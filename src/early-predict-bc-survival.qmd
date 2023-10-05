@@ -1,0 +1,111 @@
+---
+title: "Early Prediction of Breast Cancer Survival"
+---
+
+# Tumor Size
+
+```{r}
+#| label: setup
+#| include: false
+
+library(tidyverse)
+library(rlang)
+library(cmdstanr)
+library(posterior)
+library(tidybayes)
+library(bayesplot)
+library(here)
+
+options(mc.cores = 8)
+
+ggplot2::theme_set(theme_minimal())
+```
+
+```{r}
+tumor_model <- cmdstan_model(here("src", "tumor.stan"))
+
+test_data <- lst(
+  fit_data = FALSE,
+  gen_tumor_sizes = TRUE,
+  n_patients = 100,
+  n_measures = 2,
+  n_patient_tumors = rep(5, 100),
+  # n_tumor_measures = rep(3, 200),
+  tumor_size = array(dim = 0)
+)
+
+res <- tumor_model$sample(data = test_data)
+
+res_rvar <- res |> 
+  spread_rvars(rep_tumor_size[tumor_index, measure_index]) |> 
+  ungroup() |> 
+  pivot_wider(id_cols = tumor_index, names_from = measure_index, values_from = rep_tumor_size, names_prefix = "tumor_size_") |>
+  mutate(patient_id = rep(seq(test_data$n_patients), test_data$n_patient_tumors))
+
+res_rvar |> 
+  pivot_longer(tumor_size_1:tumor_size_2, names_prefix = "tumor_size_", names_transform = as.integer, names_to = "measure_id", values_to = "tumor_size") |> 
+  filter(tumor_index < 6) |> 
+  # unnest_rvars() |> 
+  # filter(.draw == 1) |> 
+  ggplot(aes(measure_id)) +
+  geom_line(aes(y = tumor_size, group = str_c(tumor_index, .draw)), alpha = 0.125, data = \(d) unnest_rvars(d) |> filter(.draw <= 100)) +
+  # geom_point(aes(y = gen_tumor_size, color = factor(tumor_id)))
+  # stat_lineribbon(aes(ydist = gen_tumor_size, fill = factor(tumor_id)), alpha = 0.25)
+  coord_cartesian(ylim = c(0, 15)) +
+  NULL
+
+fake_tumor_data <- res_rvar |>
+  unnest_rvars() |>
+  ungroup() |> 
+  filter(.draw == 1)
+
+# fake_data_res <- test_data |> 
+#   list_modify(
+#     fit_data = TRUE,
+#     gen_tumor_sizes = FALSE,
+#     tumor_size = fake_data$gen_tumor_size
+#   ) |> 
+#   tumor_model$sample()
+```
+
+```{r}
+pfs_model <- cmdstan_model(here("src", "pfs.stan"))
+
+pfs_test_data <- test_data |> 
+  list_modify(
+    gen_pfs = TRUE,
+    max_pfs = 20,
+    tumor_size = select(fake_tumor_data, tumor_size_1:tumor_size_2),
+    pfs = rep(20, test_data$n_patients),
+    censored = rep(1, test_data$n_patients)
+  )
+
+pfs_res <- pfs_model$sample(data = pfs_test_data, refresh = 0)
+
+rep_pfs_rvar <- pfs_res |> 
+  spread_rvars(rep_pfs[patient_index], rep_censored[patient_index])
+
+lambda_rvar <- pfs_res |> 
+  spread_rvars(log_lambda[t], base_pf_prob[t]) |> 
+  mutate(lambda = exp(log_lambda))
+
+lambda_rvar |> 
+  ggplot(aes(t)) +
+  stat_lineribbon(aes(ydist = lambda), fill = "black", alpha = 0.5, .width = 0.8) +
+  geom_line(aes(y = lambda, group = .draw), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 50)) 
+
+lambda_rvar |> 
+  ggplot(aes(t)) +
+  stat_lineribbon(aes(ydist = base_pf_prob), fill = "black", alpha = 0.5, .width = 0.8) +
+  geom_line(aes(y = base_pf_prob, group = .draw), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 50)) 
+
+pfs_res |> 
+  spread_rvars(disease_progress_prob[i]) |> 
+  mutate(patient_index = rep(seq(test_data$n_patients), each = 20), t = rep(seq(20), 100)) |> 
+  filter(patient_index == 1) |> 
+  ggplot(aes(t)) +
+  stat_lineribbon(aes(ydist = disease_progress_prob), fill = "black", alpha = 0.5, .width = 0.8) +
+  geom_line(aes(y = disease_progress_prob, group = .draw), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 20)) +
+  NULL
+```
+
