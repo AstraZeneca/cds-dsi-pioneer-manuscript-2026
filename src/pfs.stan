@@ -1,5 +1,27 @@
 functions {
   #include "util.stan"
+  
+  vector linear_tumor_stimulus(real intercept, vector coef, matrix covar) {
+    return intercept + covar * coef; 
+  } 
+  
+  vector calculate_progress_linear_prob(vector log_lambda, real tumor_intercept, vector tumor_coef, matrix tumor_covar) {
+      real total_time_invar_tumor_stim = sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar));
+      
+      return inv_cloglog(log_lambda + total_time_invar_tumor_stim);
+  }
+  
+  int pfs_rng(vector prob) {
+    int n_prob = rows(prob);
+    int disease_progress = 0;
+    int pfs = 0;
+    
+    while (pfs < n_prob && !bernoulli_rng(prob[pfs + 1])) {
+      pfs += 1;
+    }
+    
+    return pfs;
+  }
 }
 
 data {
@@ -59,10 +81,9 @@ transformed parameters {
   
     for (i in 1:n_patients) {
       int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
-      real total_time_invar_tumor_stim = sum(tumor_stim_intercept + tumor_covar[tumor_pos:tumor_end] * tumor_stim_coef);
-     
       int pfs_interval_end = pfs_interval_pos + pfs[i] - censored[i]; 
-      
+      real total_time_invar_tumor_stim = sum(linear_tumor_stimulus(tumor_stim_intercept, tumor_stim_coef, tumor_covar[tumor_pos:tumor_end]));
+     
       disease_progress_pred[pfs_interval_pos:pfs_interval_end] = log_lambda[1:(pfs[i] + uncensored[i])] + total_time_invar_tumor_stim;
       
       tumor_pos = tumor_end + 1;
@@ -88,7 +109,7 @@ model {
     for (i in 1:n_patients) {
       int pfs_interval_end = pfs_interval_pos + pfs[i] - censored[i]; 
       
-      target += bernoulli_lupmf(0 | disease_progress_prob[pfs_interval_pos:(pfs_interval_end - 1)]) + (censored[i] ? 0 : bernoulli_lupmf(1 | disease_progress_prob[pfs_interval_end]));
+      target += bernoulli_lupmf(0 | disease_progress_prob[pfs_interval_pos:(pfs_interval_end - 1)]) + uncensored[i] * bernoulli_lupmf(1 | disease_progress_prob[pfs_interval_end]);
       
       pfs_interval_pos = pfs_interval_end + 1;
     }
@@ -106,22 +127,31 @@ generated quantities {
     int pfs_interval_pos = 1;
     
     for (i in 1:n_patients) {
+      int pfs_interval_end = pfs_interval_pos + max_pfs - 1;
+      int t = 1;
       int disease_progress = 0;
-      rep_censored[i] = 0;
-      rep_pfs[i] = 0;
       
-      for (t in 1:max_pfs) {
-        disease_progress = bernoulli_rng(disease_progress_prob[pfs_interval_pos]);
-        
-        pfs_interval_pos += 1;
-        
-        if (disease_progress) {
-          rep_pfs[i] = t - 1;
-          rep_censored[i] = t >= max_pfs;
-          
-          break;
-        }
-      }
+      rep_pfs[i] = pfs_rng(disease_progress_prob[pfs_interval_pos:pfs_interval_end]);
+      rep_censored[i] = rep_pfs[i] >= max_pfs;
+      
+      pfs_interval_pos = pfs_interval_end + 1;
+      
+      // while (!disease_progress && t <= max_pfs) {
+      //   disease_progress = bernoulli_rng(disease_progress_prob[pfs_interval_pos]);
+      //  
+      //   pfs_interval_pos += 1;
+      //   
+      //   if (disease_progress) {
+      //     rep_pfs[i] = t - 1;
+      //     rep_censored[i] = 0; 
+      //   } else {
+      //     t += 1;
+      //   }
+      // }
+      // 
+      // if (!disease_progress) {
+      //   rep_pfs[i] = max_pfs;
+      // }
     }
   }
 }

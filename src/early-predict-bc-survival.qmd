@@ -21,15 +21,18 @@ options(mc.cores = 8)
 ggplot2::theme_set(theme_minimal())
 ```
 
+
 ```{r}
+n_patients <- 200
+
 tumor_model <- cmdstan_model(here("src", "tumor.stan"))
 
 test_data <- lst(
   fit_data = FALSE,
   gen_tumor_sizes = TRUE,
-  n_patients = 100,
+  n_patients,
   n_measures = 2,
-  n_patient_tumors = rep(5, 100),
+  n_patient_tumors = rep(5, n_patients),
   # n_tumor_measures = rep(3, 200),
   tumor_size = array(dim = 0)
 )
@@ -69,7 +72,7 @@ fake_tumor_data <- res_rvar |>
 ```
 
 ```{r}
-pfs_model <- cmdstan_model(here("src", "pfs.stan"))
+pfs_model <- cmdstan_model(here("src", "pfs.stan"), compile_standalone = TRUE)
 
 pfs_test_data <- test_data |> 
   list_modify(
@@ -81,9 +84,15 @@ pfs_test_data <- test_data |>
   )
 
 pfs_res <- pfs_model$sample(data = pfs_test_data, refresh = 0)
+```
 
+```{r}
 rep_pfs_rvar <- pfs_res |> 
   spread_rvars(rep_pfs[patient_index], rep_censored[patient_index])
+
+rep_pfs_param_rvar <- pfs_res |> 
+  spread_rvars(log_lambda_gp_alpha, log_lambda_gp_rho, log_lambda_gp_intercept, tumor_stim_intercept, tumor_stim_coef[t]) |> 
+  pivot_wider(names_from = t, values_from = tumor_stim_coef, names_prefix = "tumor_stim_coef_") 
 
 lambda_rvar <- pfs_res |> 
   spread_rvars(log_lambda[t], base_pf_prob[t]) |> 
@@ -101,11 +110,70 @@ lambda_rvar |>
 
 pfs_res |> 
   spread_rvars(disease_progress_prob[i]) |> 
-  mutate(patient_index = rep(seq(test_data$n_patients), each = 20), t = rep(seq(20), 100)) |> 
+  mutate(patient_index = rep(seq(test_data$n_patients), each = 20), t = rep(seq(20), n_patients)) |> 
   filter(patient_index == 1) |> 
   ggplot(aes(t)) +
   stat_lineribbon(aes(ydist = disease_progress_prob), fill = "black", alpha = 0.5, .width = 0.8) +
   geom_line(aes(y = disease_progress_prob, group = .draw), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 20)) +
   NULL
+```
+
+```{r}
+#| fig-height: 10
+
+draw <- 3
+
+fake_pfs_data <- rep_pfs_rvar |> 
+  unnest_rvars() |> 
+  filter(.draw == draw) |> 
+  rename_with(\(col) str_remove(col, "rep_")) |> 
+  mutate(censored = vctrs::vec_cast(censored, logical()))
+
+fake_pfs_param_data <- rep_pfs_param_rvar |>  
+  unnest_rvars() |> 
+  filter(.draw == draw) |> 
+  pivot_longer(!starts_with("."), names_to = "param", values_to = "true")
+  
+fake_pfs_fit <- pfs_test_data |> 
+  list_modify(
+    gen_pfs = FALSE,
+    fit_data = TRUE,
+    !!!select(fake_pfs_data, pfs, censored)
+  ) |> 
+  pfs_model$sample(refresh = 0)
+
+fake_pfs_fit_param_rvar <- fake_pfs_fit |> 
+  spread_rvars(log_lambda_gp_alpha, log_lambda_gp_rho, log_lambda_gp_intercept, tumor_stim_intercept, tumor_stim_coef[t]) |> 
+  pivot_wider(names_from = t, values_from = tumor_stim_coef, names_prefix = "tumor_stim_coef_") |> 
+  pivot_longer(everything(), names_to = "param", values_to = "est")
+
+bind_rows(
+  prior = rep_pfs_param_rvar |> pivot_longer(everything(), names_to = "param", values_to = "est"),
+  post = fake_pfs_fit_param_rvar,
+  .id = "type"
+) |> 
+  ggplot(aes(y = param)) +
+  stat_pointinterval(aes(xdist = est, color = type), size = 0.25, .width = 0.8, position = "dodge") +
+  geom_vline(aes(xintercept = true), data = fake_pfs_param_data) +
+  facet_wrap(vars(param), ncol = 1, scales = "free") +
+  theme(axis.text.y = element_blank())
+```
+
+```{r}
+max_pfs <- 20
+log_lambda <- pfs_model$functions$calc_gp_pred(seq(max_pfs), 0.25, 0.125, 0.25, 1e-9, rnorm(max_pfs))
+
+gen_fake_pfs_data <- function(fake_tumor_data, log_lambda) { 
+  fake_tumor_data |> 
+    group_by(patient_id) |>
+    summarize(tumor_covar = list(cbind(tumor_size_1, tumor_size_2))) |>
+    rowwise() |> 
+    reframe(patient_id, progress_prob = pfs_model$functions$calculate_progress_linear_prob(log_lambda, -0.5, c(0.0125, 0.005), tumor_covar)) |> 
+    group_by(patient_id) |> 
+    summarize(pfs = pfs_model$functions$pfs_rng(progress_prob)) |> 
+    mutate(censored = pfs >= length(log_lambda))
+}
+
+gen_fake_pfs_data(fake_tumor_data, log_lambda)
 ```
 
