@@ -16,14 +16,23 @@ library(tidybayes)
 library(bayesplot)
 library(here)
 
-options(mc.cores = 8)
+options(mc.cores = 12)
 
 ggplot2::theme_set(theme_minimal())
+
+future::plan(future::multisession(workers = 3))
+```
+
+```{r}
+#| label: sim-settings
+
+n_patients <- 1000
+max_pfs <- 20
 ```
 
 
 ```{r}
-n_patients <- 200
+#| label: tumor
 
 tumor_model <- cmdstan_model(here("src", "tumor.stan"))
 
@@ -32,8 +41,8 @@ test_data <- lst(
   gen_tumor_sizes = TRUE,
   n_patients,
   n_measures = 2,
-  n_patient_tumors = rep(5, n_patients),
-  # n_tumor_measures = rep(3, 200),
+  # n_patient_tumors = rep(5, n_patients),
+  n_patient_tumors = 1 + rbinom(n_patients, 5, 0.4),
   tumor_size = array(dim = 0)
 )
 
@@ -72,14 +81,16 @@ fake_tumor_data <- res_rvar |>
 ```
 
 ```{r}
-pfs_model <- cmdstan_model(here("src", "pfs.stan"), compile_standalone = TRUE)
+#| label: pfs-model
+
+pfs_model <- cmdstan_model(here("src", "pfs.stan"), compile_standalone = TRUE, force_recompile = TRUE)
 
 pfs_test_data <- test_data |> 
   list_modify(
     gen_pfs = TRUE,
-    max_pfs = 20,
+    max_pfs = max_pfs,
     tumor_size = select(fake_tumor_data, tumor_size_1:tumor_size_2),
-    pfs = rep(20, test_data$n_patients),
+    pfs = rep(max_pfs, test_data$n_patients),
     censored = rep(1, test_data$n_patients)
   )
 
@@ -110,7 +121,7 @@ lambda_rvar |>
 
 pfs_res |> 
   spread_rvars(disease_progress_prob[i]) |> 
-  mutate(patient_index = rep(seq(test_data$n_patients), each = 20), t = rep(seq(20), n_patients)) |> 
+  mutate(patient_index = rep(seq(test_data$n_patients), each = max_pfs), t = rep(seq(max_pfs), n_patients)) |> 
   filter(patient_index == 1) |> 
   ggplot(aes(t)) +
   stat_lineribbon(aes(ydist = disease_progress_prob), fill = "black", alpha = 0.5, .width = 0.8) +
@@ -120,6 +131,7 @@ pfs_res |>
 
 ```{r}
 #| fig-height: 10
+#| eval: false
 
 draw <- 3
 
@@ -140,7 +152,7 @@ fake_pfs_fit <- pfs_test_data |>
     fit_data = TRUE,
     !!!select(fake_pfs_data, pfs, censored)
   ) |> 
-  pfs_model$sample(refresh = 0)
+  pfs_model$sample(refresh = 0, init = \(chain_id) lst(tumor_stim_intercept = 0.01, tumor_stim_coef = c(0.01, 0.01)))
 
 fake_pfs_fit_param_rvar <- fake_pfs_fit |> 
   spread_rvars(log_lambda_gp_alpha, log_lambda_gp_rho, log_lambda_gp_intercept, tumor_stim_intercept, tumor_stim_coef[t]) |> 
@@ -160,20 +172,100 @@ bind_rows(
 ```
 
 ```{r}
-max_pfs <- 20
-log_lambda <- pfs_model$functions$calc_gp_pred(seq(max_pfs), 0.25, 0.125, 0.25, 1e-9, rnorm(max_pfs))
+#| label: fake-pfs-data
+#| include: false
 
-gen_fake_pfs_data <- function(fake_tumor_data, log_lambda) { 
+# log_lambda <- pfs_model$functions$calc_gp_pred(seq(max_pfs), intercept = -2.0, alpha = 0.3, rho = 1.5, delta = 1e-9, eta = rnorm(max_pfs))
+
+log_lambda <- c(-2.48777760709026, -2.57152726838213, -2.23380584287276, -1.90739893145911, -1.86259266390287, -1.92891255821976, -1.93801857664684, -1.78872336415524, -1.54522270753866, -1.48718504020436, -1.70706597143648, -1.82018710107277, -1.67764635563667, -1.69933003110133, -1.86937604603516, -2.03108481232034, -2.15728306810556, -2.11459406967666, -2.02311574428507, -2.08871876979315) 
+
+gen_patient_interval_properties <- function(fake_tumor_data, log_lambda) {
   fake_tumor_data |> 
     group_by(patient_id) |>
     summarize(tumor_covar = list(cbind(tumor_size_1, tumor_size_2))) |>
     rowwise() |> 
-    reframe(patient_id, progress_prob = pfs_model$functions$calculate_progress_linear_prob(log_lambda, -0.5, c(0.0125, 0.005), tumor_covar)) |> 
+    reframe(
+      patient_id, 
+      # progress_prob = pfs_model$functions$calculate_progress_linear_prob(log_lambda, 0.0, c(0.15, 0.05), tumor_covar),
+      # hazard = pfs_model$functions$calculate_linear_hazard(log_lambda, 0.0, c(0.15, 0.05), tumor_covar),
+      progress_prob = pfs_model$functions$calculate_progress_linear_prob(log_lambda, 0.2, c(0.15, 0.0), tumor_covar),
+      hazard = pfs_model$functions$calculate_linear_hazard(log_lambda, 0.2, c(0.15, 0.0), tumor_covar),
+      survival = cumprod(progress_prob)
+    )  
+}
+
+gen_fake_pfs_data <- function(patient_interval_data) { 
+  patient_interval_data |> 
     group_by(patient_id) |> 
     summarize(pfs = pfs_model$functions$pfs_rng(progress_prob)) |> 
     mutate(censored = pfs >= length(log_lambda))
 }
 
-gen_fake_pfs_data(fake_tumor_data, log_lambda)
+patient_interval_data <- gen_patient_interval_properties(fake_tumor_data, log_lambda)
+
+fake_data_sim <- tibble(sim_id = 1:24) |> 
+  rowwise() |> 
+  mutate(sim_data = list(gen_fake_pfs_data(patient_interval_data))) |> 
+  ungroup() |> 
+  mutate(
+    sim_fit = furrr::future_map(.progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
+    # sim_fit = map(
+      sim_data, 
+      function(d) { 
+        pfs_test_data |> 
+          list_modify(
+            gen_pfs = FALSE,
+            fit_data = TRUE,
+            pfs = d$pfs, censored = d$censored
+          ) |> 
+          pfs_model$sample(
+            refresh = 0, 
+            parallel_chains = 4, 
+            init = \(chain_id) lst(tumor_stim_intercept = truncnorm::rtruncnorm(1, 0, mean = 0.01, sd = 0.05), 
+                                   tumor_stim_coef = c(truncnorm::rtruncnorm(2, 0, mean = 0.01, sd = 0.05)))
+          )
+      }
+    ),
+    
+    sim_param_post = map(
+      sim_fit, 
+      \(f) spread_rvars(f, log_lambda_gp_alpha, log_lambda_gp_rho, log_lambda_gp_intercept, tumor_stim_intercept, tumor_stim_coef[t]) |>
+        pivot_wider(names_from = t, values_from = tumor_stim_coef, names_prefix = "tumor_stim_coef_")
+    ),
+    
+    sim_log_lambda_post = map(sim_fit, \(f) spread_rvars(f, log_lambda[m]))
+  ) 
 ```
 
+```{r}
+fake_data_sim |> 
+  select(!c(sim_data, sim_fit, sim_log_lambda_post)) |>
+  unnest(sim_param_post) |> 
+  add_row(sim_id = 0, rep_pfs_param_rvar) |>
+  pivot_longer(!sim_id, names_to = "param", values_to = "est") |>
+  mutate(est_type = if_else(sim_id > 0, "post", "prior")) |> 
+  ggplot(aes(sim_id)) + 
+  geom_hline(aes(yintercept = true_val), data = tribble(~ param,                   ~ true_val,
+                                                        "log_lambda_gp_intercept", -2.0,
+                                                        "log_lambda_gp_alpha",     0.3,
+                                                        "log_lambda_gp_rho",       1.5,
+                                                        "tumor_stim_intercept",    0.2,
+                                                        "tumor_stim_coef_1",       0.15,
+                                                        "tumor_stim_coef_2",       0.05)) +
+  stat_pointinterval(aes(ydist = est, color = est_type), size = 0.25, .width = 0.8, fatten_point = 0) +
+  facet_wrap(vars(param), scales = "free_y") +
+  theme(axis.text.x = element_blank(), legend.position = "none")
+```
+
+```{r}
+fake_data_sim |> 
+  select(!c(sim_data, sim_fit, sim_param_post)) |>
+  unnest(sim_log_lambda_post) |> 
+  bind_rows(transmute(lambda_rvar, m = t, log_lambda, sim_id = 0)) |> 
+  mutate(est_type = if_else(sim_id > 0, "post", "prior")) |> 
+  ggplot(aes(sim_id)) + 
+  geom_hline(aes(yintercept = true_val), data = tibble(m = 1:20, true_val = log_lambda)) +
+  stat_pointinterval(aes(ydist = log_lambda, color = est_type), size = 0.5, .width = 0.8, fatten_point = 0) +
+  facet_wrap(vars(m)) +
+  theme(axis.text.x = element_blank(), legend.position = "none")
+```

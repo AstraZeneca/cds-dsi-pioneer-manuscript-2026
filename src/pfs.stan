@@ -11,6 +11,12 @@ functions {
       return inv_cloglog(log_lambda + total_time_invar_tumor_stim);
   }
   
+  vector calculate_linear_hazard(vector log_lambda, real tumor_intercept, vector tumor_coef, matrix tumor_covar) {
+      real total_time_invar_tumor_stim = sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar));
+      
+      return exp(log_lambda + total_time_invar_tumor_stim);
+  }
+  
   int pfs_rng(vector prob) {
     int n_prob = rows(prob);
     int disease_progress = 0;
@@ -66,7 +72,7 @@ parameters {
   vector[max_pfs] log_lambda_gp_eta;
   real log_lambda_gp_intercept;
   
-  real tumor_stim_intercept;
+  real<lower = 0> tumor_stim_intercept;
   vector<lower = 0>[2] tumor_stim_coef;
 }
 
@@ -74,6 +80,7 @@ transformed parameters {
   vector[max_pfs] log_lambda = calc_gp_pred(pfs_range, log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho, delta, log_lambda_gp_eta);
   vector[n_total_pfs + sum(uncensored)] disease_progress_pred;
   vector<lower = 0, upper = 1>[n_total_pfs + sum(uncensored)] disease_progress_prob;
+  vector[n_patients] total_time_invar_tumor_stim;
   
   {
     int tumor_pos = 1;
@@ -82,9 +89,11 @@ transformed parameters {
     for (i in 1:n_patients) {
       int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
       int pfs_interval_end = pfs_interval_pos + pfs[i] - censored[i]; 
-      real total_time_invar_tumor_stim = sum(linear_tumor_stimulus(tumor_stim_intercept, tumor_stim_coef, tumor_covar[tumor_pos:tumor_end]));
-     
-      disease_progress_pred[pfs_interval_pos:pfs_interval_end] = log_lambda[1:(pfs[i] + uncensored[i])] + total_time_invar_tumor_stim;
+      
+      // total_time_invar_tumor_stim[i] = sum(linear_tumor_stimulus(tumor_stim_intercept, tumor_stim_coef, tumor_covar[tumor_pos:tumor_end]));
+      total_time_invar_tumor_stim[i] = sum(linear_tumor_stimulus(tumor_stim_intercept, [tumor_stim_coef[1], 0.0]', tumor_covar[tumor_pos:tumor_end]));
+      
+      disease_progress_pred[pfs_interval_pos:pfs_interval_end] = log_lambda[1:(pfs[i] + uncensored[i])] + total_time_invar_tumor_stim[i];
       
       tumor_pos = tumor_end + 1;
       pfs_interval_pos = pfs_interval_end + 1;
@@ -98,18 +107,23 @@ model {
   log_lambda_gp_alpha ~ normal(0, 0.25);
   log_lambda_gp_rho ~ inv_gamma(5, 5);
   log_lambda_gp_eta ~ std_normal();
-  log_lambda_gp_intercept ~ normal(0, 0.5);
+  log_lambda_gp_intercept ~ normal(-2, 0.5);
   
-  tumor_stim_intercept ~ normal(-0.5, 0.125);
-  tumor_stim_coef ~ normal(0, 0.05);
+  tumor_stim_intercept ~ normal(0, 0.25);
+  tumor_stim_coef[1] ~ normal(0, 0.125);
+  tumor_stim_coef[2] ~ normal(0, 0.125);
   
   if (fit_data) {
     int pfs_interval_pos = 1;
     
     for (i in 1:n_patients) {
       int pfs_interval_end = pfs_interval_pos + pfs[i] - censored[i]; 
-      
-      target += bernoulli_lupmf(0 | disease_progress_prob[pfs_interval_pos:(pfs_interval_end - 1)]) + uncensored[i] * bernoulli_lupmf(1 | disease_progress_prob[pfs_interval_end]);
+   
+      if (pfs[i] > 0) {
+        target += bernoulli_lupmf(0 | disease_progress_prob[pfs_interval_pos:(pfs_interval_end - uncensored[i])]);
+      }
+
+      target += uncensored[i] * bernoulli_lupmf(1 | disease_progress_prob[pfs_interval_end]);
       
       pfs_interval_pos = pfs_interval_end + 1;
     }
@@ -135,23 +149,6 @@ generated quantities {
       rep_censored[i] = rep_pfs[i] >= max_pfs;
       
       pfs_interval_pos = pfs_interval_end + 1;
-      
-      // while (!disease_progress && t <= max_pfs) {
-      //   disease_progress = bernoulli_rng(disease_progress_prob[pfs_interval_pos]);
-      //  
-      //   pfs_interval_pos += 1;
-      //   
-      //   if (disease_progress) {
-      //     rep_pfs[i] = t - 1;
-      //     rep_censored[i] = 0; 
-      //   } else {
-      //     t += 1;
-      //   }
-      // }
-      // 
-      // if (!disease_progress) {
-      //   rep_pfs[i] = max_pfs;
-      // }
     }
   }
 }
