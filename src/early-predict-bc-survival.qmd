@@ -202,7 +202,7 @@ gen_fake_pfs_data <- function(patient_interval_data) {
 
 patient_interval_data <- gen_patient_interval_properties(fake_tumor_data, log_lambda)
 
-fake_data_sim <- tibble(sim_id = 1:12) |> 
+fake_data_sim <- tibble(sim_id = 1:100) |> 
   rowwise() |> 
   mutate(sim_data = list(gen_fake_pfs_data(patient_interval_data))) |> 
   ungroup() |> 
@@ -228,17 +228,13 @@ fake_data_sim <- tibble(sim_id = 1:12) |>
     ),
     
     sim_param_post = map(
-      sim_fit,
+      sim_fit, 
       \(f) spread_rvars(f, log_lambda_gp_alpha, log_lambda_gp_rho, log_lambda_gp_intercept, tumor_stim_intercept, tumor_stim_coef[t]) |>
         pivot_wider(names_from = t, values_from = tumor_stim_coef, names_prefix = "tumor_stim_coef_")
     ),
-
+    
     sim_log_lambda_post = map(sim_fit, \(f) spread_rvars(f, log_lambda[m]))
   ) 
-
-# fake_data_sim |> 
-#   select(!c(sim_data, sim_fit)) |> 
-#   write_rds(here("temp", "data", "fake_data_sim.rds"))
 ```
 
 ```{r}
@@ -256,7 +252,7 @@ fake_data_sim |>
                                                         "tumor_stim_intercept",    0.2,
                                                         "tumor_stim_coef_1",       0.15,
                                                         "tumor_stim_coef_2",       0.05)) +
-  stat_pointinterval(aes(ydist = est, color = est_type), size = 0.5, .width = 0.8, fatten_point = 0.5) +
+  stat_pointinterval(aes(ydist = est, color = est_type), size = 0.25, .width = 0.8, fatten_point = 0) +
   facet_wrap(vars(param), scales = "free_y") +
   theme(axis.text.x = element_blank(), legend.position = "none")
 ```
@@ -268,8 +264,8 @@ fake_data_sim |>
   bind_rows(transmute(lambda_rvar, m = t, log_lambda, sim_id = 0)) |> 
   mutate(est_type = if_else(sim_id > 0, "post", "prior")) |> 
   ggplot(aes(sim_id)) + 
-  stat_pointinterval(aes(ydist = log_lambda, color = est_type), size = 0.5, .width = 0.8, fatten_point = 0) +
   geom_hline(aes(yintercept = true_val), data = tibble(m = 1:20, true_val = log_lambda)) +
+  stat_pointinterval(aes(ydist = log_lambda, color = est_type), size = 0.5, .width = 0.8, fatten_point = 0) +
   facet_wrap(vars(m)) +
   theme(axis.text.x = element_blank(), legend.position = "none")
 ```
