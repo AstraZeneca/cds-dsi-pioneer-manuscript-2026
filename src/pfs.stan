@@ -91,6 +91,7 @@ transformed parameters {
       int pfs_interval_end = pfs_interval_pos + pfs[i] - censored[i]; 
       
       total_time_invar_tumor_stim[i] = sum(linear_tumor_stimulus(tumor_stim_intercept, tumor_stim_coef, tumor_covar[tumor_pos:tumor_end]));
+      // total_time_invar_tumor_stim[i] = sum(linear_tumor_stimulus(tumor_stim_intercept, [tumor_stim_coef[1], 0.0]', tumor_covar[tumor_pos:tumor_end]));
       
       disease_progress_pred[pfs_interval_pos:pfs_interval_end] = log_lambda[1:(pfs[i] + uncensored[i])] + total_time_invar_tumor_stim[i];
       
