@@ -48,8 +48,8 @@ transformed parameters {
 }
 
 model {
-  pop_tumor_gp_intercept ~ normal(0, 1);
-  pop_tumor_gp_alpha ~ normal(0, 0.5);
+  pop_tumor_gp_intercept ~ normal(0, 0.25);
+  pop_tumor_gp_alpha ~ normal(0, 0.25);
   pop_tumor_gp_rho ~ inv_gamma(5, 5);
   pop_tumor_sigma ~ normal(0, 0.5);
   
