@@ -20,7 +20,7 @@ options(mc.cores = 12)
 
 ggplot2::theme_set(theme_minimal())
 
-future::plan(future::multisession(workers = 12))
+future::plan(future::multisession(workers = 3))
 ```
 
 ```{r}
@@ -190,8 +190,8 @@ gen_patient_interval_properties <- function(fake_tumor_data, log_lambda) {
       patient_id, 
       # progress_prob = pfs_model$functions$calculate_progress_linear_prob(log_lambda, 0.2, c(0.15, 0.05), tumor_covar),
       # hazard = pfs_model$functions$calculate_linear_hazard(log_lambda, 0.2, c(0.15, 0.05), tumor_covar),
-      progress_prob = pfs_model$functions$calculate_progress_linear_prob(log_lambda, 0.2, c(0.0, 0.0), tumor_covar),
-      hazard = pfs_model$functions$calculate_linear_hazard(log_lambda, 0.2, c(0.0, 0.0), tumor_covar),
+      progress_prob = pfs_model$functions$calculate_progress_linear_prob(log_lambda, 0.2, c(0.15, 0.0), tumor_covar),
+      hazard = pfs_model$functions$calculate_linear_hazard(log_lambda, 0.2, c(0.15, 0.0), tumor_covar),
       survival = cumprod(progress_prob)
     )  
 }
