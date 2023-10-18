@@ -59,7 +59,7 @@ transformed data {
     reject("Only supporting two measures for now.");
   }
   
-  tumor_covar[, 2] -= tumor_covar[, 1];
+  // tumor_covar[, 2] -= tumor_covar[, 1];
   
   for (i in 1:n_patients) {
     uncensored[i] = 1 - censored[i];
@@ -91,8 +91,8 @@ transformed parameters {
       int pfs_interval_end = pfs_interval_pos + pfs[i] - censored[i]; 
       
       // total_time_invar_tumor_stim[i] = sum(linear_tumor_stimulus(tumor_stim_intercept, [0.0, 0.0]', tumor_covar[tumor_pos:tumor_end]));
-      // total_time_invar_tumor_stim[i] = sum(linear_tumor_stimulus(tumor_stim_intercept, tumor_stim_coef, tumor_covar[tumor_pos:tumor_end]));
-      total_time_invar_tumor_stim[i] = sum(linear_tumor_stimulus(tumor_stim_intercept, [tumor_stim_coef[1], 0.0]', tumor_covar[tumor_pos:tumor_end]));
+      // total_time_invar_tumor_stim[i] = sum(linear_tumor_stimulus(tumor_stim_intercept, [tumor_stim_coef[1], 0.0]', tumor_covar[tumor_pos:tumor_end]));
+      total_time_invar_tumor_stim[i] = sum(linear_tumor_stimulus(tumor_stim_intercept, tumor_stim_coef, tumor_covar[tumor_pos:tumor_end]));
       
       disease_progress_pred[pfs_interval_pos:pfs_interval_end] = log_lambda[1:(pfs[i] + uncensored[i])] + total_time_invar_tumor_stim[i];
       
