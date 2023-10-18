@@ -20,7 +20,7 @@ options(mc.cores = 12)
 
 ggplot2::theme_set(theme_minimal())
 
-future::plan(future::multisession(workers = 3))
+future::plan(future::multisession(workers = 12))
 ```
 
 ```{r}
@@ -188,10 +188,10 @@ gen_patient_interval_properties <- function(fake_tumor_data, log_lambda) {
     rowwise() |> 
     reframe(
       patient_id, 
-      # progress_prob = pfs_model$functions$calculate_progress_linear_prob(log_lambda, 0.2, c(0.15, 0.05), tumor_covar),
-      # hazard = pfs_model$functions$calculate_linear_hazard(log_lambda, 0.2, c(0.15, 0.05), tumor_covar),
-      progress_prob = pfs_model$functions$calculate_progress_linear_prob(log_lambda, 0.2, c(0.15, 0.0), tumor_covar),
-      hazard = pfs_model$functions$calculate_linear_hazard(log_lambda, 0.2, c(0.15, 0.0), tumor_covar),
+      progress_prob = pfs_model$functions$calculate_progress_linear_prob(log_lambda, 0.2, c(0.15, 0.05), tumor_covar),
+      hazard = pfs_model$functions$calculate_linear_hazard(log_lambda, 0.2, c(0.15, 0.05), tumor_covar),
+      # progress_prob = pfs_model$functions$calculate_progress_linear_prob(log_lambda, 0.2, c(0.15, 0.0), tumor_covar),
+      # hazard = pfs_model$functions$calculate_linear_hazard(log_lambda, 0.2, c(0.15, 0.0), tumor_covar),
       survival = cumprod(progress_prob)
     )  
 }
@@ -205,7 +205,7 @@ gen_fake_pfs_data <- function(patient_interval_data) {
 
 patient_interval_data <- gen_patient_interval_properties(fake_tumor_data, log_lambda)
 
-fake_data_sim <- tibble(sim_id = 1:24) |> 
+fake_data_sim <- tibble(sim_id = 1:100) |> 
   rowwise() |> 
   mutate(sim_data = list(gen_fake_pfs_data(patient_interval_data))) |> 
   ungroup() |> 
