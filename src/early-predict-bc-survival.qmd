@@ -2,8 +2,6 @@
 title: "Early Prediction of Breast Cancer Survival"
 ---
 
-# Tumor Size
-
 ```{r}
 #| label: setup
 #| include: false
@@ -20,7 +18,7 @@ options(mc.cores = 12)
 
 ggplot2::theme_set(theme_minimal())
 
-future::plan(future::multisession(workers = 12))
+future::plan(future::multisession(workers = 3))
 ```
 
 ```{r}
@@ -30,6 +28,7 @@ n_patients <- 1000
 max_pfs <- 20
 ```
 
+# Tumor Size Model
 
 ```{r}
 #| label: tumor
@@ -80,6 +79,32 @@ fake_tumor_data <- res_rvar |>
 #   tumor_model$sample()
 ```
 
+# Survival Model
+
+We will be using a piecewise-constant proportional hazard model:
+
+-   Time is discretized into $m \in \{0,\dots,M\}$, with $m = 0$ is the baseline timepoint.
+-   $Y_m$ is an indicator for disease progression at timepoint $m$, with $Y_0 = 0$.
+-   $X_m$ are--possibly time-variant--covariates.
+
+The probability of remaining progression-free at $m \geq 1$ is 
+$$
+\alpha_m(x;\theta) = \Pr[Y_m = 0\mid Y_{m-1} = 0, X_m = \bf{x}] = \exp[-\lambda(m, \bf{x}; \boldsymbol{\theta})] 
+$$
+
+and the hazard function 
+
+$$
+  \lambda(m, \bf{x}; \boldsymbol{\theta}) = \lambda_m \kappa(\bf{x}; \boldsymbol{\beta})
+$$
+
+We assume that censoring in conditionally independent of time to progression. We will use a linear for for $\kappa(\bf{x}; \boldsymbol{\beta}) = \exp(\bf{x}\boldsymbol{\beta})$.
+
+Aside from whatever priors we use for $\boldsymbol{\beta}$, we will use a Gaussian process prior for $\lambda_m$, $$
+\lambda_m \sim \mathtt{GP}(0, k),
+$$ where $k(\lambda_p, \lambda_q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$.
+
+
 ```{r}
 #| label: pfs-model
 
@@ -93,11 +118,15 @@ pfs_test_data <- test_data |>
     pfs = rep(max_pfs, test_data$n_patients),
     censored = rep(1, test_data$n_patients)
   )
-
-pfs_res <- pfs_model$sample(data = pfs_test_data, refresh = 0)
 ```
 
+## Prior Prediction
+
 ```{r}
+#| label: pfs-prior-predict
+
+pfs_res <- pfs_model$sample(data = pfs_test_data, refresh = 0)
+
 rep_pfs_rvar <- pfs_res |> 
   spread_rvars(rep_pfs[patient_index], rep_censored[patient_index])
 
@@ -106,71 +135,71 @@ rep_pfs_param_rvar <- pfs_res |>
   pivot_wider(names_from = t, values_from = tumor_stim_coef, names_prefix = "tumor_stim_coef_") 
 
 lambda_rvar <- pfs_res |> 
-  spread_rvars(log_lambda[t], base_pf_prob[t]) |> 
+  spread_rvars(log_lambda[t], base_pf_cond_prob[t], base_survival[t], one_tumor_survival[t]) |> 
   mutate(lambda = exp(log_lambda))
+
+expected_pfs_rvar <- pfs_res |> 
+  gather_rvars(base_cond_expected_pfs, one_tumor_cond_expected_pfs)  
+```
+
+```{r}
+#| label: lambda-plot
 
 lambda_rvar |> 
   ggplot(aes(t)) +
   stat_lineribbon(aes(ydist = lambda), fill = "black", alpha = 0.5, .width = 0.8) +
-  geom_line(aes(y = lambda, group = .draw), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 50)) 
+  geom_line(aes(y = lambda, group = .draw), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 50)) +
+  labs(x = "m", y = latex2exp::TeX("$\\lambda_m$"))
+```
+
+```{r}
+#| label: base-pf-prob-plot
 
 lambda_rvar |> 
   ggplot(aes(t)) +
-  stat_lineribbon(aes(ydist = base_pf_prob), fill = "black", alpha = 0.5, .width = 0.8) +
-  geom_line(aes(y = base_pf_prob, group = .draw), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 50)) 
+  stat_lineribbon(aes(ydist = base_pf_cond_prob), fill = "black", alpha = 0.5, .width = 0.8) +
+  geom_line(aes(y = base_pf_cond_prob, group = .draw), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 50)) +
+  labs(title = "Base conditional probability of remaining progress", x = "m", y = "")
+```
+
+```{r}
+#| label: pf-prob-plot
 
 pfs_res |> 
   spread_rvars(disease_progress_prob[i]) |> 
   mutate(patient_index = rep(seq(test_data$n_patients), each = max_pfs), t = rep(seq(max_pfs), n_patients)) |> 
-  filter(patient_index == 1) |> 
+  filter(patient_index <= 6) |> 
   ggplot(aes(t)) +
   stat_lineribbon(aes(ydist = disease_progress_prob), fill = "black", alpha = 0.5, .width = 0.8) +
-  geom_line(aes(y = disease_progress_prob, group = .draw), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 20)) +
+  geom_line(aes(y = disease_progress_prob, group = str_c(patient_index, .draw)), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 20)) +
+  labs(title = "Conditional probability of remaining progress free", x = "m", y = latex2exp::TeX("$\\alpha_m$")) +
   coord_cartesian(ylim = c(0, 1)) +
+  facet_wrap(vars(patient_index)) +
   NULL
 ```
 
 ```{r}
-#| fig-height: 10
-#| eval: false
+#| label: base-surivival-plot
 
-draw <- 3
-
-fake_pfs_data <- rep_pfs_rvar |> 
-  unnest_rvars() |> 
-  filter(.draw == draw) |> 
-  rename_with(\(col) str_remove(col, "rep_")) |> 
-  mutate(censored = vctrs::vec_cast(censored, logical()))
-
-fake_pfs_param_data <- rep_pfs_param_rvar |>  
-  unnest_rvars() |> 
-  filter(.draw == draw) |> 
-  pivot_longer(!starts_with("."), names_to = "param", values_to = "true")
-  
-fake_pfs_fit <- pfs_test_data |> 
-  list_modify(
-    gen_pfs = FALSE,
-    fit_data = TRUE,
-    !!!select(fake_pfs_data, pfs, censored)
-  ) |> 
-  pfs_model$sample(refresh = 0, init = \(chain_id) lst(tumor_stim_intercept = 0.01, tumor_stim_coef = c(0.01, 0.01)))
-
-fake_pfs_fit_param_rvar <- fake_pfs_fit |> 
-  spread_rvars(log_lambda_gp_alpha, log_lambda_gp_rho, log_lambda_gp_intercept, tumor_stim_intercept, tumor_stim_coef[t]) |> 
-  pivot_wider(names_from = t, values_from = tumor_stim_coef, names_prefix = "tumor_stim_coef_") |> 
-  pivot_longer(everything(), names_to = "param", values_to = "est")
-
-bind_rows(
-  prior = rep_pfs_param_rvar |> pivot_longer(everything(), names_to = "param", values_to = "est"),
-  post = fake_pfs_fit_param_rvar,
-  .id = "type"
-) |> 
-  ggplot(aes(y = param)) +
-  stat_pointinterval(aes(xdist = est, color = type), size = 0.25, .width = 0.8, position = "dodge") +
-  geom_vline(aes(xintercept = true), data = fake_pfs_param_data) +
-  facet_wrap(vars(param), ncol = 1, scales = "free") +
-  theme(axis.text.y = element_blank())
+lambda_rvar |>
+  select(t, base_survival, one_tumor_survival) |> 
+  pivot_longer(!t, names_to = "survival_type", values_to = "survival") |> 
+  ggplot(aes(t)) +
+  stat_lineribbon(aes(ydist = survival, fill = survival_type, color = survival_type), alpha = 0.25, .width = 0.8) +
+  labs(title = "Base survival probability", x = "m", y = latex2exp::TeX("$S(m)$"))
 ```
+
+```{r}
+#| label: cond-expected-pfs-plot
+
+expected_pfs_rvar |> 
+  mutate(.variable = str_remove(.variable, "_cond_expected_pfs")) |> 
+  ggplot(aes(y = .variable)) +
+  stat_pointinterval(aes(xdist = .value), .width = 0.8) +
+  labs(title = "Expected PFS", subtitle = "Conditional on progress within maximum observed PFS", x = "m", y = "")
+```
+
+## Fake Data Simulation
 
 ```{r}
 #| label: fake-pfs-data
@@ -182,7 +211,8 @@ bind_rows(
 log_lambda <- c(-2.48777760709026, -2.57152726838213, -2.23380584287276, -1.90739893145911, -1.86259266390287, -1.92891255821976, -1.93801857664684, -1.78872336415524, -1.54522270753866, -1.48718504020436, -1.70706597143648, -1.82018710107277, -1.67764635563667, -1.69933003110133, -1.86937604603516, -2.03108481232034, -2.15728306810556, -2.11459406967666, -2.02311574428507, -2.08871876979315) 
 
 gen_patient_interval_properties <- function(fake_tumor_data, log_lambda) {
-  fake_tumor_data |> 
+  fake_tumor_data |>
+    mutate(across(c(tumor_size_1, tumor_size_2), \(tsize) tsize / sd(tsize))) |> 
     group_by(patient_id) |>
     summarize(tumor_covar = list(cbind(tumor_size_1, tumor_size_2))) |>
     rowwise() |> 
@@ -190,8 +220,6 @@ gen_patient_interval_properties <- function(fake_tumor_data, log_lambda) {
       patient_id, 
       progress_prob = pfs_model$functions$calculate_progress_linear_prob(log_lambda, 0.2, c(0.15, 0.05), tumor_covar),
       hazard = pfs_model$functions$calculate_linear_hazard(log_lambda, 0.2, c(0.15, 0.05), tumor_covar),
-      # progress_prob = pfs_model$functions$calculate_progress_linear_prob(log_lambda, 0.2, c(0.15, 0.0), tumor_covar),
-      # hazard = pfs_model$functions$calculate_linear_hazard(log_lambda, 0.2, c(0.15, 0.0), tumor_covar),
       survival = cumprod(progress_prob)
     )  
 }
@@ -205,7 +233,7 @@ gen_fake_pfs_data <- function(patient_interval_data) {
 
 patient_interval_data <- gen_patient_interval_properties(fake_tumor_data, log_lambda)
 
-fake_data_sim <- tibble(sim_id = 1:100) |> 
+fake_data_sim <- tibble(sim_id = 1:12) |> 
   rowwise() |> 
   mutate(sim_data = list(gen_fake_pfs_data(patient_interval_data))) |> 
   ungroup() |> 
