@@ -19,7 +19,6 @@ functions {
   
   int pfs_rng(vector prob) {
     int n_prob = rows(prob);
-    int disease_progress = 0;
     int pfs = 0;
     
     while (pfs < n_prob && !bernoulli_rng(prob[pfs + 1])) {
@@ -48,7 +47,8 @@ transformed data {
   int<lower = 0, upper = max_pfs * n_patients> n_total_pfs = sum(pfs);
   array[max_pfs] real pfs_range;
   int<lower = 0> n_all_tumors = sum(n_patient_tumors);
-  matrix[n_all_tumors, n_measures] tumor_covar = tumor_size;
+  vector<lower = 0>[n_measures] tumor_covar_sd;
+  matrix[n_all_tumors, n_measures] scaled_tumor_covar;
   array[n_patients] int<lower = 0, upper = 1> uncensored;
   
   for (i in 1:max_pfs) {
@@ -57,6 +57,11 @@ transformed data {
   
   if (n_measures != 2) {
     reject("Only supporting two measures for now.");
+  }
+  
+  for (m in 1:n_measures) {
+    tumor_covar_sd[m] = sd(tumor_size[, m]);
+    scaled_tumor_covar[, m] = tumor_size[, m] / tumor_covar_sd[m];
   }
   
   // tumor_covar[, 2] -= tumor_covar[, 1];
@@ -92,7 +97,7 @@ transformed parameters {
       
       // total_time_invar_tumor_stim[i] = sum(linear_tumor_stimulus(tumor_stim_intercept, [0.0, 0.0]', tumor_covar[tumor_pos:tumor_end]));
       // total_time_invar_tumor_stim[i] = sum(linear_tumor_stimulus(tumor_stim_intercept, [tumor_stim_coef[1], 0.0]', tumor_covar[tumor_pos:tumor_end]));
-      total_time_invar_tumor_stim[i] = sum(linear_tumor_stimulus(tumor_stim_intercept, tumor_stim_coef, tumor_covar[tumor_pos:tumor_end]));
+      total_time_invar_tumor_stim[i] = sum(linear_tumor_stimulus(tumor_stim_intercept, tumor_stim_coef, scaled_tumor_covar[tumor_pos:tumor_end]));
       
       disease_progress_pred[pfs_interval_pos:pfs_interval_end] = log_lambda[1:(pfs[i] + uncensored[i])] + total_time_invar_tumor_stim[i];
       
