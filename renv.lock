@@ -1,6 +1,6 @@
 {
   "R": {
-    "Version": "4.1.0",
+    "Version": "4.3.1",
     "Repositories": [
       {
         "Name": "CRAN",
@@ -309,11 +309,11 @@
       "Version": "0.6.1.9000",
       "Source": "GitHub",
       "RemoteType": "github",
-      "RemoteHost": "api.github.com",
-      "RemoteRepo": "cmdstanr",
       "RemoteUsername": "stan-dev",
+      "RemoteRepo": "cmdstanr",
       "RemoteRef": "HEAD",
-      "RemoteSha": "ede72e3293d7318577fd07142bedaa2e3f76904e",
+      "RemoteSha": "5bd7ef37104e437269d24bffbe388fdf824e2c31",
+      "RemoteHost": "api.github.com",
       "Requirements": [
         "R",
         "R6",
@@ -325,7 +325,7 @@
         "rlang",
         "withr"
       ],
-      "Hash": "87a4388b84aaa524988ff1d2efbc46b8"
+      "Hash": "2f37cc6bce54f65bdb57ddb250490074"
     },
     "coda": {
       "Package": "coda",
@@ -1752,13 +1752,13 @@
     },
     "tinytex": {
       "Package": "tinytex",
-      "Version": "0.47",
+      "Version": "0.48",
       "Source": "Repository",
       "Repository": "CRAN",
       "Requirements": [
         "xfun"
       ],
-      "Hash": "8d4ccb733843e513c1c1cdd66a759f0d"
+      "Hash": "8f96d229b7311beb32b94cf413b13f84"
     },
     "truncnorm": {
       "Package": "truncnorm",
@@ -1803,7 +1803,7 @@
     },
     "vctrs": {
       "Package": "vctrs",
-      "Version": "0.6.3",
+      "Version": "0.6.4",
       "Source": "Repository",
       "Repository": "CRAN",
       "Requirements": [
@@ -1813,7 +1813,7 @@
         "lifecycle",
         "rlang"
       ],
-      "Hash": "d0ef2856b83dc33ea6e255caf6229ee2"
+      "Hash": "266c1ca411266ba8f365fcc726444b87"
     },
     "viridisLite": {
       "Package": "viridisLite",
