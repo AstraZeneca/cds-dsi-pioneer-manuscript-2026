@@ -27,6 +27,26 @@ functions {
     
     return pfs;
   }
+  
+  vector estimate_kaplan_meier(array[] int pfs, int max_pfs) {
+    vector[max_pfs + 1] s = rep_vector(1.0, max_pfs + 1);
+    
+    for (r in 1:max_pfs) {
+      int n = 0; 
+      int ex = 0;
+      
+      if (s[r] > 0) {
+        for (i in 1:size(pfs)) {
+          n += (pfs[i] + 1 >= r);
+          ex += (pfs[i] + 1 == r);
+        }
+      }
+      
+      s[r + 1] = n > 0 ? s[r] * (n - ex) / n : 0;
+    }
+    
+    return s[2:]; 
+  }  
 }
 
 data {
@@ -45,6 +65,7 @@ data {
 transformed data {
   real delta = 1e-9;
   int<lower = 0, upper = max_pfs * n_patients> n_total_pfs = sum(pfs);
+  int<lower = 0, upper = max_pfs * n_patients> n_time_periods;
   array[max_pfs] real pfs_range;
   vector[max_pfs] pfs_range_vec;
   int<lower = 0> n_all_tumors = sum(n_patient_tumors);
@@ -72,6 +93,8 @@ transformed data {
   for (i in 1:n_patients) {
     uncensored[i] = 1 - censored[i];
   }
+  
+  n_time_periods = gen_pfs ? max_pfs * n_patients : n_total_pfs + sum(uncensored);
 }
 
 parameters {
@@ -86,8 +109,8 @@ parameters {
 
 transformed parameters {
   vector[max_pfs] log_lambda = calc_gp_pred(pfs_range, log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho, delta, log_lambda_gp_eta);
-  vector[n_total_pfs + sum(uncensored)] disease_progress_pred;
-  vector<lower = 0, upper = 1>[n_total_pfs + sum(uncensored)] disease_progress_prob;
+  vector[n_time_periods] disease_progress_pred;
+  vector<lower = 0, upper = 1>[n_time_periods] disease_progress_prob;
   vector[n_patients] total_time_invar_tumor_stim;
   
   {
@@ -96,11 +119,12 @@ transformed parameters {
   
     for (i in 1:n_patients) {
       int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
-      int pfs_interval_end = pfs_interval_pos + pfs[i] - censored[i]; 
+      int pfs_interval_end = pfs_interval_pos + (gen_pfs ? max_pfs - 1 : pfs[i] - censored[i]); 
       
       total_time_invar_tumor_stim[i] = sum(linear_tumor_stimulus(tumor_stim_intercept, tumor_stim_coef, scaled_tumor_covar[tumor_pos:tumor_end]));
       
-      disease_progress_pred[pfs_interval_pos:pfs_interval_end] = log_lambda[1:(pfs[i] + uncensored[i])] + total_time_invar_tumor_stim[i];
+      disease_progress_pred[pfs_interval_pos:pfs_interval_end] = 
+        log_lambda[1:(gen_pfs ? max_pfs : pfs[i] + uncensored[i])] + total_time_invar_tumor_stim[i];
       
       tumor_pos = tumor_end + 1;
       pfs_interval_pos = pfs_interval_end + 1;
@@ -132,7 +156,7 @@ model {
 
       target += uncensored[i] * bernoulli_lupmf(1 | disease_progress_prob[pfs_interval_end]);
       
-      pfs_interval_pos = pfs_interval_end + 1;
+      pfs_interval_pos = gen_pfs ? pfs_interval_pos + max_pfs : pfs_interval_end + 1;
     }
   }
 }
@@ -148,6 +172,8 @@ generated quantities {
   array[gen_pfs ? n_patients : 0] int<lower = 0> rep_pfs;
   array[gen_pfs ? n_patients : 0] int<lower = 0, upper = 1> rep_censored;
   
+  vector<lower = 0, upper = 1>[gen_pfs ? max_pfs : 0] km_est; 
+  
   if (gen_pfs) {
     int tumor_pos = 1;
     int pfs_interval_pos = 1;
@@ -162,6 +188,8 @@ generated quantities {
       
       pfs_interval_pos = pfs_interval_end + 1;
     }
+    
+    km_est = estimate_kaplan_meier(rep_pfs, max_pfs); 
   } 
   
   {

@@ -87,12 +87,11 @@ We will be using a piecewise-constant proportional hazard model:
 -   $Y_m$ is an indicator for disease progression at timepoint $m$, with $Y_0 = 0$.
 -   $X_m$ are--possibly time-variant--covariates.
 
-The probability of remaining progression-free at $m \geq 1$ is 
-$$
+The probability of remaining progression-free at $m \geq 1$ is $$
 \alpha_m(x;\theta) = \Pr[Y_m = 0\mid Y_{m-1} = 0, X_m = \bf{x}] = \exp[-\lambda(m, \bf{x}; \boldsymbol{\theta})] 
 $$
 
-and the hazard function 
+and the hazard function
 
 $$
   \lambda(m, \bf{x}; \boldsymbol{\theta}) = \lambda_m \kappa(\bf{x}; \boldsymbol{\beta})
@@ -103,7 +102,6 @@ We assume that censoring in conditionally independent of time to progression. We
 Aside from whatever priors we use for $\boldsymbol{\beta}$, we will use a Gaussian process prior for $\lambda_m$, $$
 \lambda_m \sim \mathtt{GP}(0, k),
 $$ where $k(\lambda_p, \lambda_q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$.
-
 
 ```{r}
 #| label: pfs-model
@@ -199,6 +197,14 @@ expected_pfs_rvar |>
   labs(title = "Expected PFS", subtitle = "Conditional on progress within maximum observed PFS", x = "m", y = "")
 ```
 
+```{r}
+pfs_res |> 
+  spread_rvars(km_est[m]) |> 
+  ggplot(aes(m)) +
+  stat_lineribbon(aes(ydist = km_est), fill = "black", alpha = 0.25, .width = 0.8) +
+  labs(title = "Kaplan-Meier estimate", y = latex2exp::TeX("$S(m)$"))
+```
+
 ## Fake Data Simulation
 
 ```{r}
@@ -206,7 +212,8 @@ expected_pfs_rvar |>
 #| include: false
 #| cache: true
 
-# log_lambda <- pfs_model$functions$calc_gp_pred(seq(max_pfs), intercept = -2.0, alpha = 0.3, rho = 1.5, delta = 1e-9, eta = rnorm(max_pfs))
+# Using a fixed set of log lambda values, generated using:
+#   pfs_model$functions$calc_gp_pred(seq(max_pfs), intercept = -2.0, alpha = 0.3, rho = 1.5, delta = 1e-9, eta = rnorm(max_pfs))
 
 log_lambda <- c(-2.48777760709026, -2.57152726838213, -2.23380584287276, -1.90739893145911, -1.86259266390287, -1.92891255821976, -1.93801857664684, -1.78872336415524, -1.54522270753866, -1.48718504020436, -1.70706597143648, -1.82018710107277, -1.67764635563667, -1.69933003110133, -1.86937604603516, -2.03108481232034, -2.15728306810556, -2.11459406967666, -2.02311574428507, -2.08871876979315) 
 
@@ -231,32 +238,32 @@ gen_fake_pfs_data <- function(patient_interval_data) {
     mutate(censored = pfs >= length(log_lambda))
 }
 
+fit_sim_data <- function(d) { 
+  pfs_test_data |> 
+    list_modify(
+      gen_pfs = TRUE,
+      fit_data = TRUE,
+      pfs = d$pfs, censored = d$censored
+    ) |> 
+    pfs_model$sample(
+      refresh = 0, 
+      parallel_chains = 4, 
+      init = \(chain_id) lst(tumor_stim_intercept = truncnorm::rtruncnorm(1, 0, mean = 0.01, sd = 0.05),
+                             tumor_stim_coef = c(truncnorm::rtruncnorm(1, 0, mean = 0.01, sd = 0.1),
+                                                 truncnorm::rtruncnorm(1, 0, mean = 0.005, sd = 0.01)))
+    )
+}
+
 patient_interval_data <- gen_patient_interval_properties(fake_tumor_data, log_lambda)
 
-fake_data_sim <- tibble(sim_id = 1:12) |> 
+fake_data_sim <- tibble(sim_id = 1:3) |> 
   rowwise() |> 
   mutate(sim_data = list(gen_fake_pfs_data(patient_interval_data))) |> 
   ungroup() |> 
   mutate(
     sim_fit = furrr::future_map(.progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
     # sim_fit = map(
-      sim_data, 
-      function(d) { 
-        pfs_test_data |> 
-          list_modify(
-            gen_pfs = FALSE,
-            fit_data = TRUE,
-            pfs = d$pfs, censored = d$censored
-          ) |> 
-          pfs_model$sample(
-            refresh = 0, 
-            parallel_chains = 4, 
-            init = \(chain_id) lst(tumor_stim_intercept = truncnorm::rtruncnorm(1, 0, mean = 0.01, sd = 0.05),
-                                   tumor_stim_coef = c(truncnorm::rtruncnorm(1, 0, mean = 0.01, sd = 0.1),
-                                                       truncnorm::rtruncnorm(1, 0, mean = 0.005, sd = 0.01)))
-          )
-      }
-    ),
+      sim_data, fit_sim_data), 
     
     sim_param_post = map(
       sim_fit, 
@@ -264,13 +271,14 @@ fake_data_sim <- tibble(sim_id = 1:12) |>
         pivot_wider(names_from = t, values_from = tumor_stim_coef, names_prefix = "tumor_stim_coef_")
     ),
     
-    sim_log_lambda_post = map(sim_fit, \(f) spread_rvars(f, log_lambda[m]))
+    sim_log_lambda_post = map(sim_fit, \(f) spread_rvars(f, log_lambda[m])),
+    km_est = map(sim_fit, \(f) spread_rvars(f, km_est[m]))
   ) 
 ```
 
 ```{r}
 fake_data_sim |> 
-  select(!c(sim_data, sim_fit, sim_log_lambda_post)) |>
+  select(!c(sim_data, sim_fit, sim_log_lambda_post, km_est)) |>
   unnest(sim_param_post) |> 
   add_row(sim_id = 0, rep_pfs_param_rvar) |>
   pivot_longer(!sim_id, names_to = "param", values_to = "est") |>
@@ -290,7 +298,7 @@ fake_data_sim |>
 
 ```{r}
 fake_data_sim |> 
-  select(!c(sim_data, sim_fit, sim_param_post)) |>
+  select(!c(sim_data, sim_fit, sim_param_post, km_est)) |>
   unnest(sim_log_lambda_post) |> 
   bind_rows(transmute(lambda_rvar, m = t, log_lambda, sim_id = 0)) |> 
   mutate(est_type = if_else(sim_id > 0, "post", "prior")) |> 
@@ -299,4 +307,16 @@ fake_data_sim |>
   stat_pointinterval(aes(ydist = log_lambda, color = est_type), size = 0.5, .width = 0.8, fatten_point = 0) +
   facet_wrap(vars(m)) +
   theme(axis.text.x = element_blank(), legend.position = "none")
+```
+
+```{r}
+fake_data_sim |> 
+  mutate(km_est = map2(km_est, sim_data, \(km_est, simd) mutate(km_est, emp_s = pfs_model$functions$estimate_kaplan_meier(simd$pfs, max_pfs)))) |> 
+  select(sim_id, km_est) |> 
+  filter(sim_id <= 6) |> 
+  unnest(km_est) |> 
+  ggplot(aes(m)) +
+  geom_line(aes(y = emp_s)) +
+  stat_lineribbon(aes(ydist = km_est), alpha = 0.25, fill = "black", .width = 0.8) +
+  facet_wrap(vars(sim_id))
 ```
