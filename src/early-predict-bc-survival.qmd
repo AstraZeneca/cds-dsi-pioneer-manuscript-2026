@@ -18,7 +18,7 @@ options(mc.cores = 12)
 
 ggplot2::theme_set(theme_minimal())
 
-future::plan(future::multisession(workers = 3))
+future::plan(future::multisession(workers = 12))
 ```
 
 ```{r}
@@ -256,7 +256,7 @@ fit_sim_data <- function(d) {
 
 patient_interval_data <- gen_patient_interval_properties(fake_tumor_data, log_lambda)
 
-fake_data_sim <- tibble(sim_id = 1:3) |> 
+fake_data_sim <- tibble(sim_id = 1:12) |> 
   rowwise() |> 
   mutate(sim_data = list(gen_fake_pfs_data(patient_interval_data))) |> 
   ungroup() |> 
@@ -264,21 +264,19 @@ fake_data_sim <- tibble(sim_id = 1:3) |>
     sim_fit = furrr::future_map(.progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
     # sim_fit = map(
       sim_data, fit_sim_data), 
-    
-    sim_param_post = map(
-      sim_fit, 
-      \(f) spread_rvars(f, log_lambda_gp_alpha, log_lambda_gp_rho, log_lambda_gp_intercept, tumor_stim_intercept, tumor_stim_coef[t]) |>
-        pivot_wider(names_from = t, values_from = tumor_stim_coef, names_prefix = "tumor_stim_coef_")
-    ),
-    
-    sim_log_lambda_post = map(sim_fit, \(f) spread_rvars(f, log_lambda[m])),
-    km_est = map(sim_fit, \(f) spread_rvars(f, km_est[m]))
   ) 
 ```
 
 ```{r}
 fake_data_sim |> 
-  select(!c(sim_data, sim_fit, sim_log_lambda_post, km_est)) |>
+  transmute(
+    sim_id,
+    sim_param_post = map(
+      sim_fit,
+      \(f) spread_rvars(f, log_lambda_gp_alpha, log_lambda_gp_rho, log_lambda_gp_intercept, tumor_stim_intercept, tumor_stim_coef[t]) |>
+        pivot_wider(names_from = t, values_from = tumor_stim_coef, names_prefix = "tumor_stim_coef_")
+    ),
+  ) |> 
   unnest(sim_param_post) |> 
   add_row(sim_id = 0, rep_pfs_param_rvar) |>
   pivot_longer(!sim_id, names_to = "param", values_to = "est") |>
@@ -298,7 +296,8 @@ fake_data_sim |>
 
 ```{r}
 fake_data_sim |> 
-  select(!c(sim_data, sim_fit, sim_param_post, km_est)) |>
+  mutate(sim_log_lambda_post = map(sim_fit, \(f) spread_rvars(f, log_lambda[m]))) |> 
+  select(!c(sim_data, sim_fit)) |>
   unnest(sim_log_lambda_post) |> 
   bind_rows(transmute(lambda_rvar, m = t, log_lambda, sim_id = 0)) |> 
   mutate(est_type = if_else(sim_id > 0, "post", "prior")) |> 
@@ -311,7 +310,7 @@ fake_data_sim |>
 
 ```{r}
 fake_data_sim |> 
-  mutate(km_est = map2(km_est, sim_data, \(km_est, simd) mutate(km_est, emp_s = pfs_model$functions$estimate_kaplan_meier(simd$pfs, max_pfs)))) |> 
+  mutate(km_est = map2(sim_fit, sim_data, \(f, simd) spread_rvars(f, km_est[m]) |> mutate(emp_s = pfs_model$functions$estimate_kaplan_meier(simd$pfs, max_pfs)))) |> 
   select(sim_id, km_est) |> 
   filter(sim_id <= 6) |> 
   unnest(km_est) |> 
