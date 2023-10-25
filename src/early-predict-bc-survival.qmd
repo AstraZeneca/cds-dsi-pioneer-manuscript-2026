@@ -19,6 +19,8 @@ options(mc.cores = 12)
 ggplot2::theme_set(theme_minimal())
 
 future::plan(future::multisession(workers = 3))
+
+source(here("src", "util.R"))
 ```
 
 ```{r}
@@ -70,13 +72,7 @@ fake_tumor_data <- res_rvar |>
   ungroup() |> 
   filter(.draw == 1)
 
-# fake_data_res <- test_data |> 
-#   list_modify(
-#     fit_data = TRUE,
-#     gen_tumor_sizes = FALSE,
-#     tumor_size = fake_data$gen_tumor_size
-#   ) |> 
-#   tumor_model$sample()
+write_rds(fake_tumor_data, here("temp", "data", "fake_tumor.rds"))
 ```
 
 # Survival Model
@@ -216,44 +212,6 @@ pfs_res |>
 #   pfs_model$functions$calc_gp_pred(seq(max_pfs), intercept = -2.0, alpha = 0.3, rho = 1.5, delta = 1e-9, eta = rnorm(max_pfs))
 
 log_lambda <- c(-2.48777760709026, -2.57152726838213, -2.23380584287276, -1.90739893145911, -1.86259266390287, -1.92891255821976, -1.93801857664684, -1.78872336415524, -1.54522270753866, -1.48718504020436, -1.70706597143648, -1.82018710107277, -1.67764635563667, -1.69933003110133, -1.86937604603516, -2.03108481232034, -2.15728306810556, -2.11459406967666, -2.02311574428507, -2.08871876979315) 
-
-gen_patient_interval_properties <- function(fake_tumor_data, log_lambda) {
-  fake_tumor_data |>
-    mutate(across(c(tumor_size_1, tumor_size_2), \(tsize) tsize / sd(tsize))) |> 
-    group_by(patient_id) |>
-    summarize(tumor_covar = list(cbind(tumor_size_1, tumor_size_2))) |>
-    rowwise() |> 
-    reframe(
-      patient_id, 
-      progress_prob = pfs_model$functions$calculate_progress_linear_prob(log_lambda, 0.2, c(0.15, 0.05), tumor_covar),
-      hazard = pfs_model$functions$calculate_linear_hazard(log_lambda, 0.2, c(0.15, 0.05), tumor_covar),
-      survival = cumprod(progress_prob)
-    )  
-}
-
-gen_fake_pfs_data <- function(patient_interval_data) { 
-  patient_interval_data |> 
-    group_by(patient_id) |> 
-    summarize(pfs = pfs_model$functions$pfs_rng(progress_prob)) |> 
-    mutate(censored = pfs >= length(log_lambda))
-}
-
-fit_sim_data <- function(d, ...) { 
-  pfs_test_data |> 
-    list_modify(
-      gen_pfs = TRUE,
-      fit_data = TRUE,
-      pfs = d$pfs, censored = d$censored
-    ) |> 
-    pfs_model$sample(
-      refresh = 0, 
-      parallel_chains = 4, 
-      init = \(chain_id) lst(tumor_stim_intercept = truncnorm::rtruncnorm(1, 0, mean = 0.01, sd = 0.05),
-                             tumor_stim_coef = c(truncnorm::rtruncnorm(1, 0, mean = 0.01, sd = 0.1),
-                                                 truncnorm::rtruncnorm(1, 0, mean = 0.005, sd = 0.01))),
-      ...
-    )
-}
 
 patient_interval_data <- gen_patient_interval_properties(fake_tumor_data, log_lambda)
 
