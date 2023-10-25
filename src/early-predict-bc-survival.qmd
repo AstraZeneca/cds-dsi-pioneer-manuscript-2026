@@ -238,7 +238,7 @@ gen_fake_pfs_data <- function(patient_interval_data) {
     mutate(censored = pfs >= length(log_lambda))
 }
 
-fit_sim_data <- function(d) { 
+fit_sim_data <- function(d, ...) { 
   pfs_test_data |> 
     list_modify(
       gen_pfs = TRUE,
@@ -250,7 +250,8 @@ fit_sim_data <- function(d) {
       parallel_chains = 4, 
       init = \(chain_id) lst(tumor_stim_intercept = truncnorm::rtruncnorm(1, 0, mean = 0.01, sd = 0.05),
                              tumor_stim_coef = c(truncnorm::rtruncnorm(1, 0, mean = 0.01, sd = 0.1),
-                                                 truncnorm::rtruncnorm(1, 0, mean = 0.005, sd = 0.01)))
+                                                 truncnorm::rtruncnorm(1, 0, mean = 0.005, sd = 0.01))),
+      ...
     )
 }
 
@@ -315,7 +316,40 @@ fake_data_sim |>
   filter(sim_id <= 6) |> 
   unnest(km_est) |> 
   ggplot(aes(m)) +
-  geom_line(aes(y = emp_s)) +
   stat_lineribbon(aes(ydist = km_est), alpha = 0.25, fill = "black", .width = 0.8) +
+  geom_line(aes(y = emp_s), color = "red") +
   facet_wrap(vars(sim_id))
+```
+
+## Simulation-Based Calibration
+
+```{r}
+#| label: sbc
+
+sbc_data <- rep_pfs_rvar |> 
+  unnest_rvars() |> 
+  ungroup() |> 
+  filter(.draw <= 3) |> 
+  select(.draw, pfs = rep_pfs, censored = rep_censored) |> 
+  nest(sim_data = !.draw) |> 
+  left_join(
+    rep_pfs_param_rvar |> 
+      unnest_rvars() |> 
+      ungroup() |> 
+      select(!c(.iteration, .chain)),
+    by = ".draw"
+  ) |> 
+  mutate(
+    furrr::future_map_dfr(.progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
+      sim_data,
+      # We need thinning when doing SBC using MCMC to break the correlation between samples.
+      \(d) fit_sim_data(d, thin = 4) |> 
+        spread_rvars(tumor_stim_intercept, tumor_stim_coef, ndraws = 1000) |> 
+        rename_with(\(n) str_c("est_", n))
+    ),
+    
+    r_tumor_stim_intercept = sum(est_tumor_stim_intercept < tumor_stim_intercept),
+    r_tumor_stim_coef_1 = c(sum(est_tumor_stim_coef[, 1] < tumor_stim_coef_1)),
+    r_tumor_stim_coef_2 = c(sum(est_tumor_stim_coef[, 2] < tumor_stim_coef_2)),
+  )
 ```
