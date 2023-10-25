@@ -284,30 +284,5 @@ fake_data_sim |>
 ```{r}
 #| label: sbc
 
-sbc_data <- rep_pfs_rvar |> 
-  unnest_rvars() |> 
-  ungroup() |> 
-  filter(.draw <= 3) |> 
-  select(.draw, pfs = rep_pfs, censored = rep_censored) |> 
-  nest(sim_data = !.draw) |> 
-  left_join(
-    rep_pfs_param_rvar |> 
-      unnest_rvars() |> 
-      ungroup() |> 
-      select(!c(.iteration, .chain)),
-    by = ".draw"
-  ) |> 
-  mutate(
-    furrr::future_map_dfr(.progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
-      sim_data,
-      # We need thinning when doing SBC using MCMC to break the correlation between samples.
-      \(d) fit_sim_data(d, thin = 4) |> 
-        spread_rvars(tumor_stim_intercept, tumor_stim_coef, ndraws = 1000) |> 
-        rename_with(\(n) str_c("est_", n))
-    ),
-    
-    r_tumor_stim_intercept = sum(est_tumor_stim_intercept < tumor_stim_intercept),
-    r_tumor_stim_coef_1 = c(sum(est_tumor_stim_coef[, 1] < tumor_stim_coef_1)),
-    r_tumor_stim_coef_2 = c(sum(est_tumor_stim_coef[, 2] < tumor_stim_coef_2)),
-  )
+sbc_data <- read_rds(here("temp", "data", "sbc.rds"))
 ```

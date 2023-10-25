@@ -4,9 +4,9 @@
 #SBATCH --partition=core
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=48
-#SBATCH --mem-per-cpu=0.5G
-#SBATCH --time=0-00:30:00
+#SBATCH --mem-per-cpu=1G
+#SBATCH --time=0-02:30:00
+#SBATCH --output=../temp/log/sbc.log
 
-module load R-core
-
-Rscript sbc.R -c 12 -n 12
+cd .. # Get back to root so R uses correct renv project
+Rscript src/sbc.R -c ${SLURM_CPUS_PER_TASK} -n 96 --append
