@@ -110,7 +110,12 @@ pfs_test_data <- test_data |>
     max_pfs = max_pfs,
     tumor_size = select(fake_tumor_data, tumor_size_1:tumor_size_2),
     pfs = rep(max_pfs, test_data$n_patients),
-    censored = rep(1, test_data$n_patients)
+    censored = rep(1, test_data$n_patients),
+    
+    log_lambda_gp_intercept_mean = -3,
+    log_lambda_gp_intercept_sd = 0.5,
+    tumor_stim_intercept_sd = 0.5,
+    tumor_stim_coef_sd = c(0.25, 0.25),
   )
 ```
 

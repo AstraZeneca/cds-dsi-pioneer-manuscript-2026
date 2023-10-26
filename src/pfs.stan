@@ -60,6 +60,13 @@ data {
   int<lower = 0> max_pfs;
   array[n_patients] int<lower = 0> pfs;
   array[n_patients] int<lower = 0, upper = 1> censored;
+  
+  // Hyperparam
+  
+  real log_lambda_gp_intercept_mean;
+  real<lower = 0> log_lambda_gp_intercept_sd;
+  real<lower = 0> tumor_stim_intercept_sd; 
+  vector<lower = 0>[2] tumor_stim_coef_sd;
 }
 
 transformed data {
@@ -138,11 +145,12 @@ model {
   log_lambda_gp_alpha ~ normal(0, 0.25);
   log_lambda_gp_rho ~ inv_gamma(5, 5);
   log_lambda_gp_eta ~ std_normal();
-  log_lambda_gp_intercept ~ normal(-2, 0.5);
+  log_lambda_gp_intercept ~ normal(log_lambda_gp_intercept_mean, log_lambda_gp_intercept_sd);
   
-  tumor_stim_intercept ~ normal(0, 0.25);
-  tumor_stim_coef[1] ~ normal(0, 0.125);
-  tumor_stim_coef[2] ~ normal(0, 0.125);
+  tumor_stim_intercept ~ normal(0, tumor_stim_intercept_sd); 
+  // tumor_stim_coef[1] ~ normal(0, 0.125);
+  // tumor_stim_coef[2] ~ normal(0, 0.125);
+  tumor_stim_coef ~ normal(0, tumor_stim_coef_sd);
   
   if (fit_data) {
     int pfs_interval_pos = 1;
@@ -164,6 +172,8 @@ model {
 generated quantities {
   vector<lower = 0, upper = 1>[max_pfs] base_pf_cond_prob = 1 - inv_cloglog(log_lambda);
   vector<lower = 0, upper = 1>[max_pfs] one_tumor_pf_cond_prob = 1 - calculate_progress_linear_prob(log_lambda, tumor_stim_intercept, tumor_stim_coef, [[1, 1]]); 
+  row_vector<lower = 0, upper = 1>[max_pfs] base_dp_prob;
+  row_vector<lower = 0, upper = 1>[max_pfs] one_tumor_dp_prob;
   vector<lower = 0, upper = 1>[max_pfs] base_survival;
   vector<lower = 0, upper = 1>[max_pfs] one_tumor_survival;
   real<lower = 0, upper = max_pfs> base_cond_expected_pfs;
@@ -173,6 +183,7 @@ generated quantities {
   array[gen_pfs ? n_patients : 0] int<lower = 0, upper = 1> rep_censored;
   
   vector<lower = 0, upper = 1>[gen_pfs ? max_pfs : 0] km_est; 
+  
   
   if (gen_pfs) {
     int tumor_pos = 1;
@@ -193,15 +204,13 @@ generated quantities {
   } 
   
   {
-    row_vector[max_pfs] base_dp_prob;
-    row_vector[max_pfs] one_tumor_dp_prob;
   
     for (m in 1:max_pfs) {
       if (m > 1) {
-        base_dp_prob[m] = prod(base_pf_cond_prob[1:(m - 1)]) * (1 - base_pf_cond_prob[m]);
-        base_survival[m] = base_survival[m - 1] + base_dp_prob[m]; 
-        one_tumor_dp_prob[m] = prod(one_tumor_pf_cond_prob[1:(m - 1)]) * (1 - one_tumor_pf_cond_prob[m]);
-        one_tumor_survival[m] = one_tumor_survival[m - 1] + one_tumor_dp_prob[m]; 
+        base_dp_prob[m] = (1 - base_pf_cond_prob[m]) * prod(base_pf_cond_prob[1:(m - 1)]);
+        base_survival[m] = base_dp_prob[m] + base_survival[m - 1]; 
+        one_tumor_dp_prob[m] = (1 - one_tumor_pf_cond_prob[m]) * prod(one_tumor_pf_cond_prob[1:(m - 1)]);
+        one_tumor_survival[m] = one_tumor_dp_prob[m] + one_tumor_survival[m - 1]; 
       } else {
         base_dp_prob[m] = 1 - base_pf_cond_prob[m];
         base_survival[m] = base_dp_prob[m];
