@@ -285,4 +285,12 @@ fake_data_sim |>
 #| label: sbc
 
 sbc_data <- read_rds(here("temp", "data", "sbc.rds"))
+
+sbc_data |> 
+  select(starts_with("r_")) |> 
+  pivot_longer(everything(), names_to = "param", names_prefix = "r_", values_to = "r") |> 
+  ggplot() +
+  # geom_bar(aes(r_tumor_stim_intercept))
+  geom_histogram(aes(r), alpha = 0.5, binwidth = 10) +
+  facet_wrap(vars(param))
 ```

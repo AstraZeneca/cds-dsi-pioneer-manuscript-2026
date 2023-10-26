@@ -1,8 +1,8 @@
 "
 Usage: sbc.R [-c <cores>] [-n <num-sim>] [--append]
 
--c  Number of available cores [default: 3]
--n  Number of simulations to run [default: 3]
+-c  Number of available cores [default: 12]
+-n  Number of simulations to run [default: 12]
 " |> 
   docopt::docopt(
     args = if (interactive()) "-c 3 -n 3" else commandArgs(TRUE),
@@ -37,6 +37,7 @@ pfs_test_data <- lst(
     censored = rep(1, n_patients)
   )
 
+# Sample from the prior; no data.
 pfs_res <- pfs_model$sample(data = pfs_test_data, refresh = 0)
 
 sbc_data <- pfs_res |> # Get data from prior
