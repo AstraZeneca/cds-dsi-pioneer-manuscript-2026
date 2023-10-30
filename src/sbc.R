@@ -34,17 +34,19 @@ pfs_test_data <- lst(
     n_patient_tumors = count(fake_tumor_data, patient_id) |> pull(n),
     tumor_size = select(fake_tumor_data, tumor_size_1:tumor_size_2),
     pfs = rep(max_pfs, n_patients),
-    censored = rep(1, n_patients)
+    right_censored = rep(1, n_patients),
+    interval_censored = rep(0, n_patients)
   )
 
 pfs_res <- pfs_model$sample(data = pfs_test_data, refresh = 0)
 
 sbc_data <- pfs_res |> 
-  spread_rvars(rep_pfs[patient_index], rep_censored[patient_index]) |> 
+  spread_rvars(rep_pfs[patient_index], rep_right_censored[patient_index]) |> 
   unnest_rvars() |> 
   ungroup() |> 
   filter(.draw <= cl_args$num_sim) |> 
-  select(.draw, pfs = rep_pfs, censored = rep_censored) |> 
+  select(.draw, pfs = rep_pfs, right_censored = rep_right_censored) |> 
+  mutate(interval_censored = 0) |> 
   nest(sim_data = !.draw) |>
   left_join(
     pfs_res |> 

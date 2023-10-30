@@ -110,7 +110,8 @@ pfs_test_data <- test_data |>
     max_pfs = max_pfs,
     tumor_size = select(fake_tumor_data, tumor_size_1:tumor_size_2),
     pfs = rep(max_pfs, test_data$n_patients),
-    censored = rep(1, test_data$n_patients),
+    right_censored = rep(1, test_data$n_patients),
+    interval_censored = rep(0, test_data$n_patients),
     
     log_lambda_gp_intercept_mean = -3,
     log_lambda_gp_intercept_sd = 0.5,
@@ -127,7 +128,7 @@ pfs_test_data <- test_data |>
 pfs_res <- pfs_model$sample(data = pfs_test_data, refresh = 0)
 
 rep_pfs_rvar <- pfs_res |> 
-  spread_rvars(rep_pfs[patient_index], rep_censored[patient_index])
+  spread_rvars(rep_pfs[patient_index], rep_right_censored[patient_index])
 
 rep_pfs_param_rvar <- pfs_res |> 
   spread_rvars(log_lambda_gp_alpha, log_lambda_gp_rho, log_lambda_gp_intercept, tumor_stim_intercept, tumor_stim_coef[t]) |> 
@@ -220,14 +221,23 @@ log_lambda <- c(-2.48777760709026, -2.57152726838213, -2.23380584287276, -1.9073
 
 patient_interval_data <- gen_patient_interval_properties(fake_tumor_data, log_lambda)
 
-fake_data_sim <- tibble(sim_id = 1:12) |> 
+fake_data_sim_settings <- pfs_test_data |>
+  list_modify(
+    log_lambda_gp_intercept_mean = -2,
+    log_lambda_gp_intercept_sd = 0.5,
+    tumor_stim_intercept_sd = 0.25,
+    tumor_stim_coef_sd = c(0.125, 0.125),
+  )
+
+fake_data_sim <- tibble(sim_id = 1:1) |> 
   rowwise() |> 
   mutate(sim_data = list(gen_fake_pfs_data(patient_interval_data))) |> 
   ungroup() |> 
   mutate(
     sim_fit = furrr::future_map(.progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
     # sim_fit = map(
-      sim_data, fit_sim_data), 
+      sim_data, \(sdata) fit_sim_data(fake_data_sim_settings, sdata)
+    ), 
   ) 
 ```
 
@@ -293,7 +303,8 @@ sbc_data <- rep_pfs_rvar |>
   unnest_rvars() |> 
   ungroup() |> 
   filter(.draw <= 3) |> 
-  select(.draw, pfs = rep_pfs, censored = rep_censored) |> 
+  select(.draw, pfs = rep_pfs, right_censored = rep_right_censored) |> 
+  mutate(interval_censored = 0) |> 
   nest(sim_data = !.draw) |> 
   left_join(
     rep_pfs_param_rvar |> 
