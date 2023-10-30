@@ -59,7 +59,8 @@ data {
   
   int<lower = 0> max_pfs;
   array[n_patients] int<lower = 0> pfs;
-  array[n_patients] int<lower = 0, upper = 1> censored;
+  array[n_patients] int<lower = 0, upper = 1> right_censored;
+  array[n_patients] int<lower = 0> interval_censored;
   
   // Hyperparam
   
@@ -78,7 +79,7 @@ transformed data {
   int<lower = 0> n_all_tumors = sum(n_patient_tumors);
   vector<lower = 0>[n_measures] tumor_covar_sd;
   matrix[n_all_tumors, n_measures] scaled_tumor_covar;
-  array[n_patients] int<lower = 0, upper = 1> uncensored;
+  array[n_patients] int<lower = 0, upper = 1> right_uncensored;
   
   for (i in 1:max_pfs) {
     pfs_range[i] = i;
@@ -95,13 +96,19 @@ transformed data {
     scaled_tumor_covar[, m] = tumor_size[, m] / tumor_covar_sd[m];
   }
   
-  // tumor_covar[, 2] -= tumor_covar[, 1];
-  
   for (i in 1:n_patients) {
-    uncensored[i] = 1 - censored[i];
+    right_uncensored[i] = 1 - right_censored[i];
+    
+    if (pfs[i] + interval_censored[i] > max_pfs) {
+      reject("Interval censoring cannot exceed max_pfs.");
+    }
+    
+    if (interval_censored[i] > 0 && right_censored[i]) {
+      reject("Cannot be both interval and right censored.");
+    }
   }
   
-  n_time_periods = gen_pfs ? max_pfs * n_patients : n_total_pfs + sum(uncensored);
+  n_time_periods = gen_pfs ? max_pfs * n_patients : n_total_pfs + sum(right_uncensored) + sum(interval_censored);
 }
 
 parameters {
@@ -115,7 +122,8 @@ parameters {
 }
 
 transformed parameters {
-  vector[max_pfs] log_lambda = calc_gp_pred(pfs_range, log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho, delta, log_lambda_gp_eta);
+  vector[max_pfs] log_lambda = calc_gp_pred(
+    pfs_range, log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho, delta, log_lambda_gp_eta);
   vector[n_time_periods] disease_progress_pred;
   vector<lower = 0, upper = 1>[n_time_periods] disease_progress_prob;
   vector[n_patients] total_time_invar_tumor_stim;
@@ -126,12 +134,12 @@ transformed parameters {
   
     for (i in 1:n_patients) {
       int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
-      int pfs_interval_end = pfs_interval_pos + (gen_pfs ? max_pfs - 1 : pfs[i] - censored[i]); 
+      int pfs_interval_end = pfs_interval_pos + (gen_pfs ? max_pfs - 1 : pfs[i] - right_censored[i] + interval_censored[i]); 
       
       total_time_invar_tumor_stim[i] = sum(linear_tumor_stimulus(tumor_stim_intercept, tumor_stim_coef, scaled_tumor_covar[tumor_pos:tumor_end]));
       
       disease_progress_pred[pfs_interval_pos:pfs_interval_end] = 
-        log_lambda[1:(gen_pfs ? max_pfs : pfs[i] + uncensored[i])] + total_time_invar_tumor_stim[i];
+        log_lambda[1:(gen_pfs ? max_pfs : pfs[i] + right_uncensored[i] + interval_censored[i])] + total_time_invar_tumor_stim[i];
       
       tumor_pos = tumor_end + 1;
       pfs_interval_pos = pfs_interval_end + 1;
@@ -148,23 +156,35 @@ model {
   log_lambda_gp_intercept ~ normal(log_lambda_gp_intercept_mean, log_lambda_gp_intercept_sd);
   
   tumor_stim_intercept ~ normal(0, tumor_stim_intercept_sd); 
-  // tumor_stim_coef[1] ~ normal(0, 0.125);
-  // tumor_stim_coef[2] ~ normal(0, 0.125);
-  tumor_stim_coef ~ normal(0, tumor_stim_coef_sd);
+  tumor_stim_coef[1] ~ normal(0, tumor_stim_coef_sd[1]);
+  tumor_stim_coef[2] ~ normal(0, tumor_stim_coef_sd[2]);
   
   if (fit_data) {
     int pfs_interval_pos = 1;
     
     for (i in 1:n_patients) {
-      int pfs_interval_end = pfs_interval_pos + pfs[i] - censored[i]; 
-   
-      if (pfs[i] > 0) {
-        target += bernoulli_lupmf(0 | disease_progress_prob[pfs_interval_pos:(pfs_interval_end - uncensored[i])]);
-      }
-
-      target += uncensored[i] * bernoulli_lupmf(1 | disease_progress_prob[pfs_interval_end]);
+      int pfs_interval_end = pfs_interval_pos + pfs[i] - right_censored[i]; 
+      vector[interval_censored[i] + 1] interval_lp = rep_vector(0, interval_censored[i] + 1);
       
-      pfs_interval_pos = gen_pfs ? pfs_interval_pos + max_pfs : pfs_interval_end + 1;
+      for (j in 0:(interval_censored[i])) {
+        int candidate_pfs = pfs[i] + j;
+        
+        if (candidate_pfs > 0) {
+          interval_lp[j + 1] = bernoulli_lupmf(0 | disease_progress_prob[pfs_interval_pos:(pfs_interval_end - right_uncensored[i])]);
+        }
+        
+        interval_lp[j + 1] += right_uncensored[i] * bernoulli_lupmf(1 | disease_progress_prob[pfs_interval_end]);
+        
+        pfs_interval_end += 1;
+      }
+     
+      if (interval_censored[i] > 0) {
+        target += log_sum_exp(interval_lp);
+      } else {
+        target += interval_lp[1];
+      }
+      
+      pfs_interval_pos = gen_pfs ? pfs_interval_pos + max_pfs : pfs_interval_end;
     }
   }
 }
@@ -172,15 +192,13 @@ model {
 generated quantities {
   vector<lower = 0, upper = 1>[max_pfs] base_pf_cond_prob = 1 - inv_cloglog(log_lambda);
   vector<lower = 0, upper = 1>[max_pfs] one_tumor_pf_cond_prob = 1 - calculate_progress_linear_prob(log_lambda, tumor_stim_intercept, tumor_stim_coef, [[1, 1]]); 
-  row_vector<lower = 0, upper = 1>[max_pfs] base_dp_prob;
-  row_vector<lower = 0, upper = 1>[max_pfs] one_tumor_dp_prob;
   vector<lower = 0, upper = 1>[max_pfs] base_survival;
   vector<lower = 0, upper = 1>[max_pfs] one_tumor_survival;
   real<lower = 0, upper = max_pfs> base_cond_expected_pfs;
   real<lower = 0, upper = max_pfs> one_tumor_cond_expected_pfs;
   
   array[gen_pfs ? n_patients : 0] int<lower = 0> rep_pfs;
-  array[gen_pfs ? n_patients : 0] int<lower = 0, upper = 1> rep_censored;
+  array[gen_pfs ? n_patients : 0] int<lower = 0, upper = 1> rep_right_censored;
   
   vector<lower = 0, upper = 1>[gen_pfs ? max_pfs : 0] km_est; 
   
@@ -195,7 +213,7 @@ generated quantities {
       int disease_progress = 0;
       
       rep_pfs[i] = pfs_rng(disease_progress_prob[pfs_interval_pos:pfs_interval_end]);
-      rep_censored[i] = rep_pfs[i] >= max_pfs;
+      rep_right_censored[i] = rep_pfs[i] >= max_pfs;
       
       pfs_interval_pos = pfs_interval_end + 1;
     }
@@ -204,6 +222,8 @@ generated quantities {
   } 
   
   {
+    row_vector[max_pfs] base_dp_prob;
+    row_vector[max_pfs] one_tumor_dp_prob;
   
     for (m in 1:max_pfs) {
       if (m > 1) {

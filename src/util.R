@@ -16,15 +16,15 @@ gen_fake_pfs_data <- function(patient_interval_data) {
   patient_interval_data |> 
     group_by(patient_id) |> 
     summarize(pfs = pfs_model$functions$pfs_rng(progress_prob)) |> 
-    mutate(censored = pfs >= length(log_lambda))
+    mutate(right_censored = pfs >= length(log_lambda), interval_censored = 0)
 }
 
-fit_sim_data <- function(d, ...) { 
-  pfs_test_data |> 
+fit_sim_data <- function(settings, d, ...) { 
+  settings |> 
     list_modify(
       gen_pfs = TRUE,
       fit_data = TRUE,
-      pfs = d$pfs, censored = d$censored
+      pfs = d$pfs, right_censored = d$right_censored
     ) |> 
     pfs_model$sample(
       refresh = 0, 
