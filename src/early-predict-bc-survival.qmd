@@ -286,6 +286,8 @@ fake_data_sim |>
 
 ## Simulation-Based Calibration
 
+The code for this simulation is located in `sbc.R` (and `sbc.sh` to run on SLURM).
+
 ```{r}
 #| label: sbc
 
@@ -295,7 +297,18 @@ sbc_data |>
   select(starts_with("r_")) |> 
   pivot_longer(everything(), names_to = "param", names_prefix = "r_", values_to = "r") |> 
   ggplot() +
-  # geom_bar(aes(r_tumor_stim_intercept))
   geom_histogram(aes(r), alpha = 0.5, binwidth = 10) +
-  facet_wrap(vars(param))
+  geom_rect(aes(xmin = -10, xmax = 1010, ymin = lb, ymax = ub), 
+            alpha = 0.25, fill = "pink",
+            data = \(d) tibble(!!!set_names(qbinom(c(0.01, 0.5, 0.99), nrow(sbc_data), 1/100), c("lb", "med", "ub")))) +
+  facet_wrap(vars(param)) +
+  labs(title = "Histogram of rank statistics", y = "", caption = str_glue("The histogram uses a bin width of 10.\nThe pink area represents the 1%-99% region of a Binom(1090, 0.01).\n{nrow(sbc_data)} simulation used."))
+
+# sbc_data |> 
+#   select(starts_with("r_")) |> 
+#   pivot_longer(everything(), names_to = "param", names_prefix = "r_", values_to = "r") |> 
+#   ggplot() +
+#   stat_ecdf(aes(r)) +
+#   facet_wrap(vars(param)) +
+#   coord_cartesian(xlim = c(0, 1000))
 ```
