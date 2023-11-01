@@ -52,13 +52,16 @@ functions {
 data {
   int<lower = 0, upper = 1> fit_data;
   int<lower = 0, upper = 1> gen_pfs;
+  int<lower = 0, upper = 1> early_tumors_only;
   
   #include "base_data.stan"
  
   // BUGBUG temporary; need to use the same shape as the tumor model. 
-  matrix<lower = 0>[sum(n_patient_tumors), 2] tumor_size;
+  // matrix<lower = 0>[sum(n_patient_tumors), 2] tumor_size;
   
-  int<lower = 0> max_pfs;
+  // [..., ((tumor_size_{i,1,1}, ..., tumor_size_{i, 1, n_measures_i}), ..., (..., tumor_size_{i,j,t},...), ...), ...  ] 
+  vector<lower = 0>[to_int(to_row_vector(n_patient_tumors) * to_vector(n_measures))] tumor_size; // cm
+  
   array[n_patients] int<lower = 0> pfs;
   array[n_patients] int<lower = 0, upper = 1> right_censored;
   array[n_patients] int<lower = 0> interval_censored;
@@ -73,24 +76,48 @@ data {
 
 transformed data {
   real delta = 1e-9;
+  int<lower = 0> max_pfs = max(pfs);
   int<lower = 0, upper = max_pfs * n_patients> n_total_pfs = sum(pfs);
   int<lower = 0, upper = max_pfs * n_patients> n_time_periods;
-  array[max_pfs] real pfs_range;
-  vector[max_pfs] pfs_range_vec;
+  array[max_pfs + 1] real pfs_range;
+  vector[max_pfs + 1] pfs_range_vec;
   int<lower = 0> n_all_tumors = sum(n_patient_tumors);
-  vector<lower = 0>[2] tumor_covar_sd;
-  matrix[n_all_tumors, 2] scaled_tumor_covar;
+  real<lower = 0> tumor_covar_sd;
+  matrix[early_tumors_only ? n_all_tumors : 0, 2] scaled_tumor_covar;
   array[n_patients] int<lower = 0, upper = 1> right_uncensored;
   
-  for (i in 1:max_pfs) {
+  for (i in 1:(max_pfs + 1)) {
     pfs_range[i] = i;
   }
   
   pfs_range_vec = to_vector(pfs_range);
-  
-  for (m in 1:2) {
-    tumor_covar_sd[m] = sd(tumor_size[, m]);
-    scaled_tumor_covar[, m] = tumor_size[, m] / tumor_covar_sd[m];
+ 
+  if (early_tumors_only) { 
+    int covar_pos = 1;
+    int tumor_pos = 1;
+    
+    tumor_covar_sd = sd(tumor_size);
+    
+    for (i in 1:n_patients) {
+      int n_current_tumors = n_patient_tumors[i];
+      int n_current_measures = n_measures[i];
+      
+      for (j in 1:n_current_tumors) {
+        int tumor_end = tumor_pos + n_current_measures - 1; 
+        
+        scaled_tumor_covar[covar_pos, ] = tumor_size[tumor_pos:(tumor_pos + 1)]' / tumor_covar_sd;
+        covar_pos += 1;
+        
+        tumor_pos = tumor_end + 1;
+      }
+    }
+    
+    // for (m in 1:2) {
+    //   tumor_covar_sd[m] = sd(tumor_size[, m]);
+    //   scaled_tumor_covar[, m] = tumor_size[, m] / tumor_covar_sd[m];
+    // }
+  } else {
+    reject("Not supported yet.");
   }
   
   for (i in 1:n_patients) {
@@ -111,7 +138,7 @@ transformed data {
 parameters {
   real<lower = 0> log_lambda_gp_alpha;
   real<lower = 0> log_lambda_gp_rho;
-  vector[max_pfs] log_lambda_gp_eta;
+  vector[max_pfs + 1] log_lambda_gp_eta;
   real log_lambda_gp_intercept;
   
   real<lower = 0> tumor_stim_intercept;
@@ -119,7 +146,7 @@ parameters {
 }
 
 transformed parameters {
-  vector[max_pfs] log_lambda = calc_gp_pred(
+  vector[max_pfs + 1] log_lambda = calc_gp_pred(
     pfs_range, log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho, delta, log_lambda_gp_eta);
   vector[n_time_periods] disease_progress_pred;
   vector<lower = 0, upper = 1>[n_time_periods] disease_progress_prob;
@@ -187,8 +214,8 @@ model {
 }
 
 generated quantities {
-  vector<lower = 0, upper = 1>[max_pfs] base_pf_cond_prob = 1 - inv_cloglog(log_lambda);
-  vector<lower = 0, upper = 1>[max_pfs] one_tumor_pf_cond_prob = 1 - calculate_progress_linear_prob(log_lambda, tumor_stim_intercept, tumor_stim_coef, [[1, 1]]); 
+  vector<lower = 0, upper = 1>[max_pfs + 1] base_pf_cond_prob = 1 - inv_cloglog(log_lambda);
+  vector<lower = 0, upper = 1>[max_pfs + 1] one_tumor_pf_cond_prob = 1 - calculate_progress_linear_prob(log_lambda, tumor_stim_intercept, tumor_stim_coef, [[1, 1]]); 
   vector<lower = 0, upper = 1>[max_pfs] base_survival;
   vector<lower = 0, upper = 1>[max_pfs] one_tumor_survival;
   real<lower = 0, upper = max_pfs> base_cond_expected_pfs;
@@ -239,7 +266,7 @@ generated quantities {
     base_survival = 1 - base_survival;
     one_tumor_survival = 1 - one_tumor_survival;
     
-    base_cond_expected_pfs = (base_dp_prob / (1 - base_survival[max_pfs])) * pfs_range_vec;
-    one_tumor_cond_expected_pfs = (one_tumor_dp_prob / (1 - one_tumor_survival[max_pfs])) * pfs_range_vec;
+    base_cond_expected_pfs = (base_dp_prob / (1 - base_survival[max_pfs])) * pfs_range_vec[:max_pfs];
+    one_tumor_cond_expected_pfs = (one_tumor_dp_prob / (1 - one_tumor_survival[max_pfs])) * pfs_range_vec[:max_pfs];
   }
 }

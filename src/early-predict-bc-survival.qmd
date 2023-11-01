@@ -130,7 +130,6 @@ pfs_model <- cmdstan_model(here("src", "pfs.stan"), compile_standalone = TRUE, f
 pfs_test_data <- test_data |> 
   list_modify(
     gen_pfs = TRUE,
-    max_pfs = max_pfs,
     tumor_size = select(fake_tumor_data, tumor_size_1:tumor_size_2),
     pfs = rep(max_pfs, test_data$n_patients),
     right_censored = rep(1, test_data$n_patients),
