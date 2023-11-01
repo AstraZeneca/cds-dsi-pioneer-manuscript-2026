@@ -85,12 +85,10 @@ parameters {
   real<lower = 0> pop_tumor_gp_rho;
   real<lower = 0> pop_tumor_sigma;
 
-  // matrix[n_measures, sum(n_patient_tumors)] eta;  
   vector[n_all_tumor_measures] eta;  
 }
 
 transformed parameters {
-  // matrix[sum(n_patient_tumors), n_measures] tumor_pred; 
   vector[n_all_tumor_measures] tumor_pred; 
   
   {
@@ -101,7 +99,6 @@ transformed parameters {
       int n_current_tumors = n_patient_tumors[i];
       int n_current_measures = n_measures[i];
       int t_measure_end = t_measure_pos + n_current_measures - 1;
-      // int current_max_t = t_measure[t_measure_end];
       
       for (j in 1:n_current_tumors) {
         int tumor_end = tumor_pos + max_t[i] - 1; 
@@ -154,11 +151,9 @@ model {
 }
 
 generated quantities {
-  // matrix<lower = 0>[gen_tumor_sizes ? sum(n_patient_tumors) : 0, n_measures] rep_tumor_size;
   array[gen_tumor_sizes ? n_all_tumor_measures : 0] real<lower = 0> rep_tumor_size;
   
   if (gen_tumor_sizes) {
-    // rep_tumor_size = to_matrix(lognormal_rng(to_vector(tumor_pred), pop_tumor_sigma), sum(n_patient_tumors), n_measures);
     rep_tumor_size = lognormal_rng(tumor_pred, pop_tumor_sigma);
   }
 }
