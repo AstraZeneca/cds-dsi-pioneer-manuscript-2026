@@ -27,6 +27,7 @@ source(here("src", "util.R"))
 #| label: sim-settings
 
 n_patients <- 1000
+patient_measures <- 10
 max_pfs <- 20
 ```
 
@@ -41,36 +42,58 @@ test_data <- lst(
   fit_data = FALSE,
   gen_tumor_sizes = TRUE,
   n_patients,
-  n_measures = 2,
-  # n_patient_tumors = rep(5, n_patients),
+  n_measures = rep(patient_measures, n_patients),
+  t_measure = rep(1:patient_measures, n_patients),
   n_patient_tumors = 1 + rbinom(n_patients, 5, 0.4),
   tumor_size = array(dim = 0)
 )
 
-res <- tumor_model$sample(data = test_data)
+res <- dir(here("temp", "fit"), pattern = "prior_tumor", full.names = TRUE) |>
+  as_cmdstan_fit()
+
+test_data <- rjson::fromJSON(file = here("temp", "data", "prior_tumor.json"))
+
+# res <- tumor_model$sample(data = test_data)
+# 
+# res$save_output_files(
+#   here("temp", "fit"), basename = "prior_tumor", timestamp = FALSE, random = FALSE
+# )
+# 
+# res$save_data_file(
+#   here("temp", "data"), basename = "prior_tumor", timestamp = FALSE, random = FALSE
+# )
 
 res_rvar <- res |> 
-  spread_rvars(rep_tumor_size[tumor_index, measure_index]) |> 
+  spread_rvars(rep_tumor_size[tumor_index]) |> 
   ungroup() |> 
-  pivot_wider(id_cols = tumor_index, names_from = measure_index, values_from = rep_tumor_size, names_prefix = "tumor_size_") |>
-  mutate(patient_id = rep(seq(test_data$n_patients), test_data$n_patient_tumors))
+  mutate(
+    patient_id = rep(1:n_patients, with(test_data, n_patient_tumors * patient_measures)),
+    tumor_index = ((tumor_index - 1) %/% 10) + 1,
+    t = rep(1:patient_measures, sum(test_data$n_patient_tumors))
+  ) |> 
+  mutate(tumor_index = tumor_index - min(tumor_index) + 1, .by = patient_id) |> 
+  rename(tumor_size = rep_tumor_size)
+  # pivot_wider(names_from = measure_index, values_from = rep_tumor_size, names_prefix = "tumor_size_") |>
 
 res_rvar |> 
-  pivot_longer(tumor_size_1:tumor_size_2, names_prefix = "tumor_size_", names_transform = as.integer, names_to = "measure_id", values_to = "tumor_size") |> 
-  filter(tumor_index < 6) |> 
+  # pivot_longer(tumor_size_1:tumor_size_2, names_prefix = "tumor_size_", names_transform = as.integer, names_to = "measure_id", values_to = "tumor_size") |> 
+  filter(patient_id == 1, tumor_index < 6) |> 
   # unnest_rvars() |> 
   # filter(.draw == 1) |> 
-  ggplot(aes(measure_id)) +
-  geom_line(aes(y = tumor_size, group = str_c(tumor_index, .draw)), alpha = 0.125, data = \(d) unnest_rvars(d) |> filter(.draw <= 100)) +
+  ggplot(aes(t)) +
+  geom_line(aes(y = tumor_size, group = str_c(patient_id, tumor_index, .draw)), alpha = 0.125, data = \(d) unnest_rvars(d) |> filter(.draw <= 50)) +
   # geom_point(aes(y = gen_tumor_size, color = factor(tumor_id)))
-  stat_lineribbon(aes(ydist = tumor_size, group = tumor_index), alpha = 0.125) +
-  coord_cartesian(ylim = c(0, 15)) +
+  stat_lineribbon(aes(ydist = tumor_size, group = tumor_index), alpha = 0.25, .width = 0.8) +
+  coord_cartesian(ylim = c(0, 10)) +
+  facet_wrap(vars(tumor_index)) +
   NULL
 
 fake_tumor_data <- res_rvar |>
+  filter(t <= 2) |> 
   unnest_rvars() |>
   ungroup() |> 
-  filter(.draw == 1)
+  filter(.draw == 1) |> 
+  pivot_wider(names_from = t, values_from = tumor_size, names_prefix = "tumor_size_")
 
 write_rds(fake_tumor_data, here("temp", "data", "fake_tumor.rds"))
 ```
@@ -159,7 +182,7 @@ lambda_rvar |>
   ggplot(aes(t)) +
   stat_lineribbon(aes(ydist = base_pf_cond_prob), fill = "black", alpha = 0.5, .width = 0.8) +
   geom_line(aes(y = base_pf_cond_prob, group = .draw), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 50)) +
-  labs(title = "Base conditional probability of remaining progress", x = "m", y = "")
+  labs(title = "Base conditional probability of remaining progress free", x = "m", y = "")
 ```
 
 ```{r}

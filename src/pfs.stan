@@ -54,8 +54,9 @@ data {
   int<lower = 0, upper = 1> gen_pfs;
   
   #include "base_data.stan"
-  
-  matrix<lower = 0>[sum(n_patient_tumors), n_measures] tumor_size;
+ 
+  // BUGBUG temporary; need to use the same shape as the tumor model. 
+  matrix<lower = 0>[sum(n_patient_tumors), 2] tumor_size;
   
   int<lower = 0> max_pfs;
   array[n_patients] int<lower = 0> pfs;
@@ -77,8 +78,8 @@ transformed data {
   array[max_pfs] real pfs_range;
   vector[max_pfs] pfs_range_vec;
   int<lower = 0> n_all_tumors = sum(n_patient_tumors);
-  vector<lower = 0>[n_measures] tumor_covar_sd;
-  matrix[n_all_tumors, n_measures] scaled_tumor_covar;
+  vector<lower = 0>[2] tumor_covar_sd;
+  matrix[n_all_tumors, 2] scaled_tumor_covar;
   array[n_patients] int<lower = 0, upper = 1> right_uncensored;
   
   for (i in 1:max_pfs) {
@@ -87,11 +88,7 @@ transformed data {
   
   pfs_range_vec = to_vector(pfs_range);
   
-  if (n_measures != 2) {
-    reject("Only supporting two measures for now.");
-  }
-  
-  for (m in 1:n_measures) {
+  for (m in 1:2) {
     tumor_covar_sd[m] = sd(tumor_size[, m]);
     scaled_tumor_covar[, m] = tumor_size[, m] / tumor_covar_sd[m];
   }
