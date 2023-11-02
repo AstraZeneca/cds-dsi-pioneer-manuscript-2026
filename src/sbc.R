@@ -27,9 +27,9 @@ pfs_model <- cmdstan_model(here("src", "pfs.stan"))
 
 pfs_test_data <- lst(
     fit_data = FALSE,
+    early_tumors_only = TRUE,
     n_patients = 1000,
     gen_pfs = TRUE,
-    max_pfs = 20,
     n_measures = 2,
     n_patient_tumors = count(fake_tumor_data, patient_id) |> pull(n),
     tumor_size = select(fake_tumor_data, tumor_size_1:tumor_size_2),
