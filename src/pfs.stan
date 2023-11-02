@@ -47,6 +47,33 @@ functions {
     
     return s[2:]; 
   }  
+  
+  matrix prepare_early_tumors_design_matrix(vector tumor_size, array[] int n_patient_tumors, array[] int n_measures, real tumor_sd) {
+    matrix[sum(n_patient_tumors), 2] scaled_tumor_covar;
+    int n_patients = size(n_patient_tumors);
+    int tumor_pos = 1;
+    int covar_pos = 1;
+    
+    for (i in 1:n_patients) {
+      int n_current_tumors = n_patient_tumors[i];
+      int n_current_measures = n_measures[i];
+      
+      if (n_current_measures < 2) {
+        reject("Two measures minimum needed per tumor.");
+      }
+      
+      for (j in 1:n_current_tumors) {
+        int tumor_end = tumor_pos + n_current_measures - 1; 
+        
+        scaled_tumor_covar[covar_pos, ] = tumor_size[tumor_pos:(tumor_pos + 1)]' / tumor_sd;
+        covar_pos += 1;
+        
+        tumor_pos = tumor_end + 1;
+      }
+    }
+    
+    return scaled_tumor_covar;
+  }
 }
 
 data {
@@ -93,29 +120,9 @@ transformed data {
   pfs_range_vec = to_vector(pfs_range);
  
   if (early_tumors_only) { 
-    int covar_pos = 1;
-    int tumor_pos = 1;
-    
     tumor_covar_sd = sd(tumor_size);
     
-    for (i in 1:n_patients) {
-      int n_current_tumors = n_patient_tumors[i];
-      int n_current_measures = n_measures[i];
-      
-      for (j in 1:n_current_tumors) {
-        int tumor_end = tumor_pos + n_current_measures - 1; 
-        
-        scaled_tumor_covar[covar_pos, ] = tumor_size[tumor_pos:(tumor_pos + 1)]' / tumor_covar_sd;
-        covar_pos += 1;
-        
-        tumor_pos = tumor_end + 1;
-      }
-    }
-    
-    // for (m in 1:2) {
-    //   tumor_covar_sd[m] = sd(tumor_size[, m]);
-    //   scaled_tumor_covar[, m] = tumor_size[, m] / tumor_covar_sd[m];
-    // }
+    scaled_tumor_covar = prepare_early_tumors_design_matrix(tumor_size, n_patient_tumors, n_measures, tumor_covar_sd); 
   } else {
     reject("Not supported yet.");
   }
