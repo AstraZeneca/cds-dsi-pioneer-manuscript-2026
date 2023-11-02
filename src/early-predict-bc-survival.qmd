@@ -48,19 +48,20 @@ test_data <- lst(
   tumor_size = array(dim = 0)
 )
 
- 
 if (is_empty(dir(here("temp", "fit"), pattern = "prior_tumor", full.names = TRUE))) {
   res <- tumor_model$sample(data = test_data)
+  
   res$save_output_files(
     here("temp", "fit"), basename = "prior_tumor", timestamp = FALSE, random = FALSE
   )
- 
+  
   res$save_data_file(
     here("temp", "data"), basename = "prior_tumor", timestamp = FALSE, random = FALSE
   )
 } else {
   res <- dir(here("temp", "fit"), pattern = "prior_tumor", full.names = TRUE) |>
     as_cmdstan_fit()
+  
   test_data <- rjson::fromJSON(file = here("temp", "data", "prior_tumor.json"))
 }
 
@@ -74,27 +75,20 @@ res_rvar <- res |>
   ) |> 
   mutate(tumor_index = tumor_index - min(tumor_index) + 1, .by = patient_id) |> 
   rename(tumor_size = rep_tumor_size)
-  # pivot_wider(names_from = measure_index, values_from = rep_tumor_size, names_prefix = "tumor_size_") |>
 
 res_rvar |> 
-  # pivot_longer(tumor_size_1:tumor_size_2, names_prefix = "tumor_size_", names_transform = as.integer, names_to = "measure_id", values_to = "tumor_size") |> 
   filter(patient_id == 1, tumor_index < 6) |> 
-  # unnest_rvars() |> 
-  # filter(.draw == 1) |> 
   ggplot(aes(t)) +
   geom_line(aes(y = tumor_size, group = str_c(patient_id, tumor_index, .draw)), alpha = 0.125, data = \(d) unnest_rvars(d) |> filter(.draw <= 50)) +
-  # geom_point(aes(y = gen_tumor_size, color = factor(tumor_id)))
   stat_lineribbon(aes(ydist = tumor_size, group = tumor_index), alpha = 0.25, .width = 0.8) +
   coord_cartesian(ylim = c(0, 10)) +
   facet_wrap(vars(tumor_index)) +
   NULL
 
 fake_tumor_data <- res_rvar |>
-  # filter(t <= 2) |> 
   unnest_rvars() |>
   ungroup() |> 
   filter(.draw == 1) 
-  # pivot_wider(names_from = t, values_from = tumor_size, names_prefix = "tumor_size_")
 
 write_rds(fake_tumor_data, here("temp", "data", "fake_tumor.rds"))
 ```
