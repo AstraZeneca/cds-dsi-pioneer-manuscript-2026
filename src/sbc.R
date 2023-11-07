@@ -27,25 +27,27 @@ pfs_model <- cmdstan_model(here("src", "pfs.stan"))
 
 pfs_test_data <- lst(
     fit_data = FALSE,
+    early_tumors_only = TRUE,
     n_patients = 1000,
     gen_pfs = TRUE,
-    max_pfs = 20,
     n_measures = 2,
     n_patient_tumors = count(fake_tumor_data, patient_id) |> pull(n),
     tumor_size = select(fake_tumor_data, tumor_size_1:tumor_size_2),
     pfs = rep(max_pfs, n_patients),
-    censored = rep(1, n_patients)
+    right_censored = rep(1, n_patients),
+    interval_censored = rep(0, n_patients)
   )
 
 # Sample from the prior; no data.
 pfs_res <- pfs_model$sample(data = pfs_test_data, refresh = 0)
 
-sbc_data <- pfs_res |> # Get data from prior
-  spread_rvars(rep_pfs[patient_index], rep_censored[patient_index]) |> 
+sbc_data <- pfs_res |> 
+  spread_rvars(rep_pfs[patient_index], rep_right_censored[patient_index]) |> 
   unnest_rvars() |> 
   ungroup() |> 
   filter(.draw <= cl_args$num_sim) |> 
-  select(.draw, pfs = rep_pfs, censored = rep_censored) |> 
+  select(.draw, pfs = rep_pfs, right_censored = rep_right_censored) |> 
+  mutate(interval_censored = 0) |> 
   nest(sim_data = !.draw) |>
   left_join( # Get the parameters that generated that data
     pfs_res |> 
