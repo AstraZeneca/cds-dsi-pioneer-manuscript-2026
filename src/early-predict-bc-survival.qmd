@@ -117,7 +117,8 @@ We assume that censoring in conditionally independent of time to progression. We
 Aside from whatever priors we use for $\boldsymbol{\beta}$, we will use a Gaussian process prior for $\lambda_m$, 
 $$
 \lambda_m \sim \mathtt{GP}(0, k),
-$$ where $k(\lambda_p, \lambda_q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$.
+$$ 
+where $k(\lambda_p, \lambda_q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$.
 
 ```{r}
 #| label: pfs-model
