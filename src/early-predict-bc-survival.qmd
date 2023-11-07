@@ -316,33 +316,29 @@ fake_data_sim |>
 
 ## Simulation-Based Calibration
 
+The code for this simulation is located in `sbc.R` (and `sbc.sh` to run on SLURM).
+
 ```{r}
 #| label: sbc
 
-sbc_data <- rep_pfs_rvar |> 
-  unnest_rvars() |> 
-  ungroup() |> 
-  filter(.draw <= 3) |> 
-  select(.draw, pfs = rep_pfs, right_censored = rep_right_censored) |> 
-  nest(sim_data = !.draw) |> 
-  left_join(
-    rep_pfs_param_rvar |> 
-      unnest_rvars() |> 
-      ungroup() |> 
-      select(!c(.iteration, .chain)),
-    by = ".draw"
-  ) |> 
-  mutate(
-    furrr::future_map_dfr(.progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
-      sim_data,
-      # We need thinning when doing SBC using MCMC to break the correlation between samples.
-      \(d) fit_sim_data(d, thin = 4) |> 
-        spread_rvars(tumor_stim_intercept, tumor_stim_coef, ndraws = 1000) |> 
-        rename_with(\(n) str_c("est_", n))
-    ),
-    
-    r_tumor_stim_intercept = sum(est_tumor_stim_intercept < tumor_stim_intercept),
-    r_tumor_stim_coef_1 = c(sum(est_tumor_stim_coef[, 1] < tumor_stim_coef_1)),
-    r_tumor_stim_coef_2 = c(sum(est_tumor_stim_coef[, 2] < tumor_stim_coef_2)),
-  )
+sbc_data <- read_rds(here("temp", "data", "sbc.rds"))
+
+sbc_data |> 
+  select(starts_with("r_")) |> 
+  pivot_longer(everything(), names_to = "param", names_prefix = "r_", values_to = "r") |> 
+  ggplot() +
+  geom_histogram(aes(r), alpha = 0.5, binwidth = 10) +
+  geom_rect(aes(xmin = -10, xmax = 1010, ymin = lb, ymax = ub), 
+            alpha = 0.25, fill = "pink",
+            data = \(d) tibble(!!!set_names(qbinom(c(0.01, 0.5, 0.99), nrow(sbc_data), 1/100), c("lb", "med", "ub")))) +
+  facet_wrap(vars(param)) +
+  labs(title = "Histogram of rank statistics", y = "", caption = str_glue("The histogram uses a bin width of 10.\nThe pink area represents the 1%-99% region of a Binom(1090, 0.01).\n{nrow(sbc_data)} simulation used."))
+
+# sbc_data |> 
+#   select(starts_with("r_")) |> 
+#   pivot_longer(everything(), names_to = "param", names_prefix = "r_", values_to = "r") |> 
+#   ggplot() +
+#   stat_ecdf(aes(r)) +
+#   facet_wrap(vars(param)) +
+#   coord_cartesian(xlim = c(0, 1000))
 ```
