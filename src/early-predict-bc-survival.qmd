@@ -27,7 +27,7 @@ source(here("src", "util.R"))
 #| label: sim-settings
 
 n_patients <- 1000
-patient_measures <- 10
+patient_measures <- 11
 max_pfs <- 20
 ```
 
@@ -43,7 +43,7 @@ test_data <- lst(
   gen_tumor_sizes = TRUE,
   n_patients,
   n_measures = rep(patient_measures, n_patients),
-  t_measure = rep(1:patient_measures, n_patients),
+  t_measure = rep(1:(patient_measures - 1), n_patients),
   n_patient_tumors = 1 + rbinom(n_patients, 5, 0.4),
   tumor_size = array(dim = 0)
 )
@@ -70,8 +70,8 @@ res_rvar <- res |>
   ungroup() |> 
   mutate(
     patient_id = rep(1:n_patients, with(test_data, n_patient_tumors * patient_measures)),
-    tumor_index = ((tumor_index - 1) %/% 10) + 1,
-    t = rep(1:patient_measures, sum(test_data$n_patient_tumors))
+    tumor_index = ((tumor_index - 1) %/% patient_measures) + 1,
+    t = rep(0:(patient_measures - 1), sum(test_data$n_patient_tumors))
   ) |> 
   mutate(tumor_index = tumor_index - min(tumor_index) + 1, .by = patient_id) |> 
   rename(tumor_size = rep_tumor_size)
@@ -81,7 +81,7 @@ res_rvar |>
   ggplot(aes(t)) +
   geom_line(aes(y = tumor_size, group = str_c(patient_id, tumor_index, .draw)), alpha = 0.125, data = \(d) unnest_rvars(d) |> filter(.draw <= 50)) +
   stat_lineribbon(aes(ydist = tumor_size, group = tumor_index), alpha = 0.25, .width = 0.8) +
-  coord_cartesian(ylim = c(0, 10)) +
+  coord_cartesian(ylim = c(0, patient_measures)) +
   facet_wrap(vars(tumor_index)) +
   NULL
 
@@ -114,7 +114,8 @@ $$
 
 We assume that censoring in conditionally independent of time to progression. We will use a linear for for $\kappa(\bf{x}; \boldsymbol{\beta}) = \exp(\bf{x}\boldsymbol{\beta})$.
 
-Aside from whatever priors we use for $\boldsymbol{\beta}$, we will use a Gaussian process prior for $\lambda_m$, $$
+Aside from whatever priors we use for $\boldsymbol{\beta}$, we will use a Gaussian process prior for $\lambda_m$, 
+$$
 \lambda_m \sim \mathtt{GP}(0, k),
 $$ where $k(\lambda_p, \lambda_q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$.
 
@@ -130,7 +131,6 @@ pfs_test_data <- test_data |>
     tumor_size = fake_tumor_data$tumor_size,
     pfs = rep(max_pfs, test_data$n_patients),
     right_censored = rep(1, test_data$n_patients),
-    interval_censored = rep(0, test_data$n_patients),
     
     log_lambda_gp_intercept_mean = -3,
     log_lambda_gp_intercept_sd = 0.5,
@@ -168,7 +168,7 @@ lambda_rvar |>
   ggplot(aes(t)) +
   stat_lineribbon(aes(ydist = lambda), fill = "black", alpha = 0.5, .width = 0.8) +
   geom_line(aes(y = lambda, group = .draw), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 50)) +
-  labs(x = "m", y = latex2exp::TeX("$\\lambda_m$"))
+  labs(title = "Base hazard", x = "m", y = latex2exp::TeX("$\\lambda_m$"))
 ```
 
 ```{r}
@@ -186,7 +186,7 @@ lambda_rvar |>
 
 pfs_res |> 
   spread_rvars(disease_progress_prob[i]) |> 
-  mutate(patient_index = rep(seq(test_data$n_patients), each = max_pfs), t = rep(seq(max_pfs), n_patients)) |> 
+  mutate(patient_index = rep(seq(test_data$n_patients), each = max_pfs + 1), t = rep(seq(max_pfs + 1), n_patients)) |> 
   filter(patient_index <= 6) |> 
   ggplot(aes(t)) +
   stat_lineribbon(aes(ydist = disease_progress_prob), fill = "black", alpha = 0.5, .width = 0.8) +
@@ -221,9 +221,10 @@ expected_pfs_rvar |>
 ```{r}
 pfs_res |> 
   spread_rvars(km_est[m]) |> 
-  ggplot(aes(m)) +
+  ggplot(aes(m - 1)) +
   stat_lineribbon(aes(ydist = km_est), fill = "black", alpha = 0.25, .width = 0.8) +
-  labs(title = "Kaplan-Meier estimate", y = latex2exp::TeX("$S(m)$"))
+  labs(title = "Kaplan-Meier estimate", y = latex2exp::TeX("$S(m)$")) +
+  scale_x_continuous("m", breaks = seq(0, 20, 2))
 ```
 
 ## Fake Data Simulation
@@ -250,7 +251,7 @@ patient_interval_data <- gen_patient_interval_properties(fake_tumor_data, log_la
 
 fake_data_sim <- tibble(sim_id = 1:12) |> 
   rowwise() |> 
-  mutate(sim_data = list(gen_fake_pfs_data(patient_interval_data))) |> 
+  mutate(sim_data = list(gen_fake_pfs_data(patient_interval_data, fake_data_sim_settings))) |> 
   ungroup() |> 
   mutate(
     sim_fit = furrr::future_map(.progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
@@ -323,7 +324,6 @@ sbc_data <- rep_pfs_rvar |>
   ungroup() |> 
   filter(.draw <= 3) |> 
   select(.draw, pfs = rep_pfs, right_censored = rep_right_censored) |> 
-  mutate(interval_censored = 0) |> 
   nest(sim_data = !.draw) |> 
   left_join(
     rep_pfs_param_rvar |> 
