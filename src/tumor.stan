@@ -32,9 +32,9 @@ data {
 
 transformed data {
   int<lower = 0> n_tumor_measures = to_int(to_row_vector(n_patient_tumors) * to_vector(n_measures));
-  int<lower = 0, upper = sum(n_patient_tumors) * max(t_measure)> n_all_tumor_measures = 0;
+  int n_all_tumor_measures = sum(n_patient_tumors);
   array[n_patients] int<lower = 0, upper = max(t_measure)> max_t;
-  array[max(t_measure)] real all_measure_idx;
+  array[max(t_measure) + 1] real all_measure_idx;
   real delta = 1e-9;
   real<lower = 0> tumor_sd = 0;
   vector<lower = 0>[rows(tumor_size) > 0 ? n_tumor_measures : 0] scaled_tumor_size;
@@ -47,7 +47,7 @@ transformed data {
     scaled_tumor_size = scale_results.2;
   }
  
-  for (t in 1:max(t_measure)) {
+  for (t in 1:(max(t_measure) + 1)) {
     all_measure_idx[t] = t;
   } 
  
@@ -57,7 +57,7 @@ transformed data {
     int tumor_count = 0;
     
     for (i in 1:n_patients) {
-      int measure_end = measure_pos + n_measures[i] - 1;
+      int measure_end = measure_pos + n_measures[i] - 2; // Base measurement not included in t_measure
       int n_current_tumors = n_patient_tumors[i];
       
       max_t[i] = t_measure[measure_end];
@@ -66,8 +66,10 @@ transformed data {
       for (j in 1:n_current_tumors) {
         int obs_measure_idx_end = obs_measure_idx_pos + n_measures[i] - 1;
         
-        for (t in 1:n_measures[i]) {
-          obs_tumor_measures_idx[obs_measure_idx_pos + t - 1] = t_measure[measure_pos + t - 1] + tumor_count; 
+        obs_tumor_measures_idx[obs_measure_idx_pos] = 1 + tumor_count;
+        
+        for (t in 1:(n_measures[i] - 1)) {
+          obs_tumor_measures_idx[obs_measure_idx_pos + t] = t_measure[measure_pos + t - 1] + 1 + tumor_count; 
         }
         
         obs_measure_idx_pos = obs_measure_idx_end + 1;
@@ -93,23 +95,19 @@ transformed parameters {
   
   {
     int tumor_pos = 1;
-    int t_measure_pos = 1;
     
     for (i in 1:n_patients) {
       int n_current_tumors = n_patient_tumors[i];
       int n_current_measures = n_measures[i];
-      int t_measure_end = t_measure_pos + n_current_measures - 1;
       
       for (j in 1:n_current_tumors) {
-        int tumor_end = tumor_pos + max_t[i] - 1; 
+        int tumor_end = tumor_pos + max_t[i]; 
         
         tumor_pred[tumor_pos:tumor_end] = calc_gp_pred(
-          all_measure_idx[:max_t[i]], pop_tumor_gp_intercept, pop_tumor_gp_alpha, pop_tumor_gp_rho, delta, eta[tumor_pos:tumor_end]); 
+          all_measure_idx[:(max_t[i] + 1)], pop_tumor_gp_intercept, pop_tumor_gp_alpha, pop_tumor_gp_rho, delta, eta[tumor_pos:tumor_end]); 
         
         tumor_pos = tumor_end + 1;
       }
-      
-      t_measure_pos = t_measure_end + 1;
     }
   }
 }
@@ -123,6 +121,7 @@ model {
   eta ~ std_normal();
 
   if (fit_data) {
+    // Don't remove the commented out code in this block until we've tested fitting tumor data properly.
     // to_vector(scaled_tumor_size) ~ lognormal(to_vector(tumor_pred), pop_tumor_sigma);
     
     scaled_tumor_size ~ lognormal(tumor_pred[obs_tumor_measures_idx], pop_tumor_sigma);
@@ -157,4 +156,3 @@ generated quantities {
     rep_tumor_size = lognormal_rng(tumor_pred, pop_tumor_sigma);
   }
 }
-
