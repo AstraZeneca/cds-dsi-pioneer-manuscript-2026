@@ -16,6 +16,20 @@ functions {
       
       return exp(log_lambda + total_time_invar_tumor_stim);
   }
+  
+  array[] int get_max_t(array[] int t_measure, array[] int n_measures) {
+    int n_patients = size(n_measures);
+    int t_pos = 1;
+    array[n_patients] int max_t;
+      
+    for (i in 1:n_patients) {
+      int t_end = t_pos + n_measures[i] - 2; // The baseline measure is not included in t_measures.
+      
+      max_t[i] = max(t_measure[t_pos:t_end]);
+    }
+    
+    return max_t;
+  }
 
   array[] int identify_interval_censoring(array[] int pfs, array[] int n_measures, array[] int t_measure) { 
     int n_patients = size(n_measures);
@@ -83,21 +97,17 @@ functions {
     int pfs_pos = 1;
     int n = n_pfs; 
     
-    for (t in 1:max_t) {
+    for (t in 0:max_t) {
       int ex = 0;
+      real prev_s = t > 0 ? s[t] : 1.0;
       
-      while ((n > 0) && (pfs_pos <= n_pfs) && (right_censored[sorted_pfs_idx[pfs_pos]] || (pfs[sorted_pfs_idx[pfs_pos]] <= t - 1))) {
+      while ((n > 0) && (pfs_pos <= n_pfs) && (right_censored[sorted_pfs_idx[pfs_pos]] || (pfs[sorted_pfs_idx[pfs_pos]] <= t))) {
         ex += !right_censored[sorted_pfs_idx[pfs_pos]];
         pfs_pos += 1;
       }
-      
-      s[t + 1] = n > 0 ? s[t] * (n - ex) / n : 0.0;
+     
+      s[t + 1] = n > 0 ? prev_s * (n - ex) / n : 0.0;
       n -= ex;
-      
-      // if (pfs_pos > n_pfs) { 
-      //   s[(t + 2):(max_pfs + 1)] = rep_vector(s[t + 1], max_pfs - t);
-      //   break;
-      // }
     }
     
     return s; 
@@ -155,17 +165,20 @@ data {
 transformed data {
   real delta = 1e-9;
   int<lower = 0> max_pfs = max(pfs);
+  array[n_patients] int<lower = 1> max_t = get_max_t(t_measure, n_measures);
+  int<lower = 1> max_all_t = max(max_t);
   int<lower = 0, upper = max_pfs * n_patients> n_total_pfs = sum(pfs);
-  int<lower = 0, upper = (max_pfs + 1) * n_patients> n_time_periods;
-  array[max_pfs + 1] real pfs_range;
-  vector[max_pfs + 1] pfs_range_vec;
+  int<lower = 0> n_time_periods;
+  array[max_all_t] real pfs_range;
+  vector[max_all_t] pfs_range_vec;
   int<lower = 0> n_all_tumors = sum(n_patient_tumors);
   real<lower = 0> tumor_covar_sd;
   matrix[early_tumors_only ? n_all_tumors : 0, 2] scaled_tumor_covar;
   array[n_patients] int<lower = 0, upper = 1> right_uncensored = rep_array(0, n_patients);
   array[n_patients] int<lower = 0> interval_censored = rep_array(0, n_patients);
+ 
   
-  for (i in 1:(max_pfs + 1)) {
+  for (i in 1:max_all_t) {
     pfs_range[i] = i;
   }
   
@@ -193,13 +206,13 @@ transformed data {
     print("Number of interval censored observations: ", sum(interval_censored));
   }
   
-  n_time_periods = gen_pfs ? (max_pfs + 1) * n_patients : n_total_pfs + sum(right_uncensored);
+  n_time_periods = gen_pfs ? sum(max_t) : n_total_pfs + sum(right_uncensored);
 }
 
 parameters {
   real<lower = 0> log_lambda_gp_alpha;
   real<lower = 0> log_lambda_gp_rho;
-  vector[max_pfs + 1] log_lambda_gp_eta;
+  vector[max_all_t] log_lambda_gp_eta;
   real log_lambda_gp_intercept;
   
   real<lower = 0> tumor_stim_intercept;
@@ -207,7 +220,7 @@ parameters {
 }
 
 transformed parameters {
-  vector[max_pfs + 1] log_lambda = calc_gp_pred(
+  vector[max_all_t] log_lambda = calc_gp_pred(
     pfs_range, log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho, delta, log_lambda_gp_eta);
   vector[n_time_periods] disease_progress_pred;
   vector<lower = 0, upper = 1>[n_time_periods] disease_progress_prob;
@@ -219,12 +232,12 @@ transformed parameters {
   
     for (i in 1:n_patients) {
       int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
-      int pfs_interval_end = pfs_interval_pos + (gen_pfs ? max_pfs + 1 : pfs[i] + right_uncensored[i]) - 1; 
+      int pfs_interval_end = pfs_interval_pos + (gen_pfs ? max_t[i] : pfs[i] + right_uncensored[i]) - 1; 
       
       total_time_invar_tumor_stim[i] = sum(linear_tumor_stimulus(tumor_stim_intercept, tumor_stim_coef, scaled_tumor_covar[tumor_pos:tumor_end]));
       
       disease_progress_pred[pfs_interval_pos:pfs_interval_end] = 
-        log_lambda[1:(gen_pfs ? max_pfs + 1 : pfs[i] + right_uncensored[i])] + total_time_invar_tumor_stim[i];
+        log_lambda[1:(gen_pfs ? max_t[i] : pfs[i] + right_uncensored[i])] + total_time_invar_tumor_stim[i];
       
       tumor_pos = tumor_end + 1;
       pfs_interval_pos = pfs_interval_end + 1;
@@ -268,19 +281,19 @@ model {
         target += interval_lp[1];
       }
       
-      pfs_interval_pos = (gen_pfs ? pfs_interval_pos + max_pfs : pfs_interval_end) + 1;
+      pfs_interval_pos = (gen_pfs ? pfs_interval_pos + max_t[i] - 1 : pfs_interval_end) + 1;
     }
   }
 }
 
 generated quantities {
-  vector<lower = 0, upper = 1>[max_pfs + 1] base_pf_cond_prob = 1 - inv_cloglog(log_lambda);
-  vector<lower = 0, upper = 1>[max_pfs + 1] one_tumor_pf_cond_prob = 
+  vector<lower = 0, upper = 1>[max_all_t] base_pf_cond_prob = 1 - inv_cloglog(log_lambda);
+  vector<lower = 0, upper = 1>[max_all_t] one_tumor_pf_cond_prob = 
     1 - calculate_progress_linear_prob(log_lambda, tumor_stim_intercept, tumor_stim_coef, [[1, 1]]); 
-  vector<lower = 0, upper = 1>[max_pfs] base_survival;
-  vector<lower = 0, upper = 1>[max_pfs] one_tumor_survival;
-  real<lower = 0, upper = max_pfs> base_cond_expected_pfs;
-  real<lower = 0, upper = max_pfs> one_tumor_cond_expected_pfs;
+  vector<lower = 0, upper = 1>[max_all_t] base_survival;
+  vector<lower = 0, upper = 1>[max_all_t] one_tumor_survival;
+  real<lower = 0, upper = max_all_t> base_cond_expected_pfs;
+  real<lower = 0, upper = max_all_t> one_tumor_cond_expected_pfs;
   
   array[gen_pfs ? n_patients : 0] int<lower = 0> rep_pfs;
   array[gen_pfs ? n_patients : 0] int<lower = 0, upper = 1> rep_right_censored;
@@ -294,7 +307,7 @@ generated quantities {
     int t_pos = 1;
     
     for (i in 1:n_patients) {
-      int pfs_interval_end = pfs_interval_pos + max_pfs - 1;
+      int pfs_interval_end = pfs_interval_pos + max_t[i] - 1;
       int t_end = t_pos + n_measures[i] - 2; // Baseline measure not included in t_measures
      
       tuple(int, int, int, int) pfs_res = pfs_rng(disease_progress_prob[pfs_interval_pos:pfs_interval_end], t_measure[t_pos:t_end]); 
@@ -311,10 +324,10 @@ generated quantities {
   } 
   
   {
-    row_vector[max_pfs] base_dp_prob;
-    row_vector[max_pfs] one_tumor_dp_prob;
+    row_vector[max_all_t] base_dp_prob;
+    row_vector[max_all_t] one_tumor_dp_prob;
   
-    for (m in 1:max_pfs) {
+    for (m in 1:max_all_t) {
       if (m > 1) {
         base_dp_prob[m] = (1 - base_pf_cond_prob[m]) * prod(base_pf_cond_prob[1:(m - 1)]);
         base_survival[m] = base_dp_prob[m] + base_survival[m - 1]; 
@@ -331,7 +344,7 @@ generated quantities {
     base_survival = 1 - base_survival;
     one_tumor_survival = 1 - one_tumor_survival;
     
-    base_cond_expected_pfs = (base_dp_prob / (1 - base_survival[max_pfs])) * pfs_range_vec[:max_pfs];
-    one_tumor_cond_expected_pfs = (one_tumor_dp_prob / (1 - one_tumor_survival[max_pfs])) * pfs_range_vec[:max_pfs];
+    base_cond_expected_pfs = (base_dp_prob / (1 - base_survival[max_all_t])) * pfs_range_vec[:max_all_t];
+    one_tumor_cond_expected_pfs = (one_tumor_dp_prob / (1 - one_tumor_survival[max_all_t])) * pfs_range_vec[:max_all_t];
   }
 }
