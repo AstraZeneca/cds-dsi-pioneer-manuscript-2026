@@ -18,7 +18,7 @@ options(mc.cores = 12)
 
 ggplot2::theme_set(theme_minimal())
 
-future::plan(future::multisession(workers = 3))
+future::plan(future::multisession(workers = 12))
 
 source(here("src", "util.R"))
 ```
@@ -266,7 +266,8 @@ fake_data_sim <- tibble(sim_id = 1:12) |>
 fake_data_sim |> 
   transmute(
     sim_id,
-    sim_param_post = map(
+    sim_param_post = furrr::future_map(.progress = TRUE, #.options = furrr::furrr_options(seed = TRUE),
+    # sim_param_post = map(
       sim_fit,
       \(f) spread_rvars(f, log_lambda_gp_alpha, log_lambda_gp_rho, log_lambda_gp_intercept, tumor_stim_intercept, tumor_stim_coef[t]) |>
         pivot_wider(names_from = t, values_from = tumor_stim_coef, names_prefix = "tumor_stim_coef_")
@@ -291,7 +292,10 @@ fake_data_sim |>
 
 ```{r}
 fake_data_sim |> 
-  mutate(sim_log_lambda_post = map(sim_fit, \(f) spread_rvars(f, log_lambda[m]))) |> 
+  mutate(
+    sim_log_lambda_post = furrr::future_map(.progress = TRUE, #.options = furrr::furrr_options(seed = TRUE),
+      sim_fit, \(f) spread_rvars(f, log_lambda[m]))
+  ) |> 
   select(!c(sim_data, sim_fit)) |>
   unnest(sim_log_lambda_post) |> 
   bind_rows(transmute(lambda_rvar, m = t, log_lambda, sim_id = 0)) |> 
@@ -305,7 +309,11 @@ fake_data_sim |>
 
 ```{r}
 fake_data_sim |> 
-  mutate(km_est = map2(sim_fit, sim_data, \(f, simd) spread_rvars(f, km_est[m]) |> mutate(emp_s = pfs_model$functions$estimate_kaplan_meier(simd$pfs, max(simd$pfs))))) |> 
+  mutate(km_est = furrr::future_map2(.progress = TRUE,
+  # mutate(km_est = map2(
+    sim_fit, sim_data, 
+    \(f, simd) spread_rvars(f, km_est[m]) |> mutate(emp_s = pfs_model$functions$estimate_kaplan_meier(simd$pfs, simd$right_censored, max(simd$t_measure)))
+  )) |> 
   select(sim_id, km_est) |> 
   filter(sim_id <= 6) |> 
   unnest(km_est) |> 

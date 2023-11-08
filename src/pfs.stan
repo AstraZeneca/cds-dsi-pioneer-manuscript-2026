@@ -76,31 +76,31 @@ functions {
   }
  
   // S(t) = Pr[T > t], t \in {0,..., N} 
-  vector estimate_kaplan_meier(array[] int pfs, array[] int right_censored, int max_pfs) {
-    vector[max_pfs + 1] s = rep_vector(1.0, max_pfs + 1);
+  vector estimate_kaplan_meier(array[] int pfs, array[] int right_censored, int max_t) {
+    vector[max_t + 1] s = rep_vector(1.0, max_t + 1);
     int n_pfs = size(pfs);
     array[n_pfs] int sorted_pfs_idx = sort_indices_asc(pfs);
     int pfs_pos = 1;
     int n = n_pfs; 
     
-    for (t in 1:max_pfs) {
+    for (t in 1:max_t) {
       int ex = 0;
       
-      while ((pfs_pos <= n_pfs) && (right_censored[sorted_pfs_idx[pfs_pos]] || (pfs[sorted_pfs_idx[pfs_pos]] <= t - 1))) {
+      while ((n > 0) && (pfs_pos <= n_pfs) && (right_censored[sorted_pfs_idx[pfs_pos]] || (pfs[sorted_pfs_idx[pfs_pos]] <= t - 1))) {
         ex += !right_censored[sorted_pfs_idx[pfs_pos]];
         pfs_pos += 1;
       }
       
-      s[t + 1] = (n > 0) * s[t] * (n - ex) / n;
+      s[t + 1] = n > 0 ? s[t] * (n - ex) / n : 0.0;
       n -= ex;
       
-      if (pfs_pos > n_pfs) { 
-        s[(t + 2):(max_pfs + 1)] = rep_vector(s[t + 1], max_pfs - t);
-        break;
-      }
+      // if (pfs_pos > n_pfs) { 
+      //   s[(t + 2):(max_pfs + 1)] = rep_vector(s[t + 1], max_pfs - t);
+      //   break;
+      // }
     }
     
-    return s[2:]; 
+    return s; 
   }  
   
   matrix prepare_early_tumors_design_matrix(vector tumor_size, array[] int n_patient_tumors, array[] int n_measures, real tumor_sd) {
@@ -286,7 +286,7 @@ generated quantities {
   array[gen_pfs ? n_patients : 0] int<lower = 0, upper = 1> rep_right_censored;
   array[gen_pfs ? n_patients : 0] int<lower = 0> rep_interval_censored;
   
-  vector<lower = 0, upper = 1>[gen_pfs ? max_pfs : 0] km_est; 
+  vector<lower = 0, upper = 1>[gen_pfs ? max(t_measure) + 1 : 0] km_est; 
   
   if (gen_pfs) {
     int tumor_pos = 1;
@@ -307,7 +307,7 @@ generated quantities {
       t_pos = t_end + 1;
     }
     
-    km_est = estimate_kaplan_meier(rep_pfs, rep_right_censored, max_pfs); 
+    km_est = estimate_kaplan_meier(rep_pfs, rep_right_censored, max(t_measure)); 
   } 
   
   {

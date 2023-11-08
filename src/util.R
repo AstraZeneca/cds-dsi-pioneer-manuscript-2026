@@ -32,7 +32,7 @@ gen_fake_pfs_data <- function(patient_interval_data, settings) {
 fit_sim_data <- function(settings, d, max_measures, ...) { 
   settings |> 
     list_modify(
-      gen_pfs = FALSE,
+      gen_pfs = TRUE,
       fit_data = TRUE,
       pfs = d$pfs, right_censored = d$right_censored, 
     ) |> 
