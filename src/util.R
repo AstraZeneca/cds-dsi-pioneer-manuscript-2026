@@ -16,11 +16,14 @@ gen_patient_interval_properties <- function(fake_tumor_data, log_lambda, setting
     )  
 }
 
+# -1 because t_measures doesn't include baseline measure
+list_t_measure <- function(t_measure, n_measures) split(t_measure, rep(seq_along(n_measures), n_measures - 1)) 
+
 gen_fake_pfs_data <- function(patient_interval_data, settings) { 
   patient_interval_data |>
     nest(prob = !patient_id) |> 
     mutate(
-      t_measure = with(settings, split(t_measure, rep(seq(n_patients), n_measures - 1))), # -1 because t_measures doesn't include baseline measure
+      t_measure = with(settings, list_t_measure(t_measure, n_measures)), 
       pfs_res = map2(prob, t_measure, \(pd, t) pfs_model$functions$pfs_rng(pd$progress_prob, t)),
       interval_censored = map_dbl(pfs_res, \(r) r[[1]]),
       right_censored = map_dbl(pfs_res, \(r) r[[2]]),
