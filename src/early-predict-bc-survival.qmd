@@ -6,6 +6,7 @@ title: "Early Prediction of Breast Cancer Survival"
 #| label: setup
 #| include: false
 
+library(magrittr)
 library(tidyverse)
 library(rlang)
 library(cmdstanr)
@@ -33,35 +34,33 @@ max_pfs <- 20
 
 # Tumor Size Model
 
+I haven't yet documented much about this model or done any kind of evaluation. I'm only using it at this time to generate fake tumor size data for testing.
+
 ```{r}
 #| label: tumor
 
 tumor_model <- cmdstan_model(here("src", "tumor.stan"))
 
-test_data <- lst(
-  fit_data = FALSE,
-  gen_tumor_sizes = TRUE,
-  n_patients,
-  n_measures = rep(patient_measures, n_patients),
-  t_measure = rep(1:(patient_measures - 1), n_patients),
-  n_patient_tumors = 1 + rbinom(n_patients, 5, 0.4),
-  tumor_size = array(dim = 0)
-)
-
-if (is_empty(dir(here("temp", "fit"), pattern = "prior_tumor", full.names = TRUE))) {
-  res <- tumor_model$sample(data = test_data)
-  
-  res$save_output_files(
-    here("temp", "fit"), basename = "prior_tumor", timestamp = FALSE, random = FALSE
+if (!file.exists(here("temp", "fit", "prior_tumor.rds"))) {
+  test_data <- lst(
+    fit_data = FALSE,
+    gen_tumor_sizes = TRUE,
+    n_patients,
+    n_measures = rep(patient_measures, n_patients),
+    t_measure = rep(1:(patient_measures - 1), n_patients),
+    n_patient_tumors = 1 + rbinom(n_patients, 5, 0.4),
+    tumor_size = array(dim = 0)
   )
+  
+  res <- tumor_model$sample(data = test_data, output_dir = here("temp", "fit"))
+  
+  res$save_object(here("temp", "fit", "prior_tumor.rds"))
   
   res$save_data_file(
     here("temp", "data"), basename = "prior_tumor", timestamp = FALSE, random = FALSE
   )
 } else {
-  res <- dir(here("temp", "fit"), pattern = "prior_tumor", full.names = TRUE) |>
-    as_cmdstan_fit()
-  
+  res <- read_rds(here("temp", "fit", "prior_tumor.rds"))
   test_data <- rjson::fromJSON(file = here("temp", "data", "prior_tumor.json"))
 }
 
@@ -92,6 +91,13 @@ fake_tumor_data <- res_rvar |>
 
 write_rds(fake_tumor_data, here("temp", "data", "fake_tumor.rds"))
 ```
+```{r}
+#| label: tumor-model-diagnose
+#| eval: false
+
+res$cmdstan_diagnose()
+```
+
 
 # Survival Model
 
@@ -128,6 +134,7 @@ pfs_test_data <- test_data |>
   list_modify(
     gen_pfs = TRUE,
     early_tumors_only = TRUE,
+    ignore_interval_censoring = FALSE,
     tumor_size = fake_tumor_data$tumor_size,
     pfs = rep(max_pfs, test_data$n_patients),
     right_censored = rep(1, test_data$n_patients),
@@ -230,7 +237,7 @@ pfs_res |>
 ## Fake Data Simulation
 
 ```{r}
-#| label: fake-pfs-data
+#| label: fake-data-model
 #| include: false
 #| cache: true
 
@@ -238,6 +245,9 @@ pfs_res |>
 #   pfs_model$functions$calc_gp_pred(seq(max_pfs), intercept = -2.0, alpha = 0.3, rho = 1.5, delta = 1e-9, eta = rnorm(max_pfs))
 
 log_lambda <- c(-2.48777760709026, -2.57152726838213, -2.23380584287276, -1.90739893145911, -1.86259266390287, -1.92891255821976, -1.93801857664684, -1.78872336415524, -1.54522270753866, -1.48718504020436, -1.70706597143648, -1.82018710107277, -1.67764635563667, -1.69933003110133, -1.86937604603516, -2.03108481232034, -2.15728306810556, -2.11459406967666, -2.02311574428507, -2.08871876979315) 
+
+true_tumor_intercept <- 0.2
+true_tumor_coef <- c(0.15, 0.05)
 
 fake_data_sim_settings <- pfs_test_data |>
   list_modify(
@@ -247,7 +257,30 @@ fake_data_sim_settings <- pfs_test_data |>
     tumor_stim_coef_sd = c(0.125, 0.125),
   )
 
-patient_interval_data <- gen_patient_interval_properties(fake_tumor_data, log_lambda, fake_data_sim_settings)
+true_base_pf_cond_prob = 
+  1 - pfs_model$functions$calculate_progress_linear_prob(
+    log_lambda, true_tumor_intercept, true_tumor_coef, t(c(0, 0)) 
+  )
+
+true_one_tumor_pf_cond_prob = 
+  1 - pfs_model$functions$calculate_progress_linear_prob(
+    log_lambda, true_tumor_intercept, true_tumor_coef, t(c(1, 1)) 
+  )
+
+true_base_marginal_prob_res = pfs_model$functions$calculate_marginal_dp_prob(true_base_pf_cond_prob, 10)  
+true_one_tumor_marginal_prob_res = pfs_model$functions$calculate_marginal_dp_prob(true_one_tumor_pf_cond_prob, 10)  
+true_base_cond_expected_pfs = 
+  c((true_base_marginal_prob_res[[1]] / (1 - true_base_marginal_prob_res[[2]][10])) %*% 1:10)
+true_one_tumor_cond_expected_pfs = 
+  c((true_one_tumor_marginal_prob_res[[1]] / (1 - true_one_tumor_marginal_prob_res[[2]][10])) %*% 1:10)
+
+patient_interval_data <- gen_patient_interval_properties(
+  fake_tumor_data, log_lambda, true_tumor_intercept, true_tumor_coef, fake_data_sim_settings
+)
+```
+
+```{r}
+#| label: fake-data-sim 
 
 fake_data_sim <- tibble(sim_id = 1:12) |> 
   rowwise() |> 
@@ -262,7 +295,29 @@ fake_data_sim <- tibble(sim_id = 1:12) |>
 ```
 
 ```{r}
-fake_data_sim |> 
+#| label: fake-data-sim-with-internval-censoring
+
+fake_data_sim_settings_with_ic <- drop_missing_measures(fake_data_sim_settings, c(2,4,7))
+
+fake_data_sim_with_ic <- tibble(sim_id = 1:3) |> 
+  rowwise() |> 
+  mutate(sim_data = list(gen_fake_pfs_data(
+    patient_interval_data, 
+    fake_data_sim_settings_with_ic 
+  ))) |> 
+  ungroup() |> 
+  mutate(
+    sim_fit = furrr::future_map(.progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
+    # sim_fit = map(
+      sim_data, \(sdata) fit_sim_data(fake_data_sim_settings_with_ic, sdata, ignore_interval_censoring = FALSE)
+    ), 
+  ) 
+```
+
+```{r}
+#| label: fake-data-params
+
+fake_data_sim_with_ic |> 
   transmute(
     sim_id,
     sim_param_post = map(
@@ -289,20 +344,28 @@ fake_data_sim |>
 ```
 
 ```{r}
-fake_data_sim |> 
-  mutate(sim_log_lambda_post = map(sim_fit, \(f) spread_rvars(f, log_lambda[m]))) |> 
+#| label: fake-data-lambda
+
+fake_data_sim_with_ic |> 
+  mutate(
+    # sim_log_lambda_post = furrr::future_map(.progress = TRUE, 
+    sim_log_lambda_post = map(
+      sim_fit, \(f) spread_rvars(f, log_lambda[m]))
+  ) |> 
   select(!c(sim_data, sim_fit)) |>
   unnest(sim_log_lambda_post) |> 
   bind_rows(transmute(lambda_rvar, m = t, log_lambda, sim_id = 0)) |> 
   mutate(est_type = if_else(sim_id > 0, "post", "prior")) |> 
   ggplot(aes(sim_id)) + 
-  geom_hline(aes(yintercept = true_val), data = tibble(m = 1:20, true_val = log_lambda)) +
+  geom_hline(aes(yintercept = true_val), data = \(d) distinct(d, m) |> mutate(true_val = log_lambda[m])) +
   stat_pointinterval(aes(ydist = log_lambda, color = est_type), size = 0.5, .width = 0.8, fatten_point = 0) +
   facet_wrap(vars(m)) +
   theme(axis.text.x = element_blank(), legend.position = "none")
 ```
 
 ```{r}
+#| label: fake-data-km
+
 fake_data_sim |> 
   mutate(km_est = map2(sim_fit, sim_data, \(f, simd) spread_rvars(f, km_est[m]) |> mutate(emp_s = pfs_model$functions$estimate_kaplan_meier(simd$pfs, max(simd$pfs))))) |> 
   select(sim_id, km_est) |> 
@@ -312,6 +375,26 @@ fake_data_sim |>
   stat_lineribbon(aes(ydist = km_est), alpha = 0.25, fill = "black", .width = 0.8) +
   geom_line(aes(y = emp_s), color = "red") +
   facet_wrap(vars(sim_id))
+```
+
+```{r}
+#| label: fake-data-cond-expected-pfs-plot
+
+fake_data_sim |>
+  group_by(sim_id) |> # So reframe doesn't throw away sim_id 
+  reframe(map_dfr(sim_fit, \(f) gather_rvars(f, base_cond_expected_pfs, one_tumor_cond_expected_pfs))) |> 
+  add_row(sim_id = 0, expected_pfs_rvar) |> 
+  mutate(
+    .variable = str_remove(.variable, "_cond_expected_pfs"),
+    est_type = if_else(sim_id > 0, "post", "prior")
+  ) |> 
+  ggplot(aes(y = sim_id)) +
+  stat_pointinterval(aes(xdist = .value, color = est_type), size = 0.5, .width = 0.8) +
+  geom_vline(aes(xintercept = true_e), 
+             data = tibble(.variable = c("base", "one_tumor"), true_e = c(true_base_cond_expected_pfs, true_one_tumor_cond_expected_pfs))) +
+  labs(title = "Fake Data Expected PFS", subtitle = "Conditional on progress within maximum observed PFS", x = "m", y = "") +
+  facet_wrap(vars(.variable)) +
+  NULL
 ```
 
 ## Simulation-Based Calibration
