@@ -50,7 +50,9 @@ functions {
             pfs_measure_found = 1;
           }
         }
-        
+       
+        // Might need to get rid of this; it could be that the the patient has died and we know their exact
+        // interval of disease progression even if it wasn't on a measured interval.
         if (!pfs_measure_found) {
           reject("pfs set at unmeasured interval.");
         }
@@ -112,6 +114,23 @@ functions {
     
     return s; 
   }  
+
+  tuple(vector, vector) calculate_marginal_dp_prob(vector cond_pf_prob, int max_all_t) {
+    vector[max_all_t] marginal_dp_prob;
+    vector[max_all_t] dp_cdf;
+  
+    for (m in 1:max_all_t) {
+      if (m > 1) {
+        marginal_dp_prob[m] = (1 - cond_pf_prob[m]) * prod(cond_pf_prob[1:(m - 1)]);
+        dp_cdf[m] = marginal_dp_prob[m] + dp_cdf[m - 1]; 
+      } else {
+        marginal_dp_prob[m] = 1 - cond_pf_prob[m];
+        dp_cdf[m] = marginal_dp_prob[m];
+      }
+    }
+    
+    return(marginal_dp_prob, 1 - dp_cdf);
+  }  
   
   matrix prepare_early_tumors_design_matrix(vector tumor_size, array[] int n_patient_tumors, array[] int n_measures, real tumor_sd) {
     matrix[sum(n_patient_tumors), 2] scaled_tumor_covar;
@@ -145,6 +164,7 @@ data {
   int<lower = 0, upper = 1> fit_data;
   int<lower = 0, upper = 1> gen_pfs;
   int<lower = 0, upper = 1> early_tumors_only;
+  int<lower = 0, upper = 1> ignore_interval_censoring;
   
   #include "base_data.stan"
   
@@ -262,12 +282,13 @@ model {
     
     for (i in 1:n_patients) {
       int pfs_interval_end = pfs_interval_pos + pfs[i] + right_uncensored[i] - 1; 
-      vector[interval_censored[i] + right_uncensored[i]] interval_lp = rep_vector(0, interval_censored[i] + right_uncensored[i]);
-      int observed_pfs_interval_end = pfs_interval_end - right_uncensored[i] - interval_censored[i];
+      int curr_interval_censored = ignore_interval_censoring ? 0 : interval_censored[i];
+      vector[curr_interval_censored + right_uncensored[i]] interval_lp = rep_vector(0, curr_interval_censored + right_uncensored[i]);
+      int observed_pfs_interval_end = pfs_interval_end - right_uncensored[i] - curr_interval_censored;
      
       target += bernoulli_lupmf(0 | disease_progress_prob[pfs_interval_pos:observed_pfs_interval_end]);
       
-      for (j in 1:(interval_censored[i] + right_uncensored[i])) {
+      for (j in 1:(curr_interval_censored + right_uncensored[i])) {
         if (j > 1) {
           interval_lp[j] = bernoulli_lupmf(0 | disease_progress_prob[(observed_pfs_interval_end + 1):(observed_pfs_interval_end + j - 1)]);
         }
@@ -275,7 +296,7 @@ model {
         interval_lp[j] += right_uncensored[i] * bernoulli_lupmf(1 | disease_progress_prob[observed_pfs_interval_end + j]);
       }
      
-      if (interval_censored[i] > 0) {
+      if (curr_interval_censored > 0) {
         target += log_sum_exp(interval_lp);
       } else if (right_uncensored[i]) {
         target += interval_lp[1];
@@ -326,23 +347,15 @@ generated quantities {
   {
     row_vector[max_all_t] base_dp_prob;
     row_vector[max_all_t] one_tumor_dp_prob;
-  
-    for (m in 1:max_all_t) {
-      if (m > 1) {
-        base_dp_prob[m] = (1 - base_pf_cond_prob[m]) * prod(base_pf_cond_prob[1:(m - 1)]);
-        base_survival[m] = base_dp_prob[m] + base_survival[m - 1]; 
-        one_tumor_dp_prob[m] = (1 - one_tumor_pf_cond_prob[m]) * prod(one_tumor_pf_cond_prob[1:(m - 1)]);
-        one_tumor_survival[m] = one_tumor_dp_prob[m] + one_tumor_survival[m - 1]; 
-      } else {
-        base_dp_prob[m] = 1 - base_pf_cond_prob[m];
-        base_survival[m] = base_dp_prob[m];
-        one_tumor_dp_prob[m] = 1 - one_tumor_pf_cond_prob[m];
-        one_tumor_survival[m] = one_tumor_dp_prob[m];
-      }
-    }
+   
+    tuple(vector[max_all_t], vector[max_all_t]) base_marginal_prob_res = calculate_marginal_dp_prob(base_pf_cond_prob, max_all_t);  
+    tuple(vector[max_all_t], vector[max_all_t]) one_tumor_marginal_prob_res = calculate_marginal_dp_prob(one_tumor_pf_cond_prob, max_all_t);  
     
-    base_survival = 1 - base_survival;
-    one_tumor_survival = 1 - one_tumor_survival;
+    base_dp_prob = base_marginal_prob_res.1';
+    one_tumor_dp_prob = one_tumor_marginal_prob_res.1';
+    
+    base_survival = base_marginal_prob_res.2;
+    one_tumor_survival = one_tumor_marginal_prob_res.2;
     
     base_cond_expected_pfs = (base_dp_prob / (1 - base_survival[max_all_t])) * pfs_range_vec[:max_all_t];
     one_tumor_cond_expected_pfs = (one_tumor_dp_prob / (1 - one_tumor_survival[max_all_t])) * pfs_range_vec[:max_all_t];
