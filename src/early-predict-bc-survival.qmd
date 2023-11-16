@@ -19,7 +19,7 @@ options(mc.cores = 12)
 
 ggplot2::theme_set(theme_minimal())
 
-future::plan(future::multisession(workers = 3))
+future::plan(future::multisession(workers = 12))
 
 source(here("src", "util.R"))
 ```
@@ -123,7 +123,8 @@ We assume that censoring in conditionally independent of time to progression. We
 Aside from whatever priors we use for $\boldsymbol{\beta}$, we will use a Gaussian process prior for $\lambda_m$, 
 $$
 \lambda_m \sim \mathtt{GP}(0, k),
-$$ where $k(\lambda_p, \lambda_q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$.
+$$ 
+where $k(\lambda_p, \lambda_q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$.
 
 ```{r}
 #| label: pfs-model
@@ -191,9 +192,12 @@ lambda_rvar |>
 ```{r}
 #| label: pf-prob-plot
 
+max_t <- with(pfs_test_data, list_t_measure(t_measure, n_measures)) |> 
+  map_int(max)
+
 pfs_res |> 
   spread_rvars(disease_progress_prob[i]) |> 
-  mutate(patient_index = rep(seq(test_data$n_patients), each = max_pfs + 1), t = rep(seq(max_pfs + 1), n_patients)) |> 
+  mutate(patient_index = rep(seq(test_data$n_patients), max_t), t = pfs_test_data$t_measure) |> 
   filter(patient_index <= 6) |> 
   ggplot(aes(t)) +
   stat_lineribbon(aes(ydist = disease_progress_prob), fill = "black", alpha = 0.5, .width = 0.8) +
@@ -320,6 +324,7 @@ fake_data_sim_with_ic <- tibble(sim_id = 1:3) |>
 fake_data_sim_with_ic |> 
   transmute(
     sim_id,
+    # sim_param_post = furrr::future_map(.progress = TRUE,
     sim_param_post = map(
       sim_fit,
       \(f) spread_rvars(f, log_lambda_gp_alpha, log_lambda_gp_rho, log_lambda_gp_intercept, tumor_stim_intercept, tumor_stim_coef[t]) |>
@@ -367,13 +372,18 @@ fake_data_sim_with_ic |>
 #| label: fake-data-km
 
 fake_data_sim |> 
-  mutate(km_est = map2(sim_fit, sim_data, \(f, simd) spread_rvars(f, km_est[m]) |> mutate(emp_s = pfs_model$functions$estimate_kaplan_meier(simd$pfs, max(simd$pfs))))) |> 
+  # mutate(km_est = furrr::future_map2(.progress = TRUE,
+  mutate(km_est = map2(
+    sim_fit, sim_data, 
+    \(f, simd) spread_rvars(f, km_est[m]) |> mutate(emp_s = pfs_model$functions$estimate_kaplan_meier(simd$pfs, simd$right_censored, max(unlist(simd$t_measure))))
+  )) |> 
   select(sim_id, km_est) |> 
   filter(sim_id <= 6) |> 
   unnest(km_est) |> 
-  ggplot(aes(m)) +
+  ggplot(aes(m - 1)) +
   stat_lineribbon(aes(ydist = km_est), alpha = 0.25, fill = "black", .width = 0.8) +
   geom_line(aes(y = emp_s), color = "red") +
+  scale_x_continuous("m", breaks = seq(0, 10, 2)) +
   facet_wrap(vars(sim_id))
 ```
 
