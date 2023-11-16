@@ -70,6 +70,8 @@ functions {
       pfs_measure_index += 1;
     }
     
+    print("actual_pfs = ", actual_pfs, ", pfs_measure_index = ", pfs_measure_index);
+    
     right_censored = pfs_measure_index > n_t;
     observed_pfs = t[min(pfs_measure_index, n_t)] - !right_censored;
     interval_censored = pfs_measure_index > 1 && !right_censored ? observed_pfs - t[pfs_measure_index - 1] : 0; 

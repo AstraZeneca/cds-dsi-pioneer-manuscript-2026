@@ -47,6 +47,7 @@ gen_fake_pfs_data <- function(patient_interval_data, settings) {
       right_censored = map_dbl(pfs_res, \(r) r[[2]]),
       pfs = map_dbl(pfs_res, \(r) r[[3]]),
       actual_pfs = map_dbl(pfs_res, \(r) r[[4]]),
+      stan_interval_censored = pfs_model$functions$identify_interval_censoring(pfs, settings$n_measures, settings$t_measure) 
     )
 }
 
