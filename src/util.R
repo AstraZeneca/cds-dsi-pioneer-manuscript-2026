@@ -38,17 +38,25 @@ drop_missing_measures <- function(settings, missing_measures = NULL) {
 }
 
 gen_fake_pfs_data <- function(patient_interval_data, settings) { 
-  patient_interval_data |>
-    nest(prob = !patient_id) |> 
+  fake_data <- patient_interval_data |>
+    nest(prob = !patient_id) |>  
+    mutate(t_measure = with(settings, list_measures(t_measure, n_measures - 1))) %>% 
     mutate(
-      t_measure = with(settings, list_measures(t_measure, n_measures - 1)), 
-      pfs_res = map2(prob, t_measure, \(pd, t) pfs_model$functions$pfs_rng(pd$progress_prob, t)),
-      interval_censored = map_dbl(pfs_res, \(r) r[[1]]),
-      right_censored = map_dbl(pfs_res, \(r) r[[2]]),
-      pfs = map_dbl(pfs_res, \(r) r[[3]]),
-      actual_pfs = map_dbl(pfs_res, \(r) r[[4]]),
-      stan_interval_censored = pfs_model$functions$identify_interval_censoring(pfs, settings$n_measures, settings$t_measure) 
+      map2(.$prob, .$t_measure, \(pd, t) pfs_model$functions$pfs_rng(pd$progress_prob, t)) |> 
+        list_transpose() |> 
+        set_names(c("interval_censored", "right_censored", "pfs", "actual_pfs")) |> 
+        `!!!`(),
+    ) %>%
+    mutate(
+      pfs_model$functions$identify_censoring(.$pfs, settings$n_measures, settings$t_measure) |> 
+        set_names(c("stan_interval_censored", "stan_right_censored")) |> 
+        `!!!`()
     )
+  
+  assertthat::assert_that(with(fake_data, all(stan_interval_censored == interval_censored)))
+  assertthat::assert_that(with(fake_data, all(stan_right_censored == right_censored)))
+  
+  return(fake_data)
 }
 
 fit_sim_data <- function(settings, d, max_measures, ..., ignore_interval_censoring = FALSE) { 
@@ -56,7 +64,7 @@ fit_sim_data <- function(settings, d, max_measures, ..., ignore_interval_censori
     list_modify(
       gen_pfs = TRUE,
       fit_data = TRUE,
-      pfs = d$pfs, right_censored = d$right_censored, 
+      pfs = d$pfs, #right_censored = d$right_censored, 
       ignore_interval_censoring = ignore_interval_censoring
     ) |> 
     pfs_model$sample(
@@ -67,4 +75,21 @@ fit_sim_data <- function(settings, d, max_measures, ..., ignore_interval_censori
                                                  truncnorm::rtruncnorm(1, 0, mean = 0.005, sd = 0.01))),
       ...
     )
+}
+
+fit_simulations <- function(n, patient_interval_data, settings, ignore_interval_censoring = FALSE, fit_basename = NULL) {
+  fake_data_sim_with_ic <- tibble(sim_id = seq(n)) |> 
+    rowwise() |> 
+    mutate(sim_data = list(gen_fake_pfs_data(patient_interval_data, settings))) |> 
+    ungroup() |> 
+    mutate(
+      sim_fit = furrr::future_map2(.progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
+      # sim_fit = map2(
+        sim_id, sim_data, 
+        \(sid, sdata) fit_sim_data(
+          settings, sdata, ignore_interval_censoring = ignore_interval_censoring, 
+          output_basename = if (!is_null(fit_basename)) str_c(fit_basename, sid, sep = "_"), 
+          output_dir = if (!is_null(fit_basename)) here("temp", "fit"))
+      ), 
+    ) 
 }
