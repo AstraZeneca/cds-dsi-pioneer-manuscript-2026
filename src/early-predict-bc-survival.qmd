@@ -102,6 +102,8 @@ res$cmdstan_diagnose()
 ## Fake Data Simulation
 
 ```{r}
+#| include: false
+#| eval: false
 
 test_data |> 
   list_modify(
@@ -206,7 +208,7 @@ lambda_rvar |>
 ```{r}
 #| label: pf-prob-plot
 
-max_t <- with(pfs_test_data, list_t_measure(t_measure, n_measures)) |> 
+max_t <- with(pfs_test_data, list_measures(t_measure, n_measures - 1)) |> 
   map_int(max)
 
 pfs_res |> 
@@ -244,6 +246,8 @@ expected_pfs_rvar |>
 ```
 
 ```{r}
+#| label: prior-kaplan-meier 
+
 pfs_res |> 
   spread_rvars(km_est[m]) |> 
   ggplot(aes(m - 1)) +
@@ -300,55 +304,35 @@ patient_interval_data <- gen_patient_interval_properties(
 ```{r}
 #| label: fake-data-sim 
 
-fake_data_sim <- tibble(sim_id = 1:12) |> 
-  rowwise() |> 
-  mutate(sim_data = list(gen_fake_pfs_data(patient_interval_data, fake_data_sim_settings))) |> 
-  ungroup() |> 
-  mutate(
-    sim_fit = furrr::future_map(.progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
-    # sim_fit = map(
-      sim_data, \(sdata) fit_sim_data(fake_data_sim_settings, sdata)
-    ), 
-  ) 
-```
+n_sim <- 3 
+fake_data_sim_settings_with_ic <- drop_missing_measures(fake_data_sim_settings, c(3, 4, 6, 9))
 
-```{r}
-#| label: fake-data-sim-with-internval-censoring
-
-fake_data_sim_settings_with_ic <- drop_missing_measures(fake_data_sim_settings, c(2,4,7))
-
-fake_data_sim_with_ic <- tibble(sim_id = 1:3) |> 
-  rowwise() |> 
-  mutate(sim_data = list(gen_fake_pfs_data(
-    patient_interval_data, 
-    fake_data_sim_settings_with_ic 
-  ))) |> 
-  ungroup() |> 
-  mutate(
-    sim_fit = furrr::future_map(.progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
-    # sim_fit = map(
-      sim_data, \(sdata) fit_sim_data(fake_data_sim_settings_with_ic, sdata, ignore_interval_censoring = FALSE)
-    ), 
-  ) 
+fake_data_sim <- bind_rows(
+  interval_censoring = fit_simulations(n_sim, patient_interval_data, fake_data_sim_settings_with_ic, fit_basename = "fake_data_sim_ic"),
+  interval_censoring_ignored = fit_simulations(n_sim, patient_interval_data, fake_data_sim_settings_with_ic, ignore_interval_censoring = TRUE, fit_basename = "fake_data_sim_ic_ignored"),
+  no_interval_censoring = fit_simulations(n_sim, patient_interval_data, fake_data_sim_settings, fit_basename = "fake_data_sim"),
+  .id = "sim_type"
+)
 ```
 
 ```{r}
 #| label: fake-data-params
 
-fake_data_sim_with_ic |> 
+fake_data_sim |> 
   transmute(
     sim_id,
-    # sim_param_post = furrr::future_map(.progress = TRUE,
-    sim_param_post = map(
+    sim_type,
+    
+    sim_param_post = furrr::future_map(
+    # sim_param_post = map(
       sim_fit,
       \(f) spread_rvars(f, log_lambda_gp_alpha, log_lambda_gp_rho, log_lambda_gp_intercept, tumor_stim_intercept, tumor_stim_coef[t]) |>
         pivot_wider(names_from = t, values_from = tumor_stim_coef, names_prefix = "tumor_stim_coef_")
     ),
   ) |> 
   unnest(sim_param_post) |> 
-  add_row(sim_id = 0, rep_pfs_param_rvar) |>
-  pivot_longer(!sim_id, names_to = "param", values_to = "est") |>
-  mutate(est_type = if_else(sim_id > 0, "post", "prior")) |> 
+  add_row(sim_id = 0, sim_type = "prior", rep_pfs_param_rvar) |>
+  pivot_longer(!c(sim_id, sim_type), names_to = "param", values_to = "est") |>
   ggplot(aes(sim_id)) + 
   geom_hline(aes(yintercept = true_val), data = tribble(~ param,                   ~ true_val,
                                                         "log_lambda_gp_intercept", -2.0,
@@ -357,59 +341,67 @@ fake_data_sim_with_ic |>
                                                         "tumor_stim_intercept",    0.2,
                                                         "tumor_stim_coef_1",       0.15,
                                                         "tumor_stim_coef_2",       0.05)) +
-  stat_pointinterval(aes(ydist = est, color = est_type), size = 0.25, .width = 0.8, fatten_point = 0) +
+  stat_pointinterval(aes(ydist = est, color = sim_type), size = 0.25, .width = 0.8, fatten_point = 0, position = "dodge") +
   facet_wrap(vars(param), scales = "free_y") +
-  theme(axis.text.x = element_blank(), legend.position = "none")
+  theme(axis.text.x = element_blank())
 ```
 
 ```{r}
 #| label: fake-data-lambda
 
-fake_data_sim_with_ic |> 
+fake_data_sim |> 
   mutate(
-    # sim_log_lambda_post = furrr::future_map(.progress = TRUE, 
+    # sim_log_lambda_post = furrr::future_map(
     sim_log_lambda_post = map(
       sim_fit, \(f) spread_rvars(f, log_lambda[m]))
   ) |> 
   select(!c(sim_data, sim_fit)) |>
   unnest(sim_log_lambda_post) |> 
-  bind_rows(transmute(lambda_rvar, m = t, log_lambda, sim_id = 0)) |> 
-  mutate(est_type = if_else(sim_id > 0, "post", "prior")) |> 
+  bind_rows(transmute(lambda_rvar, m = t, log_lambda, sim_id = 0, sim_type = "prior")) |> 
   ggplot(aes(sim_id)) + 
   geom_hline(aes(yintercept = true_val), data = \(d) distinct(d, m) |> mutate(true_val = log_lambda[m])) +
-  stat_pointinterval(aes(ydist = log_lambda, color = est_type), size = 0.5, .width = 0.8, fatten_point = 0) +
+  stat_pointinterval(
+    aes(ydist = log_lambda, color = sim_type), 
+    size = 0.5, .width = 0.8, fatten_point = 0, position = "dodge"
+  ) +
   facet_wrap(vars(m)) +
-  theme(axis.text.x = element_blank(), legend.position = "none")
+  theme(axis.text.x = element_blank())
 ```
 
 ```{r}
 #| label: fake-data-km
 
-fake_data_sim_with_ic |> 
-  mutate(km_est = map2(sim_fit, sim_data, \(f, simd) spread_rvars(f, km_est[m]) |> mutate(emp_s = pfs_model$functions$estimate_kaplan_meier(simd$pfs, simd$right_censored, max(simd$pfs))))) |> 
-  select(sim_id, km_est) |> 
-  filter(sim_id <= 6) |> 
+fake_data_sim |> 
+  # mutate(km_est = map2(
+  mutate(km_est = furrr::future_map2(
+    sim_fit, sim_data, 
+    \(f, simd) spread_rvars(f, km_est[m])  
+      # mutate(emp_s = pfs_model$functions$estimate_kaplan_meier(simd$pfs, simd$right_censored, max(simd$pfs)))
+  )) |> 
+  select(sim_id, sim_type, km_est) |> 
+  filter(sim_id <= 9) |> 
   unnest(km_est) |> 
   ggplot(aes(m - 1)) +
-  stat_lineribbon(aes(ydist = km_est), alpha = 0.25, fill = "black", .width = 0.8) +
-  geom_line(aes(y = emp_s), color = "red") +
+  stat_lineribbon(aes(ydist = km_est, color = sim_type, fill = sim_type), alpha = 0.25, .width = 0.8) +
+  # geom_line(aes(y = emp_s), color = "red") +
   scale_x_continuous("m", breaks = seq(0, 10, 2)) +
+  # facet_grid(rows = vars(sim_type), cols = vars(sim_id))
   facet_wrap(vars(sim_id))
 ```
 
 ```{r}
 #| label: fake-data-cond-expected-pfs-plot
 
-fake_data_sim_with_ic |>
-  group_by(sim_id) |> # So reframe doesn't throw away sim_id 
-  reframe(map_dfr(sim_fit, \(f) gather_rvars(f, base_cond_expected_pfs, one_tumor_cond_expected_pfs))) |> 
-  add_row(sim_id = 0, expected_pfs_rvar) |> 
+fake_data_sim |>
+  group_by(sim_id, sim_type) |> # So reframe doesn't throw away sim_id 
+  reframe(furrr::future_map_dfr(sim_fit, \(f) gather_rvars(f, base_cond_expected_pfs, one_tumor_cond_expected_pfs))) |> 
+  add_row(sim_id = 0, sim_type = "prior", expected_pfs_rvar) |> 
   mutate(
     .variable = str_remove(.variable, "_cond_expected_pfs"),
     est_type = if_else(sim_id > 0, "post", "prior")
   ) |> 
   ggplot(aes(y = sim_id)) +
-  stat_pointinterval(aes(xdist = .value, color = est_type), size = 0.5, .width = 0.8) +
+  stat_pointinterval(aes(xdist = .value, color = sim_type), size = 0.5, .width = 0.8, position = "dodge") +
   geom_vline(aes(xintercept = true_e), 
              data = tibble(.variable = c("base", "one_tumor"), true_e = c(true_base_cond_expected_pfs, true_one_tumor_cond_expected_pfs))) +
   labs(title = "Fake Data Expected PFS", subtitle = "Conditional on progress within maximum observed PFS", x = "m", y = "") +
