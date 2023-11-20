@@ -271,6 +271,10 @@ log_lambda <- c(-2.48777760709026, -2.57152726838213, -2.23380584287276, -1.9073
 true_tumor_intercept <- 0.2
 true_tumor_coef <- c(0.15, 0.05)
 
+patient_interval_data <- gen_patient_interval_properties(
+  fake_tumor_data, log_lambda, true_tumor_intercept, true_tumor_coef, fake_data_sim_settings
+)
+
 fake_data_sim_settings <- pfs_test_data |>
   list_modify(
     log_lambda_gp_intercept_mean = -2,
@@ -296,9 +300,13 @@ true_base_cond_expected_pfs =
 true_one_tumor_cond_expected_pfs = 
   c((true_one_tumor_marginal_prob_res[[1]] / (1 - true_one_tumor_marginal_prob_res[[2]][10])) %*% 1:10)
 
-patient_interval_data <- gen_patient_interval_properties(
-  fake_tumor_data, log_lambda, true_tumor_intercept, true_tumor_coef, fake_data_sim_settings
-)
+true_km <- patient_interval_data |> 
+  group_by(patient_id) %>% 
+  summarize(pfs = pfs_model$functions$pfs_rng(progress_prob, 1:n()) |>   
+              list()) %>% 
+  mutate(!!!set_names(list_transpose(.$pfs), c("interval_censored", "right_censored", "pfs", "actual_pfs"))) |>   
+  reframe(km_est = pfs_model$functions$estimate_kaplan_meier(pfs, right_censored, max_pfs - 1)) |> 
+  mutate(m = seq(n()))
 ```
 
 ```{r}
@@ -376,17 +384,16 @@ fake_data_sim |>
   mutate(km_est = furrr::future_map2(
     sim_fit, sim_data, 
     \(f, simd) spread_rvars(f, km_est[m])  
-      # mutate(emp_s = pfs_model$functions$estimate_kaplan_meier(simd$pfs, simd$right_censored, max(simd$pfs)))
   )) |> 
   select(sim_id, sim_type, km_est) |> 
   filter(sim_id <= 9) |> 
   unnest(km_est) |> 
   ggplot(aes(m - 1)) +
+  geom_line(aes(y = km_est), data = \(sim) semi_join(true_km, sim, by = "m")) +
   stat_lineribbon(aes(ydist = km_est, color = sim_type, fill = sim_type), alpha = 0.25, .width = 0.8) +
-  # geom_line(aes(y = emp_s), color = "red") +
   scale_x_continuous("m", breaks = seq(0, 10, 2)) +
-  # facet_grid(rows = vars(sim_type), cols = vars(sim_id))
-  facet_wrap(vars(sim_id))
+  facet_wrap(vars(sim_id)) +
+  theme(legend.position = "top")
 ```
 
 ```{r}
