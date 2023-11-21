@@ -152,11 +152,11 @@ pfs_model <- cmdstan_model(here("src", "pfs.stan"), compile_standalone = TRUE, f
 pfs_test_data <- test_data |> 
   list_modify(
     gen_pfs = TRUE,
+    gen_interval_censored = FALSE,
     early_tumors_only = TRUE,
     ignore_interval_censoring = FALSE,
     tumor_size = fake_tumor_data$tumor_size,
     pfs = rep(max_pfs, test_data$n_patients),
-    right_censored = rep(1, test_data$n_patients),
     
     log_lambda_gp_intercept_mean = -3,
     log_lambda_gp_intercept_sd = 0.5,
