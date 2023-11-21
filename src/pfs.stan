@@ -158,6 +158,7 @@ functions {
 data {
   int<lower = 0, upper = 1> fit_data;
   int<lower = 0, upper = 1> gen_pfs;
+  int<lower = 0, upper = 1> gen_interval_censored;
   int<lower = 0, upper = 1> early_tumors_only;
   int<lower = 0, upper = 1> ignore_interval_censoring;
   
@@ -225,7 +226,6 @@ transformed data {
     print("Number of interval censored observations: ", sum(interval_censored));
   }
   
-  // n_time_periods = gen_pfs ? sum(max_t) : n_total_pfs + sum(right_uncensored) + sum(interval_censored);
   n_time_periods = gen_pfs ? n_patients * max_all_t : n_total_pfs + sum(right_uncensored) + sum(interval_censored);
 }
 
@@ -325,20 +325,23 @@ generated quantities {
   if (gen_pfs) {
     int tumor_pos = 1;
     int pfs_interval_pos = 1;
-    // int t_pos = 1;
+    int t_pos = 1;
     
     for (i in 1:n_patients) {
       int pfs_interval_end = pfs_interval_pos + max_all_t - 1;
-      // int t_end = t_pos + n_measures[i] - 2; // Baseline measure not included in t_measures
+      int t_end = t_pos + n_measures[i] - 2; // Baseline measure not included in t_measures
      
-      tuple(int, int, int, int) pfs_res = pfs_rng(disease_progress_prob[pfs_interval_pos:pfs_interval_end], pfs_range_int); 
+      tuple(int, int, int, int) pfs_res = pfs_rng(
+        disease_progress_prob[pfs_interval_pos:pfs_interval_end], 
+        gen_interval_censored ? t_measure[t_pos:t_end] : pfs_range_int
+      );
       
       rep_interval_censored[i] = pfs_res.1;
       rep_right_censored[i] = pfs_res.2;
       rep_pfs[i] = pfs_res.3; 
       
       pfs_interval_pos = pfs_interval_end + 1;
-      // t_pos = t_end + 1;
+      t_pos = t_end + 1;
     }
     
     km_est = estimate_kaplan_meier(rep_pfs, rep_right_censored, max_all_t); 

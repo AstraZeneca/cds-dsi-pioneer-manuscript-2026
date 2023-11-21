@@ -59,10 +59,10 @@ gen_fake_pfs_data <- function(patient_interval_data, settings) {
   return(fake_data)
 }
 
-fit_sim_data <- function(settings, d, max_measures, ..., ignore_interval_censoring = FALSE) { 
+fit_sim_data <- function(settings, d, max_measures, ..., gen_pfs = TRUE, ignore_interval_censoring = FALSE) { 
   settings |> 
     list_modify(
-      gen_pfs = TRUE,
+      gen_pfs = gen_pfs,
       fit_data = TRUE,
       pfs = d$pfs, 
       ignore_interval_censoring = ignore_interval_censoring
