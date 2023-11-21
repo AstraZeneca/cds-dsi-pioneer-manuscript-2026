@@ -64,7 +64,7 @@ fit_sim_data <- function(settings, d, max_measures, ..., ignore_interval_censori
     list_modify(
       gen_pfs = TRUE,
       fit_data = TRUE,
-      pfs = d$pfs, #right_censored = d$right_censored, 
+      pfs = d$pfs, 
       ignore_interval_censoring = ignore_interval_censoring
     ) |> 
     pfs_model$sample(
@@ -77,19 +77,18 @@ fit_sim_data <- function(settings, d, max_measures, ..., ignore_interval_censori
     )
 }
 
-fit_simulations <- function(n, patient_interval_data, settings, ignore_interval_censoring = FALSE, fit_basename = NULL) {
+fit_simulations <- function(n, patient_interval_data, settings, ignore_interval_censoring = FALSE, fit_basename = NULL, tmp_dir = here("temp")) {
   fake_data_sim_with_ic <- tibble(sim_id = seq(n)) |> 
     rowwise() |> 
     mutate(sim_data = list(gen_fake_pfs_data(patient_interval_data, settings))) |> 
     ungroup() |> 
     mutate(
       sim_fit = furrr::future_map2(.progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
-      # sim_fit = map2(
         sim_id, sim_data, 
         \(sid, sdata) fit_sim_data(
           settings, sdata, ignore_interval_censoring = ignore_interval_censoring, 
           output_basename = if (!is_null(fit_basename)) str_c(fit_basename, sid, sep = "_"), 
-          output_dir = if (!is_null(fit_basename)) here("temp", "fit"))
+          output_dir = if (!is_null(fit_basename)) file.path(tmp_dir, "fit"))
       ), 
     ) 
 }

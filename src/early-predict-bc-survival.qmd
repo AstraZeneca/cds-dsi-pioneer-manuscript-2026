@@ -15,6 +15,8 @@ library(tidybayes)
 library(bayesplot)
 library(here)
 
+tmp_dir <- if (nchar(Sys.getenv("TMP")) > 0) file.path(Sys.getenv("TMP"), "adc-early-predict") else here("temp")
+
 options(mc.cores = 12)
 
 ggplot2::theme_set(theme_minimal())
@@ -41,7 +43,7 @@ I haven't yet documented much about this model or done any kind of evaluation. I
 
 tumor_model <- cmdstan_model(here("src", "tumor.stan"))
 
-if (!file.exists(here("temp", "fit", "prior_tumor.rds"))) {
+if (!file.exists(file.path(tmp_dir, "prior_tumor.rds"))) {
   test_data <- lst(
     fit_data = FALSE,
     gen_tumor_sizes = TRUE,
@@ -52,16 +54,16 @@ if (!file.exists(here("temp", "fit", "prior_tumor.rds"))) {
     tumor_size = array(dim = 0)
   )
   
-  res <- tumor_model$sample(data = test_data, output_dir = here("temp", "fit"))
+  res <- tumor_model$sample(data = test_data, output_dir = file.path(tmp_dir, "fit"))
   
-  res$save_object(here("temp", "fit", "prior_tumor.rds"))
+  res$save_object(file.path(tmp_dir, "fit", "prior_tumor.rds"))
   
   res$save_data_file(
-    here("temp", "data"), basename = "prior_tumor", timestamp = FALSE, random = FALSE
+    file.path(tmp_dir, "data"), basename = "prior_tumor", timestamp = FALSE, random = FALSE
   )
 } else {
-  res <- read_rds(here("temp", "fit", "prior_tumor.rds"))
-  test_data <- rjson::fromJSON(file = here("temp", "data", "prior_tumor.json"))
+  res <- read_rds(file.path(tmp_dir, "fit", "prior_tumor.rds"))
+  test_data <- rjson::fromJSON(file = file.path(tmp_dir, "data", "prior_tumor.json"))
 }
 
 res_rvar <- res |> 
@@ -89,7 +91,7 @@ fake_tumor_data <- res_rvar |>
   ungroup() |> 
   filter(.draw == 1) 
 
-write_rds(fake_tumor_data, here("temp", "data", "fake_tumor.rds"))
+write_rds(fake_tumor_data, file.path(tmp_dir, "data", "fake_tumor.rds"))
 ```
 
 ```{r}
@@ -111,7 +113,7 @@ test_data |>
     gen_tumor_sizes = FALSE,
     tumor_size = fake_tumor_data$tumor_size
   ) |> 
-  tumor_model$sample(output_dir = here("temp", "fit"), output_basename = "tumor")
+  tumor_model$sample(output_dir = file.path(tmp_dir, "fit"), output_basename = "tumor")
 
 ```
 
@@ -271,10 +273,6 @@ log_lambda <- c(-2.48777760709026, -2.57152726838213, -2.23380584287276, -1.9073
 true_tumor_intercept <- 0.2
 true_tumor_coef <- c(0.15, 0.05)
 
-patient_interval_data <- gen_patient_interval_properties(
-  fake_tumor_data, log_lambda, true_tumor_intercept, true_tumor_coef, fake_data_sim_settings
-)
-
 fake_data_sim_settings <- pfs_test_data |>
   list_modify(
     log_lambda_gp_intercept_mean = -2,
@@ -282,6 +280,10 @@ fake_data_sim_settings <- pfs_test_data |>
     tumor_stim_intercept_sd = 0.25,
     tumor_stim_coef_sd = c(0.125, 0.125),
   )
+
+patient_interval_data <- gen_patient_interval_properties(
+  fake_tumor_data, log_lambda, true_tumor_intercept, true_tumor_coef, fake_data_sim_settings
+)
 
 true_base_pf_cond_prob = 
   1 - pfs_model$functions$calculate_progress_linear_prob(
@@ -312,13 +314,13 @@ true_km <- patient_interval_data |>
 ```{r}
 #| label: fake-data-sim 
 
-n_sim <- 3 
+n_sim <- 12 
 fake_data_sim_settings_with_ic <- drop_missing_measures(fake_data_sim_settings, c(3, 4, 6, 9))
 
 fake_data_sim <- bind_rows(
-  interval_censoring = fit_simulations(n_sim, patient_interval_data, fake_data_sim_settings_with_ic, fit_basename = "fake_data_sim_ic"),
-  interval_censoring_ignored = fit_simulations(n_sim, patient_interval_data, fake_data_sim_settings_with_ic, ignore_interval_censoring = TRUE, fit_basename = "fake_data_sim_ic_ignored"),
-  no_interval_censoring = fit_simulations(n_sim, patient_interval_data, fake_data_sim_settings, fit_basename = "fake_data_sim"),
+  interval_censoring = fit_simulations(n_sim, patient_interval_data, fake_data_sim_settings_with_ic, fit_basename = "fake_data_sim_ic", tmp_dir = tmp_dir),
+  interval_censoring_ignored = fit_simulations(n_sim, patient_interval_data, fake_data_sim_settings_with_ic, ignore_interval_censoring = TRUE, fit_basename = "fake_data_sim_ic_ignored", tmp_dir = tmp_dir),
+  no_interval_censoring = fit_simulations(n_sim, patient_interval_data, fake_data_sim_settings, fit_basename = "fake_data_sim", tmp_dir = tmp_dir),
   .id = "sim_type"
 )
 ```
@@ -332,7 +334,6 @@ fake_data_sim |>
     sim_type,
     
     sim_param_post = furrr::future_map(
-    # sim_param_post = map(
       sim_fit,
       \(f) spread_rvars(f, log_lambda_gp_alpha, log_lambda_gp_rho, log_lambda_gp_intercept, tumor_stim_intercept, tumor_stim_coef[t]) |>
         pivot_wider(names_from = t, values_from = tumor_stim_coef, names_prefix = "tumor_stim_coef_")
@@ -358,18 +359,15 @@ fake_data_sim |>
 #| label: fake-data-lambda
 
 fake_data_sim |> 
-  mutate(
-    # sim_log_lambda_post = furrr::future_map(
-    sim_log_lambda_post = map(
-      sim_fit, \(f) spread_rvars(f, log_lambda[m]))
-  ) |> 
+  mutate(sim_log_lambda_post = furrr::future_map(sim_fit, \(f) spread_rvars(f, log_lambda[m]))) |> 
   select(!c(sim_data, sim_fit)) |>
   unnest(sim_log_lambda_post) |> 
   bind_rows(transmute(lambda_rvar, m = t, log_lambda, sim_id = 0, sim_type = "prior")) |> 
+  mutate(lambda = exp(log_lambda)) |> 
   ggplot(aes(sim_id)) + 
-  geom_hline(aes(yintercept = true_val), data = \(d) distinct(d, m) |> mutate(true_val = log_lambda[m])) +
+  geom_hline(aes(yintercept = true_val), data = \(d) distinct(d, m) |> mutate(true_val = exp(log_lambda[m]))) +
   stat_pointinterval(
-    aes(ydist = log_lambda, color = sim_type), 
+    aes(ydist = lambda, color = sim_type), 
     size = 0.5, .width = 0.8, fatten_point = 0, position = "dodge"
   ) +
   facet_wrap(vars(m)) +
@@ -380,11 +378,7 @@ fake_data_sim |>
 #| label: fake-data-km
 
 fake_data_sim |> 
-  # mutate(km_est = map2(
-  mutate(km_est = furrr::future_map2(
-    sim_fit, sim_data, 
-    \(f, simd) spread_rvars(f, km_est[m])  
-  )) |> 
+  mutate(km_est = furrr::future_map2(sim_fit, sim_data, \(f, simd) spread_rvars(f, km_est[m]))) |> 
   select(sim_id, sim_type, km_est) |> 
   filter(sim_id <= 9) |> 
   unnest(km_est) |> 
@@ -400,8 +394,8 @@ fake_data_sim |>
 #| label: fake-data-cond-expected-pfs-plot
 
 fake_data_sim |>
-  group_by(sim_id, sim_type) |> # So reframe doesn't throw away sim_id 
-  reframe(furrr::future_map_dfr(sim_fit, \(f) gather_rvars(f, base_cond_expected_pfs, one_tumor_cond_expected_pfs))) |> 
+  group_by(sim_id, sim_type) |> # So reframe doesn't throw away sim_id and sim_type
+  reframe(furrr::future_map_dfr(sim_fit, \(f) gather_rvars(f, base_cond_expected_pfs, one_tumor_cond_expected_pfs), .progress = TRUE)) |>  
   add_row(sim_id = 0, sim_type = "prior", expected_pfs_rvar) |> 
   mutate(
     .variable = str_remove(.variable, "_cond_expected_pfs"),
@@ -422,8 +416,9 @@ The code for this simulation is located in `sbc.R` (and `sbc.sh` to run on SLURM
 
 ```{r}
 #| label: sbc
+#| eval: false
 
-sbc_data <- read_rds(here("temp", "data", "sbc.rds"))
+sbc_data <- read_rds(file.path(tmp_dir, "data", "sbc.rds"))
 
 sbc_data |> 
   select(starts_with("r_")) |> 
