@@ -331,7 +331,6 @@ generated quantities {
       int pfs_interval_end = pfs_interval_pos + max_all_t - 1;
       // int t_end = t_pos + n_measures[i] - 2; // Baseline measure not included in t_measures
      
-      // tuple(int, int, int, int) pfs_res = pfs_rng(disease_progress_prob[pfs_interval_pos:pfs_interval_end], t_measure[t_pos:t_end]); 
       tuple(int, int, int, int) pfs_res = pfs_rng(disease_progress_prob[pfs_interval_pos:pfs_interval_end], pfs_range_int); 
       
       rep_interval_censored[i] = pfs_res.1;
