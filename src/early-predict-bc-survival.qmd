@@ -418,17 +418,24 @@ The code for this simulation is located in `sbc.R` (and `sbc.sh` to run on SLURM
 #| label: sbc
 #| eval: false
 
-sbc_data <- read_rds(file.path(tmp_dir, "data", "sbc.rds"))
+sbc_draws <- 1000
+sbc_bw <- 10
+
+sbc_data <- bind_rows( 
+  no_ic = read_rds(file.path(tmp_dir, "data", "sbc.rds")),
+  ic = read_rds(file.path(tmp_dir, "data", "sbc_ic.rds")),
+  ic_ignore = read_rds(file.path(tmp_dir, "data", "sbc_ic_ignore.rds")),
+  .id = "sim_type") |> 
+  select(sim_type, starts_with("r_"))
 
 sbc_data |> 
-  select(starts_with("r_")) |> 
-  pivot_longer(everything(), names_to = "param", names_prefix = "r_", values_to = "r") |> 
+  pivot_longer(!c(sim_type), names_to = "param", names_prefix = "r_", values_to = "r") |> 
   ggplot() +
-  geom_histogram(aes(r), alpha = 0.5, binwidth = 10) +
-  geom_rect(aes(xmin = -10, xmax = 1010, ymin = lb, ymax = ub), 
+  geom_histogram(aes(r), alpha = 0.5, binwidth = sbc_bw) +
+  geom_rect(aes(xmin = -10, xmax = sbc_draws, ymin = lb, ymax = ub), 
             alpha = 0.25, fill = "pink",
-            data = \(d) tibble(!!!set_names(qbinom(c(0.01, 0.5, 0.99), nrow(sbc_data), 1/100), c("lb", "med", "ub")))) +
-  facet_wrap(vars(param)) +
+            data = count(sbc_data, sim_type) |> mutate(map_dfr(n, \(n) set_names(qbinom(c(0.01, 0.5, 0.99), n, sbc_bw / sbc_draws), c("lb", "med", "ub"))))) +
+  facet_grid(rows = vars(sim_type), cols = vars(param)) +
   labs(title = "Histogram of rank statistics", y = "", caption = str_glue("The histogram uses a bin width of 10.\nThe pink area represents the 1%-99% region of a Binom(1090, 0.01).\n{nrow(sbc_data)} simulation used."))
 
 # sbc_data |> 
