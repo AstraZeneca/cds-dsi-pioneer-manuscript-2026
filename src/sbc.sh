@@ -6,12 +6,12 @@
 #SBATCH --cpus-per-task=48
 #SBATCH --mem-per-cpu=1G
 #SBATCH --time=0-05:30:00
-#SBATCH --output=../temp/log/sbc.log
+#SBATCH --output=/wscratch/%u/adc-early-predict/log/%x_%j.log
 
 module load R-core
 
 cd .. # Get back to root so R uses correct renv project
-Rscript src/sbc.R -c ${SLURM_CPUS_PER_TASK} -n 520 --append
+Rscript src/sbc.R ${SLURM_CPUS_PER_TASK} $* #1000 sbc_ic_ignore --censor-intervals=3,4,6,9
 
 scontrol show job ${SLURM_JOB_ID}
 
