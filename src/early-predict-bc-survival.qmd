@@ -1,5 +1,7 @@
 ---
 title: "Early Prediction of Breast Cancer Survival"
+code-fold: true
+table-of-contents: true
 ---
 
 ```{r}
@@ -15,6 +17,7 @@ library(tidybayes)
 library(bayesplot)
 library(here)
 
+# Using different temp directories on SCP and locally.
 tmp_dir <- if (nchar(Sys.getenv("TMP")) > 0) file.path(Sys.getenv("TMP"), "adc-early-predict") else here("temp")
 
 options(mc.cores = 12)
@@ -26,10 +29,36 @@ future::plan(future::multisession(workers = 12))
 source(here("src", "util.R"))
 ```
 
+# Exploratory Analysis Plan
+
+## Question
+
+Are there observable strong and deep early responses to antibody-drug conjugates (ADCs) that are predictive of long term progression free survival (PFS)? Are we able to reliably predict the heterogeneous response to ADCs using early measurements?
+
+In this exploratory analysis we will not take up the causal question of whether these strong early responders would see similar PFS under counterfactual dosages or medications.^[This should probably revisited as the prediction within arm might not be the relevant question.]
+
+## Exploratory Analysis Context and Data
+
+We will evaluate whether early (at baseline and at 6 and 12 weeks post treatment) measurements of tumor sizes are predictive of the PFS in response to Enhertu.
+
+We will use data from the Breast01, Breast02, Breast03, and Breast04 trials, focusing on the treatment arms receiving the same dosage. Initially, we will be analyzing the different studies separately with no partial pooling since the inclusion criteria for the studies were different.
+
+*	Primary outcome: Post treatment progression free survival (interval and right censored).
+*	Predictive variables (at all the early intervals):
+    –	Number of lesions observed.
+    –	Organ of lesions.
+    –	lesion sizes measured, with a maximum of ten of observed lesions and two per organ. 
+    
+## Statistical Model Goals
+
+*	Explore the heterogeneity in PFS conditional on early tumor size measures.
+*	Consider more nuanced characteristics of a patient’s tumors beyond the aggregated sum of largest diameters. The challenge here is how to model the nonlinear contribution of multiple influencers (tumors) on a central node’s outcome (survival). A simple sum or mean ends up discarding a lot of information about the context of the disease.
+*	Introduce a lesion level first-stage model. Considering the limit on the number of lesions measured, we potentially truncate some measures such as the total sum of tumor sizes. A model of tumor sizes would allow us to impute the missing data and propagate any uncertainty to the second-stage survival model.
+
 ```{r}
 #| label: sim-settings
 
-n_patients <- 1000
+n_patients <- 250
 patient_measures <- 11
 max_pfs <- 20
 ```
@@ -38,38 +67,53 @@ max_pfs <- 20
 
 I haven't yet documented much about this model or done any kind of evaluation. I'm only using it at this time to generate fake tumor size data for testing.
 
+We model tumor size as a nonlinear function with a Gaussian process prior (with common hyperparameters),
+
+$$
+X_{it} \sim  \mathtt{GP}(\mu^\textrm{tumor}, k(\cdot;\alpha^\textrm{tumor}, \rho^\textrm{tumor})) 
+$$
+where 
+$$k(p, q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$$.
+
+## Prior Prediction
+
 ```{r}
 #| label: tumor
 
 tumor_model <- cmdstan_model(here("src", "tumor.stan"))
 
+# Only run this once; it takes a while so we save results locally.
 if (!file.exists(file.path(tmp_dir, "prior_tumor.rds"))) {
   test_data <- lst(
-    fit_data = FALSE,
+    fit_data = FALSE, # Prior prediction
     gen_tumor_sizes = TRUE,
     n_patients,
     n_measures = rep(patient_measures, n_patients),
     t_measure = rep(1:(patient_measures - 1), n_patients),
-    n_patient_tumors = 1 + rbinom(n_patients, 5, 0.4),
+    n_patient_tumors = 1 + rbinom(n_patients, 5, 0.4), # We're not yet generatively modeling the number of tumors
     tumor_size = array(dim = 0)
   )
   
-  res <- tumor_model$sample(data = test_data, output_dir = file.path(tmp_dir, "fit"))
+  tumor_prior_res <- tumor_model$sample(
+    data = test_data, 
+    iter_warmup = 500, iter_sampling = 500,
+    output_dir = file.path(tmp_dir, "fit"),
+  )
   
-  res$save_object(file.path(tmp_dir, "fit", "prior_tumor.rds"))
+  tumor_prior_res$save_object(file.path(tmp_dir, "fit", "prior_tumor.rds"))
   
-  res$save_data_file(
+  tumor_prior_res$save_data_file(
     file.path(tmp_dir, "data"), basename = "prior_tumor", timestamp = FALSE, random = FALSE
   )
 } else {
-  res <- read_rds(file.path(tmp_dir, "fit", "prior_tumor.rds"))
+  tumor_prior_res <- read_rds(file.path(tmp_dir, "fit", "prior_tumor.rds"))
   test_data <- rjson::fromJSON(file = file.path(tmp_dir, "data", "prior_tumor.json"))
 }
 
-res_rvar <- res |> 
+res_rvar <- tumor_prior_res |> 
   spread_rvars(rep_tumor_size[tumor_index]) |> 
   ungroup() |> 
-  mutate(
+  mutate( # A bunch of acrobatics to get the IDs, indices, and intervals right.
     patient_id = rep(1:n_patients, with(test_data, n_patient_tumors * patient_measures)),
     tumor_index = ((tumor_index - 1) %/% patient_measures) + 1,
     t = rep(0:(patient_measures - 1), sum(test_data$n_patient_tumors))
@@ -77,29 +121,40 @@ res_rvar <- res |>
   mutate(tumor_index = tumor_index - min(tumor_index) + 1, .by = patient_id) |> 
   rename(tumor_size = rep_tumor_size)
 
-res_rvar |> 
-  filter(patient_id == 1, tumor_index < 6) |> 
-  ggplot(aes(t)) +
-  geom_line(aes(y = tumor_size, group = str_c(patient_id, tumor_index, .draw)), alpha = 0.125, data = \(d) unnest_rvars(d) |> filter(.draw <= 50)) +
-  stat_lineribbon(aes(ydist = tumor_size, group = tumor_index), alpha = 0.25, .width = 0.8) +
-  coord_cartesian(ylim = c(0, patient_measures)) +
-  facet_wrap(vars(tumor_index)) +
-  NULL
+tumor_prior_param_rvar <- tumor_prior_res |> 
+  gather_rvars(pop_tumor_gp_intercept, pop_tumor_gp_alpha, pop_tumor_gp_rho)
 
+# This is the tumor data I'll be using in the PFS model
 fake_tumor_data <- res_rvar |>
   unnest_rvars() |>
   ungroup() |> 
   filter(.draw == 1) 
 
+# This will be used by SLURM jobs that need tumor data (e.g., PFS SBC run).
 write_rds(fake_tumor_data, file.path(tmp_dir, "data", "fake_tumor.rds"))
 ```
 
 ```{r}
 #| label: tumor-model-diagnose
-#| eval: false
 
 res$cmdstan_diagnose()
 ```
+
+```{r}
+#| label: tumor-prior-predict-plot
+#| fig-cap: "Prior prediction checking for tumor model."
+
+res_rvar |> 
+  filter(patient_id == 1, tumor_index < 6) |> 
+  ggplot(aes(t)) +
+  geom_line(aes(y = tumor_size, group = str_c(patient_id, tumor_index, .draw)), alpha = 0.125, data = \(d) unnest_rvars(d) |> filter(.draw <= 50)) +
+  stat_lineribbon(aes(ydist = tumor_size, group = tumor_index), fill = "black", alpha = 0.25, .width = 0.8) +
+  scale_x_continuous(breaks = seq(0, 10, 2)) +
+  labs(y = "Tumor Size", caption = "Shown for a subset of tumors of a single patient.") +
+  facet_wrap(vars(tumor_index)) +
+  NULL
+```
+
 
 ## Fake Data Simulation
 
@@ -107,42 +162,83 @@ res$cmdstan_diagnose()
 #| include: false
 #| eval: false
 
-test_data |> 
-  list_modify(
-    fit_data = TRUE,
-    gen_tumor_sizes = FALSE,
-    tumor_size = fake_tumor_data$tumor_size
-  ) |> 
-  tumor_model$sample(output_dir = file.path(tmp_dir, "fit"), output_basename = "tumor")
+tumor_fake_res <- res_rvar |> 
+  unnest_rvars() |> 
+  filter(.draw <= 24) |> # We'll simulate parameters and data for a number simulations. 
+  nest(fake_data = !c(.draw, .iteration, .chain)) |> 
+  transmute(
+    .draw,
+    fake_fit = furrr::future_map2(.draw, fake_data, function(id, d) {
+      test_data |> 
+        list_modify(
+          fit_data = TRUE,
+          gen_tumor_sizes = FALSE,
+          tumor_size = d$tumor_size
+        ) |> 
+        tumor_model$sample(
+          iter_warmup = 500, iter_sampling = 500,
+          output_dir = file.path(tmp_dir, "fit"), 
+          output_basename = str_c("fake_tumor_", id)
+        )
+    }, .progress = TRUE, .options = furrr::furrr_options(seed = TRUE))
+  ) 
+```
 
+```{r}
+#| label: tumor-fake-data-params
+#| fig-cap: "Fake data simulation assessing model's ability to recover posterior of model parameters."
+
+tumor_fake_res |> 
+  group_by(.draw) |> 
+  reframe(map_dfr(fake_fit, \(f) gather_rvars(f, pop_tumor_gp_intercept, pop_tumor_gp_alpha, pop_tumor_gp_rho))) |> 
+  left_join(tumor_prior_param_rvar |> unnest_rvars(), by = c(".draw", ".variable"), suffix = c("", "_true")) |> 
+  mutate(.value = .value - .value_true) |> 
+  ggplot(aes(y = .draw)) +
+  stat_pointinterval(aes(xdist = .value), .width = 0.8) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  labs(x = "Difference from True Parameter Value", y = "", caption = "Showing 24 simulations.") +
+  facet_wrap(vars(.variable), scales = "free") +
+  theme(axis.text.y = element_blank()) +
+  NULL  
 ```
 
 # Survival Model
 
-We will be using a piecewise-constant proportional hazard model:
+We will use a piecewise-constant proportional hazard model:
 
--   Time is discretized into $m \in \{0,\dots,M\}$, with $m = 0$ is the baseline timepoint.
--   $Y_m$ is an indicator for disease progression at timepoint $m$, with $Y_0 = 0$.
--   $X_m$ are--possibly time-variant--covariates.
+- Time is discretized into $t \in \{0,\dots,T\}$, with $t = 0$ is the baseline interval.
+- $Y_{it}$ is an indicator for disease progression at interval $t$, with $Y_{i0} = 0$.
+- $S_i$ is the number of intervals observed without disease progression, \[ \Pr[S > s] = \prod_{r=0}^s \Pr[Y_{i,r+1} = 0 \mid Y_{i,r} = 0]. \] 
+- $X_{it}$ are--possibly time-variant--covariates.
+- $C_i$ is an indicator of whether $i$ is right censored.
+- $M_{i} \in \mathbb{Z}^{+}$ is the difference between $S_i$ and the previous interval $i$ was observed progression free ($M_i = 1$ if $C_i = 1$). 
 
 The probability of remaining progression-free at $m \geq 1$ is 
 $$
-\alpha_m(x;\theta) = \Pr[Y_m = 0\mid Y_{m-1} = 0, X_m = \bf{x}] = \exp[-\lambda(m, \bf{x}; \boldsymbol{\theta})] 
+\alpha_t(x;\theta) = \Pr[Y_t = 0\mid Y_{t-1} = 0, X_t = \bf{x}] = \exp[-\lambda(t, \bf{x}; \boldsymbol{\theta})] 
 $$
 
 and the hazard function
-
+.
 $$
-  \lambda(m, \bf{x}; \boldsymbol{\theta}) = \lambda_m \kappa(\bf{x}; \boldsymbol{\beta})
+  \lambda(t, \bf{x}; \boldsymbol{\theta}) = \lambda_t \kappa(\bf{x}; \boldsymbol{\beta})
 $$
 
-We assume that censoring in conditionally independent of time to progression. We will use a linear for for $\kappa(\bf{x}; \boldsymbol{\beta}) = \exp(\bf{x}\boldsymbol{\beta})$.
+We assume that censoring in conditionally independent of time to progression. We will use a linear form for $\kappa(\bf{x}; \boldsymbol{\beta}) = \exp(\bf{x}\boldsymbol{\beta})$.
 
-Aside from whatever priors we use for $\boldsymbol{\beta}$, we will use a Gaussian process prior for $\lambda_m$, 
+Aside from whatever priors we use for $\boldsymbol{\beta}$, we will use a Gaussian process prior for $\lambda_t$, 
 $$
-\lambda_m \sim \mathtt{GP}(0, k),
+\lambda_t \sim \mathtt{GP}(0, k),
 $$ 
 where $k(\lambda_p, \lambda_q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$.
+
+Our likelihood, accounting for interval and right censoring, is
+$$
+\mathcal{L}_i = \begin{cases}
+  \prod_{t=1}^{S_i-M_i}\alpha_t(x_i;\theta)\sum_{r=S_i-M_i+1}^{S_i}\alpha_r(x_i;\theta)[1-\alpha_{r+1}(x_i;\theta)] & \textrm{if }C_i = 0 \\
+  \prod_{t=1}^{S_i}\alpha_t(x_i;\theta) & \textrm{if }C_i = 1 
+  \end{cases}
+$$
 
 ```{r}
 #| label: pfs-model
@@ -194,7 +290,7 @@ lambda_rvar |>
   ggplot(aes(t)) +
   stat_lineribbon(aes(ydist = lambda), fill = "black", alpha = 0.5, .width = 0.8) +
   geom_line(aes(y = lambda, group = .draw), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 50)) +
-  labs(title = "Base hazard", x = "m", y = latex2exp::TeX("$\\lambda_m$"))
+  labs(title = "Base hazard", x = "m", y = latex2exp::TeX("$\\lambda_t$"))
 ```
 
 ```{r}
@@ -204,7 +300,7 @@ lambda_rvar |>
   ggplot(aes(t)) +
   stat_lineribbon(aes(ydist = base_pf_cond_prob), fill = "black", alpha = 0.5, .width = 0.8) +
   geom_line(aes(y = base_pf_cond_prob, group = .draw), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 50)) +
-  labs(title = "Base conditional probability of remaining progress free", x = "m", y = "")
+  labs(title = "Base conditional probability of remaining progress free", x = "t", y = "")
 ```
 
 ```{r}
@@ -220,7 +316,7 @@ pfs_res |>
   ggplot(aes(t)) +
   stat_lineribbon(aes(ydist = disease_progress_prob), fill = "black", alpha = 0.5, .width = 0.8) +
   geom_line(aes(y = disease_progress_prob, group = str_c(patient_index, .draw)), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 20)) +
-  labs(title = "Conditional probability of remaining progress free", x = "m", y = latex2exp::TeX("$\\alpha_m$")) +
+  labs(title = "Conditional probability of remaining progress free", x = "t", y = latex2exp::TeX("$\\alpha_t$")) +
   coord_cartesian(ylim = c(0, 1)) +
   facet_wrap(vars(patient_index)) +
   NULL
@@ -234,7 +330,7 @@ lambda_rvar |>
   pivot_longer(!t, names_to = "survival_type", values_to = "survival") |> 
   ggplot(aes(t)) +
   stat_lineribbon(aes(ydist = survival, fill = survival_type, color = survival_type), alpha = 0.25, .width = 0.8) +
-  labs(title = "Base survival probability", x = "m", y = latex2exp::TeX("$S(m)$"))
+  labs(title = "Base survival probability", x = "t", y = latex2exp::TeX("$S(t)$"))
 ```
 
 ```{r}
@@ -244,7 +340,7 @@ expected_pfs_rvar |>
   mutate(.variable = str_remove(.variable, "_cond_expected_pfs")) |> 
   ggplot(aes(y = .variable)) +
   stat_pointinterval(aes(xdist = .value), .width = 0.8) +
-  labs(title = "Expected PFS", subtitle = "Conditional on progress within maximum observed PFS", x = "m", y = "")
+  labs(title = "Expected PFS", subtitle = "Conditional on progress within maximum observed PFS", x = "t", y = "")
 ```
 
 ```{r}
@@ -254,11 +350,17 @@ pfs_res |>
   spread_rvars(km_est[m]) |> 
   ggplot(aes(m - 1)) +
   stat_lineribbon(aes(ydist = km_est), fill = "black", alpha = 0.25, .width = 0.8) +
-  labs(title = "Kaplan-Meier estimate", y = latex2exp::TeX("$S(m)$")) +
-  scale_x_continuous("m", breaks = seq(0, 20, 2))
+  labs(title = "Kaplan-Meier estimate", y = latex2exp::TeX("$S(t)$")) +
+  scale_x_continuous("t", breaks = seq(0, 20, 2))
 ```
 
 ## Fake Data Simulation
+
+Here we're using a set of ad hoc survival model parameters and generating a number of datasets, then we compare the posterior distributions of these parameters against the known truth. We do this three times:
+
+1. Without any interval censoring
+2. With interval censoring but ignored by the model (observed PFS is assumed to be actual PFS)
+3. With interval censoring which is accounted for by the model
 
 ```{r}
 #| label: fake-data-model
@@ -411,6 +513,8 @@ fake_data_sim |>
 ```
 
 ## Simulation-Based Calibration
+
+With SBC we use the prior to generate a number of datasets that we use the same model and prior to fit. We then calculate the number of samples that are less than the true value (from the prior-only run generating the data). If the model and algorithm are working correctly, the distribution of the number draws that are less than the true parameter values should approach a uniform distribution.
 
 The code for this simulation is located in `sbc.R` (and `sbc.sh` to run on SLURM).
 
