@@ -1,9 +1,6 @@
 "
 Usage: sbc.R <cores> <num-sim> <output-name> [--append] [--censor-intervals=<intervals> --ignore-interval-censoring]
 
--c                              Number of available cores 
--n                              Number of simulations to run 
--o                              Name to use for SBC run files, etc. 
 --censor-intervals=<intervals>  Intervals to censor in the data
 " |> 
   docopt::docopt(
@@ -29,11 +26,13 @@ source(here("src", "util.R"))
 options(mc.cores = cl_args$cores %/% 4)
 future::plan(future::multisession(workers = cl_args$cores %/% 4))
 
+# Load pre-generated tumor data
 tumor_test_data <- rjson::fromJSON(file = file.path(tmp_dir, "data", "prior_tumor.json"))
 fake_tumor_data <- read_rds(file.path(tmp_dir, "data", "fake_tumor.rds"))
 
 pfs_model <- cmdstan_model(here("src", "pfs.stan"))
 
+# A prior only run to generate datasets
 pfs_test_data <- tumor_test_data |> 
   list_modify(
     fit_data = FALSE,
@@ -57,7 +56,8 @@ pfs_res <- pfs_model$sample(data = pfs_test_data, refresh = 0)
 sbc_data <- pfs_res |> 
   spread_rvars(rep_pfs[patient_index]) |> 
   unnest_rvars() |> 
-  ungroup() |> 
+  ungroup() |>
+  # The PFS from each draw will be used as a simulation dataset 
   filter(.draw <= cl_args$num_sim) |> 
   select(.draw, pfs = rep_pfs) |> 
   nest(sim_data = !.draw) |>
@@ -70,7 +70,7 @@ sbc_data <- pfs_res |>
       select(!c(.iteration, .chain)),
     by = ".draw"
   ) |>
-  mutate(
+  mutate(# For each simulation dataset fit the model and extract the posteriors for each of the model parameters 
     furrr::future_map2_dfr(.draw, sim_data, .progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
       function(sim_id, d, cl_args) { 
         fit_sim_data(
@@ -81,7 +81,7 @@ sbc_data <- pfs_res |>
           output_basename = str_glue("{cl_args$output_name}_{sim_id}"),
           output_dir = file.path(tmp_dir, "fit"), 
           ignore_interval_censoring = cl_args$ignore_interval_censoring 
-        ) |> # Get posterior draws from simulation fit 
+        ) |> # Get posterior draws from simulation fit. 
           spread_rvars(tumor_stim_intercept, tumor_stim_coef,  log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho, ndraws = 1000) |> 
           rename_with(\(n) str_c("est_", n))
       }, 
@@ -91,7 +91,8 @@ sbc_data <- pfs_res |>
   transmute(
     .draw,
    
-    # Rank statistics 
+    # Rank statistics
+    # For each simulation calculate the number of posterior parameter samples that are less than the true parameter value. 
     r_tumor_stim_intercept = sum(est_tumor_stim_intercept < tumor_stim_intercept),
     r_tumor_stim_coef_1 = c(sum(est_tumor_stim_coef[, 1] < tumor_stim_coef_1)),
     r_tumor_stim_coef_2 = c(sum(est_tumor_stim_coef[, 2] < tumor_stim_coef_2)),

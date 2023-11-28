@@ -1,22 +1,26 @@
 functions {
   #include "util.stan"
-  
+ 
+  // Simple regression model for the influence of tumors on surival. 
   vector linear_tumor_stimulus(real intercept, vector coef, matrix covar) {
     return intercept + covar * coef; 
   } 
-  
+ 
+  // Combine influence of all tumors on survival and calculate probability of survival using a cloglog link function. 
   vector calculate_progress_linear_prob(vector log_lambda, real tumor_intercept, vector tumor_coef, matrix tumor_covar) {
       real total_time_invar_tumor_stim = sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar));
       
       return inv_cloglog(log_lambda + total_time_invar_tumor_stim);
   }
-  
+ 
+  // Hazard function given a base hazard and time-invariant covariates.  
   vector calculate_linear_hazard(vector log_lambda, real tumor_intercept, vector tumor_coef, matrix tumor_covar) {
       real total_time_invar_tumor_stim = sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar));
       
       return exp(log_lambda + total_time_invar_tumor_stim);
   }
-  
+ 
+  // Calculate the last observed measure for each patient. 
   array[] int get_max_t(array[] int t_measure, array[] int n_measures) {
     int n_patients = size(n_measures);
     int t_pos = 1;
@@ -30,7 +34,8 @@ functions {
     
     return max_t;
   }
-  
+ 
+  // Given PFS and tumor measures data, determine interval and right censoring for each patient. 
   tuple(array[] int, array[] int) identify_censoring(array[] int pfs, array[] int n_measures, array[] int t_measure) { 
     int n_patients = size(n_measures);
     array[n_patients] int interval_censored = rep_array(0, n_patients);
@@ -44,8 +49,8 @@ functions {
           int curr_t = t_measure[t_pos + t_index - 1]; 
           
           if (curr_t > pfs[i]) {
-            interval_censored[i] = curr_t - pfs[i] - 1;
-            right_censored[i] = 0;
+            interval_censored[i] = curr_t - pfs[i] - 1; // Progression actually happened between pfs[i] and the next measured interval. 
+            right_censored[i] = 0; // Found an observation after pfs[i]
             
             break;
           }
@@ -56,7 +61,8 @@ functions {
       
       return (interval_censored, right_censored);
   }
-  
+ 
+  // Random PFS generator given conditional progression probability and obseration intervals. 
   tuple(int, int, int, int) pfs_rng(vector prob, array[] int t) {
     int n_prob = rows(prob);
     int n_t = size(t);
@@ -74,28 +80,31 @@ functions {
     while (actual_pfs < n_prob && !bernoulli_rng(prob[actual_pfs + 1])) {
       actual_pfs += 1;
     }
-    
-    while (pfs_measure_index < n_t && t[pfs_measure_index + 1] < actual_pfs + 1) {
+   
+    // Find the index in the measurement t array that corresponds to the interval observed after last progression free interval.
+    while (pfs_measure_index < n_t && t[pfs_measure_index + 1] <= actual_pfs) {
       pfs_measure_index += 1;
     }
     
-    right_censored = pfs_measure_index >= n_t;
-    observed_pfs = pfs_measure_index > 0 ? t[min(pfs_measure_index, n_t)] : 0;
-    interval_censored = !right_censored ? t[pfs_measure_index + 1] - observed_pfs - 1 : 0; 
+    right_censored = pfs_measure_index >= n_t; // We passed beyond the measurement t array so we must be right censored.
+    observed_pfs = pfs_measure_index > 0 ? t[min(pfs_measure_index, n_t)] : 0; // Figure out which of the observed intervals would be the observed PFS
+    interval_censored = !right_censored ? t[pfs_measure_index + 1] - observed_pfs - 1 : 0; // Figure how many intervals forward could be the true PFS 
     
     return (interval_censored, right_censored, observed_pfs, actual_pfs);
   }
  
-  // S(t) = Pr[T > t], t \in {0,..., N} 
+  // Survival aggregated over all patients, S(t) = Pr[T > t], t \in {0,..., N} 
   vector estimate_kaplan_meier(array[] int pfs, array[] int right_censored, int max_t) {
     vector[max_t + 1] s = rep_vector(1.0, max_t + 1);
-    int n_pfs = size(pfs);
+    int n_pfs = size(pfs); // How many patients
     array[n_pfs] int sorted_pfs_idx = sort_indices_asc(pfs);
     int pfs_pos = 1;
-    int n = n_pfs; 
+    int n = n_pfs; // How many patients still haven't seen disease progression. 
+    
+    // For each time interval in 0..max_t see how many patiented exited and calculate proportion surviving.
     
     for (t in 0:max_t) {
-      int ex = 0;
+      int ex = 0; // How many saw disease progression (exited) in current interval.
       real prev_s = t > 0 ? s[t] : 1.0;
       
       while ((n > 0) && (pfs_pos <= n_pfs) && (right_censored[sorted_pfs_idx[pfs_pos]] || (pfs[sorted_pfs_idx[pfs_pos]] <= t))) {
@@ -110,6 +119,7 @@ functions {
     return s; 
   }  
 
+  // Calculate marginal probability of disease progression at every time interval, given conditional probabilities.
   tuple(vector, vector) calculate_marginal_dp_prob(vector cond_pf_prob, int max_all_t) {
     vector[max_all_t] marginal_dp_prob;
     vector[max_all_t] dp_cdf;
@@ -126,7 +136,8 @@ functions {
     
     return(marginal_dp_prob, 1 - dp_cdf);
   }  
-  
+ 
+  // Create (n_patients * n_tumors) x 2 matrix of each tumor's covariates from t = 1, 2. 
   matrix prepare_early_tumors_design_matrix(vector tumor_size, array[] int n_patient_tumors, array[] int n_measures, real tumor_sd) {
     matrix[sum(n_patient_tumors), 2] scaled_tumor_covar;
     int n_patients = size(n_patient_tumors);
@@ -158,16 +169,16 @@ functions {
 data {
   int<lower = 0, upper = 1> fit_data;
   int<lower = 0, upper = 1> gen_pfs;
-  int<lower = 0, upper = 1> gen_interval_censored;
-  int<lower = 0, upper = 1> early_tumors_only;
-  int<lower = 0, upper = 1> ignore_interval_censoring;
+  int<lower = 0, upper = 1> gen_interval_censored; // Should the generated PFS be interval censored?
+  int<lower = 0, upper = 1> early_tumors_only; // Only time-invariant covariates used: tumor size from t = 1,2.
+  int<lower = 0, upper = 1> ignore_interval_censoring; // Treat observed PFS as true pfs and ignore t_measure.
   
   #include "base_data.stan"
   
   // [..., ((tumor_size_{i,1,1}, ..., tumor_size_{i, 1, n_measures_i}), ..., (..., tumor_size_{i,j,t},...), ...), ...  ] 
-  vector<lower = 0>[to_int(to_row_vector(n_patient_tumors) * to_vector(n_measures))] tumor_size; // cm
+  vector<lower = 0>[to_int(to_row_vector(n_patient_tumors) * to_vector(n_measures))] tumor_size;
   
-  array[n_patients] int<lower = 0> pfs; // How many periods after baseline did survive
+  array[n_patients] int<lower = 0> pfs; // How many periods after baseline did patient survive
   
   // Hyperparam
   
@@ -178,22 +189,26 @@ data {
 }
 
 transformed data {
-  real delta = 1e-9;
+  real delta = 1e-9; // Very small value for GP vcov matrices
   int<lower = 0> max_pfs = max(pfs);
   array[n_patients] int<lower = 1> max_t = get_max_t(t_measure, n_measures);
   int<lower = 1> max_all_t = max(max_t);
   int<lower = 0, upper = max_pfs * n_patients> n_total_pfs = sum(pfs);
   int<lower = 0> n_time_periods;
+  
+  // These are used for the time interval distance between base hazard
   array[max_all_t] real pfs_range;
   array[max_all_t] int pfs_range_int;
   vector[max_all_t] pfs_range_vec;
+  
   int<lower = 0> n_all_tumors = sum(n_patient_tumors);
   real<lower = 0> tumor_covar_sd;
   matrix[early_tumors_only ? n_all_tumors : 0, 2] scaled_tumor_covar;
+ 
+  // Censoring information calculated from PFS and t_measure; no need to pass it in. 
   array[n_patients] int<lower = 0> interval_censored = rep_array(0, n_patients);
   array[n_patients] int<lower = 0, upper = 1> right_censored = rep_array(0, n_patients);
   array[n_patients] int<lower = 0, upper = 1> right_uncensored = rep_array(0, n_patients);
- 
   
   for (i in 1:max_all_t) {
     pfs_range[i] = i;
@@ -203,7 +218,7 @@ transformed data {
   pfs_range_vec = to_vector(pfs_range);
  
   if (early_tumors_only) { 
-    tumor_covar_sd = sd(tumor_size);
+    tumor_covar_sd = sd(tumor_size); // BUGBUG Ignoring zero sizes?
     
     scaled_tumor_covar = prepare_early_tumors_design_matrix(tumor_size, n_patient_tumors, n_measures, tumor_covar_sd); 
   } else {
@@ -225,28 +240,32 @@ transformed data {
       
     print("Number of interval censored observations: ", sum(interval_censored));
   }
-  
+ 
+  // If generating PFS we need to calculate probs for all possible time intervals, otherwise only up to observed PFS. 
   n_time_periods = gen_pfs ? n_patients * max_all_t : n_total_pfs + sum(right_uncensored) + sum(interval_censored);
 }
 
 parameters {
+  // Base hazard GP parameters
   real<lower = 0> log_lambda_gp_alpha;
   real<lower = 0> log_lambda_gp_rho;
   vector[max_all_t] log_lambda_gp_eta;
   real log_lambda_gp_intercept;
-  
+ 
+  // Tumor level influence on hazard 
   real<lower = 0> tumor_stim_intercept;
   vector<lower = 0>[2] tumor_stim_coef;
 }
 
 transformed parameters {
-  vector[max_all_t] log_lambda = calc_gp_pred(
-    pfs_range, log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho, delta, log_lambda_gp_eta);
-  vector[n_time_periods] disease_progress_pred;
+  // Base hazard
+  vector[max_all_t] log_lambda = calc_gp_pred(pfs_range, log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho, delta, log_lambda_gp_eta);
   vector<lower = 0, upper = 1>[n_time_periods] disease_progress_prob;
-  vector[n_patients] total_time_invar_tumor_stim;
   
-  {
+  { // Calculate patient-interval conditional probability of disease progression.
+    vector[n_time_periods] disease_progress_pred;
+    vector[n_patients] total_time_invar_tumor_stim;
+    
     int tumor_pos = 1;
     int pfs_interval_pos = 1;
   
@@ -268,6 +287,8 @@ transformed parameters {
 }
 
 model {
+  // Priors
+  
   log_lambda_gp_alpha ~ normal(0, 0.25);
   log_lambda_gp_rho ~ inv_gamma(5, 5);
   log_lambda_gp_eta ~ std_normal();
@@ -285,31 +306,36 @@ model {
       int curr_interval_censored = ignore_interval_censoring ? 0 : interval_censored[i];
       vector[curr_interval_censored + right_uncensored[i]] interval_lp = rep_vector(0, curr_interval_censored + right_uncensored[i]);
       int observed_pfs_interval_end = pfs_interval_end - right_uncensored[i] - curr_interval_censored;
-     
+    
+      // These are the time intervals we are sure that the patient has progression free 
       target += bernoulli_lupmf(0 | disease_progress_prob[pfs_interval_pos:observed_pfs_interval_end]);
       
       for (j in 1:(curr_interval_censored + right_uncensored[i])) {
-        if (j > 1) {
+        if (j > 1) { // We need to add more possible intervals that the patient remained progression free.
           interval_lp[j] = bernoulli_lupmf(0 | disease_progress_prob[(observed_pfs_interval_end + 1):(observed_pfs_interval_end + j - 1)]);
         }
         
+        // If not right censored add pdf of disease progression. 
         interval_lp[j] += right_uncensored[i] * bernoulli_lupmf(1 | disease_progress_prob[observed_pfs_interval_end + j]);
       }
      
       if (curr_interval_censored > 0) {
-        target += log_sum_exp(interval_lp);
+        // There are more than one candidate true PFS: sum of the probabilities and then log.
+        target += log_sum_exp(interval_lp); 
       } else if (right_uncensored[i]) {
-        target += interval_lp[1];
+        target += interval_lp[1]; // PFS not observed because of right censoring.
       }
       
+      // If generating PFS jump ahead to the beginning of the next patient's probs.
       pfs_interval_pos = (gen_pfs ? pfs_interval_pos + max_all_t - 1 : pfs_interval_end) + 1;
     }
   }
 }
 
 generated quantities {
-  vector<lower = 0, upper = 1>[max_all_t] base_pf_cond_prob = 1 - inv_cloglog(log_lambda);
+  vector<lower = 0, upper = 1>[max_all_t] base_pf_cond_prob = 1 - inv_cloglog(log_lambda); // Progression free conditional prob if not using covar
   vector<lower = 0, upper = 1>[max_all_t] one_tumor_pf_cond_prob = 
+    // Progress free conditional probability if only 1 tumor per patient fixed at size = 1 
     1 - calculate_progress_linear_prob(log_lambda, tumor_stim_intercept, tumor_stim_coef, [[1, 1]]); 
   vector<lower = 0, upper = 1>[max_all_t] base_survival;
   vector<lower = 0, upper = 1>[max_all_t] one_tumor_survival;
@@ -319,7 +345,8 @@ generated quantities {
   array[gen_pfs ? n_patients : 0] int<lower = 0> rep_pfs;
   array[gen_pfs ? n_patients : 0] int<lower = 0, upper = 1> rep_right_censored;
   array[gen_pfs ? n_patients : 0] int<lower = 0> rep_interval_censored;
-  
+ 
+  // Kaplan-Meier survival probability, aggregated over generated patients' data.  
   vector<lower = 0, upper = 1>[gen_pfs ? max(t_measure) + 1 : 0] km_est; 
   
   if (gen_pfs) {
