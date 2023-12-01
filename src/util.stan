@@ -40,3 +40,27 @@ tuple(real, real, vector) standardize_nonzero_tumor_sizes(vector tumor_size) {
   
   return (tumor_mean, tumor_sd, (tumor_size - tumor_mean) / tumor_sd); 
 }
+
+array[] real pfs_quantiles_from_prob(vector exit_prob, array[] real p) {
+  int max_t = rows(exit_prob);
+  int n_p = size(p);
+  array[n_p] int sorted_p_idx = sort_indices_asc(p);
+  vector[max_t + 1] cumul_prob = append_row(0.0, cumulative_sum(exit_prob)); 
+  array[n_p] real q;
+  int pfs = 1;
+  
+  for (p_index in 1:n_p) {
+    real curr_p = p[sorted_p_idx][p_index];
+    real q_part;
+    
+    while (cumul_prob[pfs + 1] < curr_p) {
+      pfs += 1;
+    }
+    
+    q_part = (curr_p - cumul_prob[pfs]) / (cumul_prob[pfs + 1] - cumul_prob[pfs]);
+    
+    q[sorted_p_idx[p_index]] = (pfs - 1) * (1 - q_part) + pfs * q_part; 
+  }
+  
+  return q;
+}

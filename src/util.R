@@ -20,18 +20,33 @@ list_measures <- function(measures, n_measures) split(measures, rep(seq_along(n_
 
 drop_missing_measures <- function(settings, missing_measures = NULL) {
   if (!is_null(missing_measures)) {
-    settings %>%  
-      list_modify(
-        t_measure = list_measures(.$t_measure, .$n_measures - 1) |> 
-          map(\(t) setdiff(t, missing_measures)),
-        tumor_size = list_measures(.$tumor_size, rep(.$n_measures, .$n_patient_tumors)) |> 
-          map(\(t) discard_at(t, missing_measures + 1)) |>  # The first one is actual for the baseline, t = 0. 
-          unlist()
-      ) %>%
-      list_modify(
-        n_measures = map_int(.$t_measure, length) + 1,
-        t_measure = unlist(.$t_measure),
-      )  
+    if (is.list(missing_measures)) {
+      settings %>%  
+        list_modify(
+          t_measure = list_measures(.$t_measure, .$n_measures - 1) |> 
+            map2(missing_measures, \(t, m) setdiff(t, m)),
+          tumor_size = list_measures(.$tumor_size, rep(.$n_measures, .$n_patient_tumors)) |> 
+            map2(rep(missing_measures, .$n_patient_tumors), \(t, m) discard_at(t, m + 1)) |>  # The first one is actual for the baseline, t = 0. 
+            unlist()
+        ) %>%
+        list_modify(
+          n_measures = map_int(.$t_measure, length) + 1,
+          t_measure = unlist(.$t_measure),
+        )  
+    } else {
+      settings %>%  
+        list_modify(
+          t_measure = list_measures(.$t_measure, .$n_measures - 1) |> 
+            map(\(t) setdiff(t, missing_measures)),
+          tumor_size = list_measures(.$tumor_size, rep(.$n_measures, .$n_patient_tumors)) |> 
+            map(\(t) discard_at(t, missing_measures + 1)) |>  # The first one is actual for the baseline, t = 0. 
+            unlist()
+        ) %>%
+        list_modify(
+          n_measures = map_int(.$t_measure, length) + 1,
+          t_measure = unlist(.$t_measure),
+        )  
+    }
   } else {
     settings
   }
@@ -82,7 +97,8 @@ fit_simulations <- function(n, patient_interval_data, settings, ignore_interval_
     rowwise() |> 
     mutate(sim_data = list(gen_fake_pfs_data(patient_interval_data, settings))) |> 
     ungroup() |> 
-    mutate(
+    transmute(
+      sim_id,
       sim_fit = furrr::future_map2(.progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
         sim_id, sim_data, 
         \(sid, sdata) fit_sim_data(

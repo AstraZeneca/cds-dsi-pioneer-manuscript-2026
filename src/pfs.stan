@@ -345,6 +345,14 @@ generated quantities {
   vector<lower = 0, upper = 1>[max_all_t] one_tumor_survival;
   real<lower = 0, upper = max_all_t> base_cond_expected_pfs;
   real<lower = 0, upper = max_all_t> one_tumor_cond_expected_pfs;
+  real<lower = 0, upper = max_all_t> base_cond_median_pfs;
+  real<lower = 0, upper = max_all_t> one_tumor_cond_median_pfs;
+  
+  row_vector<lower = 0, upper = 1>[max_all_t] base_dp_prob;
+  row_vector<lower = 0, upper = 1>[max_all_t] one_tumor_dp_prob;
+  
+  row_vector<lower = 0, upper = 1>[max_all_t] base_dp_prob_not_censored;
+  row_vector<lower = 0, upper = 1>[max_all_t] one_tumor_dp_prob_not_censored;
   
   array[gen_pfs ? n_patients : 0] int<lower = 0> rep_pfs;
   array[gen_pfs ? n_patients : 0] int<lower = 0, upper = 1> rep_right_censored;
@@ -379,9 +387,6 @@ generated quantities {
   } 
   
   {
-    row_vector[max_all_t] base_dp_prob;
-    row_vector[max_all_t] one_tumor_dp_prob;
-   
     tuple(vector[max_all_t], vector[max_all_t]) base_marginal_prob_res = calculate_marginal_dp_prob(base_pf_cond_prob, max_all_t);  
     tuple(vector[max_all_t], vector[max_all_t]) one_tumor_marginal_prob_res = calculate_marginal_dp_prob(one_tumor_pf_cond_prob, max_all_t);  
     
@@ -391,7 +396,13 @@ generated quantities {
     base_survival = base_marginal_prob_res.2;
     one_tumor_survival = one_tumor_marginal_prob_res.2;
     
-    base_cond_expected_pfs = (base_dp_prob / (1 - base_survival[max_all_t])) * pfs_range_vec[:max_all_t];
-    one_tumor_cond_expected_pfs = (one_tumor_dp_prob / (1 - one_tumor_survival[max_all_t])) * pfs_range_vec[:max_all_t];
+    base_dp_prob_not_censored = base_dp_prob / (1 - base_survival[max_all_t]);
+    one_tumor_dp_prob_not_censored = one_tumor_dp_prob / (1 - one_tumor_survival[max_all_t]);
+    
+    base_cond_expected_pfs = base_dp_prob_not_censored * pfs_range_vec[:max_all_t];
+    one_tumor_cond_expected_pfs = one_tumor_dp_prob_not_censored * pfs_range_vec[:max_all_t];
+    
+    base_cond_median_pfs = pfs_quantiles_from_prob(base_dp_prob_not_censored', { 0.5 })[1];
+    one_tumor_cond_median_pfs = pfs_quantiles_from_prob(one_tumor_dp_prob_not_censored', { 0.5 })[1];
   }
 }
