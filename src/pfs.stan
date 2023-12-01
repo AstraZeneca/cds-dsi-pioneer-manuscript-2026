@@ -138,8 +138,8 @@ functions {
   }  
  
   // Create (n_patients * n_tumors) x 2 matrix of each tumor's covariates from t = 1, 2. 
-  matrix prepare_early_tumors_design_matrix(vector tumor_size, array[] int n_patient_tumors, array[] int n_measures, real tumor_sd) {
-    matrix[sum(n_patient_tumors), 2] scaled_tumor_covar;
+  matrix prepare_early_tumors_design_matrix(vector tumor_size, array[] int n_patient_tumors, array[] int n_measures) {
+    matrix[sum(n_patient_tumors), 2] tumor_covar;
     int n_patients = size(n_patient_tumors);
     int tumor_pos = 1;
     int covar_pos = 1;
@@ -155,14 +155,14 @@ functions {
       for (j in 1:n_current_tumors) {
         int tumor_end = tumor_pos + n_current_measures - 1; 
         
-        scaled_tumor_covar[covar_pos, ] = tumor_size[tumor_pos:(tumor_pos + 1)]' / tumor_sd;
+        tumor_covar[covar_pos, ] = tumor_size[tumor_pos:(tumor_pos + 1)]';
         covar_pos += 1;
         
         tumor_pos = tumor_end + 1;
       }
     }
     
-    return scaled_tumor_covar;
+    return tumor_covar;
   }
 }
 
@@ -189,7 +189,8 @@ data {
 }
 
 transformed data {
-  real delta = 1e-9; // Very small value for GP vcov matrices
+  real delta = 1e-9;
+  int<lower = 0> n_total_measures = to_int(to_row_vector(n_patient_tumors) * to_vector(n_measures));
   int<lower = 0> max_pfs = max(pfs);
   array[n_patients] int<lower = 1> max_t = get_max_t(t_measure, n_measures);
   int<lower = 1> max_all_t = max(max_t);
@@ -202,8 +203,7 @@ transformed data {
   vector[max_all_t] pfs_range_vec;
   
   int<lower = 0> n_all_tumors = sum(n_patient_tumors);
-  real<lower = 0> tumor_covar_sd;
-  matrix[early_tumors_only ? n_all_tumors : 0, 2] scaled_tumor_covar;
+  matrix[early_tumors_only ? n_all_tumors : 0, 2] standardized_tumor_covar;
  
   // Censoring information calculated from PFS and t_measure; no need to pass it in. 
   array[n_patients] int<lower = 0> interval_censored = rep_array(0, n_patients);
@@ -217,10 +217,11 @@ transformed data {
   
   pfs_range_vec = to_vector(pfs_range);
  
-  if (early_tumors_only) { 
-    tumor_covar_sd = sd(tumor_size); // BUGBUG Ignoring zero sizes?
+  if (early_tumors_only) {
+    tuple(real, real, vector[n_total_measures]) standardize_results = standardize_nonzero_tumor_sizes(tumor_size);
+    vector[n_total_measures] standardized_tumor_size = standardize_results.3;
     
-    scaled_tumor_covar = prepare_early_tumors_design_matrix(tumor_size, n_patient_tumors, n_measures, tumor_covar_sd); 
+    standardized_tumor_covar = prepare_early_tumors_design_matrix(standardized_tumor_size, n_patient_tumors, n_measures);
   } else {
     reject("Not supported yet.");
   }
@@ -262,8 +263,9 @@ transformed parameters {
   vector[max_all_t] log_lambda = calc_gp_pred(pfs_range, log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho, delta, log_lambda_gp_eta);
   vector<lower = 0, upper = 1>[n_time_periods] disease_progress_prob;
   
-  { // Calculate patient-interval conditional probability of disease progression.
     vector[n_time_periods] disease_progress_pred;
+  
+  { // Calculate patient-interval conditional probability of disease progression.
     vector[n_patients] total_time_invar_tumor_stim;
     
     int tumor_pos = 1;
@@ -273,7 +275,9 @@ transformed parameters {
       int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
       int pfs_interval_end = pfs_interval_pos + (gen_pfs ? max_all_t : pfs[i] + right_uncensored[i] + interval_censored[i]) - 1; 
       
-      total_time_invar_tumor_stim[i] = sum(linear_tumor_stimulus(tumor_stim_intercept, tumor_stim_coef, scaled_tumor_covar[tumor_pos:tumor_end]));
+      total_time_invar_tumor_stim[i] = sum(linear_tumor_stimulus(
+        tumor_stim_intercept, tumor_stim_coef, standardized_tumor_covar[tumor_pos:tumor_end]
+      ));
       
       disease_progress_pred[pfs_interval_pos:pfs_interval_end] = 
         log_lambda[1:(gen_pfs ? max_t[i] : pfs[i] + right_uncensored[i] + interval_censored[i])] + total_time_invar_tumor_stim[i];

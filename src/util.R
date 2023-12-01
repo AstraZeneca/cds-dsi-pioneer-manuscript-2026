@@ -1,7 +1,7 @@
 gen_patient_interval_properties <- function(fake_tumor_data, log_lambda, tumor_intercept, tumor_coef, settings) {
-  pfs_model$functions$prepare_early_tumors_design_matrix(
-    fake_tumor_data$tumor_size, settings$n_patient_tumors, settings$n_measures, sd(fake_tumor_data$tumor_size)
-  ) |> 
+  standardized <- pfs_model$functions$standardize_nonzero_tumor_sizes(fake_tumor_data$tumor_size)[[3]]
+  
+  pfs_model$functions$prepare_early_tumors_design_matrix(standardized, settings$n_patient_tumors, settings$n_measures) |>  #, sd(fake_tumor_data$tumor_size)
     as_tibble() |> 
     set_names(c("tumor_size_1", "tumor_size_2")) |> 
     mutate(patient_id = rep(1:settings$n_patients, settings$n_patient_tumors)) |> 

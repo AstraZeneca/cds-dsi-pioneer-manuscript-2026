@@ -58,7 +58,7 @@ We will use data from the Breast01, Breast02, Breast03, and Breast04 trials, foc
 ```{r}
 #| label: sim-settings
 
-n_patients <- 250
+n_patients <- 1000
 patient_measures <- 11
 max_pfs <- 20
 ```
@@ -70,7 +70,7 @@ I haven't yet documented much about this model or done any kind of evaluation. I
 We model tumor size as a nonlinear function with a Gaussian process prior (with common hyperparameters),
 
 $$
-X_{it} \sim  \mathtt{GP}(\mu^\textrm{tumor}, k(\cdot;\alpha^\textrm{tumor}, \rho^\textrm{tumor})) 
+X_{it} \sim  \mathtt{GP}(\mu^\textrm{tumor}, k(\cdot;\alpha^\textrm{tumor}, \rho^\textrm{tumor}) + \bf{I} \sigma^\textrm{tumor}) 
 $$
 where 
 $$k(p, q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$$.
@@ -83,7 +83,7 @@ $$k(p, q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$$.
 tumor_model <- cmdstan_model(here("src", "tumor.stan"))
 
 # Only run this once; it takes a while so we save results locally.
-if (!file.exists(file.path(tmp_dir, "prior_tumor.rds"))) {
+if (!file.exists(file.path(tmp_dir, "fit", "prior_tumor.rds"))) {
   test_data <- lst(
     fit_data = FALSE, # Prior prediction
     gen_tumor_sizes = TRUE,
@@ -91,7 +91,10 @@ if (!file.exists(file.path(tmp_dir, "prior_tumor.rds"))) {
     n_measures = rep(patient_measures, n_patients),
     t_measure = rep(1:(patient_measures - 1), n_patients),
     n_patient_tumors = 1 + rbinom(n_patients, 5, 0.4), # We're not yet generatively modeling the number of tumors
-    tumor_size = array(dim = 0)
+    tumor_size = array(dim = 0),
+    
+    pop_tumor_gp_rho_alpha = 18.51,
+    pop_tumor_gp_rho_beta = 299.54 
   )
   
   tumor_prior_res <- tumor_model$sample(
@@ -137,7 +140,7 @@ write_rds(fake_tumor_data, file.path(tmp_dir, "data", "fake_tumor.rds"))
 ```{r}
 #| label: tumor-model-diagnose
 
-res$cmdstan_diagnose()
+tumor_prior_res$cmdstan_diagnose()
 ```
 
 ```{r}
@@ -147,7 +150,7 @@ res$cmdstan_diagnose()
 res_rvar |> 
   filter(patient_id == 1, tumor_index < 6) |> 
   ggplot(aes(t)) +
-  geom_line(aes(y = tumor_size, group = str_c(patient_id, tumor_index, .draw)), alpha = 0.125, data = \(d) unnest_rvars(d) |> filter(.draw <= 50)) +
+  geom_line(aes(y = tumor_size, group = str_c(patient_id, tumor_index, .draw)), alpha = 0.125, data = \(d) unnest_rvars(d) |> filter(.draw == 5)) +
   stat_lineribbon(aes(ydist = tumor_size, group = tumor_index), fill = "black", alpha = 0.25, .width = 0.8) +
   scale_x_continuous(breaks = seq(0, 10, 2)) +
   labs(y = "Tumor Size", caption = "Shown for a subset of tumors of a single patient.") +
@@ -159,8 +162,8 @@ res_rvar |>
 ## Fake Data Simulation
 
 ```{r}
-#| include: false
-#| eval: false
+#| label: tumor-fake-sim
+#| output: false
 
 tumor_fake_res <- res_rvar |> 
   unnest_rvars() |> 
@@ -251,6 +254,7 @@ pfs_test_data <- test_data |>
     gen_interval_censored = FALSE,
     early_tumors_only = TRUE,
     ignore_interval_censoring = FALSE,
+    
     tumor_size = fake_tumor_data$tumor_size,
     pfs = rep(max_pfs, test_data$n_patients),
     
@@ -310,10 +314,12 @@ max_t <- with(pfs_test_data, list_measures(t_measure, n_measures - 1)) |>
   map_int(max)
 
 pfs_res |> 
-  spread_rvars(disease_progress_prob[i]) |> 
+  spread_rvars(disease_progress_prob[i]) |>
+  # spread_rvars(disease_progress_pred[i]) |> 
   mutate(patient_index = rep(seq(test_data$n_patients), max_t), t = pfs_test_data$t_measure) |> 
   filter(patient_index <= 6) |> 
   ggplot(aes(t)) +
+  # stat_lineribbon(aes(ydist = disease_progress_pred), fill = "black", alpha = 0.5, .width = 0.8) +
   stat_lineribbon(aes(ydist = disease_progress_prob), fill = "black", alpha = 0.5, .width = 0.8) +
   geom_line(aes(y = disease_progress_prob, group = str_c(patient_index, .draw)), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 20)) +
   labs(title = "Conditional probability of remaining progress free", x = "t", y = latex2exp::TeX("$\\alpha_t$")) +
@@ -414,7 +420,8 @@ true_km <- patient_interval_data |>
 ```
 
 ```{r}
-#| label: fake-data-sim 
+#| label: fake-data-sim
+#| output: false
 
 n_sim <- 12 
 fake_data_sim_settings_with_ic <- drop_missing_measures(fake_data_sim_settings, c(3, 4, 6, 9))
@@ -429,6 +436,7 @@ fake_data_sim <- bind_rows(
 
 ```{r}
 #| label: fake-data-params
+#| fig-cap: "Comparing fake data simulation parameter posteriors against their known true values."
 
 fake_data_sim |> 
   transmute(
@@ -453,12 +461,15 @@ fake_data_sim |>
                                                         "tumor_stim_coef_1",       0.15,
                                                         "tumor_stim_coef_2",       0.05)) +
   stat_pointinterval(aes(ydist = est, color = sim_type), size = 0.25, .width = 0.8, fatten_point = 0, position = "dodge") +
+  scale_color_discrete("") +
   facet_wrap(vars(param), scales = "free_y") +
-  theme(axis.text.x = element_blank())
+  labs(x = "", y = "", caption = "Black horizontal line represents the true parameter value.") +
+  theme(axis.text.x = element_blank(), legend.position = "bottom")
 ```
 
 ```{r}
 #| label: fake-data-lambda
+#| fig-cap: "Comparing fake data simulation base hazard posteriors against their known true values."
 
 fake_data_sim |> 
   mutate(sim_log_lambda_post = furrr::future_map(sim_fit, \(f) spread_rvars(f, log_lambda[m]))) |> 
@@ -472,12 +483,14 @@ fake_data_sim |>
     aes(ydist = lambda, color = sim_type), 
     size = 0.5, .width = 0.8, fatten_point = 0, position = "dodge"
   ) +
+  labs(x = "", y = "", caption = "Black horizontal line represents the true parameter value.") +
   facet_wrap(vars(m)) +
-  theme(axis.text.x = element_blank())
+  theme(axis.text.x = element_blank(), legend.position = "bottom")
 ```
 
 ```{r}
 #| label: fake-data-km
+#| fig-cap: "Comparing the fake data Kaplan-Meier survival probability against the true probability."
 
 fake_data_sim |> 
   mutate(km_est = furrr::future_map2(sim_fit, sim_data, \(f, simd) spread_rvars(f, km_est[m]))) |> 
@@ -487,9 +500,10 @@ fake_data_sim |>
   ggplot(aes(m - 1)) +
   geom_line(aes(y = km_est), data = \(sim) semi_join(true_km, sim, by = "m")) +
   stat_lineribbon(aes(ydist = km_est, color = sim_type, fill = sim_type), alpha = 0.25, .width = 0.8) +
-  scale_x_continuous("m", breaks = seq(0, 10, 2)) +
+  scale_x_continuous("t", breaks = seq(0, 10, 2)) +
+  labs(y = "S(t)", caption = "Black line represents the true survival probability.") +
   facet_wrap(vars(sim_id)) +
-  theme(legend.position = "top")
+  theme(legend.position = "bottom")
 ```
 
 ```{r}
@@ -497,7 +511,7 @@ fake_data_sim |>
 
 fake_data_sim |>
   group_by(sim_id, sim_type) |> # So reframe doesn't throw away sim_id and sim_type
-  reframe(furrr::future_map_dfr(sim_fit, \(f) gather_rvars(f, base_cond_expected_pfs, one_tumor_cond_expected_pfs), .progress = TRUE)) |>  
+  reframe(map_dfr(sim_fit, \(f) gather_rvars(f, base_cond_expected_pfs, one_tumor_cond_expected_pfs))) |>  
   add_row(sim_id = 0, sim_type = "prior", expected_pfs_rvar) |> 
   mutate(
     .variable = str_remove(.variable, "_cond_expected_pfs"),
@@ -507,6 +521,7 @@ fake_data_sim |>
   stat_pointinterval(aes(xdist = .value, color = sim_type), size = 0.5, .width = 0.8, position = "dodge") +
   geom_vline(aes(xintercept = true_e), 
              data = tibble(.variable = c("base", "one_tumor"), true_e = c(true_base_cond_expected_pfs, true_one_tumor_cond_expected_pfs))) +
+  scale_color_discrete("") +
   labs(title = "Fake Data Expected PFS", subtitle = "Conditional on progress within maximum observed PFS", x = "m", y = "") +
   facet_wrap(vars(.variable)) +
   NULL
@@ -520,7 +535,6 @@ The code for this simulation is located in `sbc.R` (and `sbc.sh` to run on SLURM
 
 ```{r}
 #| label: sbc
-#| eval: false
 
 sbc_draws <- 1000
 sbc_bw <- 10
