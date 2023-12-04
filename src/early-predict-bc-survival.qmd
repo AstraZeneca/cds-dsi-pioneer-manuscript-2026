@@ -59,8 +59,8 @@ We will use data from the Breast01, Breast02, Breast03, and Breast04 trials, foc
 #| label: sim-settings
 
 n_patients <- 250
-patient_measures <- 41
-max_pfs <- 50
+patient_measures <- 41 
+max_pfs <- 50 
 ```
 
 # Tumor Size Model
@@ -82,37 +82,25 @@ $$k(p, q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$$.
 
 tumor_model <- cmdstan_model(here("src", "tumor.stan"))
 
-# Only run this once; it takes a while so we save results locally.
-if (!file.exists(file.path(tmp_dir, "fit", "prior_tumor.rds"))) {
-  test_data <- lst(
-    fit_data = FALSE, # Prior prediction
-    gen_tumor_sizes = TRUE,
-    n_patients,
-    n_measures = rep(patient_measures, n_patients),
-    t_measure = rep(1:(patient_measures - 1), n_patients),
-    n_patient_tumors = 1 + rbinom(n_patients, 5, 0.4), # We're not yet generatively modeling the number of tumors
-    tumor_size = array(dim = 0),
-    
-    pop_tumor_gp_rho_alpha = 18.51,
-    pop_tumor_gp_rho_beta = 299.54 
-  )
+test_data <- lst(
+  fit_data = FALSE, # Prior prediction
+  gen_tumor_sizes = TRUE,
+  n_patients,
+  n_measures = rep(patient_measures, n_patients),
+  t_measure = rep(1:(patient_measures - 1), n_patients),
+  n_patient_tumors = 1 + rbinom(n_patients, 5, 0.4), # We're not yet generatively modeling the number of tumors
+  tumor_size = array(dim = 0),
   
-  tumor_prior_res <- tumor_model$sample(
-    data = test_data, 
-    iter_warmup = 500, iter_sampling = 500,
-    output_dir = file.path(tmp_dir, "fit"),
-  )
-  
-  tumor_prior_res$save_object(file.path(tmp_dir, "fit", "prior_tumor.rds"))
-  
-  tumor_prior_res$save_data_file(
-    file.path(tmp_dir, "data"), basename = "prior_tumor", timestamp = FALSE, random = FALSE
-  )
-} else {
-  tumor_prior_res <- read_rds(file.path(tmp_dir, "fit", "prior_tumor.rds"))
-  test_data <- rjson::fromJSON(file = file.path(tmp_dir, "data", "prior_tumor.json"))
-}
+  pop_tumor_gp_rho_alpha = 7.3,
+  pop_tumor_gp_rho_beta = 7.5, 
+)
 
+tumor_prior_res <- tumor_model$sample(
+  data = test_data, 
+  iter_warmup = 500, iter_sampling = 500,
+  output_dir = file.path(tmp_dir, "fit"),
+)
+  
 res_rvar <- tumor_prior_res |> 
   spread_rvars(rep_tumor_size[tumor_index]) |> 
   ungroup() |> 
@@ -150,7 +138,7 @@ tumor_prior_res$cmdstan_diagnose()
 res_rvar |> 
   filter(patient_id == 1, tumor_index < 6) |> 
   ggplot(aes(t)) +
-  geom_line(aes(y = tumor_size, group = str_c(patient_id, tumor_index, .draw)), alpha = 0.125, data = \(d) unnest_rvars(d) |> filter(.draw <= 10)) +
+  geom_line(aes(y = tumor_size, group = str_c(patient_id, tumor_index, .draw)), alpha = 0.125, data = \(d) unnest_rvars(d) |> filter(.draw <= 5)) +
   stat_lineribbon(aes(ydist = tumor_size, group = tumor_index), fill = "black", alpha = 0.25, .width = 0.8) +
   scale_x_continuous(breaks = seq(0, 40, 4)) +
   labs(y = "Tumor Size", caption = "Shown for a subset of tumors of a single patient.") +
@@ -167,7 +155,7 @@ res_rvar |>
 
 tumor_fake_res <- res_rvar |> 
   unnest_rvars() |> 
-  filter(.draw <= 24) |> # We'll simulate parameters and data for a number simulations. 
+  filter(.draw <= 12) |> # We'll simulate parameters and data for a number simulations. 
   nest(fake_data = !c(.draw, .iteration, .chain)) |> 
   transmute(
     .draw,
@@ -196,6 +184,7 @@ tumor_fake_res |>
   reframe(map_dfr(fake_fit, \(f) gather_rvars(f, pop_tumor_gp_intercept, pop_tumor_gp_alpha, pop_tumor_gp_rho))) |> 
   left_join(tumor_prior_param_rvar |> unnest_rvars(), by = c(".draw", ".variable"), suffix = c("", "_true")) |> 
   mutate(.value = .value - .value_true) |> 
+  # filter(.draw == 9) |> 
   ggplot(aes(y = .draw)) +
   stat_pointinterval(aes(xdist = .value), .width = 0.8) +
   geom_vline(xintercept = 0, linetype = "dashed") +
@@ -260,6 +249,8 @@ pfs_test_data <- test_data |>
     
     log_lambda_gp_intercept_mean = -3,
     log_lambda_gp_intercept_sd = 0.5,
+    log_lambda_gp_rho_alpha = 7.3,
+    log_lambda_gp_rho_beta = 7.5, 
     tumor_stim_intercept_sd = 0.5,
     tumor_stim_coef_sd = c(0.25, 0.25),
   )
@@ -376,11 +367,9 @@ Here we're using a set of ad hoc survival model parameters and generating a numb
 #| cache: true
 
 # Using a fixed set of log lambda values, generated using:
-# log_lambda <- pfs_model$functions$calc_gp_pred(seq(max_pfs), intercept = -2.0, alpha = 0.3, rho = 1.5, delta = 1e-9, eta = rnorm(max_pfs))
+# log_lambda <- pfs_model$functions$calc_gp_pred(seq(max_pfs), intercept = -3.0, alpha = 0.3, rho = 1.0, delta = 1e-9, eta = rnorm(max_pfs))
 
-# log_lambda <- c(-2.48777760709026, -2.57152726838213, -2.23380584287276, -1.90739893145911, -1.86259266390287, -1.92891255821976, -1.93801857664684, -1.78872336415524, -1.54522270753866, -1.48718504020436, -1.70706597143648, -1.82018710107277, -1.67764635563667, -1.69933003110133, -1.86937604603516, -2.03108481232034, -2.15728306810556, -2.11459406967666, -2.02311574428507, -2.08871876979315) 
-
-log_lambda <- c(-2.15198206860079, -1.9834649783293, -1.58924450591575, -1.72622975593769, -2.14749811630941, -2.36746008971024, -2.37603430990814, -2.31884170580194, -2.44594008841828, -2.55308133765309, -2.34942966889274, -2.11081788044056, -2.10416809304163, -2.1747842298264, -2.06193570842988, -1.72451741818645, -1.44061145931908, -1.49243517822036, -1.89738065443229, -2.23253221652979, -2.11594972443719, -1.94466476576053, -2.14307296151702, -2.29255674748006, -2.08534744999199, -1.73322235693011, -1.65930969929608, -1.88427746964134, -1.96010035175497, -1.94801550249887, -2.19777497820952, -2.43994224459392, -2.29011547358451, -2.01165144315639, -1.9504432712125, -1.94979696672373, -1.74392718783763, -1.5068763886987, -1.48278183677214, -1.64167575342364, -1.84391705940756, -2.16577419440616, -2.53798040608542, -2.66393671892821, -2.53995873189041, -2.2290366420158, -1.78676339546464, -1.59326397968639, -1.69843496452192, -1.77885142385461)
+log_lambda <- c(-2.82925267735431, -2.64520060266755, -2.71623982642665, -2.77870171827626, -2.98322379591453, -3.11838860843101, -3.34166784783459, -3.48984490669283, -3.61074155082535, -3.58991072239931, -3.26653787967046, -2.81081696520833, -2.76301919595487, -2.81578807255205, -2.5179917543256, -2.12192433192815, -2.51329071349476, -3.0513962354066, -3.12183008139132, -3.06572504126551, -3.10726156521308, -3.2750736986627, -3.28560254446871, -3.179764551445, -3.28315288576764, -3.24049943707745, -2.75581328613387, -2.5354647841861, -2.33195936788247, -2.44681772248594, -2.51227126417272, -2.39945076364035, -2.82194286435258, -2.82373614430963, -2.60959395006977, -2.33842528324795, -2.08257238059931, -2.69365813909611, -3.11157953021958, -2.8374417739431, -2.66320620192322, -2.66720997575652, -2.87573308955999, -2.85251742740491, -2.84768094162344, -3.48625620597443, -3.45667264432181, -3.10928556740996, -3.01219644491099, -2.93446227457952)
 
 true_tumor_intercept <- 0.2
 true_tumor_coef <- c(0.15, 0.05)
@@ -407,12 +396,12 @@ true_one_tumor_pf_cond_prob =
     log_lambda, true_tumor_intercept, true_tumor_coef, t(c(1, 1)) 
   )
 
-true_base_marginal_prob_res = pfs_model$functions$calculate_marginal_dp_prob(true_base_pf_cond_prob, patient_measures - 1)  
-true_one_tumor_marginal_prob_res = pfs_model$functions$calculate_marginal_dp_prob(true_one_tumor_pf_cond_prob, patient_measures - 1)  
+true_base_marginal_prob_res = pfs_model$functions$calculate_marginal_dp_prob(true_base_pf_cond_prob, patient_measures)  
+true_one_tumor_marginal_prob_res = pfs_model$functions$calculate_marginal_dp_prob(true_one_tumor_pf_cond_prob, patient_measures)  
 true_base_cond_expected_pfs = 
-  c((true_base_marginal_prob_res[[1]] / (1 - true_base_marginal_prob_res[[2]][10])) %*% seq(patient_measures - 1))
+  c((true_base_marginal_prob_res[[1]] / (1 - true_base_marginal_prob_res[[2]][patient_measures])) %*% seq(patient_measures))
 true_one_tumor_cond_expected_pfs = 
-  c((true_one_tumor_marginal_prob_res[[1]] / (1 - true_one_tumor_marginal_prob_res[[2]][10])) %*% seq(patient_measures - 1))
+  c((true_one_tumor_marginal_prob_res[[1]] / (1 - true_one_tumor_marginal_prob_res[[2]][patient_measures])) %*% seq(patient_measures))
 
 true_km <- patient_interval_data |> 
   group_by(patient_id) %>% 
@@ -429,9 +418,10 @@ true_km <- patient_interval_data |>
 
 missing_measures <- map(seq(n_patients), \(i) sort(sample(3:(patient_measures - 1), 20, replace = FALSE)))
 
-n_sim <- 12 
+n_sim <- 3  
 # fake_data_sim_settings_with_ic <- drop_missing_measures(fake_data_sim_settings, c(3, 4, 6, 9))
-fake_data_sim_settings_with_ic <- drop_missing_measures(fake_data_sim_settings, missing_measures)
+# fake_data_sim_settings_with_ic <- drop_missing_measures(fake_data_sim_settings, missing_measures)
+fake_data_sim_settings_with_ic <- drop_missing_measures(fake_data_sim_settings, c(1,seq(2, 40, 4)), keep_only = TRUE)
 
 fake_data_sim <- bind_rows(
   interval_censoring = fit_simulations(
@@ -441,7 +431,7 @@ fake_data_sim <- bind_rows(
   interval_censoring_ignored = fit_simulations(
     n_sim, patient_interval_data, fake_data_sim_settings_with_ic, ignore_interval_censoring = TRUE, fit_basename = "fake_data_sim_ic_ignored", tmp_dir = tmp_dir
   ),
-  
+
   no_interval_censoring = fit_simulations(
     n_sim, patient_interval_data, fake_data_sim_settings, fit_basename = "fake_data_sim", tmp_dir = tmp_dir
   ),
@@ -470,9 +460,9 @@ fake_data_sim |>
   pivot_longer(!c(sim_id, sim_type), names_to = "param", values_to = "est") |>
   ggplot(aes(sim_id)) + 
   geom_hline(aes(yintercept = true_val), data = tribble(~ param,                   ~ true_val,
-                                                        "log_lambda_gp_intercept", -2.0,
+                                                        "log_lambda_gp_intercept", -3.0,
                                                         "log_lambda_gp_alpha",     0.3,
-                                                        "log_lambda_gp_rho",       1.5,
+                                                        "log_lambda_gp_rho",       1.0,
                                                         "tumor_stim_intercept",    0.2,
                                                         "tumor_stim_coef_1",       0.15,
                                                         "tumor_stim_coef_2",       0.05)) +
@@ -489,10 +479,11 @@ fake_data_sim |>
 
 fake_data_sim |> 
   mutate(sim_log_lambda_post = furrr::future_map(sim_fit, \(f) spread_rvars(f, log_lambda[m]))) |> 
-  select(!c(sim_data, sim_fit)) |>
+  select(!sim_fit) |>
   unnest(sim_log_lambda_post) |> 
   bind_rows(transmute(lambda_rvar, m = t, log_lambda, sim_id = 0, sim_type = "prior")) |> 
   mutate(lambda = exp(log_lambda)) |> 
+  filter(m <= 20) |> 
   ggplot(aes(sim_id)) + 
   geom_hline(aes(yintercept = true_val), data = \(d) distinct(d, m) |> mutate(true_val = exp(log_lambda[m]))) +
   stat_pointinterval(
@@ -509,9 +500,9 @@ fake_data_sim |>
 #| fig-cap: "Comparing the fake data Kaplan-Meier survival probability against the true probability."
 
 fake_data_sim |> 
-  mutate(km_est = furrr::future_map2(sim_fit, sim_data, \(f, simd) spread_rvars(f, km_est[m]))) |> 
+  mutate(km_est = furrr::future_map(sim_fit, \(f) spread_rvars(f, km_est[m]))) |> 
   select(sim_id, sim_type, km_est) |> 
-  filter(sim_id <= 9) |> 
+  filter(sim_id <= 3) |> 
   unnest(km_est) |> 
   ggplot(aes(m - 1)) +
   geom_line(aes(y = km_est), data = \(sim) semi_join(true_km, sim, by = "m")) +
@@ -528,7 +519,7 @@ fake_data_sim |>
 fake_data_sim |>
   group_by(sim_id, sim_type) |> # So reframe doesn't throw away sim_id and sim_type
   reframe(map_dfr(sim_fit, \(f) gather_rvars(f, base_cond_expected_pfs, one_tumor_cond_expected_pfs))) |>  
-  add_row(sim_id = 0, sim_type = "prior", expected_pfs_rvar) |> 
+  # add_row(sim_id = 0, sim_type = "prior", expected_pfs_rvar) |> 
   mutate(
     .variable = str_remove(.variable, "_cond_expected_pfs"),
     est_type = if_else(sim_id > 0, "post", "prior")
