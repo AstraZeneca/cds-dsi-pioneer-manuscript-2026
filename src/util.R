@@ -18,35 +18,53 @@ gen_patient_interval_properties <- function(fake_tumor_data, log_lambda, tumor_i
 
 list_measures <- function(measures, n_measures) split(measures, rep(seq_along(n_measures), n_measures)) 
 
-drop_missing_measures <- function(settings, missing_measures = NULL) {
-  if (!is_null(missing_measures)) {
-    if (is.list(missing_measures)) {
-      settings %>%  
-        list_modify(
-          t_measure = list_measures(.$t_measure, .$n_measures - 1) |> 
-            map2(missing_measures, \(t, m) setdiff(t, m)),
-          tumor_size = list_measures(.$tumor_size, rep(.$n_measures, .$n_patient_tumors)) |> 
-            map2(rep(missing_measures, .$n_patient_tumors), \(t, m) discard_at(t, m + 1)) |>  # The first one is actual for the baseline, t = 0. 
-            unlist()
-        ) %>%
-        list_modify(
-          n_measures = map_int(.$t_measure, length) + 1,
-          t_measure = unlist(.$t_measure),
-        )  
+drop_missing_measures <- function(settings, measures = NULL, keep_only = FALSE) {
+  if (!is_null(measures)) {
+    updated_settings <- if (is.list(measures)) {
+      if (keep_only) {
+        settings %>%  
+          list_modify(
+            t_measure = measures,
+            tumor_size = list_measures(.$tumor_size, rep(.$n_measures, .$n_patient_tumors)) |> 
+              map2(rep(measures, .$n_patient_tumors), \(t, m) keep_at(t, m + 1)) |>  # The first one is actual for the baseline, t = 0. 
+              unlist()
+          ) 
+      } else {
+        settings %>%  
+          list_modify(
+            t_measure = list_measures(.$t_measure, .$n_measures - 1) |> 
+              map2(measures, \(t, m) setdiff(t, m)),
+            tumor_size = list_measures(.$tumor_size, rep(.$n_measures, .$n_patient_tumors)) |> 
+              map2(rep(measures, .$n_patient_tumors), \(t, m) discard_at(t, m + 1)) |>  # The first one is actual for the baseline, t = 0. 
+              unlist()
+          ) 
+      }
     } else {
-      settings %>%  
-        list_modify(
-          t_measure = list_measures(.$t_measure, .$n_measures - 1) |> 
-            map(\(t) setdiff(t, missing_measures)),
-          tumor_size = list_measures(.$tumor_size, rep(.$n_measures, .$n_patient_tumors)) |> 
-            map(\(t) discard_at(t, missing_measures + 1)) |>  # The first one is actual for the baseline, t = 0. 
-            unlist()
-        ) %>%
-        list_modify(
-          n_measures = map_int(.$t_measure, length) + 1,
-          t_measure = unlist(.$t_measure),
-        )  
+      if (keep_only) {
+        settings %>%  
+          list_modify(
+            t_measure = map(seq(.$n_patients), \(i) measures),
+            tumor_size = list_measures(.$tumor_size, rep(.$n_measures, .$n_patient_tumors)) |> 
+              map(\(t) keep_at(t, c(1, measures + 1))) |>  # The first one is actual for the baseline, t = 0. 
+              unlist()
+          ) 
+      } else {
+        settings %>%  
+          list_modify(
+            t_measure = list_measures(.$t_measure, .$n_measures - 1) |> 
+              map(\(t) setdiff(t, measures)),
+            tumor_size = list_measures(.$tumor_size, rep(.$n_measures, .$n_patient_tumors)) |> 
+              map(\(t) discard_at(t, c(1, measures + 1))) |>  # The first one is actual for the baseline, t = 0. 
+              unlist()
+          ) 
+      }
     }
+    
+    updated_settings %>%
+      list_modify(
+        n_measures = map_int(.$t_measure, length) + 1,
+        t_measure = unlist(.$t_measure),
+      )  
   } else {
     settings
   }
