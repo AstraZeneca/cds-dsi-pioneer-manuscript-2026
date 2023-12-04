@@ -11,8 +11,8 @@ functions {
       real total_time_invar_tumor_stim = sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar));
       
       return inv_cloglog(log_lambda + total_time_invar_tumor_stim);
-  }
  
+  }
   // Hazard function given a base hazard and time-invariant covariates.  
   vector calculate_linear_hazard(vector log_lambda, real tumor_intercept, vector tumor_coef, matrix tumor_covar) {
       real total_time_invar_tumor_stim = sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar));
@@ -30,6 +30,8 @@ functions {
       int t_end = t_pos + n_measures[i] - 2; // The baseline measure is not included in t_measures.
       
       max_t[i] = max(t_measure[t_pos:t_end]);
+      
+      t_pos = t_end + 1;
     }
     
     return max_t;
@@ -184,6 +186,8 @@ data {
   
   real log_lambda_gp_intercept_mean;
   real<lower = 0> log_lambda_gp_intercept_sd;
+  real<lower = 0> log_lambda_gp_rho_alpha;
+  real<lower = 0> log_lambda_gp_rho_beta;
   real<lower = 0> tumor_stim_intercept_sd; 
   vector<lower = 0>[2] tumor_stim_coef_sd;
 }
@@ -211,11 +215,11 @@ transformed data {
   array[n_patients] int<lower = 0, upper = 1> right_uncensored = rep_array(0, n_patients);
   
   for (i in 1:max_all_t) {
-    pfs_range[i] = i;
+    pfs_range[i] = i / 12.0;
     pfs_range_int[i] = i;
+    pfs_range_vec[i] = i; 
   }
   
-  pfs_range_vec = to_vector(pfs_range);
  
   if (early_tumors_only) {
     tuple(real, real, vector[n_total_measures]) standardize_results = standardize_nonzero_tumor_sizes(tumor_size);
@@ -280,7 +284,7 @@ transformed parameters {
       ));
       
       disease_progress_pred[pfs_interval_pos:pfs_interval_end] = 
-        log_lambda[1:(gen_pfs ? max_t[i] : pfs[i] + right_uncensored[i] + interval_censored[i])] + total_time_invar_tumor_stim[i];
+        log_lambda[1:(gen_pfs ? max_all_t : pfs[i] + right_uncensored[i] + interval_censored[i])] + total_time_invar_tumor_stim[i];
       
       tumor_pos = tumor_end + 1;
       pfs_interval_pos = pfs_interval_end + 1;
@@ -294,7 +298,7 @@ model {
   // Priors
   
   log_lambda_gp_alpha ~ normal(0, 0.25);
-  log_lambda_gp_rho ~ inv_gamma(5, 5);
+  log_lambda_gp_rho ~ inv_gamma(log_lambda_gp_rho_alpha, log_lambda_gp_rho_beta);
   log_lambda_gp_eta ~ std_normal();
   log_lambda_gp_intercept ~ normal(log_lambda_gp_intercept_mean, log_lambda_gp_intercept_sd);
   
