@@ -30,7 +30,7 @@ transformed data {
   array[n_tumor_measures] int<lower = 1, upper = n_tumor_measures> obs_tumor_measures_idx; 
   
   for (t in 1:(max_all_t + 1)) {
-    all_measure_idx[t] = t;
+    all_measure_idx[t] = t / 12.0; // 1 = year
   } 
  
   {
