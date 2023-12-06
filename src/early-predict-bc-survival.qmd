@@ -100,6 +100,8 @@ tumor_prior_res <- tumor_model$sample(
   iter_warmup = 500, iter_sampling = 500,
   output_dir = file.path(tmp_dir, "fit"),
 )
+
+tumor_prior_res$save_data_file(dir = file.path(tmp_dir, "data"), basename = "prior_tumor", timestamp = FALSE, random = FALSE)
   
 res_rvar <- tumor_prior_res |> 
   spread_rvars(rep_tumor_size[tumor_index]) |> 
@@ -402,6 +404,8 @@ true_base_cond_expected_pfs =
   c((true_base_marginal_prob_res[[1]] / (1 - true_base_marginal_prob_res[[2]][patient_measures])) %*% seq(patient_measures))
 true_one_tumor_cond_expected_pfs = 
   c((true_one_tumor_marginal_prob_res[[1]] / (1 - true_one_tumor_marginal_prob_res[[2]][patient_measures])) %*% seq(patient_measures))
+true_base_cond_median_pfs = pfs_model$functions$pfs_quantiles_from_prob(true_base_pf_cond_prob, 0.5) 
+true_one_tumor_cond_median_pfs = pfs_model$functions$pfs_quantiles_from_prob(true_one_tumor_pf_cond_prob, 0.5)  
 
 true_km <- patient_interval_data |> 
   group_by(patient_id) %>% 
@@ -418,7 +422,7 @@ true_km <- patient_interval_data |>
 
 missing_measures <- map(seq(n_patients), \(i) sort(sample(3:(patient_measures - 1), 20, replace = FALSE)))
 
-n_sim <- 3  
+n_sim <- 12  
 # fake_data_sim_settings_with_ic <- drop_missing_measures(fake_data_sim_settings, c(3, 4, 6, 9))
 # fake_data_sim_settings_with_ic <- drop_missing_measures(fake_data_sim_settings, missing_measures)
 fake_data_sim_settings_with_ic <- drop_missing_measures(fake_data_sim_settings, c(1,seq(2, 40, 4)), keep_only = TRUE)
@@ -517,20 +521,32 @@ fake_data_sim |>
 #| label: fake-data-cond-expected-pfs-plot
 
 fake_data_sim |>
-  group_by(sim_id, sim_type) |> # So reframe doesn't throw away sim_id and sim_type
-  reframe(map_dfr(sim_fit, \(f) gather_rvars(f, base_cond_expected_pfs, one_tumor_cond_expected_pfs))) |>  
+  mutate(
+    cond_stat = furrr::future_map(
+      sim_fit, \(f) gather_rvars(f, base_cond_expected_pfs, one_tumor_cond_expected_pfs, base_cond_median_pfs, one_tumor_cond_median_pfs)
+    )
+  ) |> 
+  unnest(cond_stat) |> 
   # add_row(sim_id = 0, sim_type = "prior", expected_pfs_rvar) |> 
   mutate(
+    stat = str_extract(.variable, "expected|median"),
     .variable = str_remove(.variable, "_cond_expected_pfs"),
     est_type = if_else(sim_id > 0, "post", "prior")
   ) |> 
   ggplot(aes(y = sim_id)) +
   stat_pointinterval(aes(xdist = .value, color = sim_type), size = 0.5, .width = 0.8, position = "dodge") +
-  geom_vline(aes(xintercept = true_e), 
-             data = tibble(.variable = c("base", "one_tumor"), true_e = c(true_base_cond_expected_pfs, true_one_tumor_cond_expected_pfs))) +
+  geom_vline(
+    aes(xintercept = true_e), 
+    data = tibble(
+      .variable = rep(c("base", "one_tumor"), 2), 
+      stat = rep(c("expected", "median"), each = 2),
+      true_e = c(true_base_cond_expected_pfs, true_one_tumor_cond_expected_pfs, true_base_cond_median_pfs, true_one_tumor_cond_median_pfs)
+    )
+  ) +
   scale_color_discrete("") +
   labs(title = "Fake Data Expected PFS", subtitle = "Conditional on progress within maximum observed PFS", x = "m", y = "") +
-  facet_wrap(vars(.variable)) +
+  # facet_wrap(vars(.variable)) +
+  facet_grid(vars(stat), vars(.variable)) +
   NULL
 ```
 
