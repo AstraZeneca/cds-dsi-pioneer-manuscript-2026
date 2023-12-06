@@ -330,7 +330,7 @@ lambda_rvar |>
   select(t, base_survival, one_tumor_survival) |> 
   pivot_longer(!t, names_to = "survival_type", values_to = "survival") |> 
   ggplot(aes(t)) +
-  stat_lineribbon(aes(ydist = survival, fill = survival_type, color = survival_type), alpha = 0.25, .width = 0.8) +
+  stat_lineribbon(aes(ydist = survival, fill = survival_type, color = survival_type), step = TRUE, alpha = 0.25, .width = 0.8) +
   labs(title = "Base survival probability", x = "t", y = latex2exp::TeX("$S(t)$"))
 ```
 
@@ -350,7 +350,7 @@ expected_pfs_rvar |>
 pfs_res |> 
   spread_rvars(km_est[m]) |> 
   ggplot(aes(m - 1)) +
-  stat_lineribbon(aes(ydist = km_est), fill = "black", alpha = 0.25, .width = 0.8) +
+  stat_lineribbon(aes(ydist = km_est), step = TRUE, fill = "black", alpha = 0.25, .width = 0.8) +
   labs(title = "Kaplan-Meier estimate", y = latex2exp::TeX("$S(t)$")) +
   scale_x_continuous("t", breaks = seq(0, 40, 2))
 ```
@@ -510,7 +510,7 @@ fake_data_sim |>
   unnest(km_est) |> 
   ggplot(aes(m - 1)) +
   geom_line(aes(y = km_est), data = \(sim) semi_join(true_km, sim, by = "m")) +
-  stat_lineribbon(aes(ydist = km_est, color = sim_type, fill = sim_type), alpha = 0.25, .width = 0.8) +
+  stat_lineribbon(aes(ydist = km_est, color = sim_type, fill = sim_type), step = TRUE, alpha = 0.25, .width = 0.8) +
   scale_x_continuous("t", breaks = seq(0, 40, 4)) +
   labs(y = "S(t)", caption = "Black line represents the true survival probability.") +
   facet_wrap(vars(sim_id)) +
