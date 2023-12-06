@@ -5,7 +5,8 @@ Usage: sbc.R <cores> <num-sim> <output-name> [--append] [--censor-intervals=<int
 --keep-only  Keep only the intervals provided for censoring
 " |> 
   docopt::docopt(
-    args = if (interactive()) "12 3 test --censor-intervals=1,2,6,10,14,18,22,26,30,34,38 --keep-only" else commandArgs(TRUE),
+    # args = if (interactive()) "12 3 test --censor-intervals=1,2,6,10,14,18,22,26,30,34,38 --keep-only" else commandArgs(TRUE),
+    args = if (interactive()) "48 1 test" else commandArgs(TRUE),
   ) -> cl_args
 
 library(tidyverse)
@@ -20,7 +21,9 @@ cl_args <- cl_args |>
   purrr::modify_at(c("cores", "num_sim", "censor_intervals"), as.integer) -> cl_args
 
 max_pfs <- 45 
-tmp_dir <- file.path(Sys.getenv("TMP"), "adc-early-predict")
+tmp_dir <- file.path(Sys.getenv("TMPDIR"), "adc-early-predict")
+
+cat("Temporary folder:", tmp_dir, "\n")
 
 source(here("src", "util.R"))
 
