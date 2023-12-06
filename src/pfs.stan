@@ -123,20 +123,23 @@ functions {
 
   // Calculate marginal probability of disease progression at every time interval, given conditional probabilities.
   tuple(vector, vector) calculate_marginal_dp_prob(vector cond_pf_prob, int max_all_t) {
+    vector[max_all_t] log_cond_pf_prob = log(cond_pf_prob[:max_all_t]);
+    vector[max_all_t] log_1m_cond_pf_prob = log(1 - cond_pf_prob[:max_all_t]);
     vector[max_all_t] marginal_dp_prob;
     vector[max_all_t] dp_cdf;
   
     for (m in 1:max_all_t) {
       if (m > 1) {
-        marginal_dp_prob[m] = (1 - cond_pf_prob[m]) * prod(cond_pf_prob[1:(m - 1)]);
-        dp_cdf[m] = marginal_dp_prob[m] + dp_cdf[m - 1]; 
+        // marginal_dp_prob[m] = (1 - cond_pf_prob[m]) * prod(cond_pf_prob[1:(m - 1)]);
+        marginal_dp_prob[m] = log_1m_cond_pf_prob[m] + sum(log_cond_pf_prob[1:(m - 1)]);
+        dp_cdf[m] = exp(marginal_dp_prob[m]) + dp_cdf[m - 1]; 
       } else {
-        marginal_dp_prob[m] = 1 - cond_pf_prob[m];
-        dp_cdf[m] = marginal_dp_prob[m];
+        marginal_dp_prob[m] = log_1m_cond_pf_prob[m];
+        dp_cdf[m] = exp(marginal_dp_prob[m]);
       }
     }
     
-    return(marginal_dp_prob, 1 - dp_cdf);
+    return(exp(marginal_dp_prob), fmax(0, 1 - dp_cdf));
   }  
  
   // Create (n_patients * n_tumors) x 2 matrix of each tumor's covariates from t = 1, 2. 
@@ -342,9 +345,8 @@ model {
 
 generated quantities {
   vector<lower = 0, upper = 1>[max_all_t] base_pf_cond_prob = 1 - inv_cloglog(log_lambda); // Progression free conditional prob if not using covar
-  vector<lower = 0, upper = 1>[max_all_t] one_tumor_pf_cond_prob = 
     // Progress free conditional probability if only 1 tumor per patient fixed at size = 1 
-    1 - calculate_progress_linear_prob(log_lambda, tumor_stim_intercept, tumor_stim_coef, [[1, 1]]); 
+  vector<lower = 0, upper = 1>[max_all_t] one_tumor_pf_cond_prob = 1 - calculate_progress_linear_prob(log_lambda, tumor_stim_intercept, tumor_stim_coef, [[1, 1]]);
   vector<lower = 0, upper = 1>[max_all_t] base_survival;
   vector<lower = 0, upper = 1>[max_all_t] one_tumor_survival;
   real<lower = 0, upper = max_all_t> base_cond_expected_pfs;
