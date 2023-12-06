@@ -1,10 +1,11 @@
 "
-Usage: sbc.R <cores> <num-sim> <output-name> [--append] [--censor-intervals=<intervals> --ignore-interval-censoring]
+Usage: sbc.R <cores> <num-sim> <output-name> [--append] [--censor-intervals=<intervals> --keep-only --ignore-interval-censoring]
 
 --censor-intervals=<intervals>  Intervals to censor in the data
+--keep-only  Keep only the intervals provided for censoring
 " |> 
   docopt::docopt(
-    args = if (interactive()) "12 3 test --censor-intervals=3,4,6,9" else commandArgs(TRUE),
+    args = if (interactive()) "12 3 test --censor-intervals=1,2,6,10,14,18,22,26,30,34,38 --keep-only" else commandArgs(TRUE),
   ) -> cl_args
 
 library(tidyverse)
@@ -18,7 +19,7 @@ cl_args <- cl_args |>
   purrr::modify_at("censor_intervals", \(si) str_split(si, fixed(",")) |> list_c() |> unique()) |> 
   purrr::modify_at(c("cores", "num_sim", "censor_intervals"), as.integer) -> cl_args
 
-max_pfs <- 20
+max_pfs <- 45 
 tmp_dir <- file.path(Sys.getenv("TMP"), "adc-early-predict")
 
 source(here("src", "util.R"))
@@ -45,10 +46,12 @@ pfs_test_data <- tumor_test_data |>
     
     log_lambda_gp_intercept_mean = -3,
     log_lambda_gp_intercept_sd = 0.5,
+    log_lambda_gp_rho_alpha = 7.3,
+    log_lambda_gp_rho_beta = 7.5, 
     tumor_stim_intercept_sd = 0.5,
     tumor_stim_coef_sd = c(0.25, 0.25),
   ) |> 
-  drop_missing_measures(cl_args$censor_intervals)  
+  drop_missing_measures(cl_args$censor_intervals, keep_only = cl_args$keep_only)  
 
 # Sample from the prior: no data.
 pfs_res <- pfs_model$sample(data = pfs_test_data, refresh = 0)
@@ -63,7 +66,10 @@ sbc_data <- pfs_res |>
   nest(sim_data = !.draw) |>
   left_join( # Get the parameters that generated that data
     pfs_res |> 
-      spread_rvars(tumor_stim_intercept, tumor_stim_coef[t], log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho) |> 
+      spread_rvars(
+        tumor_stim_intercept, tumor_stim_coef[t], log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho,
+        base_cond_expected_pfs, one_tumor_cond_expected_pfs, base_cond_median_pfs, one_tumor_cond_median_pfs
+      ) |> 
       pivot_wider(names_from = t, values_from = tumor_stim_coef, names_prefix = "tumor_stim_coef_") |> 
       unnest_rvars() |> 
       ungroup() |> 
@@ -82,7 +88,11 @@ sbc_data <- pfs_res |>
           output_dir = file.path(tmp_dir, "fit"), 
           ignore_interval_censoring = cl_args$ignore_interval_censoring 
         ) |> # Get posterior draws from simulation fit. 
-          spread_rvars(tumor_stim_intercept, tumor_stim_coef,  log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho, ndraws = 1000) |> 
+          spread_rvars(
+            tumor_stim_intercept, tumor_stim_coef, log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho, 
+            base_cond_expected_pfs, one_tumor_cond_expected_pfs, base_cond_median_pfs, one_tumor_cond_median_pfs,
+            ndraws = 1000
+          ) |> 
           rename_with(\(n) str_c("est_", n))
       }, 
       cl_args = cl_args
@@ -99,6 +109,10 @@ sbc_data <- pfs_res |>
     r_log_lambda_gp_intercept = sum(est_log_lambda_gp_intercept < log_lambda_gp_intercept),
     r_log_lambda_gp_alpha = sum(est_log_lambda_gp_alpha < log_lambda_gp_alpha),
     r_log_lambda_gp_rho = sum(est_log_lambda_gp_rho < log_lambda_gp_rho),
+    r_base_cond_expected_pfs = sum(est_base_cond_expected_pfs < base_cond_expected_pfs),
+    r_one_tumor_cond_expected_pfs = sum(est_one_tumor_cond_expected_pfs < one_tumor_cond_expected_pfs),
+    r_base_cond_median_pfs = sum(est_base_cond_median_pfs < base_cond_median_pfs),
+    r_one_tumor_cond_median_pfs = sum(est_one_tumor_cond_median_pfs < one_tumor_cond_median_pfs),
   )
 
 if (cl_args$append) {
