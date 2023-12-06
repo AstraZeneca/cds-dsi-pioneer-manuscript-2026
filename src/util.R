@@ -19,7 +19,7 @@ gen_patient_interval_properties <- function(fake_tumor_data, log_lambda, tumor_i
 list_measures <- function(measures, n_measures) split(measures, rep(seq_along(n_measures), n_measures)) 
 
 drop_missing_measures <- function(settings, measures = NULL, keep_only = FALSE) {
-  if (!is_null(measures)) {
+  if (!is_null(measures) && length(measures) > 0) {
     updated_settings <- if (is.list(measures)) {
       if (keep_only) {
         settings %>%  

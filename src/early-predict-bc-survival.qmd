@@ -18,7 +18,7 @@ library(bayesplot)
 library(here)
 
 # Using different temp directories on SCP and locally.
-tmp_dir <- if (nchar(Sys.getenv("TMP")) > 0) file.path(Sys.getenv("TMP"), "adc-early-predict") else here("temp")
+tmp_dir <- if (nchar(Sys.getenv("TMP")) > 0) file.path(Sys.getenv("TMPDIR"), "adc-early-predict") else here("temp")
 
 options(mc.cores = 12)
 
