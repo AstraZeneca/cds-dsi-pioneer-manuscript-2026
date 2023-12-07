@@ -5,7 +5,7 @@
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=48
 #SBATCH --mem-per-cpu=1G
-#SBATCH --time=0-05:30:00
+#SBATCH --time=0-02:30:00
 #SBATCH --output=/wscratch/%u/adc-early-predict/log/%x_%j.log
 
 module load R-core
