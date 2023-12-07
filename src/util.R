@@ -1,7 +1,7 @@
 gen_patient_interval_properties <- function(fake_tumor_data, log_lambda, tumor_intercept, tumor_coef, settings) {
-  pfs_model$functions$prepare_early_tumors_design_matrix(
-    fake_tumor_data$tumor_size, settings$n_patient_tumors, settings$n_measures, sd(fake_tumor_data$tumor_size)
-  ) |> 
+  standardized <- pfs_model$functions$standardize_nonzero_tumor_sizes(fake_tumor_data$tumor_size)[[3]]
+  
+  pfs_model$functions$prepare_early_tumors_design_matrix(standardized, settings$n_patient_tumors, settings$n_measures) |>  #, sd(fake_tumor_data$tumor_size)
     as_tibble() |> 
     set_names(c("tumor_size_1", "tumor_size_2")) |> 
     mutate(patient_id = rep(1:settings$n_patients, settings$n_patient_tumors)) |> 
@@ -18,16 +18,49 @@ gen_patient_interval_properties <- function(fake_tumor_data, log_lambda, tumor_i
 
 list_measures <- function(measures, n_measures) split(measures, rep(seq_along(n_measures), n_measures)) 
 
-drop_missing_measures <- function(settings, missing_measures = NULL) {
-  if (!is_null(missing_measures)) {
-    settings %>%  
-      list_modify(
-        t_measure = list_measures(.$t_measure, .$n_measures - 1) |> 
-          map(\(t) setdiff(t, missing_measures)),
-        tumor_size = list_measures(.$tumor_size, rep(.$n_measures, .$n_patient_tumors)) |> 
-          map(\(t) discard_at(t, missing_measures + 1)) |>  # The first one is actual for the baseline, t = 0. 
-          unlist()
-      ) %>%
+drop_missing_measures <- function(settings, measures = NULL, keep_only = FALSE) {
+  if (!is_null(measures) && length(measures) > 0) {
+    updated_settings <- if (is.list(measures)) {
+      if (keep_only) {
+        settings %>%  
+          list_modify(
+            t_measure = measures,
+            tumor_size = list_measures(.$tumor_size, rep(.$n_measures, .$n_patient_tumors)) |> 
+              map2(rep(measures, .$n_patient_tumors), \(t, m) keep_at(t, c(1, m + 1))) |>  # The first one is actual for the baseline, t = 0. 
+              unlist()
+          ) 
+      } else {
+        settings %>%  
+          list_modify(
+            t_measure = list_measures(.$t_measure, .$n_measures - 1) |> 
+              map2(measures, \(t, m) setdiff(t, m)),
+            tumor_size = list_measures(.$tumor_size, rep(.$n_measures, .$n_patient_tumors)) |> 
+              map2(rep(measures, .$n_patient_tumors), \(t, m) discard_at(t, m + 1)) |>  # The first one is actual for the baseline, t = 0. 
+              unlist()
+          ) 
+      }
+    } else {
+      if (keep_only) {
+        settings %>%  
+          list_modify(
+            t_measure = map(seq(.$n_patients), \(i) measures),
+            tumor_size = list_measures(.$tumor_size, rep(.$n_measures, .$n_patient_tumors)) |> 
+              map(\(t) keep_at(t, c(1, measures + 1))) |>  # The first one is actual for the baseline, t = 0. 
+              unlist()
+          ) 
+      } else {
+        settings %>%  
+          list_modify(
+            t_measure = list_measures(.$t_measure, .$n_measures - 1) |> 
+              map(\(t) setdiff(t, measures)),
+            tumor_size = list_measures(.$tumor_size, rep(.$n_measures, .$n_patient_tumors)) |> 
+              map(\(t) discard_at(t, measures + 1)) |>  # The first one is actual for the baseline, t = 0. 
+              unlist()
+          ) 
+      }
+    }
+    
+    updated_settings %>%
       list_modify(
         n_measures = map_int(.$t_measure, length) + 1,
         t_measure = unlist(.$t_measure),
@@ -82,7 +115,8 @@ fit_simulations <- function(n, patient_interval_data, settings, ignore_interval_
     rowwise() |> 
     mutate(sim_data = list(gen_fake_pfs_data(patient_interval_data, settings))) |> 
     ungroup() |> 
-    mutate(
+    transmute(
+      sim_id,
       sim_fit = furrr::future_map2(.progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
         sim_id, sim_data, 
         \(sid, sdata) fit_sim_data(
