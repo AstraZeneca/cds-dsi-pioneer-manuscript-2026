@@ -26,7 +26,7 @@ drop_missing_measures <- function(settings, measures = NULL, keep_only = FALSE) 
           list_modify(
             t_measure = measures,
             tumor_size = list_measures(.$tumor_size, rep(.$n_measures, .$n_patient_tumors)) |> 
-              map2(rep(measures, .$n_patient_tumors), \(t, m) keep_at(t, m + 1)) |>  # The first one is actual for the baseline, t = 0. 
+              map2(rep(measures, .$n_patient_tumors), \(t, m) keep_at(t, c(1, m + 1))) |>  # The first one is actual for the baseline, t = 0. 
               unlist()
           ) 
       } else {
@@ -54,7 +54,7 @@ drop_missing_measures <- function(settings, measures = NULL, keep_only = FALSE) 
             t_measure = list_measures(.$t_measure, .$n_measures - 1) |> 
               map(\(t) setdiff(t, measures)),
             tumor_size = list_measures(.$tumor_size, rep(.$n_measures, .$n_patient_tumors)) |> 
-              map(\(t) discard_at(t, c(1, measures + 1))) |>  # The first one is actual for the baseline, t = 0. 
+              map(\(t) discard_at(t, measures + 1)) |>  # The first one is actual for the baseline, t = 0. 
               unlist()
           ) 
       }
