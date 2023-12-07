@@ -79,6 +79,7 @@ $$k(p, q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$$.
 
 ```{r}
 #| label: tumor
+#| warning: false
 
 tumor_model <- cmdstan_model(here("src", "tumor.stan"))
 
@@ -151,9 +152,12 @@ res_rvar |>
 
 ## Fake Data Simulation
 
+This code isn't running pending a bug fix.
+
 ```{r}
 #| label: tumor-fake-sim
 #| output: false
+#| eval: false
 
 tumor_fake_res <- res_rvar |> 
   unnest_rvars() |> 
@@ -180,6 +184,7 @@ tumor_fake_res <- res_rvar |>
 ```{r}
 #| label: tumor-fake-data-params
 #| fig-cap: "Fake data simulation assessing model's ability to recover posterior of model parameters."
+#| eval: false
 
 tumor_fake_res |> 
   group_by(.draw) |> 
@@ -419,6 +424,8 @@ true_km <- patient_interval_data |>
 ```{r}
 #| label: fake-data-sim
 #| output: false
+#| cache: true
+#| dependson: fake-data-model
 
 missing_measures <- map(seq(n_patients), \(i) sort(sample(3:(patient_measures - 1), 20, replace = FALSE)))
 
@@ -447,6 +454,8 @@ fake_data_sim <- bind_rows(
 ```{r}
 #| label: fake-data-params
 #| fig-cap: "Comparing fake data simulation parameter posteriors against their known true values."
+#| cache: true
+#| dependson: fake-data-sim
 
 fake_data_sim |> 
   transmute(
@@ -480,6 +489,8 @@ fake_data_sim |>
 ```{r}
 #| label: fake-data-lambda
 #| fig-cap: "Comparing fake data simulation base hazard posteriors against their known true values."
+#| cache: true
+#| dependson: fake-data-sim
 
 fake_data_sim |> 
   mutate(sim_log_lambda_post = furrr::future_map(sim_fit, \(f) spread_rvars(f, log_lambda[m]))) |> 
@@ -502,6 +513,8 @@ fake_data_sim |>
 ```{r}
 #| label: fake-data-km
 #| fig-cap: "Comparing the fake data Kaplan-Meier survival probability against the true probability."
+#| cache: true
+#| dependson: fake-data-sim
 
 fake_data_sim |> 
   mutate(km_est = furrr::future_map(sim_fit, \(f) spread_rvars(f, km_est[m]))) |> 
@@ -519,6 +532,8 @@ fake_data_sim |>
 
 ```{r}
 #| label: fake-data-cond-expected-pfs-plot
+#| cache: true
+#| dependson: fake-data-sim
 
 fake_data_sim |>
   mutate(
@@ -571,14 +586,31 @@ sbc_data <- bind_rows(
 
 sbc_data |> 
   pivot_longer(!c(sim_type), names_to = "param", names_prefix = "r_", values_to = "r") |> 
+  filter(!str_detect(param, "pfs$")) |>
   ggplot() +
   geom_histogram(aes(r), alpha = 0.5, binwidth = sbc_bw) +
   geom_rect(aes(xmin = -10, xmax = sbc_draws, ymin = lb, ymax = ub), 
             alpha = 0.25, fill = "pink",
             data = count(sbc_data, sim_type) |> mutate(map_dfr(n, \(n) set_names(qbinom(c(0.01, 0.5, 0.99), n, sbc_bw / sbc_draws), c("lb", "med", "ub"))))) +
   facet_grid(rows = vars(sim_type), cols = vars(param)) +
-  labs(title = "Histogram of rank statistics", y = "", caption = str_glue("The histogram uses a bin width of 10.\nThe pink area represents the 1%-99% region of a Binom(1090, 0.01).\n{nrow(sbc_data)} simulation used.")) +
+  labs(title = "Histogram of rank statistics", y = "", caption = str_glue("The histogram uses a bin width of 10.\nThe pink area represents the 1%-99% region of a Binom({sbc_draws}, {sbc_bw / sbc_draws}).\n{sbc_draws} simulation used per model.")) +
   coord_cartesian(ylim = c(0, 20))
+
+sbc_data |> 
+  pivot_longer(!c(sim_type), names_to = "param", names_prefix = "r_", values_to = "r") |> 
+  filter(str_detect(param, "pfs$")) |>
+  mutate(
+    stat = str_extract(param, "expected|median"),
+    tumor_state = str_extract(param, "one_tumor|base")
+  ) |> 
+  ggplot() +
+  geom_histogram(aes(r), alpha = 0.5, binwidth = sbc_bw) +
+  geom_rect(aes(xmin = -10, xmax = sbc_draws, ymin = lb, ymax = ub), 
+            alpha = 0.25, fill = "pink",
+            data = count(sbc_data, sim_type) |> mutate(map_dfr(n, \(n) set_names(qbinom(c(0.01, 0.5, 0.99), n, sbc_bw / sbc_draws), c("lb", "med", "ub"))))) +
+  facet_grid(rows = vars(sim_type), cols = vars(stat, tumor_state)) +
+  labs(title = "Histogram of rank statistics", y = "", caption = str_glue("The histogram uses a bin width of 10.\nThe pink area represents the 1%-99% region of a Binom({sbc_draws}, {sbc_bw / sbc_draws}).\n{sbc_draws} simulation used per model.")) +
+  coord_cartesian(ylim = c(0, 30))
 
 # sbc_data |> 
 #   select(starts_with("r_")) |> 
