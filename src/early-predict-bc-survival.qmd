@@ -35,7 +35,9 @@ source(here("src", "util.R"))
 
 Are there observable strong and deep early responses to antibody-drug conjugates (ADCs) that are predictive of long term progression free survival (PFS)? Are we able to reliably predict the heterogeneous response to ADCs using early measurements?
 
-In this exploratory analysis we will not take up the causal question of whether these strong early responders would see similar PFS under counterfactual dosages or medications.^[This should probably revisited as the prediction within arm might not be the relevant question.]
+In this exploratory analysis we will not take up the causal question of whether these strong early responders would see similar PFS under counterfactual dosages or medications.[^1]
+
+[^1]: This should probably revisited as the prediction within arm might not be the relevant question.
 
 ## Exploratory Analysis Context and Data
 
@@ -43,17 +45,17 @@ We will evaluate whether early (at baseline and at 6 and 12 weeks post treatment
 
 We will use data from the Breast01, Breast02, Breast03, and Breast04 trials, focusing on the treatment arms receiving the same dosage. Initially, we will be analyzing the different studies separately with no partial pooling since the inclusion criteria for the studies were different.
 
-*	Primary outcome: Post treatment progression free survival (interval and right censored).
-*	Predictive variables (at all the early intervals):
-    –	Number of lesions observed.
-    –	Organ of lesions.
-    –	lesion sizes measured, with a maximum of ten of observed lesions and two per organ. 
-    
+* Primary outcome: Post treatment progression free survival (interval and right censored).
+* Predictive variables (at all the early intervals): 
+    - Number of lesions observed. 
+    - Organ of lesions. 
+    - lesion sizes measured, with a maximum of ten of observed lesions and two per organ.
+
 ## Statistical Model Goals
 
-*	Explore the heterogeneity in PFS conditional on early tumor size measures.
-*	Consider more nuanced characteristics of a patient’s tumors beyond the aggregated sum of largest diameters. The challenge here is how to model the nonlinear contribution of multiple influencers (tumors) on a central node’s outcome (survival). A simple sum or mean ends up discarding a lot of information about the context of the disease.
-*	Introduce a lesion level first-stage model. Considering the limit on the number of lesions measured, we potentially truncate some measures such as the total sum of tumor sizes. A model of tumor sizes would allow us to impute the missing data and propagate any uncertainty to the second-stage survival model.
+-   Explore the heterogeneity in PFS conditional on early tumor size measures.
+-   Consider more nuanced characteristics of a patient's tumors beyond the aggregated sum of largest diameters. The challenge here is how to model the nonlinear contribution of multiple influencers (tumors) on a central node's outcome (survival). A simple sum or mean ends up discarding a lot of information about the context of the disease.
+-   Introduce a lesion level first-stage model. Considering the limit on the number of lesions measured, we potentially truncate some measures such as the total sum of tumor sizes. A model of tumor sizes would allow us to impute the missing data and propagate any uncertainty to the second-stage survival model.
 
 ```{r}
 #| label: sim-settings
@@ -71,9 +73,9 @@ We model tumor size as a nonlinear function with a Gaussian process prior (with 
 
 $$
 X_{it} \sim  \mathtt{GP}(\mu^\textrm{tumor}, k(\cdot;\alpha^\textrm{tumor}, \rho^\textrm{tumor}) + \bf{I} \sigma^\textrm{tumor}) 
-$$
+$$ 
 where 
-$$k(p, q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$$.
+$$k(p, q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right).$$
 
 ## Prior Prediction
 
@@ -149,7 +151,6 @@ res_rvar |>
   NULL
 ```
 
-
 ## Fake Data Simulation
 
 This code isn't running pending a bug fix.
@@ -157,7 +158,8 @@ This code isn't running pending a bug fix.
 ```{r}
 #| label: tumor-fake-sim
 #| output: false
-#| eval: false
+#| cache: true
+#| dependson: tumor
 
 tumor_fake_res <- res_rvar |> 
   unnest_rvars() |> 
@@ -175,27 +177,43 @@ tumor_fake_res <- res_rvar |>
         tumor_model$sample(
           iter_warmup = 500, iter_sampling = 500,
           output_dir = file.path(tmp_dir, "fit"), 
-          output_basename = str_c("fake_tumor_", id)
+          output_basename = str_c("fake_tumor_", id), 
+          init = \(chain_id) lst(
+            pop_tumor_gp_rho = invgamma::rinvgamma(1, 7.3, 7.5),
+            tumor_mean = rnorm(1, 2.8, 0.1),
+            tumor_sd = abs(rnorm(1, 0, 1.25))
+          ),
+          max_treedepth = 15
         )
     }, .progress = TRUE, .options = furrr::furrr_options(seed = TRUE))
   ) 
 ```
 
 ```{r}
+#| eval: false
+#| include: false
+
+f <- tumor_fake_res$fake_fit[[1]]
+f_lp <- log_posterior(f)
+f_np <- nuts_params(f)
+
+mcmc_trace(f$draws(inc_warmup = TRUE), pars = "tumor_mean", n_warmup = 500) #, np = f_np)
+```
+
+
+```{r}
 #| label: tumor-fake-data-params
 #| fig-cap: "Fake data simulation assessing model's ability to recover posterior of model parameters."
-#| eval: false
 
 tumor_fake_res |> 
   group_by(.draw) |> 
   reframe(map_dfr(fake_fit, \(f) gather_rvars(f, pop_tumor_gp_intercept, pop_tumor_gp_alpha, pop_tumor_gp_rho))) |> 
   left_join(tumor_prior_param_rvar |> unnest_rvars(), by = c(".draw", ".variable"), suffix = c("", "_true")) |> 
   mutate(.value = .value - .value_true) |> 
-  # filter(.draw == 9) |> 
   ggplot(aes(y = .draw)) +
   stat_pointinterval(aes(xdist = .value), .width = 0.8) +
   geom_vline(xintercept = 0, linetype = "dashed") +
-  labs(x = "Difference from True Parameter Value", y = "", caption = "Showing 24 simulations.") +
+  labs(x = "Difference from True Parameter Value", y = "", caption = str_glue("Showing {nrow(tumor_fake_res)} simulations.")) +
   facet_wrap(vars(.variable), scales = "free") +
   theme(axis.text.y = element_blank()) +
   NULL  
@@ -205,34 +223,28 @@ tumor_fake_res |>
 
 We will use a piecewise-constant proportional hazard model:
 
-- Time is discretized into $t \in \{0,\dots,T\}$, with $t = 0$ is the baseline interval.
-- $Y_{it}$ is an indicator for disease progression at interval $t$, with $Y_{i0} = 0$.
-- $S_i$ is the number of intervals observed without disease progression, \[ \Pr[S > s] = \prod_{r=0}^s \Pr[Y_{i,r+1} = 0 \mid Y_{i,r} = 0]. \] 
-- $X_{it}$ are--possibly time-variant--covariates.
-- $C_i$ is an indicator of whether $i$ is right censored.
-- $M_{i} \in \mathbb{Z}^{+}$ is the difference between $S_i$ and the previous interval $i$ was observed progression free ($M_i = 1$ if $C_i = 1$). 
+-   Time is discretized into $t \in \{0,\dots,T\}$, with $t = 0$ is the baseline interval.
+-   $Y_{it}$ is an indicator for disease progression at interval $t$, with $Y_{i0} = 0$.
+-   $S_i$ is the number of intervals observed without disease progression, \[ \Pr[S > s] = \prod\_{r=0}\^s \Pr[Y_{i,r+1} = 0 \mid Y_{i,r} = 0]. \]
+-   $X_{it}$ are--possibly time-variant--covariates.
+-   $C_i$ is an indicator of whether $i$ is right censored.
+-   $M_{i} \in \mathbb{Z}^{+}$ is the difference between $S_i$ and the previous interval $i$ was observed progression free ($M_i = 1$ if $C_i = 1$).
 
-The probability of remaining progression-free at $m \geq 1$ is 
-$$
+The probability of remaining progression-free at $m \geq 1$ is $$
 \alpha_t(x;\theta) = \Pr[Y_t = 0\mid Y_{t-1} = 0, X_t = \bf{x}] = \exp[-\lambda(t, \bf{x}; \boldsymbol{\theta})] 
 $$
 
-and the hazard function
-.
-$$
+and the hazard function . $$
   \lambda(t, \bf{x}; \boldsymbol{\theta}) = \lambda_t \kappa(\bf{x}; \boldsymbol{\beta})
 $$
 
 We assume that censoring in conditionally independent of time to progression. We will use a linear form for $\kappa(\bf{x}; \boldsymbol{\beta}) = \exp(\bf{x}\boldsymbol{\beta})$.
 
-Aside from whatever priors we use for $\boldsymbol{\beta}$, we will use a Gaussian process prior for $\lambda_t$, 
-$$
+Aside from whatever priors we use for $\boldsymbol{\beta}$, we will use a Gaussian process prior for $\lambda_t$, $$
 \lambda_t \sim \mathtt{GP}(0, k),
-$$ 
-where $k(\lambda_p, \lambda_q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$.
+$$ where $k(\lambda_p, \lambda_q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$.
 
-Our likelihood, accounting for interval and right censoring, is
-$$
+Our likelihood, accounting for interval and right censoring, is $$
 \mathcal{L}_i = \begin{cases}
   \prod_{t=1}^{S_i-M_i}\alpha_t(x_i;\theta)\sum_{r=S_i-M_i+1}^{S_i}\alpha_r(x_i;\theta)[1-\alpha_{r+1}(x_i;\theta)] & \textrm{if }C_i = 0 \\
   \prod_{t=1}^{S_i}\alpha_t(x_i;\theta) & \textrm{if }C_i = 1 
@@ -364,9 +376,9 @@ pfs_res |>
 
 Here we're using a set of ad hoc survival model parameters and generating a number of datasets, then we compare the posterior distributions of these parameters against the known truth. We do this three times:
 
-1. Without any interval censoring
-2. With interval censoring but ignored by the model (observed PFS is assumed to be actual PFS)
-3. With interval censoring which is accounted for by the model
+1.  Without any interval censoring
+2.  With interval censoring but ignored by the model (observed PFS is assumed to be actual PFS)
+3.  With interval censoring which is accounted for by the model
 
 ```{r}
 #| label: fake-data-model
