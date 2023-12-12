@@ -71,7 +71,7 @@ parameters {
 }
 
 transformed parameters {
-  real pop_tumor_gp_alpha = sqrt(log(tumor_sd^2 / tumor_mean^2 + 1));
+  real<lower = 0> pop_tumor_gp_alpha = sqrt(log((tumor_sd / tumor_mean)^2 + 1));
   real pop_tumor_gp_intercept = log(tumor_mean) - pop_tumor_gp_alpha^2 / 2.0;
   
   // GP vcov matrix
@@ -81,7 +81,8 @@ transformed parameters {
 
 model {
   tumor_mean ~ normal(2.8, 0.1);
-  tumor_sd ~ normal(1, 0.1);
+  // tumor_sd ~ normal(1, 0.1);
+  tumor_sd ~ normal(0, 1.25);
   
   pop_tumor_gp_rho ~ inv_gamma(pop_tumor_gp_rho_alpha, pop_tumor_gp_intercept);
 
@@ -100,7 +101,7 @@ model {
         array[n_measures[i]] int curr_full_t_measure = append_array({ 1 }, t_measure_p1[t_measure_pos:t_measure_end]);
 
         log(tumor_size[tumor_pos:tumor_end]) ~ multi_normal_cholesky(
-          rep_vector(pop_tumor_gp_intercept, max_t[i] + 1), 
+          rep_vector(pop_tumor_gp_intercept, n_measures[i]), 
           L_tumor_vcov[curr_full_t_measure, curr_full_t_measure]
         );
 
