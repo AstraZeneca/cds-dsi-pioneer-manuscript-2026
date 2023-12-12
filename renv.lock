@@ -943,6 +943,13 @@
       ],
       "Hash": "99df65cfef20e525ed38c3d2577f7190"
     },
+    "invgamma": {
+      "Package": "invgamma",
+      "Version": "1.1",
+      "Source": "Repository",
+      "Repository": "RSPM",
+      "Hash": "d124cd1623454d8aeaaec5d67cf1d146"
+    },
     "isoband": {
       "Package": "isoband",
       "Version": "0.2.7",
