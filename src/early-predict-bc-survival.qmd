@@ -159,7 +159,6 @@ This code isn't running pending a bug fix.
 #| label: tumor-fake-sim
 #| output: false
 #| cache: true
-#| dependson: tumor
 
 tumor_fake_res <- res_rvar |> 
   unnest_rvars() |> 
@@ -176,6 +175,7 @@ tumor_fake_res <- res_rvar |>
         ) |> 
         tumor_model$sample(
           iter_warmup = 500, iter_sampling = 500,
+          parallel_chains = 4,
           output_dir = file.path(tmp_dir, "fit"), 
           output_basename = str_c("fake_tumor_", id), 
           init = \(chain_id) lst(
@@ -185,7 +185,7 @@ tumor_fake_res <- res_rvar |>
           ),
           max_treedepth = 15
         )
-    }, .progress = TRUE, .options = furrr::furrr_options(seed = TRUE))
+    }, .progress = FALSE, .options = furrr::furrr_options(seed = TRUE))
   ) 
 ```
 
@@ -230,21 +230,26 @@ We will use a piecewise-constant proportional hazard model:
 -   $C_i$ is an indicator of whether $i$ is right censored.
 -   $M_{i} \in \mathbb{Z}^{+}$ is the difference between $S_i$ and the previous interval $i$ was observed progression free ($M_i = 1$ if $C_i = 1$).
 
-The probability of remaining progression-free at $m \geq 1$ is $$
+The probability of remaining progression-free at $m \geq 1$ is 
+$$
 \alpha_t(x;\theta) = \Pr[Y_t = 0\mid Y_{t-1} = 0, X_t = \bf{x}] = \exp[-\lambda(t, \bf{x}; \boldsymbol{\theta})] 
 $$
 
-and the hazard function . $$
+and the hazard function . 
+$$
   \lambda(t, \bf{x}; \boldsymbol{\theta}) = \lambda_t \kappa(\bf{x}; \boldsymbol{\beta})
 $$
 
 We assume that censoring in conditionally independent of time to progression. We will use a linear form for $\kappa(\bf{x}; \boldsymbol{\beta}) = \exp(\bf{x}\boldsymbol{\beta})$.
 
-Aside from whatever priors we use for $\boldsymbol{\beta}$, we will use a Gaussian process prior for $\lambda_t$, $$
+Aside from whatever priors we use for $\boldsymbol{\beta}$, we will use a Gaussian process prior for $\lambda_t$, 
+$$
 \lambda_t \sim \mathtt{GP}(0, k),
-$$ where $k(\lambda_p, \lambda_q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$.
+$$ 
+where $k(\lambda_p, \lambda_q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$.
 
-Our likelihood, accounting for interval and right censoring, is $$
+Our likelihood, accounting for interval and right censoring, is 
+$$
 \mathcal{L}_i = \begin{cases}
   \prod_{t=1}^{S_i-M_i}\alpha_t(x_i;\theta)\sum_{r=S_i-M_i+1}^{S_i}\alpha_r(x_i;\theta)[1-\alpha_{r+1}(x_i;\theta)] & \textrm{if }C_i = 0 \\
   \prod_{t=1}^{S_i}\alpha_t(x_i;\theta) & \textrm{if }C_i = 1 
