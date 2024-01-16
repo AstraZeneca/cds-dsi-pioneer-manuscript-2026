@@ -8,6 +8,7 @@ table-of-contents: true
 #| label: setup
 #| include: false
 
+# library(conflicted)
 library(magrittr)
 library(tidyverse)
 library(rlang)
@@ -16,6 +17,11 @@ library(posterior)
 library(tidybayes)
 library(bayesplot)
 library(here)
+library(gtsummary)
+
+# conflicts_prefer(
+#   dplyr::filter
+# )
 
 # Using different temp directories on SCP and locally.
 tmp_dir <- if (nchar(Sys.getenv("TMP")) > 0) file.path(Sys.getenv("TMPDIR"), "adc-early-predict") else here("temp")
@@ -57,6 +63,139 @@ We will use data from the Breast01, Breast02, Breast03, and Breast04 trials, foc
 -   Consider more nuanced characteristics of a patient's tumors beyond the aggregated sum of largest diameters. The challenge here is how to model the nonlinear contribution of multiple influencers (tumors) on a central node's outcome (survival). A simple sum or mean ends up discarding a lot of information about the context of the disease.
 -   Introduce a lesion level first-stage model. Considering the limit on the number of lesions measured, we potentially truncate some measures such as the total sum of tumor sizes. A model of tumor sizes would allow us to impute the missing data and propagate any uncertainty to the second-stage survival model.
 
+# Data
+
+```{r}
+#| label: load-trials-data
+
+# Trial arms
+sdtm_ta <- arrow::read_parquet("/scratch/ewfteams/dpo0083/parquet/sdtm/deid_ta.parquet") |> 
+  rename_with(str_to_lower)
+
+# Protocol deviations
+sdtm_dv <- arrow::read_parquet("/scratch/ewfteams/dpo0083/parquet/sdtm/deid_dv.parquet") |> 
+  rename_with(str_to_lower)
+
+# Inclusion/exclusion
+sdtm_ie <- arrow::read_parquet("/scratch/ewfteams/dpo0083/parquet/sdtm/deid_ie.parquet") |> 
+  rename_with(str_to_lower)
+
+# Demographics 
+sdtm_dm <- arrow::read_parquet("/scratch/ewfteams/dpo0083/parquet/sdtm/deid_dm.parquet") |> 
+  rename_with(str_to_lower)
+
+# Death details 
+sdtm_dd <- arrow::read_parquet("/scratch/ewfteams/dpo0083/parquet/sdtm/deid_dd.parquet") |> 
+  rename_with(str_to_lower)
+
+# Tumor identification
+sdtm_tu <- arrow::read_parquet("/scratch/ewfteams/dpo0083/parquet/sdtm/deid_tu.parquet") |> 
+  rename_with(str_to_lower)
+
+# Trial visits 
+sdtm_tv <- arrow::read_parquet("/scratch/ewfteams/dpo0083/parquet/sdtm/deid_tv.parquet") |> 
+  rename_with(str_to_lower)
+
+# Subject visits
+sdtm_sv <- arrow::read_parquet("/scratch/ewfteams/dpo0083/parquet/sdtm/deid_sv.parquet") |> 
+  rename_with(str_to_lower)
+
+# Tumor measurements/assessments
+sdtm_tr <- arrow::read_parquet("/scratch/ewfteams/dpo0083/parquet/sdtm/deid_tr.parquet") |>
+# sdtm_tr <- read_rds("/scratch/ewfteams/dpo0083/sdtm/prod/data/deid_tr.rds") |> 
+  rename_with(str_to_lower) |> 
+  mutate(tracptfl = fct_match(tracptfl, "Y"))
+
+# Disease response 
+sdtm_rs <- arrow::read_parquet("/scratch/ewfteams/dpo0083/parquet/sdtm/deid_rs.parquet") |> 
+  rename_with(str_to_lower)
+
+# Tumor analysis_data
+adam_adtr <- arrow::read_parquet("/scratch/ewfteams/dpo0083/parquet/adam/deid_adtr.parquet") |>
+  rename_with(str_to_lower) |> 
+  mutate(across(ends_with("fl"), \(fl) fct_match(fl, "Y")))
+
+# Tumor analysis_data
+adam_adef <- arrow::read_parquet("/scratch/ewfteams/dpo0083/parquet/adam/deid_adef.parquet") |>
+  rename_with(str_to_lower) |> 
+  mutate(across(ends_with("fl"), \(fl) fct_match(fl, "Y")))
+
+tumor_analysis_data <- adam_adtr |> 
+  filter(
+    paramcd == "DIAMETER",
+    # There are a number of assessments that show up in the data but in SDTM they are marked as "NOT DONE"
+    !is.na(trdy), !is.na(aval),
+    tracptfl,
+    adt <= trtedt, # Drop assessments occuring after treatment ended.
+    aval > 0, # Drop all zero diameter assessments; these appear to be missing measurements. 
+  ) %>% 
+  select(studyid, usubjid, trlnkid, tuloc, tulat, trtsdt, trtedt, adt, ends_with("fl"), trdy, trtp, trta, visit, visitnum, mmdiam = aval) |> 
+  mutate(
+    week = if_else(trdy > 0, trdy - 1, trdy) %/% 7,
+    treated = adt >= trtsdt
+  ) |> 
+  arrange(usubjid, trlnkid, visitnum) |> 
+  group_by(usubjid, trlnkid) |> 
+  mutate(tuloc = first(tuloc), tulat = first(tulat) |> na_if("")) |> # Only the first assessment has the location of the tumor.
+  ungroup() |> 
+  nest(tumor_history = c(adt, trdy, week, visit, visitnum, tsplitfl, tmergefl, mmdiam, treated)) |> 
+  mutate(n_measures = map_int(tumor_history, nrow)) |> 
+  pack(flags = ends_with("fl")) |> 
+  nest(patient_tumors = !c(studyid, usubjid, trtsdt, trtedt, trtp, trta)) |> 
+  rowwise() |> 
+  mutate(
+    patient_min_t = min(map_int(patient_tumors$tumor_history, \(h) min(h$week))),
+    patient_max_t = max(map_int(patient_tumors$tumor_history, \(h) max(h$week))),
+    patient_last_dt = max(do.call(c, map(patient_tumors$tumor_history, \(h) max(h$adt)))),
+  ) |>
+  ungroup() |> 
+  mutate(
+    patient_t_width = patient_max_t - patient_min_t + 1,
+    n_tumors = map_int(patient_tumors, nrow),
+  ) |> 
+  left_join(select(adam_adef, usubjid, bicrdt, bicrpfs), by = "usubjid") |> 
+  mutate(
+    death = fct_match(bicrpfs, "DEATH"),
+    progress_week = time_length(bicrdt - trtsdt, unit = "days") %/% 7,
+    death_week = if_else(death & bicrdt <= trtedt, progress_week, 0L), # Deaths after treatment ended will be treated as censored
+    
+    # The model expects "pfs" to record the number of weeks that were progress free, so I need to find the last assessment week before
+    # disease progress was detected.
+    pfs = map2_int(progress_week, patient_tumors, function(progress_week, patient_tumors) {
+      pre_progress_weeks <- unnest(patient_tumors, tumor_history) |> 
+        distinct(week) |> 
+        filter(week < progress_week) |> 
+        pull(week) 
+     
+      # There are a few patients who just have a single post treatment visit 
+      if (length(pre_progress_weeks) > 0) max(pre_progress_weeks) else NA_integer_
+    }),
+  )
+```
+
+```{r}
+#| label: tumor-demographics-table 
+
+sdtm_dm |> 
+  tbl_summary(
+    include = c("age", "sex", "race", "ethnic", "dthfl"), by = "arm"
+  )
+```
+
+```{r}
+#| label: tumor-history-plot 
+
+tumor_analysis_data |>
+  filter(patient_t_width > 1) |> 
+  slice(1:20) |> 
+  unnest(patient_tumors) |> 
+  unnest(tumor_history) |> 
+  ggplot() +
+  geom_step(aes(week, mmdiam, group = trlnkid), direction = "hv") +
+  facet_wrap(vars(usubjid), scale = "free") +
+  NULL
+```
+
 ```{r}
 #| label: sim-settings
 
@@ -76,6 +215,15 @@ X_{it} \sim  \mathtt{GP}(\mu^\textrm{tumor}, k(\cdot;\alpha^\textrm{tumor}, \rho
 $$ 
 where 
 $$k(p, q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right).$$
+```{r}
+#| label: tumor-priors
+
+tumor_priors <- lst(
+  pop_tumor_gp_rho_alpha = 7.3,
+  pop_tumor_gp_rho_beta = 7.5, 
+)
+```
+
 
 ## Prior Prediction
 
@@ -85,24 +233,25 @@ $$k(p, q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right).$$
 
 tumor_model <- cmdstan_model(here("src", "tumor.stan"))
 
+t_offset <- 5
+
 test_data <- lst(
   fit_data = FALSE, # Prior prediction
   gen_tumor_sizes = TRUE,
-  n_patients,
-  n_measures = rep(patient_measures, n_patients),
-  t_measure = rep(1:(patient_measures - 1), n_patients),
-  n_patient_tumors = 1 + rbinom(n_patients, 5, 0.4), # We're not yet generatively modeling the number of tumors
-  tumor_size = array(dim = 0),
+  predict_missing_sizes = FALSE,
+  multilevel_patient = FALSE,
+  multilevel_tumor = FALSE,
   
-  pop_tumor_gp_rho_alpha = 7.3,
-  pop_tumor_gp_rho_beta = 7.5, 
+  n_patients,
+  n_patient_tumors = 1 + rbinom(n_patients, 5, 0.4), # We're not yet generatively modeling the number of tumors
+  n_measures = rep(patient_measures, sum(n_patient_tumors)),
+  t_measure = rep(0:(patient_measures - 1), sum(n_patient_tumors)) - t_offset,
+  tumor_size = rep(0, sum(n_measures)),
+
+  !!!tumor_priors  
 )
 
-tumor_prior_res <- tumor_model$sample(
-  data = test_data, 
-  iter_warmup = 500, iter_sampling = 500,
-  output_dir = file.path(tmp_dir, "fit"),
-)
+tumor_prior_res <- tumor_model$sample(data = test_data, iter_warmup = 500, iter_sampling = 500)
 
 tumor_prior_res$save_data_file(dir = file.path(tmp_dir, "data"), basename = "prior_tumor", timestamp = FALSE, random = FALSE)
   
@@ -112,7 +261,7 @@ res_rvar <- tumor_prior_res |>
   mutate( # A bunch of acrobatics to get the IDs, indices, and intervals right.
     patient_id = rep(1:n_patients, with(test_data, n_patient_tumors * patient_measures)),
     tumor_index = ((tumor_index - 1) %/% patient_measures) + 1,
-    t = rep(0:(patient_measures - 1), sum(test_data$n_patient_tumors))
+    t = rep(0:(patient_measures - 1), sum(test_data$n_patient_tumors)) - t_offset
   ) |> 
   mutate(tumor_index = tumor_index - min(tumor_index) + 1, .by = patient_id) |> 
   rename(tumor_size = rep_tumor_size)
@@ -148,12 +297,11 @@ res_rvar |>
   scale_x_continuous(breaks = seq(0, 40, 4)) +
   labs(y = "Tumor Size", caption = "Shown for a subset of tumors of a single patient.") +
   facet_wrap(vars(tumor_index)) +
+  coord_cartesian(ylim = c(0, 10)) +
   NULL
 ```
 
 ## Fake Data Simulation
-
-This code isn't running pending a bug fix.
 
 ```{r}
 #| label: tumor-fake-sim
@@ -162,11 +310,11 @@ This code isn't running pending a bug fix.
 
 tumor_fake_res <- res_rvar |> 
   unnest_rvars() |> 
-  filter(.draw <= 12) |> # We'll simulate parameters and data for a number simulations. 
+  filter(.draw <= 24) |> # We'll simulate parameters and data for a number simulations. 
   nest(fake_data = !c(.draw, .iteration, .chain)) |> 
-  transmute(
-    .draw,
+  mutate(
     fake_fit = furrr::future_map2(.draw, fake_data, function(id, d) {
+    # fake_fit = map2(.draw, fake_data, function(id, d) {
       test_data |> 
         list_modify(
           fit_data = TRUE,
@@ -174,7 +322,7 @@ tumor_fake_res <- res_rvar |>
           tumor_size = d$tumor_size
         ) |> 
         tumor_model$sample(
-          iter_warmup = 500, iter_sampling = 500,
+          iter_warmup = 200, iter_sampling = 200,
           parallel_chains = 4,
           output_dir = file.path(tmp_dir, "fit"), 
           output_basename = str_c("fake_tumor_", id), 
@@ -185,6 +333,7 @@ tumor_fake_res <- res_rvar |>
           ),
           max_treedepth = 15
         )
+    # })
     }, .progress = FALSE, .options = furrr::furrr_options(seed = TRUE))
   ) 
 ```
@@ -218,6 +367,71 @@ tumor_fake_res |>
   theme(axis.text.y = element_blank()) +
   NULL  
 ```
+
+
+## Fit Data
+
+```{r}
+#| label: tumor-fit
+#| cache: true
+
+prepare_tumor_stan_data <- function(analysis_data) {
+  lst(
+    n_patients = nrow(analysis_data),
+    n_patient_tumors = analysis_data$n_tumors,
+    n_measures = map(analysis_data$patient_tumors, \(tu) tu$n_measures) |> unlist(),
+    t_measure = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$week) |> unlist(),
+    tumor_size = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$mmdiam / 10) |> unlist(),
+  )
+}
+
+treated_tumor_analysis_data <- tumor_analysis_data |> 
+  filter(fct_match(trtp, "T-DXd")) 
+  # slice(1:10)
+  
+tumor_stan_data <- lst(
+  fit_data = TRUE,
+  gen_tumor_sizes = TRUE,
+  predict_missing_sizes = TRUE, 
+  multilevel_patient = TRUE,
+  multilevel_tumor = FALSE,
+  
+  !!!prepare_tumor_stan_data(treated_tumor_analysis_data),
+  !!!tumor_priors
+)
+
+tumor_fit_res <- tumor_model$sample(data = tumor_stan_data, iter_warmup = 500, iter_sampling = 500, max_treedepth = 15)
+
+all_tumor_size <- tumor_fit_res |> 
+  spread_rvars(all_tumor_size[idx]) |> 
+  mutate(
+    usubjid = with(treated_tumor_analysis_data, rep(usubjid, patient_t_width * n_tumors)),
+    trlnkid = rep(
+      treated_tumor_analysis_data |> unnest(patient_tumors) |> pull(trlnkid), 
+      with(treated_tumor_analysis_data, rep(patient_t_width, n_tumors)) 
+    )
+  ) |> 
+  nest(tumor_history = c(idx, all_tumor_size)) |> 
+  left_join(select(treated_tumor_analysis_data, usubjid, matches("patient_(min|max)_t"), patient_t_width), by = "usubjid") |> 
+  mutate(
+    tumor_history = pmap(lst(h = tumor_history, min_t = patient_min_t, max_t = patient_max_t), 
+                         \(h, min_t, max_t) mutate(h, week = min_t:max_t))
+  ) |> 
+  nest(patient_tumors = c(trlnkid, tumor_history))
+```
+
+```{r}
+#| label: fit-tumor-history-plot
+
+all_tumor_size |> 
+  slice(1:9) |> 
+  unnest(patient_tumors) |> 
+  unnest(tumor_history) |> 
+  ggplot(aes(week)) +
+  stat_lineribbon(aes(ydist = all_tumor_size, group = trlnkid), fill = "black", alpha = 0.25, .width = 0.8) +
+  facet_wrap(vars(usubjid), scales = "free")
+```
+
 
 # Survival Model
 
@@ -255,6 +469,20 @@ $$
   \prod_{t=1}^{S_i}\alpha_t(x_i;\theta) & \textrm{if }C_i = 1 
   \end{cases}
 $$
+```{r}
+#| label: pfs-priors
+
+pfs_priors <- lst(
+  log_lambda_gp_intercept_mean = -3,
+  log_lambda_gp_intercept_sd = 0.5,
+  log_lambda_gp_alpha_sd = 0.5,
+  log_lambda_gp_rho_alpha = 7.3,
+  log_lambda_gp_rho_beta = 7.5, 
+  tumor_stim_intercept_sd = 0.5,
+  tumor_stim_coef_sd = c(0.25, 0.25),
+)
+```
+
 
 ```{r}
 #| label: pfs-model
@@ -267,16 +495,13 @@ pfs_test_data <- test_data |>
     gen_interval_censored = FALSE,
     early_tumors_only = TRUE,
     ignore_interval_censoring = FALSE,
+    no_tumor_stim = FALSE,
     
     tumor_size = fake_tumor_data$tumor_size,
     pfs = rep(max_pfs, test_data$n_patients),
+    death_week = rep(0, test_data$n_patients),
     
-    log_lambda_gp_intercept_mean = -3,
-    log_lambda_gp_intercept_sd = 0.5,
-    log_lambda_gp_rho_alpha = 7.3,
-    log_lambda_gp_rho_beta = 7.5, 
-    tumor_stim_intercept_sd = 0.5,
-    tumor_stim_coef_sd = c(0.25, 0.25),
+    !!!pfs_priors
   )
 ```
 
@@ -285,20 +510,26 @@ pfs_test_data <- test_data |>
 ```{r}
 #| label: pfs-prior-predict
 
-pfs_res <- pfs_model$sample(data = pfs_test_data, refresh = 0)
+pfs_prior_res <- pfs_model$sample(data = pfs_test_data, refresh = 0)
 
-rep_pfs_rvar <- pfs_res |> 
+rep_pfs_rvar <- pfs_prior_res |> 
   spread_rvars(rep_pfs[patient_index], rep_right_censored[patient_index])
 
-rep_pfs_param_rvar <- pfs_res |> 
-  spread_rvars(log_lambda_gp_alpha, log_lambda_gp_rho, log_lambda_gp_intercept, tumor_stim_intercept, tumor_stim_coef[t]) |> 
+rep_pfs_param_rvar <- pfs_prior_res |> 
+  spread_rvars(
+    tumor_stim_intercept,
+    tumor_stim_coef[t],
+    log_lambda_gp_alpha, 
+    log_lambda_gp_rho, 
+    log_lambda_gp_intercept
+  ) |> 
   pivot_wider(names_from = t, values_from = tumor_stim_coef, names_prefix = "tumor_stim_coef_") 
 
-lambda_rvar <- pfs_res |> 
+lambda_rvar <- pfs_prior_res |> 
   spread_rvars(log_lambda[t], base_pf_cond_prob[t], base_survival[t], one_tumor_survival[t]) |> 
   mutate(lambda = exp(log_lambda))
 
-expected_pfs_rvar <- pfs_res |> 
+expected_pfs_rvar <- pfs_prior_res |> 
   gather_rvars(base_cond_expected_pfs, one_tumor_cond_expected_pfs, base_cond_median_pfs, one_tumor_cond_median_pfs) |> 
   mutate(
     stat_type = str_extract(.variable, "expected|median"),
@@ -311,7 +542,7 @@ expected_pfs_rvar <- pfs_res |>
 
 lambda_rvar |> 
   ggplot(aes(t)) +
-  stat_lineribbon(aes(ydist = lambda), fill = "black", alpha = 0.5, .width = 0.8) +
+  stat_lineribbon(aes(ydist = lambda), fill = "black", alpha = 0.25, .width = 0.8) +
   geom_line(aes(y = lambda, group = .draw), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 50)) +
   labs(title = "Base hazard", x = "m", y = latex2exp::TeX("$\\lambda_t$"))
 ```
@@ -321,7 +552,7 @@ lambda_rvar |>
 
 lambda_rvar |> 
   ggplot(aes(t)) +
-  stat_lineribbon(aes(ydist = base_pf_cond_prob), fill = "black", alpha = 0.5, .width = 0.8) +
+  stat_lineribbon(aes(ydist = base_pf_cond_prob), fill = "black", alpha = 0.25, .width = 0.8) +
   geom_line(aes(y = base_pf_cond_prob, group = .draw), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 50)) +
   labs(title = "Base conditional probability of remaining progress free", x = "t", y = "")
 ```
@@ -329,15 +560,18 @@ lambda_rvar |>
 ```{r}
 #| label: pf-prob-plot
 
-max_t <- with(pfs_test_data, list_measures(t_measure, n_measures - 1)) |> 
+t_measure_list <- with(pfs_test_data, list_measures(t_measure, n_measures, n_patient_tumors))  
+max_t <- t_measure_list |> 
+  map(unlist) |> 
   map_int(max)
+first_t_measure <- t_measure_list |> map(first) |> unlist()
 
-pfs_res |> 
+pfs_prior_res |> 
   spread_rvars(disease_progress_prob[i]) |>
-  mutate(patient_index = rep(seq(test_data$n_patients), max_t), t = pfs_test_data$t_measure) |> 
+  mutate(patient_index = rep(seq(test_data$n_patients), max_t), t = discard(first_t_measure, \(t) t <= 0)) |> 
   filter(patient_index <= 6) |> 
   ggplot(aes(t)) +
-  stat_lineribbon(aes(ydist = disease_progress_prob), fill = "black", alpha = 0.5, .width = 0.8) +
+  stat_lineribbon(aes(ydist = disease_progress_prob), fill = "black", alpha = 0.25, .width = 0.8) +
   geom_line(aes(y = disease_progress_prob, group = str_c(patient_index, .draw)), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 20)) +
   labs(title = "Conditional probability of remaining progress free", x = "t", y = latex2exp::TeX("$\\alpha_t$")) +
   coord_cartesian(ylim = c(0, 1)) +
@@ -369,7 +603,7 @@ expected_pfs_rvar |>
 ```{r}
 #| label: prior-kaplan-meier 
 
-pfs_res |> 
+pfs_prior_res |> 
   spread_rvars(km_est[m]) |> 
   ggplot(aes(m - 1)) +
   stat_lineribbon(aes(ydist = km_est), step = TRUE, fill = "black", alpha = 0.25, .width = 0.8) +
@@ -391,17 +625,13 @@ Here we're using a set of ad hoc survival model parameters and generating a numb
 #| cache: true
 
 # Using a fixed set of log lambda values, generated using:
-# log_lambda <- pfs_model$functions$calc_gp_pred(seq(max_pfs), intercept = -3.0, alpha = 0.3, rho = 1.0, delta = 1e-9, eta = rnorm(max_pfs))
-
-log_lambda <- c(-2.82925267735431, -2.64520060266755, -2.71623982642665, -2.77870171827626, -2.98322379591453, -3.11838860843101, -3.34166784783459, -3.48984490669283, -3.61074155082535, -3.58991072239931, -3.26653787967046, -2.81081696520833, -2.76301919595487, -2.81578807255205, -2.5179917543256, -2.12192433192815, -2.51329071349476, -3.0513962354066, -3.12183008139132, -3.06572504126551, -3.10726156521308, -3.2750736986627, -3.28560254446871, -3.179764551445, -3.28315288576764, -3.24049943707745, -2.75581328613387, -2.5354647841861, -2.33195936788247, -2.44681772248594, -2.51227126417272, -2.39945076364035, -2.82194286435258, -2.82373614430963, -2.60959395006977, -2.33842528324795, -2.08257238059931, -2.69365813909611, -3.11157953021958, -2.8374417739431, -2.66320620192322, -2.66720997575652, -2.87573308955999, -2.85251742740491, -2.84768094162344, -3.48625620597443, -3.45667264432181, -3.10928556740996, -3.01219644491099, -2.93446227457952)
+log_lambda <- pfs_model$functions$calc_gp_pred(seq(max_pfs) / 12, intercept = -3.0, alpha = 0.3, rho = 1.0, delta = 1e-9, eta = rnorm(max_pfs))
 
 true_tumor_intercept <- 0.2
 true_tumor_coef <- c(0.15, 0.05)
 
 fake_data_sim_settings <- pfs_test_data |>
   list_modify(
-    log_lambda_gp_intercept_mean = -2,
-    log_lambda_gp_intercept_sd = 0.5,
     tumor_stim_intercept_sd = 0.25,
     tumor_stim_coef_sd = c(0.125, 0.125),
   )
@@ -410,31 +640,28 @@ patient_interval_data <- gen_patient_interval_properties(
   fake_tumor_data, log_lambda, true_tumor_intercept, true_tumor_coef, fake_data_sim_settings
 )
 
-true_base_pf_cond_prob = 
-  1 - pfs_model$functions$calculate_progress_linear_prob(
-    log_lambda, true_tumor_intercept, true_tumor_coef, t(c(0, 0)) 
-  )
+true_base_pf_cond_prob <- 1 - pfs_model$functions$calculate_progress_linear_prob(log_lambda, true_tumor_intercept, true_tumor_coef, t(c(0, 0)))
+true_one_tumor_pf_cond_prob <- 1 - pfs_model$functions$calculate_progress_linear_prob(log_lambda, true_tumor_intercept, true_tumor_coef, t(c(1, 1)))
 
-true_one_tumor_pf_cond_prob = 
-  1 - pfs_model$functions$calculate_progress_linear_prob(
-    log_lambda, true_tumor_intercept, true_tumor_coef, t(c(1, 1)) 
-  )
+max_all_t <- patient_measures - t_offset - 1
 
-true_base_marginal_prob_res = pfs_model$functions$calculate_marginal_dp_prob(true_base_pf_cond_prob, patient_measures)  
-true_one_tumor_marginal_prob_res = pfs_model$functions$calculate_marginal_dp_prob(true_one_tumor_pf_cond_prob, patient_measures)  
-true_base_cond_expected_pfs = 
-  c((true_base_marginal_prob_res[[1]] / (1 - true_base_marginal_prob_res[[2]][patient_measures])) %*% seq(patient_measures))
-true_one_tumor_cond_expected_pfs = 
-  c((true_one_tumor_marginal_prob_res[[1]] / (1 - true_one_tumor_marginal_prob_res[[2]][patient_measures])) %*% seq(patient_measures))
-true_base_cond_median_pfs = pfs_model$functions$pfs_quantiles_from_prob(true_base_pf_cond_prob, 0.5) 
-true_one_tumor_cond_median_pfs = pfs_model$functions$pfs_quantiles_from_prob(true_one_tumor_pf_cond_prob, 0.5)  
+true_base_marginal_prob_res = pfs_model$functions$calculate_marginal_dp_prob(true_base_pf_cond_prob[1:max_all_t], max_all_t)  
+true_one_tumor_marginal_prob_res = pfs_model$functions$calculate_marginal_dp_prob(true_one_tumor_pf_cond_prob[1:max_all_t], max_all_t)  
+
+base_dp_prob_not_censored <- true_base_marginal_prob_res[[1]] / (1 - true_base_marginal_prob_res[[2]][max_all_t])
+one_tumor_dp_prob_not_censored <- true_one_tumor_marginal_prob_res[[1]] / (1 - true_one_tumor_marginal_prob_res[[2]][max_all_t])
+
+true_base_cond_expected_pfs = c(base_dp_prob_not_censored %*% seq(0, length.out = max_all_t))
+true_one_tumor_cond_expected_pfs = c(one_tumor_dp_prob_not_censored %*% seq(0, length.out = max_all_t))
+true_base_cond_median_pfs = pfs_model$functions$pfs_quantiles_from_prob(base_dp_prob_not_censored, 0.5) 
+true_one_tumor_cond_median_pfs = pfs_model$functions$pfs_quantiles_from_prob(one_tumor_dp_prob_not_censored, 0.5)  
 
 true_km <- patient_interval_data |> 
-  group_by(patient_id) %>% 
-  summarize(pfs = pfs_model$functions$pfs_rng(progress_prob, 1:n()) |>   
-              list()) %>% 
+  group_by(patient_id) %>%
+  # This really isn't the _true_ km; I'm taking random draws here give true parameters.
+  summarize(pfs = pfs_model$functions$pfs_rng(progress_prob, 1:n()) |> list()) %>% 
   mutate(!!!set_names(list_transpose(.$pfs), c("interval_censored", "right_censored", "pfs", "actual_pfs"))) |>   
-  reframe(km_est = pfs_model$functions$estimate_kaplan_meier(pfs, right_censored, max_pfs - 1)) |> 
+  reframe(km_est = pfs_model$functions$estimate_kaplan_meier(pfs, right_censored, max_all_t - 1)) |> 
   mutate(m = seq(n()))
 ```
 
@@ -444,18 +671,22 @@ true_km <- patient_interval_data |>
 #| cache: true
 #| dependson: fake-data-model
 
-missing_measures <- map(seq(n_patients), \(i) sort(sample(3:(patient_measures - 1), 20, replace = FALSE)))
+# missing_measures <- map(
+#   seq(sum(fake_data_sim_settings$n_patient_tumors)), \(i) sort(sample(3:(patient_measures - 1), 20, replace = FALSE) - t_offset)
+# )
 
 n_sim <- 12  
 # fake_data_sim_settings_with_ic <- drop_missing_measures(fake_data_sim_settings, c(3, 4, 6, 9))
 # fake_data_sim_settings_with_ic <- drop_missing_measures(fake_data_sim_settings, missing_measures)
-fake_data_sim_settings_with_ic <- drop_missing_measures(fake_data_sim_settings, c(1,seq(2, 40, 4)), keep_only = TRUE)
+fake_data_sim_settings_with_ic <- drop_missing_measures(
+  fake_data_sim_settings, c(-t_offset, seq(1 - t_offset, patient_measures - t_offset - 1, by = 4)), keep_only = TRUE
+)
 
 fake_data_sim <- bind_rows(
   interval_censoring = fit_simulations(
     n_sim, patient_interval_data, fake_data_sim_settings_with_ic, fit_basename = "fake_data_sim_ic", tmp_dir = tmp_dir
   ),
-  
+
   interval_censoring_ignored = fit_simulations(
     n_sim, patient_interval_data, fake_data_sim_settings_with_ic, ignore_interval_censoring = TRUE, fit_basename = "fake_data_sim_ic_ignored", tmp_dir = tmp_dir
   ),
@@ -528,6 +759,22 @@ fake_data_sim |>
 ```
 
 ```{r}
+#| eval: false
+
+fake_data_sim |>
+  filter(sim_id <= 4) |> 
+  mutate(sim_log_lambda_post = furrr::future_map(sim_fit, \(f) spread_rvars(f, log_lambda[t]))) |> 
+  select(!sim_fit) |>
+  unnest(sim_log_lambda_post) |>
+  ggplot(aes(t)) +
+  stat_lineribbon(aes(ydist = log_lambda), fill = "black", alpha = 0.25, .width = 0.8) +
+  geom_line(aes(y = log_lambda, group = .draw), alpha = 0.25, data = \(d) unnest_rvars(d) |> filter(.draw <= 10)) +
+  geom_line(aes(y = log_lambda), color = "red", data = tibble(t = 1:max_all_t, log_lambda = log_lambda[1:max_all_t])) +
+  facet_grid(vars(sim_type), vars(sim_id))
+```
+
+
+```{r}
 #| label: fake-data-km
 #| fig-cap: "Comparing the fake data Kaplan-Meier survival probability against the true probability."
 #| cache: true
@@ -536,10 +783,11 @@ fake_data_sim |>
 fake_data_sim |> 
   mutate(km_est = furrr::future_map(sim_fit, \(f) spread_rvars(f, km_est[m]))) |> 
   select(sim_id, sim_type, km_est) |> 
-  filter(sim_id <= 3) |> 
+  filter(sim_id <= 6) |> 
   unnest(km_est) |> 
   ggplot(aes(m - 1)) +
-  geom_line(aes(y = km_est), data = \(sim) semi_join(true_km, sim, by = "m")) +
+  # geom_line(aes(y = km_est), data = \(sim) semi_join(true_km, sim, by = "m")) +
+  # This comes from a draw so not really reliable as the truth.
   stat_lineribbon(aes(ydist = km_est, color = sim_type, fill = sim_type), step = TRUE, alpha = 0.25, .width = 0.8) +
   scale_x_continuous("t", breaks = seq(0, 40, 4)) +
   labs(y = "S(t)", caption = "Black line represents the true survival probability.") +
@@ -562,7 +810,7 @@ fake_data_sim |>
   # add_row(sim_id = 0, sim_type = "prior", expected_pfs_rvar) |> 
   mutate(
     stat = str_extract(.variable, "expected|median"),
-    .variable = str_remove(.variable, "_cond_expected_pfs"),
+    .variable = str_remove(.variable, "_cond_(expected|median)_pfs"),
     est_type = if_else(sim_id > 0, "post", "prior")
   ) |> 
   ggplot(aes(y = sim_id)) +
@@ -596,8 +844,8 @@ sbc_bw <- 10
 
 sbc_data <- bind_rows( 
   no_ic = read_rds(file.path(tmp_dir, "data", "sbc.rds")),
-  ic = read_rds(file.path(tmp_dir, "data", "sbc_ic.rds")),
-  ic_ignore = read_rds(file.path(tmp_dir, "data", "sbc_ic_ignore.rds")),
+  # ic = read_rds(file.path(tmp_dir, "data", "sbc_ic2.rds")),
+  # ic_ignore = read_rds(file.path(tmp_dir, "data", "sbc_ic_ignore.rds")),
   .id = "sim_type") |> 
   select(sim_type, starts_with("r_"))
 
@@ -637,3 +885,100 @@ sbc_data |>
 #   facet_wrap(vars(param)) +
 #   coord_cartesian(xlim = c(0, 1000))
 ```
+
+## Fit Data
+
+```{r}
+prepare_pfs_stan_data <- function(analysis_data, ...) {
+    lst(
+    fit_data = TRUE,
+    gen_pfs = TRUE,
+    gen_interval_censored = FALSE,
+    early_tumors_only = TRUE,
+    ignore_interval_censoring = FALSE,
+   
+    ...,
+    
+    !!!prepare_tumor_stan_data(analysis_data),
+    !!!select(analysis_data, pfs, death_week),
+    
+    !!!pfs_priors,
+  )
+}
+
+pfs_analysis_data <- tumor_analysis_data |> 
+  filter(
+    !is.na(pfs), pfs > 0, # No missing pfs and progress must be assured to have happened after treatment
+    patient_min_t <= 0, # At least one screening assessment needed
+  )
+```
+
+### No Tumors
+
+```{r}
+#| label: no-tumor-pfs-fit
+
+pfs_res <- pfs_model$sample(
+  data = prepare_pfs_stan_data(filter(pfs_analysis_data, fct_match(trtp, "T-DXd")), no_tumor_stim = TRUE), 
+  iter_warmup = 500, iter_sampling = 500
+)
+
+control_pfs_res <- pfs_model$sample(
+  data = prepare_pfs_stan_data(filter(pfs_analysis_data, !fct_match(trtp, "T-DXd")), no_tumor_stim = TRUE), 
+  iter_warmup = 500, iter_sampling = 500
+)
+```
+
+```{r}
+#| label: no-tumor_kaplan-meier 
+
+lst(treated = pfs_res, control = control_pfs_res) |> 
+  map_dfr(\(r) spread_rvars(r, km_est[m]), .id = "arm") |> 
+  ggplot(aes(m - 1)) +
+  stat_lineribbon(aes(ydist = km_est, fill = arm, color = arm), step = TRUE, alpha = 0.25, .width = 0.8) +
+  labs(title = "Kaplan-Meier estimate", y = latex2exp::TeX("$S(t)$")) +
+  NULL
+```
+
+### First Two Tumor Sizes Only
+
+```{r}
+#| label: two-tumor-pfs-fit
+
+two_tumor_pfs_res <- pfs_analysis_data |> 
+  filter(fct_match(trtp, "T-DXd"), map_lgl(patient_tumors, \(tu) all(tu$n_measures >= 2))) |> 
+  prepare_pfs_stan_data(no_tumor_stim = FALSE) |>  
+  pfs_model$sample(
+    iter_warmup = 500, iter_sampling = 500, 
+    # init = create_pfs_initializer(.)
+    init = function(chain_id) { 
+      lst(
+        tumor_stim_coef = c(truncnorm::rtruncnorm(1, 0, mean = 0.01, sd = 0.1),
+                            truncnorm::rtruncnorm(1, 0, mean = 0.005, sd = 0.01)))
+    }
+  )
+
+control_two_tumor_pfs_res <- pfs_analysis_data |> 
+  filter(!fct_match(trtp, "T-DXd")) |> 
+  prepare_pfs_stan_data(no_tumor_stim = FALSE) |>  
+  pfs_model$sample(
+    iter_warmup = 500, iter_sampling = 500,
+    init = function(chain_id) { 
+      lst(
+        tumor_stim_coef = c(truncnorm::rtruncnorm(1, 0, mean = 0.01, sd = 0.1),
+                            truncnorm::rtruncnorm(1, 0, mean = 0.005, sd = 0.01)))
+    }
+  )
+```
+
+```{r}
+#| label: two-tumor_kaplan-meier 
+
+lst(treated = two_tumor_pfs_res) |> #, control = control_two_tumor_pfs_res) |> 
+  map_dfr(\(r) spread_rvars(r, km_est[m]), .id = "arm") |> 
+  ggplot(aes(m - 1)) +
+  stat_lineribbon(aes(ydist = km_est, fill = arm, color = arm), step = TRUE, alpha = 0.25, .width = 0.8) +
+  labs(title = "Kaplan-Meier estimate", y = latex2exp::TeX("$S(t)$")) +
+  NULL
+```
+
