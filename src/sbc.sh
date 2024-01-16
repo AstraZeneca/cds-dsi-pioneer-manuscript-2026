@@ -3,9 +3,9 @@
 #SBATCH -J early-predict-sbc
 #SBATCH --partition=core
 #SBATCH --nodes=1
-#SBATCH --cpus-per-task=48
+#SBATCH --cpus-per-task=24
 #SBATCH --mem-per-cpu=1G
-#SBATCH --time=0-02:30:00
+#SBATCH --time=0-05:00:00
 #SBATCH --output=/wscratch/%u/adc-early-predict/log/%x_%j.log
 
 module load R-core

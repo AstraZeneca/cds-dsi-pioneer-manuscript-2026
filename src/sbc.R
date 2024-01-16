@@ -5,8 +5,8 @@ Usage: sbc.R <cores> <num-sim> <output-name> [--append] [--censor-intervals=<int
 --keep-only  Keep only the intervals provided for censoring
 " |> 
   docopt::docopt(
-    args = if (interactive()) "12 3 test --censor-intervals=1,2,6,10,14,18,22,26,30,34,38" else commandArgs(TRUE),
-    # args = if (interactive()) "48 1 test" else commandArgs(TRUE),
+    args = if (interactive()) "12 3 test --censor-intervals=1,2,6,10,14,18,22,26,30,34" else commandArgs(TRUE),
+    # args = if (interactive()) "12 12 test" else commandArgs(TRUE),
   ) -> cl_args
 
 library(tidyverse)
@@ -42,14 +42,17 @@ pfs_test_data <- tumor_test_data |>
   list_modify(
     fit_data = FALSE,
     early_tumors_only = TRUE,
+    no_tumor_stim = FALSE,
     ignore_interval_censoring = FALSE,
     gen_pfs = TRUE,
     gen_interval_censored = TRUE,
     tumor_size = fake_tumor_data$tumor_size,
     pfs = rep(max_pfs, tumor_test_data$n_patients),
+    death_week = rep(0, tumor_test_data$n_patients),
     
     log_lambda_gp_intercept_mean = -3,
     log_lambda_gp_intercept_sd = 0.5,
+    log_lambda_gp_alpha_sd = 0.5,
     log_lambda_gp_rho_alpha = 7.3,
     log_lambda_gp_rho_beta = 7.5, 
     tumor_stim_intercept_sd = 0.5,
@@ -71,10 +74,11 @@ sbc_data <- pfs_res |>
   left_join( # Get the parameters that generated that data
     pfs_res |> 
       spread_rvars(
-        tumor_stim_intercept, tumor_stim_coef[t], log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho,
+        tumor_stim_intercept, tumor_stim_coef[t],
+        log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho,
         base_cond_expected_pfs, one_tumor_cond_expected_pfs, base_cond_median_pfs, one_tumor_cond_median_pfs
       ) |> 
-      pivot_wider(names_from = t, values_from = tumor_stim_coef, names_prefix = "tumor_stim_coef_") |> 
+      pivot_wider(names_from = t, values_from = tumor_stim_coef, names_prefix = "tumor_stim_coef_") |>
       unnest_rvars() |> 
       ungroup() |> 
       select(!c(.iteration, .chain)),
@@ -82,6 +86,7 @@ sbc_data <- pfs_res |>
   ) |>
   mutate(# For each simulation dataset fit the model and extract the posteriors for each of the model parameters 
     furrr::future_map2_dfr(.draw, sim_data, .progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
+    # map2_dfr(.draw, sim_data,
       function(sim_id, d, cl_args) { 
         fit_sim_data(
           pfs_test_data,
@@ -93,7 +98,8 @@ sbc_data <- pfs_res |>
           ignore_interval_censoring = cl_args$ignore_interval_censoring 
         ) |> # Get posterior draws from simulation fit. 
           spread_rvars(
-            tumor_stim_intercept, tumor_stim_coef, log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho, 
+            tumor_stim_intercept, tumor_stim_coef,
+            log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho, 
             base_cond_expected_pfs, one_tumor_cond_expected_pfs, base_cond_median_pfs, one_tumor_cond_median_pfs,
             ndraws = 1000
           ) |> 
