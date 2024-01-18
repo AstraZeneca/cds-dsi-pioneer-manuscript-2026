@@ -41,7 +41,9 @@ pfs_model <- cmdstan_model(here("src", "pfs.stan"))
 pfs_test_data <- tumor_test_data |> 
   list_modify(
     fit_data = FALSE,
+    use_tumor_model = FALSE,
     early_tumors_only = TRUE,
+    add_interaction_term = FALSE,
     no_tumor_stim = FALSE,
     ignore_interval_censoring = FALSE,
     gen_pfs = TRUE,
@@ -56,7 +58,7 @@ pfs_test_data <- tumor_test_data |>
     log_lambda_gp_rho_alpha = 7.3,
     log_lambda_gp_rho_beta = 7.5, 
     tumor_stim_intercept_sd = 0.5,
-    tumor_stim_coef_sd = c(0.25, 0.25),
+    tumor_stim_coef_sd = c(0.25, 0.25, 0.125),
   ) |> 
   drop_missing_measures(cl_args$censor_intervals, keep_only = cl_args$keep_only)  
 
