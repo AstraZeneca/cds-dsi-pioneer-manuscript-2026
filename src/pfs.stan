@@ -9,9 +9,12 @@ data {
   int<lower = 0, upper = 1> gen_interval_censored; // Should the generated PFS be interval censored?
   int<lower = 0, upper = 1> no_tumor_stim; // Don't use tumor characteristics to predict survival
   int<lower = 0, upper = 1> early_tumors_only; // Only time-invariant covariates used: tumor size from t = 1,2.
+  int<lower = 0, upper = 1> add_interaction_term;
   int<lower = 0, upper = 1> ignore_interval_censoring; // Treat observed PFS as true pfs and ignore t_measure.
+  int<lower = 0, upper = 1> use_tumor_model;
   
   #include "base_data.stan"
+  #include "tumor_data.stan"
   
   array[n_patients] int<lower = 0> pfs; // How many periods after baseline did patient survive
   array[n_patients] int<lower = 0> death_week; 
@@ -24,7 +27,7 @@ data {
   real<lower = 0> log_lambda_gp_rho_alpha;
   real<lower = 0> log_lambda_gp_rho_beta;
   real<lower = 0> tumor_stim_intercept_sd;
-  vector<lower = 0>[2] tumor_stim_coef_sd;
+  vector<lower = 0>[3] tumor_stim_coef_sd;
 }
 
 transformed data {
@@ -47,14 +50,18 @@ transformed data {
     pfs_range_vec[i] = i - 1; 
   }
   
-  matrix[early_tumors_only && !no_tumor_stim ? sum(n_patient_tumors) : 0, 2] standardized_tumor_covar;
+  matrix[early_tumors_only && !no_tumor_stim ? sum(n_patient_tumors) : 0, add_interaction_term ? 3 : 2] standardized_tumor_covar;
   
   if (!no_tumor_stim) { 
     if (early_tumors_only) {
       tuple(real, real, vector[sum(n_measures)]) standardize_results = standardize_nonzero_tumor_sizes(tumor_size);
       vector[sum(n_measures)] standardized_tumor_size = standardize_results.3;
       
-      standardized_tumor_covar = prepare_early_tumors_design_matrix(standardized_tumor_size, n_patient_tumors, n_measures, n_screening_t);
+      standardized_tumor_covar[, 1:2] = prepare_early_tumors_design_matrix(standardized_tumor_size, n_patient_tumors, n_measures, n_screening_t);
+      
+      if (add_interaction_term) {
+        standardized_tumor_covar[, 3] = standardized_tumor_covar[, 1] .* standardized_tumor_covar[, 2];
+      }
     } else {
       reject("Not supported yet.");
     }
@@ -86,6 +93,8 @@ transformed data {
 }
 
 parameters {
+  #include "tumor_parameters.stan"
+  
   // Base hazard GP parameters
   real<lower = 0> log_lambda_gp_alpha;
   real<lower = 0> log_lambda_gp_rho;
@@ -94,10 +103,12 @@ parameters {
  
   // Tumor level influence on hazard 
   real<lower = 0> tumor_stim_intercept; // DO NOT REMOVE; this is a per tumor intercept and not per patient intercept which is included in lambda.
-  vector<lower = 0>[no_tumor_stim ? 0 : 2] tumor_stim_coef;
+  vector<lower = 0>[no_tumor_stim ? 0 : add_interaction_term ? 3 : 2] tumor_stim_coef;
 }
 
 transformed parameters {
+  #include "tumor_transformed_parameters.stan"
+  
   // Base hazard
   vector[max_all_t] log_lambda = calc_gp_pred(pfs_range, log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho, delta, log_lambda_gp_eta);
   vector<lower = 0, upper = 1>[n_time_periods] disease_progress_prob;
@@ -129,6 +140,8 @@ transformed parameters {
 }
 
 model {
+  #include "tumor_model.stan"
+  
   // Priors
   
   log_lambda_gp_alpha ~ normal(0, log_lambda_gp_alpha_sd);
@@ -141,56 +154,28 @@ model {
   if (!no_tumor_stim) {
     tumor_stim_coef[1] ~ normal(0, tumor_stim_coef_sd[1]);
     tumor_stim_coef[2] ~ normal(0, tumor_stim_coef_sd[2]);
+    
+    if (add_interaction_term) {
+      tumor_stim_coef[3] ~ normal(0, tumor_stim_coef_sd[3]);
+    }
   }
   
   if (fit_data) {
-    int pfs_interval_pos = 1;
-    
-    for (i in 1:n_patients) {
-      int pfs_interval_end = pfs_interval_pos + pfs[i] + right_uncensored[i] + interval_censored[i] - 1; 
-      int curr_interval_censored = ignore_interval_censoring ? 0 : interval_censored[i];
-      vector[curr_interval_censored + right_uncensored[i]] interval_lp = rep_vector(0, curr_interval_censored + right_uncensored[i]);
-      int observed_pfs_interval_end = pfs_interval_end - right_uncensored[i] - curr_interval_censored;
-    
-      // print("i = ", i); 
-      // print("pfs[i] = ", pfs[i]); 
-      // print("pfs_interval_pos = ", pfs_interval_pos);
-      // print("pfs_interval_end = ", pfs_interval_end);
-      // print("curr_interval_censored = ", curr_interval_censored);
-      // print("observed_pfs_interval_end = ", observed_pfs_interval_end);
-      // print("right_uncensored[i] = ", right_uncensored[i]);
-      // print("disease_progress_prob[pfs_interval_pos:observed_pfs_interval_end] = ", disease_progress_prob[pfs_interval_pos:observed_pfs_interval_end]);
-    
-      // These are the time intervals we are sure that the patient has progression free 
-      target += bernoulli_lupmf(0 | disease_progress_prob[pfs_interval_pos:observed_pfs_interval_end]);
-      
-      for (t in 1:(curr_interval_censored + right_uncensored[i])) {
-        if (t > 1) { // We need to add more possible intervals that the patient remained progression free.
-          interval_lp[t] = bernoulli_lupmf(0 | disease_progress_prob[(observed_pfs_interval_end + 1):(observed_pfs_interval_end + t - 1)]);
-        }
-        
-        // If not right censored add pdf of disease progression. 
-        interval_lp[t] += right_uncensored[i] * bernoulli_lupmf(1 | disease_progress_prob[observed_pfs_interval_end + t]);
-      }
-     
-      if (curr_interval_censored > 0) {
-        // There are more than one candidate true PFS: sum of the probabilities and then log.
-        target += log_sum_exp(interval_lp); 
-      } else if (right_uncensored[i]) {
-        target += interval_lp[1]; // PFS not observed because of right censoring.
-      }
-      
-      // If generating PFS jump ahead to the beginning of the next patient's probs.
-      pfs_interval_pos = (gen_pfs ? pfs_interval_pos + max_all_t - 1 : pfs_interval_end) + 1;
-    }
+    pfs ~ pch(right_uncensored, interval_censored, ignore_interval_censoring, disease_progress_prob, gen_pfs ? max_all_t : 0);
   }
 }
 
 generated quantities {
+  vector[fit_data ? n_patients : 0] log_lik; 
+  
+  if (fit_data) {
+    log_lik = calc_pch_loglik(pfs, right_uncensored, interval_censored, ignore_interval_censoring, disease_progress_prob, gen_pfs ? max_all_t : 0);
+  }
+  
   vector<lower = 0, upper = 1>[max_all_t] base_pf_cond_prob = 1 - inv_cloglog(log_lambda); // Progression free conditional prob if not using covar
     // Progress free conditional probability if only 1 tumor per patient fixed at size = 1 
   vector<lower = 0, upper = 1>[max_all_t] one_tumor_pf_cond_prob = no_tumor_stim ? 
-    base_pf_cond_prob : 1 - calculate_progress_linear_prob(log_lambda, no_tumor_stim ? 0 : tumor_stim_intercept, tumor_stim_coef, [[1, 1]]);
+    base_pf_cond_prob : 1 - calculate_progress_linear_prob(log_lambda, no_tumor_stim ? 0 : tumor_stim_intercept, tumor_stim_coef, add_interaction_term ? [[1, 1, 1]] : [[1, 1]]);
   
   vector<lower = 0, upper = 1>[max_all_t] base_survival;
   vector<lower = 0, upper = 1>[max_all_t] one_tumor_survival;
@@ -222,9 +207,6 @@ generated quantities {
       int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
       int t_end = t_pos + n_measures[tumor_pos] - 1;
      
-      // print("n_screening_t[i] = ", n_screening_t[i]); 
-      // print("t_measure[(t_pos + n_screening_t[tumor_pos]):t_end] = ", t_measure[(t_pos + n_screening_t[tumor_pos]):t_end]);
-      
       tuple(int, int, int, int) pfs_res = pfs_rng(
         disease_progress_prob[pfs_interval_pos:pfs_interval_end], 
         gen_interval_censored ? t_measure[(t_pos + n_screening_t[tumor_pos]):t_end] : pfs_range_int
