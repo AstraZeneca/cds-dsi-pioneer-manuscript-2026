@@ -37,11 +37,6 @@ tuple(array[] int, array[] int) identify_censoring(array[] int pfs, array[] int 
         
         // for (t_index in 1:n_measures[tumor_pos]) {
         for (t_index in t_pos:t_end) {
-          // if (t_pos + t_index - 1 > size(t_measure)) {
-          //   print("i = ", i, ", j = ", j, ", t_index = ", t_index);
-          //   print("t_pos = ", t_pos);
-          // }
-          
           int curr_t = t_measure[t_index]; 
           
           if (death_week[i] == 0 && curr_t > pfs[i]) { 
@@ -110,6 +105,7 @@ vector estimate_kaplan_meier(array[] int pfs, array[] int right_censored, int ma
     
     while ((n > 0) && (pfs_pos <= n_pfs) && (right_censored[sorted_pfs_idx[pfs_pos]] || (pfs[sorted_pfs_idx[pfs_pos]] <= t))) {
       ex += !right_censored[sorted_pfs_idx[pfs_pos]];
+      n -= right_censored[sorted_pfs_idx[pfs_pos]];
       pfs_pos += 1;
     }
    
@@ -170,3 +166,49 @@ matrix prepare_early_tumors_design_matrix(vector tumor_size, array[] int n_patie
   
   return tumor_covar;
 }
+
+
+vector calc_pch_loglik(array[] int pfs, array[] int right_uncensored, array[] int interval_censored, int ignore_interval_censoring, vector disease_progress_prob, int max_all_t) {
+  int n_patients = size(pfs);
+  vector[n_patients] lp = rep_vector(0, n_patients);
+  
+  int pfs_interval_pos = 1;
+    
+  for (i in 1:n_patients) {
+    int pfs_interval_end = pfs_interval_pos + pfs[i] + right_uncensored[i] + interval_censored[i] - 1; 
+    int curr_interval_censored = ignore_interval_censoring ? 0 : interval_censored[i];
+    vector[curr_interval_censored + right_uncensored[i]] interval_lp = rep_vector(0, curr_interval_censored + right_uncensored[i]);
+    int observed_pfs_interval_end = pfs_interval_end - right_uncensored[i] - curr_interval_censored;
+  
+    // These are the time intervals we are sure that the patient has progression free 
+    lp[i] += bernoulli_lpmf(0 | disease_progress_prob[pfs_interval_pos:observed_pfs_interval_end]);
+    // target += bernoulli_lupmf(0 | disease_progress_prob[pfs_interval_pos:observed_pfs_interval_end]);
+    
+    for (t in 1:(curr_interval_censored + right_uncensored[i])) {
+      if (t > 1) { // We need to add more possible intervals that the patient remained progression free.
+        interval_lp[t] = bernoulli_lpmf(0 | disease_progress_prob[(observed_pfs_interval_end + 1):(observed_pfs_interval_end + t - 1)]);
+        // interval_lp[t] = bernoulli_lupmf(0 | disease_progress_prob[(observed_pfs_interval_end + 1):(observed_pfs_interval_end + t - 1)]);
+      }
+      
+      // If not right censored add pdf of disease progression. 
+      interval_lp[t] += right_uncensored[i] * bernoulli_lpmf(1 | disease_progress_prob[observed_pfs_interval_end + t]);
+      // interval_lp[t] += right_uncensored[i] * bernoulli_lupmf(1 | disease_progress_prob[observed_pfs_interval_end + t]);
+    }
+   
+    if (curr_interval_censored > 0) {
+      // There are more than one candidate true PFS: sum of the probabilities and then log.
+      lp[i] += log_sum_exp(interval_lp); 
+    } else if (right_uncensored[i]) {
+      lp[i] += interval_lp[1]; // PFS not observed because of right censoring.
+    }
+    
+    // If generating PFS jump ahead to the beginning of the next patient's probs.
+    pfs_interval_pos = (max_all_t > 0 ? pfs_interval_pos + max_all_t - 1 : pfs_interval_end) + 1;
+  }
+  
+  return lp;
+}
+  
+real pch_lpmf(array[] int y, array[] int right_uncensored, array[] int interval_censored, int ignore_interval_censoring, vector disease_progress_prob, int max_all_t) {
+  return sum(calc_pch_loglik(y, right_uncensored, interval_censored, ignore_interval_censoring, disease_progress_prob, max_all_t));
+} 
