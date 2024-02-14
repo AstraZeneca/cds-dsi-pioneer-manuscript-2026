@@ -1,12 +1,10 @@
-gen_patient_interval_properties <- function(fake_tumor_data, log_lambda, tumor_intercept, tumor_coef, settings) {
-  standardized <- pfs_model$functions$standardize_nonzero_tumor_sizes(fake_tumor_data$tumor_size)[[3]]
+gen_patient_interval_properties <- function(log_lambda, tumor_intercept, tumor_coef, settings) {
+  standardized <- pfs_model$functions$standardize_nonzero_tumor_sizes(settings$tumor_size)[[3]]
   
   t_measure_list <- with(settings, list_measures(t_measure, n_measures, n_patient_tumors))
-  n_screening_t <- t_measure_list |> 
-    list_flatten() |> 
-    map_int(\(t) sum(t <= 0))
+  n_screening_t <- with(settings, pfs_model$functions$calc_n_screening_t(n_patient_tumors, n_measures, t_measure)) 
   
-  pfs_model$functions$prepare_early_tumors_design_matrix(standardized, settings$n_patient_tumors, settings$n_measures, n_screening_t) |>  #, sd(fake_tumor_data$tumor_size)
+  with(settings, pfs_model$functions$prepare_early_tumors_design_matrix(standardized, n_patient_tumors, n_measures, n_screening_t)) |>  
     as_tibble() |> 
     set_names(c("tumor_size_1", "tumor_size_2")) |> 
     mutate(patient_id = rep(1:settings$n_patients, settings$n_patient_tumors)) |> 
@@ -15,8 +13,8 @@ gen_patient_interval_properties <- function(fake_tumor_data, log_lambda, tumor_i
     rowwise() |> 
     reframe(
       patient_id, 
-      progress_prob = pfs_model$functions$calculate_progress_linear_prob(log_lambda, tumor_intercept, tumor_coef, tumor_covar),
-      hazard = pfs_model$functions$calculate_linear_hazard(log_lambda, tumor_intercept, tumor_coef, tumor_covar),
+      progress_prob = pfs_model$functions$calculate_progress_linear_prob(settings$n_patient_tumors, log_lambda, tumor_intercept, tumor_coef, tumor_covar),
+      hazard = pfs_model$functions$calculate_linear_hazard(settings$n_patient_tumors, log_lambda, tumor_intercept, tumor_coef, tumor_covar),
       survival = cumprod(progress_prob)
     )  
 }
@@ -73,10 +71,10 @@ drop_missing_measures <- function(settings, measures = NULL, keep_only = FALSE) 
     }
     
     updated_settings %>%
-      list_modify(
+      list_assign(
         n_measures = map_int(.$t_measure, length),
         t_measure = unlist(.$t_measure),
-      )  
+      ) 
   } else {
     settings
   }
@@ -112,18 +110,19 @@ create_pfs_initializer <- function(stan_data) {
   }
 }
 
-fit_sim_data <- function(settings, d, max_measures, ..., gen_pfs = TRUE, ignore_interval_censoring = FALSE) { 
+fit_sim_data <- function(settings, d, max_measures, ..., gen_pfs = TRUE, ignore_interval_censoring = FALSE, drop_measures = NULL, keep_only = FALSE) { 
   settings |> 
     list_modify(
       gen_pfs = gen_pfs,
       fit_data = TRUE,
       pfs = d$pfs, 
+      right_censored = d$right_censored,
       ignore_interval_censoring = ignore_interval_censoring
-    ) |> 
+    ) |>
     pfs_model$sample(
       refresh = 0, 
       parallel_chains = 4, 
-      init = if (!settings$no_tumor_stim) function(chain_id) { 
+      init = if (settings$tumor_hazard_type > 0) function(chain_id) { 
         # init_vals <- lst(tumor_stim_intercept = truncnorm::rtruncnorm(1, 0, mean = 0.01, sd = 0.05))
         
         lst(
@@ -149,5 +148,143 @@ fit_simulations <- function(n, patient_interval_data, settings, ignore_interval_
           output_basename = if (!is_null(fit_basename)) str_c(fit_basename, sid, sep = "_"), 
           output_dir = if (!is_null(fit_basename)) file.path(tmp_dir, "fit"))
       ), 
+    ) 
+}
+
+prepare_tumor_stan_data <- function(analysis_data) {
+  lst(
+    n_patients = nrow(analysis_data),
+    n_patient_tumors = analysis_data$n_tumors,
+    n_measures = map(analysis_data$patient_tumors, \(tu) tu$n_measures) |> unlist(),
+    t_measure = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$week) |> unlist(),
+    tumor_size = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$mmdiam / 10) |> unlist(),
+  )
+}
+
+prepare_tumor_size_rvars <- function(rv, settings) {
+  rv |> 
+    ungroup() |> 
+    mutate( # A bunch of acrobatics to get the IDs, indices, and intervals right.
+      patient_id = rep(1:n_patients, with(settings, n_patient_tumors * patient_measures)),
+      tumor_index = ((tumor_index - 1) %/% patient_measures) + 1,
+      t = rep(0:(patient_measures - 1), sum(settings$n_patient_tumors)) - t_offset
+    ) |>
+    mutate(tumor_index = tumor_index - min(tumor_index) + 1, .by = patient_id) |>
+    rename(tumor_size = rep_tumor_size)
+}
+
+prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ..., pfs_var = pfs) {
+    tumor_stan_data <- prepare_tumor_stan_data(analysis_data)
+    pfs_data <- select(analysis_data, pfs = {{ pfs_var }}, death_week, right_censored) |> 
+      mutate(death_week = if_else(right_censored, 0, death_week)) # Death week is irrelevant if the data is censored
+  
+    lst(
+    fit_data = TRUE,
+    use_tumor_model = FALSE,
+    gen_pfs = TRUE,
+    gen_interval_censored = FALSE,
+    ignore_interval_censoring = FALSE,
+    
+    fit_tumor_data = FALSE,
+    gen_tumor_sizes = FALSE,
+    predict_missing_sizes = FALSE, 
+    multilevel_patient = FALSE,
+    multilevel_tumor = FALSE,
+    
+    !!!tumor_stan_data,
+    !!!pfs_data,
+    
+    !!!.pfs_priors,
+    !!!.tumor_priors,
+    
+    ...
+  ) |> 
+    list_modify(fit_tumor_data = FALSE)
+}
+
+run_sbc_sims <- function(
+  pfs_model, stan_data, num_sim, output_name,  output_dir = file.path(tmp_dir, "fit"), 
+  ignore_interval_censoring = FALSE,keep_fit = FALSE, gen_pfs = FALSE,
+  reuse_data = NULL, drop_measures = NULL, keep_only = FALSE
+) {
+  spread_param_rvars <- function(f, ...) { 
+    f |> 
+      spread_rvars(
+        tumor_stim_intercept, tumor_stim_coef[t],
+        log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho,
+        base_cond_expected_pfs, one_tumor_cond_expected_pfs, base_cond_median_pfs, one_tumor_cond_median_pfs,
+        ...
+      ) |> 
+      ungroup() |> 
+      pivot_wider(names_from = t, values_from = tumor_stim_coef, names_prefix = "tumor_stim_coef_")
+  }
+  
+  stan_data <- stan_data |> 
+    drop_missing_measures(drop_measures, keep_only)
+  
+  lstm <- with(stan_data, list_measures(t_measure, n_measures, n_patient_tumors))
+ 
+  all_sim_data <- if (is_null(reuse_data)) { 
+    pfs_res <- pfs_model$sample(data = stan_data, refresh = 0, parallel_chains = 4)
+    
+    pfs_res |> 
+      spread_rvars(rep_pfs[patient_index], rep_right_censored[patient_index]) |> 
+      unnest_rvars() |> 
+      ungroup() |>
+      # The PFS from each draw will be used as a simulation dataset 
+      filter(.draw <= num_sim) |> 
+      select(.draw, pfs = rep_pfs, right_censored = rep_right_censored) |> 
+      nest(sim_data = !.draw) |>
+      left_join( # Get the parameters that generated that data
+        pfs_res |> 
+          spread_param_rvars() |> 
+          unnest_rvars() |> 
+          select(!c(.iteration, .chain)) |> 
+          pack(true = !.draw),
+        by = ".draw"
+      )
+  } else {
+    reuse_data |> select(.draw, sim_data, true)
+  }
+  
+  all_sim_data |> 
+    mutate(# For each simulation dataset fit the model and extract the posteriors for each of the model parameters 
+      sim_data = map(
+        sim_data, 
+        \(d) mutate(d, 
+                    map2_dfr(pfs, lstm, function(s, m) { 
+                      m_union <- reduce(m, \(a, n) union(a, n)) 
+                      list(pfs = m_union |> discard(\(t) t > s) |> max(), right_censored = s >= max(m_union))
+                    })
+                    # pfs = map2_int(pfs, lstm, \(s, m) reduce(m, \(a, n) union(a, n)) |> discard(\(t) t > s) |> max()),
+                    # right_censored = pmap_lgl(lst(c = right_censored, p = pfs, m = lstm), \(c, p, m) c || )
+        )),
+                              
+      furrr::future_map2_dfr(.draw, sim_data, .progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
+      # map2_dfr(.draw, sim_data,
+        function(sim_id, d, output_dir, output_name, ignore_interval_censoring) { 
+          fit <- fit_sim_data(
+            stan_data,
+            d, 
+            gen_pfs = gen_pfs, 
+            thin = 4, # We need thinning when doing SBC using MCMC to break the correlation between samples.
+            output_basename = str_glue("{output_name}_{sim_id}"),
+            output_dir = output_dir, 
+            ignore_interval_censoring = ignore_interval_censoring 
+          ) 
+          
+          res <- fit |> # Get posterior draws from simulation fit. 
+            spread_param_rvars(ndraws = 1000) |> 
+            pack(est = everything())
+          
+          if (keep_fit) {
+            res <- res |> 
+              mutate(sim_fit = list(fit))
+          }
+          
+          return(res)
+        },
+        output_dir = output_dir, output_name = output_name, ignore_interval_censoring = ignore_interval_censoring
+      ),
     ) 
 }
