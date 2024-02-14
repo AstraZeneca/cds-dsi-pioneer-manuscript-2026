@@ -26,7 +26,7 @@ model {
 }
 
 generated quantities {
-  vector<lower = 0>[predict_missing_sizes ? n_all_tumor_measures : 0] all_tumor_size; // This includes both observed and missing measurements
+  vector<lower = 0>[predict_missing_sizes ? sum(n_full_measures) : 0] all_tumor_size; // This includes both observed and missing measurements
   vector<lower = 0>[gen_tumor_sizes ? sum(n_measures) : 0] rep_tumor_size; // Drawing *new* data
  
   if (predict_missing_sizes || gen_tumor_sizes) { 
@@ -39,7 +39,7 @@ generated quantities {
     
     for (i in 1:n_patients) {
       for (j in 1:n_patient_tumors[i]) {
-        int full_measure_end = full_measure_pos + patient_max_t_width[i] - 1;
+        int full_measure_end = full_measure_pos + n_full_measures[tumor_pos] - 1;
         int obs_measure_end = obs_measure_pos + n_measures[tumor_pos] - 1;
         int missing_measure_end = missing_measure_pos + n_missing_measures[tumor_pos] - 1;
         
@@ -48,7 +48,10 @@ generated quantities {
         if (predict_missing_sizes) {
           array[n_missing_measures[tumor_pos]] int current_t_missing_measure_idx = patient_t_missing_measure_idx[missing_measure_pos:missing_measure_end];
           
-          vector[patient_max_t_width[i]] current_tumor_size;
+          // vector[patient_max_t_width[i]] current_tumor_size;
+          vector[n_full_measures[tumor_pos]] current_tumor_size;
+          
+          // print("i = ", i, ", j = ", j, " current_t_measure_idx = ", current_t_measure_idx);
           
           current_tumor_size[current_t_measure_idx] = tumor_size[obs_measure_pos:obs_measure_end];
           
