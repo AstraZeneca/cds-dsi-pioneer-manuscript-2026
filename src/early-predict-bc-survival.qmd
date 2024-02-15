@@ -328,6 +328,7 @@ pfs_analysis_data |>
   count(studyid, trial_name, treated, trtp, trta) |> 
   kableExtra::kbl() |> 
   kableExtra::kable_styling()
+
 ```
 
 In the below plots we look at the empirical Kaplan-Meier survival, the number of at risk patients, and the number of censored at each interval, for the various trials and arms. We also compare: 
@@ -359,12 +360,12 @@ km_to_tibble <- function(trt_data, key, pfs_var) {
 
 km_res_calculated <- pfs_analysis_data |>
   group_by(trial_name, treated) |>  
-  group_map(\(trt_data, key) km_to_tibble(trt_data, key, pfs_var = "pfs")) |>  
+  group_map(\(trt_data, key) km_to_tibble(trt_data, key, pfs_var = "pfs"), .keep = TRUE) |>  
   bind_rows()  
 
 km_res_from_data <- pfs_analysis_data |>
   group_by(trial_name, treated) |>  
-  group_map(\(trt_data, key) km_to_tibble(trt_data, key, pfs_var = "progress_week")) |>  
+  group_map(\(trt_data, key) km_to_tibble(trt_data, key, pfs_var = "progress_week"), .keep = TRUE) |>  
   bind_rows()  
 
 km_res <- bind_rows(calculated = km_res_calculated, from_data = km_res_from_data, .id = "pfs_type")
@@ -759,6 +760,7 @@ tumor_fit_res <- tumor_model$sample(
   output_dir = file.path(tmp_dir, "fit"), 
   output_basename = "tumor" 
 )
+
 ```
 
 ```{r}
@@ -1395,13 +1397,19 @@ ic_ignored_no_tumor_pfs_future <- future::future(
 prior_no_tumor_pfs_res <- future::value(prior_no_tumor_pfs_future)
 no_tumor_pfs_res <- future::value(no_tumor_pfs_future)
 # control_no_tumor_pfs_res <- future::value(control_no_tumor_pfs_future)
-
 ```
 
 ```{r}
-#| label: no-tumor_kaplan-meier
+#| label: no-tumor-kaplan-meier
 #| cache: true
 #| dependson: no-tumor-pfs-fit
+
+lst(prior = prior_no_tumor_pfs_res) |>
+  map_dfr(\(r) spread_rvars(r, km_est[m]), .id = "arm") |> 
+  ggplot() +
+  stat_lineribbon(aes(x = m - 1, ydist = km_est), fill = "black", step = TRUE, alpha = 0.25, .width = 0.8) +
+  labs(title = "Kaplan-Meier estimate", subtitle = "Treated arm", x = "Week", y = latex2exp::TeX("$S(t)$")) +
+  NULL
 
 lst(treated = no_tumor_pfs_res) |>  #, control = control_no_tumor_pfs_res) |> 
   map_dfr(\(r) spread_rvars(r, km_est[m]), .id = "arm") |> 
@@ -1606,10 +1614,14 @@ lst(treated = two_tumor_pfs_res) |> #, control = control_two_tumor_pfs_res) |>
 #| dependson: two-tumor-pfs-fit
 
 lst(treated = two_tumor_pfs_res, prior = prior_two_tumor_pfs_res) |> #, control = control_two_tumor_pfs_res) |> 
-  map_dfr(\(f) spread_rvars(f, log_lambda[t]), .id = "fit_type") |> 
-  mutate(lambda = exp(log_lambda)) |> 
+  # map_dfr(\(f) spread_rvars(f, log_lambda[t]), .id = "fit_type") |> 
+  map_dfr(\(f) spread_rvars(f, log_lambda[t]) |> 
+            mutate(lambda = exp(log_lambda)) |> 
+            median_qi(lambda, .width = 0.8), 
+          .id = "fit_type") |> 
   ggplot(aes(t)) +
-  stat_lineribbon(aes(ydist = lambda, fill = fit_type, color = fit_type), alpha = 0.25, step = TRUE, .width = 0.8) +
+  geom_lineribbon(aes(y = lambda, ymin = .lower, ymax = .upper, fill = fit_type, color = fit_type), alpha = 0.25, step = TRUE) +
+  # stat_lineribbon(aes(ydist = lambda, fill = fit_type, color = fit_type), alpha = 0.25, step = TRUE, .width = 0.8) +
   # stat_lineribbon(aes(ydist = lambda, color = arm, fill = arm), alpha = 0.25, step = TRUE, .width = 0.8) +
   geom_rug(aes(week), alpha = 0.125, 
            data = treated_pfs_analysis_data |> 
@@ -1788,11 +1800,12 @@ control_tumor_change_pfs_res <- future::value(control_tumor_change_pfs_future)
 #| dependson: tumor-change-pfs-fit
 
 lst(treated = tumor_change_pfs_res) |> #, control = control_tumor_change_pfs_res) |> 
-  map_dfr(\(r) spread_rvars(r, km_est[m]), .id = "arm") |> 
+  map_dfr(\(r) spread_rvars(r, km_est[m]) |> median_qi(km_est, .width = 0.8), .id = "arm") |> 
   ggplot(aes(m - 1)) +
   geom_step(aes(x = t, y = s, group = btype), data = treated_obs_km) +
   # stat_lineribbon(aes(ydist = km_est, fill = arm, color = arm), step = TRUE, alpha = 0.25, .width = 0.8) +
-  stat_lineribbon(aes(ydist = km_est), step = TRUE, alpha = 0.25, .width = 0.8) +
+  # stat_lineribbon(aes(ydist = km_est), step = TRUE, alpha = 0.25, .width = 0.8) +
+  geom_lineribbon(aes(y = km_est, ymin = .lower, ymax = .upper), color = "black", fill = alpha("black", 0.25), step = TRUE) +
   labs(title = "Kaplan-Meier estimate", subtitle = "Treated arm", x = "Week", y = latex2exp::TeX("$S(t)$")) +
   NULL
 ```
@@ -1808,11 +1821,14 @@ TODO
 #| cache: true
 #| dependson: no-tumor-pfs-fit, two-tumor-pfs-fit
 
-lst(two_tumor = two_tumor_pfs_res, no_tumor = no_tumor_pfs_res, prior = prior_two_tumor_pfs_res) |> 
-  map_dfr(\(f) spread_rvars(f, log_lambda[t]), .id = "model") |> 
-  mutate(lambda = exp(log_lambda)) |> 
+lst(two_tumor = two_tumor_pfs_res, no_tumor = no_tumor_pfs_res) |>  #, prior = prior_two_tumor_pfs_res) |> 
+  map_dfr(
+    \(f) spread_rvars(f, log_lambda[t]) |> mutate(lambda = exp(log_lambda)) |> median_qi(lambda, .width = 0.8), 
+    .id = "model"
+  ) |> 
   ggplot(aes(t)) +
-  stat_lineribbon(aes(ydist = lambda, color = model, fill = model), alpha = 0.25, step = TRUE, .width = 0.8) +
+  # stat_lineribbon(aes(ydist = lambda, color = model, fill = model), alpha = 0.25, step = TRUE, .width = 0.8) +
+  geom_lineribbon(aes(y = lambda, ymin = .lower, ymax = .upper, color = model, fill = model), alpha = 0.25, step = TRUE) +
   geom_rug(aes(week), alpha = 0.125, 
            data = pfs_analysis_data |> 
              transmute(
