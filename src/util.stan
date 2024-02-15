@@ -109,7 +109,7 @@ array[] real pfs_quantiles_from_prob(vector exit_prob, array[] real p) {
   return q;
 }
 
-
+// A missing measure is defined as one that lies between a _tumor's_ first assessment to the _patient's_ last assessment.
 array[] int calculate_n_missing_measures(array[] int n_measures, array[] int t_measure, array[] int n_patient_tumors) {
   int tumor_pos = 1;
   int t_measure_pos = 1;
@@ -119,17 +119,25 @@ array[] int calculate_n_missing_measures(array[] int n_measures, array[] int t_m
   
   for (i in 1:n_patients) {
     int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
-    int t_measure_end = t_measure_pos + sum(n_measures[tumor_pos:tumor_end]) - 1;
-    int min_patient_t = min(t_measure[t_measure_pos:t_measure_end]);
-    int max_patient_t = max(t_measure[t_measure_pos:t_measure_end]);
-    int full_patient_measure_width = max_patient_t - min_patient_t + 1;
+    int first_tumor_t_measure_pos = t_measure_pos;
+    int last_tumor_t_measure_end = t_measure_pos + sum(n_measures[tumor_pos:tumor_end]) - 1;
+    
+    int max_patient_t = max(t_measure[first_tumor_t_measure_pos:last_tumor_t_measure_end]);
+    // int max_patient_t = max(t_measure[t_measure_pos:t_measure_end]);
+    // int full_patient_measure_width = max_patient_t - min_patient_t + 1;
     
     for (j in 1:n_patient_tumors[i]) {
+      int t_measure_end = t_measure_pos + n_measures[tumor_pos] - 1;
+      
+      int min_tumor_t = min(t_measure[t_measure_pos:t_measure_end]);
+      int full_patient_measure_width = max_patient_t - min_tumor_t + 1;
+      
       n_missing_measures[tumor_pos] = full_patient_measure_width - n_measures[tumor_pos];
+      
       tumor_pos += 1;  
+      t_measure_pos = t_measure_end + 1;
     }
     
-    t_measure_pos = t_measure_end + 1;
   }
   
   return n_missing_measures;
@@ -147,15 +155,25 @@ array[] int calculate_t_missing_measure(
   
   for (i in 1:n_patients) {
     int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
-    int t_measure_end = t_measure_pos + sum(n_measures[tumor_pos:tumor_end]) - 1;
-    int min_patient_t = min(t_measure[t_measure_pos:t_measure_end]);
-    int max_patient_t = max(t_measure[t_measure_pos:t_measure_end]);
+    int first_tumor_t_measure_pos = t_measure_pos;
+    int last_tumor_t_measure_end = t_measure_pos + sum(n_measures[tumor_pos:tumor_end]) - 1;
+    
+    // int t_measure_end = t_measure_pos + sum(n_measures[tumor_pos:tumor_end]) - 1;
+    // int min_patient_t = min(t_measure[t_measure_pos:t_measure_end]);
+    int max_patient_t = max(t_measure[first_tumor_t_measure_pos:last_tumor_t_measure_end]);
     
     for (j in 1:n_patient_tumors[i]) {
+      int t_measure_end = t_measure_pos + n_measures[tumor_pos] - 1;
+      
+      int min_tumor_t = min(t_measure[t_measure_pos:t_measure_end]);
       int measures_checked = 0;
       
-      for (k in min_patient_t:max_patient_t) {
+      for (k in min_tumor_t:max_patient_t) {
         if (measures_checked >= n_measures[tumor_pos] || t_measure[t_measure_pos] > k) {
+          if (t_missing_measure_pos > sum(n_missing_measures)) {
+            print("i = ", i, ", j = ", j);
+          }
+          
           t_missing_measure[t_missing_measure_pos] = k;
           t_missing_measure_pos += 1;
         } else {
@@ -166,8 +184,35 @@ array[] int calculate_t_missing_measure(
       
       tumor_pos += 1;
     }
-    
   }
   
   return t_missing_measure;
+}
+
+array[] int calc_n_screening_t(array[] int n_patient_tumors, array[] int n_measures, array[] int t_measure) {
+  int n_patients = size(n_patient_tumors);
+  array[sum(n_patient_tumors)] int n_screening_t = rep_array(0, sum(n_patient_tumors));
+  
+  int tumor_pos = 1;
+  int t_measure_pos = 1;
+  
+  for (i in 1:n_patients) {
+    int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
+    
+    for (j in 1:n_patient_tumors[i]) {
+      int t_measure_end = t_measure_pos + n_measures[tumor_pos + j - 1] - 1;
+      
+      for (tp in t_measure_pos:t_measure_end) {
+        if (t_measure[tp] <= 0) {
+          n_screening_t[tumor_pos + j - 1] += 1;
+        }
+      }
+      
+      t_measure_pos = t_measure_end + 1;
+    }
+    
+    tumor_pos = tumor_end + 1;
+  }
+  
+  return n_screening_t;
 }
