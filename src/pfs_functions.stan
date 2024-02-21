@@ -189,13 +189,9 @@ vector calc_pch_loglik(array[] int pfs, array[] int right_uncensored, array[] in
     lp[i] += bernoulli_lpmf(0 | disease_progress_prob[pfs_interval_pos:observed_pfs_interval_end]);
     
     int pfs_interval_end = observed_pfs_interval_end + right_uncensored[i] + interval_censored[i]; 
-    // int observed_pfs_interval_end = pfs_interval_end - right_uncensored[i] - interval_censored[i];
     int curr_interval_censored = ignore_interval_censoring ? 0 : interval_censored[i];
     vector[curr_interval_censored + right_uncensored[i]] interval_lp = rep_vector(0, curr_interval_censored + right_uncensored[i]);
   
-    
-    // print("i = ", i, ", max_all_t = ", max_all_t, ", curr_interval_censored = ", curr_interval_censored, ", right_uncensored[i] = ", right_uncensored[i], ", pfs[i] = ", pfs[i]);
-    
     for (t in 1:(curr_interval_censored + right_uncensored[i])) {
       if (t > 1) { // We need to add more possible intervals that the patient remained progression free.
         interval_lp[t] = bernoulli_lpmf(0 | disease_progress_prob[(observed_pfs_interval_end + 1):(observed_pfs_interval_end + t - 1)]);
