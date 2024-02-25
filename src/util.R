@@ -104,31 +104,44 @@ gen_fake_pfs_data <- function(patient_interval_data, settings) {
 
 create_pfs_initializer <- function(stan_data) {
   function(chain_id) { 
-    lst(
-      tumor_stim_coef = c(truncnorm::rtruncnorm(1, 0, mean = 0, sd = stan_data$tumor_stim_coef_sd[1]),
-                          truncnorm::rtruncnorm(1, 0, mean = 0, sd = stan_data$tumor_stim_coef_sd[2])))
+    n_covar <- with(stan_data, if_else(tumor_hazard_type > 0, if_else(tumor_hazard_type < 3, tumor_hazard_type + 1, 1), 0))
+    
+    init_vals <- lst(
+      tumor_stim_intercept = abs(rnorm(1, 0, stan_data$tumor_stim_intercept_sd)),
+      tumor_stim_coef = abs(rnorm(n_covar, 0, stan_data$tumor_stim_coef_sd[1:n_covar])), 
+    )
+    
+    if (stan_data$add_trial_level) {
+      init_vals <- init_vals |> 
+        list_assign(
+          raw_log_lambda_gp_trial_intercept = rnorm(stan_data$n_trials),
+          raw_tumor_stim_trial_coef_mult = map(seq(stan_data$n_trials), \(...) rnorm(n_covar + 1)),
+          log_lambda_gp_trial_intercept_sd = abs(rnorm(1, 0, stan_data$log_lambda_gp_trial_intercept_sd_sd)),
+          tumor_stim_trial_coef_mult_sd = abs(rnorm(n_covar + 1, 0, stan_data$tumor_stim_trial_coef_sd_sd)),
+        )
+    }
+    
+    return(init_vals)
   }
 }
 
-fit_sim_data <- function(settings, d, max_measures, ..., gen_pfs = TRUE, ignore_interval_censoring = FALSE, drop_measures = NULL, keep_only = FALSE) { 
-  settings |> 
+fit_sim_data <- function(
+  settings, d, max_measures, ..., gen_pfs = TRUE, ignore_interval_censoring = FALSE, drop_measures = NULL, keep_only = FALSE, no_init = FALSE
+) { 
+  settings <- settings |> 
     list_modify(
       gen_pfs = gen_pfs,
       fit_data = TRUE,
       pfs = d$pfs, 
       right_censored = d$right_censored,
       ignore_interval_censoring = ignore_interval_censoring
-    ) |>
+    )
+  
+  settings |> 
     pfs_model$sample(
-      refresh = 0, 
-      parallel_chains = 4, 
-      init = if (settings$tumor_hazard_type > 0) function(chain_id) { 
-        # init_vals <- lst(tumor_stim_intercept = truncnorm::rtruncnorm(1, 0, mean = 0.01, sd = 0.05))
-        
-        lst(
-          tumor_stim_coef = c(truncnorm::rtruncnorm(1, 0, mean = 0.01, sd = 0.1),
-                              truncnorm::rtruncnorm(1, 0, mean = 0.005, sd = 0.01)))
-      },
+      refresh = 0,
+      parallel_chains = 4,
+      init = if (settings$tumor_hazard_type > 0 && !no_init) create_pfs_initializer(settings),
       ...
     )
 }
@@ -154,8 +167,10 @@ fit_simulations <- function(n, patient_interval_data, settings, ignore_interval_
 prepare_tumor_stan_data <- function(analysis_data) {
   lst(
     n_patients = nrow(analysis_data),
+    n_trials = n_distinct(analysis_data$trial),
+    patient_trial = analysis_data$trial,
     n_patient_tumors = analysis_data$n_tumors,
-    n_measures = map(analysis_data$patient_tumors, \(tu) tu$n_measures) |> unlist(),
+    n_measures = analysis_data$n_measures |> unlist(),
     t_measure = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$week) |> unlist(),
     tumor_size = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$mmdiam / 10) |> unlist(),
   )
@@ -175,7 +190,7 @@ prepare_tumor_size_rvars <- function(rv, settings) {
 
 prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ..., pfs_var = pfs) {
     tumor_stan_data <- prepare_tumor_stan_data(analysis_data)
-    pfs_data <- select(analysis_data, pfs = {{ pfs_var }}, death_week, right_censored) |> 
+    pfs_data <- select(analysis_data, pfs = {{ pfs_var }}, death_week, right_censored, interval_censored) |> 
       mutate(death_week = if_else(right_censored, 0, death_week)) # Death week is irrelevant if the data is censored
   
     lst(
@@ -184,6 +199,7 @@ prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ...
     gen_pfs = TRUE,
     gen_interval_censored = FALSE,
     ignore_interval_censoring = FALSE,
+    add_trial_level = FALSE,
     
     fit_tumor_data = FALSE,
     gen_tumor_sizes = FALSE,
@@ -205,7 +221,7 @@ prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ...
 run_sbc_sims <- function(
   pfs_model, stan_data, num_sim, output_name,  output_dir = file.path(tmp_dir, "fit"), 
   ignore_interval_censoring = FALSE,keep_fit = FALSE, gen_pfs = FALSE,
-  reuse_data = NULL, drop_measures = NULL, keep_only = FALSE
+  reuse_data = NULL, drop_measures = NULL, keep_only = FALSE, ... 
 ) {
   spread_param_rvars <- function(f, ...) { 
     f |> 
@@ -270,7 +286,8 @@ run_sbc_sims <- function(
             thin = 4, # We need thinning when doing SBC using MCMC to break the correlation between samples.
             output_basename = str_glue("{output_name}_{sim_id}"),
             output_dir = output_dir, 
-            ignore_interval_censoring = ignore_interval_censoring 
+            ignore_interval_censoring = ignore_interval_censoring,
+            ...
           ) 
           
           res <- fit |> # Get posterior draws from simulation fit. 
@@ -287,4 +304,102 @@ run_sbc_sims <- function(
         output_dir = output_dir, output_name = output_name, ignore_interval_censoring = ignore_interval_censoring
       ),
     ) 
+}
+
+plot_km <- function(data_list, analysis_data) {
+  plot_obj <- data_list |> 
+    map(\(r) recover_types(r, select(analysis_data, trial))) |> 
+    map_dfr(\(r) spread_rvars(r, trial_km_est[trial, t]), .id = "arm") |> 
+    ggplot() +
+    facet_wrap(vars(trial)) +
+    labs(title = "Kaplan-Meier estimate", subtitle = "Treated arm", x = "Week", y = latex2exp::TeX("$S(t)$")) +
+    NULL
+  
+  if (length(data_list) > 1) {
+    plot_obj +
+      stat_lineribbon(aes(x = t - 1, ydist = trial_km_est, fill = arm, color = arm), step = TRUE, alpha = 0.25, .width = 0.8) 
+  } else {
+    plot_obj +
+      stat_lineribbon(aes(x = t - 1, ydist = trial_km_est), fill = "black", step = TRUE, alpha = 0.25, .width = 0.8) 
+  }
+}
+
+plot_pfs_hist_posterior <- function(data_list, stan_data, hist_breaks = seq(10, 150, 10)) {
+  # This function is used to generate a histogram of time-to-events for a single draw
+  sample_hist <- function(pred, breaks) {
+    # hist() is a base R function to generate histograms from data and provided breaks.
+    hist(pmin(pred, max(breaks)), breaks = c(0, breaks), plot = FALSE)$count
+  }
+  
+  # This function is used to allow us to generate a distribution of histograms
+  rvar_sample_hist <- posterior::rfun(sample_hist)
+  
+  data_list |> 
+    map_dfr(\(f) spread_rvars(f, rep_pfs[i], rep_right_censored[i]) |> mutate(trial = stan_data$patient_trial), .id = "arm") |> 
+    group_by(trial) |> 
+    reframe(t = hist_breaks, bindist = rvar_sample_hist(rep_pfs, hist_breaks)) |> 
+    filter(t < max(t)) %>% 
+    bind_rows(
+      group_by(., trial) %>%
+        filter(t %in% range(t)) |> 
+        mutate(t = c(0, max(t) + min(hist_breaks)))
+    ) |> 
+    ggplot(aes(t)) +
+    stat_lineribbon(aes(ydist = bindist, color = "Posterior"),
+                    fill = "black", alpha = 0.125, linewidth = 2,
+                    step = "mid",
+                    .width = c(0.5, 0.8), show.legend = FALSE) + 
+    scale_x_continuous("t", breaks = seq(0, max(hist_breaks) + min(hist_breaks), 20)) +
+    scale_color_discrete("") +
+    facet_wrap(vars(trial)) +
+    NULL
+}
+
+plot_base_hazard <- function(data_list, analysis_data) {
+  data_list |> 
+    map(\(f) recover_types(f, select(analysis_data, trial))) |> 
+    map_dfr(\(f) spread_rvars(f, log_trial_lambda[trial, t]), .id = "fit_type") |> 
+    mutate(trial_lambda = exp(log_trial_lambda)) |> 
+    ggplot(aes(t)) +
+    stat_lineribbon(aes(ydist = trial_lambda, color = fit_type, fill = fit_type, alpha = fit_type), step = TRUE, .width = 0.8) +
+    geom_rug(aes(week), alpha = 0.125, 
+             data = analysis_data |> 
+               transmute(
+                 trtp, trial, 
+                 patient_visits = map(patient_tumors, \(tu) unnest(tu, tumor_history) |> distinct(week))
+               ) |> 
+               unnest(patient_visits)) +
+    scale_color_viridis_d("", aesthetics = c("fill", "color"), labels = c(prior = "Prior", treated = "Posterior")) +
+    scale_alpha_manual("", values = c(prior = 0.125, treated = 0.5)) +
+    facet_wrap(vars(trial)) +
+    labs(title = "Baseline hazard", y = latex2exp::TeX(r"{$\lambda_{st}$}"), caption = "Ribbons shown are for the 80% CI.\nRugs below x-axis show the distribution of assessment weeks.") +
+    guides(alpha = "none") +
+    theme(legend.position = "bottom") +
+    NULL
+}
+
+estimate_oos_loss <- function (fit, fit_loo, stan_data, loss_fn, insample = FALSE) {
+  log_lik <- fit$draws("log_lik", format = "matrix")
+  
+  observed_pfs <- with(stan_data, map2(pfs, interval_censored, \(p, i) runif(nrow(log_lik), p, p + i))) 
+  rep_draws <- map(c("rep_pfs", "rep_right_censored"), \(v) fit$draws(v, format = "matrix")) |> 
+    map(\(r) split(r, rep(seq(ncol(r)), each = nrow(r)))) |> 
+    set_names(c("pfs", "right_censored"))
+  
+  calculated_loss <- lst(observed_pfs, observed_right_censored = stan_data$right_censored, !!!rep_draws) |> 
+    unname() |> 
+    pmap(loss_fn) |> 
+    simplify2array()
+  
+  if (insample) {
+    calculated_loss |> 
+      plyr::aaply(2, mean) |> 
+      enframe(name = NULL) |> 
+      mutate(trial = stan_data$patient_trial, id = seq(n()))
+  } else {
+    calculated_loss |> 
+      E_loo(fit_loo$psis_object, type = "mean", log_ratios = -log_lik) |> 
+      as_tibble() |> 
+      mutate(trial = stan_data$patient_trial, id = seq(n()))
+  }
 }
