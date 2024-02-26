@@ -10,6 +10,7 @@ data {
   int<lower = 0> tumor_hazard_type; // 0: None; 1: First two, no interaction; 2: First two, interaction; 3: First two percentage difference
   int<lower = 0, upper = 1> ignore_interval_censoring; // Treat observed PFS as true pfs and ignore t_measure.
   int<lower = 0, upper = 1> use_tumor_model;
+  int<lower = 0, upper = 1> add_trial_level;
   
   #include "base_data.stan"
   #include "tumor_data.stan"
@@ -23,10 +24,13 @@ data {
   real log_lambda_gp_intercept_mean;
   real<lower = 0> log_lambda_gp_intercept_sd;
   real<lower = 0> log_lambda_gp_alpha_sd;
+  real<lower = 0> log_lambda_gp_trial_alpha_sd;
   real<lower = 0> log_lambda_gp_rho_alpha;
   real<lower = 0> log_lambda_gp_rho_beta;
+  real<lower = 0> log_lambda_gp_trial_intercept_sd_sd;
   real<lower = 0> tumor_stim_intercept_sd;
   vector<lower = 0>[3] tumor_stim_coef_sd;
+  real<lower = 0> tumor_stim_trial_coef_sd_sd;
 }
 
 transformed data {
@@ -35,6 +39,29 @@ transformed data {
   if (min(n_patient_screening_t) <= 0) {
     reject("We need at least one screening measurement per patient, for now: ", min(n_patient_screening_t));
   }
+  
+  
+  array[n_trials] int<lower = 0, upper = n_patients> n_trial_patients = rep_array(0, n_trials);
+  array[n_patients] int<lower = 1, upper = n_patients> ordered_trial_patients;
+ 
+  {
+    array[n_trials] int trial_patient_pos;
+    trial_patient_pos[1] = 1;
+ 
+    for (i in 1:n_patients) {
+      n_trial_patients[patient_trial[i]] += 1;
+    }
+    
+    
+    for (s in 2:n_trials) {
+      trial_patient_pos[s] = sum(n_trial_patients[:(s - 1)]) + 1;
+    }
+    
+    for (i in 1:n_patients) {
+      ordered_trial_patients[trial_patient_pos[patient_trial[i]]] = i;
+      trial_patient_pos[patient_trial[i]] += 1;
+    }
+  } 
   
   int<lower = 0, upper = max(pfs) * n_patients> n_total_pfs = sum(pfs);
   
@@ -109,10 +136,20 @@ parameters {
   real<lower = 0> log_lambda_gp_rho;
   vector[max_all_t] log_lambda_gp_eta;
   real log_lambda_gp_intercept;
+  
+  vector[add_trial_level ? n_trials : 0] raw_log_lambda_gp_trial_intercept;
+  real<lower = 0> log_lambda_gp_trial_intercept_sd;
+  
+  real<lower = 0> log_lambda_gp_trial_alpha;
+  real<lower = 0> log_lambda_gp_trial_rho;
+  array[add_trial_level ? n_trials : 0] vector[max_all_t] log_lambda_gp_trial_eta;
  
   // Tumor level influence on hazard 
   real<lower = 0> tumor_stim_intercept; // DO NOT REMOVE; this is a per tumor intercept and not per patient intercept which is included in lambda.
   vector<lower = 0>[n_covar_col] tumor_stim_coef;
+  
+  array[add_trial_level ? n_trials : 0] vector[n_covar_col + 1] raw_tumor_stim_trial_coef_mult;
+  vector<lower = 0>[add_trial_level ? n_covar_col + 1 : 0] tumor_stim_trial_coef_mult_sd;
 }
 
 transformed parameters {
@@ -120,7 +157,32 @@ transformed parameters {
   
   // Base hazard
   vector[max_all_t] log_lambda = calc_gp_pred(pfs_range, log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho, delta, log_lambda_gp_eta);
+  vector[add_trial_level ? n_trials : 0] log_lambda_gp_trial_intercept;
+  array[n_trials] vector[max_all_t] log_trial_lambda; 
+  
   vector<lower = 0, upper = 1>[n_time_periods] disease_progress_prob;
+  
+  vector[n_trials] tumor_stim_trial_intercept;
+  array[n_trials] vector[n_covar_col] tumor_stim_trial_coef;
+  
+  if (add_trial_level) {
+    log_lambda_gp_trial_intercept = raw_log_lambda_gp_trial_intercept * log_lambda_gp_trial_intercept_sd;
+  }
+  
+  for (s in 1:n_trials) {
+    tumor_stim_trial_intercept[s] = tumor_stim_intercept * exp(add_trial_level ? raw_tumor_stim_trial_coef_mult[s, 1] * tumor_stim_trial_coef_mult_sd[1] : 0);
+   
+    if (n_covar_col > 0) { 
+      // TODO Add correlation between intercept and the coefs
+      tumor_stim_trial_coef[s] = 
+        tumor_stim_coef .* (add_trial_level ? exp(raw_tumor_stim_trial_coef_mult[s, 2:] .* tumor_stim_trial_coef_mult_sd[2:]) : rep_vector(1, n_covar_col));
+    }
+    
+    log_trial_lambda[s] = log_lambda + ( 
+      add_trial_level ? 
+      calc_gp_pred(pfs_range, log_lambda_gp_trial_intercept[s], log_lambda_gp_trial_alpha, log_lambda_gp_trial_rho, delta, log_lambda_gp_trial_eta[s]): 
+      rep_vector(0, max_all_t));
+  }
   
   vector[n_patients] total_time_invar_tumor_stim;
   vector[n_time_periods] disease_progress_pred;
@@ -134,14 +196,16 @@ transformed parameters {
       int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
       int n_intervals = gen_pfs ? max_all_t : pfs[i] + right_uncensored[i] + interval_censored[i];
       int pfs_interval_end = pfs_interval_pos + n_intervals - 1; 
-      // int pfs_interval_end = pfs_interval_pos + pfs[i] + right_uncensored[i] + interval_censored[i] - 1; 
-      // pfs_interval_pos = (max_all_t > 0 ? pfs_interval_pos + max_all_t - 1 : pfs_interval_end) + 1;
       
-      vector[n_patient_tumors[i]] tumor_stim = linear_tumor_stimulus(tumor_stim_intercept, tumor_stim_coef, tumor_covar[tumor_pos:tumor_end]);
+      vector[n_patient_tumors[i]] tumor_stim = linear_tumor_stimulus(
+        tumor_stim_trial_intercept[patient_trial[i]], 
+        tumor_stim_trial_coef[patient_trial[i]], 
+        tumor_covar[tumor_pos:tumor_end]
+      );
       
       total_time_invar_tumor_stim[i] = tumor_hazard_type > 0 ? sum(tumor_stim) - mean(n_patient_tumors) * tumor_stim_intercept : 0;
      
-      disease_progress_pred[pfs_interval_pos:pfs_interval_end] = log_lambda[1:n_intervals] + total_time_invar_tumor_stim[i];
+      disease_progress_pred[pfs_interval_pos:pfs_interval_end] = log_trial_lambda[patient_trial[i], 1:n_intervals] + total_time_invar_tumor_stim[i];
       
       tumor_pos = tumor_end + 1;
       pfs_interval_pos = pfs_interval_end + 1;
@@ -161,14 +225,30 @@ model {
   log_lambda_gp_eta ~ std_normal();
   log_lambda_gp_intercept ~ normal(log_lambda_gp_intercept_mean, log_lambda_gp_intercept_sd);
   
+  log_lambda_gp_trial_intercept_sd ~ normal(0, log_lambda_gp_trial_intercept_sd_sd);
+  raw_log_lambda_gp_trial_intercept ~ std_normal(); 
+  
   tumor_stim_intercept ~ normal(0, tumor_stim_intercept_sd);
+  
+  // TODO separate hyperparam for these parameters 
+  log_lambda_gp_trial_alpha ~ normal(0, log_lambda_gp_trial_alpha_sd);
+  log_lambda_gp_trial_rho ~ inv_gamma(log_lambda_gp_rho_alpha, log_lambda_gp_rho_beta);
+ 
+  if (add_trial_level) { 
+    tumor_stim_trial_coef_mult_sd ~ normal(0, tumor_stim_trial_coef_sd_sd);
+    
+    for (s in 1:n_trials) {
+      raw_tumor_stim_trial_coef_mult[s] ~ std_normal();
+      log_lambda_gp_trial_eta[s] ~ std_normal();
+    }
+  }
   
   if (tumor_hazard_type > 0) {
     tumor_stim_coef[1] ~ normal(0, tumor_stim_coef_sd[1]);
-    
+
     if (tumor_hazard_type == 1 || tumor_hazard_type == 2) {
       tumor_stim_coef[2] ~ normal(0, tumor_stim_coef_sd[2]);
-      
+
       if (tumor_hazard_type == 2) {
         tumor_stim_coef[3] ~ normal(0, tumor_stim_coef_sd[3]);
       }
@@ -191,6 +271,24 @@ generated quantities {
   vector<lower = 0, upper = 1>[max_all_t] base_pf_cond_prob = 1 - inv_cloglog(log_lambda); // Progression free conditional prob if not using covar
     // Progress free conditional probability if only 1 tumor per patient fixed at size = 1 
   vector<lower = 0, upper = 1>[max_all_t] one_tumor_pf_cond_prob; 
+  
+  array[add_trial_level ? n_trials : 0] vector<lower = 0, upper = 1>[max_all_t] trial_base_pf_cond_prob; 
+  array[add_trial_level ? n_trials : 0] vector<lower = 0, upper = 1>[max_all_t] trial_one_tumor_pf_cond_prob; 
+  
+  if (add_trial_level) {
+    for (s in 1:n_trials) {
+      trial_base_pf_cond_prob[s] = 1 - inv_cloglog(log_trial_lambda[s]);
+      
+      if (tumor_hazard_type > 0) {
+        trial_one_tumor_pf_cond_prob[s] = 
+          1 - calculate_progress_linear_prob(
+            n_patient_tumors, log_trial_lambda[s], tumor_stim_trial_intercept[s], tumor_stim_trial_coef[s], [rep_row_vector(1, n_covar_col)]
+          ); 
+      } else {
+        trial_one_tumor_pf_cond_prob[s] = trial_base_pf_cond_prob[s];
+      } 
+    }
+  }
  
   if (tumor_hazard_type > 0) {
     one_tumor_pf_cond_prob = 
@@ -218,6 +316,7 @@ generated quantities {
  
   // Kaplan-Meier survival probability, aggregated over generated patients' data.  
   vector<lower = 0, upper = 1>[gen_pfs ? max(t_measure) + 1 : 0] km_est; 
+  array[add_trial_level && gen_pfs ? n_trials : 0] vector<lower = 0, upper = 1>[max(t_measure) + 1] trial_km_est; 
   
   if (gen_pfs) {
     int tumor_pos = 1;
@@ -244,6 +343,19 @@ generated quantities {
     }
     
     km_est = estimate_kaplan_meier(rep_pfs, rep_right_censored, max_all_t).1; 
+    
+    
+    if (add_trial_level) {
+      int trial_patient_pos = 1;
+      
+      for (s in 1:n_trials) {
+        int trial_patient_end = trial_patient_pos + n_trial_patients[s] - 1;
+        
+        trial_km_est[s] = estimate_kaplan_meier(rep_pfs[trial_patient_pos:trial_patient_end], rep_right_censored[trial_patient_pos:trial_patient_end], max_all_t).1; 
+        
+        trial_patient_pos = trial_patient_end + 1;
+      }
+    }
   } 
   
   {
