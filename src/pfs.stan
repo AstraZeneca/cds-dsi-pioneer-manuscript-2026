@@ -24,8 +24,10 @@ data {
   real log_lambda_gp_intercept_mean;
   real<lower = 0> log_lambda_gp_intercept_sd;
   real<lower = 0> log_lambda_gp_alpha_sd;
+  real<lower = 0> log_lambda_gp_trial_alpha_sd;
   real<lower = 0> log_lambda_gp_rho_alpha;
   real<lower = 0> log_lambda_gp_rho_beta;
+  real<lower = 0> log_lambda_gp_trial_intercept_sd_sd;
   real<lower = 0> tumor_stim_intercept_sd;
   vector<lower = 0>[3] tumor_stim_coef_sd;
   real<lower = 0> tumor_stim_trial_coef_sd_sd;
@@ -146,9 +148,6 @@ parameters {
   real<lower = 0> tumor_stim_intercept; // DO NOT REMOVE; this is a per tumor intercept and not per patient intercept which is included in lambda.
   vector<lower = 0>[n_covar_col] tumor_stim_coef;
   
-  // vector[add_trial_level ? n_trials : 0] raw_tumor_stim_trial_intercept;
-  // real<lower = 0> tumor_stim_trial_intercept_sd;
-  
   array[add_trial_level ? n_trials : 0] vector[n_covar_col + 1] raw_tumor_stim_trial_coef_mult;
   vector<lower = 0>[add_trial_level ? n_covar_col + 1 : 0] tumor_stim_trial_coef_mult_sd;
 }
@@ -171,7 +170,7 @@ transformed parameters {
   }
   
   for (s in 1:n_trials) {
-    tumor_stim_trial_intercept[s] = tumor_stim_intercept * exp(raw_tumor_stim_trial_coef_mult[s, 1] * tumor_stim_trial_coef_mult_sd[1]);
+    tumor_stim_trial_intercept[s] = tumor_stim_intercept * exp(add_trial_level ? raw_tumor_stim_trial_coef_mult[s, 1] * tumor_stim_trial_coef_mult_sd[1] : 0);
    
     if (n_covar_col > 0) { 
       // TODO Add correlation between intercept and the coefs
@@ -226,16 +225,13 @@ model {
   log_lambda_gp_eta ~ std_normal();
   log_lambda_gp_intercept ~ normal(log_lambda_gp_intercept_mean, log_lambda_gp_intercept_sd);
   
-  log_lambda_gp_trial_intercept_sd ~ normal(0, 1);
+  log_lambda_gp_trial_intercept_sd ~ normal(0, log_lambda_gp_trial_intercept_sd_sd);
   raw_log_lambda_gp_trial_intercept ~ std_normal(); 
   
   tumor_stim_intercept ~ normal(0, tumor_stim_intercept_sd);
   
-  // tumor_stim_trial_intercept_sd ~ normal(0, 1);
-  // raw_tumor_stim_trial_intercept ~ std_normal(); 
- 
   // TODO separate hyperparam for these parameters 
-  log_lambda_gp_trial_alpha ~ normal(0, log_lambda_gp_alpha_sd);
+  log_lambda_gp_trial_alpha ~ normal(0, log_lambda_gp_trial_alpha_sd);
   log_lambda_gp_trial_rho ~ inv_gamma(log_lambda_gp_rho_alpha, log_lambda_gp_rho_beta);
  
   if (add_trial_level) { 
@@ -249,10 +245,10 @@ model {
   
   if (tumor_hazard_type > 0) {
     tumor_stim_coef[1] ~ normal(0, tumor_stim_coef_sd[1]);
-    
+
     if (tumor_hazard_type == 1 || tumor_hazard_type == 2) {
       tumor_stim_coef[2] ~ normal(0, tumor_stim_coef_sd[2]);
-      
+
       if (tumor_hazard_type == 2) {
         tumor_stim_coef[3] ~ normal(0, tumor_stim_coef_sd[3]);
       }
@@ -275,6 +271,24 @@ generated quantities {
   vector<lower = 0, upper = 1>[max_all_t] base_pf_cond_prob = 1 - inv_cloglog(log_lambda); // Progression free conditional prob if not using covar
     // Progress free conditional probability if only 1 tumor per patient fixed at size = 1 
   vector<lower = 0, upper = 1>[max_all_t] one_tumor_pf_cond_prob; 
+  
+  array[add_trial_level ? n_trials : 0] vector<lower = 0, upper = 1>[max_all_t] trial_base_pf_cond_prob; 
+  array[add_trial_level ? n_trials : 0] vector<lower = 0, upper = 1>[max_all_t] trial_one_tumor_pf_cond_prob; 
+  
+  if (add_trial_level) {
+    for (s in 1:n_trials) {
+      trial_base_pf_cond_prob[s] = 1 - inv_cloglog(log_trial_lambda[s]);
+      
+      if (tumor_hazard_type > 0) {
+        trial_one_tumor_pf_cond_prob[s] = 
+          1 - calculate_progress_linear_prob(
+            n_patient_tumors, log_trial_lambda[s], tumor_stim_trial_intercept[s], tumor_stim_trial_coef[s], [rep_row_vector(1, n_covar_col)]
+          ); 
+      } else {
+        trial_one_tumor_pf_cond_prob[s] = trial_base_pf_cond_prob[s];
+      } 
+    }
+  }
  
   if (tumor_hazard_type > 0) {
     one_tumor_pf_cond_prob = 
