@@ -1,4 +1,7 @@
+int<lower = 1> n_trials;
 int<lower = 0> n_patients;
+
+array[n_patients] int<lower = 1, upper = n_trials> patient_trial;
 
 // How many tumors were measured. Tumors that weren't detected or disappeared = 0 size. 
 // [num_tumors_1, ..., num_tumors_i, ...]

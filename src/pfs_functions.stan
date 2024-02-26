@@ -8,8 +8,8 @@ vector calculate_progress_linear_prob(array[] int n_patient_tumors, vector log_l
     real total_time_invar_tumor_stim = sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar)) - tumor_intercept * mean(n_patient_tumors);
     
     return inv_cloglog(log_lambda + total_time_invar_tumor_stim);
-
 }
+
 // Hazard function given a base hazard and time-invariant covariates.  
 vector calculate_linear_hazard(array[] int n_patient_tumors, vector log_lambda, real tumor_intercept, vector tumor_coef, matrix tumor_covar) {
     real total_time_invar_tumor_stim = sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar)) - tumor_intercept * mean(n_patient_tumors);
@@ -35,7 +35,6 @@ tuple(array[] int, array[] int) identify_censoring(array[] int pfs, array[] int 
       for (j in 1:n_patient_tumors[i]) {
         int t_end = t_pos + n_measures[tumor_pos] - 1; 
         
-        // for (t_index in 1:n_measures[tumor_pos]) {
         for (t_index in t_pos:t_end) {
           int curr_t = t_measure[t_index]; 
           
@@ -44,7 +43,7 @@ tuple(array[] int, array[] int) identify_censoring(array[] int pfs, array[] int 
             // t; some tumors might not be observed for all t, so I don't want to arbitrarily use the last one's next t.
             interval_censored[i] = interval_censored[i] > 0 ? min(curr_t - pfs[i] - 1, interval_censored[i]) : curr_t - pfs[i] - 1; 
             
-            right_censored[i] = 0; // Found an observation after pfs[i] for _any_ of the tumors (hence the multiplication)
+            right_censored[i] = 0; // Found an observation after pfs[i] for _any_ of the tumors
             
             break;
           } 
@@ -189,13 +188,9 @@ vector calc_pch_loglik(array[] int pfs, array[] int right_uncensored, array[] in
     lp[i] += bernoulli_lpmf(0 | disease_progress_prob[pfs_interval_pos:observed_pfs_interval_end]);
     
     int pfs_interval_end = observed_pfs_interval_end + right_uncensored[i] + interval_censored[i]; 
-    // int observed_pfs_interval_end = pfs_interval_end - right_uncensored[i] - interval_censored[i];
     int curr_interval_censored = ignore_interval_censoring ? 0 : interval_censored[i];
     vector[curr_interval_censored + right_uncensored[i]] interval_lp = rep_vector(0, curr_interval_censored + right_uncensored[i]);
   
-    
-    // print("i = ", i, ", max_all_t = ", max_all_t, ", curr_interval_censored = ", curr_interval_censored, ", right_uncensored[i] = ", right_uncensored[i], ", pfs[i] = ", pfs[i]);
-    
     for (t in 1:(curr_interval_censored + right_uncensored[i])) {
       if (t > 1) { // We need to add more possible intervals that the patient remained progression free.
         interval_lp[t] = bernoulli_lpmf(0 | disease_progress_prob[(observed_pfs_interval_end + 1):(observed_pfs_interval_end + t - 1)]);
