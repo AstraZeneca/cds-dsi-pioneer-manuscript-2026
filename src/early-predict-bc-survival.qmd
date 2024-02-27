@@ -23,6 +23,7 @@ library(tidybayes)
 library(bayesplot)
 library(here)
 library(gtsummary)
+library(targets)
 
 # conflicts_prefer(
 #   dplyr::filter
@@ -1839,7 +1840,6 @@ loo_compare(lst(no_tumor_loo, ic_ignored_no_tumor_loo, two_tumor_loo, tumor_chan
 linear_loss <- function(m, c, a, ac, k0 = 1, k1 = 1) if_else(c & (ac | a >= m), 0, if_else(m >= a, k0, k1) * abs(m - a))
 squared_error_loss <- function(m, c, a, ac) if_else(c & (ac | a >= m), 0, (m - a)^2)
 ```
-
 
 Linear loss function, where $(m, c)$ are the PFS and right censoring status observed in the data and $(\tilde{m}, \tilde{c})$ are their inferred values.
 
