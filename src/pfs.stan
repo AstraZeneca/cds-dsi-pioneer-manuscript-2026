@@ -7,7 +7,7 @@ data {
   int<lower = 0, upper = 1> fit_data;
   int<lower = 0, upper = 1> gen_pfs;
   int<lower = 0, upper = 1> gen_interval_censored; // Should the generated PFS be interval censored?
-  int<lower = 0> tumor_hazard_type; // 0: None; 1: First two, no interaction; 2: First two, interaction; 3: First two percentage difference
+  int<lower = 0> tumor_hazard_type; // 0: None; 1: First two, no interaction; 2: First two, interaction; 3: First two percentage difference; 4: tumor intercept only
   int<lower = 0, upper = 1> ignore_interval_censoring; // Treat observed PFS as true pfs and ignore t_measure.
   int<lower = 0, upper = 1> use_tumor_model;
   
@@ -163,7 +163,20 @@ model {
   
   tumor_stim_intercept ~ normal(0, tumor_stim_intercept_sd);
   
-  if (tumor_hazard_type > 0) {
+  // TODO separate hyperparam for these parameters 
+  log_lambda_gp_trial_alpha ~ normal(0, log_lambda_gp_trial_alpha_sd);
+  log_lambda_gp_trial_rho ~ inv_gamma(log_lambda_gp_rho_alpha, log_lambda_gp_rho_beta);
+ 
+  if (add_trial_level) { 
+    tumor_stim_trial_coef_mult_sd ~ normal(0, tumor_stim_trial_coef_sd_sd);
+    
+    for (s in 1:n_trials) {
+      raw_tumor_stim_trial_coef_mult[s] ~ std_normal();
+      log_lambda_gp_trial_eta[s] ~ std_normal();
+    }
+  }
+  
+  if (tumor_hazard_type > 0 && tumor_hazard_type < 4) {
     tumor_stim_coef[1] ~ normal(0, tumor_stim_coef_sd[1]);
     
     if (tumor_hazard_type == 1 || tumor_hazard_type == 2) {

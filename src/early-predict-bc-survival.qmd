@@ -102,10 +102,20 @@ pfs_model <- cmdstan_model(here("src", "pfs.stan"), compile_standalone = TRUE, f
 # Data
 
 What data we have so far:
+1. Breast01: phase II dose finding study (HER2-positive metastatic breast cancer).
+2. Breast02: phase III study comparing to physician choice of drug (HER2-positive metastatic breast cancer). 
+2. Breast03^[Pending]: phase III study comparing to trastuzumab emtansine (HER2-positive metastatic breast cancer).
+3. Breast04: This is a phase III study on patients with HER2-low metastatic breast cancer (HER2-low metastatic breast cancer).
 
-1. Breast01: This is a phase II dose finding study. Doses of trastuzumab deruxtecan (T-DXd) were 5.4, 6.4, 7.4 mg/kg.
-2. Breast02: This is a phase III study comparing T-DXd (5.4 mg/kg) to physician choice of drug. 
-3. Breast04: This is a phase III 
+```{mermaid}
+%%| label: fig-data-structure
+%%| fig-align: center
+
+erDiagram
+  Study ||--|{ Patient : enrolls
+  Patient ||--|{ Tumor : has
+  Tumor ||--|{ Assessment : assessed 
+```
 
 ```{r}
 #| label: load-trials-data
@@ -117,12 +127,6 @@ data_details <- tribble(
   "idap_20231129", "Breast02",  
   "idap_20231124", "Breast04"
 )
-
-read_entimice_data <- function(idap, dataset, data_type = c("sdtm", "adam"), team_dir = "/wscratch/ewfteams/dpo0083") {
-  read_rds(file.path(team_dir, idap, arg_match(data_type), "prod", "data", str_c(dataset, ".rds"))) |> 
-    rename_with(str_to_lower) |> 
-    mutate(across(ends_with("fl"), \(fl) fct_expand(fl, c("Y", "N")) |>  fct_match("Y")))
-}
 
 # Trial arms
 sdtm_ta <- data_details |> 
@@ -341,22 +345,6 @@ As expected, if we use progress week, survival appears to be longer, while in fa
 ```{r}
 #| label: fig-survival-dynamics
 #| warning: false
-
-km_to_tibble <- function(trt_data, key, pfs_var) { 
-  with(
-    prepare_pfs_stan_data(trt_data, tumor_priors, pfs_priors, pfs_var = pfs_var), {
-      interval_censored <- pfs_model$functions$identify_censoring(pfs, death_week, n_patient_tumors, n_measures, t_measure)[[1]]
-      
-      map_dfr(list(lb = pfs, ub = pfs + interval_censored), function(s) {
-        pfs_model$functions$estimate_kaplan_meier(s, right_censored, max(s)) |>
-          set_names(c("s", "n", "c", "e")) |>
-          as_tibble() |> 
-          mutate(t = seq(0, n() - 1))
-      }, .id = "btype")
-    }) |> 
-    # pivot_wider(values_from = s:e, names_from = btype) |> 
-    bind_cols(key)
-}
 
 km_res_calculated <- pfs_analysis_data |>
   group_by(trial_name, treated) |>  
@@ -1507,6 +1495,16 @@ lst(ic = no_tumor_pfs_res, ic_ignored = ic_ignored_no_tumor_pfs_res) |>
 
 While SBC shows that ignoring interval censoring should be a big problem, it does not appear to bias estimates much using our data.
 
+### Tumor Count Model
+
+The hazard function is time invariant:
+
+$$
+\begin{align}
+  \lambda(t, \bf{x}; \boldsymbol{\theta}) &= \lambda_t \cdot \exp\left[\beta_0(N_i - \bar{N})\right] \\ 
+  \end{align}
+$$
+
 ### First Two Tumor Sizes Only Model
 
 The hazard function is time invariant:
@@ -1857,9 +1855,33 @@ tumor_change_loo <- tumor_change_pfs_res$loo(save_psis = TRUE, cores = 12)
 loo_compare(lst(no_tumor_loo, ic_ignored_no_tumor_loo, two_tumor_loo, tumor_change_loo))
 ```
 
-The below isn't going to work because I'm comparing LOO estimates to observed data at the PFS level and ignoring interval censoring. In other words, our model will predict ranges of values within the interval censoring area while the data is fixed at the lowest possible PFS.
+```{r}
+#| label: loss-functions
 
-~~We see that in terms of elpd the no tumors model is inferior and the SE is smaller than the difference.~~
+linear_loss <- function(m, c, a, ac, k0 = 1, k1 = 1) if_else(c & (ac | a >= m), 0, if_else(m >= a, k0, k1) * abs(m - a))
+squared_error_loss <- function(m, c, a, ac) if_else(c & (ac | a >= m), 0, (m - a)^2)
+```
+
+
+Linear loss function, where $(m, c)$ are the PFS and right censoring status observed in the data and $(\tilde{m}, \tilde{c})$ are their inferred values.
+
+$$
+L(y, c, \tilde{y}, \tilde{c}) = \begin{cases}
+0 & \textrm{if } c = 0 \land (\tilde{c} \lor \tilde{y} \geq y) \\
+K_0 (y - \tilde{y}) & \textrm{if } y \geq \tilde{y} \\
+K_1 (\tilde{y} - y) & \textrm{if } y < \tilde{y} 
+\end{cases}
+$$
+```{r}
+#| label: fig-linear-loss
+
+tibble(delta = seq(-10, 10), sym_loss = abs(delta), asym_loss = if_else(delta < 0, 3, 1) * abs(delta)) |> 
+  pivot_longer(sym_loss:asym_loss) |> 
+  ggplot(aes(delta, value)) +
+  geom_line(aes(y = value, color = name), linewidth = 2, alpha = 0.25) +
+  scale_color_discrete("Loss Type", labels = c("sym_loss" = "Symmetric", "asym_loss" = "Asymmetric")) +
+  labs(x = latex2exp::TeX(r"{$y - \tilde{y}$}"), y = "Loss")
+```
 
 ~~Below we do the same thing but using a linear loss function and RMSE. Again, there is little difference between them.~~
 
@@ -1869,49 +1891,87 @@ The below isn't going to work because I'm comparing LOO estimates to observed da
 #| cache: true
 #| dependson: pfs-loo
 
-linear_loss <- function(m, a, k0 = 1, k1 = 1) if_else(m >= a, k0, k1) * abs(m - a)
+asym_linear_loss <- partial(linear_loss, k1 = 3)
+no_tumor_asym_loss <- estimate_oos_loss(no_tumor_pfs_res, no_tumor_loo, no_tumor_treated_pfs_stan_data, asym_linear_loss)
+ic_ignored_no_tumor_asym_loss <- estimate_oos_loss(ic_ignored_no_tumor_pfs_res, ic_ignored_no_tumor_loo, no_tumor_treated_pfs_stan_data, asym_linear_loss)
+two_tumor_asym_loss <- estimate_oos_loss(two_tumor_pfs_res, two_tumor_loo, two_tumor_treated_pfs_stan_data, asym_linear_loss)
+no_tumor_sym_loss <- estimate_oos_loss(no_tumor_pfs_res, no_tumor_loo, no_tumor_treated_pfs_stan_data, linear_loss)
+ic_ignored_no_tumor_sym_loss <- estimate_oos_loss(ic_ignored_no_tumor_pfs_res, ic_ignored_no_tumor_loo, no_tumor_treated_pfs_stan_data, linear_loss)
+two_tumor_sym_loss <- estimate_oos_loss(two_tumor_pfs_res, two_tumor_loo, two_tumor_treated_pfs_stan_data, linear_loss)
+no_tumor_sqerr_loss <- estimate_oos_loss(no_tumor_pfs_res, no_tumor_loo, no_tumor_treated_pfs_stan_data, squared_error_loss)
+two_tumor_sqerr_loss <- estimate_oos_loss(two_tumor_pfs_res, two_tumor_loo, two_tumor_treated_pfs_stan_data, squared_error_loss)
 
-two_tumor_log_lik <- two_tumor_pfs_res$draws("log_lik", format = "matrix")
-tumor_change_log_lik <- tumor_change_pfs_res$draws("log_lik", format = "matrix")
-no_tumor_log_lik <- no_tumor_pfs_res$draws("log_lik", format = "matrix")
- 
-two_tumor_loo_pfs <- E_loo(
-    two_tumor_pfs_res$draws("rep_pfs", format = "matrix"), two_tumor_loo$psis_object, type = "mean", log_ratios = -two_tumor_log_lik
-  ) |>  
-  pluck("value")
+loss_data <- bind_rows(
+  lst(no_tumor_sym_loss, 
+      ic_ignored_no_tumor_asym_loss, 
+      two_tumor_sym_loss, 
+      no_tumor_asym_loss, 
+      ic_ignored_no_tumor_sym_loss, 
+      two_tumor_asym_loss, 
+      no_tumor_sqerr_loss, 
+      two_tumor_sqerr_loss),
+  .id = "model"
+) |> 
+  mutate(loss_type = str_extract(model, "(a?sym)|sqerr"), model = str_extract(model, "(ic_ignored_)?(no|two)_tumor"))
+```
 
-tumor_change_loo_pfs <- E_loo(
-    tumor_change_pfs_res$draws("rep_pfs", format = "matrix"), tumor_change_loo$psis_object, type = "mean", log_ratios = -tumor_change_log_lik
-  ) |>  
-  pluck("value")
+```{r}
+#| label: fig-loss
+#| fig-height: 8
 
-no_tumor_loo_pfs <- E_loo(
-    no_tumor_pfs_res$draws("rep_pfs", format = "matrix"), no_tumor_loo$psis_object, type = "mean", log_ratios = -no_tumor_log_lik
-  ) |>  
-  pluck("value")
+loss_data |> 
+  filter(!fct_match(loss_type, "sqerr"), !fct_match(model, "ic_ignored_no_tumor")) |> 
+  plot_loss(binwidth = 6)
 
-linear_loss(tumor_change_loo_pfs, treated_pfs_analysis_data$pfs, 2, 1) |> 
-  mean()
+loss_data |> 
+  filter(fct_match(loss_type, "sqerr"), !fct_match(model, "ic_ignored_no_tumor")) |> 
+  plot_loss(binwidth = 100)
+```
 
-linear_loss(two_tumor_loo_pfs, treated_pfs_analysis_data$pfs, 2, 1) |> 
-  mean()
+```{r}
+loss_data |> 
+  group_by(loss_type, model) |> 
+  summarize(expected_loss = mean(value), .groups = "drop") |> 
+  kableExtra::kbl() |> 
+  kableExtra::kable_styling()
+```
+```{r}
+loss_data |> 
+  filter(fct_match(model, c("no_tumor", "two_tumor")), !fct_match(loss_type, "sqerr")) %>%
+  left_join(filter(., fct_match(model, "two_tumor")), filter(., fct_match(model, "no_tumor")), by = c("loss_type", "trial", "id")) |> 
+  mutate(diff = value.x - value.y) |> 
+  ggplot(aes(diff)) +
+  stat_histinterval(
+    point_interval = mean_qi, .width = c(0.5, 0.8), alpha = 0.5, breaks = ggdist::breaks_fixed(width = 6)
+  ) +
+  facet_grid(vars(trial), vars(loss_type), scales = "free", margins = "trial") +
+  coord_cartesian(xlim = c(-20, 20)) +
+  NULL
+```
 
-linear_loss(no_tumor_loo_pfs, treated_pfs_analysis_data$pfs, 2, 1) |> 
-  mean()
 
-subtract(tumor_change_loo_pfs, treated_pfs_analysis_data$pfs) |> 
-  magrittr::raise_to_power(2) |> 
-  mean() |> 
-  sqrt()
+```{r} 
+#| label: in-sample-loss
+#| eval: false
+#| include: false
 
-subtract(two_tumor_loo_pfs, treated_pfs_analysis_data$pfs) |> 
-  magrittr::raise_to_power(2) |> 
-  mean() |> 
-  sqrt()
+no_tumor_asym_is_loss <- estimate_oos_loss(no_tumor_pfs_res, no_tumor_loo, no_tumor_treated_pfs_stan_data, asym_linear_loss, insample = TRUE)
+two_tumor_asym_is_loss <- estimate_oos_loss(two_tumor_pfs_res, two_tumor_loo, two_tumor_treated_pfs_stan_data, asym_linear_loss, insample = TRUE)
+no_tumor_sym_is_loss <- estimate_oos_loss(no_tumor_pfs_res, no_tumor_loo, no_tumor_treated_pfs_stan_data, linear_loss, insample = TRUE)
+two_tumor_sym_is_loss <- estimate_oos_loss(two_tumor_pfs_res, two_tumor_loo, two_tumor_treated_pfs_stan_data, linear_loss, insample = TRUE)
+no_tumor_sqerr_is_loss <- estimate_oos_loss(no_tumor_pfs_res, no_tumor_loo, no_tumor_treated_pfs_stan_data, squared_error_loss, insample = TRUE)
+two_tumor_sqerr_is_loss <- estimate_oos_loss(two_tumor_pfs_res, two_tumor_loo, two_tumor_treated_pfs_stan_data, squared_error_loss, insample = TRUE)
 
-subtract(no_tumor_loo_pfs, treated_pfs_analysis_data$pfs) |> 
-  magrittr::raise_to_power(2) |> 
-  mean() |> 
-  sqrt()
+is_loss_data <- bind_rows(
+  lst(no_tumor_sym_is_loss, two_tumor_sym_is_loss, no_tumor_asym_is_loss, two_tumor_asym_is_loss, no_tumor_sqerr_is_loss, two_tumor_sqerr_is_loss),
+  .id = "model"
+) |> 
+  mutate(loss_type = str_extract(model, "(a?sym)|sqerr"), model = str_extract(model, "(no|two)_tumor"))
+
+is_loss_data |> 
+  group_by(loss_type, model) |> 
+  summarize(expected_loss = mean(value), .groups = "drop") |> 
+  kableExtra::kbl() |> 
+  kableExtra::kable_styling()
 ```
 
