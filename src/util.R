@@ -149,25 +149,23 @@ create_pfs_initializer <- function(stan_data) {
   }
 }
 
-fit_sim_data <- function(settings, d, max_measures, ..., gen_pfs = TRUE, ignore_interval_censoring = FALSE, drop_measures = NULL, keep_only = FALSE) { 
-  settings |> 
+fit_sim_data <- function(
+  settings, d, max_measures, ..., gen_pfs = TRUE, ignore_interval_censoring = FALSE, drop_measures = NULL, keep_only = FALSE, no_init = FALSE
+) { 
+  settings <- settings |> 
     list_modify(
       gen_pfs = gen_pfs,
       fit_data = TRUE,
       pfs = d$pfs, 
       right_censored = d$right_censored,
       ignore_interval_censoring = ignore_interval_censoring
-    ) |>
+    )
+  
+  settings |> 
     pfs_model$sample(
-      refresh = 0, 
-      parallel_chains = 4, 
-      init = if (settings$tumor_hazard_type > 0) function(chain_id) { 
-        # init_vals <- lst(tumor_stim_intercept = truncnorm::rtruncnorm(1, 0, mean = 0.01, sd = 0.05))
-        
-        lst(
-          tumor_stim_coef = c(truncnorm::rtruncnorm(1, 0, mean = 0.01, sd = 0.1),
-                              truncnorm::rtruncnorm(1, 0, mean = 0.005, sd = 0.01)))
-      },
+      refresh = 0,
+      parallel_chains = 4,
+      init = if (settings$tumor_hazard_type > 0 && !no_init) create_pfs_initializer(settings),
       ...
     )
 }
@@ -193,8 +191,10 @@ fit_simulations <- function(n, patient_interval_data, settings, ignore_interval_
 prepare_tumor_stan_data <- function(analysis_data) {
   lst(
     n_patients = nrow(analysis_data),
+    n_trials = n_distinct(analysis_data$trial),
+    patient_trial = analysis_data$trial,
     n_patient_tumors = analysis_data$n_tumors,
-    n_measures = map(analysis_data$patient_tumors, \(tu) tu$n_measures) |> unlist(),
+    n_measures = analysis_data$n_measures |> unlist(),
     t_measure = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$week) |> unlist(),
     tumor_size = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$mmdiam / 10) |> unlist(),
   )
@@ -214,7 +214,7 @@ prepare_tumor_size_rvars <- function(rv, settings) {
 
 prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ..., pfs_var = pfs) {
     tumor_stan_data <- prepare_tumor_stan_data(analysis_data)
-    pfs_data <- select(analysis_data, pfs = {{ pfs_var }}, death_week, right_censored) |> 
+    pfs_data <- select(analysis_data, pfs = {{ pfs_var }}, death_week, right_censored, interval_censored) |> 
       mutate(death_week = if_else(right_censored, 0, death_week)) # Death week is irrelevant if the data is censored
   
     lst(
@@ -223,6 +223,7 @@ prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ...
     gen_pfs = TRUE,
     gen_interval_censored = FALSE,
     ignore_interval_censoring = FALSE,
+    add_trial_level = FALSE,
     
     fit_tumor_data = FALSE,
     gen_tumor_sizes = FALSE,
@@ -244,7 +245,7 @@ prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ...
 run_sbc_sims <- function(
   pfs_model, stan_data, num_sim, output_name,  output_dir = file.path(tmp_dir, "fit"), 
   ignore_interval_censoring = FALSE,keep_fit = FALSE, gen_pfs = FALSE,
-  reuse_data = NULL, drop_measures = NULL, keep_only = FALSE
+  reuse_data = NULL, drop_measures = NULL, keep_only = FALSE, ... 
 ) {
   spread_param_rvars <- function(f, ...) { 
     f |> 
@@ -309,7 +310,8 @@ run_sbc_sims <- function(
             thin = 4, # We need thinning when doing SBC using MCMC to break the correlation between samples.
             output_basename = str_glue("{output_name}_{sim_id}"),
             output_dir = output_dir, 
-            ignore_interval_censoring = ignore_interval_censoring 
+            ignore_interval_censoring = ignore_interval_censoring,
+            ...
           ) 
           
           res <- fit |> # Get posterior draws from simulation fit. 
