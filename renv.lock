@@ -813,26 +813,6 @@
       ],
       "Hash": "c76ee8fe60939384b9726128e38caea0"
     },
-    "ggsurvfit": {
-      "Package": "ggsurvfit",
-      "Version": "1.0.0",
-      "Source": "Repository",
-      "Repository": "RSPM",
-      "Requirements": [
-        "R",
-        "broom",
-        "cli",
-        "dplyr",
-        "ggplot2",
-        "glue",
-        "gtable",
-        "patchwork",
-        "rlang",
-        "survival",
-        "tidyr"
-      ],
-      "Hash": "42d3b3206360e4fb840a7c9311b975cc"
-    },
     "globals": {
       "Package": "globals",
       "Version": "0.16.2",
@@ -1443,24 +1423,6 @@
       ],
       "Hash": "bca377e1c87ec89ebed77bba00635b2e"
     },
-    "patchwork": {
-      "Package": "patchwork",
-      "Version": "1.2.0",
-      "Source": "Repository",
-      "Repository": "RSPM",
-      "Requirements": [
-        "cli",
-        "ggplot2",
-        "grDevices",
-        "graphics",
-        "grid",
-        "gtable",
-        "rlang",
-        "stats",
-        "utils"
-      ],
-      "Hash": "9c8ab14c00ac07e9e04d1664c0b74486"
-    },
     "pillar": {
       "Package": "pillar",
       "Version": "1.9.0",
@@ -1921,22 +1883,6 @@
       ],
       "Hash": "960e2ae9e09656611e0b8214ad543207"
     },
-    "survival": {
-      "Package": "survival",
-      "Version": "3.5-7",
-      "Source": "Repository",
-      "Repository": "RSPM",
-      "Requirements": [
-        "Matrix",
-        "R",
-        "graphics",
-        "methods",
-        "splines",
-        "stats",
-        "utils"
-      ],
-      "Hash": "b8e943d262c3da0b0febd3e04517c197"
-    },
     "svUnit": {
       "Package": "svUnit",
       "Version": "1.0.6",
@@ -2144,16 +2090,6 @@
         "xfun"
       ],
       "Hash": "5ac22900ae0f386e54f1c307eca7d843"
-    },
-    "truncnorm": {
-      "Package": "truncnorm",
-      "Version": "1.0-9",
-      "Source": "Repository",
-      "Repository": "RSPM",
-      "Requirements": [
-        "R"
-      ],
-      "Hash": "ef5b32c5194351ff409dfb37ca9468f1"
     },
     "tzdb": {
       "Package": "tzdb",
