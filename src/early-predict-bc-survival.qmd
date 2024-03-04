@@ -89,7 +89,7 @@ pfs_priors <- lst(
   tumor_stim_intercept_sd = 0.125,
   log_lambda_gp_trial_alpha_sd = 0.0625,
   log_lambda_gp_trial_intercept_sd_sd = 0.25,
-  tumor_stim_coef_sd = c(0.125, 0.125, 0.0625) / 2,
+  tumor_stim_coef_sd = c(0.125, 0.125, 0.0625, 0.0625, 0.0625) / 2,
   tumor_stim_trial_coef_sd_sd = 0.0625
 )
 ```

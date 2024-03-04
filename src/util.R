@@ -126,9 +126,11 @@ gen_fake_pfs_data <- function(patient_interval_data, settings) {
 
 create_pfs_initializer <- function(stan_data) {
   function(chain_id) { 
-    n_covar <- with(stan_data, if_else(tumor_hazard_type > 0 && tumor_hazard_type < 4, 
+    n_covar <- with(stan_data, if_else(tumor_hazard_type > 0 && tumor_hazard_type != 4, 
                                        if_else(tumor_hazard_type < 3, 
-                                               tumor_hazard_type + 1, 1), 0))
+                                               tumor_hazard_type + 1, 
+                                               if_else(tumor_hazard_type == 5, 5, 1)), 
+                                       0))
     
     init_vals <- lst(
       tumor_stim_intercept = abs(rnorm(1, 0, stan_data$tumor_stim_intercept_sd)),
