@@ -32,7 +32,7 @@ data {
   real<lower = 0> log_lambda_gp_rho_beta;
   real<lower = 0> log_lambda_gp_trial_intercept_sd_sd;
   real<lower = 0> tumor_stim_intercept_sd;
-  vector<lower = 0>[3] tumor_stim_coef_sd;
+  vector<lower = 0>[5] tumor_stim_coef_sd;
   real<lower = 0> tumor_stim_trial_coef_sd_sd;
 }
 
@@ -94,7 +94,7 @@ transformed data {
   matrix[sum(n_patient_tumors), n_covar_col] tumor_covar;
   
   if (tumor_hazard_type > 0) {
-    if (tumor_hazard_type == 1 || tumor_hazard_type == 2) {  
+    if (tumor_hazard_type == 1 || tumor_hazard_type == 2 || tumor_hazard_type == 5) {  
       tuple(real, real, vector[sum(n_measures)]) standardize_results = standardize_nonzero_tumor_sizes(tumor_size);
       vector[sum(n_measures)] standardized_tumor_size = standardize_results.3;
       tumor_covar[, 1:2] = prepare_early_tumors_design_matrix(standardized_tumor_size, n_patient_tumors, n_measures, n_screening_t);
@@ -253,14 +253,19 @@ model {
     }
   }
   
-  if (tumor_hazard_type > 0 && tumor_hazard_type < 4) {
+  if ((tumor_hazard_type > 0 && tumor_hazard_type < 4) || tumor_hazard_type > 4) {
     tumor_stim_coef[1] ~ normal(0, tumor_stim_coef_sd[1]);
 
     if (tumor_hazard_type == 1 || tumor_hazard_type == 2) {
       tumor_stim_coef[2] ~ normal(0, tumor_stim_coef_sd[2]);
 
-      if (tumor_hazard_type == 2) {
+      if (tumor_hazard_type == 2 || tumor_hazard_type == 5) {
         tumor_stim_coef[3] ~ normal(0, tumor_stim_coef_sd[3]);
+      }
+      
+      if (tumor_hazard_type == 5) {
+        tumor_stim_coef[4] ~ normal(0, tumor_stim_coef_sd[4]);
+        tumor_stim_coef[5] ~ normal(0, tumor_stim_coef_sd[5]);
       }
     }
   }
