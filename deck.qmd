@@ -1,6 +1,8 @@
 ---
 title: "Early Prediction of Breast Cancer Progress Free Survival"
-format: revealjs
+format: 
+  revealjs:
+    smaller: true
 ---
 
 ```{r}
@@ -450,7 +452,7 @@ lst(post = two_tumor_pfs_res) |>
 
 # Model Comparison
 
-## Approximate Leave-One-Out Cross Validation {.smaller}
+## Approximate Leave-One-Out Cross Validation {#sec-loo-cv}
 
 ```{r}
 #| label: pfs-loo
@@ -470,7 +472,7 @@ loo_compare(lst("No Tumor Response" = no_tumor_loo, "Tumor Count Only" = tumor_c
   kableExtra::kable_styling()
 ```
 
-## Loss Function
+## Quantifying Out-of-Sample Prediction Errors {.smaller}
 
 ```{r}
 #| label: loss-functions
@@ -478,18 +480,38 @@ loo_compare(lst("No Tumor Response" = no_tumor_loo, "Tumor Count Only" = tumor_c
 linear_loss <- function(m, c, a, ac, k0 = 1, k1 = 1) if_else(c & (ac | a >= m), 0, if_else(m >= a, k0, k1) * abs(m - a))
 ```
 
+:::: {.columns}
+
+::: {.column width="50%"}
+
+* In order to evaluate a model's improvement in predicting PFS when using tumor sizes, we need to quantify the _loss_ from incorrect predictions.
+* To avoid biasing our assessment, we need to use the model to predict PFS _out-of-sample_.
+* For each patient, we will calculate the _expected patient prediction loss_, and compare them for our candidate models. 
+
+:::
+
+::: {.column width="50%"}
+
 ```{r}
 #| label: fig-linear-loss
+#| fig-cap: Linear loss functions, one symmetric and the other asymmetric, placing greater loss on overestimation of survival.
+#| fig-width: 5
+#| fig-height: 3
 
 tibble(delta = seq(-10, 10), sym_loss = abs(delta), asym_loss = if_else(delta < 0, 3, 1) * abs(delta)) |> 
   pivot_longer(sym_loss:asym_loss) |> 
   ggplot(aes(delta, value)) +
-  geom_line(aes(y = value, color = name), linewidth = 2, alpha = 0.25) +
+  geom_line(aes(y = value, color = name)) +
   scale_color_discrete("Loss Type", labels = c("sym_loss" = "Symmetric", "asym_loss" = "Asymmetric")) +
-  labs(x = latex2exp::TeX(r"{$y - \tilde{y}$}"), y = "Loss")
+  labs(x = latex2exp::TeX(r"{Prediction Error}"), y = "Loss") +
+  NULL
 ```
 
-## Comparison of Out-of-sample Loss {.smaller}
+:::
+
+::::
+
+## Comparison of Out-of-Sample Loss {.smaller}
 
 ```{r}
 #| label: loo-predict-other-utility 
@@ -512,27 +534,47 @@ loss_data <- bind_rows(
   mutate(loss_type = str_extract(model, "(a?sym)|sqerr"), model = str_extract(model, "(ic_ignored_)?(no|two)_tumor"))
 ```
 
+:::: {.columns}
+
+::: {.column width="40%"}
+
+* From this analysis we see that including tumors does reduce expected loss.
+* At the highest end, expected loss is reduced by ~7 weeks asymmetric loss (~2 week symmetric loss).
+* However, as we saw in the [cross validation](#sec-loo-cv) results, this reduction in loss appears to be driven by the number of tumors rather than their sizes.
+
+:::
+
+::: {.column width="60%"}
+
 ::: {.panel-tabset}
 
 ### Expected Loss 
 
 ```{r}
+#| label: loss-table
+
 loss_data |> 
   group_by(loss_type, model, trial) |> 
   summarize(expected_loss = mean(value), .groups = "drop") |> 
+  mutate(expected_loss = if_else(fct_match(loss_type, "sqerr"), sqrt(expected_loss), expected_loss)) |> 
   pivot_wider(names_from = trial, values_from = expected_loss) |> 
   mutate(
-    loss_type = fct_recode(loss_type, "Asymmetric" = "asym", "Symmetric" = "sym"),
-    model = fct_recode(model, "No Tumor Response" = "no_tumor", "Linear Response" = "two_tumor")
+    loss_type = fct_recode(loss_type, "Asymmetric" = "asym", "Symmetric" = "sym", "RMSE" = "sqerr") |> 
+      fct_relevel("RMSE", after = Inf),
+    model = fct_recode(model, "No Tumor Response" = "no_tumor", "Linear Response" = "two_tumor"),
   ) |> 
+  arrange(loss_type) |> 
+  rename("Loss Type" = loss_type, "Model" = model) |>
   kableExtra::kable(digits = 2) |> 
-  kableExtra::kable_styling()
+  kableExtra::kable_styling(font_size = 15)
 ```
 
 ### CDF 
 
 ```{r}
 #| label: fig-loss-cdf
+#| fig-width: 5
+#| fig-cap: Empirical CDF for patients' mean loss.
 
 loss_data |> 
   mutate(loss_type = fct_recode(loss_type, "Asymmetric" = "asym", "Symmetric" = "sym")) |> 
@@ -549,6 +591,8 @@ loss_data |>
 
 ```{r}
 #| label: fig-loss-hist
+#| fig-width: 5
+#| fig-cap: Histogram of patients' mean loss.
 
 loss_data |> 
   mutate(loss_type = fct_recode(loss_type, "Asymmetric" = "asym", "Symmetric" = "sym")) |> 
@@ -557,6 +601,10 @@ loss_data |>
 ```
 
 :::
+
+:::
+
+::::
 
 # Tumor Size Sensitivity
 
