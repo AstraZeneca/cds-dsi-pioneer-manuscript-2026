@@ -216,8 +216,11 @@ prepare_tumor_size_rvars <- function(rv, settings) {
 
 prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ..., pfs_var = pfs) {
     tumor_stan_data <- prepare_tumor_stan_data(analysis_data)
-    pfs_data <- select(analysis_data, pfs = {{ pfs_var }}, death_week, right_censored, interval_censored) |> 
-      mutate(death_week = if_else(right_censored, 0, death_week)) # Death week is irrelevant if the data is censored
+    pfs_data <- select(analysis_data, pfs = {{ pfs_var }}, death_week, right_censored, interval_censored, patient = usubjid) |> 
+      mutate(
+        death_week = if_else(right_censored, 0, death_week), # Death week is irrelevant if the data is censored
+        patient = factor(patient) 
+      ) 
   
     lst(
     fit_data = TRUE,
@@ -332,27 +335,34 @@ run_sbc_sims <- function(
     ) 
 }
 
-plot_km <- function(data_list, analysis_data, facet_arm = FALSE) {
-  plot_obj <- data_list |> 
-    map(\(r) recover_types(r, select(analysis_data, trial))) |> 
-    map_dfr(\(r) spread_rvars(r, trial_km_est[trial, t]), .id = "arm") |> 
+plot_km_rvars <- function(rvars_data, analysis_data, facet_arm = FALSE, group_arm = FALSE,
+                          arm_var = arm, group_var = arm,
+                          model_labels = c("no_tumor" = "Baseline Model", "tumor_change" = "Proportional Change Model", "two_tumor" = "Linear Model")) {
+  plot_obj <- rvars_data |>  
     ggplot() +
-    labs(title = "Kaplan-Meier estimate", subtitle = "Treated arm", x = "t", y = latex2exp::TeX("$S(t)$")) +
+    labs(title = "Kaplan-Meier estimate", x = "t", y = latex2exp::TeX("$S(t)$")) +
     NULL
   
   if (!facet_arm) {
-    plot_obj <- plot_obj + facet_wrap(vars(trial)) 
+    plot_obj <- plot_obj + facet_wrap(vars(trial), labeller = labeller("{{arm_var}}" := model_labels)) 
   } else {
-    plot_obj <- plot_obj + facet_grid(vars(arm), vars(trial)) 
+    plot_obj <- plot_obj + facet_grid(vars({{arm}}), vars(trial), labeller = labeller("{{arm_var}}" := model_labels)) 
   }
   
-  if (length(data_list) > 1 && !facet_arm) {
+  if (group_arm) {
     plot_obj +
-      stat_lineribbon(aes(x = t - 1, ydist = trial_km_est, fill = arm, color = arm), step = TRUE, alpha = 0.25, .width = 0.8) 
+      stat_lineribbon(aes(x = t - 1, ydist = trial_km_est, fill = {{group_var}}, color = {{group_var}}), step = TRUE, alpha = 0.25, .width = 0.8) 
   } else {
     plot_obj +
       stat_lineribbon(aes(x = t - 1, ydist = trial_km_est), fill = "black", step = TRUE, alpha = 0.25, .width = 0.8) 
   }
+}
+
+plot_km <- function(data_list, analysis_data, ...) {
+  data_list |> 
+    map(\(r) recover_types(r, select(analysis_data, trial))) |> 
+    map_dfr(\(r) spread_rvars(r, trial_km_est[trial, t]), .id = "arm") |>
+    plot_km_rvars(analysis_data, arm_var = arm, ...)
 }
 
 plot_pfs_hist_posterior <- function(data_list, stan_data, hist_breaks = seq(10, 150, 10)) {
@@ -365,25 +375,31 @@ plot_pfs_hist_posterior <- function(data_list, stan_data, hist_breaks = seq(10, 
   # This function is used to allow us to generate a distribution of histograms
   rvar_sample_hist <- posterior::rfun(sample_hist)
   
-  data_list |> 
+  model_labels = c("no_tumor" = "Baseline Model", "tumor_change" = "Proportional Change Model", "two_tumor" = "Linear Model")
+  
+  plot_obj <- data_list |> 
     map_dfr(\(f) spread_rvars(f, rep_pfs[i], rep_right_censored[i]) |> mutate(trial = stan_data$patient_trial), .id = "arm") |> 
-    group_by(trial) |> 
+    group_by(arm, trial) |> 
     reframe(t = hist_breaks, bindist = rvar_sample_hist(rep_pfs, hist_breaks)) |> 
     filter(t < max(t)) %>% 
     bind_rows(
-      group_by(., trial) %>%
+      group_by(., arm, trial) %>%
         filter(t %in% range(t)) |> 
         mutate(t = c(0, max(t) + min(hist_breaks)))
     ) |> 
     ggplot(aes(t)) +
-    stat_lineribbon(aes(ydist = bindist, color = "Posterior"),
-                    fill = "black", alpha = 0.125, linewidth = 2,
+    stat_lineribbon(aes(ydist = bindist),
+                    color = "black", fill = "black", alpha = 0.125, linewidth = 2,
                     step = "mid",
                     .width = c(0.5, 0.8), show.legend = FALSE) + 
     scale_x_continuous("t", breaks = seq(0, max(hist_breaks) + min(hist_breaks), 20)) +
-    scale_color_discrete("") +
-    facet_wrap(vars(trial)) +
     NULL
+ 
+  if (length(data_list) > 1) {
+    plot_obj + facet_grid(vars(arm), vars(trial), labeller = labeller(arm = model_labels)) 
+  } else {
+    plot_obj + facet_wrap(vars(trial)) 
+  }
 }
 
 plot_base_hazard <- function(data_list, analysis_data) {
