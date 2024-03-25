@@ -170,6 +170,9 @@ sdtm_dm <- data_details |>
 # Tumor identification
 # sdtm_tu <- arrow::read_parquet("/scratch/ewfteams/dpo0083/parquet/sdtm/deid_tu.parquet") |> 
 #   rename_with(str_to_lower)
+sdtm_tu <- data_details |>
+  rowwise() |>
+  mutate(data = list(read_entimice_data(idap, "deid_tu", "sdtm")))
 
 # Trial visits 
 # sdtm_tv <- arrow::read_parquet("/scratch/ewfteams/dpo0083/parquet/sdtm/deid_tv.parquet") |> 
@@ -180,10 +183,9 @@ sdtm_dm <- data_details |>
 #   rename_with(str_to_lower)
 
 # Tumor measurements/assessments
-# sdtm_tr <- arrow::read_parquet("/scratch/ewfteams/dpo0083/parquet/sdtm/deid_tr.parquet") |>
-# sdtm_tr <- read_rds("/scratch/ewfteams/dpo0083/sdtm/prod/data/deid_tr.rds") |> 
-  # rename_with(str_to_lower) |> 
-  # mutate(tracptfl = fct_match(tracptfl, "Y"))
+# sdtm_tr <- data_details |> 
+#   rowwise() |> 
+#   mutate(data = list(read_entimice_data(idap, "deid_tr", "sdtm")))
 
 # Disease response 
 # sdtm_rs <- arrow::read_parquet("/scratch/ewfteams/dpo0083/parquet/sdtm/deid_rs.parquet") |> 
@@ -192,7 +194,23 @@ sdtm_dm <- data_details |>
 # Tumor analysis_data
 adam_adtr <- data_details |> 
   rowwise() |> 
-  mutate(data = list(read_entimice_data(idap, "deid_adtr", "adam")))
+  mutate(data = list(read_entimice_data(idap, "deid_adtr", "adam"))) |> 
+  unnest(data) |> 
+  select(!c(tuloc, tulat)) |> 
+  left_join(# I need to do this because tuloc in the adam data for breast01 is NA for all observations.
+    unnest(sdtm_tu, data) |> 
+      arrange(visitnum) |> 
+      distinct(usubjid, tulnkid, tuloc, tulat) |> 
+      group_by(usubjid, tulnkid) |>
+      filter(!is.na(tuloc)) |> 
+      summarize(tuloc = first(tuloc), tulat = first(tulat), .groups = "drop"), # Only the first assessment has the location of the tumor. Fix that.
+    by = c("usubjid", "trlnkid" = "tulnkid")
+  ) |> 
+  mutate(
+    tuloc = str_remove(tuloc, fixed("(EXCLUDING ORAL CAVITY)")) |>
+      str_replace_all(c("SUBCARINAL" = "SUBCRANIAL", "VERTEBRA" = "SPINE", "PARAAORTIC" = "PARA-AORTIC"))
+  ) |>
+  nest(.by = c(idap, trial))
 
 # Subject-level data
 adam_adsl <- data_details |> 
@@ -230,16 +248,14 @@ Using SDTM and ADaM data from the trials, we prepare the analysis data.
 tumor_analysis_data <- adam_adtr |> 
   unnest(data) |> 
   filter(
-    # fct_match(paramcd, c("DIAMETER", "DIAM")),
     fct_match(paramcd, "LDIAM"),
     # There are a number of assessments that show up in the data but in SDTM they are marked as "NOT DONE"
     !is.na(trdy), !is.na(aval),
     tracptfl,
-    # adt <= trtedt, # Drop assessments occurring after treatment ended.
     aval > 0, # Drop all zero diameter assessments; these appear to be missing measurements. 
   ) %>% 
   select(studyid, idap, trial, 
-         usubjid, trlnkid, tuloc, tulat, trtsdt, trtedt, adt, ends_with("fl"), trdy, trtp, trta, visit, visitnum, mmdiam = aval) |> 
+         usubjid, trlnkid, trlnkgrp, tuloc, tulat, trtsdt, trtedt, adt, ends_with("fl"), trdy, trtp, trta, visit, visitnum, mmdiam = aval) |> 
   mutate(
     week = if_else(trdy > 0, trdy, trdy + 1) %/% 7, 
     treated_week = adt >= trtsdt,
@@ -247,7 +263,7 @@ tumor_analysis_data <- adam_adtr |>
   ) |> 
   arrange(usubjid, trlnkid, visitnum) |> 
   group_by(usubjid, trlnkid) |> 
-  mutate(tuloc = first(tuloc), tulat = first(tulat) |> na_if("")) |> # Only the first assessment has the location of the tumor. Fix that.
+  
   ungroup() |>
   # Turns out that some assessments are not listed in order of the days they were done. Look at subject DS8201-A-U303-10033028.
   arrange(studyid, usubjid, trlnkid, trdy) |> 
@@ -261,7 +277,7 @@ tumor_analysis_data <- adam_adtr |>
           n_week_visits = map_int(visits, nrow),
           mmdiam = map_dbl(visits, \(v) mean(v$mmdiam))
         )
-    ),
+    ), 
     n_tumor_measures = map_int(tumor_history, nrow),
     
     min_t = map_int(tumor_history, \(h) min(h$week)),
@@ -269,6 +285,14 @@ tumor_analysis_data <- adam_adtr |>
   ) |> 
   pack(flags = ends_with("fl")) |> 
   nest(patient_tumors = !c(studyid, trial, idap, usubjid, trtsdt, trtedt, trtp, trta)) |> 
+  left_join(
+    adam_adtr |> 
+      unnest(data) |> 
+      filter(fct_match(trlnkgrp, c("NON-TARGET", "TARGET", "NEW"))) |> 
+      distinct(usubjid, trlnkid) |> 
+      count(usubjid, name = "n_all_tumors"),
+    by = "usubjid"
+  ) |> 
   rowwise() |> 
   mutate(
     patient_min_t = min(patient_tumors$min_t),
@@ -558,9 +582,10 @@ sdtm_dm$data |>
 ```
 
 ```{r}
-#| label: tumor-history-plot 
+#| label: fig-tumor-history-plot 
+#| fig-cap: Observed tumor sizes for a sample of patients.
 
-tumor_analysis_data |>
+treated_pfs_analysis_data |> 
   filter(patient_t_width > 1) |> 
   slice(1:20) |>
   unnest(patient_tumors) |> 
@@ -571,6 +596,82 @@ tumor_analysis_data |>
   labs(title = "Observed tumor sizes for a sample of patients", x = "Week", y = "Tumor Diameter [mm]") +
   theme(strip.text = element_blank()) +
   NULL
+```
+
+```{r, fig.height=8, fig.width=8}
+#| label: fig-num-patient-tumors
+#| fig-cap: Number of tumors per patient.
+
+treated_pfs_analysis_data |> 
+  select(trial, n_tumors, n_all_tumors) |>
+  pivot_longer(n_tumors:n_all_tumors, values_to = "n", names_to = "tumor_type") |> 
+  mutate(tumor_type = if_else(fct_match(tumor_type, "n_tumors"), "Target", "All")) |> 
+  ggplot(aes(n, fill = tumor_type)) +
+  geom_bar(position = "identity", alpha = 0.5) +
+  geom_vline(xintercept = 2, linetype = "dashed") +
+  scale_fill_discrete("Tumor Type") +
+  labs(x = "Number of Patient Tumors", y = "Count") +
+  facet_grid(vars(trial), margins = TRUE, scales = "free_y")
+```
+
+```{r, fig.height=4, fig.width=8}
+#| label: 
+#| fig-cap: 
+
+sdtm_tu |> 
+  unnest(data) |> 
+  semi_join(treated_pfs_analysis_data, by = "usubjid") |> 
+  distinct(trial, usubjid, tulnkid, tuloc, tuorres) |>
+  mutate(
+    tuloc = fct_lump_min(tuloc, 250) |> fct_infreq() |> fct_relabel(str_to_title) |> fct_relevel("Other", after = Inf)
+  ) |> 
+  filter(!fct_match(tuloc, "Other")) |> 
+  group_by(trial, usubjid, tuloc) |> 
+  summarize(n_target_tumors = sum(tuorres == "TARGET"), n_all_tumors = n(), .groups = "drop") |> 
+  pivot_longer(c(n_all_tumors, n_target_tumors), values_to = "n", names_to = "tumor_type", names_pattern = "(all|target)") |> 
+  ggplot(aes(n, fill = tumor_type)) +
+  geom_bar(position = "identity", alpha = 0.5) +
+  geom_vline(xintercept = 2, linetype = "dashed") +
+  scale_x_continuous("Number of Tumors", breaks = seq(0, 10)) +
+  scale_fill_discrete("Tumor Type", labels = str_to_title) +
+  labs(y = "Count") +
+  facet_wrap(vars(tuloc), scales = "free")
+```
+
+```{r}
+#| label: fig-tumor-locations
+#| fig-cap: The number of tumors in the data by location.
+
+sdtm_tu |> 
+  unnest(data) |> 
+  semi_join(treated_pfs_analysis_data, by = "usubjid") |> 
+  distinct(usubjid, tulnkid, tuloc, tuorres) |>
+  mutate(
+    tuloc = fct_lump_min(tuloc, 25) |> fct_infreq() |> fct_relabel(str_to_title) |> fct_relevel("Other", after = Inf)
+  ) |>  
+  ggplot() +
+  geom_bar(aes(tuloc, fill = tuorres), alpha = 0.5) +
+  scale_fill_discrete("Tumor Type", labels = str_to_title) +
+  labs(x = "Tumor Location", y = "Tumor Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8))
+```
+
+```{r}
+#| label: fig-patients-with-tumor-locations
+#| fig-cap: The number of patients in the data with tumors in locations.
+
+sdtm_tu |> 
+  unnest(data) |> 
+  semi_join(treated_pfs_analysis_data, by = "usubjid") |> 
+  distinct(usubjid, tuloc, tuorres) |>
+  mutate(
+    tuloc = fct_lump_min(tuloc, 25) |> fct_infreq() |> fct_relabel(str_to_title) |> fct_relevel("Other", after = Inf)
+  ) |>  
+  ggplot() +
+  geom_bar(aes(tuloc, fill = tuorres), alpha = 0.5) +
+  scale_fill_discrete("Tumor Type", labels = str_to_title) +
+  labs(x = "Tumor Location", y = "Patient Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8))
 ```
 
 ```{r}
