@@ -1,6 +1,8 @@
 int<lower = 1> n_trials;
 int<lower = 0> n_patients;
 
+int<lower = 1> n_tumor_locations;
+
 array[n_patients] int<lower = 1, upper = n_trials> patient_trial;
 
 // How many tumors were measured. Tumors that weren't detected or disappeared = 0 size. 
@@ -10,6 +12,8 @@ array[n_patients] int<lower = 1> n_patient_tumors;
 // How many times were tumors measured per tumor.
 // [..., (measures_{i,1} ..., measures_{i,n_patient_tumors[i]}), ...]
 array[sum(n_patient_tumors)] int<lower = 1> n_measures; 
+
+array[sum(n_patient_tumors)] int<lower = 1, upper = n_tumor_locations> tumor_location; 
 
 // The periods of each measurement per tumor. 
 // [..., (t_{i,j,1}, ..., t_{i,j,n_measures_{i,j}}}), ... ]
