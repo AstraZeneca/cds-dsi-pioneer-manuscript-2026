@@ -1,20 +1,22 @@
 // Simple regression model for the influence of tumors on surival. 
-vector linear_tumor_stimulus(real intercept, vector coef, matrix covar) {
-  return intercept + covar * coef; 
+vector linear_tumor_stimulus(vector intercept, matrix coef, matrix covar) {
+  return intercept + rows_dot_product(covar, coef); 
 } 
 
 // Combine influence of all tumors on survival and calculate probability of survival using a cloglog link function. 
-vector calculate_progress_linear_prob(array[] int n_patient_tumors, vector log_lambda, real tumor_intercept, vector tumor_coef, matrix tumor_covar) {
-    real total_time_invar_tumor_stim = sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar)) - tumor_intercept * mean(n_patient_tumors);
+matrix calculate_progress_linear_prob(array[] int n_patient_tumors, vector log_lambda, vector tumor_intercept, matrix tumor_coef, matrix tumor_covar) {
+    vector[rows(tumor_intercept)] total_time_invar_tumor_stim = 
+      sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar)) - tumor_intercept * mean(n_patient_tumors);
     
-    return inv_cloglog(log_lambda + total_time_invar_tumor_stim);
+    return inv_cloglog(rep_matrix(log_lambda, rows(tumor_intercept)) + rep_matrix(total_time_invar_tumor_stim', rows(log_lambda)));
 }
 
 // Hazard function given a base hazard and time-invariant covariates.  
-vector calculate_linear_hazard(array[] int n_patient_tumors, vector log_lambda, real tumor_intercept, vector tumor_coef, matrix tumor_covar) {
-    real total_time_invar_tumor_stim = sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar)) - tumor_intercept * mean(n_patient_tumors);
+matrix calculate_linear_hazard(array[] int n_patient_tumors, vector log_lambda, vector tumor_intercept, matrix tumor_coef, matrix tumor_covar) {
+    vector[rows(tumor_intercept)] total_time_invar_tumor_stim = 
+      sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar)) - tumor_intercept * mean(n_patient_tumors);
     
-    return exp(log_lambda + total_time_invar_tumor_stim);
+    return exp(rep_matrix(log_lambda, rows(tumor_intercept)) + rep_matrix(total_time_invar_tumor_stim', rows(log_lambda)));
 }
 
 // Given PFS and tumor measures data, determine interval and right censoring for each patient. 
