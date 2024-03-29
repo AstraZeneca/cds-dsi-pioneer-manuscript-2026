@@ -81,6 +81,7 @@ tumor_priors <- lst(
 )
 
 pfs_priors <- lst(
+
   log_lambda_gp_intercept_mean = -5,
   log_lambda_gp_intercept_sd = 0.5,
   log_lambda_gp_alpha_sd = 0.5,
@@ -89,8 +90,9 @@ pfs_priors <- lst(
   tumor_stim_intercept_sd = 0.125,
   log_lambda_gp_trial_alpha_sd = 0.25,
   log_lambda_gp_trial_intercept_sd_sd = 0.25,
-  tumor_stim_coef_sd = c(0.125, 0.125, 0.0625, 0.0625, 0.0625) / 2,
-  tumor_stim_trial_coef_sd_sd = 0.0625
+  tumor_stim_pop_coef_sd = c(0.125, 0.125, 0.0625, 0.0625, 0.0625) / 2,
+  tumor_stim_trial_coef_sd_sd = 0.0625,
+  tumor_stim_location_coef_sd_sd = 0.0625
 )
 ```
 
@@ -119,6 +121,7 @@ erDiagram
   Study ||--|{ Patient : enrolls
   Patient ||--|{ Tumor : has
   Tumor ||--|{ Assessment : assessed
+  Organ ||--|{ Tumor
   Patient ||--|{ Prior Therapy : treated
 ```
 
@@ -139,12 +142,29 @@ data_details <- tribble(
 # Demographics 
 sdtm_dm <- data_details |> 
   rowwise() |> 
+
   mutate(data = list(read_entimice_data(study, idap, "deid_dm", "sdtm")))
 
 # Tumor analysis_data
 adam_adtr <- data_details |> 
   rowwise() |> 
-  mutate(data = list(read_entimice_data(study, idap, "deid_adtr", "adam")))
+  mutate(data = list(read_entimice_data(idap, "deid_adtr", "adam"))) |> 
+  unnest(data) |> 
+  select(!c(tuloc, tulat)) |> 
+  left_join(# I need to do this because tuloc in the adam data for breast01 is NA for all observations.
+    unnest(sdtm_tu, data) |> 
+      arrange(visitnum) |> 
+      distinct(usubjid, tulnkid, tuloc, tulat) |> 
+      group_by(usubjid, tulnkid) |>
+      filter(!is.na(tuloc)) |> 
+      summarize(tuloc = first(tuloc), tulat = first(tulat), .groups = "drop"), # Only the first assessment has the location of the tumor. Fix that.
+    by = c("usubjid", "trlnkid" = "tulnkid")
+  ) |> 
+  mutate(
+    tuloc = str_remove(tuloc, fixed("(EXCLUDING ORAL CAVITY)")) |>
+      str_replace_all(c("SUBCARINAL" = "SUBCRANIAL", "VERTEBRA" = "SPINE", "PARAAORTIC" = "PARA-AORTIC"))
+  ) |>
+  nest(.by = c(idap, trial))
 
 # Subject-level data
 adam_adsl <- data_details |> 
@@ -180,7 +200,7 @@ tumor_analysis_data <- adam_adtr |>
     aval > 0, # Drop all zero diameter assessments; these appear to be missing measurements. 
   ) %>% 
   select(studyid, idap, trial, 
-         usubjid, trlnkid, tuloc, tulat, trtsdt, trtedt, adt, ends_with("fl"), trdy, trtp, trta, visit, visitnum, mmdiam = aval) |> 
+         usubjid, trlnkid, trlnkgrp, tuloc, tulat, trtsdt, trtedt, adt, ends_with("fl"), trdy, trtp, trta, visit, visitnum, mmdiam = aval) |> 
   mutate(
     week = if_else(trdy > 0, trdy, trdy + 1) %/% 7, 
     treated_week = adt >= trtsdt,
@@ -188,7 +208,7 @@ tumor_analysis_data <- adam_adtr |>
   ) |> 
   arrange(usubjid, trlnkid, visitnum) |> 
   group_by(usubjid, trlnkid) |> 
-  mutate(tuloc = first(tuloc), tulat = first(tulat) |> na_if("")) |> # Only the first assessment has the location of the tumor. Fix that.
+  
   ungroup() |>
   # Turns out that some assessments are not listed in order of the days they were done. Look at subject DS8201-A-U303-10033028.
   arrange(studyid, usubjid, trlnkid, trdy) |> 
@@ -202,7 +222,7 @@ tumor_analysis_data <- adam_adtr |>
           n_week_visits = map_int(visits, nrow),
           mmdiam = map_dbl(visits, \(v) mean(v$mmdiam))
         )
-    ),
+    ), 
     n_tumor_measures = map_int(tumor_history, nrow),
     
     min_t = map_int(tumor_history, \(h) min(h$week)),
@@ -210,6 +230,14 @@ tumor_analysis_data <- adam_adtr |>
   ) |> 
   pack(flags = ends_with("fl")) |> 
   nest(patient_tumors = !c(studyid, trial, idap, usubjid, trtsdt, trtedt, trtp, trta)) |> 
+  left_join(
+    adam_adtr |> 
+      unnest(data) |> 
+      filter(fct_match(trlnkgrp, c("NON-TARGET", "TARGET", "NEW"))) |> 
+      distinct(usubjid, trlnkid) |> 
+      count(usubjid, name = "n_all_tumors"),
+    by = "usubjid"
+  ) |> 
   rowwise() |> 
   mutate(
     patient_min_t = min(patient_tumors$min_t),
@@ -505,9 +533,10 @@ sdtm_dm$data |>
 ```
 
 ```{r}
-#| label: tumor-history-plot 
+#| label: fig-tumor-history-plot 
+#| fig-cap: Observed tumor sizes for a sample of patients.
 
-tumor_analysis_data |>
+treated_pfs_analysis_data |> 
   filter(patient_t_width > 1) |> 
   slice(1:20) |>
   unnest(patient_tumors) |> 
@@ -518,6 +547,82 @@ tumor_analysis_data |>
   labs(title = "Observed tumor sizes for a sample of patients", x = "Week", y = "Tumor Diameter [mm]") +
   theme(strip.text = element_blank()) +
   NULL
+```
+
+```{r, fig.height=8, fig.width=8}
+#| label: fig-num-patient-tumors
+#| fig-cap: Number of tumors per patient.
+
+treated_pfs_analysis_data |> 
+  select(trial, n_tumors, n_all_tumors) |>
+  pivot_longer(n_tumors:n_all_tumors, values_to = "n", names_to = "tumor_type") |> 
+  mutate(tumor_type = if_else(fct_match(tumor_type, "n_tumors"), "Target", "All")) |> 
+  ggplot(aes(n, fill = tumor_type)) +
+  geom_bar(position = "identity", alpha = 0.5) +
+  geom_vline(xintercept = 2, linetype = "dashed") +
+  scale_fill_discrete("Tumor Type") +
+  labs(x = "Number of Patient Tumors", y = "Count") +
+  facet_grid(vars(trial), margins = TRUE, scales = "free_y")
+```
+
+```{r, fig.height=4, fig.width=8}
+#| label: 
+#| fig-cap: 
+
+sdtm_tu |> 
+  unnest(data) |> 
+  semi_join(treated_pfs_analysis_data, by = "usubjid") |> 
+  distinct(trial, usubjid, tulnkid, tuloc, tuorres) |>
+  mutate(
+    tuloc = fct_lump_min(tuloc, 250) |> fct_infreq() |> fct_relabel(str_to_title) |> fct_relevel("Other", after = Inf)
+  ) |> 
+  filter(!fct_match(tuloc, "Other")) |> 
+  group_by(trial, usubjid, tuloc) |> 
+  summarize(n_target_tumors = sum(tuorres == "TARGET"), n_all_tumors = n(), .groups = "drop") |> 
+  pivot_longer(c(n_all_tumors, n_target_tumors), values_to = "n", names_to = "tumor_type", names_pattern = "(all|target)") |> 
+  ggplot(aes(n, fill = tumor_type)) +
+  geom_bar(position = "identity", alpha = 0.5) +
+  geom_vline(xintercept = 2, linetype = "dashed") +
+  scale_x_continuous("Number of Tumors", breaks = seq(0, 10)) +
+  scale_fill_discrete("Tumor Type", labels = str_to_title) +
+  labs(y = "Count") +
+  facet_wrap(vars(tuloc), scales = "free")
+```
+
+```{r}
+#| label: fig-tumor-locations
+#| fig-cap: The number of tumors in the data by location.
+
+sdtm_tu |> 
+  unnest(data) |> 
+  semi_join(treated_pfs_analysis_data, by = "usubjid") |> 
+  distinct(usubjid, tulnkid, tuloc, tuorres) |>
+  mutate(
+    tuloc = fct_lump_min(tuloc, 25) |> fct_infreq() |> fct_relabel(str_to_title) |> fct_relevel("Other", after = Inf)
+  ) |>  
+  ggplot() +
+  geom_bar(aes(tuloc, fill = tuorres), alpha = 0.5) +
+  scale_fill_discrete("Tumor Type", labels = str_to_title) +
+  labs(x = "Tumor Location", y = "Tumor Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8))
+```
+
+```{r}
+#| label: fig-patients-with-tumor-locations
+#| fig-cap: The number of patients in the data with tumors in locations.
+
+sdtm_tu |> 
+  unnest(data) |> 
+  semi_join(treated_pfs_analysis_data, by = "usubjid") |> 
+  distinct(usubjid, tuloc, tuorres) |>
+  mutate(
+    tuloc = fct_lump_min(tuloc, 25) |> fct_infreq() |> fct_relabel(str_to_title) |> fct_relevel("Other", after = Inf)
+  ) |>  
+  ggplot() +
+  geom_bar(aes(tuloc, fill = tuorres), alpha = 0.5) +
+  scale_fill_discrete("Tumor Type", labels = str_to_title) +
+  labs(x = "Tumor Location", y = "Patient Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8))
 ```
 
 ```{r}
@@ -637,6 +742,8 @@ test_data <- lst(
   n_measures = rep(patient_measures, sum(n_patient_tumors)),
   t_measure = rep(0:(patient_measures - 1), sum(n_patient_tumors)) - t_offset,
   tumor_size = rep(0, sum(n_measures)),
+  n_tumor_locations = 1,
+  tumor_location = rep(1, sum(n_patient_tumors)),
 
   !!!tumor_priors  
 )
@@ -659,7 +766,6 @@ tumor_prior_res <- tumor_model$sample(
 
 # Saving this to use in SBC runs.
 tumor_prior_res$save_data_file(dir = file.path(tmp_dir, "data"), basename = "prior_tumor", timestamp = FALSE, random = FALSE)
-
 ```
 
 ```{r}
@@ -923,6 +1029,7 @@ pfs_test_data <- test_data |>
     tumor_hazard_type = 1,
     ignore_interval_censoring = FALSE,
     add_trial_level = TRUE,
+    add_tumor_location_level = FALSE,
     
     pfs = rep(max_pfs, n_patients),
     death_week = rep(0, n_patients),
@@ -1549,6 +1656,46 @@ $$
   \end{align}
 $$
 
+```{r}
+#| label: tumor-count-pfs-fit
+#| cache: true
+#| dependson: fit-pfs-util, priors 
+#| output: false
+
+tumor_count_treated_pfs_stan_data <- treated_pfs_stan_data |> 
+  list_assign(tumor_hazard_type = 4, add_trial_level = TRUE)
+
+tumor_count_init <- create_pfs_initializer(tumor_count_treated_pfs_stan_data) 
+
+prior_tumor_count_pfs_future <- future::future(
+  tumor_count_treated_pfs_stan_data |> 
+    list_assign(fit_data = FALSE, add_trial_level = TRUE) |> 
+    pfs_model$sample(
+      iter_warmup = 300, iter_sampling = 300, 
+      init = two_tumor_init,
+      parallel_chains = 4,
+      output_dir = file.path(tmp_dir, "fit"), 
+      output_basename = "prior_tumor_count_pfs" 
+    ),
+  seed = TRUE
+)
+
+tumor_count_pfs_future <- future::future(
+    pfs_model$sample(
+      tumor_count_treated_pfs_stan_data,
+      iter_warmup = 300, iter_sampling = 300, 
+      init = two_tumor_init,
+      parallel_chains = 4,
+      output_dir = file.path(tmp_dir, "fit"), 
+      output_basename = "tumor_count_pfs" 
+    ),
+  seed = TRUE
+)
+
+prior_tumor_count_pfs_res <- future::value(prior_tumor_count_pfs_future)
+tumor_count_pfs_res <- future::value(tumor_count_pfs_future)
+```
+
 ### First Two Tumor Sizes Only Model
 
 The hazard function is time invariant:
@@ -1556,7 +1703,7 @@ The hazard function is time invariant:
 $$
 \begin{align}
   \lambda(t, \bf{x}; \boldsymbol{\theta}) &= \lambda_t \cdot \exp\left[\beta_0(N_i - \bar{N}) + \sum_m \beta_1 \bar{x}_{m0} + \beta_2 \bar{x}_{m1} + \beta_3 (\bar{x}_{m0} \times \bar{x}_{m1})\right] \\ 
-  &= \lambda_t \cdot \underbrace{\exp\left[-\beta_0 \bar{N} + \sum_m \beta_0 + \beta_1 \bar{x}_{m0} + \beta_2 \bar{x}_{m1} + \beta_3 (\bar{x}_{m0} \times \bar{x}_{m1})\right]}_{\kappa} \\
+  &= \lambda_t \cdot \underbrace{\exp\left[-\beta_0 \bar{N} + \sum_m \beta_0 + \beta_1 \bar{x}_{m0} + \beta_2 \bar{x}_{m1} + \beta_3 (\bar{x}_{m0} \times \bar{x}_{m1})\right]}_{\textrm{Hazard ratio, }\kappa} \\
   \end{align}
 $$
 where $\bar{N}$ is the average number of tumors per patient and, for every tumor $m$, $\bar{x}_{m0}$ is the standardized last screening assessment and $\bar{x}_{m1}$ is the standardized first assessment after treatment begins.^[$\bar{x}_{mt} = \frac{x_{mt} - \bar{x}}{s(x)}$] We subtract $\beta_0 \bar{N}$ 
@@ -1568,7 +1715,7 @@ where $\bar{N}$ is the average number of tumors per patient and, for every tumor
 #| output: false
 
 two_tumor_treated_pfs_stan_data <- treated_pfs_stan_data |> 
-  list_assign(tumor_hazard_type = 2, add_trial_level = TRUE)
+  list_assign(tumor_hazard_type = 2, add_trial_level = TRUE, add_tumor_location_level = TRUE)
 
 two_tumor_init <- create_pfs_initializer(two_tumor_treated_pfs_stan_data) 
 
@@ -1597,24 +1744,9 @@ two_tumor_pfs_future <- future::future(
   seed = TRUE
 )
 
-# control_two_tumor_pfs_future <- future::future(
-#   pfs_analysis_data |> 
-#     filter(!treated) |> 
-#     prepare_pfs_stan_data(tumor_priors, pfs_priors, tumor_hazard_type = 2) |>  
-#     pfs_model$sample(
-#       iter_warmup = 500, iter_sampling = 500,
-#       init = two_tumor_init,
-#       parallel_chains = 4,
-#       output_dir = file.path(tmp_dir, "fit"), 
-#       output_basename = "control_two_tumor_pfs" 
-#     ),
-#   seed = TRUE
-# )
-
 prior_two_tumor_pfs_res <- future::value(prior_two_tumor_pfs_future)
 two_tumor_pfs_res <- future::value(two_tumor_pfs_future)
 control_two_tumor_pfs_res <- NULL # future::value(control_two_tumor_pfs_future)
-
 ```
 
 ```{r}
@@ -1989,10 +2121,12 @@ Here we are calculating the LOO-PSIS cross validation approximations for the no 
 
 no_tumor_loo <- no_tumor_pfs_res$loo(save_psis = TRUE, cores = 12)
 ic_ignored_no_tumor_loo <- ic_ignored_no_tumor_pfs_res$loo(save_psis = TRUE, cores = 12)
+tumor_count_loo <- tumor_count_pfs_res$loo(save_psis = TRUE, cores = 12)
 two_tumor_loo <- two_tumor_pfs_res$loo(save_psis = TRUE, cores = 12) # This doesn't change anything -> , moment_match = TRUE)
 tumor_change_loo <- tumor_change_pfs_res$loo(save_psis = TRUE, cores = 12)
 
-loo_compare(lst(no_tumor_loo, ic_ignored_no_tumor_loo, two_tumor_loo, tumor_change_loo))
+#loo_compare(lst(no_tumor_loo, ic_ignored_no_tumor_loo, tumor_count_loo, two_tumor_loo, tumor_change_loo))
+loo_compare(lst(no_tumor_loo, two_tumor_loo))
 ```
 
 ```{r}
@@ -2037,12 +2171,15 @@ Where the observed PFS is modeled as uniform value within the censored interval,
 #| dependson: pfs-loo
 
 asym_linear_loss <- partial(linear_loss, k1 = 3)
+
 no_tumor_asym_loss <- estimate_oos_loss(no_tumor_pfs_res, no_tumor_loo, no_tumor_treated_pfs_stan_data, asym_linear_loss)
 ic_ignored_no_tumor_asym_loss <- estimate_oos_loss(ic_ignored_no_tumor_pfs_res, ic_ignored_no_tumor_loo, no_tumor_treated_pfs_stan_data, asym_linear_loss)
 two_tumor_asym_loss <- estimate_oos_loss(two_tumor_pfs_res, two_tumor_loo, two_tumor_treated_pfs_stan_data, asym_linear_loss)
+tumor_count_asym_loss <- estimate_oos_loss(tumor_count_pfs_res, tumor_count_loo, tumor_count_treated_pfs_stan_data, asym_linear_loss)
 no_tumor_sym_loss <- estimate_oos_loss(no_tumor_pfs_res, no_tumor_loo, no_tumor_treated_pfs_stan_data, linear_loss)
 ic_ignored_no_tumor_sym_loss <- estimate_oos_loss(ic_ignored_no_tumor_pfs_res, ic_ignored_no_tumor_loo, no_tumor_treated_pfs_stan_data, linear_loss)
 two_tumor_sym_loss <- estimate_oos_loss(two_tumor_pfs_res, two_tumor_loo, two_tumor_treated_pfs_stan_data, linear_loss)
+tumor_count_sym_loss <- estimate_oos_loss(tumor_count_pfs_res, tumor_count_loo, tumor_count_treated_pfs_stan_data, linear_loss)
 no_tumor_sqerr_loss <- estimate_oos_loss(no_tumor_pfs_res, no_tumor_loo, no_tumor_treated_pfs_stan_data, squared_error_loss)
 two_tumor_sqerr_loss <- estimate_oos_loss(two_tumor_pfs_res, two_tumor_loo, two_tumor_treated_pfs_stan_data, squared_error_loss)
 

@@ -133,8 +133,8 @@ create_pfs_initializer <- function(stan_data) {
                                        0))
     
     init_vals <- lst(
-      tumor_stim_intercept = abs(rnorm(1, 0, stan_data$tumor_stim_intercept_sd)),
-      tumor_stim_coef = abs(rnorm(n_covar, 0, stan_data$tumor_stim_coef_sd[1:n_covar])), 
+      tumor_stim_pop_intercept = abs(rnorm(1, 0, stan_data$tumor_stim_pop_intercept_sd)),
+      tumor_stim_pop_coef = abs(rnorm(n_covar, 0, stan_data$tumor_stim_pop_coef_sd[1:n_covar])), 
     )
     
     if (stan_data$add_trial_level) {
@@ -194,11 +194,14 @@ prepare_tumor_stan_data <- function(analysis_data) {
   lst(
     n_patients = nrow(analysis_data),
     n_trials = n_distinct(analysis_data$trial),
+    tumor_location = unnest(analysis_data, patient_tumors) |> pull(tuloc) |> factor(),
+    n_tumor_locations = nlevels(tumor_location), 
     patient_trial = analysis_data$trial,
     n_patient_tumors = analysis_data$n_tumors,
     n_measures = analysis_data$n_measures |> unlist(),
     t_measure = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$week) |> unlist(),
     tumor_size = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$mmdiam / 10) |> unlist(),
+    
   )
 }
 
@@ -229,6 +232,7 @@ prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ...
     gen_interval_censored = FALSE,
     ignore_interval_censoring = FALSE,
     add_trial_level = FALSE,
+    add_tumor_location_level = FALSE,
     
     fit_tumor_data = FALSE,
     gen_tumor_sizes = FALSE,
