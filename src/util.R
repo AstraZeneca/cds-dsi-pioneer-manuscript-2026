@@ -19,8 +19,8 @@ gen_patient_interval_properties <- function(log_lambda, tumor_intercept, tumor_c
     )  
 }
 
-read_entimice_data <- function(idap, dataset, data_type = c("sdtm", "adam"), team_dir = "/wscratch/ewfteams/dpo0083") {
-  read_rds(file.path(team_dir, idap, arg_match(data_type), "prod", "data", str_c(dataset, ".rds"))) |> 
+read_entimice_data <- function(study, idap, dataset, data_type = c("sdtm", "adam"), team_dir = "/wscratch/ewfteams/dpo0083") {
+  read_rds(file.path(team_dir, study, idap, arg_match(data_type), "prod", "data", str_c(dataset, ".rds"))) |> 
     rename_with(str_to_lower) |> 
     mutate(across(ends_with("fl"), \(fl) fct_expand(fl, c("Y", "N")) |>  fct_match("Y")))
 }
@@ -406,13 +406,13 @@ plot_pfs_hist_posterior <- function(data_list, stan_data, hist_breaks = seq(10, 
   }
 }
 
-plot_base_hazard <- function(data_list, analysis_data) {
+plot_base_hazard <- function(data_list, analysis_data, ci_width = 0.8) {
   data_list |> 
     map(\(f) recover_types(f, select(analysis_data, trial))) |> 
     map_dfr(\(f) spread_rvars(f, log_trial_lambda[trial, t]), .id = "fit_type") |> 
     mutate(trial_lambda = exp(log_trial_lambda)) |> 
     ggplot(aes(t)) +
-    stat_lineribbon(aes(ydist = trial_lambda, color = fit_type, fill = fit_type, alpha = fit_type), step = TRUE, .width = 0.8) +
+    stat_lineribbon(aes(ydist = trial_lambda, color = fit_type, fill = fit_type, alpha = fit_type), step = TRUE, .width = ci_width) +
     geom_rug(aes(week), alpha = 0.125, 
              data = analysis_data |> 
                transmute(
