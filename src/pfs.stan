@@ -22,6 +22,9 @@ data {
   array[n_patients] int<lower = 0> pfs; // How many periods after baseline did patient survive
   array[n_patients] int<lower = 0> death_week; 
   array[n_patients] int<lower = 0, upper = 1> right_censored;
+ 
+  // int<lower = 0> n_tumor_grid_range; 
+  // vector[n_tumor_grid_range] tumor_grid_range;
   
   // Hyperparam
   
@@ -94,12 +97,12 @@ transformed data {
   }
   
   matrix[sum(n_patient_tumors), n_covar_col] tumor_covar;
+  vector<lower = 0>[n_covar_col] tumor_covar_mean;
+  vector<lower = 0>[n_covar_col] tumor_covar_sd;
   
   if (tumor_hazard_type > 0) {
     if (tumor_hazard_type == 1 || tumor_hazard_type == 2 || tumor_hazard_type == 5) {  
-      tuple(real, real, vector[sum(n_measures)]) standardize_results = standardize_nonzero_tumor_sizes(tumor_size);
-      vector[sum(n_measures)] standardized_tumor_size = standardize_results.3;
-      tumor_covar[, 1:2] = prepare_early_tumors_design_matrix(standardized_tumor_size, n_patient_tumors, n_measures, n_screening_t);
+      tumor_covar[, 1:2] = prepare_early_tumors_design_matrix(tumor_size, n_patient_tumors, n_measures, n_screening_t, 2);
       
       if (tumor_hazard_type == 2 || tumor_hazard_type == 5) {
         tumor_covar[, 3] = tumor_covar[, 1] .* tumor_covar[, 2];
@@ -109,8 +112,17 @@ transformed data {
         tumor_covar[, 4] = tumor_covar[, 1]^2;
         tumor_covar[, 5] = tumor_covar[, 2]^2;
       }
+      
+      for (c in 1:n_covar_col) {
+        tuple(real, real, vector[sum(n_measures)]) standardize_results = standardize_nonzero_tumor_sizes(tumor_covar[, c]);
+        tumor_covar_mean[c] = standardize_results.1;
+        tumor_covar_sd[c] = standardize_results.2;
+        tumor_covar[, c] = standardize_results.3;
+      }
+      
+      
     } else if (tumor_hazard_type == 3) {
-      matrix[sum(n_patient_tumors), 2] covar = prepare_early_tumors_design_matrix(tumor_size, n_patient_tumors, n_measures, n_screening_t);
+      matrix[sum(n_patient_tumors), 2] covar = prepare_early_tumors_design_matrix(tumor_size, n_patient_tumors, n_measures, n_screening_t, 2);
       
       tumor_covar[, 1] = (covar[, 2] - covar[, 1]) ./ covar[, 1];
     } 
