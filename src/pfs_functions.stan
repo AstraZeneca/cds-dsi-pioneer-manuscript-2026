@@ -145,9 +145,9 @@ tuple(vector, vector) calculate_marginal_dp_prob(vector cond_pf_prob, int max_al
   return(exp(marginal_dp_log_prob), fmax(0, 1 - dp_cdf));
 }  
 
-// Create (n_patients * n_tumors) x 2 matrix of each tumor's covariates from t = 1, 2. 
-matrix prepare_early_tumors_design_matrix(vector tumor_size, array[] int n_patient_tumors, array[] int n_measures, array[] int n_screening_t) {
-  matrix[sum(n_patient_tumors), 2] tumor_covar = rep_matrix(0, sum(n_patient_tumors), 2);
+// Create (n_patients * n_tumors) x max_tumors matrix of each tumor's covariates from t = 1, 2, .... 
+matrix prepare_early_tumors_design_matrix(vector tumor_size, array[] int n_patient_tumors, array[] int n_measures, array[] int n_screening_t, int max_measures) {
+  matrix[sum(n_patient_tumors), max_measures] tumor_covar = rep_matrix(0, sum(n_patient_tumors), max_measures);
   int n_patients = size(n_patient_tumors);
   int tumor_pos = 1;
   int tumor_size_pos = 1;
@@ -160,12 +160,10 @@ matrix prepare_early_tumors_design_matrix(vector tumor_size, array[] int n_patie
       int n_current_measures = n_measures[tumor_pos];
       int tumor_size_end = tumor_size_pos + n_current_measures - 1; 
       
-      if (n_current_measures < 2) {
-        // reject("Two measures minimum needed per tumor.");
-        tumor_covar[covar_pos, 1] = tumor_size[tumor_size_pos + n_screening_t[tumor_pos] - 1]; 
-      } else {
-        tumor_covar[covar_pos, ] = tumor_size[(tumor_size_pos + n_screening_t[tumor_pos] - 1):(tumor_size_pos + n_screening_t[tumor_pos] - 1 + 1)]';
-      }
+      int measures_found = min(n_current_measures, max_measures);
+      
+      tumor_covar[covar_pos, :measures_found] = 
+        tumor_size[(tumor_size_pos + n_screening_t[tumor_pos] - 1):(tumor_size_pos + n_screening_t[tumor_pos] - 1 + measures_found - 1)]';
       
       covar_pos += 1;
       tumor_size_pos = tumor_size_end + 1;
