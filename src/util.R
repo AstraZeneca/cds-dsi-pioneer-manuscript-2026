@@ -4,7 +4,7 @@ gen_patient_interval_properties <- function(log_lambda, tumor_intercept, tumor_c
   t_measure_list <- with(settings, list_measures(t_measure, n_measures, n_patient_tumors))
   n_screening_t <- with(settings, pfs_model$functions$calc_n_screening_t(n_patient_tumors, n_measures, t_measure)) 
   
-  with(settings, pfs_model$functions$prepare_early_tumors_design_matrix(standardized, n_patient_tumors, n_measures, n_screening_t)) |>  
+  with(settings, pfs_model$functions$prepare_early_tumors_design_matrix(standardized, n_patient_tumors, n_measures, t_measure, n_screening_t)[[1]]) |>  
     as_tibble() |> 
     set_names(c("tumor_size_1", "tumor_size_2")) |> 
     mutate(patient_id = rep(1:settings$n_patients, settings$n_patient_tumors)) |> 
@@ -140,7 +140,7 @@ create_pfs_initializer <- function(stan_data) {
     if (stan_data$add_trial_level) {
       init_vals <- init_vals |> 
         list_assign(
-          raw_log_lambda_gp_trial_intercept = rnorm(stan_data$n_trials),
+          raw_log_lambda_gp_trial_intercept = if (stan_data$add_trial_level) rnorm(stan_data$n_trials),
           raw_tumor_stim_trial_coef_mult = map(seq(stan_data$n_trials), \(...) rnorm(n_covar + 1)),
           log_lambda_gp_trial_intercept_sd = abs(rnorm(1, 0, stan_data$log_lambda_gp_trial_intercept_sd_sd)),
           tumor_stim_trial_coef_mult_sd = abs(rnorm(n_covar + 1, 0, stan_data$tumor_stim_trial_coef_sd_sd)),
@@ -201,7 +201,6 @@ prepare_tumor_stan_data <- function(analysis_data) {
     n_measures = analysis_data$n_measures |> unlist(),
     t_measure = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$week) |> unlist(),
     tumor_size = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$mmdiam / 10) |> unlist(),
-    
   )
 }
 
@@ -217,15 +216,40 @@ prepare_tumor_size_rvars <- function(rv, settings) {
     rename(tumor_size = rep_tumor_size)
 }
 
-prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ..., pfs_var = pfs) {
-    tumor_stan_data <- prepare_tumor_stan_data(analysis_data)
-    pfs_data <- select(analysis_data, pfs = {{ pfs_var }}, death_week, right_censored, interval_censored, patient = usubjid) |> 
-      mutate(
-        death_week = if_else(right_censored, 0, death_week), # Death week is irrelevant if the data is censored
-        patient = factor(patient) 
-      ) 
+# get_early_tumors <- function(data) {
+#   data |> 
+#     unnest(patient_tumors) |> 
+#     unnest(tumor_history) |> 
+#     group_by(usubjid) |> 
+#     filter(week %in% c(max(keep(week, \(x) x <= 0)), min(keep(week, \(x) x > 0)))) |> 
+#     pull(mmdiam)
+# }
+
+get_early_tumor_pairs <- function(stan_data, .model = pfs_model) {
+  prep_res <- with(
+    stan_data, 
+    .model$functions$prepare_early_tumors_design_matrix(
+      tumor_size, n_patient_tumors, n_measures, t_measure, .model$functions$calc_n_screening_t(n_patient_tumors, n_measures, t_measure), 2
+    ) 
+  )
   
-    lst(
+  prep_res[[2]] <- exec(rbind, !!!prep_res[[2]])  
+  
+  exec(bind_cols, !!!prep_res) |> 
+    set_colnames(c("x0", "x1", "t0", "t1")) |> 
+    as_tibble() |> 
+    mutate(trial = with(stan_data, rep(patient_trial, n_patient_tumors)))
+}
+
+prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ..., pfs_var = pfs) {
+  tumor_stan_data <- prepare_tumor_stan_data(analysis_data)
+  pfs_data <- select(analysis_data, pfs = {{ pfs_var }}, death_week, right_censored, interval_censored, patient = usubjid) |> 
+    mutate(
+      death_week = if_else(right_censored, 0, death_week), # Death week is irrelevant if the data is censored
+      patient = factor(patient) 
+    ) 
+  
+  stan_data <- lst(
     fit_data = TRUE,
     use_tumor_model = FALSE,
     gen_pfs = TRUE,
@@ -240,15 +264,24 @@ prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ...
     multilevel_patient = FALSE,
     multilevel_tumor = FALSE,
     
+    # tumor_grid_range = seq(min(early_tumors), max(early_tumors), 1), 
+    # n_tumor_grid_range = length(tumor_grid_range),
+    
     !!!tumor_stan_data,
     !!!pfs_data,
     
     !!!.pfs_priors,
     !!!.tumor_priors,
     
-    ...
-  ) |> 
-    list_modify(fit_tumor_data = FALSE)
+    ...,
+  ) 
+  
+  early_tumors <- get_early_tumor_pairs(stan_data) |> 
+    mutate(id = seq(n())) |> 
+    distinct(x0, x1, .keep_all = TRUE) |> 
+    pull(id)
+  
+  stan_data |> list_assign(fit_tumor_data = FALSE, grid_tumors = early_tumors, n_grid_tumors = length(early_tumors))
 }
 
 run_sbc_sims <- function(
@@ -467,3 +500,35 @@ plot_loss <- function(data, binwidth) {
     theme(legend.position = "top", strip.text.y = element_text(angle = 0)) +
     NULL
 }
+
+get_tumor_hazard_ratio_summary <- function(fit, var, tumor_size_pairs, ci_width = c(0, 0.5, 0.8)) {
+  if (is.vector(tumor_size_pairs)) {
+    n_tumor_grid_range <- length(tumor_size_pairs)
+    
+    tumor_size_pairs <- tibble(
+      x0 = rep(tumor_size_pairs, each = n_tumor_grid_range),
+      x1 = rep(tumor_size_pairs, n_tumor_grid_range),
+    ) 
+  }
+  
+  tumor_size_pairs <- tumor_size_pairs |> 
+    mutate(n = seq(n())) |>
+    rename(tumor_trial = trial)
+  
+  p_data <- tibble(
+    p = (ci_width / 2) %>% { c(0.5 - ., 0.5 + .) } |> unique(),
+  ) |> 
+    mutate(pid = seq(n()))
+  
+  fit |> 
+    gather_rvars({{ var }}) |>
+    mutate(.value = exp(.value)) |> 
+    rowwise() |> 
+    # Turns out this is faster than median_qi()
+    mutate(.value = list(enframe(quantile(.value, probs = p_data$p), name = "pid", value = "q"))) |> 
+    ungroup() |>
+    left_join(tumor_size_pairs, by = "n") |> 
+    unnest(.value) |> 
+    left_join(p_data, by = "pid") # I need to do this because quantile.rvar just adds indices not the p's
+}
+
