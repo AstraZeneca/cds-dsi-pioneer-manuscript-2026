@@ -105,7 +105,6 @@ tuple(vector, array[] int, array[] int, array[] int) estimate_kaplan_meier(array
   // For each time interval in 0..max_t see how many patiented exited and calculate proportion surviving.
   
   for (t in 0:max_t) {
-    // int ex = 0; // How many saw disease progression (exited) in current interval.
     n_exited[t + 1] = 0; // How many saw disease progression (exited) in current interval.
     real prev_s = t > 0 ? s[t] : 1.0;
     
@@ -133,7 +132,6 @@ tuple(vector, vector) calculate_marginal_dp_prob(vector cond_pf_prob, int max_al
 
   for (m in 1:max_all_t) {
     if (m > 1) {
-      // marginal_dp_prob[m] = (1 - cond_pf_prob[m]) * prod(cond_pf_prob[1:(m - 1)]);
       marginal_dp_log_prob[m] = log_1m_cond_pf_prob[m] + sum(log_cond_pf_prob[1:(m - 1)]);
       dp_cdf[m] = exp(marginal_dp_log_prob[m]) + dp_cdf[m - 1]; 
     } else {
@@ -146,8 +144,11 @@ tuple(vector, vector) calculate_marginal_dp_prob(vector cond_pf_prob, int max_al
 }  
 
 // Create (n_patients * n_tumors) x max_tumors matrix of each tumor's covariates from t = 1, 2, .... 
-matrix prepare_early_tumors_design_matrix(vector tumor_size, array[] int n_patient_tumors, array[] int n_measures, array[] int n_screening_t, int max_measures) {
+tuple(matrix, array[,] int) prepare_early_tumors_design_matrix(
+  vector tumor_size, array[] int n_patient_tumors, array[] int n_measures, array[] int t_measure, array[] int n_screening_t, int max_measures
+) {
   matrix[sum(n_patient_tumors), max_measures] tumor_covar = rep_matrix(0, sum(n_patient_tumors), max_measures);
+  array[sum(n_patient_tumors), max_measures] int tumor_covar_t = rep_array(min(t_measure) - 1, sum(n_patient_tumors), max_measures);
   int n_patients = size(n_patient_tumors);
   int tumor_pos = 1;
   int tumor_size_pos = 1;
@@ -164,6 +165,9 @@ matrix prepare_early_tumors_design_matrix(vector tumor_size, array[] int n_patie
       
       tumor_covar[covar_pos, :measures_found] = 
         tumor_size[(tumor_size_pos + n_screening_t[tumor_pos] - 1):(tumor_size_pos + n_screening_t[tumor_pos] - 1 + measures_found - 1)]';
+        
+      tumor_covar_t[covar_pos, :measures_found] = 
+        t_measure[(tumor_size_pos + n_screening_t[tumor_pos] - 1):(tumor_size_pos + n_screening_t[tumor_pos] - 1 + measures_found - 1)];
       
       covar_pos += 1;
       tumor_size_pos = tumor_size_end + 1;
@@ -171,7 +175,7 @@ matrix prepare_early_tumors_design_matrix(vector tumor_size, array[] int n_patie
     }
   }
   
-  return tumor_covar;
+  return (tumor_covar, tumor_covar_t);
 }
 
 
@@ -204,7 +208,7 @@ vector calc_pch_loglik(array[] int pfs, array[] int right_uncensored, array[] in
    
     if (curr_interval_censored > 0) {
       // There are more than one candidate true PFS: sum of the probabilities and then log.
-      lp[i] += log_sum_exp(interval_lp); 
+      lp[i] += log_sum_exp(interval_lp); // BUG Shouldn't I multiply by 1/n_candidate_intervals for the likelihood to be correct? Should only matter for cv.
     } else if (right_uncensored[i]) {
       lp[i] += interval_lp[1]; // PFS not observed because of right censoring.
     }
