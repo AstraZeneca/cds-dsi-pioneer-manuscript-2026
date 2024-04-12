@@ -95,46 +95,65 @@ transformed data {
     n_covar_col = 5;
   }
   
+  array[n_tumors, 2] int<lower = min(t_measure), upper = max(t_measure)> tumor_covar_t;
+  array[n_patients] int<lower = min(t_measure), upper = max(t_measure)> patient_max_2nd_tumor_t; 
   matrix[n_tumors, n_covar_col] tumor_covar;
   matrix[n_tumors, n_covar_col] uncentered_tumor_covar;
   vector[n_covar_col] tumor_covar_mean;
   vector<lower = 0>[n_covar_col] tumor_covar_sd = rep_vector(0, n_covar_col);
   
-  if (tumor_hazard_type > 0) {
-    if (tumor_hazard_type == 1 || tumor_hazard_type == 2 || tumor_hazard_type == 5) {  
-      tumor_covar[, 1:2] = prepare_early_tumors_design_matrix(tumor_size, n_patient_tumors,n_measures, t_measure, n_screening_t, 2).1;
+  {
+    tuple(matrix[n_tumors, 2], array[n_tumors, 2] int) prep_res = 
+      prepare_early_tumors_design_matrix(tumor_size, n_patient_tumors, n_measures, t_measure, n_screening_t, 2);
       
-      if (tumor_hazard_type == 2 || tumor_hazard_type == 5) {
-        tumor_covar[, 3] = tumor_covar[, 2] ./ tumor_covar[, 1];
-      }
+    tumor_covar_t = prep_res.2;
+    
+    int tumor_pos = 1;
+    
+    for (i in 1:n_patients) {
+      int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
       
-      if (tumor_hazard_type == 5) {
-        tumor_covar[, 4] = tumor_covar[, 1]^2;
-        tumor_covar[, 5] = tumor_covar[, 2]^2;
-      }
+      patient_max_2nd_tumor_t[i] = max(tumor_covar_t[tumor_pos:tumor_end, 2]);
       
-      for (c in 1:n_covar_col) {
-        uncentered_tumor_covar[, c] = tumor_covar[, c];
+      tumor_pos = tumor_end + 1;
+    }
+    
+    if (tumor_hazard_type > 0) {
+      if (tumor_hazard_type == 1 || tumor_hazard_type == 2 || tumor_hazard_type == 5) {  
+        tumor_covar[, 1:2] = prep_res.1;
         
-        tuple(real, real, vector[n_tumors]) standardize_results = standardize_nonzero_tumor_sizes(tumor_covar[, c]);
-        tumor_covar_mean[c] = standardize_results.1;
-        tumor_covar_sd[c] = standardize_results.2;
-        tumor_covar[, c] = standardize_results.3;
+        if (tumor_hazard_type == 2 || tumor_hazard_type == 5) {
+          tumor_covar[, 3] = tumor_covar[, 2] ./ tumor_covar[, 1];
+        }
         
-        uncentered_tumor_covar[, c] /= tumor_covar_sd[c];
+        if (tumor_hazard_type == 5) {
+          tumor_covar[, 4] = tumor_covar[, 1]^2;
+          tumor_covar[, 5] = tumor_covar[, 2]^2;
+        }
         
-        print("Scaling covar ", c, " by ", tumor_covar_sd[c]);
-      }
-     
-      if (tumor_hazard_type == 2 || tumor_hazard_type == 5) {
-        tumor_covar[, 3] = rep_vector(0, n_tumors);
-      }
-    } else if (tumor_hazard_type == 3) {
-      matrix[n_tumors, 2] covar = prepare_early_tumors_design_matrix(tumor_size, n_patient_tumors, n_measures, t_measure, n_screening_t, 2).1;
-      
-      tumor_covar[, 1] = (covar[, 2] - covar[, 1]) ./ covar[, 1];
-      uncentered_tumor_covar[, 1] = tumor_covar[, 1];
-    } 
+        for (c in 1:n_covar_col) {
+          uncentered_tumor_covar[, c] = tumor_covar[, c];
+          
+          tuple(real, real, vector[n_tumors]) standardize_results = standardize_nonzero_tumor_sizes(tumor_covar[, c]);
+          tumor_covar_mean[c] = standardize_results.1;
+          tumor_covar_sd[c] = standardize_results.2;
+          tumor_covar[, c] = standardize_results.3;
+          
+          uncentered_tumor_covar[, c] /= tumor_covar_sd[c];
+          
+          print("Scaling covar ", c, " by ", tumor_covar_sd[c]);
+        }
+       
+        if (tumor_hazard_type == 2 || tumor_hazard_type == 5) {
+          tumor_covar[, 3] = rep_vector(0, n_tumors);
+        }
+      } else if (tumor_hazard_type == 3) {
+        matrix[n_tumors, 2] covar = prep_res.1;
+        
+        tumor_covar[, 1] = (covar[, 2] - covar[, 1]) ./ covar[, 1];
+        uncentered_tumor_covar[, 1] = tumor_covar[, 1];
+      } 
+    }
   }
   
   // Censoring information calculated from PFS and t_measure; no need to pass it in. 
@@ -318,7 +337,7 @@ model {
   }
   
   if (fit_data) {
-    pfs ~ pch(right_uncensored, interval_censored, ignore_interval_censoring, disease_progress_prob, gen_pfs ? max_all_t : 0);
+    pfs ~ pch(right_uncensored, interval_censored, ignore_interval_censoring, disease_progress_prob, gen_pfs ? max_all_t : 0, patient_max_2nd_tumor_t);
   }
 }
 
@@ -327,7 +346,7 @@ generated quantities {
   
   if (fit_data) {
     // Do not ignore censoring when calculating this
-    log_lik = calc_pch_loglik(pfs, right_uncensored, interval_censored, 0, disease_progress_prob, gen_pfs ? max_all_t : 0);
+    log_lik = calc_pch_loglik(pfs, right_uncensored, interval_censored, 0, disease_progress_prob, gen_pfs ? max_all_t : 0, patient_max_2nd_tumor_t);
   }
   
   vector<lower = 0, upper = 1>[max_all_t] base_pf_cond_prob = 1 - inv_cloglog(log_lambda); // Progression free conditional prob if not using covar
