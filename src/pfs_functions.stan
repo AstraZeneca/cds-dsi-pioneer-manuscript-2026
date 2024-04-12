@@ -208,7 +208,7 @@ vector calc_pch_loglik(array[] int pfs, array[] int right_uncensored, array[] in
    
     if (curr_interval_censored > 0) {
       // There are more than one candidate true PFS: sum of the probabilities and then log.
-      lp[i] += log_sum_exp(interval_lp); // BUG Shouldn't I multiply by 1/n_candidate_intervals for the likelihood to be correct? Should only matter for cv.
+      lp[i] += log_sum_exp(interval_lp - log(curr_interval_censored)); 
     } else if (right_uncensored[i]) {
       lp[i] += interval_lp[1]; // PFS not observed because of right censoring.
     }
