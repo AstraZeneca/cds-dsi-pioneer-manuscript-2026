@@ -141,9 +141,17 @@ create_pfs_initializer <- function(stan_data) {
       init_vals <- init_vals |> 
         list_assign(
           raw_log_lambda_gp_trial_intercept = if (stan_data$add_trial_level) rnorm(stan_data$n_trials),
-          raw_tumor_stim_trial_coef_mult = map(seq(stan_data$n_trials), \(...) rnorm(n_covar + 1)),
+          raw_tumor_stim_trial_coef = map(seq(stan_data$n_trials), \(...) rnorm(n_covar + 1)),
           log_lambda_gp_trial_intercept_sd = abs(rnorm(1, 0, stan_data$log_lambda_gp_trial_intercept_sd_sd)),
-          tumor_stim_trial_coef_mult_sd = abs(rnorm(n_covar + 1, 0, stan_data$tumor_stim_trial_coef_sd_sd)),
+          tumor_stim_trial_coef_sd = abs(rnorm(n_covar + 1, 0, stan_data$tumor_stim_trial_coef_sd_sd)),
+        )
+    }
+    
+    if (stan_data$add_tumor_location_level) {
+      init_vals <- init_vals |> 
+        list_assign(
+          raw_tumor_stim_location_coef = map(seq(stan_data$n_tumor_locations), \(...) rnorm(n_covar + 1)),
+          tumor_stim_location_coef_sd = abs(rnorm(n_covar + 1, 0, stan_data$tumor_stim_location_coef_sd_sd)),
         )
     }
     
@@ -167,7 +175,8 @@ fit_sim_data <- function(
     pfs_model$sample(
       refresh = 0,
       parallel_chains = 4,
-      init = if (settings$tumor_hazard_type > 0 && !no_init) create_pfs_initializer(settings),
+      init = create_pfs_initializer(settings),
+      # init = if (settings$tumor_hazard_type > 0 && !no_init) create_pfs_initializer(settings),
       ...
     )
 }
@@ -286,19 +295,19 @@ prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ...
 
 run_sbc_sims <- function(
   pfs_model, stan_data, num_sim, output_name,  output_dir = file.path(tmp_dir, "fit"), 
-  ignore_interval_censoring = FALSE,keep_fit = FALSE, gen_pfs = FALSE,
+  ignore_interval_censoring = FALSE,keep_fit = FALSE, gen_pfs = FALSE, .thin = 4, .ndraws = 1000,
   reuse_data = NULL, drop_measures = NULL, keep_only = FALSE, ... 
 ) {
   spread_param_rvars <- function(f, ...) { 
     f |> 
       spread_rvars(
-        tumor_stim_intercept, tumor_stim_coef[t],
+        tumor_stim_pop_intercept, tumor_stim_pop_coef[t],
         log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho,
         base_cond_expected_pfs, one_tumor_cond_expected_pfs, base_cond_median_pfs, one_tumor_cond_median_pfs,
         ...
       ) |> 
       ungroup() |> 
-      pivot_wider(names_from = t, values_from = tumor_stim_coef, names_prefix = "tumor_stim_coef_")
+      pivot_wider(names_from = t, values_from = tumor_stim_pop_coef, names_prefix = "tumor_stim_pop_coef_")
   }
   
   stan_data <- stan_data |> 
@@ -338,8 +347,6 @@ run_sbc_sims <- function(
                       m_union <- reduce(m, \(a, n) union(a, n)) 
                       list(pfs = m_union |> discard(\(t) t > s) |> max(), right_censored = s >= max(m_union))
                     })
-                    # pfs = map2_int(pfs, lstm, \(s, m) reduce(m, \(a, n) union(a, n)) |> discard(\(t) t > s) |> max()),
-                    # right_censored = pmap_lgl(lst(c = right_censored, p = pfs, m = lstm), \(c, p, m) c || )
         )),
                               
       furrr::future_map2_dfr(.draw, sim_data, .progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
@@ -349,16 +356,22 @@ run_sbc_sims <- function(
             stan_data,
             d, 
             gen_pfs = gen_pfs, 
-            thin = 4, # We need thinning when doing SBC using MCMC to break the correlation between samples.
+            thin = .thin, # We need thinning when doing SBC using MCMC to break the correlation between samples.
             output_basename = str_glue("{output_name}_{sim_id}"),
             output_dir = output_dir, 
             ignore_interval_censoring = ignore_interval_censoring,
             ...
           ) 
-          
-          res <- fit |> # Get posterior draws from simulation fit. 
-            spread_param_rvars(ndraws = 1000) |> 
-            pack(est = everything())
+         
+          if (!is_null(.ndraws)) { 
+            res <- fit |> # Get posterior draws from simulation fit. 
+              spread_param_rvars(ndraws = .ndraws) |> 
+              pack(est = everything())
+          } else {
+            res <- fit |> # Get posterior draws from simulation fit. 
+              spread_param_rvars() |> 
+              pack(est = everything())
+          }
           
           if (keep_fit) {
             res <- res |> 
@@ -377,7 +390,7 @@ plot_km_rvars <- function(rvars_data, analysis_data, facet_arm = FALSE, group_ar
                           model_labels = c("no_tumor" = "Baseline Model", "tumor_change" = "Proportional Change Model", "two_tumor" = "Linear Model")) {
   plot_obj <- rvars_data |>  
     ggplot() +
-    labs(title = "Kaplan-Meier estimate", x = "t", y = latex2exp::TeX("$S(t)$")) +
+    labs(x = "t [Week]", y = latex2exp::TeX("$S(t)$")) +
     NULL
   
   if (!facet_arm) {
@@ -388,10 +401,11 @@ plot_km_rvars <- function(rvars_data, analysis_data, facet_arm = FALSE, group_ar
   
   if (group_arm) {
     plot_obj +
-      stat_lineribbon(aes(x = t - 1, ydist = trial_km_est, fill = {{group_var}}, color = {{group_var}}), step = TRUE, alpha = 0.25, .width = 0.8) 
+      stat_lineribbon(aes(x = t - 1, ydist = trial_km_est, fill = {{group_var}}, color = {{group_var}}), step = TRUE, alpha = 0.5, .width = 0.8) +
+      scale_color_discrete("", type = AZ_palette, aesthetics = c("color", "fill"))
   } else {
     plot_obj +
-      stat_lineribbon(aes(x = t - 1, ydist = trial_km_est), fill = "black", step = TRUE, alpha = 0.25, .width = 0.8) 
+      stat_lineribbon(aes(x = t - 1, ydist = trial_km_est), fill = AZ_platinum, step = TRUE, alpha = 0.25, .width = 0.8) 
   }
 }
 
@@ -426,16 +440,16 @@ plot_pfs_hist_posterior <- function(data_list, stan_data, hist_breaks = seq(10, 
     ) |> 
     ggplot(aes(t)) +
     stat_lineribbon(aes(ydist = bindist),
-                    color = "black", fill = "black", alpha = 0.125, linewidth = 2,
+                    color = AZ_platinum, fill = AZ_platinum, alpha = 0.25, linewidth = 2,
                     step = "mid",
                     .width = c(0.5, 0.8), show.legend = FALSE) + 
-    scale_x_continuous("t", breaks = seq(0, max(hist_breaks) + min(hist_breaks), 20)) +
+    scale_x_continuous("t [Week]", breaks = seq(0, max(hist_breaks) + min(hist_breaks), 20)) +
     NULL
  
   if (length(data_list) > 1) {
     plot_obj + facet_grid(vars(arm), vars(trial), labeller = labeller(arm = model_labels)) 
   } else {
-    plot_obj + facet_wrap(vars(trial)) 
+    plot_obj + facet_wrap(vars(trial), scales = "free_y") 
   }
 }
 
@@ -501,18 +515,13 @@ plot_loss <- function(data, binwidth) {
     NULL
 }
 
-get_tumor_hazard_ratio_summary <- function(fit, var, tumor_size_pairs, ci_width = c(0, 0.5, 0.8)) {
-  if (is.vector(tumor_size_pairs)) {
-    n_tumor_grid_range <- length(tumor_size_pairs)
-    
-    tumor_size_pairs <- tibble(
-      x0 = rep(tumor_size_pairs, each = n_tumor_grid_range),
-      x1 = rep(tumor_size_pairs, n_tumor_grid_range),
-    ) 
-  }
+get_tumor_hazard_ratio_summary <- function(fit, var, tumor_size_pairs, stan_data, diff_var = FALSE, ci_width = c(0, 0.5, 0.8), no_summary = FALSE) {
+  grid_ids <- tibble(id = stan_data$grid_tumors) |> 
+    mutate(n = seq(n()))
   
   tumor_size_pairs <- tumor_size_pairs |> 
-    mutate(n = seq(n())) |>
+    mutate(id = seq(n())) |> 
+    semi_join(grid_ids, by = "id") |> 
     rename(tumor_trial = trial)
   
   p_data <- tibble(
@@ -520,15 +529,30 @@ get_tumor_hazard_ratio_summary <- function(fit, var, tumor_size_pairs, ci_width 
   ) |> 
     mutate(pid = seq(n()))
   
-  fit |> 
+  ratio_rvars <- fit |> 
     gather_rvars({{ var }}) |>
-    mutate(.value = exp(.value)) |> 
-    rowwise() |> 
-    # Turns out this is faster than median_qi()
-    mutate(.value = list(enframe(quantile(.value, probs = p_data$p), name = "pid", value = "q"))) |> 
-    ungroup() |>
-    left_join(tumor_size_pairs, by = "n") |> 
-    unnest(.value) |> 
-    left_join(p_data, by = "pid") # I need to do this because quantile.rvar just adds indices not the p's
+    left_join(grid_ids, by = "n", relationship = "many-to-one") |> 
+    left_join(tumor_size_pairs, by = "id", relationship = "many-to-one") 
+  
+  if (diff_var) {
+    ratio_rvars <- ratio_rvars |> 
+      left_join(gather_rvars(fit, pop_tumor_effect[n]) |> select(base_value = .value, n), by = "n", relationship = "many-to-one") |> 
+      mutate(.value = .value - base_value)
+  }
+  
+  ratio_rvars <- ratio_rvars |> 
+    mutate(.value = exp(.value)) 
+  
+  if (no_summary) {
+    return(ratio_rvars)
+  } else {
+    ratio_rvars |> 
+      rowwise() |> 
+      # Turns out this is faster than median_qi()
+      mutate(.value = list(enframe(quantile(.value, probs = p_data$p), name = "pid", value = "q"))) |> 
+      ungroup() |>
+      unnest(.value) |> 
+      left_join(p_data, by = "pid") # I need to do this because quantile.rvar just adds indices not the p's
+  }
 }
 
