@@ -614,7 +614,7 @@ While the first two accuracy measures are well known, we need to spend more time
 
 * We see that in terms of RMSE the linear model outperforms the baseline model for all trials. 
 
-```{r, fig.height=1, fig.width=4}
+```{r, fig.height=4, fig.width=8}
 #| label: fig-rmse
 #| fig-cap: Comparing RMSE for the baseline and linear models, separated by trials.
 
@@ -634,7 +634,7 @@ loss_data |>
 * We include a version of the linear model that does not include lesion sizes, just their number.
 * Accuracy improvement appears to be driven by the number of lesions and not really by their size. 
 
-```{r, fig.height=1.5, fig.width=6}
+```{r, fig.height=2, fig.width=8}
 #| label: fig-loo-cv
 #| fig-cap: Expected log likelihood for the various model. Error bars characterize the standard errors since we rely on approximation to calculate LOO-CV.
 #| fig-height: 2
@@ -649,8 +649,8 @@ loo_compare(lst("Baseline" = no_tumor_loo, "Tumor Count Only" = tumor_count_loo,
   ggplot(aes(y = model)) +
   geom_col(aes(elpd_loo), fill = AZ_platinum, alpha = 0.5) +
   geom_errorbar(aes(xmin = elpd_loo - se_diff, xmax = elpd_loo + se_diff), width = 0.25) +
-  labs(x = "log-probability score", y = "Model") +
-  coord_cartesian(xlim = c(-725, -600)) +
+  labs(x = "log-probability score", y = "Model", caption = latex2exp::TeX(r"{Error bars show the $\pm$SE range for the LOO approximation.}")) +
+  coord_cartesian(xlim = c(-1025, -950)) +
   NULL
 ```
 
