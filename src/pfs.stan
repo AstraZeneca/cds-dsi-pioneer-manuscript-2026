@@ -12,7 +12,7 @@ data {
   int<lower = 0, upper = 1> add_trial_level;
   int<lower = 0, upper = 1> add_tumor_location_level;
   
-  // 0: None; 1: First two, no interaction; 2: First two, interaction; 3: First two percentage difference; 4: tumor intercept only
+  // 0: None; 1: First two, no interaction; 2: First two, interaction; 3: First two percentage difference; 4: tumor intercept only 
   // 5: quadratic
   int<lower = 0, upper = 5> tumor_hazard_type; 
   
@@ -22,6 +22,9 @@ data {
   array[n_patients] int<lower = 0> pfs; // How many periods after baseline did patient survive
   array[n_patients] int<lower = 0> death_week; 
   array[n_patients] int<lower = 0, upper = 1> right_censored;
+ 
+  int<lower = 0> n_grid_tumors;
+  array[n_grid_tumors] int<lower = 1, upper = sum(n_patient_tumors)> grid_tumors;
   
   // Hyperparam
   
@@ -34,8 +37,8 @@ data {
   real<lower = 0> log_lambda_gp_trial_intercept_sd_sd;
   real<lower = 0> tumor_stim_pop_intercept_sd;
   vector<lower = 0>[5] tumor_stim_pop_coef_sd;
-  real<lower = 0> tumor_stim_trial_coef_sd_sd;
-  real<lower = 0> tumor_stim_location_coef_sd_sd;
+  vector<lower = 0>[6] tumor_stim_trial_coef_sd_sd;
+  vector<lower = 0>[6] tumor_stim_location_coef_sd_sd;
 }
 
 transformed data {
@@ -44,7 +47,6 @@ transformed data {
   if (min(n_patient_screening_t) <= 0) {
     reject("We need at least one screening measurement per patient, for now: ", min(n_patient_screening_t));
   }
-  
   
   array[n_trials] int<lower = 0, upper = n_patients> n_trial_patients = rep_array(0, n_trials);
   array[n_patients] int<lower = 1, upper = n_patients> ordered_trial_patients;
@@ -93,27 +95,65 @@ transformed data {
     n_covar_col = 5;
   }
   
-  matrix[sum(n_patient_tumors), n_covar_col] tumor_covar;
+  array[n_tumors, 2] int<lower = min(t_measure), upper = max(t_measure)> tumor_covar_t;
+  array[n_patients] int<lower = min(t_measure), upper = max(t_measure)> patient_max_2nd_tumor_t; 
+  matrix[n_tumors, n_covar_col] tumor_covar;
+  matrix[n_tumors, n_covar_col] uncentered_tumor_covar;
+  vector[n_covar_col] tumor_covar_mean;
+  vector<lower = 0>[n_covar_col] tumor_covar_sd = rep_vector(0, n_covar_col);
   
-  if (tumor_hazard_type > 0) {
-    if (tumor_hazard_type == 1 || tumor_hazard_type == 2 || tumor_hazard_type == 5) {  
-      tuple(real, real, vector[sum(n_measures)]) standardize_results = standardize_nonzero_tumor_sizes(tumor_size);
-      vector[sum(n_measures)] standardized_tumor_size = standardize_results.3;
-      tumor_covar[, 1:2] = prepare_early_tumors_design_matrix(standardized_tumor_size, n_patient_tumors, n_measures, n_screening_t);
+  {
+    tuple(matrix[n_tumors, 2], array[n_tumors, 2] int) prep_res = 
+      prepare_early_tumors_design_matrix(tumor_size, n_patient_tumors, n_measures, t_measure, n_screening_t, 2);
       
-      if (tumor_hazard_type == 2 || tumor_hazard_type == 5) {
-        tumor_covar[, 3] = tumor_covar[, 1] .* tumor_covar[, 2];
-      }
+    tumor_covar_t = prep_res.2;
+    
+    int tumor_pos = 1;
+    
+    for (i in 1:n_patients) {
+      int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
       
-      if (tumor_hazard_type == 5) {
-        tumor_covar[, 4] = tumor_covar[, 1]^2;
-        tumor_covar[, 5] = tumor_covar[, 2]^2;
-      }
-    } else if (tumor_hazard_type == 3) {
-      matrix[sum(n_patient_tumors), 2] covar = prepare_early_tumors_design_matrix(tumor_size, n_patient_tumors, n_measures, n_screening_t);
+      patient_max_2nd_tumor_t[i] = max(tumor_covar_t[tumor_pos:tumor_end, 2]);
       
-      tumor_covar[, 1] = (covar[, 2] - covar[, 1]) ./ covar[, 1];
-    } 
+      tumor_pos = tumor_end + 1;
+    }
+    
+    if (tumor_hazard_type > 0) {
+      if (tumor_hazard_type == 1 || tumor_hazard_type == 2 || tumor_hazard_type == 5) {  
+        tumor_covar[, 1:2] = prep_res.1;
+        
+        if (tumor_hazard_type == 2 || tumor_hazard_type == 5) {
+          tumor_covar[, 3] = tumor_covar[, 2] ./ tumor_covar[, 1];
+        }
+        
+        if (tumor_hazard_type == 5) {
+          tumor_covar[, 4] = tumor_covar[, 1]^2;
+          tumor_covar[, 5] = tumor_covar[, 2]^2;
+        }
+        
+        for (c in 1:n_covar_col) {
+          uncentered_tumor_covar[, c] = tumor_covar[, c];
+          
+          tuple(real, real, vector[n_tumors]) standardize_results = standardize_nonzero_tumor_sizes(tumor_covar[, c]);
+          tumor_covar_mean[c] = standardize_results.1;
+          tumor_covar_sd[c] = standardize_results.2;
+          tumor_covar[, c] = standardize_results.3;
+          
+          uncentered_tumor_covar[, c] /= tumor_covar_sd[c];
+          
+          print("Scaling covar ", c, " by ", tumor_covar_sd[c]);
+        }
+       
+        if (tumor_hazard_type == 2 || tumor_hazard_type == 5) {
+          tumor_covar[, 3] = rep_vector(0, n_tumors);
+        }
+      } else if (tumor_hazard_type == 3) {
+        matrix[n_tumors, 2] covar = prep_res.1;
+        
+        tumor_covar[, 1] = (covar[, 2] - covar[, 1]) ./ covar[, 1];
+        uncentered_tumor_covar[, 1] = tumor_covar[, 1];
+      } 
+    }
   }
   
   // Censoring information calculated from PFS and t_measure; no need to pass it in. 
@@ -158,15 +198,13 @@ parameters {
  
   // Tumor level influence on hazard 
   real<lower = 0> tumor_stim_pop_intercept; // DO NOT REMOVE; this is a per tumor intercept and not per patient intercept which is included in lambda.
-  row_vector<lower = 0>[n_covar_col] tumor_stim_pop_coef;
+  row_vector[n_covar_col] tumor_stim_pop_coef;
   
-  // array[add_trial_level ? n_trials : 0] vector[n_covar_col + 1] raw_tumor_stim_trial_coef_mult;
-  matrix[add_trial_level ? n_trials : 0, n_covar_col + 1] raw_tumor_stim_trial_coef_mult;
-  row_vector<lower = 0>[add_trial_level ? n_covar_col + 1 : 0] tumor_stim_trial_coef_mult_sd;
+  matrix[add_trial_level ? n_trials : 0, n_covar_col + 1] raw_tumor_stim_trial_coef;
+  row_vector<lower = 0>[add_trial_level ? n_covar_col + 1 : 0] tumor_stim_trial_coef_sd;
   
-  // array[add_tumor_location_level ? n_tumor_locations : 0] vector[n_covar_col + 1] raw_tumor_stim_location_coef_mult;
-  matrix[add_tumor_location_level ? n_tumor_locations : 0, n_covar_col + 1] raw_tumor_stim_location_coef_mult;
-  row_vector<lower = 0>[add_tumor_location_level ? n_covar_col + 1 : 0] tumor_stim_location_coef_mult_sd;
+  matrix[add_tumor_location_level ? n_tumor_locations : 0, n_covar_col + 1] raw_tumor_stim_location_coef;
+  row_vector<lower = 0>[add_tumor_location_level ? n_covar_col + 1 : 0] tumor_stim_location_coef_sd;
 }
 
 transformed parameters {
@@ -179,21 +217,17 @@ transformed parameters {
   
   vector<lower = 0, upper = 1>[n_time_periods] disease_progress_prob;
   
-  vector[n_trials] tumor_stim_trial_intercept;
+  vector[n_trials] tumor_stim_trial_intercept = add_trial_level ? raw_tumor_stim_trial_coef[, 1] * tumor_stim_trial_coef_sd[1] : rep_vector(0, n_trials);
   matrix[n_trials, n_covar_col] tumor_stim_trial_coef;
   
   if (add_trial_level) {
     log_lambda_gp_trial_intercept = raw_log_lambda_gp_trial_intercept * log_lambda_gp_trial_intercept_sd;
   }
   
-  tumor_stim_trial_intercept = add_trial_level ? exp(raw_tumor_stim_trial_coef_mult[, 1] * tumor_stim_trial_coef_mult_sd[1]) : rep_vector(1, n_trials);
-  
   for (s in 1:n_trials) {
-    // tumor_stim_trial_intercept[s] = tumor_stim_pop_intercept * exp(add_trial_level ? raw_tumor_stim_trial_coef_mult[s, 1] * tumor_stim_trial_coef_mult_sd[1] : 0);
-   
     if (n_covar_col > 0) { 
       // TODO Add correlation between intercept and the coefs
-      tumor_stim_trial_coef[s] = add_trial_level ? exp(raw_tumor_stim_trial_coef_mult[s, 2:] .* tumor_stim_trial_coef_mult_sd[2:]) : rep_row_vector(1, n_covar_col);
+      tumor_stim_trial_coef[s] = add_trial_level ? raw_tumor_stim_trial_coef[s, 2:] .* tumor_stim_trial_coef_sd[2:] : rep_row_vector(0, n_covar_col);
     }
     
     log_trial_lambda[s] = log_lambda + ( 
@@ -205,20 +239,18 @@ transformed parameters {
   vector[n_tumor_locations] tumor_stim_location_intercept;
   matrix[n_tumor_locations, n_covar_col] tumor_stim_location_coef;
   
-  tumor_stim_location_intercept = 
-    exp(
-      add_tumor_location_level ? raw_tumor_stim_location_coef_mult[, 1] * tumor_stim_location_coef_mult_sd[1] : rep_vector(0, n_tumor_locations)
-    );
+  tumor_stim_location_intercept = add_tumor_location_level ? raw_tumor_stim_location_coef[, 1] * tumor_stim_location_coef_sd[1] : rep_vector(0, n_tumor_locations);
   
   if (n_covar_col > 0) { 
     for (l in 1:n_tumor_locations) {
       // TODO Add correlation between intercept and the coefs
       tumor_stim_location_coef[l] = 
-        add_tumor_location_level ? exp(raw_tumor_stim_location_coef_mult[l, 2:] .* tumor_stim_location_coef_mult_sd[2:]) : rep_row_vector(1, n_covar_col);
+        add_tumor_location_level ? raw_tumor_stim_location_coef[l, 2:] .* tumor_stim_location_coef_sd[2:] : rep_row_vector(0, n_covar_col);
     }
   }
   
   vector[n_patients] total_time_invar_tumor_stim;
+  vector[n_patients] total_time_invar_tumor_stim_no_intercept;
   vector[n_time_periods] disease_progress_pred;
   
   { // Calculate patient-interval conditional probability of disease progression.
@@ -231,14 +263,17 @@ transformed parameters {
       int pfs_interval_end = pfs_interval_pos + n_intervals - 1; 
       array[n_patient_tumors[i]] int patient_tumor_locations = tumor_location[tumor_pos:tumor_end];
       
-      vector[n_patient_tumors[i]] tumor_stim = linear_tumor_stimulus(
-        (tumor_stim_pop_intercept * tumor_stim_trial_intercept[patient_trial[i]]) .* tumor_stim_location_intercept[patient_tumor_locations], 
-        rep_matrix(tumor_stim_pop_coef .* tumor_stim_trial_coef[patient_trial[i]], n_patient_tumors[i]) .* tumor_stim_location_coef[patient_tumor_locations], 
-        tumor_covar[tumor_pos:tumor_end]
-      );
+      vector[n_patient_tumors[i]] patient_stim_intercept = 
+        tumor_stim_pop_intercept + tumor_stim_trial_intercept[patient_trial[i]] + tumor_stim_location_intercept[patient_tumor_locations];
+      matrix[n_patient_tumors[i], n_covar_col] patient_stim_coef =
+        // rep_matrix(tumor_stim_pop_coef .* exp(tumor_stim_trial_coef[patient_trial[i]]), n_patient_tumors[i]) .* exp(tumor_stim_location_coef[patient_tumor_locations]);
+        rep_matrix(tumor_stim_pop_coef + tumor_stim_trial_coef[patient_trial[i]], n_patient_tumors[i]) +tumor_stim_location_coef[patient_tumor_locations];
+        
+      vector[n_patient_tumors[i]] tumor_stim = linear_tumor_stimulus(patient_stim_intercept, patient_stim_coef, tumor_covar[tumor_pos:tumor_end]);
       
       total_time_invar_tumor_stim[i] = tumor_hazard_type > 0 ? sum(tumor_stim) : 0;
-      // total_time_invar_tumor_stim[i] = tumor_hazard_type > 0 ? sum(tumor_stim) - mean(n_patient_tumors) * tumor_stim_pop_intercept : 0;
+      total_time_invar_tumor_stim_no_intercept[i] = 
+        tumor_hazard_type > 0 ? sum(linear_tumor_stimulus(rep_vector(0, n_patient_tumors[i]), patient_stim_coef, tumor_covar[tumor_pos:tumor_end])) : 0;
      
       disease_progress_pred[pfs_interval_pos:pfs_interval_end] = log_trial_lambda[patient_trial[i], 1:n_intervals] + total_time_invar_tumor_stim[i];
       
@@ -270,9 +305,9 @@ model {
   log_lambda_gp_trial_rho ~ inv_gamma(log_lambda_gp_rho_alpha, log_lambda_gp_rho_beta);
  
   if (add_trial_level) { 
-    tumor_stim_trial_coef_mult_sd ~ normal(0, tumor_stim_trial_coef_sd_sd);
+    tumor_stim_trial_coef_sd ~ normal(0, tumor_stim_trial_coef_sd_sd[:(n_covar_col + 1)]);
     
-    to_vector(raw_tumor_stim_trial_coef_mult) ~ std_normal();
+    to_vector(raw_tumor_stim_trial_coef) ~ std_normal();
     
     for (s in 1:n_trials) {
       log_lambda_gp_trial_eta[s] ~ std_normal();
@@ -280,8 +315,8 @@ model {
   }
   
   if (add_tumor_location_level) { 
-    tumor_stim_location_coef_mult_sd ~ normal(0, tumor_stim_location_coef_sd_sd);
-    to_vector(raw_tumor_stim_location_coef_mult) ~ std_normal();
+    tumor_stim_location_coef_sd ~ normal(0, tumor_stim_location_coef_sd_sd[:(n_covar_col + 1)]);
+    to_vector(raw_tumor_stim_location_coef) ~ std_normal();
   }
   
   if ((tumor_hazard_type > 0 && tumor_hazard_type < 4) || tumor_hazard_type > 4) {
@@ -302,7 +337,7 @@ model {
   }
   
   if (fit_data) {
-    pfs ~ pch(right_uncensored, interval_censored, ignore_interval_censoring, disease_progress_prob, gen_pfs ? max_all_t : 0);
+    pfs ~ pch(right_uncensored, interval_censored, ignore_interval_censoring, disease_progress_prob, gen_pfs ? max_all_t : 0, patient_max_2nd_tumor_t);
   }
 }
 
@@ -311,7 +346,7 @@ generated quantities {
   
   if (fit_data) {
     // Do not ignore censoring when calculating this
-    log_lik = calc_pch_loglik(pfs, right_uncensored, interval_censored, 0, disease_progress_prob, gen_pfs ? max_all_t : 0);
+    log_lik = calc_pch_loglik(pfs, right_uncensored, interval_censored, 0, disease_progress_prob, gen_pfs ? max_all_t : 0, patient_max_2nd_tumor_t);
   }
   
   vector<lower = 0, upper = 1>[max_all_t] base_pf_cond_prob = 1 - inv_cloglog(log_lambda); // Progression free conditional prob if not using covar
@@ -401,7 +436,39 @@ generated quantities {
         trial_patient_pos = trial_patient_end + 1;
       }
     }
-  } 
+  }
+  
+  array[add_trial_level ? n_trials : 0] vector[n_grid_tumors] trial_tumor_effect;
+  array[add_tumor_location_level ? n_tumor_locations : 0] vector[n_grid_tumors] location_tumor_effect;
+  vector[n_grid_tumors] pop_tumor_effect = linear_tumor_stimulus(
+    // rep_vector(tumor_stim_pop_intercept, n_grid_tumors), 
+    rep_vector(0, n_grid_tumors), 
+    rep_matrix(tumor_stim_pop_coef, n_grid_tumors), 
+    tumor_covar[grid_tumors]
+  );
+  
+  if (add_trial_level) { 
+    for (s in 1:n_trials) {
+      trial_tumor_effect[s] = linear_tumor_stimulus(
+        // rep_vector(tumor_stim_pop_intercept + tumor_stim_trial_intercept[s], n_grid_tumors), 
+        rep_vector(0, n_grid_tumors), 
+        // rep_matrix(tumor_stim_pop_coef .* exp(tumor_stim_trial_coef[s]), n_grid_tumors), 
+        rep_matrix(tumor_stim_pop_coef + tumor_stim_trial_coef[s], n_grid_tumors), 
+        tumor_covar[grid_tumors]
+      );
+    }
+  }
+    
+  if (add_tumor_location_level) { 
+    for (l in 1:n_tumor_locations) {
+      location_tumor_effect[l] = linear_tumor_stimulus(
+        // rep_vector(tumor_stim_pop_intercept + tumor_stim_location_intercept[l], n_grid_tumors), 
+        rep_vector(0, n_grid_tumors), 
+        rep_matrix(tumor_stim_pop_coef + tumor_stim_location_coef[l], n_grid_tumors), 
+        tumor_covar[grid_tumors]
+      );
+    }
+  }
   
   {
     tuple(vector[max_all_t], vector[max_all_t]) base_marginal_prob_res = calculate_marginal_dp_prob(base_pf_cond_prob, max_all_t);  

@@ -66,21 +66,23 @@ vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, 
 
 // Scale tumor sizes by the standard deviation of all non-zero tumors (a size of zero means the tumor doesn't exist yet/anymore).
 tuple(real, real, vector) standardize_nonzero_tumor_sizes(vector tumor_size) {
-  int n_tumor_measures = rows(tumor_size);
-  array[n_tumor_measures] int nonzero_tumor_idx;
-  int measured_pos = 1;
+  // int n_tumor_measures = rows(tumor_size);
+  
+  // array[n_tumor_measures] int nonzero_tumor_idx;
+  // int measured_pos = 1;
+  
   real tumor_mean;
   real tumor_sd;
+
+  // for (t in 1:n_tumor_measures) {
+  //   if (tumor_size[t] > 0) {
+  //     nonzero_tumor_idx[measured_pos] = t;
+  //     measured_pos += 1;
+  //   }
+  // }
   
-  for (t in 1:n_tumor_measures) {
-    if (tumor_size[t] > 0) {
-      nonzero_tumor_idx[measured_pos] = t;
-      measured_pos += 1;
-    }
-  }
-  
-  tumor_mean = mean(tumor_size[nonzero_tumor_idx[:(measured_pos - 1)]]);
-  tumor_sd = sd(tumor_size[nonzero_tumor_idx[:(measured_pos - 1)]]);
+  tumor_mean = mean(tumor_size); // [nonzero_tumor_idx[:(measured_pos - 1)]]);
+  tumor_sd = sd(tumor_size); //[nonzero_tumor_idx[:(measured_pos - 1)]]);
   
   return (tumor_mean, tumor_sd, (tumor_size - tumor_mean) / tumor_sd); 
 }
@@ -123,8 +125,6 @@ array[] int calculate_n_missing_measures(array[] int n_measures, array[] int t_m
     int last_tumor_t_measure_end = t_measure_pos + sum(n_measures[tumor_pos:tumor_end]) - 1;
     
     int max_patient_t = max(t_measure[first_tumor_t_measure_pos:last_tumor_t_measure_end]);
-    // int max_patient_t = max(t_measure[t_measure_pos:t_measure_end]);
-    // int full_patient_measure_width = max_patient_t - min_patient_t + 1;
     
     for (j in 1:n_patient_tumors[i]) {
       int t_measure_end = t_measure_pos + n_measures[tumor_pos] - 1;
@@ -158,8 +158,6 @@ array[] int calculate_t_missing_measure(
     int first_tumor_t_measure_pos = t_measure_pos;
     int last_tumor_t_measure_end = t_measure_pos + sum(n_measures[tumor_pos:tumor_end]) - 1;
     
-    // int t_measure_end = t_measure_pos + sum(n_measures[tumor_pos:tumor_end]) - 1;
-    // int min_patient_t = min(t_measure[t_measure_pos:t_measure_end]);
     int max_patient_t = max(t_measure[first_tumor_t_measure_pos:last_tumor_t_measure_end]);
     
     for (j in 1:n_patient_tumors[i]) {
