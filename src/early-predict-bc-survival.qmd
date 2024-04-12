@@ -122,8 +122,8 @@ erDiagram
   Study ||--|{ Patient : enrolls
   Patient ||--|{ Tumor : has
   Tumor ||--|{ Assessment : assessed
-  Organ ||--|{ Tumor
-  Patient |--|{ "Prior Therapy" : "previously treated"
+  Organ ||--|{ Tumor : has
+  Patient ||--|{ "Prior Therapy" : "previously treated"
 ```
 
 ```{r}
@@ -295,11 +295,11 @@ tumor_analysis_data <- adam_adtr |>
   
 pfs_analysis_data <- tumor_analysis_data |> 
   mutate(
-    patient_tumors = map(patient_tumors, \(tu) filter(tu, min_t <= 0, max_t > 0)), # Drop tumors that don't have two assessments 
+    patient_tumors = map(patient_tumors, \(tu) filter(tu, min_t <= 0, max_t > 0)), # Drop tumors that don't have two assessments
     n_measures = map(patient_tumors, \(tu) tu$n_tumor_measures),
     t_measure = map(patient_tumors, \(tu) map(tu$tumor_history, \(tr) pull(tr, week))),
   ) |> 
-  filter(map_int(n_measures, sum) > 0) |> 
+  filter(map_int(n_measures, sum) > 0) |>
   mutate(
     # After dropping tumors, these need to be recalculated 
     patient_min_t = map_int(patient_tumors, \(tu) min(tu$min_t)),
@@ -1630,6 +1630,7 @@ ic_ignored_no_tumor_pfs_future <- future::future(
 
 prior_no_tumor_pfs_res <- future::value(prior_no_tumor_pfs_future)
 no_tumor_pfs_res <- future::value(no_tumor_pfs_future)
+
 ```
 
 ```{r}
@@ -1850,6 +1851,7 @@ two_tumor_pfs_future <- future::future(
 
 prior_two_tumor_pfs_res <- future::value(prior_two_tumor_pfs_future)
 two_tumor_pfs_res <- future::value(two_tumor_pfs_future)
+
 ```
 
 ```{r}
@@ -2024,7 +2026,6 @@ two_tumor_pfs_res |>
   # filter(fct_match(trial, "Breast01")) |>
   ggplot(aes(x = x0, y = x1, z = q)) +
   stat_summary_hex(binwidth = c(1, 1)) +
-  # colorspace::scale_fill_continuous_divergingx("Roma", mid = 1, name = "") + #, name = latex2exp::TeX(r"{\exp(\beta\cdot x)}")) +
   scale_fill_gradient2("", midpoint = 1, low = AZ_darkpurple, mid = AZ_turquoise, high = AZ_gold) + # latex2exp::TeX(r"{\exp(\beta\cdot x)}")) +
   labs(x = "Pre-screening Tumor Size", y = "Post-treatment Tumor Size") +
   # facet_wrap(vars(trial)) +
@@ -2146,7 +2147,7 @@ two_tumor_pfs_res |>
 
 #### Partial Pooling
 
-```{r, fig.height=2, fig.width=4}
+```{r, fig.height=4, fig.width=8}
 #| label: fig-separate-two-tumor-pfs-fit
 #| cache: true
 #| dependson: fit-pfs-util, priors 
@@ -2176,7 +2177,9 @@ bind_rows(
 ) |> 
   plot_km_rvars(group_arm = TRUE, group_var = model_type) +
   scale_color_discrete("", labels = c(partial_pooled = "Partial Pooled", separated = "Fully Separated"), aesthetics = c("color", "fill"), type = AZ_palette) +
-  labs(title = "")
+  labs(title = "") +
+  guides(color = guide_legend(position = "inside")) +
+  theme(legend.position.inside = c(0.9, 0.35))
 ```
 
 ```{r, fig.height=2, fig.width=6}
@@ -2383,11 +2386,11 @@ Where the observed PFS is modeled as uniform value within the censored interval,
 asym_linear_loss <- partial(linear_loss, k1 = 3)
 
 no_tumor_asym_loss <- estimate_oos_loss(no_tumor_pfs_res, no_tumor_loo, no_tumor_treated_pfs_stan_data, asym_linear_loss)
-ic_ignored_no_tumor_asym_loss <- estimate_oos_loss(ic_ignored_no_tumor_pfs_res, ic_ignored_no_tumor_loo, no_tumor_treated_pfs_stan_data, asym_linear_loss)
+# ic_ignored_no_tumor_asym_loss <- estimate_oos_loss(ic_ignored_no_tumor_pfs_res, ic_ignored_no_tumor_loo, no_tumor_treated_pfs_stan_data, asym_linear_loss)
 two_tumor_asym_loss <- estimate_oos_loss(two_tumor_pfs_res, two_tumor_loo, two_tumor_treated_pfs_stan_data, asym_linear_loss)
 tumor_count_asym_loss <- estimate_oos_loss(tumor_count_pfs_res, tumor_count_loo, tumor_count_treated_pfs_stan_data, asym_linear_loss)
 no_tumor_sym_loss <- estimate_oos_loss(no_tumor_pfs_res, no_tumor_loo, no_tumor_treated_pfs_stan_data, linear_loss)
-ic_ignored_no_tumor_sym_loss <- estimate_oos_loss(ic_ignored_no_tumor_pfs_res, ic_ignored_no_tumor_loo, no_tumor_treated_pfs_stan_data, linear_loss)
+# ic_ignored_no_tumor_sym_loss <- estimate_oos_loss(ic_ignored_no_tumor_pfs_res, ic_ignored_no_tumor_loo, no_tumor_treated_pfs_stan_data, linear_loss)
 two_tumor_sym_loss <- estimate_oos_loss(two_tumor_pfs_res, two_tumor_loo, two_tumor_treated_pfs_stan_data, linear_loss)
 tumor_count_sym_loss <- estimate_oos_loss(tumor_count_pfs_res, tumor_count_loo, tumor_count_treated_pfs_stan_data, linear_loss)
 no_tumor_sqerr_loss <- estimate_oos_loss(no_tumor_pfs_res, no_tumor_loo, no_tumor_treated_pfs_stan_data, squared_error_loss)
@@ -2412,15 +2415,15 @@ loss_data <- bind_rows(
 #| fig-height: 8
 
 loss_data |> 
-  filter(!fct_match(loss_type, "sqerr"), !fct_match(model, "ic_ignored_no_tumor")) |> 
+  filter(!fct_match(loss_type, "sqerr")) |> #, !fct_match(model, "ic_ignored_no_tumor")) |> 
   plot_loss(binwidth = 6)
 
 loss_data |> 
-  filter(fct_match(loss_type, "sqerr"), !fct_match(model, "ic_ignored_no_tumor")) |> 
+  filter(fct_match(loss_type, "sqerr")) |> #, !fct_match(model, "ic_ignored_no_tumor")) |> 
   plot_loss(binwidth = 100)
 ```
 
-```{r, fig.width=6, fig.height=2}
+```{r, fig.width=10, fig.height=4}
 #| label: fig-linear-loss
 
 loss_data |> 
