@@ -614,7 +614,7 @@ While the first two accuracy measures are well known, we need to spend more time
 
 * We see that in terms of RMSE the linear model outperforms the baseline model for all trials. 
 
-```{r, fig.height=2, fig.width=8}
+```{r, fig.height=4, fig.width=8}
 #| label: fig-rmse
 #| fig-cap: Comparing RMSE for the baseline and linear models, separated by trials.
 
@@ -624,8 +624,8 @@ loss_data |>
   summarize(rmse = sqrt(mean(value)), .groups = "drop") |> 
   ggplot() +
   geom_col(aes(y = trial, x = rmse, fill = model), position = "dodge", alpha = 0.5) +
-  scale_fill_discrete("Model", labels = c(no_tumor = "Baseline", two_tumor = "Linear Lesion Size")) +
-  labs(x = "RMSE", y = "Trial")
+  scale_fill_discrete("Model", labels = c(no_tumor = "Baseline", two_tumor = "Linear Lesion Size"), type = AZ_palette) +
+  labs(x = "RMSE (Weeks)", y = "Trial")
 ```
 
 ## Log likelihood scoring function
@@ -642,12 +642,16 @@ loss_data |>
 
 loo_compare(lst("Baseline" = no_tumor_loo, "Tumor Count Only" = tumor_count_loo, "Linear Lesion Size" = two_tumor_loo))[, c("elpd_loo", "elpd_diff", "se_diff")] |> 
   as_tibble(rownames = "model") |>
-  mutate(se_diff = if_else(se_diff > 0, se_diff, NA)) |>  
+  mutate(
+    se_diff = if_else(se_diff > 0, se_diff, NA),
+    model = factor(model, levels = c("Baseline", "Tumor Count Only", "Linear Lesion Size"))
+  ) |>  
   ggplot(aes(y = model)) +
-  geom_col(aes(elpd_loo), alpha = 0.5) +
+  geom_col(aes(elpd_loo), fill = AZ_platinum, alpha = 0.5) +
   geom_errorbar(aes(xmin = elpd_loo - se_diff, xmax = elpd_loo + se_diff), width = 0.25) +
-  labs(x = "Expected log likelihood", y = "Model") +
-  coord_cartesian(xlim = c(-1125, -1000)) 
+  labs(x = "log-probability score", y = "Model", caption = latex2exp::TeX(r"{Error bars show the $\pm$SE range for the LOO approximation.}")) +
+  coord_cartesian(xlim = c(-1025, -950)) +
+  NULL
 ```
 
 

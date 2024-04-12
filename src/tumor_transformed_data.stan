@@ -7,12 +7,14 @@ int<lower = min_all_t> max_all_t = max(t_measure);
 array[sum(n_measures)] int<lower = 1> patient_t_measure_idx; // The index of each t relative to the first t per patient
 array[n_patients] int<lower = 0> patient_max_t_width; // The number of intervals from the first to the last measurement per patient
 
-// Same as n_measures and t_measure but for the missing measurement intervals 
-array[sum(n_patient_tumors)] int<lower = 0> n_missing_measures = calculate_n_missing_measures(n_measures, t_measure, n_patient_tumors); 
-array[sum(n_missing_measures)] int<lower = 1> patient_t_missing_measure_idx; 
-array[sum(n_patient_tumors)] int<lower = 0> n_full_measures;
+int<lower = 0> n_tumors = sum(n_patient_tumors);
 
-array[sum(n_patient_tumors)] int<lower = 0> n_screening_t = calc_n_screening_t(n_patient_tumors, n_measures, t_measure); 
+// Same as n_measures and t_measure but for the missing measurement intervals 
+array[n_tumors] int<lower = 0> n_missing_measures = calculate_n_missing_measures(n_measures, t_measure, n_patient_tumors); 
+array[sum(n_missing_measures)] int<lower = 1> patient_t_missing_measure_idx; 
+array[n_tumors] int<lower = 0> n_full_measures;
+
+array[n_tumors] int<lower = 0> n_screening_t = calc_n_screening_t(n_patient_tumors, n_measures, t_measure); 
 array[n_patients] int<lower = 0> n_patient_screening_t =  rep_array(0, n_patients);
 
 array[sum(n_measures)] int<lower = 1> t_measure_idx;
