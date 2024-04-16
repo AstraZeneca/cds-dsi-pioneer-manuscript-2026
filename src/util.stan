@@ -18,11 +18,13 @@ array[] int get_max_t(array[] int t_measure, array[] int n_measures, array[] int
   return max_t;
 }
 
+// GP vcov
 matrix calc_gp_vcov(array[] real x, real alpha, real rho, real delta) {
   int n_x = size(x);
   return gp_exp_quad_cov(x, alpha, rho) + diag_matrix(rep_vector(delta, n_x));
 }
 
+// Cholesky version of GP vcov
 matrix calc_gp_cholesky_vcov(array[] real x, real alpha, real rho, real delta) {
   return cholesky_decompose(calc_gp_vcov(x, alpha, rho, delta));
 }
@@ -39,7 +41,8 @@ vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, real d
   return intercept + L_K * eta;
 }  
 
-
+// This is the calculation needed to extrapolate a GP that is fit using observed y and x. We are predicting for x*.
+// For details, see Rasmussen' and Williams' "Gaussian Processes for Machine Learning".
 vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, real alpha, real rho, real delta) {
   int n_obs = rows(y);
   int n_pred = size(x_pred);
@@ -64,29 +67,18 @@ vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, 
 //   return calc_gp_pred(x, intercept, alpha, 1e-9, eta);
 // }  
 
-// Scale tumor sizes by the standard deviation of all non-zero tumors (a size of zero means the tumor doesn't exist yet/anymore).
-tuple(real, real, vector) standardize_nonzero_tumor_sizes(vector tumor_size) {
-  // int n_tumor_measures = rows(tumor_size);
-  
-  // array[n_tumor_measures] int nonzero_tumor_idx;
-  // int measured_pos = 1;
-  
+// Scale tumor sizes by the standard deviation of all tumors and demean.
+tuple(real, real, vector) standardize_tumor_sizes(vector tumor_size) {
   real tumor_mean;
   real tumor_sd;
-
-  // for (t in 1:n_tumor_measures) {
-  //   if (tumor_size[t] > 0) {
-  //     nonzero_tumor_idx[measured_pos] = t;
-  //     measured_pos += 1;
-  //   }
-  // }
   
-  tumor_mean = mean(tumor_size); // [nonzero_tumor_idx[:(measured_pos - 1)]]);
-  tumor_sd = sd(tumor_size); //[nonzero_tumor_idx[:(measured_pos - 1)]]);
+  tumor_mean = mean(tumor_size); 
+  tumor_sd = sd(tumor_size); 
   
   return (tumor_mean, tumor_sd, (tumor_size - tumor_mean) / tumor_sd); 
 }
 
+// Calculate the quantiles of PFS given a vector of exit conditional probabilities.
 array[] real pfs_quantiles_from_prob(vector exit_prob, array[] real p) {
   int max_t = rows(exit_prob);
   int n_p = size(p);
@@ -111,7 +103,8 @@ array[] real pfs_quantiles_from_prob(vector exit_prob, array[] real p) {
   return q;
 }
 
-// A missing measure is defined as one that lies between a _tumor's_ first assessment to the _patient's_ last assessment.
+// A missing measure is defined as one that lies between a _tumor's_ first assessment to the _patient's_ last assessment. Basically,
+// we're counting how many intervals (weeks) we don't have a observed assessment of tumor size, for each tumor.
 array[] int calculate_n_missing_measures(array[] int n_measures, array[] int t_measure, array[] int n_patient_tumors) {
   int tumor_pos = 1;
   int t_measure_pos = 1;
@@ -143,6 +136,7 @@ array[] int calculate_n_missing_measures(array[] int n_measures, array[] int t_m
   return n_missing_measures;
 }
 
+// Return the actual t for which we don't have observed tumor size assessments.
 array[] int calculate_t_missing_measure(
   array[] int n_measures, array[] int n_missing_measures, array[] int t_measure, array[] int n_patient_tumors 
 ) { 
@@ -168,10 +162,6 @@ array[] int calculate_t_missing_measure(
       
       for (k in min_tumor_t:max_patient_t) {
         if (measures_checked >= n_measures[tumor_pos] || t_measure[t_measure_pos] > k) {
-          if (t_missing_measure_pos > sum(n_missing_measures)) {
-            print("i = ", i, ", j = ", j);
-          }
-          
           t_missing_measure[t_missing_measure_pos] = k;
           t_missing_measure_pos += 1;
         } else {
@@ -187,6 +177,7 @@ array[] int calculate_t_missing_measure(
   return t_missing_measure;
 }
 
+// How many assessments for each tumor were pre-screening assessments (t <= 0).
 array[] int calc_n_screening_t(array[] int n_patient_tumors, array[] int n_measures, array[] int t_measure) {
   int n_patients = size(n_patient_tumors);
   array[sum(n_patient_tumors)] int n_screening_t = rep_array(0, sum(n_patient_tumors));
