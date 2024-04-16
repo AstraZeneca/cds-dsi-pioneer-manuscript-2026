@@ -1,6 +1,4 @@
-real delta = 1e-9;
-
-// int<lower = 0> n_all_tumor_measures; // The sum of all measures for all tumors if we observed all of them for each interval
+real delta = 1e-9; // Used for GP modeling
 
 int min_all_t = min(t_measure);
 int<lower = min_all_t> max_all_t = max(t_measure);
@@ -12,12 +10,12 @@ int<lower = 0> n_tumors = sum(n_patient_tumors);
 // Same as n_measures and t_measure but for the missing measurement intervals 
 array[n_tumors] int<lower = 0> n_missing_measures = calculate_n_missing_measures(n_measures, t_measure, n_patient_tumors); 
 array[sum(n_missing_measures)] int<lower = 1> patient_t_missing_measure_idx; 
-array[n_tumors] int<lower = 0> n_full_measures;
+array[n_tumors] int<lower = 0> n_full_measures; // Missing and observed measures
 
-array[n_tumors] int<lower = 0> n_screening_t = calc_n_screening_t(n_patient_tumors, n_measures, t_measure); 
-array[n_patients] int<lower = 0> n_patient_screening_t =  rep_array(0, n_patients);
+array[n_tumors] int<lower = 0> n_screening_t = calc_n_screening_t(n_patient_tumors, n_measures, t_measure); // number of pre-screening measures per tumor
+array[n_patients] int<lower = 0> n_patient_screening_t = rep_array(0, n_patients); // ...per patient
 
-array[sum(n_measures)] int<lower = 1> t_measure_idx;
+array[sum(n_measures)] int<lower = 1> t_measure_idx; // measure ts starting at 1.
 
 {
   int tumor_pos = 1;
@@ -79,8 +77,6 @@ array[sum(n_measures)] int<lower = 1> t_measure_idx;
         patient_t_missing_measure_idx[tp] = t_missing_measure_idx[tp] - min_t_idx[j] + 1;
       }
       
-      // print(patient_t_measure_idx[t_measure_pos:t_measure_end]);
-      
       t_measure_pos = t_measure_end + 1;
       t_missing_measure_pos = t_missing_measure_end + 1;
     }
@@ -92,14 +88,5 @@ array[sum(n_measures)] int<lower = 1> t_measure_idx;
 array[max(patient_max_t_width)] real all_measure_t; // This is for the GP "proximity" between size measurement time intervals.
 
 for (t in 1:max(patient_max_t_width)) {
-  all_measure_t[t] = t / 12.0; 
+  all_measure_t[t] = t / 12.0; // Why 12? Our intervals are weeks not months. Doesn't matter.  
 } 
-
-// // n_all_tumor_measures = to_int(to_row_vector(patient_max_t_width) * to_vector(n_patient_tumors));
-// n_all_tumor_measures = sum(n_measures) + sum(n_missing_measures); 
-
-// if (sum(n_missing_measures) > 0) { 
-//   array[sum(n_missing_measures)] int t_missing_measure = calculate_t_missing_measure(n_measures, n_missing_measures, t_measure, n_patient_tumors);
-//   patient_t_missing_measure_idx =
-//   // patient_t_missing_measure_idx = calculate_t_missing_measure(n_measures, n_missing_measures, patient_t_measure_idx, n_patient_tumors);
-// }

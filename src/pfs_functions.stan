@@ -8,7 +8,10 @@ matrix calculate_progress_linear_prob(array[] int n_patient_tumors, vector log_l
     vector[rows(tumor_intercept)] total_time_invar_tumor_stim = 
       sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar)) - tumor_intercept * mean(n_patient_tumors);
     
-    return inv_cloglog(rep_matrix(log_lambda, rows(tumor_intercept)) + rep_matrix(total_time_invar_tumor_stim', rows(log_lambda)));
+    return inv_cloglog(
+      rep_matrix(log_lambda, rows(tumor_intercept)) + // Log baseline hazard 
+      rep_matrix(total_time_invar_tumor_stim', rows(log_lambda)) // log hazard ratio
+    );
 }
 
 // Hazard function given a base hazard and time-invariant covariates.  
@@ -16,11 +19,16 @@ matrix calculate_linear_hazard(array[] int n_patient_tumors, vector log_lambda, 
     vector[rows(tumor_intercept)] total_time_invar_tumor_stim = 
       sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar)) - tumor_intercept * mean(n_patient_tumors);
     
-    return exp(rep_matrix(log_lambda, rows(tumor_intercept)) + rep_matrix(total_time_invar_tumor_stim', rows(log_lambda)));
+    return exp(
+      rep_matrix(log_lambda, rows(tumor_intercept)) + // Log baseline hazard 
+      rep_matrix(total_time_invar_tumor_stim', rows(log_lambda)) // log hazard ratio
+    );
 }
 
 // Given PFS and tumor measures data, determine interval and right censoring for each patient. 
-tuple(array[] int, array[] int) identify_censoring(array[] int pfs, array[] int death_week, array[] int n_patient_tumors, array[] int n_measures, array[] int t_measure) { 
+tuple(array[] int, array[] int) identify_censoring(
+  array[] int pfs, array[] int death_week, array[] int n_patient_tumors, array[] int n_measures, array[] int t_measure) 
+{ 
   int n_patients = size(n_patient_tumors);
   array[n_patients] int interval_censored = rep_array(0, n_patients);
   array[n_patients] int right_censored = rep_array(1, n_patients);
@@ -143,7 +151,9 @@ tuple(vector, vector) calculate_marginal_dp_prob(vector cond_pf_prob, int max_al
   return(exp(marginal_dp_log_prob), fmax(0, 1 - dp_cdf));
 }  
 
-// Create (n_patients * n_tumors) x max_tumors matrix of each tumor's covariates from t = 1, 2, .... 
+// Create (n_patients * n_tumors) x max_measures matrix of each tumor's covariates from t = 1, 2, .... 
+// What this function actually returns is the last pre-screening measure and the (max_measures - 1) succeeding measures. The second output in the tuple
+// provides the intervals (weeks) of these max_measures columns.
 tuple(matrix, array[,] int) prepare_early_tumors_design_matrix(
   vector tumor_size, array[] int n_patient_tumors, array[] int n_measures, array[] int t_measure, array[] int n_screening_t, int max_measures
 ) {
@@ -178,11 +188,14 @@ tuple(matrix, array[,] int) prepare_early_tumors_design_matrix(
   return (tumor_covar, tumor_covar_t);
 }
 
-
+// Calculate the piecewise-constant proportional hazard log-likelihood. This returns the patients vector of log-likelihoods as opposed to the following
+// pch_lpmf() function. 
 vector calc_pch_loglik(
   array[] int pfs, 
-  array[] int right_uncensored, array[] int interval_censored, int ignore_interval_censoring, vector disease_progress_prob, int max_all_t, array[] int patient_2nd_t 
-) {
+  array[] int right_uncensored, array[] int interval_censored, int ignore_interval_censoring, 
+  vector disease_progress_prob, int max_all_t, array[] int patient_2nd_t 
+) 
+{
   int n_patients = size(pfs);
   vector[n_patients] lp = rep_vector(0, n_patients);
   
@@ -194,15 +207,15 @@ vector calc_pch_loglik(
     // Ignoring intervals that were guaranteed for the patient to have survived because of the inclusion criteria in this meta-analysis (not the the original trials).
     pfs_interval_pos += patient_2nd_t[i] - 1; 
     
-    // These are the time intervals we are sure that the patient has progression free 
+    // These are the time intervals we are sure that the patient was progression free 
     lp[i] += bernoulli_lpmf(0 | disease_progress_prob[pfs_interval_pos:observed_pfs_interval_end]);
     
     int pfs_interval_end = observed_pfs_interval_end + right_uncensored[i] + interval_censored[i]; 
     int curr_interval_censored = ignore_interval_censoring ? 0 : interval_censored[i];
     vector[curr_interval_censored + right_uncensored[i]] interval_lp = rep_vector(0, curr_interval_censored + right_uncensored[i]);
-  
+ 
+    // The point of this loop is marginalize over all the potential intervals of progression, due to interval censoring. 
     for (t in 1:(curr_interval_censored + right_uncensored[i])) {
-    // for (t in patient_2nd_t[i]:(curr_interval_censored + right_uncensored[i])) {
       if (t > 1) { // We need to add more possible intervals that the patient remained progression free.
         interval_lp[t] = bernoulli_lpmf(0 | disease_progress_prob[(observed_pfs_interval_end + 1):(observed_pfs_interval_end + t - 1)]);
       }
@@ -226,7 +239,8 @@ vector calc_pch_loglik(
   
   return lp;
 }
-  
+ 
+// This is used to provide and easy to use Stan distribution. It just sums the log-probs. 
 real pch_lpmf(
   array[] int y, 
   array[] int right_uncensored, array[] int interval_censored, int ignore_interval_censoring, vector disease_progress_prob, int max_all_t, array[] int patient_2nd_t
