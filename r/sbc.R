@@ -26,7 +26,7 @@ tmp_dir <- file.path(Sys.getenv("TMPDIR"), "adc-early-predict") |>
 
 cat("Temporary folder:", tmp_dir, "\n")
 
-source(here("src", "util.R"))
+source(here("r", "util.R"))
 
 future::plan(future::multisession(workers = cl_args$cores %/% 4))
 
@@ -34,7 +34,7 @@ future::plan(future::multisession(workers = cl_args$cores %/% 4))
 tumor_test_data <- rjson::fromJSON(file = file.path(tmp_dir, "data", "prior_tumor.json"))
 fake_tumor_data <- read_rds(file.path(tmp_dir, "data", "fake_tumor.rds"))
 
-pfs_model <- cmdstan_model(here("src", "pfs.stan"))
+pfs_model <- cmdstan_model(here("r", "pfs.stan"))
 
 # A prior only run to generate datasets
 pfs_test_data <- tumor_test_data |> 
