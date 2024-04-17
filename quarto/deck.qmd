@@ -31,7 +31,7 @@ options(mc.cores = 4)
 
 ggplot2::theme_set(theme_minimal())
 
-source(here("src", "util.R"))
+source(here("r", "util.R"))
 ```
 
 ```{r}
@@ -61,8 +61,8 @@ pfs_priors <- lst(
 #| label: models
 #| code-fold: false   
 
-tumor_model <- cmdstan_model(here("src", "tumor.stan"))
-pfs_model <- cmdstan_model(here("src", "pfs.stan"), compile_standalone = TRUE, force_recompile = TRUE)
+tumor_model <- cmdstan_model(here("stan", "tumor.stan"))
+pfs_model <- cmdstan_model(here("stan", "pfs.stan"), compile_standalone = TRUE, force_recompile = TRUE)
 ```
 
 ```{r}
