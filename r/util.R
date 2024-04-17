@@ -281,16 +281,15 @@ prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ...
     
     !!!.pfs_priors,
     !!!.tumor_priors,
-    
-    ...,
-  ) 
+  ) |> 
+    list_assign(...)
   
   early_tumors <- get_early_tumor_pairs(stan_data) |> 
     mutate(id = seq(n())) |> 
     distinct(x0, x1, .keep_all = TRUE) |> 
     pull(id)
   
-  stan_data |> list_assign(fit_tumor_data = FALSE, grid_tumors = early_tumors, n_grid_tumors = length(early_tumors))
+  stan_data |> list_assign(grid_tumors = early_tumors, n_grid_tumors = length(early_tumors))
 }
 
 run_sbc_sims <- function(
