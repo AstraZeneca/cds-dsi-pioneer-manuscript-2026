@@ -1820,7 +1820,12 @@ where $\bar{N}$ is the average number of tumors per patient and, for every tumor
 #| output: false
 
 two_tumor_treated_pfs_stan_data <- treated_pfs_stan_data |> 
-  list_assign(tumor_hazard_type = 2, add_trial_level = TRUE, add_tumor_location_level = FALSE)
+  list_assign(
+    tumor_hazard_type = 2, 
+    add_trial_level = TRUE, 
+    add_tumor_location_level = FALSE,
+    fit_tumor_data = TRUE
+  )
 
 two_tumor_init <- create_pfs_initializer(two_tumor_treated_pfs_stan_data) 
 
@@ -1977,7 +1982,7 @@ prior_two_tumor_pfs_res |>
   ggplot(aes(x = x0, y = x1, z = q)) +
   stat_summary_hex(binwidth = c(1, 1)) +
   geom_abline(slope = 1, linetype = "dashed") +
-  colorspace::scale_fill_continuous_divergingx("Roma", name = "", mid = 1) + #latex2exp::TeX(r"{\exp(\beta\cdot x)}")) +
+  colorspace::scale_fill_continuous_divergingx("Roma", name = "", mid = 1) +
   labs(x = "Pre-screening Tumor Size [cm]", y = "Post-treatment Tumor Size [cm]") +
   facet_wrap(vars(p), labeller = labeller(p = \(per) str_glue("Posterior {per}th percentile"))) +
   coord_fixed(xlim = c(0, 11), ylim = c(0, 11)) +
@@ -1991,10 +1996,14 @@ two_tumor_pfs_res |>
   stat_summary_hex(binwidth = c(1, 1)) +
   geom_abline(slope = 1, linetype = "dotted") +
   stat_summary_hex(aes(label = sprintf("%.2f", after_stat(value))), geom = "text", size = 3, binwidth = c(1, 1), color = "white") +
-  scale_fill_gradient2("", midpoint = 1, low = AZ_darkpurple, mid = AZ_turquoise, high = AZ_gold) + # latex2exp::TeX(r"{\exp(\beta\cdot x)}")) +
-  # colorspace::scale_fill_continuous_divergingx("Roma", name = "", mid = 1) + # latex2exp::TeX(r"{\exp(\beta\cdot x)}")) +
+  scale_fill_gradient2("", midpoint = 1, low = AZ_darkpurple, mid = AZ_turquoise, high = AZ_gold) + 
   labs(x = "Pre-screening Tumor Size [cm]", y = "Post-treatment Tumor Size [cm]") +
-  facet_wrap(vars(p), labeller = labeller(p = \(per) str_glue("Posterior {per}th percentile"))) +
+  facet_wrap(
+    vars(p), 
+    labeller = labeller(
+      p = \(per) if_else(per == 0.5, "Posterior median", str_glue("Posterior {per}th percentile"))
+    )
+  ) +
   coord_fixed(xlim = c(0, 11), ylim = c(0, 11)) +
   NULL
 ```
