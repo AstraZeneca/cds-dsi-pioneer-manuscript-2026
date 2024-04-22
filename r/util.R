@@ -247,7 +247,7 @@ get_early_tumor_pairs <- function(stan_data, .model = pfs_model) {
   exec(bind_cols, !!!prep_res) |> 
     set_colnames(c("x0", "x1", "t0", "t1")) |> 
     as_tibble() |> 
-    mutate(trial = with(stan_data, rep(patient_trial, n_patient_tumors)))
+    mutate(pfs = with(stan_data, rep(pfs, n_patient_tumors)), trial = with(stan_data, rep(patient_trial, n_patient_tumors)))
 }
 
 prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ..., pfs_var = pfs) {
