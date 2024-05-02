@@ -27,6 +27,7 @@ tmp_dir <- file.path(Sys.getenv("TMPDIR"), "adc-early-predict") |>
 cat("Temporary folder:", tmp_dir, "\n")
 
 source(here("r", "util.R"))
+source(here("r", "priors.R"))
 
 future::plan(future::multisession(workers = cl_args$cores %/% 4))
 
@@ -34,7 +35,7 @@ future::plan(future::multisession(workers = cl_args$cores %/% 4))
 tumor_test_data <- rjson::fromJSON(file = file.path(tmp_dir, "data", "prior_tumor.json"))
 fake_tumor_data <- read_rds(file.path(tmp_dir, "data", "fake_tumor.rds"))
 
-pfs_model <- cmdstan_model(here("r", "pfs.stan"))
+pfs_model <- cmdstan_model(here("stan", "pfs.stan"))
 
 # A prior only run to generate datasets
 pfs_test_data <- tumor_test_data |> 
@@ -45,18 +46,25 @@ pfs_test_data <- tumor_test_data |>
     ignore_interval_censoring = FALSE,
     gen_pfs = TRUE,
     gen_interval_censored = TRUE,
+    add_trial_level = FALSE, 
+    add_tumor_location_level = FALSE, 
+    grid_tumors = array(NA, dim = 0),
+    n_grid_tumors = 0,
     tumor_size = fake_tumor_data$tumor_size,
     pfs = rep(max_pfs, tumor_test_data$n_patients),
     right_censored = rep(FALSE, tumor_test_data$n_patients),
     death_week = rep(0, tumor_test_data$n_patients),
     
-    log_lambda_gp_intercept_mean = -3,
-    log_lambda_gp_intercept_sd = 0.5,
-    log_lambda_gp_alpha_sd = 0.5,
-    log_lambda_gp_rho_alpha = 7.3,
-    log_lambda_gp_rho_beta = 7.5, 
-    tumor_stim_intercept_sd = 0.5,
-    tumor_stim_coef_sd = c(0.25, 0.25, 0.125),
+    !!!tumor_priors,
+    !!!pfs_priors,
+    
+    # log_lambda_gp_intercept_mean = -3,
+    # log_lambda_gp_intercept_sd = 0.5,
+    # log_lambda_gp_alpha_sd = 0.5,
+    # log_lambda_gp_rho_alpha = 7.3,
+    # log_lambda_gp_rho_beta = 7.5, 
+    # tumor_stim_intercept_sd = 0.5,
+    # tumor_stim_coef_sd = c(0.25, 0.25, 0.125),
   ) |> 
   drop_missing_measures(cl_args$censor_intervals, keep_only = cl_args$keep_only)  
 
@@ -66,9 +74,9 @@ sbc_data <- run_sbc_sims(pfs_model, pfs_test_data, cl_args$num_sim, ignore_inter
    
     # Rank statistics
     # For each simulation calculate the number of posterior parameter samples that are less than the true parameter value. 
-    r_tumor_stim_intercept = sum(est$tumor_stim_intercept < true$tumor_stim_intercept),
-    r_tumor_stim_coef_1 = sum(est$tumor_stim_coef_1 < true$tumor_stim_coef_1),
-    r_tumor_stim_coef_2 = sum(est$tumor_stim_coef_2 < true$tumor_stim_coef_2),
+    r_tumor_stim_intercept = sum(est$tumor_stim_pop_intercept < true$tumor_stim_pop_intercept),
+    r_tumor_stim_coef_1 = sum(est$tumor_stim_pop_coef_1 < true$tumor_stim_pop_coef_1),
+    r_tumor_stim_coef_2 = sum(est$tumor_stim_pop_coef_2 < true$tumor_stim_pop_coef_2),
     r_log_lambda_gp_intercept = sum(est$log_lambda_gp_intercept < true$log_lambda_gp_intercept),
     r_log_lambda_gp_alpha = sum(est$log_lambda_gp_alpha < true$log_lambda_gp_alpha),
     r_log_lambda_gp_rho = sum(est$log_lambda_gp_rho < true$log_lambda_gp_rho),
