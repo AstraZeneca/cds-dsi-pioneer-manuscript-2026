@@ -1,12 +1,26 @@
-// Simple regression model for the influence of tumors on surival. 
+/** Simple regression model for the influence of tumors on surival. 
+ *
+ * @param intercept Vector of tumor-level log hazard ratio model.
+ * @param coef Matrix of tumor-level (rows) log hazard ratio model coefficients for the effect of tumor sizes.
+ * @param covar Design matrix
+ * @return Tumor-level log hazard ratios.
+ */
 vector linear_tumor_stimulus(vector intercept, matrix coef, matrix covar) {
   return intercept + rows_dot_product(covar, coef); 
 } 
 
-// Combine influence of all tumors on survival and calculate probability of survival using a cloglog link function. 
+/** Combine influence of all tumors on survival and calculate probability of survival using a cloglog link function. 
+ * 
+ * @param n_patient_tumors Array with the number of tumors per patient.
+ * @param log_lambda Log of baseline hazard.
+ * @param itumor_ntercept Vector of tumor-level log hazard ratio model.
+ * @param tumor_coef Matrix of tumor-level (rows) log hazard ratio model coefficients for the effect of tumor sizes.
+ * @param tumor_covar Design matrix
+ * @return <Number of patients> x <number of intervals> matrix of probabilities of disease progress. 
+ */
 matrix calculate_progress_linear_prob(array[] int n_patient_tumors, vector log_lambda, vector tumor_intercept, matrix tumor_coef, matrix tumor_covar) {
     vector[rows(tumor_intercept)] total_time_invar_tumor_stim = 
-      sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar)) - tumor_intercept * mean(n_patient_tumors);
+      sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar)); # - tumor_intercept * mean(n_patient_tumors);
     
     return inv_cloglog(
       rep_matrix(log_lambda, rows(tumor_intercept)) + // Log baseline hazard 
@@ -25,7 +39,16 @@ matrix calculate_linear_hazard(array[] int n_patient_tumors, vector log_lambda, 
     );
 }
 
-// Given PFS and tumor measures data, determine interval and right censoring for each patient. 
+/**
+ * Given PFS and tumor measures data, determine interval and right censoring for each patient. 
+ * 
+ * @param pfs Patient-level array of the number of weeks survived without disease progression.
+ * @param death_week Patient-level array of what week death was observed.
+ * @param n_patient_tumors Array with the number of tumors per patient.
+ * @param n_measures The number of assessments per tumor.
+ * @param t_measure The week each assessment was done.
+ * @return Per patient, (Number of interval censoring intervals, indicator of right censoring).
+ */
 tuple(array[] int, array[] int) identify_censoring(
   array[] int pfs, array[] int death_week, array[] int n_patient_tumors, array[] int n_measures, array[] int t_measure) 
 { 
