@@ -9,6 +9,7 @@ data {
   int<lower = 0, upper = 1> gen_interval_censored; // Should the generated PFS be interval censored?
   int<lower = 0, upper = 1> ignore_interval_censoring; // Treat observed PFS as true pfs and ignore t_measure.
   int<lower = 0, upper = 1> use_tumor_model;
+  int<lower = 0, upper = 1> fit_post_2nd_meaure_only; // Should we exclude all survival intervals before second tumor assessment (post-treatment) from loglik calculation.
   
   // Hierarchical settings 
   int<lower = 0, upper = 1> add_trial_level;
@@ -126,7 +127,11 @@ transformed data {
       if (tumor_hazard_type == 1 || tumor_hazard_type == 2 || tumor_hazard_type == 5) {  
         tumor_covar[, 1:2] = prep_res.1;
         
-        if (tumor_hazard_type == 2 || tumor_hazard_type == 5) {
+        if (tumor_hazard_type == 2) {
+          tumor_covar[, 3] = tumor_covar[, 2] .* tumor_covar[, 1];
+        }
+        
+        if (tumor_hazard_type == 3) {
           tumor_covar[, 3] = tumor_covar[, 2] ./ tumor_covar[, 1];
         }
         
@@ -350,7 +355,12 @@ model {
   }
   
   if (fit_data) {
-    pfs ~ pch(right_uncensored, interval_censored, ignore_interval_censoring, disease_progress_prob, gen_pfs ? max_all_t : 0, patient_max_2nd_tumor_t);
+    pfs ~ pch(
+      right_uncensored, interval_censored, ignore_interval_censoring, 
+      disease_progress_prob, 
+      gen_pfs ? max_all_t : 0, 
+      fit_post_2nd_meaure_only ? patient_max_2nd_tumor_t : rep_array(1, n_patients) 
+    );
   }
 }
 
@@ -375,9 +385,7 @@ generated quantities {
       
       if (tumor_hazard_type > 0) {
         trial_one_tumor_pf_cond_prob[s] = 
-          1 - calculate_progress_linear_prob(
-            n_patient_tumors, log_trial_lambda[s], tumor_stim_trial_intercept[s:s], tumor_stim_trial_coef[s:s, :], [ rep_row_vector(1, n_covar_col) ]
-          )[, 1]; 
+          1 - calculate_progress_linear_prob(log_trial_lambda[s], tumor_stim_trial_intercept[s], tumor_stim_trial_coef[s], rep_row_vector(1, n_covar_col));
       } else {
         trial_one_tumor_pf_cond_prob[s] = trial_base_pf_cond_prob[s];
       } 
@@ -386,7 +394,7 @@ generated quantities {
  
   if (tumor_hazard_type > 0) {
     one_tumor_pf_cond_prob = 
-      1 - calculate_progress_linear_prob(n_patient_tumors, log_lambda, [ tumor_stim_pop_intercept ]', [ tumor_stim_pop_coef ], [ rep_row_vector(1, n_covar_col) ])[, 1]; 
+      1 - calculate_progress_linear_prob(log_lambda, tumor_stim_pop_intercept, tumor_stim_pop_coef, rep_row_vector(1, n_covar_col)); 
   } else {
     one_tumor_pf_cond_prob = base_pf_cond_prob;
   } 
