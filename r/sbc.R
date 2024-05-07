@@ -5,7 +5,7 @@ Usage: sbc.R <cores> <num-sim> <output-name> [--append] [--censor-intervals=<int
 --keep-only  Keep only the intervals provided for censoring
 " |> 
   docopt::docopt(
-    args = if (interactive()) "12 3 test --censor-intervals=1,2,6,10,14,18,22,26,30,34" else commandArgs(TRUE),
+    args = if (interactive()) "12 3 test  --censor-intervals=0,6,12,18,24,30,36 --keep-only" else commandArgs(TRUE),
     # args = if (interactive()) "12 12 test" else commandArgs(TRUE),
   ) -> cl_args
 
@@ -48,6 +48,8 @@ pfs_test_data <- tumor_test_data |>
     gen_interval_censored = TRUE,
     add_trial_level = FALSE, 
     add_tumor_location_level = FALSE, 
+    fit_post_2nd_meaure_only = FALSE,
+    
     grid_tumors = array(NA, dim = 0),
     n_grid_tumors = 0,
     tumor_size = fake_tumor_data$tumor_size,
@@ -57,14 +59,6 @@ pfs_test_data <- tumor_test_data |>
     
     !!!tumor_priors,
     !!!pfs_priors,
-    
-    # log_lambda_gp_intercept_mean = -3,
-    # log_lambda_gp_intercept_sd = 0.5,
-    # log_lambda_gp_alpha_sd = 0.5,
-    # log_lambda_gp_rho_alpha = 7.3,
-    # log_lambda_gp_rho_beta = 7.5, 
-    # tumor_stim_intercept_sd = 0.5,
-    # tumor_stim_coef_sd = c(0.25, 0.25, 0.125),
   ) |> 
   drop_missing_measures(cl_args$censor_intervals, keep_only = cl_args$keep_only)  
 

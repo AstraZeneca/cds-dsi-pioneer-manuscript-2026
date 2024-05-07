@@ -11,33 +11,28 @@ vector linear_tumor_stimulus(vector intercept, matrix coef, matrix covar) {
 
 /** Combine influence of all tumors on survival and calculate probability of survival using a cloglog link function. 
  * 
- * @param n_patient_tumors Array with the number of tumors per patient.
  * @param log_lambda Log of baseline hazard.
- * @param itumor_ntercept Vector of tumor-level log hazard ratio model.
- * @param tumor_coef Matrix of tumor-level (rows) log hazard ratio model coefficients for the effect of tumor sizes.
- * @param tumor_covar Design matrix
- * @return <Number of patients> x <number of intervals> matrix of probabilities of disease progress. 
+ * @param itumor_ntercept log hazard ratio model intercept.
+ * @param tumor_coef Log hazard ratio model coefficients for the effect of tumor sizes.
+ * @param tumor_covar Tumor size covariates. 
+ * @return <number of intervals> vector of probabilities of disease progress. 
  */
-matrix calculate_progress_linear_prob(array[] int n_patient_tumors, vector log_lambda, vector tumor_intercept, matrix tumor_coef, matrix tumor_covar) {
-    vector[rows(tumor_intercept)] total_time_invar_tumor_stim = 
-      sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar)); # - tumor_intercept * mean(n_patient_tumors);
+vector calculate_progress_linear_prob(vector log_lambda, real tumor_intercept, row_vector tumor_coef, row_vector tumor_covar) {
+    real total_time_invar_tumor_stim = linear_tumor_stimulus([ tumor_intercept ]', [ tumor_coef ], [ tumor_covar ])[1];
     
-    return inv_cloglog(
-      rep_matrix(log_lambda, rows(tumor_intercept)) + // Log baseline hazard 
-      rep_matrix(total_time_invar_tumor_stim', rows(log_lambda)) // log hazard ratio
-    );
+    return inv_cloglog(log_lambda + rep_vector(total_time_invar_tumor_stim, rows(log_lambda))); 
 }
 
-// Hazard function given a base hazard and time-invariant covariates.  
-matrix calculate_linear_hazard(array[] int n_patient_tumors, vector log_lambda, vector tumor_intercept, matrix tumor_coef, matrix tumor_covar) {
-    vector[rows(tumor_intercept)] total_time_invar_tumor_stim = 
-      sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar)) - tumor_intercept * mean(n_patient_tumors);
-    
-    return exp(
-      rep_matrix(log_lambda, rows(tumor_intercept)) + // Log baseline hazard 
-      rep_matrix(total_time_invar_tumor_stim', rows(log_lambda)) // log hazard ratio
-    );
-}
+// // Hazard function given a base hazard and time-invariant covariates.  
+// matrix calculate_linear_hazard(array[] int n_patient_tumors, vector log_lambda, vector tumor_intercept, matrix tumor_coef, matrix tumor_covar) {
+//     vector[rows(tumor_intercept)] total_time_invar_tumor_stim = 
+//       sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar)) - tumor_intercept * mean(n_patient_tumors);
+//     
+//     return exp(
+//       rep_matrix(log_lambda, rows(tumor_intercept)) + // Log baseline hazard 
+//       rep_matrix(total_time_invar_tumor_stim', rows(log_lambda)) // log hazard ratio
+//     );
+// }
 
 /**
  * Given PFS and tumor measures data, determine interval and right censoring for each patient. 
@@ -90,7 +85,12 @@ tuple(array[] int, array[] int) identify_censoring(
     return (interval_censored, right_censored);
 }
 
-// Random PFS generator given conditional progression probability and obseration intervals. 
+/** Random PFS generator given conditional progression probability and obseration intervals. 
+ *
+ * @param prob Vector of conditional probability of disease progression.
+ * @param t Array of weeks when tumor assessments were actually conducted.
+ * @return (is interval censored, is right censored, observed PFS, actual PFS)
+ */
 tuple(int, int, int, int) pfs_rng(vector prob, array[] int t) {
   int n_prob = rows(prob);
   int n_t = size(t);
@@ -211,8 +211,18 @@ tuple(matrix, array[,] int) prepare_early_tumors_design_matrix(
   return (tumor_covar, tumor_covar_t);
 }
 
-// Calculate the piecewise-constant proportional hazard log-likelihood. This returns the patients vector of log-likelihoods as opposed to the following
-// pch_lpmf() function. 
+/** Calculate the piecewise-constant proportional hazard log-likelihood. This returns the patients vector of log-likelihoods as opposed to the following
+ * pch_lpmf() function. 
+ *
+ * @param pfs Observed number of weeks without disease progression.
+ * @param right_censored Is right censored?
+ * @param interval_censored Number of weeks over which we have interval censoring.
+ * @param ignore_interval_censoring Treat `pfs` as the actual PFS.
+ * @param disease_progress_prob Conditional probability of disease progress at every interval.
+ * @param max_all_t The latest week assessment is done in all the data.
+ * @param patient_2nd_t The week in which the first post-treatment assessment was done.
+ * @return Vector of patient-level log-likelihood.
+ */
 vector calc_pch_loglik(
   array[] int pfs, 
   array[] int right_uncensored, array[] int interval_censored, int ignore_interval_censoring, 
@@ -228,30 +238,38 @@ vector calc_pch_loglik(
     int observed_pfs_interval_end = pfs_interval_pos + pfs[i] - 1; 
     
     // Ignoring intervals that were guaranteed for the patient to have survived because of the inclusion criteria in this meta-analysis (not the the original trials).
-    pfs_interval_pos += patient_2nd_t[i] - 1; 
+    pfs_interval_pos += patient_2nd_t[i] - 1;
     
-    // These are the time intervals we are sure that the patient was progression free 
-    lp[i] += bernoulli_lpmf(0 | disease_progress_prob[pfs_interval_pos:observed_pfs_interval_end]);
+    int unobs_pfs_interval_pos = max(observed_pfs_interval_end + 1, pfs_interval_pos);
+   
+    if (pfs_interval_pos <= observed_pfs_interval_end) { // By incrementing by patient_2nd_t we can end up outside the observed range.
+      // These are the time intervals we are sure that the patient was progression free 
+      lp[i] += bernoulli_lpmf(0 | disease_progress_prob[pfs_interval_pos:observed_pfs_interval_end]);
+    }
     
     int pfs_interval_end = observed_pfs_interval_end + right_uncensored[i] + interval_censored[i]; 
     int curr_interval_censored = ignore_interval_censoring ? 0 : interval_censored[i];
-    vector[curr_interval_censored + right_uncensored[i]] interval_lp = rep_vector(0, curr_interval_censored + right_uncensored[i]);
+    // vector[curr_interval_censored + right_uncensored[i]] interval_lp = rep_vector(0, curr_interval_censored + right_uncensored[i]);
+    int unobs_size = pfs_interval_end - unobs_pfs_interval_pos + 1;
+    vector[unobs_size] interval_lp = rep_vector(0, unobs_size);
  
     // The point of this loop is marginalize over all the potential intervals of progression, due to interval censoring. 
-    for (t in 1:(curr_interval_censored + right_uncensored[i])) {
+    // for (t in 1:(curr_interval_censored + right_uncensored[i])) {
+    for (t in 1:unobs_size) {
       if (t > 1) { // We need to add more possible intervals that the patient remained progression free.
-        interval_lp[t] = bernoulli_lpmf(0 | disease_progress_prob[(observed_pfs_interval_end + 1):(observed_pfs_interval_end + t - 1)]);
+        // interval_lp[t] = bernoulli_lpmf(0 | disease_progress_prob[(observed_pfs_interval_end + 1):(observed_pfs_interval_end + t - 1)]);
+        interval_lp[t] = bernoulli_lpmf(0 | disease_progress_prob[unobs_pfs_interval_pos:(unobs_pfs_interval_pos - 2 + t)]);
       }
       
       // If not right censored add pdf of disease progression. 
       if (right_uncensored[i]) {
-        interval_lp[t] += bernoulli_lpmf(1 | disease_progress_prob[observed_pfs_interval_end + t]);
+        interval_lp[t] += bernoulli_lpmf(1 | disease_progress_prob[unobs_pfs_interval_pos + t - 1]);
       }
     }
    
     if (curr_interval_censored > 0) {
       // There are more than one candidate true PFS: sum of the probabilities and then log.
-      lp[i] += log_sum_exp(interval_lp - log(curr_interval_censored)); 
+      lp[i] += log_sum_exp(interval_lp); // - log(curr_interval_censored + 1); 
     } else if (right_uncensored[i]) {
       lp[i] += interval_lp[1]; // PFS not observed because of right censoring.
     }

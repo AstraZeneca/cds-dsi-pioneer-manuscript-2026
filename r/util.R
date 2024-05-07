@@ -1,23 +1,23 @@
-gen_patient_interval_properties <- function(log_lambda, tumor_intercept, tumor_coef, settings) {
-  standardized <- pfs_model$functions$standardize_nonzero_tumor_sizes(settings$tumor_size)[[3]]
-  
-  t_measure_list <- with(settings, list_measures(t_measure, n_measures, n_patient_tumors))
-  n_screening_t <- with(settings, pfs_model$functions$calc_n_screening_t(n_patient_tumors, n_measures, t_measure)) 
-  
-  with(settings, pfs_model$functions$prepare_early_tumors_design_matrix(standardized, n_patient_tumors, n_measures, t_measure, n_screening_t)[[1]]) |>  
-    as_tibble() |> 
-    set_names(c("tumor_size_1", "tumor_size_2")) |> 
-    mutate(patient_id = rep(1:settings$n_patients, settings$n_patient_tumors)) |> 
-    group_by(patient_id) |>
-    summarize(tumor_covar = list(cbind(tumor_size_1, tumor_size_2))) |>
-    rowwise() |> 
-    reframe(
-      patient_id, 
-      progress_prob = pfs_model$functions$calculate_progress_linear_prob(settings$n_patient_tumors, log_lambda, tumor_intercept, tumor_coef, tumor_covar),
-      hazard = pfs_model$functions$calculate_linear_hazard(settings$n_patient_tumors, log_lambda, tumor_intercept, tumor_coef, tumor_covar),
-      survival = cumprod(progress_prob)
-    )  
-}
+# gen_patient_interval_properties <- function(log_lambda, tumor_intercept, tumor_coef, settings) {
+#   standardized <- pfs_model$functions$standardize_nonzero_tumor_sizes(settings$tumor_size)[[3]]
+#   
+#   t_measure_list <- with(settings, list_measures(t_measure, n_measures, n_patient_tumors))
+#   n_screening_t <- with(settings, pfs_model$functions$calc_n_screening_t(n_patient_tumors, n_measures, t_measure)) 
+#   
+#   with(settings, pfs_model$functions$prepare_early_tumors_design_matrix(standardized, n_patient_tumors, n_measures, t_measure, n_screening_t)[[1]]) |>  
+#     as_tibble() |> 
+#     set_names(c("tumor_size_1", "tumor_size_2")) |> 
+#     mutate(patient_id = rep(1:settings$n_patients, settings$n_patient_tumors)) |> 
+#     group_by(patient_id) |>
+#     summarize(tumor_covar = list(cbind(tumor_size_1, tumor_size_2))) |>
+#     rowwise() |> 
+#     reframe(
+#       patient_id, 
+#       progress_prob = pfs_model$functions$calculate_progress_linear_prob(settings$n_patient_tumors, log_lambda, tumor_intercept, tumor_coef, tumor_covar),
+#       hazard = pfs_model$functions$calculate_linear_hazard(settings$n_patient_tumors, log_lambda, tumor_intercept, tumor_coef, tumor_covar),
+#       survival = cumprod(progress_prob)
+#     )  
+# }
 
 read_entimice_data <- function(study, idap, dataset, data_type = c("sdtm", "adam"), team_dir = "/wscratch/ewfteams/dpo0083") {
   read_rds(file.path(team_dir, study, idap, arg_match(data_type), "prod", "data", str_c(dataset, ".rds"))) |> 
@@ -266,6 +266,7 @@ prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ...
     ignore_interval_censoring = FALSE,
     add_trial_level = FALSE,
     add_tumor_location_level = FALSE,
+    fit_post_2nd_meaure_only = TRUE,
     
     fit_tumor_data = FALSE,
     gen_tumor_sizes = FALSE,

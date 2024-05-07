@@ -294,7 +294,7 @@ pfs_analysis_data <- tumor_analysis_data |>
     patient_t_width = patient_max_t - patient_min_t + 1,
     n_tumors = map_int(patient_tumors, nrow),
     
-    # The model expects "pfs" to record the number of weeks that were progress free, so I need to find the last assessment week before
+    # The model expects "pfs" to record the number of weeks that were progress free, so I need to find the last *assessment* week before
     # disease progress was detected.
     pfs = pmap_int(
       lst(progress_week, death_week, right_censored, patient_tumors), 
@@ -1094,6 +1094,7 @@ pfs_test_data <- test_data |>
     ignore_interval_censoring = FALSE,
     add_trial_level = TRUE,
     add_tumor_location_level = FALSE,
+    fit_post_2nd_meaure_only = FALSE, 
     
     pfs = rep(max_pfs, n_patients),
     death_week = rep(0, n_patients),
@@ -1521,8 +1522,8 @@ sbc_bw <- 10
 ic_labels <- c(ic = "IC Adjusted", ic_ignore = "IC Ignored", no_ic = "No IC")
 
 sbc_data <- bind_rows( 
-  no_ic = read_rds(file.path(tmp_dir, "data", "sbc3.rds")),
-  ic = read_rds(file.path(tmp_dir, "data", "sbc3_ic.rds")),
+  no_ic = read_rds(file.path(tmp_dir, "data", "sbc4.rds")),
+  ic = read_rds(file.path(tmp_dir, "data", "sbc5_ic.rds")),
   ic_ignore = read_rds(file.path(tmp_dir, "data", "sbc3_ic_ignore.rds")),
   .id = "sim_type") |> 
   select(sim_type, starts_with("r_"))
@@ -1624,7 +1625,6 @@ ic_ignored_no_tumor_pfs_future <- future::future(
 
 prior_no_tumor_pfs_res <- future::value(prior_no_tumor_pfs_future)
 no_tumor_pfs_res <- future::value(no_tumor_pfs_future)
-
 ```
 
 ```{r}
@@ -1815,7 +1815,7 @@ where $\bar{N}$ is the average number of tumors per patient and, for every tumor
 
 two_tumor_treated_pfs_stan_data <- treated_pfs_stan_data |> 
   list_assign(
-    tumor_hazard_type = 2, 
+    tumor_hazard_type = 1, 
     add_trial_level = TRUE, 
     add_tumor_location_level = FALSE,
   )
