@@ -23,17 +23,6 @@ vector calculate_progress_linear_prob(vector log_lambda, real tumor_intercept, r
     return inv_cloglog(log_lambda + rep_vector(total_time_invar_tumor_stim, rows(log_lambda))); 
 }
 
-// // Hazard function given a base hazard and time-invariant covariates.  
-// matrix calculate_linear_hazard(array[] int n_patient_tumors, vector log_lambda, vector tumor_intercept, matrix tumor_coef, matrix tumor_covar) {
-//     vector[rows(tumor_intercept)] total_time_invar_tumor_stim = 
-//       sum(linear_tumor_stimulus(tumor_intercept, tumor_coef, tumor_covar)) - tumor_intercept * mean(n_patient_tumors);
-//     
-//     return exp(
-//       rep_matrix(log_lambda, rows(tumor_intercept)) + // Log baseline hazard 
-//       rep_matrix(total_time_invar_tumor_stim', rows(log_lambda)) // log hazard ratio
-//     );
-// }
-
 /**
  * Given PFS and tumor measures data, determine interval and right censoring for each patient. 
  * 
@@ -121,7 +110,13 @@ tuple(int, int, int, int) pfs_rng(vector prob, array[] int t) {
   return (interval_censored, right_censored, observed_pfs, actual_pfs);
 }
 
-// Survival aggregated over all patients, S(t) = Pr[T > t], t \in {0,..., N} 
+/** Survival aggregated over all patients, S(t) = Pr[T > t], t \in {0,..., N} 
+ *
+ * @param pfs The last observed week that was progression-free
+ * @param right_censored Right censoring per patient
+ * @param max_t The last interval to report Kaplan-Meier results
+ * @return (Proportion surviving, Number at risk, Number right censored, Number for whom disease progressed) for each week
+ */
 tuple(vector, array[] int, array[] int, array[] int) estimate_kaplan_meier(array[] int pfs, array[] int right_censored, int max_t) {
   int n_pfs = size(pfs); // How many patients
   array[n_pfs] int sorted_pfs_idx = sort_indices_asc(pfs);
@@ -154,7 +149,12 @@ tuple(vector, array[] int, array[] int, array[] int) estimate_kaplan_meier(array
   return (s, at_risk, n_right_censored, n_exited); 
 }  
 
-// Calculate marginal probability of disease progression at every time interval, given conditional probabilities.
+/** Calculate marginal probability of disease progression at every time interval, given conditional probabilities.
+ *
+ * @param cond_pf_prob Conditional probability of disease progression
+ * @param max_all_t The last week observed in all the data
+ * @return (Marginal probabilities, Disease progression empirical CDF) for each week
+ */
 tuple(vector, vector) calculate_marginal_dp_prob(vector cond_pf_prob, int max_all_t) {
   vector[max_all_t] log_cond_pf_prob = log(cond_pf_prob[:max_all_t]);
   vector[max_all_t] log_1m_cond_pf_prob = log(1 - cond_pf_prob[:max_all_t]);
@@ -174,9 +174,18 @@ tuple(vector, vector) calculate_marginal_dp_prob(vector cond_pf_prob, int max_al
   return(exp(marginal_dp_log_prob), fmax(0, 1 - dp_cdf));
 }  
 
-// Create (n_patients * n_tumors) x max_measures matrix of each tumor's covariates from t = 1, 2, .... 
-// What this function actually returns is the last pre-screening measure and the (max_measures - 1) succeeding measures. The second output in the tuple
-// provides the intervals (weeks) of these max_measures columns.
+/** Create (n_patients * n_tumors) x max_measures matrix of each tumor's covariates from assessment **order** (not t) = 1, 2, ...., max_measures 
+ * What this function actually returns is the last pre-screening measure and the (max_measures - 1) succeeding measures. The second output in the tuple
+ * provides the intervals (weeks) of these max_measures columns.
+ * 
+ * @param tumor_size Tumor sizes
+ * @param n_patient_tumors Array with the number of tumors per patient.
+ * @param n_measures The number of assessments per tumor.
+ * @param t_measure The week each assessment was done.
+ * @param n_screening_t Number of observed pre-screening assessments per tumor
+ * @param max_measures Number of tumor sizes to include in output, irrespective of when they are actually observed.
+ * @return (Design matrix, Actual t used for the columns)
+ */
 tuple(matrix, array[,] int) prepare_early_tumors_design_matrix(
   vector tumor_size, array[] int n_patient_tumors, array[] int n_measures, array[] int t_measure, array[] int n_screening_t, int max_measures
 ) {
@@ -281,7 +290,17 @@ vector calc_pch_loglik(
   return lp;
 }
  
-// This is used to provide and easy to use Stan distribution. It just sums the log-probs. 
+/** This is used to provide and easy to use Stan distribution. It just sums the log-probs. 
+ *
+ * @param y Observed number of weeks without disease progression.
+ * @param right_censored Is right censored?
+ * @param interval_censored Number of weeks over which we have interval censoring.
+ * @param ignore_interval_censoring Treat `pfs` as the actual PFS.
+ * @param disease_progress_prob Conditional probability of disease progress at every interval.
+ * @param max_all_t The latest week assessment is done in all the data.
+ * @param patient_2nd_t The week in which the first post-treatment assessment was done.
+ * @return Vector of patient-level log-likelihood.
+ */
 real pch_lpmf(
   array[] int y, 
   array[] int right_uncensored, array[] int interval_censored, int ignore_interval_censoring, vector disease_progress_prob, int max_all_t, array[] int patient_2nd_t
