@@ -29,10 +29,6 @@ matrix calc_gp_cholesky_vcov(array[] real x, real alpha, real rho, real delta) {
   return cholesky_decompose(calc_gp_vcov(x, alpha, rho, delta));
 }
 
-// matrix calc_gp_cholesky_vcov(array[] real x, real alpha, real rho) {
-//   return calc_gp_cholesky_vcov(x, alpha, rho, 1e-9); 
-// }
-
 // Calculate one dimensional GP predictor
 vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, real delta, vector eta) {
   int n_x = size(x);
