@@ -25,6 +25,7 @@ library(here)
 library(gtsummary)
 library(targets)
 library(colorspace)
+library(ggalluvial)
 
 # conflicts_prefer(
 #   dplyr::filter
@@ -166,6 +167,10 @@ adam_adtte <- data_details |>
   rowwise() |> 
   mutate(data = list(read_entimice_data(study, idap, "deid_adtte", "adam")) |> 
            map(\(d) mutate(d, cnsr = cnsr == 1)))
+
+adam_adrs <- data_details |> 
+  rowwise() |> 
+  mutate(data = list(read_entimice_data(study, idap, "deid_adrs", "adam")))
 ```
 
 Using SDTM and ADaM data from the trials, we prepare the analysis data.
@@ -199,8 +204,9 @@ tumor_analysis_data <- adam_adtr |>
   arrange(studyid, usubjid, trlnkid, trdy) |> 
   # For each patient-tumor row, put all the tumor assessment data in a nested column
   nest(tumor_history = c(adt, trdy, week, visit, visitnum, tsplitfl, tmergefl, mmdiam, treated_week)) |> 
-  mutate(# For some weeks, there are multiple (unscheduled) visits that might happen. I'm just going to use the average for tumor sizes within those
-         # weeks.
+  mutate(
+    # For some weeks, there are multiple (unscheduled) visits that might happen. I'm just going to use the average for tumor sizes within those
+    # weeks.
     tumor_history = map(
       tumor_history, 
       \(h) nest(h, visits = c(adt, trdy, visit, visitnum, mmdiam)) |> 
@@ -275,7 +281,15 @@ tumor_analysis_data <- adam_adtr |>
   ) |> 
   # Get prior therapy medications per patient
   nest_join(unnest(adam_adcm, data) |> select(usubjid, cmcat, response, cmdecod), by = c("usubjid"), name = "med_data") |> 
-  mutate(med_data = map(med_data, \(cm) mutate(cm, response = str_extract(response, "CR|NA|PR|PD|SD|UNK"))))
+  mutate(med_data = map(med_data, \(cm) mutate(cm, response = str_extract(response, "CR|NA|PR|PD|SD|UNK")))) |> 
+  # Get visit level disease response
+  nest_join(
+    unnest(adam_adrs, data) |> 
+      filter(rsacptfl, fct_match(parqual, "CENTRAL"), fct_match(param, "Overall Response")) |> 
+      transmute(studyid, usubjid, visit, visitnum, week = ady %/% 7, overall_response = avalc),
+    by = c("studyid", "usubjid"),
+    name = "disease_response"
+  )
  
 # For PFS focusing on the subset of patients with the needed assessments and calculating PFS. 
 pfs_analysis_data <- tumor_analysis_data |> 
@@ -761,6 +775,29 @@ interval_censoring_data |>
   facet_wrap(vars(trial), ncol = 2, scales = "free_y") +
   NULL
 ```
+
+```{r}
+#| label: fig-disease-reponse-alluvial
+#| fig-cap: Alluvial plot for changes in disease response between assessment visits.
+
+tumor_analysis_data |> 
+  unnest(disease_response) |> 
+  transmute(trial, usubjid, week, overall_response = factor(overall_response, levels = c("CR", "PR", "SD", "PD", "NED", "NE", "NON-CR/NON-PD"))) |> 
+  mutate(overall_response = fct_collapse(overall_response, Other = c("NE", "NED", "NON-CR/NON-PD"))) |> 
+  arrange(usubjid, week) |> 
+  group_by(usubjid) |> 
+  mutate(prev_or = lag(overall_response)) |> 
+  ungroup() |> 
+  count(prev_or, overall_response, name = "freq") |> 
+  filter(!are_na(prev_or)) |>
+  ggplot(aes(axis1 = prev_or, axis2 = overall_response, y = freq)) +
+  geom_alluvium(aes(fill = prev_or), width = 1/10, show.legend = FALSE) +
+  geom_stratum(width = 1/10, color = "white", fill = "black", alpha = 0.5) + 
+  geom_label(aes(label = after_stat(stratum)), stat = "stratum") + 
+  scale_x_discrete(expand = c(0.05, 0.05)) +
+  scale_fill_discrete(type = AZ_palette)
+```
+
 
 ```{r}
 #| label: sim-settings
