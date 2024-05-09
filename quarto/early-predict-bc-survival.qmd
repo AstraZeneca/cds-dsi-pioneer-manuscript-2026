@@ -76,25 +76,7 @@ We will use data from the Breast01, Breast02, Breast03, and Breast04 trials, foc
 #| label: priors
 #| cache: true
 
-tumor_priors <- lst(
-  pop_tumor_gp_rho_alpha = 7.3,
-  pop_tumor_gp_rho_beta = 7.5, 
-)
-
-pfs_priors <- lst(
-  log_lambda_gp_intercept_mean = -5,
-  log_lambda_gp_intercept_sd = 0.5,
-  log_lambda_gp_alpha_sd = 0.5,
-  log_lambda_gp_rho_alpha = 7.3,
-  log_lambda_gp_rho_beta = 7.5, 
-  log_lambda_gp_trial_alpha_sd = 0.25,
-  log_lambda_gp_trial_intercept_sd_sd = 0.25,
-  
-  tumor_stim_pop_intercept_sd = 0.35,
-  tumor_stim_pop_coef_sd = c(0.15, 0.15, 0.15, 0.05, 0.05),
-  tumor_stim_trial_coef_sd_sd = c(0.3, 0.125, 0.125, 0.125, 0.125, 0.125),
-  tumor_stim_location_coef_sd_sd = tumor_stim_trial_coef_sd_sd 
-)
+source(here("r", "priors.R"))
 ```
 
 ```{r}
@@ -194,6 +176,7 @@ Using SDTM and ADaM data from the trials, we prepare the analysis data.
 #| dependson: load-trials-data
 #| code-fold: false 
 
+# This first cleaned up data set used for tumor and PFS analysis.
 tumor_analysis_data <- adam_adtr |> 
   unnest(data) |> 
   filter(
@@ -206,16 +189,15 @@ tumor_analysis_data <- adam_adtr |>
   select(studyid, idap, trial, 
          usubjid, trlnkid, trlnkgrp, tuloc, tulat, trtsdt, trtedt, adt, ends_with("fl"), trdy, trtp, trta, visit, visitnum, mmdiam = aval) |> 
   mutate(
-    week = if_else(trdy > 0, trdy, trdy + 1) %/% 7, 
-    treated_week = adt >= trtsdt,
+    week = if_else(trdy > 0, # Is post-treatment day? 
+                   trdy, 
+                   trdy + 1) %/% 7, # Last pre-screening week is 0. 
+    treated_week = adt >= trtsdt, # Was this a post-treatment week?
     usubjid = factor(usubjid)
   ) |> 
-  arrange(usubjid, trlnkid, visitnum) |> 
-  group_by(usubjid, trlnkid) |> 
-  
-  ungroup() |>
   # Turns out that some assessments are not listed in order of the days they were done. Look at subject DS8201-A-U303-10033028.
   arrange(studyid, usubjid, trlnkid, trdy) |> 
+  # For each patient-tumor row, put all the tumor assessment data in a nested column
   nest(tumor_history = c(adt, trdy, week, visit, visitnum, tsplitfl, tmergefl, mmdiam, treated_week)) |> 
   mutate(# For some weeks, there are multiple (unscheduled) visits that might happen. I'm just going to use the average for tumor sizes within those
          # weeks.
@@ -227,14 +209,16 @@ tumor_analysis_data <- adam_adtr |>
           mmdiam = map_dbl(visits, \(v) mean(v$mmdiam))
         )
     ), 
-    n_tumor_measures = map_int(tumor_history, nrow),
     
-    min_t = map_int(tumor_history, \(h) min(h$week)),
-    max_t = map_int(tumor_history, \(h) max(h$week)),
+    n_tumor_measures = map_int(tumor_history, nrow), # How many assessments/measurements per tumor
+    
+    min_t = map_int(tumor_history, \(h) min(h$week)), # First assessment week, per tumor
+    max_t = map_int(tumor_history, \(h) max(h$week)), # Last assessment week, per tumor
   ) |> 
   pack(flags = ends_with("fl")) |> 
+  # Each row is going to be a patient and all their tumor data are put in a nested column.
   nest(patient_tumors = !c(studyid, trial, idap, usubjid, trtsdt, trtedt, trtp, trta)) |> 
-  left_join(
+  left_join(# Adding a column `n_all_tumors` that counts all the tumors per patient (irrespective of being target tumors or not). 
     adam_adtr |> 
       unnest(data) |> 
       filter(fct_match(trlnkgrp, c("NON-TARGET", "TARGET", "NEW"))) |> 
@@ -242,17 +226,17 @@ tumor_analysis_data <- adam_adtr |>
       count(usubjid, name = "n_all_tumors"),
     by = "usubjid"
   ) |> 
-  rowwise() |> 
+  rowwise() |> # Per patient 
   mutate(
     patient_min_t = min(patient_tumors$min_t),
     patient_max_t = max(patient_tumors$max_t),
   ) |>
   ungroup() |> 
   mutate(
-    patient_t_width = patient_max_t - patient_min_t + 1,
-    n_tumors = map_int(patient_tumors, nrow),
+    patient_t_width = patient_max_t - patient_min_t + 1, # Range between first and last assessment
+    n_tumors = map_int(patient_tumors, nrow), # Tumors per patient
   ) |> 
-  left_join(
+  left_join(# Get some other time-to-event variables
     adam_adtte |> 
       unnest(data) |> 
       filter(
@@ -265,37 +249,40 @@ tumor_analysis_data <- adam_adtr |>
   ) |> 
   mutate(
     right_censored = cnsr,
-    death_week = floor(time_length(dthdt - trtsdt, unit = "weeks")),
-    progress_week = floor(time_length(fpddt - trtsdt, unit = "weeks")),
-    progress_week = if_else(death, coalesce(progress_week, death_week), 
-                                   if_else(right_censored & is.na(progress_week), max(progress_week, na.rm = TRUE), progress_week)),
+    death_week = floor(time_length(dthdt - trtsdt, unit = "weeks")), # Week of death
+    progress_week = floor(time_length(fpddt - trtsdt, unit = "weeks")), # Week of disease progression
+    progress_week = if_else(death, coalesce(progress_week, death_week), # If death, progress week is death week
+                                   if_else(right_censored & is.na(progress_week), max(progress_week, na.rm = TRUE), # Get rid of NA 
+                                                                                  progress_week)),
     aval_week = aval %/% 7,
     
-    treated = 
+    treated = # True is getting the same dosage 
       (fct_match(trial, "Breast01") & fct_match(trtp, "5.4 mg/kg")) | 
       (fct_match(trial, c("Breast02", "Breast03", "Breast04")) & fct_match(trtp, "T-DXd")),
     
-    death_week = coalesce(death_week, 0L),
+    death_week = coalesce(death_week, 0L), # if NA, set to 0.
     
-    n_measures = map(patient_tumors, \(tu) tu$n_tumor_measures),
-    t_measure = map(patient_tumors, \(tu) map(tu$tumor_history, \(tr) pull(tr, week))),
+    n_measures = map(patient_tumors, \(tu) tu$n_tumor_measures), # A list of the number of tumor assessments.
+    t_measure = map(patient_tumors, \(tu) map(tu$tumor_history, \(tr) pull(tr, week))), # A list of tumor assessment weeks
   ) |> 
-  left_join(
+  left_join(# Getting some demographic characteristics
     unnest(adam_adsl, data) |> 
       transmute(
         studyid, usubjid, country, age, sex, race, ecogbl, hormonr, her2ic1, nreg, 
         region = coalesce(region1, region2)
       ), 
     by = c("studyid", "usubjid")
-  ) |>  
+  ) |> 
+  # Get prior therapy medications per patient
   nest_join(unnest(adam_adcm, data) |> select(usubjid, cmcat, response, cmdecod), by = c("usubjid"), name = "med_data") |> 
-  mutate(
-    med_data = map(med_data, \(cm) mutate(cm, response = str_extract(response, "CR|NA|PR|PD|SD|UNK")))
-  )
-  
+  mutate(med_data = map(med_data, \(cm) mutate(cm, response = str_extract(response, "CR|NA|PR|PD|SD|UNK"))))
+ 
+# For PFS focusing on the subset of patients with the needed assessments and calculating PFS. 
 pfs_analysis_data <- tumor_analysis_data |> 
   mutate(
     patient_tumors = map(patient_tumors, \(tu) filter(tu, min_t <= 0, max_t > 0)), # Drop tumors that don't have two assessments
+    
+    # Recalculate these:
     n_measures = map(patient_tumors, \(tu) tu$n_tumor_measures),
     t_measure = map(patient_tumors, \(tu) map(tu$tumor_history, \(tr) pull(tr, week))),
   ) |> 
@@ -307,12 +294,14 @@ pfs_analysis_data <- tumor_analysis_data |>
     patient_t_width = patient_max_t - patient_min_t + 1,
     n_tumors = map_int(patient_tumors, nrow),
     
-    # The model expects "pfs" to record the number of weeks that were progress free, so I need to find the last assessment week before
+    # The model expects "pfs" to record the number of weeks that were progress free, so I need to find the last *assessment* week before
     # disease progress was detected.
     pfs = pmap_int(
-      lst(progress_week, death_week, right_censored, patient_tumors), function(progress_week, death_week, right_censored, patient_tumors) {
-        event_week <- min(progress_week, death_week, na.rm = TRUE)
-        
+      lst(progress_week, death_week, right_censored, patient_tumors), 
+      function(progress_week, death_week, right_censored, patient_tumors) {
+        event_week <- min(progress_week, death_week, na.rm = TRUE) # Whichever happened first, death or DP.
+       
+        # Get all the assessment weeks that happened before progression (if not censored). 
         pre_progress_weeks <- unnest(patient_tumors, tumor_history) |>
           distinct(week) |>
           filter(right_censored | week < event_week) |>
@@ -348,8 +337,10 @@ pfs_analysis_data |>
 #| cache: true
 #| dependson: prepare-analysis-data
 
+# Convert analysis data into a format usable by Stan
 treated_pfs_stan_data <- prepare_pfs_stan_data(treated_pfs_analysis_data, tumor_priors, pfs_priors)
 
+# Same as above but but split by trial
 treated_trial_pfs_stan_data <- treated_pfs_analysis_data |> 
   nest(.by = trial) |> 
   deframe() |> 
@@ -357,6 +348,7 @@ treated_trial_pfs_stan_data <- treated_pfs_analysis_data |>
 
 early_tumor_pairs <- get_early_tumor_pairs(treated_pfs_stan_data)  
 
+# Observed Kaplan-Meier
 treated_obs_km <- map_dfr(treated_trial_pfs_stan_data, function(sdata) {
   with(sdata, {
     list(lb = pfs, ub = pfs + interval_censored) |> 
@@ -775,7 +767,7 @@ interval_censoring_data |>
 
 n_patients <- 250
 patient_measures <- 41 
-max_pfs <- 50 
+max_pfs <- 45 
 ```
 
 # Tumor Size Model
@@ -1102,6 +1094,7 @@ pfs_test_data <- test_data |>
     ignore_interval_censoring = FALSE,
     add_trial_level = TRUE,
     add_tumor_location_level = FALSE,
+    fit_post_2nd_meaure_only = FALSE, 
     
     pfs = rep(max_pfs, n_patients),
     death_week = rep(0, n_patients),
@@ -1529,8 +1522,8 @@ sbc_bw <- 10
 ic_labels <- c(ic = "IC Adjusted", ic_ignore = "IC Ignored", no_ic = "No IC")
 
 sbc_data <- bind_rows( 
-  no_ic = read_rds(file.path(tmp_dir, "data", "sbc3.rds")),
-  ic = read_rds(file.path(tmp_dir, "data", "sbc3_ic.rds")),
+  no_ic = read_rds(file.path(tmp_dir, "data", "sbc4.rds")),
+  ic = read_rds(file.path(tmp_dir, "data", "sbc5_ic.rds")),
   ic_ignore = read_rds(file.path(tmp_dir, "data", "sbc3_ic_ignore.rds")),
   .id = "sim_type") |> 
   select(sim_type, starts_with("r_"))
@@ -1538,13 +1531,15 @@ sbc_data <- bind_rows(
 sbc_data |> 
   pivot_longer(!c(sim_type), names_to = "param", names_prefix = "r_", values_to = "r") |> 
   filter(!str_detect(param, "pfs$")) |>
+  filter(str_detect(param, "lambda_gp_")) |> 
   ggplot() +
   geom_histogram(aes(r), alpha = 0.5, binwidth = sbc_bw) +
   geom_rect(aes(xmin = -10, xmax = sbc_draws, ymin = lb, ymax = ub), 
             alpha = 0.25, fill = "pink",
             data = count(sbc_data, sim_type) |> mutate(map_dfr(n, \(n) set_names(qbinom(c(0.01, 0.5, 0.99), n, sbc_bw / sbc_draws), c("lb", "med", "ub"))))) +
   facet_grid(rows = vars(sim_type), cols = vars(param), labeller = labeller(sim_type = ic_labels)) +
-  labs(title = "Histogram of rank statistics", y = "", caption = str_glue("The histogram uses a bin width of 10.\nThe pink area represents the 1%-99% region of a Binom({sbc_draws}, {sbc_bw / sbc_draws}).\n{sbc_draws} simulation used per model.")) +
+  labs(y = "", caption = str_glue("The histogram uses a bin width of 10.\nThe pink area represents the 1%-99% region of a Binom({sbc_draws}, {sbc_bw / sbc_draws}).\n{sbc_draws} simulation used per model.")) +
+  # labs(title = "Histogram of rank statistics", y = "", caption = str_glue("The histogram uses a bin width of 10.\nThe pink area represents the 1%-99% region of a Binom({sbc_draws}, {sbc_bw / sbc_draws}).\n{sbc_draws} simulation used per model.")) +
   coord_cartesian(ylim = c(0, 20))
 
 sbc_data |> 
@@ -1630,7 +1625,6 @@ ic_ignored_no_tumor_pfs_future <- future::future(
 
 prior_no_tumor_pfs_res <- future::value(prior_no_tumor_pfs_future)
 no_tumor_pfs_res <- future::value(no_tumor_pfs_future)
-
 ```
 
 ```{r}
@@ -1821,10 +1815,9 @@ where $\bar{N}$ is the average number of tumors per patient and, for every tumor
 
 two_tumor_treated_pfs_stan_data <- treated_pfs_stan_data |> 
   list_assign(
-    tumor_hazard_type = 2, 
+    tumor_hazard_type = 1, 
     add_trial_level = TRUE, 
     add_tumor_location_level = FALSE,
-    fit_tumor_data = TRUE
   )
 
 two_tumor_init <- create_pfs_initializer(two_tumor_treated_pfs_stan_data) 
@@ -1856,7 +1849,6 @@ two_tumor_pfs_future <- future::future(
 
 prior_two_tumor_pfs_res <- future::value(prior_two_tumor_pfs_future)
 two_tumor_pfs_res <- future::value(two_tumor_pfs_future)
-
 ```
 
 ```{r}
@@ -1866,8 +1858,13 @@ two_tumor_pfs_res <- future::value(two_tumor_pfs_future)
 
 lst(treated = two_tumor_pfs_res) |> 
   plot_km(treated_pfs_analysis_data) +
-  geom_step(aes(x = t, y = s, color = "Observed"), data = treated_obs_km |> filter(fct_match(btype, "lb"))) +
-  scale_color_discrete("", type = AZ_palette[-1]) +
+  geom_rug(aes(x = pfs, color = right_censored), 
+           length = unit(0.05, "npc"), alpha = 0.5, 
+           data = treated_pfs_analysis_data) +
+  geom_step(aes(x = t, y = s, linetype = "Observed Kaplan-Meier"), 
+            data = treated_obs_km |> filter(fct_match(btype, "lb"))) +
+  scale_color_discrete("Observed PFS", labels = c("FALSE" = "Uncensored", "TRUE" = "Censored"), type = AZ_palette[-1]) +
+  scale_linetype_manual("", values = "dotted") +
   guides(fill = "none") +
   theme(legend.position = "bottom")
 ```
@@ -1995,13 +1992,14 @@ two_tumor_pfs_res |>
   ggplot(aes(x = x0, y = x1, z = q)) +
   stat_summary_hex(binwidth = c(1, 1)) +
   geom_abline(slope = 1, linetype = "dotted") +
+  geom_rug(sides = "tr", alpha = 0.125) +
   stat_summary_hex(aes(label = sprintf("%.2f", after_stat(value))), geom = "text", size = 3, binwidth = c(1, 1), color = "white") +
   scale_fill_gradient2("", midpoint = 1, low = AZ_darkpurple, mid = AZ_turquoise, high = AZ_gold) + 
   labs(x = "Pre-screening Tumor Size [cm]", y = "Post-treatment Tumor Size [cm]") +
   facet_wrap(
     vars(p), 
     labeller = labeller(
-      p = \(per) if_else(per == 0.5, "Posterior median", str_glue("Posterior {per}th percentile"))
+      p = \(per) if_else(per == 50, "Posterior median", str_glue("Posterior {per}th percentile"))
     )
   ) +
   coord_fixed(xlim = c(0, 11), ylim = c(0, 11)) +
@@ -2022,7 +2020,7 @@ prior_two_tumor_pfs_res |>
   filter(fct_match(trial, "Breast01")) |>
   ggplot(aes(x = x0, y = x1, z = q)) +
   stat_summary_hex(binwidth = c(1, 1)) +
-  scale_fill_continuous_divergingx("Roma", mid = 1, name = "") + #, name = latex2exp::TeX(r"{\exp(\beta\cdot x)}")) +
+  scale_fill_continuous_divergingx("Roma", mid = 1, name = "") + 
   labs(x = "Pre-screening Tumor Size", y = "Post-treatment Tumor Size") +
   facet_wrap(vars(p))
   # facet_grid(vars(p), vars(trial))
@@ -2031,9 +2029,10 @@ two_tumor_pfs_res |>
   recover_types(select(treated_pfs_analysis_data, trial)) |> 
   get_tumor_hazard_ratio_summary(trial_tumor_effect[trial, n], early_tumor_pairs, two_tumor_treated_pfs_stan_data, diff_var = diff_var) |>  
   filter(p == 0.5) |> 
-  mutate(p = fct_rev(str_glue("Posterior {p * 100}th\npercentile"))) |> 
+  mutate(p = fct_rev(if_else(p == 0.5, "Posterior median", str_glue("Posterior {p * 100}th\npercentile")))) |> 
   # filter(fct_match(trial, "Breast01")) |>
   ggplot(aes(x = x0, y = x1, z = q)) +
+  geom_rug(sides = "tr", alpha = 0.125) +
   stat_summary_hex(binwidth = c(1, 1)) +
   scale_fill_gradient2("", midpoint = 1, low = AZ_darkpurple, mid = AZ_turquoise, high = AZ_gold) + # latex2exp::TeX(r"{\exp(\beta\cdot x)}")) +
   labs(x = "Pre-screening Tumor Size", y = "Post-treatment Tumor Size") +

@@ -1,4 +1,10 @@
-// Calculate the last observed measure for each patient. 
+/** Calculate the last observed measure for each patient. 
+ *
+ * @param t_measure The week each assessment was done.
+ * @param n_measures The number of assessments per tumor.
+ * @param n_patient_tumors Array with the number of tumors per patient.
+ * @return Get the week of last observation per patient.
+ */
 array[] int get_max_t(array[] int t_measure, array[] int n_measures, array[] int n_patient_tumors) {
   int n_patients = size(n_patient_tumors);
   int t_pos = 1;
@@ -18,22 +24,41 @@ array[] int get_max_t(array[] int t_measure, array[] int n_measures, array[] int
   return max_t;
 }
 
-// GP vcov
+/** Calculate Gaussian process variance-covariance matrix. 
+ *
+ * @param x Proximity measures
+ * @param alpha GP variance parameter
+ * @param rho GP Smoothness/scale parameter
+ * @param delta Small epsilon to add to ensure proper matrix
+ * @return Variance-covariance matrix
+ */
 matrix calc_gp_vcov(array[] real x, real alpha, real rho, real delta) {
   int n_x = size(x);
   return gp_exp_quad_cov(x, alpha, rho) + diag_matrix(rep_vector(delta, n_x));
 }
 
-// Cholesky version of GP vcov
+/** Calculate Gaussian process Cholesky variance-covariance matrix. 
+ *
+ * @param x Proximity measures
+ * @param alpha GP variance parameter
+ * @param rho GP Smoothness/scale parameter
+ * @param delta Small epsilon to add to ensure proper matrix
+ * @return Variance-covariance matrix
+ */
 matrix calc_gp_cholesky_vcov(array[] real x, real alpha, real rho, real delta) {
   return cholesky_decompose(calc_gp_vcov(x, alpha, rho, delta));
 }
 
-// matrix calc_gp_cholesky_vcov(array[] real x, real alpha, real rho) {
-//   return calc_gp_cholesky_vcov(x, alpha, rho, 1e-9); 
-// }
-
-// Calculate one dimensional GP predictor
+/** Calculate one dimensional GP predictor.
+ *
+ * @param x Proximity measures
+ * @param intercept GP mean
+ * @param alpha GP variance parameter
+ * @param rho GP Smoothness/scale parameter
+ * @param delta Small epsilon to add to ensure proper matrix
+ * @param eta Standard normal (raw) parameters
+ * @return GP values for the given `x` 
+ */
 vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, real delta, vector eta) {
   int n_x = size(x);
   matrix[n_x, n_x] L_K = calc_gp_cholesky_vcov(x, alpha, rho, delta); 
@@ -41,8 +66,18 @@ vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, real d
   return intercept + L_K * eta;
 }  
 
-// This is the calculation needed to extrapolate a GP that is fit using observed y and x. We are predicting for x*.
-// For details, see Rasmussen' and Williams' "Gaussian Processes for Machine Learning".
+/** This is the calculation needed to extrapolate a GP that is fit using observed y and x. We are predicting for x*.
+ * For details, see Rasmussen' and Williams' "Gaussian Processes for Machine Learning".
+ *
+ * @param x_pred Proxmity measures to predict for
+ * @param y Observed outcomes
+ * @param x Observed proxmity measures
+ * @param K_obs GP variance-covariance matrix for observed `(x, y)`
+ * @param alpha GP variance parameter
+ * @param rho GP Smoothness/scale parameter
+ * @param delta Small epsilon to add to ensure proper matrix
+ * @return Predicted GP values conditional on observed data (interpolated from) 
+ */
 vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, real alpha, real rho, real delta) {
   int n_obs = rows(y);
   int n_pred = size(x_pred);
@@ -67,7 +102,11 @@ vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, 
 //   return calc_gp_pred(x, intercept, alpha, 1e-9, eta);
 // }  
 
-// Scale tumor sizes by the standard deviation of all tumors and demean.
+/** Scale tumor sizes by the standard deviation of all tumors and demean.
+ * 
+ * @param tumor_size Observed tumor sizes
+ * @return (Mean tumor size, Std deviation of tumor sizes, Standardized tumor sizes)
+ */
 tuple(real, real, vector) standardize_tumor_sizes(vector tumor_size) {
   real tumor_mean;
   real tumor_sd;
@@ -78,7 +117,12 @@ tuple(real, real, vector) standardize_tumor_sizes(vector tumor_size) {
   return (tumor_mean, tumor_sd, (tumor_size - tumor_mean) / tumor_sd); 
 }
 
-// Calculate the quantiles of PFS given a vector of exit conditional probabilities.
+/** Calculate the quantiles of PFS given a vector of exit conditional probabilities.
+ *
+ * @param exit_prob Marginal probability of disease progression at all the intervals
+ * @param p Quantile probabilities
+ * @return Quantiles of PFS
+ */
 array[] real pfs_quantiles_from_prob(vector exit_prob, array[] real p) {
   int max_t = rows(exit_prob);
   int n_p = size(p);
@@ -103,8 +147,14 @@ array[] real pfs_quantiles_from_prob(vector exit_prob, array[] real p) {
   return q;
 }
 
-// A missing measure is defined as one that lies between a _tumor's_ first assessment to the _patient's_ last assessment. Basically,
-// we're counting how many intervals (weeks) we don't have a observed assessment of tumor size, for each tumor.
+/** Missing measure is defined as one that lies between a _tumor's_ first assessment to the _patient's_ last assessment. Basically,
+ * we're counting how many intervals (weeks) we don't have observed assessments of tumor size, for each tumor.
+ *
+ * @param n_measures The number of assessments per tumor.
+ * @param t_measure The week each assessment was done.
+ * @param n_patient_tumors Array with the number of tumors per patient.
+ * @return Number of missing assessments per tumor
+ */
 array[] int calculate_n_missing_measures(array[] int n_measures, array[] int t_measure, array[] int n_patient_tumors) {
   int tumor_pos = 1;
   int t_measure_pos = 1;
@@ -136,7 +186,14 @@ array[] int calculate_n_missing_measures(array[] int n_measures, array[] int t_m
   return n_missing_measures;
 }
 
-// Return the actual t for which we don't have observed tumor size assessments.
+/** Return the actual t for which we don't have observed tumor size assessments.
+ *
+ * @param n_measures The number of assessments per tumor.
+ * @param n_missing_measures Number of missing assessments per tumor
+ * @param t_measure The week each assessment was done.
+ * @param n_patient_tumors Array with the number of tumors per patient.
+ * @return The actual weeks in which assessments are unobserved
+ */
 array[] int calculate_t_missing_measure(
   array[] int n_measures, array[] int n_missing_measures, array[] int t_measure, array[] int n_patient_tumors 
 ) { 
@@ -177,7 +234,13 @@ array[] int calculate_t_missing_measure(
   return t_missing_measure;
 }
 
-// How many assessments for each tumor were pre-screening assessments (t <= 0).
+/** How many assessments for each tumor were pre-screening assessments (t <= 0).
+ *
+ * @param n_patient_tumors Array with the number of tumors per patient.
+ * @param n_measures The number of assessments per tumor.
+ * @param t_measure The week each assessment was done.
+ * @return Number of pre-screening observed assessments per tumor
+ */
 array[] int calc_n_screening_t(array[] int n_patient_tumors, array[] int n_measures, array[] int t_measure) {
   int n_patients = size(n_patient_tumors);
   array[sum(n_patient_tumors)] int n_screening_t = rep_array(0, sum(n_patient_tumors));
