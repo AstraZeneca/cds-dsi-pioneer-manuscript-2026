@@ -4,11 +4,12 @@ functions {
 }
 
 data {
-  int<lower = 0, upper = 1> fit_data;
-  int<lower = 0, upper = 1> gen_pfs;
+  // Model settings
+  int<lower = 0, upper = 1> fit_data; // If 0, just do prior prediction
+  int<lower = 0, upper = 1> gen_pfs; // Generate simulated data
   int<lower = 0, upper = 1> gen_interval_censored; // Should the generated PFS be interval censored?
   int<lower = 0, upper = 1> ignore_interval_censoring; // Treat observed PFS as true pfs and ignore t_measure.
-  int<lower = 0, upper = 1> use_tumor_model;
+  int<lower = 0, upper = 1> use_tumor_model; // Should the tumor model be jointly fit
   int<lower = 0, upper = 1> fit_post_2nd_meaure_only; // Should we exclude all survival intervals before second tumor assessment (post-treatment) from loglik calculation.
   
   // Hierarchical settings 
@@ -34,7 +35,6 @@ data {
   array[n_grid_tumors] int<lower = 1, upper = sum(n_patient_tumors)> grid_tumors;
   
   // Hyperparam
-  
   real log_lambda_gp_intercept_mean;
   real<lower = 0> log_lambda_gp_intercept_sd;
   real<lower = 0> log_lambda_gp_alpha_sd;
@@ -57,23 +57,9 @@ transformed data {
  
   array[n_trials] int<lower = 0, upper = n_patients> n_trial_patients = rep_array(0, n_trials); // How many patients per trial
  
-  {
-    array[n_trials] int trial_patient_pos;
-    trial_patient_pos[1] = 1;
- 
-    for (i in 1:n_patients) {
-      n_trial_patients[patient_trial[i]] += 1;
-    }
-    
-    
-    for (s in 2:n_trials) {
-      trial_patient_pos[s] = sum(n_trial_patients[:(s - 1)]) + 1;
-    }
-    
-    for (i in 1:n_patients) {
-      trial_patient_pos[patient_trial[i]] += 1;
-    }
-  } 
+  for (i in 1:n_patients) {
+    n_trial_patients[patient_trial[i]] += 1;
+  }
   
   int<lower = 0, upper = max(pfs) * n_patients> n_total_pfs = sum(pfs);
   
@@ -102,12 +88,12 @@ transformed data {
   
   array[n_tumors, 2] int<lower = min(t_measure), upper = max(t_measure)> tumor_covar_t; // ts (weeks) of the assessments used in the covar design matrix
   array[n_patients] int<lower = min(t_measure), upper = max(t_measure)> patient_max_2nd_tumor_t; // What t is the second assessment in the covar design matrix 
-  matrix[n_tumors, n_covar_col] tumor_covar;
+  matrix[n_tumors, n_covar_col] tumor_covar; // This is the design matrix with the covar in the first two (or _n_) assessments.
   matrix[n_tumors, n_covar_col] uncentered_tumor_covar; // Just scaled
   vector[n_covar_col] tumor_covar_mean;
   vector<lower = 0>[n_covar_col] tumor_covar_sd = rep_vector(0, n_covar_col);
   
-  {
+  { // Preparing all the tumor covariates data 
     tuple(matrix[n_tumors, 2], array[n_tumors, 2] int) prep_res = 
       prepare_early_tumors_design_matrix(tumor_size, n_patient_tumors, n_measures, t_measure, n_screening_t, 2);
       
@@ -200,7 +186,7 @@ parameters {
   vector[max_all_t] log_lambda_gp_eta;
   real log_lambda_gp_intercept;
 
-  // Trial level hierarchical effect 
+  // Trial level hierarchical effect on baseline hazard 
   real<lower = 0> log_lambda_gp_trial_alpha;
   real<lower = 0> log_lambda_gp_trial_rho;
   array[add_trial_level ? n_trials : 0] vector[max_all_t] log_lambda_gp_trial_eta;
@@ -223,13 +209,15 @@ parameters {
 transformed parameters {
   #include "tumor_transformed_parameters.stan"
   
-  // Baseline hazard
+  // Log baseline hazard
   vector[max_all_t] log_lambda = calc_gp_pred(pfs_range, log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho, delta, log_lambda_gp_eta);
-  
+ 
+  // Trial-level variation in log baseline hazard 
   vector[add_trial_level ? n_trials : 0] log_lambda_gp_trial_intercept;
   array[n_trials] vector[max_all_t] log_trial_lambda; 
   
   if (add_trial_level) {
+    // We're using uncentered hierarchical effects here to reduce divergent transitions
     log_lambda_gp_trial_intercept = raw_log_lambda_gp_trial_intercept * log_lambda_gp_trial_intercept_sd;
   }
   
@@ -265,7 +253,7 @@ transformed parameters {
  
   // This is a sum of the contribution of all a patient's tumors to their hazard 
   vector[n_patients] total_time_invar_tumor_stim;
-  vector[n_patients] total_time_invar_tumor_stim_no_intercept;
+  vector[n_patients] total_time_invar_tumor_stim_no_intercept; // This used outside the model, so don't delete it.
   
   vector[n_time_periods] disease_progress_pred; // DP predictor for all patients at all observed and unobserved intervals.
   vector<lower = 0, upper = 1>[n_time_periods] disease_progress_prob; // DP probability for all patients (same as above)
@@ -354,6 +342,8 @@ model {
     }
   }
   
+  // Likelihood 
+  
   if (fit_data) {
     pfs ~ pch(
       right_uncensored, interval_censored, ignore_interval_censoring, 
@@ -420,7 +410,7 @@ generated quantities {
   vector<lower = 0, upper = 1>[gen_pfs ? max(t_measure) + 1 : 0] km_est; 
   array[add_trial_level && gen_pfs ? n_trials : 0] vector<lower = 0, upper = 1>[max(t_measure) + 1] trial_km_est; 
   
-  if (gen_pfs) { // Retrodiction
+  if (gen_pfs) { // Retrodiction, generating simulated data.
     int tumor_pos = 1;
     int pfs_interval_pos = 1;
     int t_pos = 1;
