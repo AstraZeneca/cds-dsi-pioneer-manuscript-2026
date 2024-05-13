@@ -285,8 +285,23 @@ tumor_analysis_data <- adam_adtr |>
   # Get visit level disease response
   nest_join(
     unnest(adam_adrs, data) |> 
-      filter(rsacptfl, fct_match(parqual, "CENTRAL"), fct_match(param, "Overall Response")) |> 
-      transmute(studyid, usubjid, visit, visitnum, week = ady %/% 7, overall_response = avalc),
+      filter(
+        rsacptfl, 
+        fct_match(parqual, "CENTRAL"), 
+        fct_match(
+          param, 
+          c("Overall Response", 
+            "Best Overall Response", 
+            "Best Overall Response (03 months)", 
+            "Best Overall Response (06 months)", 
+            "Best Overall Response (09 months)", 
+            "Best Overall Response (12 months)")
+        )
+      ) |> 
+      transmute(
+        studyid, usubjid, visit, visitnum, week = ady %/% 7, param, paramcd = factor(paramcd), 
+        response = factor(avalc, levels = c("CR", "PR", "SD", "NON-CR/NON-PD", "PD", "NE", "NED"), ordered = TRUE)
+      ),
     by = c("studyid", "usubjid"),
     name = "disease_response"
   )
@@ -325,6 +340,12 @@ pfs_analysis_data <- tumor_analysis_data |>
         if (length(pre_progress_weeks) > 0) max(pre_progress_weeks) else NA_integer_
       }
     ),
+ 
+    # Calculate Objective Reponse Rate 
+    map_dfr(
+      disease_response, \(r) filter(r, fct_match(param, "Overall Response")) |> 
+        summarize(orr_6wk = any(week <= 6 & response <= "PR"), orr_18wk = any(week <= 18 & response <= "PR"))
+    )
   ) %>%
   mutate(
     interval_censored = with(., pfs_model$functions$identify_censoring(pfs, death_week, n_tumors, unlist(n_measures), unlist(t_measure))[[1]]) |> 
@@ -782,20 +803,23 @@ interval_censoring_data |>
 
 tumor_analysis_data |> 
   unnest(disease_response) |> 
-  transmute(trial, usubjid, week, overall_response = factor(overall_response, levels = c("CR", "PR", "SD", "PD", "NED", "NE", "NON-CR/NON-PD"))) |> 
-  mutate(overall_response = fct_collapse(overall_response, Other = c("NE", "NED", "NON-CR/NON-PD"))) |> 
-  arrange(usubjid, week) |> 
+  filter(fct_match(param, "Overall Response")) |> 
+  select(trial, usubjid, week, response) |> 
+  mutate(response = fct_collapse(response, Other = c("NE", "NED", "NON-CR/NON-PD")) |> fct_relevel("Other", after = Inf)) |> 
+  arrange(trial, usubjid, week) |> 
   group_by(usubjid) |> 
-  mutate(prev_or = lag(overall_response)) |> 
+  mutate(prev_or = lag(response)) |> 
   ungroup() |> 
-  count(prev_or, overall_response, name = "freq") |> 
+  count(trial, prev_or, response, name = "freq") |> 
   filter(!are_na(prev_or)) |>
-  ggplot(aes(axis1 = prev_or, axis2 = overall_response, y = freq)) +
+  ggplot(aes(axis1 = prev_or, axis2 = response, y = freq)) +
   geom_alluvium(aes(fill = prev_or), width = 1/10, show.legend = FALSE) +
   geom_stratum(width = 1/10, color = "white", fill = "black", alpha = 0.5) + 
   geom_label(aes(label = after_stat(stratum)), stat = "stratum") + 
   scale_x_discrete(expand = c(0.05, 0.05)) +
-  scale_fill_discrete(type = AZ_palette)
+  scale_fill_discrete(type = AZ_palette) +
+  labs(y = "Frequency") +
+  facet_wrap(vars(trial), scales = "free_y")
 ```
 
 
@@ -1561,7 +1585,7 @@ ic_labels <- c(ic = "IC Adjusted", ic_ignore = "IC Ignored", no_ic = "No IC")
 sbc_data <- bind_rows( 
   no_ic = read_rds(file.path(tmp_dir, "data", "sbc4.rds")),
   ic = read_rds(file.path(tmp_dir, "data", "sbc5_ic.rds")),
-  ic_ignore = read_rds(file.path(tmp_dir, "data", "sbc3_ic_ignore.rds")),
+  ic_ignore = read_rds(file.path(tmp_dir, "data", "sbc4_ic_ignored.rds")),
   .id = "sim_type") |> 
   select(sim_type, starts_with("r_"))
 

@@ -256,7 +256,7 @@ transformed parameters {
   vector[n_patients] total_time_invar_tumor_stim_no_intercept; // This used outside the model, so don't delete it.
   
   vector[n_time_periods] disease_progress_pred; // DP predictor for all patients at all observed and unobserved intervals.
-  vector<lower = 0, upper = 1>[n_time_periods] disease_progress_prob; // DP probability for all patients (same as above)
+  vector<lower = 0, upper = 1>[n_time_periods] disease_progress_prob; // DP conditional probability for all patients (same as above)
   
   { // Calculate patient-interval conditional probability of disease progression.
     int tumor_pos = 1;
@@ -409,6 +409,10 @@ generated quantities {
   // Kaplan-Meier survival probability, aggregated over generated patients' data.  
   vector<lower = 0, upper = 1>[gen_pfs ? max(t_measure) + 1 : 0] km_est; 
   array[add_trial_level && gen_pfs ? n_trials : 0] vector<lower = 0, upper = 1>[max(t_measure) + 1] trial_km_est; 
+ 
+  // These need `gen_pfs` to have progress_prob calculated for all the needed intervals 
+  vector<lower = 0, upper = 1>[gen_pfs ? n_patients : 0] pfs_6mon;
+  vector<lower = 0, upper = 1>[gen_pfs ? n_patients : 0] pfs_9mon;
   
   if (gen_pfs) { // Retrodiction, generating simulated data.
     int tumor_pos = 1;
@@ -418,7 +422,8 @@ generated quantities {
     for (i in 1:n_patients) {
       int pfs_interval_end = pfs_interval_pos + max_all_t - 1;
       int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
-      int t_end = t_pos + n_measures[tumor_pos] - 1;
+      int t_end = t_pos + n_measures[tumor_pos] - 1; // This is for just one tumor
+      int t_all_end = t_pos + sum(n_measures[tumor_pos:tumor_end]) - 1; // For all the patient's tumors 
      
       tuple(int, int, int, int) pfs_res = pfs_rng(
         disease_progress_prob[pfs_interval_pos:pfs_interval_end], 
@@ -428,6 +433,25 @@ generated quantities {
       rep_interval_censored[i] = pfs_res.1;
       rep_right_censored[i] = pfs_res.2;
       rep_pfs[i] = pfs_res.3; 
+      
+      int max_t = max(t_measure[t_pos:t_all_end]);
+      
+      if (max_t >= 9 * 4 || (!right_censored[i] && pfs[i] <= 9 * 4)) {
+        pfs_6mon[i] = pfs[i] >= 6 * 4; // What about interval censoring?
+        pfs_9mon[i] = pfs[i] >= 9 * 4; // What about interval censoring?
+      } else {
+        int n_intervals = 9 * 4 - pfs[i];
+        tuple(vector[n_intervals], vector[n_intervals]) marginal_prob_res = 
+          calculate_marginal_dp_prob(disease_progress_prob[(pfs_interval_pos + pfs[i]):(pfs_interval_pos + 9 * 4 - 1)], n_intervals);  
+        
+        pfs_9mon[i] = 1 - marginal_prob_res.2[9 * 4 - pfs[i]]; 
+        
+        if (max_t >= 6 * 4 || (!right_censored[i] && pfs[i] <= 6 * 4)) {
+          pfs_6mon[i] = pfs[i] >= 6 * 4; // What about interval censoring?
+        } else {
+          pfs_6mon[i] = 1 - marginal_prob_res.2[6 * 4 - pfs[i]]; 
+        }
+      } 
       
       pfs_interval_pos = pfs_interval_end + 1;
       t_pos += sum(n_measures[tumor_pos:tumor_end]);

@@ -556,3 +556,15 @@ get_tumor_hazard_ratio_summary <- function(fit, var, tumor_size_pairs, stan_data
   }
 }
 
+calc_pfs <- function(progress_week, death_week, right_censored, patient_tumors) {
+  event_week <- min(progress_week, death_week, na.rm = TRUE) # Whichever happened first, death or DP.
+ 
+  # Get all the assessment weeks that happened before progression (if not censored). 
+  pre_progress_weeks <- unnest(patient_tumors, tumor_history) |>
+    distinct(week) |>
+    filter(right_censored | week < event_week) |>
+    pull(week)
+
+  # There are a few patients who just have a single post treatment visit
+  if (length(pre_progress_weeks) > 0) max(pre_progress_weeks) else NA_integer_
+}
