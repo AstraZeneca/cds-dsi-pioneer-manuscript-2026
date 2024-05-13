@@ -74,83 +74,6 @@ transformed data {
     pfs_range_vec[i] = i - 1; 
   }
   
-  int n_covar_col = 0; // number of columns in covariates design matrix, excluding the intercept. 
-  
-  if (tumor_hazard_type == 1) {
-    n_covar_col = 2;
-  } else if (tumor_hazard_type == 2) {
-    n_covar_col = 3;
-  } else if (tumor_hazard_type == 3) {
-    n_covar_col = 1;
-  } else if (tumor_hazard_type == 5) {
-    n_covar_col = 5;
-  }
-  
-  array[n_tumors, 2] int<lower = min(t_measure), upper = max(t_measure)> tumor_covar_t; // ts (weeks) of the assessments used in the covar design matrix
-  array[n_patients] int<lower = min(t_measure), upper = max(t_measure)> patient_max_2nd_tumor_t; // What t is the second assessment in the covar design matrix 
-  matrix[n_tumors, n_covar_col] tumor_covar; // This is the design matrix with the covar in the first two (or _n_) assessments.
-  matrix[n_tumors, n_covar_col] uncentered_tumor_covar; // Just scaled
-  vector[n_covar_col] tumor_covar_mean;
-  vector<lower = 0>[n_covar_col] tumor_covar_sd = rep_vector(0, n_covar_col);
-  
-  { // Preparing all the tumor covariates data 
-    tuple(matrix[n_tumors, 2], array[n_tumors, 2] int) prep_res = 
-      prepare_early_tumors_design_matrix(tumor_size, n_patient_tumors, n_measures, t_measure, n_screening_t, 2);
-      
-    tumor_covar_t = prep_res.2;
-    
-    int tumor_pos = 1;
-    
-    for (i in 1:n_patients) {
-      int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
-      
-      patient_max_2nd_tumor_t[i] = max(tumor_covar_t[tumor_pos:tumor_end, 2]);
-      
-      tumor_pos = tumor_end + 1;
-    }
-    
-    if (tumor_hazard_type > 0) {
-      if (tumor_hazard_type == 1 || tumor_hazard_type == 2 || tumor_hazard_type == 5) {  
-        tumor_covar[, 1:2] = prep_res.1;
-        
-        if (tumor_hazard_type == 2) {
-          tumor_covar[, 3] = tumor_covar[, 2] .* tumor_covar[, 1];
-        }
-        
-        if (tumor_hazard_type == 3) {
-          tumor_covar[, 3] = tumor_covar[, 2] ./ tumor_covar[, 1];
-        }
-        
-        if (tumor_hazard_type == 5) {
-          tumor_covar[, 4] = tumor_covar[, 1]^2;
-          tumor_covar[, 5] = tumor_covar[, 2]^2;
-        }
-        
-        for (c in 1:n_covar_col) {
-          uncentered_tumor_covar[, c] = tumor_covar[, c];
-          
-          tuple(real, real, vector[n_tumors]) standardize_results = standardize_tumor_sizes(tumor_covar[, c]);
-          tumor_covar_mean[c] = standardize_results.1;
-          tumor_covar_sd[c] = standardize_results.2;
-          tumor_covar[, c] = standardize_results.3;
-          
-          uncentered_tumor_covar[, c] /= tumor_covar_sd[c];
-          
-          print("Scaling covar ", c, " by ", tumor_covar_sd[c]);
-        }
-       
-        if (tumor_hazard_type == 2 || tumor_hazard_type == 5) {
-          tumor_covar[, 3] = rep_vector(0, n_tumors);
-        }
-      } else if (tumor_hazard_type == 3) {
-        matrix[n_tumors, 2] covar = prep_res.1;
-        
-        tumor_covar[, 1] = (covar[, 2] - covar[, 1]) ./ covar[, 1];
-        uncentered_tumor_covar[, 1] = tumor_covar[, 1];
-      } 
-    }
-  }
-  
   // Censoring information calculated from PFS and t_measure; no need to pass it in. 
   array[n_patients] int<lower = 0> interval_censored = rep_array(0, n_patients);
   array[n_patients] int<lower = 0, upper = 1> right_uncensored = rep_array(0, n_patients);
@@ -174,6 +97,19 @@ transformed data {
   // If generating PFS we need to calculate probs for all possible time intervals, otherwise only up to observed PFS. 
   int<lower = 0> n_time_periods = 
     gen_pfs ? n_patients * max_all_t : n_total_pfs + sum(right_uncensored) + sum(interval_censored);
+    
+  int n_covar_col = calc_n_covar_col(tumor_hazard_type); // number of columns in covariates design matrix, excluding the intercept. 
+ 
+  int max_measures = 2; 
+  array[n_tumors, max_measures] int<lower = min(t_measure), upper = max(t_measure)> tumor_covar_t; // ts (weeks) of the assessments used in the covar design matrix
+  array[n_patients] int<lower = min(t_measure), upper = max(t_measure)> patient_max_2nd_tumor_t; // What t is the second assessment in the covar design matrix 
+  matrix[n_tumors, n_covar_col] tumor_covar; // This is the design matrix with the covar in the first two (or _n_) assessments.
+  matrix[n_tumors, n_covar_col] uncentered_tumor_covar; // Just scaled
+  vector[n_covar_col] tumor_covar_mean;
+  vector<lower = 0>[n_covar_col] tumor_covar_sd = rep_vector(0, n_covar_col);
+ 
+  (tumor_covar_t, patient_max_2nd_tumor_t, tumor_covar, uncentered_tumor_covar, tumor_covar_mean, tumor_covar_sd) = 
+    prepare_early_tumors_covar(tumor_size, tumor_hazard_type, n_patients, n_tumors, n_patient_tumors, n_measures, t_measure, n_screening_t, max_measures); 
 }
 
 parameters {
