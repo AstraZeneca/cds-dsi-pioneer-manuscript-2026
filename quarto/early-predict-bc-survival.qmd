@@ -23,7 +23,7 @@ library(tidybayes)
 library(bayesplot)
 library(here)
 library(gtsummary)
-library(targets)
+# library(targets)
 library(colorspace)
 library(ggalluvial)
 
@@ -61,11 +61,11 @@ We will evaluate whether early (at baseline and at 6 and 12 weeks post treatment
 
 We will use data from the Breast01, Breast02, Breast03, and Breast04 trials, focusing on the treatment arms receiving the same dosage. Initially, we will be analyzing the different studies separately with no partial pooling since the inclusion criteria for the studies were different.
 
-* Primary outcome: Post treatment progression free survival (interval and right censored).
-* Predictive variables (at all the early intervals): 
-    - Number of lesions observed. 
-    - Organ of lesions. 
-    - lesion sizes measured, with a maximum of ten of observed lesions and two per organ.
+-   Primary outcome: Post treatment progression free survival (interval and right censored).
+-   Predictive variables (at all the early intervals):
+    -   Number of lesions observed.
+    -   Organ of lesions.
+    -   lesion sizes measured, with a maximum of ten of observed lesions and two per organ.
 
 ## Statistical Model Goals
 
@@ -86,16 +86,12 @@ source(here("r", "priors.R"))
 
 tumor_model <- cmdstan_model(here("stan", "tumor.stan"))
 pfs_model <- cmdstan_model(here("stan", "pfs.stan"), compile_standalone = TRUE, force_recompile = TRUE)
+pfs_orr_model <- cmdstan_model(here("stan", "pfs_orr.stan"))
 ```
-
 
 # Data
 
-What data we have so far:
-1. Breast01: phase II dose finding study (HER2-positive metastatic breast cancer).
-2. Breast02: phase III study comparing to physician choice of drug (HER2-positive metastatic breast cancer). 
-2. Breast03: phase III study comparing to trastuzumab emtansine (HER2-positive metastatic breast cancer).
-3. Breast04: This is a phase III study on patients with HER2-low metastatic breast cancer (HER2-low metastatic breast cancer).
+What data we have so far: 1. Breast01: phase II dose finding study (HER2-positive metastatic breast cancer). 2. Breast02: phase III study comparing to physician choice of drug (HER2-positive metastatic breast cancer). 2. Breast03: phase III study comparing to trastuzumab emtansine (HER2-positive metastatic breast cancer). 3. Breast04: This is a phase III study on patients with HER2-low metastatic breast cancer (HER2-low metastatic breast cancer).
 
 ```{mermaid}
 %%| label: fig-data-structure
@@ -299,11 +295,22 @@ tumor_analysis_data <- adam_adtr |>
         )
       ) |> 
       transmute(
-        studyid, usubjid, visit, visitnum, week = ady %/% 7, param, paramcd = factor(paramcd), 
+        studyid, usubjid, visit, visitnum, week = ady %/% 7, param = factor(param), paramcd = factor(paramcd), 
         response = factor(avalc, levels = c("CR", "PR", "SD", "NON-CR/NON-PD", "PD", "NE", "NED"), ordered = TRUE)
       ),
     by = c("studyid", "usubjid"),
     name = "disease_response"
+  ) |> 
+  mutate(
+    # The model expects "pfs" to record the number of weeks that were progress free, so I need to find the last *assessment* week before
+    # disease progress was detected.
+    pfs = pmap_int(lst(progress_week, death_week, right_censored, patient_tumors), calc_pfs),
+ 
+    # Calculate Objective Reponse Rate 
+    map_dfr(
+      disease_response, \(r) filter(r, fct_match(param, "Overall Response")) |>
+        summarize(orr_6wk = any(week <= 6 & response <= "PR"), orr_18wk = any(week <= 18 & response <= "PR"))
+    )
   )
  
 # For PFS focusing on the subset of patients with the needed assessments and calculating PFS. 
@@ -322,30 +329,6 @@ pfs_analysis_data <- tumor_analysis_data |>
     patient_max_t = map_int(patient_tumors, \(tu) max(tu$max_t)),
     patient_t_width = patient_max_t - patient_min_t + 1,
     n_tumors = map_int(patient_tumors, nrow),
-    
-    # The model expects "pfs" to record the number of weeks that were progress free, so I need to find the last *assessment* week before
-    # disease progress was detected.
-    pfs = pmap_int(
-      lst(progress_week, death_week, right_censored, patient_tumors), 
-      function(progress_week, death_week, right_censored, patient_tumors) {
-        event_week <- min(progress_week, death_week, na.rm = TRUE) # Whichever happened first, death or DP.
-       
-        # Get all the assessment weeks that happened before progression (if not censored). 
-        pre_progress_weeks <- unnest(patient_tumors, tumor_history) |>
-          distinct(week) |>
-          filter(right_censored | week < event_week) |>
-          pull(week)
-
-        # There are a few patients who just have a single post treatment visit
-        if (length(pre_progress_weeks) > 0) max(pre_progress_weeks) else NA_integer_
-      }
-    ),
- 
-    # Calculate Objective Reponse Rate 
-    map_dfr(
-      disease_response, \(r) filter(r, fct_match(param, "Overall Response")) |> 
-        summarize(orr_6wk = any(week <= 6 & response <= "PR"), orr_18wk = any(week <= 18 & response <= "PR"))
-    )
   ) %>%
   mutate(
     interval_censored = with(., pfs_model$functions$identify_censoring(pfs, death_week, n_tumors, unlist(n_measures), unlist(t_measure))[[1]]) |> 
@@ -364,6 +347,16 @@ pfs_analysis_data |>
   count(studyid, trial, treated, trtp, trta) |> 
   kableExtra::kbl() |> 
   kableExtra::kable_styling()
+
+orr_analysis_data <- tumor_analysis_data |> 
+  filter(!is.na(pfs), pfs >= 0) %>% 
+  mutate(
+    wk6_subsample = patient_max_t >= 6,
+    wk18_subsample = patient_max_t >=18,
+    
+    interval_censored = with(., pfs_model$functions$identify_censoring(pfs, death_week, n_tumors, unlist(n_measures), unlist(t_measure))[[1]]) |> 
+      pmax(0) # Issue https://github.com/azu-oncology-rd/ods-adc-early-predict-2023/issues/36
+  )
 ```
 
 ```{r}
@@ -397,7 +390,6 @@ treated_obs_km <- map_dfr(treated_trial_pfs_stan_data, function(sdata) {
   )
 }, .id = "trial")
 ```
-
 
 ```{r}
 #| label: tbl-subject-level-summary
@@ -476,10 +468,10 @@ prior_med_table1 <- pfs_analysis_data |>
 prior_med_table1
 ```
 
-In the below plots we look at the empirical Kaplan-Meier survival, the number of at risk patients, and the number of censored at each interval, for the various trials and arms. We also compare: 
+In the below plots we look at the empirical Kaplan-Meier survival, the number of at risk patients, and the number of censored at each interval, for the various trials and arms. We also compare:
 
-a) Our calculated PFS measure defined as the observed assessment week that occured _just before_ progress/death week.
-b) PFS as defined as the progress week in data.
+a)  Our calculated PFS measure defined as the observed assessment week that occured *just before* progress/death week.
+b)  PFS as defined as the progress week in data.
 
 As expected, if we use progress week, survival appears to be longer, while in fact survival is interval censored between the last progress free week and the week just before progress. In particular, the number of censored plot shows bunching at the maximum observed progress week.
 
@@ -542,7 +534,6 @@ km_res |>
   NULL 
 ```
 
-
 ```{r}
 #| labels: kaplan-meier-upper-and-lower-bounds
 
@@ -569,7 +560,6 @@ km_res |>
 #   theme_minimal() +
 #   NULL
 ```
-
 
 ```{r}
 #| label: tumor-demographics-table 
@@ -721,7 +711,6 @@ early_tumor_pairs |>
   labs(x = "Difference in Weeks", y = "Count")
 ```
 
-
 ```{r}
 #| label: fig-pfs-distribution
 #| code-fold: false
@@ -822,7 +811,6 @@ tumor_analysis_data |>
   facet_wrap(vars(trial), scales = "free_y")
 ```
 
-
 ```{r}
 #| label: sim-settings
 
@@ -839,12 +827,9 @@ We model tumor size as a nonlinear function with a Gaussian process prior (with 
 
 $$
 \log(X_{it}) \sim  \mathtt{GP}(\mu^\textrm{tumor}, k(\cdot;\alpha^\textrm{tumor}, \rho^\textrm{tumor})) 
-$$ 
-where 
-$$k(p, q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right).$$
+$$ where $$k(p, q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right).$$
 
 ## Prior Prediction
-
 
 ```{r}
 #| label: test-data
@@ -873,7 +858,6 @@ test_data <- lst(
   !!!tumor_priors  
 )
 ```
-
 
 ```{r}
 #| label: tumor-prior-predict
@@ -907,7 +891,6 @@ fake_tumor_data <- tumor_prior_res |>
 # This will be used by SLURM jobs that need tumor data (e.g., PFS SBC run).
 write_rds(fake_tumor_data, file.path(tmp_dir, "data", "fake_tumor.rds"))
 ```
-
 
 ```{r}
 #| label: tumor-model-diagnose
@@ -1009,7 +992,6 @@ tumor_fake_res |>
   NULL  
 ```
 
-
 ## Fit Data
 
 Now using actual trial data.
@@ -1089,7 +1071,6 @@ all_tumor_size |>
   theme(strip.text = element_blank())
 ```
 
-
 # Survival Model
 
 ```{r}
@@ -1098,7 +1079,6 @@ all_tumor_size |>
 
 hist_breaks <- seq(10, 150, by = 10)
 ```
-
 
 We will use a piecewise-constant proportional hazard model:
 
@@ -1109,26 +1089,21 @@ We will use a piecewise-constant proportional hazard model:
 -   $C_i$ is an indicator of whether $i$ is right censored.
 -   $M_{i} \in \mathbb{Z}^{+}$ is the difference between $S_i$ and the previous interval $i$ was observed progression free ($M_i = 1$ if $C_i = 1$).
 
-The probability of remaining progression-free at $m \geq 1$ is 
-$$
+The probability of remaining progression-free at $m \geq 1$ is $$
 \alpha_t(x;\theta) = \Pr[Y_t = 0\mid Y_{t-1} = 0, X_t = \bf{x}] = \exp[-\lambda(t, \bf{x}; \boldsymbol{\theta})] 
 $$
 
-and the hazard function . 
-$$
+and the hazard function . $$
   \lambda(t, \bf{x}; \boldsymbol{\theta}) = \lambda_t \kappa(\bf{x}; \boldsymbol{\beta})
 $$
 
 We assume that censoring in conditionally independent of time to progression. We will use a linear form for $\kappa(\bf{x}; \boldsymbol{\beta}) = \exp(\bf{x}\boldsymbol{\beta})$.
 
-Aside from whatever priors we use for $\boldsymbol{\beta}$, we will use a Gaussian process prior for $\lambda_t$, 
-$$
+Aside from whatever priors we use for $\boldsymbol{\beta}$, we will use a Gaussian process prior for $\lambda_t$, $$
 \log(\lambda_t) \sim \mathtt{GP}(0, k),
-$$ 
-where $k(\lambda_p, \lambda_q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$.
+$$ where $k(\lambda_p, \lambda_q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$.
 
-Our likelihood, accounting for interval and right censoring, is 
-$$
+Our likelihood, accounting for interval and right censoring, is $$
 \mathcal{L}_i = \begin{cases}
   \prod_{t=1}^{S_i-M_i}\alpha_t(x_i;\theta)\sum_{r=S_i-M_i+1}^{S_i + 1}\left\{\prod_{m=S_i - M_i + 1}^{r-1}\alpha_m(x_i;\theta)[1-\alpha_{r}(x_i;\theta)]\right\} & \textrm{if }C_i = 0 \\
   \prod_{t=1}^{S_i}\alpha_t(x_i;\theta) & \textrm{if }C_i = 1 
@@ -1261,7 +1236,6 @@ lambda_rvar |>
   NULL
 ```
 
-
 ```{r}
 #| label: fig-prior-base-pf-prob
 #| dependson: pfs-prior-predict
@@ -1321,7 +1295,6 @@ pfs_prior_res |>
   # coord_cartesian(xlim = c(0, 1)) +
   NULL
 ```
-
 
 ```{r}
 #| label: base-surivival-plot
@@ -1520,7 +1493,6 @@ fake_data_sim |>
   facet_grid(vars(sim_type), vars(sim_id))
 ```
 
-
 ```{r}
 #| label: fake-data-km
 #| fig-cap: "Comparing the fake data Kaplan-Meier survival probability against the true probability."
@@ -1634,7 +1606,7 @@ It is clear that ignoring interval censoring degrades the model's ability to rec
 
 ### No Tumors Model
 
-The hazard function does not use any covariates: 
+The hazard function does not use any covariates:
 
 $$
   \lambda(t, \bf{x}; \boldsymbol{\theta}) = \lambda_t
@@ -1804,7 +1776,6 @@ lst(ic = no_tumor_pfs_res, ic_ignored = ic_ignored_no_tumor_pfs_res) |>
   labs(title = "Posterior PFS mean and median", subtitle = "Treated arm", x = "PFS [weeks]", y = "")
 ```
 
-
 While SBC shows that ignoring interval censoring should be a big problem, it does not appear to bias estimates much using our data.
 
 ### Tumor Count Model
@@ -1865,8 +1836,9 @@ $$
 \begin{align}
   \lambda(t, \bf{x}; \boldsymbol{\theta}) &= \lambda_t \cdot \underbrace{\exp\left[\sum_m \beta_0 + \beta_1 \bar{x}_{m0} + \beta_2 \bar{x}_{m1} \right]}_{\textrm{Hazard ratio, }\kappa} \\
   \end{align}
-$$
-where $\bar{N}$ is the average number of tumors per patient and, for every tumor $m$, $\bar{x}_{m0}$ is the standardized last screening assessment and $\bar{x}_{m1}$ is the standardized first assessment after treatment begins.^[$\bar{x}_{mt} = \frac{x_{mt} - \bar{x}}{s(x)}$] We subtract $\beta_0 \bar{N}$ 
+$$ where $\bar{N}$ is the average number of tumors per patient and, for every tumor $m$, $\bar{x}_{m0}$ is the standardized last screening assessment and $\bar{x}_{m1}$ is the standardized first assessment after treatment begins.[^2] We subtract $\beta_0 \bar{N}$
+
+[^2]: $\bar{x}_{mt} = \frac{x_{mt} - \bar{x}}{s(x)}$
 
 ```{r}
 #| label: two-tumor-pfs-fit
@@ -2120,6 +2092,17 @@ lst(prior = prior_two_tumor_pfs_res, posterior = two_tumor_pfs_res) |>
   coord_cartesian(xlim = c(0, 2))
 ```
 
+```{r}
+treated_pfs_analysis_data |>
+  bind_cols(two_tumor_pfs_res |> spread_rvars(pfs_6mon[i], pfs_9mon[i])) |> 
+  ggplot() +
+  stat_pointinterval(aes(orr_6wk, ydist = pfs_6mon), position = position_jitter(width = 0.25, height = 0.25), alpha = 0.25) 
+
+treated_pfs_analysis_data |>
+  bind_cols(two_tumor_pfs_res |> spread_rvars(pfs_6mon[i], pfs_9mon[i])) |> 
+  ggplot() +
+  stat_pointinterval(aes(orr_18wk, ydist = pfs_9mon), position = position_jitter(width = 0.25, height = 0.25), alpha = 0.25) 
+```
 
 #### Variation in Tumor Predictive Power
 
@@ -2212,7 +2195,6 @@ two_tumor_pfs_res |>
   labs(title = "Variation in the probability of disease progression", y = latex2exp::TeX(r"{1 - \alpha}"))
   NULL
 ```
-
 
 #### Partial Pooling
 
@@ -2347,6 +2329,75 @@ lst(treated = tumor_change_pfs_res) |> #, control = control_two_tumor_pfs_res) |
 
 TODO
 
+### ORR
+
+```{r}
+treated_orr_wk6_stan_data <- orr_analysis_data |> 
+  filter(treated, wk6_subsample) |> 
+  prepare_pfs_stan_data(tumor_priors, pfs_priors)
+
+treated_orr_wk18_stan_data <- orr_analysis_data |> 
+  filter(treated, wk18_subsample) |> 
+  prepare_pfs_stan_data(tumor_priors, pfs_priors)
+
+# orr_init <- create_orr_initializer(treated_orr_wk6_stan_data)
+
+prior_orr_wk6_future <- future::future(
+  treated_orr_wk6_stan_data |> 
+    list_assign(fit_data = FALSE) |> 
+    pfs_orr_model$sample(
+      iter_warmup = 300, iter_sampling = 300, 
+      # init = orr_init,
+      parallel_chains = 4,
+      output_dir = file.path(tmp_dir, "fit"), 
+      output_basename = "prior_orr_wk6" 
+    ),
+  seed = TRUE
+)
+
+prior_orr_wk18_future <- future::future(
+  treated_orr_wk18_stan_data |> 
+    list_assign(fit_data = FALSE) |> 
+    pfs_orr_model$sample(
+      iter_warmup = 300, iter_sampling = 300, 
+      # init = orr_init,
+      parallel_chains = 4,
+      output_dir = file.path(tmp_dir, "fit"), 
+      output_basename = "prior_orr_wk18" 
+    ),
+  seed = TRUE
+)
+
+orr_wk6_future <- future::future(
+  treated_orr_wk6_stan_data |> 
+    pfs_orr_model$sample(
+      iter_warmup = 300, iter_sampling = 300, 
+      # init = orr_init,
+      parallel_chains = 4,
+      output_dir = file.path(tmp_dir, "fit"), 
+      output_basename = "orr_wk6" 
+    ),
+  seed = TRUE
+)
+
+orr_wk18_future <- future::future(
+  treated_orr_wk18_stan_data |> 
+    pfs_orr_model$sample(
+      iter_warmup = 300, iter_sampling = 300, 
+      # init = orr_init,
+      parallel_chains = 4,
+      output_dir = file.path(tmp_dir, "fit"), 
+      output_basename = "orr_wk18" 
+    ),
+  seed = TRUE
+)
+
+prior_orr_wk6_res <- future::value(prior_orr_wk6_future)
+orr_wk6_res <- future::value(orr_wk6_future)
+prior_orr_wk18_res <- future::value(prior_orr_wk18_future)
+orr_wk18_res <- future::value(orr_wk18_future)
+```
+
 ### Compare Models
 
 ```{r}
@@ -2440,11 +2491,9 @@ tibble(delta = seq(-10, 10), sym_loss = abs(delta), asym_loss = if_else(delta < 
   NULL
 ```
 
-For each patient, $i$, we calculate the **out-of-sample** loss as
-$$
+For each patient, $i$, we calculate the **out-of-sample** loss as $$
 \int L(y_i, c_i, \tilde{y}_i, \tilde{c}_i)\cdot p(\tilde{y}_i,\tilde{c}_i \mid y_{-i}, c_{-i})\cdot p(y_i)\,\textrm{d}\tilde{y}_i\textrm{d}\tilde{c}_i\textrm{d}y_i.
-$$
-Where the observed PFS is modeled as uniform value within the censored interval, $Y_i \sim \mathtt{Uniform}(\underline{y}_i, \overline{y}_i)$.
+$$ Where the observed PFS is modeled as uniform value within the censored interval, $Y_i \sim \mathtt{Uniform}(\underline{y}_i, \overline{y}_i)$.
 
 ```{r}
 #| label: loo-predict-other-utility 
@@ -2506,7 +2555,6 @@ loss_data |>
   facet_wrap(vars(loss_type), ncol = 1, labeller = labeller(loss_type = c(sym = "Symmetric Loss", asym = "Asymmetric Loss")))
 ```
 
-
 ```{r}
 loss_data |> 
   group_by(loss_type, model) |> 
@@ -2528,7 +2576,6 @@ loss_data |>
   coord_cartesian(xlim = c(-20, 20)) +
   NULL
 ```
-
 
 ```{r}
 #| label: fig-patient-hazard-ratios
@@ -2554,7 +2601,6 @@ patient_kappa_full_dist_data |>
   NULL
 ```
 
-
 <!-- Ignore everything below -->
 
 ```{r}
@@ -2572,5 +2618,3 @@ loss_diff_data |>
   theme(legend.position = "bottom")
 
 ```
-
-
