@@ -398,3 +398,52 @@ tuple(array[,] int, array[] int, matrix, matrix, vector, vector) prepare_early_t
   
   return (tumor_covar_t, patient_max_2nd_tumor_t, tumor_covar, uncentered_tumor_covar, tumor_covar_mean, tumor_covar_sd);
 }
+
+// Calculate patient-interval conditional probability of disease progression.
+tuple(vector, vector, vector) calc_disease_progress_pred_from_early_tumors(
+  array[] int pfs, matrix tumor_covar,
+  int tumor_hazard_type, int n_patients, array[] int n_patient_tumors,
+  array[] int patient_trial,
+  array[] int tumor_location,
+  array[] int right_uncensored, array[] int interval_censored, 
+  array[] vector log_trial_lambda,
+  real tumor_stim_pop_intercept, vector tumor_stim_trial_intercept, vector tumor_stim_location_intercept, 
+  row_vector tumor_stim_pop_coef, matrix tumor_stim_trial_coef, matrix tumor_stim_location_coef,
+  int gen_pfs, int max_all_t
+) {
+  int n_covar_col = cols(tumor_covar);
+  int n_time_periods = gen_pfs ? n_patients * max_all_t : sum(pfs) + sum(right_uncensored) + sum(interval_censored);
+  
+  vector[n_patients] total_time_invar_tumor_stim; // This is a sum of the contribution of all a patient's tumors to their hazard 
+  vector[n_patients] total_time_invar_tumor_stim_no_intercept; // This used outside the model, so don't delete it.
+  vector[n_time_periods] disease_progress_pred;
+  
+  int tumor_pos = 1;
+  int pfs_interval_pos = 1;
+
+  for (i in 1:n_patients) {
+    int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
+    int n_intervals = gen_pfs ? max_all_t : pfs[i] + right_uncensored[i] + interval_censored[i];
+    int pfs_interval_end = pfs_interval_pos + n_intervals - 1; 
+    array[n_patient_tumors[i]] int patient_tumor_locations = tumor_location[tumor_pos:tumor_end];
+    
+    vector[n_patient_tumors[i]] patient_stim_intercept = 
+      tumor_stim_pop_intercept + tumor_stim_trial_intercept[patient_trial[i]] + tumor_stim_location_intercept[patient_tumor_locations];
+      
+    matrix[n_patient_tumors[i], n_covar_col] patient_stim_coef =
+      // rep_matrix(tumor_stim_pop_coef .* exp(tumor_stim_trial_coef[patient_trial[i]]), n_patient_tumors[i]) .* exp(tumor_stim_location_coef[patient_tumor_locations]);
+      rep_matrix(tumor_stim_pop_coef + tumor_stim_trial_coef[patient_trial[i]], n_patient_tumors[i]) + tumor_stim_location_coef[patient_tumor_locations];
+     
+    vector[n_patient_tumors[i]] tumor_stim = linear_tumor_stimulus(patient_stim_intercept, patient_stim_coef, tumor_covar[tumor_pos:tumor_end]);
+    total_time_invar_tumor_stim[i] = tumor_hazard_type > 0 ? sum(tumor_stim) : 0;
+    total_time_invar_tumor_stim_no_intercept[i] = 
+      tumor_hazard_type > 0 ? sum(linear_tumor_stimulus(rep_vector(0, n_patient_tumors[i]), patient_stim_coef, tumor_covar[tumor_pos:tumor_end])) : 0;
+   
+    disease_progress_pred[pfs_interval_pos:pfs_interval_end] = log_trial_lambda[patient_trial[i], 1:n_intervals] + total_time_invar_tumor_stim[i];
+    
+    tumor_pos = tumor_end + 1;
+    pfs_interval_pos = pfs_interval_end + 1;
+  }
+
+  return (total_time_invar_tumor_stim, total_time_invar_tumor_stim_no_intercept, disease_progress_pred);    
+}
