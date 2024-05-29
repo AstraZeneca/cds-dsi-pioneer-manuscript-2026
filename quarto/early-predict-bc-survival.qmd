@@ -289,7 +289,7 @@ unfiltered_pfs_analysis_data <- tumor_analysis_data |>
     patient_t_width = patient_max_t - patient_min_t + 1,
     n_tumors = map_int(patient_tumors, nrow),
     
-    # The model expects "pfs" to record the number of weeks that were progress free, so I need to find the last *assessment* week before
+    # The model expects "pfs" to record the number of weeks that were **progress free**, so I need to find the last *assessment* week before
     # disease progress was detected.
     pfs = pmap_int(
       lst(progress_week, death_week, right_censored, patient_tumors), 
@@ -299,7 +299,7 @@ unfiltered_pfs_analysis_data <- tumor_analysis_data |>
         # Get all the assessment weeks that happened before progression (if not censored). 
         pre_progress_weeks <- unnest(patient_tumors, tumor_history) |>
           distinct(week) |>
-          filter(right_censored | week < event_week) |>
+          filter(right_censored | week < event_week) |> # Either no even happened (right censored) or use weeks before event.
           pull(week)
 
         # There are a few patients who just have a single post treatment visit
@@ -810,9 +810,14 @@ unfiltered_pfs_analysis_data |>
 Notice that 27% of the patients are excluded because progression could have occurred before treatment started; it progression was detected on the first post-treatment visit.
 
 ```{r}
+#| label: fig-early-pfs-progress-week
 
+unfiltered_pfs_analysis_data |>
+  filter(pfs < 0) |> 
+  transmute(treated, progress_week = pmin(progress_week, death_week)) |> 
+  ggplot(aes(progress_week)) +
+  geom_bar(aes(fill = treated), position = "dodge")
 ```
-
 
 # Tumor Size Model
 
