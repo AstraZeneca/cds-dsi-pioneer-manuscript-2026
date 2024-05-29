@@ -60,11 +60,11 @@ We will evaluate whether early (at baseline and at 6 and 12 weeks post treatment
 
 We will use data from the Breast01, Breast02, Breast03, and Breast04 trials, focusing on the treatment arms receiving the same dosage. Initially, we will be analyzing the different studies separately with no partial pooling since the inclusion criteria for the studies were different.
 
-* Primary outcome: Post treatment progression free survival (interval and right censored).
-* Predictive variables (at all the early intervals): 
-    - Number of lesions observed. 
-    - Organ of lesions. 
-    - lesion sizes measured, with a maximum of ten of observed lesions and two per organ.
+-   Primary outcome: Post treatment progression free survival (interval and right censored).
+-   Predictive variables (at all the early intervals):
+    -   Number of lesions observed.
+    -   Organ of lesions.
+    -   lesion sizes measured, with a maximum of ten of observed lesions and two per organ.
 
 ## Statistical Model Goals
 
@@ -87,14 +87,9 @@ tumor_model <- cmdstan_model(here("stan", "tumor.stan"))
 pfs_model <- cmdstan_model(here("stan", "pfs.stan"), compile_standalone = TRUE, force_recompile = TRUE)
 ```
 
-
 # Data
 
-What data we have so far:
-1. Breast01: phase II dose finding study (HER2-positive metastatic breast cancer).
-2. Breast02: phase III study comparing to physician choice of drug (HER2-positive metastatic breast cancer). 
-2. Breast03: phase III study comparing to trastuzumab emtansine (HER2-positive metastatic breast cancer).
-3. Breast04: This is a phase III study on patients with HER2-low metastatic breast cancer (HER2-low metastatic breast cancer).
+What data we have so far: 1. Breast01: phase II dose finding study (HER2-positive metastatic breast cancer). 2. Breast02: phase III study comparing to physician choice of drug (HER2-positive metastatic breast cancer). 2. Breast03: phase III study comparing to trastuzumab emtansine (HER2-positive metastatic breast cancer). 3. Breast04: This is a phase III study on patients with HER2-low metastatic breast cancer (HER2-low metastatic breast cancer).
 
 ```{mermaid}
 %%| label: fig-data-structure
@@ -249,8 +244,8 @@ tumor_analysis_data <- adam_adtr |>
   ) |> 
   mutate(
     right_censored = cnsr,
-    death_week = floor(time_length(dthdt - trtsdt, unit = "weeks")), # Week of death
-    progress_week = floor(time_length(fpddt - trtsdt, unit = "weeks")), # Week of disease progression
+    death_week = floor(time_length(dthdt - trtsdt, unit = "weeks") + 1), # Week of death
+    progress_week = floor(time_length(fpddt - trtsdt, unit = "weeks") + 1), # Week of disease progression
     progress_week = if_else(death, coalesce(progress_week, death_week), # If death, progress week is death week
                                    if_else(right_censored & is.na(progress_week), max(progress_week, na.rm = TRUE), # Get rid of NA 
                                                                                   progress_week)),
@@ -278,7 +273,7 @@ tumor_analysis_data <- adam_adtr |>
   mutate(med_data = map(med_data, \(cm) mutate(cm, response = str_extract(response, "CR|NA|PR|PD|SD|UNK"))))
  
 # For PFS focusing on the subset of patients with the needed assessments and calculating PFS. 
-pfs_analysis_data <- tumor_analysis_data |> 
+unfiltered_pfs_analysis_data <- tumor_analysis_data |> 
   mutate(
     patient_tumors = map(patient_tumors, \(tu) filter(tu, min_t <= 0, max_t > 0)), # Drop tumors that don't have two assessments
     
@@ -315,7 +310,9 @@ pfs_analysis_data <- tumor_analysis_data |>
   mutate(
     interval_censored = with(., pfs_model$functions$identify_censoring(pfs, death_week, n_tumors, unlist(n_measures), unlist(t_measure))[[1]]) |> 
       pmax(0) # Issue https://github.com/azu-oncology-rd/ods-adc-early-predict-2023/issues/36
-  ) |> 
+  ) 
+
+pfs_analysis_data <- unfiltered_pfs_analysis_data |> 
   filter(
     !is.na(pfs), pfs >= 0, # No missing pfs and progress must be assured to have happened after treatment
     patient_min_t <= 0, # At least one screening assessment needed,
@@ -362,7 +359,6 @@ treated_obs_km <- map_dfr(treated_trial_pfs_stan_data, function(sdata) {
   )
 }, .id = "trial")
 ```
-
 
 ```{r}
 #| label: tbl-subject-level-summary
@@ -441,10 +437,10 @@ prior_med_table1 <- pfs_analysis_data |>
 prior_med_table1
 ```
 
-In the below plots we look at the empirical Kaplan-Meier survival, the number of at risk patients, and the number of censored at each interval, for the various trials and arms. We also compare: 
+In the below plots we look at the empirical Kaplan-Meier survival, the number of at risk patients, and the number of censored at each interval, for the various trials and arms. We also compare:
 
-a) Our calculated PFS measure defined as the observed assessment week that occured _just before_ progress/death week.
-b) PFS as defined as the progress week in data.
+a)  Our calculated PFS measure defined as the observed assessment week that occured *just before* progress/death week.
+b)  PFS as defined as the progress week in data.
 
 As expected, if we use progress week, survival appears to be longer, while in fact survival is interval censored between the last progress free week and the week just before progress. In particular, the number of censored plot shows bunching at the maximum observed progress week.
 
@@ -507,7 +503,6 @@ km_res |>
   NULL 
 ```
 
-
 ```{r}
 #| labels: kaplan-meier-upper-and-lower-bounds
 
@@ -534,7 +529,6 @@ km_res |>
 #   theme_minimal() +
 #   NULL
 ```
-
 
 ```{r}
 #| label: tumor-demographics-table 
@@ -686,7 +680,6 @@ early_tumor_pairs |>
   labs(x = "Difference in Weeks", y = "Count")
 ```
 
-
 ```{r}
 #| label: fig-pfs-distribution
 #| code-fold: false
@@ -770,6 +763,57 @@ patient_measures <- 41
 max_pfs <- 45 
 ```
 
+## Excluded Data
+
+In terms of tumor data, we dropped rows from the ADTR data that 
+
+(i) did not have a treatment start data, 
+(ii) had a missing or non-positive tumor diameter, or 
+(iii) did not have TRUE accepted flag.
+
+```{r}
+#| label: excluded-tumor-rows
+
+adam_adtr |> 
+  unnest(data) |> 
+  filter(fct_match(paramcd, "LDIAM")) |>
+  transmute(
+    exclude = is.na(trdy) | is.na(aval) | !tracptfl | aval <= 0, 
+    missing_trdy = is.na(trdy), 
+    missing_aval = is.na(aval) | aval <= 0, 
+    tracptfl 
+  ) |> 
+  gtsummary::tbl_summary()
+```
+
+We exclude patients 
+
+(i) with missing PFS,
+(ii) PFS could have occurred during pre-screening (before treatment),
+(iii) have their first RECIST assessment after pre-screening, or
+(iv) have their last RECIST assessment before treatment.
+
+```{r}
+#| label: excluded-patients
+
+unfiltered_pfs_analysis_data |>
+  transmute(
+    excluded = is.na(pfs) | pfs < 0 | patient_min_t > 0 | patient_max_t <= 0,
+    missing_pfs = is.na(pfs),
+    pfs_in_prescreening = pfs < 0,
+    first_measure_not_in_prescreening = patient_min_t > 0,
+    last_measure_in_prescreening = patient_max_t <= 0
+  ) |> 
+  gtsummary::tbl_summary()
+```
+
+Notice that 27% of the patients are excluded because progression could have occurred before treatment started; it progression was detected on the first post-treatment visit.
+
+```{r}
+
+```
+
+
 # Tumor Size Model
 
 I haven't yet documented much about this model or done any kind of evaluation. I'm only using it at this time to generate fake tumor size data for testing.
@@ -778,12 +822,9 @@ We model tumor size as a nonlinear function with a Gaussian process prior (with 
 
 $$
 \log(X_{it}) \sim  \mathtt{GP}(\mu^\textrm{tumor}, k(\cdot;\alpha^\textrm{tumor}, \rho^\textrm{tumor})) 
-$$ 
-where 
-$$k(p, q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right).$$
+$$ where $$k(p, q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right).$$
 
 ## Prior Prediction
-
 
 ```{r}
 #| label: test-data
@@ -812,7 +853,6 @@ test_data <- lst(
   !!!tumor_priors  
 )
 ```
-
 
 ```{r}
 #| label: tumor-prior-predict
@@ -846,7 +886,6 @@ fake_tumor_data <- tumor_prior_res |>
 # This will be used by SLURM jobs that need tumor data (e.g., PFS SBC run).
 write_rds(fake_tumor_data, file.path(tmp_dir, "data", "fake_tumor.rds"))
 ```
-
 
 ```{r}
 #| label: tumor-model-diagnose
@@ -948,7 +987,6 @@ tumor_fake_res |>
   NULL  
 ```
 
-
 ## Fit Data
 
 Now using actual trial data.
@@ -1028,7 +1066,6 @@ all_tumor_size |>
   theme(strip.text = element_blank())
 ```
 
-
 # Survival Model
 
 ```{r}
@@ -1037,7 +1074,6 @@ all_tumor_size |>
 
 hist_breaks <- seq(10, 150, by = 10)
 ```
-
 
 We will use a piecewise-constant proportional hazard model:
 
@@ -1048,26 +1084,21 @@ We will use a piecewise-constant proportional hazard model:
 -   $C_i$ is an indicator of whether $i$ is right censored.
 -   $M_{i} \in \mathbb{Z}^{+}$ is the difference between $S_i$ and the previous interval $i$ was observed progression free ($M_i = 1$ if $C_i = 1$).
 
-The probability of remaining progression-free at $m \geq 1$ is 
-$$
+The probability of remaining progression-free at $m \geq 1$ is $$
 \alpha_t(x;\theta) = \Pr[Y_t = 0\mid Y_{t-1} = 0, X_t = \bf{x}] = \exp[-\lambda(t, \bf{x}; \boldsymbol{\theta})] 
 $$
 
-and the hazard function . 
-$$
+and the hazard function . $$
   \lambda(t, \bf{x}; \boldsymbol{\theta}) = \lambda_t \kappa(\bf{x}; \boldsymbol{\beta})
 $$
 
 We assume that censoring in conditionally independent of time to progression. We will use a linear form for $\kappa(\bf{x}; \boldsymbol{\beta}) = \exp(\bf{x}\boldsymbol{\beta})$.
 
-Aside from whatever priors we use for $\boldsymbol{\beta}$, we will use a Gaussian process prior for $\lambda_t$, 
-$$
+Aside from whatever priors we use for $\boldsymbol{\beta}$, we will use a Gaussian process prior for $\lambda_t$, $$
 \log(\lambda_t) \sim \mathtt{GP}(0, k),
-$$ 
-where $k(\lambda_p, \lambda_q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$.
+$$ where $k(\lambda_p, \lambda_q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$.
 
-Our likelihood, accounting for interval and right censoring, is 
-$$
+Our likelihood, accounting for interval and right censoring, is $$
 \mathcal{L}_i = \begin{cases}
   \prod_{t=1}^{S_i-M_i}\alpha_t(x_i;\theta)\sum_{r=S_i-M_i+1}^{S_i + 1}\left\{\prod_{m=S_i - M_i + 1}^{r-1}\alpha_m(x_i;\theta)[1-\alpha_{r}(x_i;\theta)]\right\} & \textrm{if }C_i = 0 \\
   \prod_{t=1}^{S_i}\alpha_t(x_i;\theta) & \textrm{if }C_i = 1 
@@ -1200,7 +1231,6 @@ lambda_rvar |>
   NULL
 ```
 
-
 ```{r}
 #| label: fig-prior-base-pf-prob
 #| dependson: pfs-prior-predict
@@ -1260,7 +1290,6 @@ pfs_prior_res |>
   # coord_cartesian(xlim = c(0, 1)) +
   NULL
 ```
-
 
 ```{r}
 #| label: base-surivival-plot
@@ -1459,7 +1488,6 @@ fake_data_sim |>
   facet_grid(vars(sim_type), vars(sim_id))
 ```
 
-
 ```{r}
 #| label: fake-data-km
 #| fig-cap: "Comparing the fake data Kaplan-Meier survival probability against the true probability."
@@ -1573,7 +1601,7 @@ It is clear that ignoring interval censoring degrades the model's ability to rec
 
 ### No Tumors Model
 
-The hazard function does not use any covariates: 
+The hazard function does not use any covariates:
 
 $$
   \lambda(t, \bf{x}; \boldsymbol{\theta}) = \lambda_t
@@ -1743,7 +1771,6 @@ lst(ic = no_tumor_pfs_res, ic_ignored = ic_ignored_no_tumor_pfs_res) |>
   labs(title = "Posterior PFS mean and median", subtitle = "Treated arm", x = "PFS [weeks]", y = "")
 ```
 
-
 While SBC shows that ignoring interval censoring should be a big problem, it does not appear to bias estimates much using our data.
 
 ### Tumor Count Model
@@ -1804,8 +1831,9 @@ $$
 \begin{align}
   \lambda(t, \bf{x}; \boldsymbol{\theta}) &= \lambda_t \cdot \underbrace{\exp\left[\sum_m \beta_0 + \beta_1 \bar{x}_{m0} + \beta_2 \bar{x}_{m1} \right]}_{\textrm{Hazard ratio, }\kappa} \\
   \end{align}
-$$
-where $\bar{N}$ is the average number of tumors per patient and, for every tumor $m$, $\bar{x}_{m0}$ is the standardized last screening assessment and $\bar{x}_{m1}$ is the standardized first assessment after treatment begins.^[$\bar{x}_{mt} = \frac{x_{mt} - \bar{x}}{s(x)}$] We subtract $\beta_0 \bar{N}$ 
+$$ where $\bar{N}$ is the average number of tumors per patient and, for every tumor $m$, $\bar{x}_{m0}$ is the standardized last screening assessment and $\bar{x}_{m1}$ is the standardized first assessment after treatment begins.[^2] We subtract $\beta_0 \bar{N}$
+
+[^2]: $\bar{x}_{mt} = \frac{x_{mt} - \bar{x}}{s(x)}$
 
 ```{r}
 #| label: two-tumor-pfs-fit
@@ -2059,7 +2087,6 @@ lst(prior = prior_two_tumor_pfs_res, posterior = two_tumor_pfs_res) |>
   coord_cartesian(xlim = c(0, 2))
 ```
 
-
 #### Variation in Tumor Predictive Power
 
 In this section I'm trying to get a sense of how much the two first assessments of tumors contribute to the variation in the hazard and the probability of disease progression. Two plots are overlapped in these plots to: First, show the degree of variation in response to the tumor sizes, holding the model parameters fixed at the posterior median; and second, show the degree of variation using the full posterior distribution of the model parameters.
@@ -2151,7 +2178,6 @@ two_tumor_pfs_res |>
   labs(title = "Variation in the probability of disease progression", y = latex2exp::TeX(r"{1 - \alpha}"))
   NULL
 ```
-
 
 #### Partial Pooling
 
@@ -2379,11 +2405,9 @@ tibble(delta = seq(-10, 10), sym_loss = abs(delta), asym_loss = if_else(delta < 
   NULL
 ```
 
-For each patient, $i$, we calculate the **out-of-sample** loss as
-$$
+For each patient, $i$, we calculate the **out-of-sample** loss as $$
 \int L(y_i, c_i, \tilde{y}_i, \tilde{c}_i)\cdot p(\tilde{y}_i,\tilde{c}_i \mid y_{-i}, c_{-i})\cdot p(y_i)\,\textrm{d}\tilde{y}_i\textrm{d}\tilde{c}_i\textrm{d}y_i.
-$$
-Where the observed PFS is modeled as uniform value within the censored interval, $Y_i \sim \mathtt{Uniform}(\underline{y}_i, \overline{y}_i)$.
+$$ Where the observed PFS is modeled as uniform value within the censored interval, $Y_i \sim \mathtt{Uniform}(\underline{y}_i, \overline{y}_i)$.
 
 ```{r}
 #| label: loo-predict-other-utility 
@@ -2445,7 +2469,6 @@ loss_data |>
   facet_wrap(vars(loss_type), ncol = 1, labeller = labeller(loss_type = c(sym = "Symmetric Loss", asym = "Asymmetric Loss")))
 ```
 
-
 ```{r}
 loss_data |> 
   group_by(loss_type, model) |> 
@@ -2467,7 +2490,6 @@ loss_data |>
   coord_cartesian(xlim = c(-20, 20)) +
   NULL
 ```
-
 
 ```{r}
 #| label: fig-patient-hazard-ratios
@@ -2493,7 +2515,6 @@ patient_kappa_full_dist_data |>
   NULL
 ```
 
-
 <!-- Ignore everything below -->
 
 ```{r}
@@ -2511,5 +2532,3 @@ loss_diff_data |>
   theme(legend.position = "bottom")
 
 ```
-
-
