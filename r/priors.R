@@ -17,5 +17,5 @@ pfs_priors <- lst(
   tumor_stim_trial_coef_sd_sd = c(0.3, 0.125, 0.125, 0.125, 0.125, 0.125),
   tumor_stim_location_coef_sd_sd = tumor_stim_trial_coef_sd_sd,
   
-  orr_pop_coef_sd = 1
+  orr_pop_coef_sd = 0.125 
 )
