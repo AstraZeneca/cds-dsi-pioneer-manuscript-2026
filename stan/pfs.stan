@@ -132,37 +132,6 @@ transformed parameters {
   ); 
   
   vector<lower = 0, upper = 1>[n_time_periods] disease_progress_prob = inv_cloglog(disease_progress_pred); // DP conditional probability for all patients (same as above)
-  
-  // { // Calculate patient-interval conditional probability of disease progression.
-  //   int tumor_pos = 1;
-  //   int pfs_interval_pos = 1;
-  // 
-  //   for (i in 1:n_patients) {
-  //     int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
-  //     int n_intervals = gen_pfs ? max_all_t : pfs[i] + right_uncensored[i] + interval_censored[i];
-  //     int pfs_interval_end = pfs_interval_pos + n_intervals - 1; 
-  //     array[n_patient_tumors[i]] int patient_tumor_locations = tumor_location[tumor_pos:tumor_end];
-  //     
-  //     vector[n_patient_tumors[i]] patient_stim_intercept = 
-  //       tumor_stim_pop_intercept + tumor_stim_trial_intercept[patient_trial[i]] + tumor_stim_location_intercept[patient_tumor_locations];
-  //       
-  //     matrix[n_patient_tumors[i], n_covar_col] patient_stim_coef =
-  //       // rep_matrix(tumor_stim_pop_coef .* exp(tumor_stim_trial_coef[patient_trial[i]]), n_patient_tumors[i]) .* exp(tumor_stim_location_coef[patient_tumor_locations]);
-  //       rep_matrix(tumor_stim_pop_coef + tumor_stim_trial_coef[patient_trial[i]], n_patient_tumors[i]) +tumor_stim_location_coef[patient_tumor_locations];
-  //      
-  //     vector[n_patient_tumors[i]] tumor_stim = linear_tumor_stimulus(patient_stim_intercept, patient_stim_coef, tumor_covar[tumor_pos:tumor_end]);
-  //     total_time_invar_tumor_stim[i] = tumor_hazard_type > 0 ? sum(tumor_stim) : 0;
-  //     total_time_invar_tumor_stim_no_intercept[i] = 
-  //       tumor_hazard_type > 0 ? sum(linear_tumor_stimulus(rep_vector(0, n_patient_tumors[i]), patient_stim_coef, tumor_covar[tumor_pos:tumor_end])) : 0;
-  //    
-  //     disease_progress_pred[pfs_interval_pos:pfs_interval_end] = log_trial_lambda[patient_trial[i], 1:n_intervals] + total_time_invar_tumor_stim[i];
-  //     
-  //     tumor_pos = tumor_end + 1;
-  //     pfs_interval_pos = pfs_interval_end + 1;
-  //   }
-  // }
-  // 
-  // disease_progress_prob = inv_cloglog(disease_progress_pred); 
 }
 
 model {
@@ -222,6 +191,13 @@ generated quantities {
     // Progress free conditional probability if only 1 tumor per patient fixed at size = 1 
   vector<lower = 0, upper = 1>[max_all_t] one_tumor_pf_cond_prob; 
   
+  if (tumor_hazard_type > 0) {
+    one_tumor_pf_cond_prob = 
+      1 - calculate_progress_linear_prob(log_lambda, tumor_stim_pop_intercept, tumor_stim_pop_coef, rep_row_vector(1, n_covar_col)); 
+  } else {
+    one_tumor_pf_cond_prob = base_pf_cond_prob;
+  } 
+  
   array[add_trial_level ? n_trials : 0] vector<lower = 0, upper = 1>[max_all_t] trial_base_pf_cond_prob; 
   array[add_trial_level ? n_trials : 0] vector<lower = 0, upper = 1>[max_all_t] trial_one_tumor_pf_cond_prob; 
   
@@ -238,13 +214,6 @@ generated quantities {
     }
   }
  
-  if (tumor_hazard_type > 0) {
-    one_tumor_pf_cond_prob = 
-      1 - calculate_progress_linear_prob(log_lambda, tumor_stim_pop_intercept, tumor_stim_pop_coef, rep_row_vector(1, n_covar_col)); 
-  } else {
-    one_tumor_pf_cond_prob = base_pf_cond_prob;
-  } 
-  
   vector<lower = 0, upper = 1>[max_all_t] base_survival;
   vector<lower = 0, upper = 1>[max_all_t] one_tumor_survival;
   real<lower = 0, upper = max_all_t> base_cond_expected_pfs;

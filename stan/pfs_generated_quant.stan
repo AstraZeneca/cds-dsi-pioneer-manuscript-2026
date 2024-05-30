@@ -43,24 +43,28 @@ if (gen_pfs) { // Retrodiction, generating simulated data.
       gen_interval_censored ? t_measure[(t_pos + n_screening_t[tumor_pos]):t_end] : pfs_range_int
     );
     
-    int max_t = max(t_measure[t_pos:t_all_end]);
+    // int rep_actual_pfs_censored = rep_actual_pfs >= max_all_t; // This means we ran out of marginal probability _not_ censored because of t_measure
+    // int max_t = max(t_measure[t_pos:t_all_end]);
     
-    if (max_t >= 9 * 4 || (!rep_right_censored[i] && rep_actual_pfs <= 9 * 4)) {
-      rep_pfs_6mon[i] = rep_actual_pfs >= 6 * 4; // What about interval censoring?
-      rep_pfs_9mon[i] = rep_actual_pfs >= 9 * 4; // What about interval censoring?
-    } else {
-      int n_intervals = 9 * 4 - rep_actual_pfs;
-      tuple(vector[n_intervals], vector[n_intervals]) marginal_prob_res = 
-        calculate_marginal_dp_prob(disease_progress_prob[(pfs_interval_pos + rep_actual_pfs):(pfs_interval_pos + 9 * 4 - 1)], n_intervals);  
-      
-      rep_pfs_9mon[i] = 1 - marginal_prob_res.2[9 * 4 - rep_actual_pfs]; 
-      
-      if (max_t >= 6 * 4 || (!right_censored[i] && rep_actual_pfs <= 6 * 4)) {
-        rep_pfs_6mon[i] = rep_actual_pfs >= 6 * 4; // What about interval censoring?
-      } else {
-        rep_pfs_6mon[i] = 1 - marginal_prob_res.2[6 * 4 - rep_actual_pfs]; 
-      }
-    } 
+    rep_pfs_6mon[i] = rep_actual_pfs >= 6 * 4; // What about interval censoring?
+    rep_pfs_9mon[i] = rep_actual_pfs >= 9 * 4; // What about interval censoring?
+    
+    // if (max_t >= 9 * 4 || (!rep_right_censored[i] && rep_actual_pfs <= 9 * 4)) {
+    //   rep_pfs_6mon[i] = rep_actual_pfs >= 6 * 4; // What about interval censoring?
+    //   rep_pfs_9mon[i] = rep_actual_pfs >= 9 * 4; // What about interval censoring?
+    // } else {
+    //   int n_intervals = 9 * 4 - rep_actual_pfs;
+    //   tuple(vector[n_intervals], vector[n_intervals]) marginal_prob_res = 
+    //     calculate_marginal_dp_prob(disease_progress_prob[(pfs_interval_pos + rep_actual_pfs):(pfs_interval_pos + 9 * 4 - 1)], n_intervals);  
+    //   
+    //   rep_pfs_9mon[i] = 1 - marginal_prob_res.2[9 * 4 - rep_actual_pfs]; 
+    //   
+    //   if (max_t >= 6 * 4 || (!right_censored[i] && rep_actual_pfs <= 6 * 4)) {
+    //     rep_pfs_6mon[i] = rep_actual_pfs >= 6 * 4; // What about interval censoring?
+    //   } else {
+    //     rep_pfs_6mon[i] = 1 - marginal_prob_res.2[6 * 4 - rep_actual_pfs]; 
+    //   }
+    // } 
     
     pfs_interval_pos = pfs_interval_end + 1;
     t_pos += sum(n_measures[tumor_pos:tumor_end]);
