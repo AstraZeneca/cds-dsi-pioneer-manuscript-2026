@@ -38,7 +38,7 @@ transformed data {
 parameters {
   #include "baseline_hazard_parameters.stan"
   
-  real<lower = 0, upper = 1> orr_coef;
+  real orr_coef;
 }
 
 transformed parameters {
@@ -78,6 +78,36 @@ model {
 
 generated quantities {
   #include "pfs_generated_quant.stan"
+   
+  real<lower = 0, upper = 1> base_pfs_6mon_prob;
+  real<lower = 0, upper = 1> base_pfs_9mon_prob;
+  real<lower = 0, upper = 1> orr_pfs_6mon_prob;
+  real<lower = 0, upper = 1> orr_pfs_9mon_prob;
   
+  {
+    vector[9 * 4] base_pf_cond_lp = -exp(log_lambda[:(9 * 4)]); 
+    vector[9 * 4] orr_pf_cond_lp = -exp(log_lambda[:(9 * 4)] + orr_coef); 
+   
+    vector[9 * 4] base_pf_marginal_prob; 
+    vector[9 * 4] orr_pf_marginal_prob; 
+    
+    real current_base_pf_lp = 0; // Marginal
+    real current_orr_pf_lp = 0; // Marginal
+    
+    for (t in 1:(9 * 4)) {
+      base_pf_marginal_prob[t] = exp(current_base_pf_lp + log1m_exp(base_pf_cond_lp[t]));
+      orr_pf_marginal_prob[t] = exp(current_orr_pf_lp + log1m_exp(orr_pf_cond_lp[t]));
+      
+      current_base_pf_lp += base_pf_cond_lp[t];
+      current_orr_pf_lp += orr_pf_cond_lp[t];
+    } 
+    
+    base_pfs_6mon_prob = 1 - sum(base_pf_marginal_prob[:(6 * 4)]);
+    base_pfs_9mon_prob = 1 - sum(base_pf_marginal_prob);
+    orr_pfs_6mon_prob = 1 - sum(orr_pf_marginal_prob[:(6 * 4)]);
+    orr_pfs_9mon_prob = 1 - sum(orr_pf_marginal_prob);
+  }
   
+  real<lower = -1, upper = 1> pfs_6mon_prob_diff = orr_pfs_6mon_prob - base_pfs_6mon_prob;
+  real<lower = -1, upper = 1> pfs_9mon_prob_diff = orr_pfs_9mon_prob - base_pfs_9mon_prob;
 }
