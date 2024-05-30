@@ -91,7 +91,12 @@ pfs_orr_model <- cmdstan_model(here("stan", "pfs_orr.stan"))
 
 # Data
 
-What data we have so far: 1. Breast01: phase II dose finding study (HER2-positive metastatic breast cancer). 2. Breast02: phase III study comparing to physician choice of drug (HER2-positive metastatic breast cancer). 2. Breast03: phase III study comparing to trastuzumab emtansine (HER2-positive metastatic breast cancer). 3. Breast04: This is a phase III study on patients with HER2-low metastatic breast cancer (HER2-low metastatic breast cancer).
+What data we have so far: 
+
+1. Breast01: phase II dose finding study (HER2-positive metastatic breast cancer). 
+2. Breast02: phase III study comparing to physician choice of drug (HER2-positive metastatic breast cancer). 
+3. Breast03: phase III study comparing to trastuzumab emtansine (HER2-positive metastatic breast cancer). 
+4. Breast04: This is a phase III study on patients with HER2-low metastatic breast cancer (HER2-low metastatic breast cancer).
 
 ```{mermaid}
 %%| label: fig-data-structure
@@ -1103,7 +1108,8 @@ Aside from whatever priors we use for $\boldsymbol{\beta}$, we will use a Gaussi
 \log(\lambda_t) \sim \mathtt{GP}(0, k),
 $$ where $k(\lambda_p, \lambda_q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$.
 
-Our likelihood, accounting for interval and right censoring, is $$
+Our likelihood, accounting for interval and right censoring, is 
+$$
 \mathcal{L}_i = \begin{cases}
   \prod_{t=1}^{S_i-M_i}\alpha_t(x_i;\theta)\sum_{r=S_i-M_i+1}^{S_i + 1}\left\{\prod_{m=S_i - M_i + 1}^{r-1}\alpha_m(x_i;\theta)[1-\alpha_{r}(x_i;\theta)]\right\} & \textrm{if }C_i = 0 \\
   \prod_{t=1}^{S_i}\alpha_t(x_i;\theta) & \textrm{if }C_i = 1 
@@ -2396,6 +2402,24 @@ prior_orr_wk6_res <- future::value(prior_orr_wk6_future)
 orr_wk6_res <- future::value(orr_wk6_future)
 prior_orr_wk18_res <- future::value(prior_orr_wk18_future)
 orr_wk18_res <- future::value(orr_wk18_future)
+```
+
+```{r}
+lst(prior = prior_orr_wk6_res, post = orr_wk6_res) |> 
+  map_dfr(\(f) spread_rvars(f, base_pfs_6mon_prob, orr_pfs_6mon_prob), .id = "fit_type") |> 
+  pivot_longer(!fit_type, names_to = "orr", values_to = "pfs") |> 
+  ggplot() +
+  stat_halfeye(aes(xdist = pfs, fill = fit_type, color = fit_type), alpha = 0.25) +
+  facet_wrap(vars(orr))
+```
+
+```{r}
+lst(prior = prior_orr_wk6_res, post = orr_wk6_res) |> 
+  map_dfr(\(f) spread_rvars(f, orr_coef), .id = "fit_type") |> 
+  mutate(hazard_ratio = exp(orr_coef)) |>  
+  ggplot() +
+  stat_halfeye(aes(xdist = hazard_ratio, color = fit_type, fill = fit_type), alpha = 0.25) +
+  geom_vline(xintercept = 1, linetype = "dotted")
 ```
 
 ### Compare Models
