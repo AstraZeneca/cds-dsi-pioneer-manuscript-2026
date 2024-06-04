@@ -1,24 +1,3 @@
-# gen_patient_interval_properties <- function(log_lambda, tumor_intercept, tumor_coef, settings) {
-#   standardized <- pfs_model$functions$standardize_nonzero_tumor_sizes(settings$tumor_size)[[3]]
-#   
-#   t_measure_list <- with(settings, list_measures(t_measure, n_measures, n_patient_tumors))
-#   n_screening_t <- with(settings, pfs_model$functions$calc_n_screening_t(n_patient_tumors, n_measures, t_measure)) 
-#   
-#   with(settings, pfs_model$functions$prepare_early_tumors_design_matrix(standardized, n_patient_tumors, n_measures, t_measure, n_screening_t)[[1]]) |>  
-#     as_tibble() |> 
-#     set_names(c("tumor_size_1", "tumor_size_2")) |> 
-#     mutate(patient_id = rep(1:settings$n_patients, settings$n_patient_tumors)) |> 
-#     group_by(patient_id) |>
-#     summarize(tumor_covar = list(cbind(tumor_size_1, tumor_size_2))) |>
-#     rowwise() |> 
-#     reframe(
-#       patient_id, 
-#       progress_prob = pfs_model$functions$calculate_progress_linear_prob(settings$n_patient_tumors, log_lambda, tumor_intercept, tumor_coef, tumor_covar),
-#       hazard = pfs_model$functions$calculate_linear_hazard(settings$n_patient_tumors, log_lambda, tumor_intercept, tumor_coef, tumor_covar),
-#       survival = cumprod(progress_prob)
-#     )  
-# }
-
 read_entimice_data <- function(study, idap, dataset, data_type = c("sdtm", "adam"), team_dir = "/wscratch/ewfteams/dpo0083") {
   read_rds(file.path(team_dir, study, idap, arg_match(data_type), "prod", "data", str_c(dataset, ".rds"))) |> 
     rename_with(str_to_lower) |> 
@@ -122,6 +101,29 @@ gen_fake_pfs_data <- function(patient_interval_data, settings) {
   assertthat::assert_that(with(fake_data, all(stan_right_censored == right_censored)))
   
   return(fake_data)
+}
+
+create_orr_initializer <- function(stan_data) {
+  function(chain_id) { 
+    init_vals <- lst(
+    )
+    
+    if (stan_data$add_trial_level) {
+      init_vals <- init_vals |> 
+        list_assign(
+          raw_log_lambda_gp_trial_intercept = if (stan_data$add_trial_level) rnorm(stan_data$n_trials),
+          log_lambda_gp_trial_intercept_sd = abs(rnorm(1, 0, stan_data$log_lambda_gp_trial_intercept_sd_sd)),
+        )
+    }
+    
+    if (stan_data$add_tumor_location_level) {
+      init_vals <- init_vals |> 
+        list_assign(
+        )
+    }
+    
+    return(init_vals)
+  }
 }
 
 create_pfs_initializer <- function(stan_data) {
@@ -250,9 +252,9 @@ get_early_tumor_pairs <- function(stan_data, .model = pfs_model) {
     mutate(pfs = with(stan_data, rep(pfs, n_patient_tumors)), trial = with(stan_data, rep(patient_trial, n_patient_tumors)))
 }
 
-prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ..., pfs_var = pfs) {
+prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ..., pfs_var = pfs, orr_var = orr_6wk) {
   tumor_stan_data <- prepare_tumor_stan_data(analysis_data)
-  pfs_data <- select(analysis_data, pfs = {{ pfs_var }}, death_week, right_censored, interval_censored, patient = usubjid) |> 
+  pfs_data <- select(analysis_data, pfs = {{ pfs_var }}, orr = {{ orr_var }}, death_week, right_censored, interval_censored, patient = usubjid) |> 
     mutate(
       death_week = if_else(right_censored, 0, death_week), # Death week is irrelevant if the data is censored
       patient = factor(patient) 
@@ -556,3 +558,15 @@ get_tumor_hazard_ratio_summary <- function(fit, var, tumor_size_pairs, stan_data
   }
 }
 
+calc_pfs <- function(progress_week, death_week, right_censored, patient_tumors) {
+  event_week <- min(progress_week, death_week, na.rm = TRUE) # Whichever happened first, death or DP.
+ 
+  # Get all the assessment weeks that happened before progression (if not censored). 
+  pre_progress_weeks <- unnest(patient_tumors, tumor_history) |>
+    distinct(week) |>
+    filter(right_censored | week < event_week) |>
+    pull(week)
+
+  # There are a few patients who just have a single post treatment visit
+  if (length(pre_progress_weeks) > 0) max(pre_progress_weeks) else NA_integer_
+}

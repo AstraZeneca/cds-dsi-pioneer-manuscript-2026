@@ -23,8 +23,9 @@ library(tidybayes)
 library(bayesplot)
 library(here)
 library(gtsummary)
-library(targets)
+# library(targets)
 library(colorspace)
+library(ggalluvial)
 
 # conflicts_prefer(
 #   dplyr::filter
@@ -85,11 +86,17 @@ source(here("r", "priors.R"))
 
 tumor_model <- cmdstan_model(here("stan", "tumor.stan"))
 pfs_model <- cmdstan_model(here("stan", "pfs.stan"), compile_standalone = TRUE, force_recompile = TRUE)
+pfs_orr_model <- cmdstan_model(here("stan", "pfs_orr.stan"))
 ```
 
 # Data
 
-What data we have so far: 1. Breast01: phase II dose finding study (HER2-positive metastatic breast cancer). 2. Breast02: phase III study comparing to physician choice of drug (HER2-positive metastatic breast cancer). 2. Breast03: phase III study comparing to trastuzumab emtansine (HER2-positive metastatic breast cancer). 3. Breast04: This is a phase III study on patients with HER2-low metastatic breast cancer (HER2-low metastatic breast cancer).
+What data we have so far: 
+
+1. Breast01: phase II dose finding study (HER2-positive metastatic breast cancer). 
+2. Breast02: phase III study comparing to physician choice of drug (HER2-positive metastatic breast cancer). 
+3. Breast03: phase III study comparing to trastuzumab emtansine (HER2-positive metastatic breast cancer). 
+4. Breast04: This is a phase III study on patients with HER2-low metastatic breast cancer (HER2-low metastatic breast cancer).
 
 ```{mermaid}
 %%| label: fig-data-structure
@@ -161,6 +168,10 @@ adam_adtte <- data_details |>
   rowwise() |> 
   mutate(data = list(read_entimice_data(study, idap, "deid_adtte", "adam")) |> 
            map(\(d) mutate(d, cnsr = cnsr == 1)))
+
+adam_adrs <- data_details |> 
+  rowwise() |> 
+  mutate(data = list(read_entimice_data(study, idap, "deid_adrs", "adam")))
 ```
 
 Using SDTM and ADaM data from the trials, we prepare the analysis data.
@@ -194,8 +205,9 @@ tumor_analysis_data <- adam_adtr |>
   arrange(studyid, usubjid, trlnkid, trdy) |> 
   # For each patient-tumor row, put all the tumor assessment data in a nested column
   nest(tumor_history = c(adt, trdy, week, visit, visitnum, tsplitfl, tmergefl, mmdiam, treated_week)) |> 
-  mutate(# For some weeks, there are multiple (unscheduled) visits that might happen. I'm just going to use the average for tumor sizes within those
-         # weeks.
+  mutate(
+    # For some weeks, there are multiple (unscheduled) visits that might happen. I'm just going to use the average for tumor sizes within those
+    # weeks.
     tumor_history = map(
       tumor_history, 
       \(h) nest(h, visits = c(adt, trdy, visit, visitnum, mmdiam)) |> 
@@ -270,7 +282,41 @@ tumor_analysis_data <- adam_adtr |>
   ) |> 
   # Get prior therapy medications per patient
   nest_join(unnest(adam_adcm, data) |> select(usubjid, cmcat, response, cmdecod), by = c("usubjid"), name = "med_data") |> 
-  mutate(med_data = map(med_data, \(cm) mutate(cm, response = str_extract(response, "CR|NA|PR|PD|SD|UNK"))))
+  mutate(med_data = map(med_data, \(cm) mutate(cm, response = str_extract(response, "CR|NA|PR|PD|SD|UNK")))) |> 
+  # Get visit level disease response
+  nest_join(
+    unnest(adam_adrs, data) |> 
+      filter(
+        rsacptfl, 
+        fct_match(parqual, "CENTRAL"), 
+        fct_match(
+          param, 
+          c("Overall Response", 
+            "Best Overall Response", 
+            "Best Overall Response (03 months)", 
+            "Best Overall Response (06 months)", 
+            "Best Overall Response (09 months)", 
+            "Best Overall Response (12 months)")
+        )
+      ) |> 
+      transmute(
+        studyid, usubjid, visit, visitnum, week = ady %/% 7, param = factor(param), paramcd = factor(paramcd), 
+        response = factor(avalc, levels = c("CR", "PR", "SD", "NON-CR/NON-PD", "PD", "NE", "NED"), ordered = TRUE)
+      ),
+    by = c("studyid", "usubjid"),
+    name = "disease_response"
+  ) |> 
+  mutate(
+    # The model expects "pfs" to record the number of weeks that were progress free, so I need to find the last *assessment* week before
+    # disease progress was detected.
+    pfs = pmap_int(lst(progress_week, death_week, right_censored, patient_tumors), calc_pfs),
+ 
+    # Calculate Objective Reponse Rate 
+    map_dfr(
+      disease_response, \(r) filter(r, fct_match(param, "Overall Response")) |>
+        summarize(orr_6wk = any(week <= 6 & response <= "PR"), orr_18wk = any(week <= 18 & response <= "PR"))
+    )
+  )
  
 # For PFS focusing on the subset of patients with the needed assessments and calculating PFS. 
 unfiltered_pfs_analysis_data <- tumor_analysis_data |> 
@@ -288,24 +334,6 @@ unfiltered_pfs_analysis_data <- tumor_analysis_data |>
     patient_max_t = map_int(patient_tumors, \(tu) max(tu$max_t)),
     patient_t_width = patient_max_t - patient_min_t + 1,
     n_tumors = map_int(patient_tumors, nrow),
-    
-    # The model expects "pfs" to record the number of weeks that were **progress free**, so I need to find the last *assessment* week before
-    # disease progress was detected.
-    pfs = pmap_int(
-      lst(progress_week, death_week, right_censored, patient_tumors), 
-      function(progress_week, death_week, right_censored, patient_tumors) {
-        event_week <- min(progress_week, death_week, na.rm = TRUE) # Whichever happened first, death or DP.
-       
-        # Get all the assessment weeks that happened before progression (if not censored). 
-        pre_progress_weeks <- unnest(patient_tumors, tumor_history) |>
-          distinct(week) |>
-          filter(right_censored | week < event_week) |> # Either no even happened (right censored) or use weeks before event.
-          pull(week)
-
-        # There are a few patients who just have a single post treatment visit
-        if (length(pre_progress_weeks) > 0) max(pre_progress_weeks) else NA_integer_
-      }
-    ),
   ) %>%
   mutate(
     interval_censored = with(., pfs_model$functions$identify_censoring(pfs, death_week, n_tumors, unlist(n_measures), unlist(t_measure))[[1]]) |> 
@@ -326,6 +354,16 @@ pfs_analysis_data |>
   count(studyid, trial, treated, trtp, trta) |> 
   kableExtra::kbl() |> 
   kableExtra::kable_styling()
+
+orr_analysis_data <- tumor_analysis_data |> 
+  filter(!is.na(pfs), pfs >= 0) %>% 
+  mutate(
+    wk6_subsample = patient_max_t >= 6,
+    wk18_subsample = patient_max_t >=18,
+    
+    interval_censored = with(., pfs_model$functions$identify_censoring(pfs, death_week, n_tumors, unlist(n_measures), unlist(t_measure))[[1]]) |> 
+      pmax(0) # Issue https://github.com/azu-oncology-rd/ods-adc-early-predict-2023/issues/36
+  )
 ```
 
 ```{r}
@@ -753,6 +791,31 @@ interval_censoring_data |>
   ) +
   facet_wrap(vars(trial), ncol = 2, scales = "free_y") +
   NULL
+```
+
+```{r}
+#| label: fig-disease-reponse-alluvial
+#| fig-cap: Alluvial plot for changes in disease response between assessment visits.
+
+tumor_analysis_data |> 
+  unnest(disease_response) |> 
+  filter(fct_match(param, "Overall Response")) |> 
+  select(trial, usubjid, week, response) |> 
+  mutate(response = fct_collapse(response, Other = c("NE", "NED", "NON-CR/NON-PD")) |> fct_relevel("Other", after = Inf)) |> 
+  arrange(trial, usubjid, week) |> 
+  group_by(usubjid) |> 
+  mutate(prev_or = lag(response)) |> 
+  ungroup() |> 
+  count(trial, prev_or, response, name = "freq") |> 
+  filter(!are_na(prev_or)) |>
+  ggplot(aes(axis1 = prev_or, axis2 = response, y = freq)) +
+  geom_alluvium(aes(fill = prev_or), width = 1/10, show.legend = FALSE) +
+  geom_stratum(width = 1/10, color = "white", fill = "black", alpha = 0.5) + 
+  geom_label(aes(label = after_stat(stratum)), stat = "stratum") + 
+  scale_x_discrete(expand = c(0.05, 0.05)) +
+  scale_fill_discrete(type = AZ_palette) +
+  labs(y = "Frequency") +
+  facet_wrap(vars(trial), scales = "free_y")
 ```
 
 ```{r}
@@ -1557,7 +1620,7 @@ ic_labels <- c(ic = "IC Adjusted", ic_ignore = "IC Ignored", no_ic = "No IC")
 sbc_data <- bind_rows( 
   no_ic = read_rds(file.path(tmp_dir, "data", "sbc4.rds")),
   ic = read_rds(file.path(tmp_dir, "data", "sbc5_ic.rds")),
-  ic_ignore = read_rds(file.path(tmp_dir, "data", "sbc3_ic_ignore.rds")),
+  ic_ignore = read_rds(file.path(tmp_dir, "data", "sbc4_ic_ignored.rds")),
   .id = "sim_type") |> 
   select(sim_type, starts_with("r_"))
 
@@ -2092,6 +2155,18 @@ lst(prior = prior_two_tumor_pfs_res, posterior = two_tumor_pfs_res) |>
   coord_cartesian(xlim = c(0, 2))
 ```
 
+```{r}
+treated_pfs_analysis_data |>
+  bind_cols(two_tumor_pfs_res |> spread_rvars(pfs_6mon[i], pfs_9mon[i])) |> 
+  ggplot() +
+  stat_pointinterval(aes(orr_6wk, ydist = pfs_6mon), position = position_jitter(width = 0.25, height = 0.25), alpha = 0.25) 
+
+treated_pfs_analysis_data |>
+  bind_cols(two_tumor_pfs_res |> spread_rvars(pfs_6mon[i], pfs_9mon[i])) |> 
+  ggplot() +
+  stat_pointinterval(aes(orr_18wk, ydist = pfs_9mon), position = position_jitter(width = 0.25, height = 0.25), alpha = 0.25) 
+```
+
 #### Variation in Tumor Predictive Power
 
 In this section I'm trying to get a sense of how much the two first assessments of tumors contribute to the variation in the hazard and the probability of disease progression. Two plots are overlapped in these plots to: First, show the degree of variation in response to the tumor sizes, holding the model parameters fixed at the posterior median; and second, show the degree of variation using the full posterior distribution of the model parameters.
@@ -2316,6 +2391,93 @@ lst(treated = tumor_change_pfs_res) |> #, control = control_two_tumor_pfs_res) |
 ### Joint Model
 
 TODO
+
+### ORR
+
+```{r}
+treated_orr_wk6_stan_data <- orr_analysis_data |> 
+  filter(treated, wk6_subsample) |> 
+  prepare_pfs_stan_data(tumor_priors, pfs_priors)
+
+treated_orr_wk18_stan_data <- orr_analysis_data |> 
+  filter(treated, wk18_subsample) |> 
+  prepare_pfs_stan_data(tumor_priors, pfs_priors)
+
+# orr_init <- create_orr_initializer(treated_orr_wk6_stan_data)
+
+prior_orr_wk6_future <- future::future(
+  treated_orr_wk6_stan_data |> 
+    list_assign(fit_data = FALSE) |> 
+    pfs_orr_model$sample(
+      iter_warmup = 300, iter_sampling = 300, 
+      # init = orr_init,
+      parallel_chains = 4,
+      output_dir = file.path(tmp_dir, "fit"), 
+      output_basename = "prior_orr_wk6" 
+    ),
+  seed = TRUE
+)
+
+prior_orr_wk18_future <- future::future(
+  treated_orr_wk18_stan_data |> 
+    list_assign(fit_data = FALSE) |> 
+    pfs_orr_model$sample(
+      iter_warmup = 300, iter_sampling = 300, 
+      # init = orr_init,
+      parallel_chains = 4,
+      output_dir = file.path(tmp_dir, "fit"), 
+      output_basename = "prior_orr_wk18" 
+    ),
+  seed = TRUE
+)
+
+orr_wk6_future <- future::future(
+  treated_orr_wk6_stan_data |> 
+    pfs_orr_model$sample(
+      iter_warmup = 300, iter_sampling = 300, 
+      # init = orr_init,
+      parallel_chains = 4,
+      output_dir = file.path(tmp_dir, "fit"), 
+      output_basename = "orr_wk6" 
+    ),
+  seed = TRUE
+)
+
+orr_wk18_future <- future::future(
+  treated_orr_wk18_stan_data |> 
+    pfs_orr_model$sample(
+      iter_warmup = 300, iter_sampling = 300, 
+      # init = orr_init,
+      parallel_chains = 4,
+      output_dir = file.path(tmp_dir, "fit"), 
+      output_basename = "orr_wk18" 
+    ),
+  seed = TRUE
+)
+
+prior_orr_wk6_res <- future::value(prior_orr_wk6_future)
+orr_wk6_res <- future::value(orr_wk6_future)
+prior_orr_wk18_res <- future::value(prior_orr_wk18_future)
+orr_wk18_res <- future::value(orr_wk18_future)
+```
+
+```{r}
+lst(prior = prior_orr_wk6_res, post = orr_wk6_res) |> 
+  map_dfr(\(f) spread_rvars(f, base_pfs_6mon_prob, orr_pfs_6mon_prob), .id = "fit_type") |> 
+  pivot_longer(!fit_type, names_to = "orr", values_to = "pfs") |> 
+  ggplot() +
+  stat_halfeye(aes(xdist = pfs, fill = fit_type, color = fit_type), alpha = 0.25) +
+  facet_wrap(vars(orr))
+```
+
+```{r}
+lst(prior = prior_orr_wk6_res, post = orr_wk6_res) |> 
+  map_dfr(\(f) spread_rvars(f, orr_coef), .id = "fit_type") |> 
+  mutate(hazard_ratio = exp(orr_coef)) |>  
+  ggplot() +
+  stat_halfeye(aes(xdist = hazard_ratio, color = fit_type, fill = fit_type), alpha = 0.25) +
+  geom_vline(xintercept = 1, linetype = "dotted")
+```
 
 ### Compare Models
 
