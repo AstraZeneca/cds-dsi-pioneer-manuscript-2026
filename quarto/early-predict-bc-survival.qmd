@@ -256,8 +256,8 @@ tumor_analysis_data <- adam_adtr |>
   ) |> 
   mutate(
     right_censored = cnsr,
-    death_week = floor(time_length(dthdt - trtsdt, unit = "weeks")), # Week of death
-    progress_week = floor(time_length(fpddt - trtsdt, unit = "weeks")), # Week of disease progression
+    death_week = floor(time_length(dthdt - trtsdt, unit = "weeks") + 1), # Week of death
+    progress_week = floor(time_length(fpddt - trtsdt, unit = "weeks") + 1), # Week of disease progression
     progress_week = if_else(death, coalesce(progress_week, death_week), # If death, progress week is death week
                                    if_else(right_censored & is.na(progress_week), max(progress_week, na.rm = TRUE), # Get rid of NA 
                                                                                   progress_week)),
@@ -319,7 +319,7 @@ tumor_analysis_data <- adam_adtr |>
   )
  
 # For PFS focusing on the subset of patients with the needed assessments and calculating PFS. 
-pfs_analysis_data <- tumor_analysis_data |> 
+unfiltered_pfs_analysis_data <- tumor_analysis_data |> 
   mutate(
     patient_tumors = map(patient_tumors, \(tu) filter(tu, min_t <= 0, max_t > 0)), # Drop tumors that don't have two assessments
     
@@ -338,7 +338,9 @@ pfs_analysis_data <- tumor_analysis_data |>
   mutate(
     interval_censored = with(., pfs_model$functions$identify_censoring(pfs, death_week, n_tumors, unlist(n_measures), unlist(t_measure))[[1]]) |> 
       pmax(0) # Issue https://github.com/azu-oncology-rd/ods-adc-early-predict-2023/issues/36
-  ) |> 
+  ) 
+
+pfs_analysis_data <- unfiltered_pfs_analysis_data |> 
   filter(
     !is.na(pfs), pfs >= 0, # No missing pfs and progress must be assured to have happened after treatment
     patient_min_t <= 0, # At least one screening assessment needed,
@@ -824,6 +826,62 @@ patient_measures <- 41
 max_pfs <- 45 
 ```
 
+## Excluded Data
+
+In terms of tumor data, we dropped rows from the ADTR data that 
+
+(i) did not have a treatment start data, 
+(ii) had a missing or non-positive tumor diameter, or 
+(iii) did not have TRUE accepted flag.
+
+```{r}
+#| label: excluded-tumor-rows
+
+adam_adtr |> 
+  unnest(data) |> 
+  filter(fct_match(paramcd, "LDIAM")) |>
+  transmute(
+    exclude = is.na(trdy) | is.na(aval) | !tracptfl | aval <= 0, 
+    missing_trdy = is.na(trdy), 
+    missing_aval = is.na(aval) | aval <= 0, 
+    tracptfl 
+  ) |> 
+  gtsummary::tbl_summary()
+```
+
+We exclude patients 
+
+(i) with missing PFS,
+(ii) PFS could have occurred during pre-screening (before treatment),
+(iii) have their first RECIST assessment after pre-screening, or
+(iv) have their last RECIST assessment before treatment.
+
+```{r}
+#| label: excluded-patients
+
+unfiltered_pfs_analysis_data |>
+  transmute(
+    excluded = is.na(pfs) | pfs < 0 | patient_min_t > 0 | patient_max_t <= 0,
+    missing_pfs = is.na(pfs),
+    pfs_in_prescreening = pfs < 0,
+    first_measure_not_in_prescreening = patient_min_t > 0,
+    last_measure_in_prescreening = patient_max_t <= 0
+  ) |> 
+  gtsummary::tbl_summary()
+```
+
+Notice that 27% of the patients are excluded because progression could have occurred before treatment started; it progression was detected on the first post-treatment visit.
+
+```{r}
+#| label: fig-early-pfs-progress-week
+
+unfiltered_pfs_analysis_data |>
+  filter(pfs < 0) |> 
+  transmute(treated, progress_week = pmin(progress_week, death_week)) |> 
+  ggplot(aes(progress_week)) +
+  geom_bar(aes(fill = treated), position = "dodge")
+```
+
 # Tumor Size Model
 
 I haven't yet documented much about this model or done any kind of evaluation. I'm only using it at this time to generate fake tumor size data for testing.
@@ -1108,8 +1166,7 @@ Aside from whatever priors we use for $\boldsymbol{\beta}$, we will use a Gaussi
 \log(\lambda_t) \sim \mathtt{GP}(0, k),
 $$ where $k(\lambda_p, \lambda_q; \alpha, \rho) = \alpha^2\exp\left(\frac{|p - q|^2}{2\rho^2}\right)$.
 
-Our likelihood, accounting for interval and right censoring, is 
-$$
+Our likelihood, accounting for interval and right censoring, is $$
 \mathcal{L}_i = \begin{cases}
   \prod_{t=1}^{S_i-M_i}\alpha_t(x_i;\theta)\sum_{r=S_i-M_i+1}^{S_i + 1}\left\{\prod_{m=S_i - M_i + 1}^{r-1}\alpha_m(x_i;\theta)[1-\alpha_{r}(x_i;\theta)]\right\} & \textrm{if }C_i = 0 \\
   \prod_{t=1}^{S_i}\alpha_t(x_i;\theta) & \textrm{if }C_i = 1 
