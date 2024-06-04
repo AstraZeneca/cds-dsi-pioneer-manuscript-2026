@@ -1,30 +1,26 @@
-# gen_patient_interval_properties <- function(log_lambda, tumor_intercept, tumor_coef, settings) {
-#   standardized <- pfs_model$functions$standardize_nonzero_tumor_sizes(settings$tumor_size)[[3]]
-#   
-#   t_measure_list <- with(settings, list_measures(t_measure, n_measures, n_patient_tumors))
-#   n_screening_t <- with(settings, pfs_model$functions$calc_n_screening_t(n_patient_tumors, n_measures, t_measure)) 
-#   
-#   with(settings, pfs_model$functions$prepare_early_tumors_design_matrix(standardized, n_patient_tumors, n_measures, t_measure, n_screening_t)[[1]]) |>  
-#     as_tibble() |> 
-#     set_names(c("tumor_size_1", "tumor_size_2")) |> 
-#     mutate(patient_id = rep(1:settings$n_patients, settings$n_patient_tumors)) |> 
-#     group_by(patient_id) |>
-#     summarize(tumor_covar = list(cbind(tumor_size_1, tumor_size_2))) |>
-#     rowwise() |> 
-#     reframe(
-#       patient_id, 
-#       progress_prob = pfs_model$functions$calculate_progress_linear_prob(settings$n_patient_tumors, log_lambda, tumor_intercept, tumor_coef, tumor_covar),
-#       hazard = pfs_model$functions$calculate_linear_hazard(settings$n_patient_tumors, log_lambda, tumor_intercept, tumor_coef, tumor_covar),
-#       survival = cumprod(progress_prob)
-#     )  
-# }
-
+#' Read and prepare entimice data 
+#'
+#' @param study Study name 
+#' @param idap IDAP ID 
+#' @param dataset Name of data set file 
+#' @param data_type SDTM or ADaM data 
+#' @param team_dir Team directory where data is stored 
+#'
+#' @return Prepared entimice data
+#'
 read_entimice_data <- function(study, idap, dataset, data_type = c("sdtm", "adam"), team_dir = "/wscratch/ewfteams/dpo0083") {
   read_rds(file.path(team_dir, study, idap, arg_match(data_type), "prod", "data", str_c(dataset, ".rds"))) |> 
     rename_with(str_to_lower) |> 
     mutate(across(ends_with("fl"), \(fl) fct_expand(fl, c("Y", "N")) |>  fct_match("Y")))
 }
 
+#' Convert Kaplan-Meier estimates to a tibble (data frame) format 
+#'
+#' @param trt_data Analysis data 
+#' @param key Identifier for the data group (e.g., treatment arm)
+#' @param pfs_var Name of variable were PFS is stored in the data 
+#'
+#' @return tibble object with Kaplan-Meier results.
 km_to_tibble <- function(trt_data, key, pfs_var) { 
   with(
     prepare_pfs_stan_data(trt_data, tumor_priors, pfs_priors, pfs_var = pfs_var), {
@@ -37,15 +33,34 @@ km_to_tibble <- function(trt_data, key, pfs_var) {
           mutate(t = seq(0, n() - 1))
       }, .id = "btype")
     }) |> 
-    # pivot_wider(values_from = s:e, names_from = btype) |> 
     bind_cols(key)
 }
 
+#' Function to reorganize t tumor size measure arrays.
+#' 
+#' Information about the number of measures and the intervals of measurement of tumor sizes are typically 
+#' stored in a flat array due to the lack of support for ragged arrays in Stan. This function converts this information
+#' into a structure easier to use in R. 
+#'
+#' @param measures The intervals in which each tumor measure is done. 
+#' @param n_measures The number of measures done for each tumor.
+#' @param n_patient_tumors The number of tumors per patient. 
+#'
+#' @return Nest list
 list_measures <- function(measures, n_measures, n_patient_tumors) { 
   split(measures, rep(seq_along(n_measures), n_measures)) |>  
     split(rep(seq_along(n_patient_tumors), n_patient_tumors))
 }
 
+#' Drop particular measures from the the tumor size data.
+#' 
+#' This is used to generate simulated data with interval censoring. 
+#'
+#' @param settings Stan configurations. 
+#' @param measures Measures to drop. 
+#' @param keep_only Instead of dropping measures, keep only the ones specified.
+#'
+#' @return Updated Stan data with specified measures dropped.
 drop_missing_measures <- function(settings, measures = NULL, keep_only = FALSE) {
   if (!is_null(measures) && length(measures) > 0) {
     updated_settings <- if (is.list(measures)) {
@@ -102,28 +117,39 @@ drop_missing_measures <- function(settings, measures = NULL, keep_only = FALSE) 
   }
 }
 
-gen_fake_pfs_data <- function(patient_interval_data, settings) { 
-  fake_data <- patient_interval_data |>
-    nest(prob = !patient_id) |>  
-    mutate(t_measure = with(settings, list_measures(t_measure, n_measures, n_patient_tumors))) %>% 
-    mutate(
-      map2(.$prob, .$t_measure, \(pd, t) pfs_model$functions$pfs_rng(pd$progress_prob, discard(first(t), \(x) x <= 0))) |> 
-        list_transpose() |> 
-        set_names(c("interval_censored", "right_censored", "pfs", "actual_pfs")) |> 
-        `!!!`(),
-    ) %>%
-    mutate(
-      pfs_model$functions$identify_censoring(.$pfs, rep_along(.$pfs, FALSE), settings$n_patient_tumors, settings$n_measures, settings$t_measure) |> 
-        set_names(c("stan_interval_censored", "stan_right_censored")) |> 
-        `!!!`()
+#' ORR Model Stan initializer factory. 
+#'
+#' @param stan_data Analysis data in list form for Stan. 
+#'
+#' @return Initialization function.
+create_orr_initializer <- function(stan_data) {
+  function(chain_id) { 
+    init_vals <- lst(
     )
-  
-  assertthat::assert_that(with(fake_data, all(stan_interval_censored == interval_censored)))
-  assertthat::assert_that(with(fake_data, all(stan_right_censored == right_censored)))
-  
-  return(fake_data)
+    
+    if (stan_data$add_trial_level) {
+      init_vals <- init_vals |> 
+        list_assign(
+          raw_log_lambda_gp_trial_intercept = if (stan_data$add_trial_level) rnorm(stan_data$n_trials),
+          log_lambda_gp_trial_intercept_sd = abs(rnorm(1, 0, stan_data$log_lambda_gp_trial_intercept_sd_sd)),
+        )
+    }
+    
+    if (stan_data$add_tumor_location_level) {
+      init_vals <- init_vals |> 
+        list_assign(
+        )
+    }
+    
+    return(init_vals)
+  }
 }
 
+#' Tumor size model Stan initializer factory. 
+#'
+#' @param stan_data Analysis data in list form for Stan. 
+#'
+#' @return Initialization function.
 create_pfs_initializer <- function(stan_data) {
   function(chain_id) { 
     n_covar <- with(stan_data, if_else(tumor_hazard_type > 0 && tumor_hazard_type != 4, 
@@ -159,6 +185,19 @@ create_pfs_initializer <- function(stan_data) {
   }
 }
 
+#' Run Stan sampling on given simulation data. 
+#'
+#' @param settings Stan data/settings 
+#' @param d Analysis data 
+#' @param max_measures deprecated setting 
+#' @param ... Any other parameters to pass to cmdstanr::sample().
+#' @param gen_pfs Should the model generated simulated data. 
+#' @param ignore_interval_censoring The model should ignore interval censoring. 
+#' @param drop_measures deprecated setting 
+#' @param keep_only deprecated setting 
+#' @param no_init deprecated setting
+#'
+#' @return cmdstanr fit object
 fit_sim_data <- function(
   settings, d, max_measures, ..., gen_pfs = TRUE, ignore_interval_censoring = FALSE, drop_measures = NULL, keep_only = FALSE, no_init = FALSE
 ) { 
@@ -176,29 +215,15 @@ fit_sim_data <- function(
       refresh = 0,
       parallel_chains = 4,
       init = create_pfs_initializer(settings),
-      # init = if (settings$tumor_hazard_type > 0 && !no_init) create_pfs_initializer(settings),
       ...
     )
 }
 
-fit_simulations <- function(n, patient_interval_data, settings, ignore_interval_censoring = FALSE, fit_basename = NULL, tmp_dir = here("temp")) {
-  fake_data_sim_with_ic <- tibble(sim_id = seq(n)) |> 
-    rowwise() |> 
-    mutate(sim_data = list(gen_fake_pfs_data(patient_interval_data, settings))) |> 
-    ungroup() |> 
-    transmute(
-      sim_id,
-      sim_data,
-      sim_fit = furrr::future_map2(.progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
-        sim_id, sim_data, 
-        \(sid, sdata) fit_sim_data(
-          settings, sdata, ignore_interval_censoring = ignore_interval_censoring, 
-          output_basename = if (!is_null(fit_basename)) str_c(fit_basename, sid, sep = "_"), 
-          output_dir = if (!is_null(fit_basename)) file.path(tmp_dir, "fit"))
-      ), 
-    ) 
-}
-
+#' Convert analysis data into Stan list format data 
+#'
+#' @param analysis_data Analysis data frame. 
+#'
+#' @return Stan list data.
 prepare_tumor_stan_data <- function(analysis_data) {
   lst(
     n_patients = nrow(analysis_data),
@@ -213,6 +238,12 @@ prepare_tumor_stan_data <- function(analysis_data) {
   )
 }
 
+#' Identify the patient and tumor for each posterior tumor size time-series. 
+#'
+#' @param rv rvar data for tumor sizes 
+#' @param settings Stan data
+#'
+#' @return rvar data set but with patient_id, tumor_index, and t
 prepare_tumor_size_rvars <- function(rv, settings) {
   rv |> 
     ungroup() |> 
@@ -225,15 +256,12 @@ prepare_tumor_size_rvars <- function(rv, settings) {
     rename(tumor_size = rep_tumor_size)
 }
 
-# get_early_tumors <- function(data) {
-#   data |> 
-#     unnest(patient_tumors) |> 
-#     unnest(tumor_history) |> 
-#     group_by(usubjid) |> 
-#     filter(week %in% c(max(keep(week, \(x) x <= 0)), min(keep(week, \(x) x > 0)))) |> 
-#     pull(mmdiam)
-# }
-
+#' Prepare a user-friendly data set of the first two tumor measures. 
+#'
+#' @param stan_data Stan list data. 
+#' @param .model The cmdstanr model exposing needed functions. 
+#'
+#' @return Data set with tumor information
 get_early_tumor_pairs <- function(stan_data, .model = pfs_model) {
   prep_res <- with(
     stan_data, 
@@ -250,9 +278,22 @@ get_early_tumor_pairs <- function(stan_data, .model = pfs_model) {
     mutate(pfs = with(stan_data, rep(pfs, n_patient_tumors)), trial = with(stan_data, rep(patient_trial, n_patient_tumors)))
 }
 
-prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ..., pfs_var = pfs) {
+#' Title
+#'
+#' @param analysis_data 
+#' @param .tumor_priors 
+#' @param .pfs_priors 
+#' @param ... 
+#' @param pfs_var 
+#' @param orr_var 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ..., pfs_var = pfs, orr_var = orr_6wk) {
   tumor_stan_data <- prepare_tumor_stan_data(analysis_data)
-  pfs_data <- select(analysis_data, pfs = {{ pfs_var }}, death_week, right_censored, interval_censored, patient = usubjid) |> 
+  pfs_data <- select(analysis_data, pfs = {{ pfs_var }}, orr = {{ orr_var }}, death_week, right_censored, interval_censored, patient = usubjid) |> 
     mutate(
       death_week = if_else(right_censored, 0, death_week), # Death week is irrelevant if the data is censored
       patient = factor(patient) 
@@ -556,3 +597,15 @@ get_tumor_hazard_ratio_summary <- function(fit, var, tumor_size_pairs, stan_data
   }
 }
 
+calc_pfs <- function(progress_week, death_week, right_censored, patient_tumors) {
+  event_week <- min(progress_week, death_week, na.rm = TRUE) # Whichever happened first, death or DP.
+ 
+  # Get all the assessment weeks that happened before progression (if not censored). 
+  pre_progress_weeks <- unnest(patient_tumors, tumor_history) |>
+    distinct(week) |>
+    filter(right_censored | week < event_week) |>
+    pull(week)
+
+  # There are a few patients who just have a single post treatment visit
+  if (length(pre_progress_weeks) > 0) max(pre_progress_weeks) else NA_integer_
+}
