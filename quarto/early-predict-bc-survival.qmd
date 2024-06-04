@@ -1774,7 +1774,7 @@ lst(treated = no_tumor_pfs_res) |> #, control = control_no_tumor_pfs_res) |>
 #| fig-cap: Baseline hazard for model with no tumor effects.
 
 lst(treated = no_tumor_pfs_res, prior = prior_no_tumor_pfs_res) |> #  control = control_no_tumor_pfs_res,  
-  plot_base_hazard(treated_pfs_analysis_data, ci_width = c(0.8, 0.95))
+  plot_baseline_hazard(treated_pfs_analysis_data, ci_width = c(0.8, 0.95))
 ```
 
 ```{r}
@@ -2006,7 +2006,7 @@ lst(treated = two_tumor_pfs_res) |> #, control = control_two_tumor_pfs_res) |>
 #| dependson: two-tumor-pfs-fit
 
 lst(treated = two_tumor_pfs_res, prior = prior_two_tumor_pfs_res) |> #, control = control_two_tumor_pfs_res) |> 
-  plot_base_hazard(treated_pfs_analysis_data) +
+  plot_baseline_hazard(treated_pfs_analysis_data) +
   labs(title = "") +
   guides(fill = "none")
 ```

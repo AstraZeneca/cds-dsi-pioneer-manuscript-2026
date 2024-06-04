@@ -278,19 +278,16 @@ get_early_tumor_pairs <- function(stan_data, .model = pfs_model) {
     mutate(pfs = with(stan_data, rep(pfs, n_patient_tumors)), trial = with(stan_data, rep(patient_trial, n_patient_tumors)))
 }
 
-#' Title
+#' Prepare analysis data for PFS model, formating in as a list for Stan. 
 #'
-#' @param analysis_data 
-#' @param .tumor_priors 
-#' @param .pfs_priors 
-#' @param ... 
-#' @param pfs_var 
-#' @param orr_var 
+#' @param analysis_data Pre-prepared analysis data frame.
+#' @param .tumor_priors Prior parameters relevant to tumor model.
+#' @param .pfs_priors Prior parameters relevant to survival model.
+#' @param ... Any other variables to pass to model.
+#' @param pfs_var Name of PFS variable to use from the analysis data.
+#' @param orr_var Name of ORR variable to use from the analysis data.
 #'
-#' @return
-#' @export
-#'
-#' @examples
+#' @return List of variables formatted for use with Stan model.
 prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ..., pfs_var = pfs, orr_var = orr_6wk) {
   tumor_stan_data <- prepare_tumor_stan_data(analysis_data)
   pfs_data <- select(analysis_data, pfs = {{ pfs_var }}, orr = {{ orr_var }}, death_week, right_censored, interval_censored, patient = usubjid) |> 
@@ -315,9 +312,6 @@ prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ...
     multilevel_patient = FALSE,
     multilevel_tumor = FALSE,
     
-    # tumor_grid_range = seq(min(early_tumors), max(early_tumors), 1), 
-    # n_tumor_grid_range = length(tumor_grid_range),
-    
     !!!tumor_stan_data,
     !!!pfs_data,
     
@@ -334,6 +328,26 @@ prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ...
   stan_data |> list_assign(grid_tumors = early_tumors, n_grid_tumors = length(early_tumors))
 }
 
+#' Run simulation fit.
+#' 
+#' Initially, used for simulation-based calibration but can also be used for any analysis of fake data. 
+#'
+#' @param pfs_model cmdstanr model object. 
+#' @param stan_data Analysis and configuration data formatted for use in Stan model. 
+#' @param num_sim Number of simulations to carry out.
+#' @param output_name Stan samples output file name prefix 
+#' @param output_dir Where to store Stan samples output files 
+#' @param ignore_interval_censoring Do not adjust for interval censoring 
+#' @param keep_fit Keep cmdstanr fit object in function output. 
+#' @param gen_pfs Should the simulation fit runs also generate simulated PFS.
+#' @param .thin Rate of thinning in output samples (needed for SBC).
+#' @param .ndraws Number of draws to extract from posterior. 
+#' @param reuse_data Do not generate new simulation.
+#' @param drop_measures Which measure intervals to drop to simulate interval censoring. 
+#' @param keep_only Keep only the measure intervals specified and drop all others.
+#' @param ... Any other parameters to pass to fit_sim_data() .
+#'
+#' @return Data frame with all the simulation posterior samples (and possibly fit object).
 run_sbc_sims <- function(
   pfs_model, stan_data, num_sim, output_name,  output_dir = file.path(tmp_dir, "fit"), 
   ignore_interval_censoring = FALSE,keep_fit = FALSE, gen_pfs = FALSE, .thin = 4, .ndraws = 1000,
@@ -426,6 +440,17 @@ run_sbc_sims <- function(
     ) 
 }
 
+#' Plot Kaplan-Meier survival curves 
+#'
+#' @param rvars_data Posterior samples data 
+#' @param analysis_data Analysis data used for fit 
+#' @param facet_arm Facet by `arm_var`, otherwise by trial 
+#' @param group_arm Group output by `group_var`, otherwise no grouping. 
+#' @param arm_var Data column to facet by. 
+#' @param group_var Data column to group by. 
+#' @param model_labels Labels use for models in legend. 
+#'
+#' @return ggplot2 plot
 plot_km_rvars <- function(rvars_data, analysis_data, facet_arm = FALSE, group_arm = FALSE,
                           arm_var = arm, group_var = arm,
                           model_labels = c("no_tumor" = "Baseline Model", "tumor_change" = "Proportional Change Model", "two_tumor" = "Linear Model")) {
@@ -450,6 +475,13 @@ plot_km_rvars <- function(rvars_data, analysis_data, facet_arm = FALSE, group_ar
   }
 }
 
+#' Plot Kaplan-Meier survival curves for multiple fits 
+#'
+#' @param data_list List of posterior samples' data 
+#' @param analysis_data Analysis data used for fit 
+#' @param ... Other parameters to pass to `plot_km_rvars` 
+#'
+#' @return ggplot2 plot object.
 plot_km <- function(data_list, analysis_data, ...) {
   data_list |> 
     map(\(r) recover_types(r, select(analysis_data, trial))) |> 
@@ -457,6 +489,15 @@ plot_km <- function(data_list, analysis_data, ...) {
     plot_km_rvars(analysis_data, arm_var = arm, ...)
 }
 
+#' Produce a probabilistic histogram from rvar samples
+#' 
+#' The difference between a probabilistic histogram and a regular histogram is that it shows the uncertainty about the distribution. 
+#'
+#' @param data_list List of cmdstanr fits 
+#' @param stan_data Data used for fitting model 
+#' @param hist_breaks Histogram breaks 
+#'
+#' @return ggplot2 plot object
 plot_pfs_hist_posterior <- function(data_list, stan_data, hist_breaks = seq(10, 150, 10)) {
   # This function is used to generate a histogram of time-to-events for a single draw
   sample_hist <- function(pred, breaks) {
@@ -472,6 +513,7 @@ plot_pfs_hist_posterior <- function(data_list, stan_data, hist_breaks = seq(10, 
   plot_obj <- data_list |> 
     map_dfr(\(f) spread_rvars(f, rep_pfs[i], rep_right_censored[i]) |> mutate(trial = stan_data$patient_trial), .id = "arm") |> 
     group_by(arm, trial) |> 
+    # bindist is the distribution of histogram size at each bin.
     reframe(t = hist_breaks, bindist = rvar_sample_hist(rep_pfs, hist_breaks)) |> 
     filter(t < max(t)) %>% 
     bind_rows(
@@ -494,7 +536,14 @@ plot_pfs_hist_posterior <- function(data_list, stan_data, hist_breaks = seq(10, 
   }
 }
 
-plot_base_hazard <- function(data_list, analysis_data, ci_width = 0.8) {
+#' Plot distribution of baseline hazard 
+#'
+#' @param data_list List of cmdstanr fit objects 
+#' @param analysis_data Analysis data used 
+#' @param ci_width Credible interval widths 
+#'
+#' @return ggplot2 plot object
+plot_baseline_hazard <- function(data_list, analysis_data, ci_width = 0.8) {
   data_list |> 
     map(\(f) recover_types(f, select(analysis_data, trial))) |> 
     map_dfr(\(f) spread_rvars(f, log_trial_lambda[trial, t]), .id = "fit_type") |> 
@@ -517,6 +566,15 @@ plot_base_hazard <- function(data_list, analysis_data, ci_width = 0.8) {
     NULL
 }
 
+#' Estimate out-of-sample loss 
+#'
+#' @param fit cmdstanr fit object 
+#' @param fit_loo leave-one-out object 
+#' @param stan_data Data used in the model 
+#' @param loss_fn Loss function 
+#' @param insample Run in-sample instead 
+#'
+#' @return Pointwise out-of-sample loss
 estimate_oos_loss <- function (fit, fit_loo, stan_data, loss_fn, insample = FALSE) {
   log_lik <- fit$draws("log_lik", format = "matrix")
   
@@ -543,19 +601,35 @@ estimate_oos_loss <- function (fit, fit_loo, stan_data, loss_fn, insample = FALS
   }
 }
 
+#' Plot estimation loss 
+#'
+#' @param data calculated loss data 
+#' @param binwidth Histogram bin width 
+#'
+#' @return ggplot2 plot object
 plot_loss <- function(data, binwidth) {
   data |> 
     ggplot(aes(value)) +
     stat_histinterval(
       aes(fill = model, color = model), point_interval = mean_qi, .width = c(0.5, 0.8), alpha = 0.5, breaks = ggdist::breaks_fixed(width = binwidth)
     ) +
-    # scale_color_viridis_d(option = "E", aesthetics = c("color", "fill")) +
     labs(x = "Loss", y = "") +
     facet_grid(vars(trial), vars(loss_type), scales = "free", margins = "trial") +
     theme(legend.position = "top", strip.text.y = element_text(angle = 0)) +
     NULL
 }
 
+#' Provide credible interval summary for hazard ratios are a specified grid representing tumor size changes 
+#'
+#' @param fit cmdstanr fit  
+#' @param var Hazard ratio parameter name in model 
+#' @param tumor_size_pairs Wide tumor size data 
+#' @param stan_data Data used in model 
+#' @param diff_var Calculate different in hazard ratio from the population hazard ratio 
+#' @param ci_width The credible interval widths 
+#' @param no_summary Just return the rvar data 
+#'
+#' @return Tumor-wise size time-series and time-invariant hazard ratio
 get_tumor_hazard_ratio_summary <- function(fit, var, tumor_size_pairs, stan_data, diff_var = FALSE, ci_width = c(0, 0.5, 0.8), no_summary = FALSE) {
   grid_ids <- tibble(id = stan_data$grid_tumors) |> 
     mutate(n = seq(n()))
@@ -564,7 +638,8 @@ get_tumor_hazard_ratio_summary <- function(fit, var, tumor_size_pairs, stan_data
     mutate(id = seq(n())) |> 
     semi_join(grid_ids, by = "id") |> 
     rename(tumor_trial = trial)
-  
+ 
+  # Translate CI widths to quantile() style probabilities 
   p_data <- tibble(
     p = (ci_width / 2) %>% { c(0.5 - ., 0.5 + .) } |> unique(),
   ) |> 
@@ -575,7 +650,7 @@ get_tumor_hazard_ratio_summary <- function(fit, var, tumor_size_pairs, stan_data
     left_join(grid_ids, by = "n", relationship = "many-to-one") |> 
     left_join(tumor_size_pairs, by = "id", relationship = "many-to-one") 
   
-  if (diff_var) {
+  if (diff_var) { # We want to see the difference between the hazard ratio from the baseline population level.
     ratio_rvars <- ratio_rvars |> 
       left_join(gather_rvars(fit, pop_tumor_effect[n]) |> select(base_value = .value, n), by = "n", relationship = "many-to-one") |> 
       mutate(.value = .value - base_value)
@@ -597,6 +672,14 @@ get_tumor_hazard_ratio_summary <- function(fit, var, tumor_size_pairs, stan_data
   }
 }
 
+#' Calculate progression-free survival from clinical data for each patient 
+#'
+#' @param progress_week Progress week 
+#' @param death_week Death week 
+#' @param right_censored Right censored 
+#' @param patient_tumors data set of all the patient's tumors 
+#'
+#' @return The last observed/measured week before progression was detected
 calc_pfs <- function(progress_week, death_week, right_censored, patient_tumors) {
   event_week <- min(progress_week, death_week, na.rm = TRUE) # Whichever happened first, death or DP.
  
