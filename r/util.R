@@ -1,19 +1,3 @@
-#' Read and prepare entimice data 
-#'
-#' @param study Study name 
-#' @param idap IDAP ID 
-#' @param dataset Name of data set file 
-#' @param data_type SDTM or ADaM data 
-#' @param team_dir Team directory where data is stored 
-#'
-#' @return Prepared entimice data
-#'
-read_entimice_data <- function(study, idap, dataset, data_type = c("sdtm", "adam"), team_dir = "/wscratch/ewfteams/dpo0083") {
-  read_rds(file.path(team_dir, study, idap, arg_match(data_type), "prod", "data", str_c(dataset, ".rds"))) |> 
-    rename_with(str_to_lower) |> 
-    mutate(across(ends_with("fl"), \(fl) fct_expand(fl, c("Y", "N")) |>  fct_match("Y")))
-}
-
 #' Convert Kaplan-Meier estimates to a tibble (data frame) format 
 #'
 #' @param trt_data Analysis data 
@@ -21,13 +5,13 @@ read_entimice_data <- function(study, idap, dataset, data_type = c("sdtm", "adam
 #' @param pfs_var Name of variable were PFS is stored in the data 
 #'
 #' @return tibble object with Kaplan-Meier results.
-km_to_tibble <- function(trt_data, key, pfs_var) { 
+km_to_tibble <- function(trt_data, key, pfs_var, tumor_priors, pfs_priors, pfs_functions) { 
   with(
-    prepare_pfs_stan_data(trt_data, tumor_priors, pfs_priors, pfs_var = pfs_var), {
-      interval_censored <- pfs_model$functions$identify_censoring(pfs, death_week, n_patient_tumors, n_measures, t_measure)[[1]]
+    prepare_pfs_stan_data(trt_data, tumor_priors, pfs_priors, pfs_var = pfs_var, pfs_functions), {
+      interval_censored <- pfs_functions$identify_censoring(pfs, death_week, n_patient_tumors, n_measures, t_measure)[[1]]
       
       map_dfr(list(lb = pfs, ub = pfs + interval_censored), function(s) {
-        pfs_model$functions$estimate_kaplan_meier(s, right_censored, max(s)) |>
+        pfs_functions$estimate_kaplan_meier(s, right_censored, max(s)) |>
           set_names(c("s", "n", "c", "e")) |>
           as_tibble() |> 
           mutate(t = seq(0, n() - 1))
@@ -35,6 +19,13 @@ km_to_tibble <- function(trt_data, key, pfs_var) {
     }) |> 
     bind_cols(key)
 }
+
+get_km_res <- function(analysis_data, pfs_var, tumor_priors, pfs_priors, pfs_functions) {
+  analysis_data |>
+    group_by(trial, treated) |>  
+    group_map(\(trt_data, key) km_to_tibble(trt_data, key, pfs_var, tumor_priors, pfs_priors, pfs_functions), .keep = TRUE) |>  
+    bind_rows() 
+} 
 
 #' Function to reorganize t tumor size measure arrays.
 #' 
@@ -219,36 +210,17 @@ fit_sim_data <- function(
     )
 }
 
-#' Convert analysis data into Stan list format data 
-#'
-#' @param analysis_data Analysis data frame. 
-#'
-#' @return Stan list data.
-prepare_tumor_stan_data <- function(analysis_data) {
-  lst(
-    n_patients = nrow(analysis_data),
-    n_trials = n_distinct(analysis_data$trial),
-    tumor_location = unnest(analysis_data, patient_tumors) |> pull(tuloc) |> factor(),
-    n_tumor_locations = nlevels(tumor_location), 
-    patient_trial = analysis_data$trial,
-    n_patient_tumors = analysis_data$n_tumors,
-    n_measures = analysis_data$n_measures |> unlist(),
-    t_measure = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$week) |> unlist(),
-    tumor_size = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$mmdiam / 10) |> unlist(),
-  )
-}
-
 #' Identify the patient and tumor for each posterior tumor size time-series. 
 #'
 #' @param rv rvar data for tumor sizes 
 #' @param settings Stan data
 #'
 #' @return rvar data set but with patient_id, tumor_index, and t
-prepare_tumor_size_rvars <- function(rv, settings) {
+prepare_tumor_size_rvars <- function(rv, patient_measures, t_offset, settings) {
   rv |> 
     ungroup() |> 
     mutate( # A bunch of acrobatics to get the IDs, indices, and intervals right.
-      patient_id = rep(1:n_patients, with(settings, n_patient_tumors * patient_measures)),
+      patient_id = with(settings, rep(1:n_patients, n_patient_tumors * patient_measures)),
       tumor_index = ((tumor_index - 1) %/% patient_measures) + 1,
       t = rep(0:(patient_measures - 1), sum(settings$n_patient_tumors)) - t_offset
     ) |>
@@ -256,76 +228,80 @@ prepare_tumor_size_rvars <- function(rv, settings) {
     rename(tumor_size = rep_tumor_size)
 }
 
-#' Prepare a user-friendly data set of the first two tumor measures. 
-#'
-#' @param stan_data Stan list data. 
-#' @param .model The cmdstanr model exposing needed functions. 
-#'
-#' @return Data set with tumor information
-get_early_tumor_pairs <- function(stan_data, .model = pfs_model) {
-  prep_res <- with(
-    stan_data, 
-    .model$functions$prepare_early_tumors_design_matrix(
-      tumor_size, n_patient_tumors, n_measures, t_measure, .model$functions$calc_n_screening_t(n_patient_tumors, n_measures, t_measure), 2
-    ) 
-  )
-  
-  prep_res[[2]] <- exec(rbind, !!!prep_res[[2]])  
-  
-  exec(bind_cols, !!!prep_res) |> 
-    set_colnames(c("x0", "x1", "t0", "t1")) |> 
-    as_tibble() |> 
-    mutate(pfs = with(stan_data, rep(pfs, n_patient_tumors)), trial = with(stan_data, rep(patient_trial, n_patient_tumors)))
+spread_param_rvars <- function(f, ...) { 
+  f |> 
+    spread_rvars(
+      tumor_stim_pop_intercept, tumor_stim_pop_coef[t],
+      log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho,
+      base_cond_expected_pfs, one_tumor_cond_expected_pfs, base_cond_median_pfs, one_tumor_cond_median_pfs,
+      ...
+    ) |> 
+    ungroup() |> 
+    pivot_wider(names_from = t, values_from = tumor_stim_pop_coef, names_prefix = "tumor_stim_pop_coef_")
 }
 
-#' Prepare analysis data for PFS model, formating in as a list for Stan. 
-#'
-#' @param analysis_data Pre-prepared analysis data frame.
-#' @param .tumor_priors Prior parameters relevant to tumor model.
-#' @param .pfs_priors Prior parameters relevant to survival model.
-#' @param ... Any other variables to pass to model.
-#' @param pfs_var Name of PFS variable to use from the analysis data.
-#' @param orr_var Name of ORR variable to use from the analysis data.
-#'
-#' @return List of variables formatted for use with Stan model.
-prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, ..., pfs_var = pfs, orr_var = orr_6wk) {
-  tumor_stan_data <- prepare_tumor_stan_data(analysis_data)
-  pfs_data <- select(analysis_data, pfs = {{ pfs_var }}, orr = {{ orr_var }}, death_week, right_censored, interval_censored, patient = usubjid) |> 
-    mutate(
-      death_week = if_else(right_censored, 0, death_week), # Death week is irrelevant if the data is censored
-      patient = factor(patient) 
-    ) 
+get_pfs_sim_seed_draws <- function(stan_data, num_sim, pfs_model) {
+  pfs_res <- pfs_model$sample(data = stan_data, refresh = 0, parallel_chains = 4)
   
-  stan_data <- lst(
-    fit_data = TRUE,
-    use_tumor_model = FALSE,
-    gen_pfs = TRUE,
-    gen_interval_censored = FALSE,
-    ignore_interval_censoring = FALSE,
-    add_trial_level = FALSE,
-    add_tumor_location_level = FALSE,
-    fit_post_2nd_meaure_only = TRUE,
-    
-    fit_tumor_data = FALSE,
-    gen_tumor_sizes = FALSE,
-    predict_missing_sizes = FALSE, 
-    multilevel_patient = FALSE,
-    multilevel_tumor = FALSE,
-    
-    !!!tumor_stan_data,
-    !!!pfs_data,
-    
-    !!!.pfs_priors,
-    !!!.tumor_priors,
-  ) |> 
-    list_assign(...)
+  pfs_res |> 
+    spread_draws(rep_pfs[patient_index], rep_right_censored[patient_index]) |> 
+    ungroup() |>
+    # The PFS from each draw will be used as a simulation dataset 
+    filter(.draw <= num_sim) |> 
+    select(.draw, pfs = rep_pfs, right_censored = rep_right_censored) |> 
+    nest(sim_data = !.draw) |>
+    left_join( # Get the parameters that generated that data
+      pfs_res |> 
+        spread_param_rvars() |> 
+        unnest_rvars() |> 
+        select(!c(.iteration, .chain)) |> 
+        pack(true = !.draw),
+      by = ".draw"
+    )
+}
+
+run_simulation <- function(
+    sim_id, stan_data, d, lstm, output_dir, output_name, ignore_interval_censoring, gen_pfs, pfs_model, 
+    .thin = NULL, .ndraws = NULL, keep_fit = FALSE
+) { 
+  d <- mutate(d, map2_dfr(pfs, lstm, function(s, m) { 
+      m_union <- reduce(m, \(a, n) union(a, n)) 
+      list(pfs = m_union |> discard(\(t) t > s) |> max(), right_censored = s >= max(m_union))
+  }))
   
-  early_tumors <- get_early_tumor_pairs(stan_data) |> 
-    mutate(id = seq(n())) |> 
-    distinct(x0, x1, .keep_all = TRUE) |> 
-    pull(id)
+  fit <- stan_data |> 
+    list_modify(
+      gen_pfs = gen_pfs,
+      fit_data = TRUE,
+      pfs = d$pfs, 
+      right_censored = d$right_censored,
+      ignore_interval_censoring = ignore_interval_censoring
+    ) %>% 
+    pfs_model$sample(
+      refresh = 0,
+      parallel_chains = 4,
+      init = create_pfs_initializer(.),
+      output_basename = str_glue("{output_name}_{sim_id}"),
+      output_dir = output_dir,
+      thin = .thin,
+    )
+ 
+  if (!is_null(.ndraws)) { 
+    res <- fit |> # Get posterior draws from simulation fit. 
+      spread_param_rvars(ndraws = .ndraws) |> 
+      pack(est = everything())
+  } else {
+    res <- fit |> # Get posterior draws from simulation fit. 
+      spread_param_rvars() |> 
+      pack(est = everything())
+  }
   
-  stan_data |> list_assign(grid_tumors = early_tumors, n_grid_tumors = length(early_tumors))
+  if (keep_fit) {
+    res <- res |> 
+      mutate(sim_fit = list(fit))
+  }
+  
+  return(res)
 }
 
 #' Run simulation fit.
@@ -353,17 +329,6 @@ run_sbc_sims <- function(
   ignore_interval_censoring = FALSE,keep_fit = FALSE, gen_pfs = FALSE, .thin = 4, .ndraws = 1000,
   reuse_data = NULL, drop_measures = NULL, keep_only = FALSE, ... 
 ) {
-  spread_param_rvars <- function(f, ...) { 
-    f |> 
-      spread_rvars(
-        tumor_stim_pop_intercept, tumor_stim_pop_coef[t],
-        log_lambda_gp_intercept, log_lambda_gp_alpha, log_lambda_gp_rho,
-        base_cond_expected_pfs, one_tumor_cond_expected_pfs, base_cond_median_pfs, one_tumor_cond_median_pfs,
-        ...
-      ) |> 
-      ungroup() |> 
-      pivot_wider(names_from = t, values_from = tumor_stim_pop_coef, names_prefix = "tumor_stim_pop_coef_")
-  }
   
   stan_data <- stan_data |> 
     drop_missing_measures(drop_measures, keep_only)
@@ -371,71 +336,28 @@ run_sbc_sims <- function(
   lstm <- with(stan_data, list_measures(t_measure, n_measures, n_patient_tumors))
  
   all_sim_data <- if (is_null(reuse_data)) { 
-    pfs_res <- pfs_model$sample(data = stan_data, refresh = 0, parallel_chains = 4)
-    
-    pfs_res |> 
-      spread_rvars(rep_pfs[patient_index], rep_right_censored[patient_index]) |> 
-      unnest_rvars() |> 
-      ungroup() |>
-      # The PFS from each draw will be used as a simulation dataset 
-      filter(.draw <= num_sim) |> 
-      select(.draw, pfs = rep_pfs, right_censored = rep_right_censored) |> 
-      nest(sim_data = !.draw) |>
-      left_join( # Get the parameters that generated that data
-        pfs_res |> 
-          spread_param_rvars() |> 
-          unnest_rvars() |> 
-          select(!c(.iteration, .chain)) |> 
-          pack(true = !.draw),
-        by = ".draw"
-      )
+    get_pfs_sim_seed_draws(stan_data, num_sim, pfs_model)
   } else {
     reuse_data |> select(.draw, sim_data, true)
   }
   
   all_sim_data |> 
     mutate(# For each simulation dataset fit the model and extract the posteriors for each of the model parameters 
-      sim_data = map(
-        sim_data, 
-        \(d) mutate(d, 
-                    map2_dfr(pfs, lstm, function(s, m) { 
-                      m_union <- reduce(m, \(a, n) union(a, n)) 
-                      list(pfs = m_union |> discard(\(t) t > s) |> max(), right_censored = s >= max(m_union))
-                    })
-        )),
+      # sim_data = map(
+      #   sim_data, 
+      #   \(d) mutate(d, 
+      #               map2_dfr(pfs, lstm, function(s, m) { 
+      #                 m_union <- reduce(m, \(a, n) union(a, n)) 
+      #                 list(pfs = m_union |> discard(\(t) t > s) |> max(), right_censored = s >= max(m_union))
+      #               })
+      #   )),
                               
-      furrr::future_map2_dfr(.draw, sim_data, .progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
-      # map2_dfr(.draw, sim_data,
-        function(sim_id, d, output_dir, output_name, ignore_interval_censoring) { 
-          fit <- fit_sim_data(
-            stan_data,
-            d, 
-            gen_pfs = gen_pfs, 
-            thin = .thin, # We need thinning when doing SBC using MCMC to break the correlation between samples.
-            output_basename = str_glue("{output_name}_{sim_id}"),
-            output_dir = output_dir, 
-            ignore_interval_censoring = ignore_interval_censoring,
-            ...
-          ) 
-         
-          if (!is_null(.ndraws)) { 
-            res <- fit |> # Get posterior draws from simulation fit. 
-              spread_param_rvars(ndraws = .ndraws) |> 
-              pack(est = everything())
-          } else {
-            res <- fit |> # Get posterior draws from simulation fit. 
-              spread_param_rvars() |> 
-              pack(est = everything())
-          }
-          
-          if (keep_fit) {
-            res <- res |> 
-              mutate(sim_fit = list(fit))
-          }
-          
-          return(res)
-        },
-        output_dir = output_dir, output_name = output_name, ignore_interval_censoring = ignore_interval_censoring
+      furrr::future_pmap_dfr(.progress = TRUE, .options = furrr::furrr_options(seed = TRUE),
+      # pmap_dfr(
+        lst(sim_id = .draw, sim_data, lstm),
+        rum_simulation,
+        output_dir = output_dir, output_name = output_name, ignore_interval_censoring = ignore_interval_censoring, 
+        gen_pfs = gen_pfs, .thin = .thin, .ndraws = .draws
       ),
     ) 
 }
@@ -505,7 +427,7 @@ plot_pfs_hist_posterior <- function(data_list, stan_data, hist_breaks = seq(10, 
     hist(pmin(pred, max(breaks)), breaks = c(0, breaks), plot = FALSE)$count
   }
   
-  # This function is used to allow us to generate a distribution of histograms
+  # This function is used to treated_pfs_analysis_dataallow us to generate a distribution of histograms
   rvar_sample_hist <- posterior::rfun(sample_hist)
   
   model_labels = c("no_tumor" = "Baseline Model", "tumor_change" = "Proportional Change Model", "two_tumor" = "Linear Model")
@@ -691,4 +613,259 @@ calc_pfs <- function(progress_week, death_week, right_censored, patient_tumors) 
 
   # There are a few patients who just have a single post treatment visit
   if (length(pre_progress_weeks) > 0) max(pre_progress_weeks) else NA_integer_
+}
+
+get_sim_tumor_stan_data <- function(n_patients, patient_measures, t_offset, tumor_priors) {
+  lst(
+    fit_tumor_data = FALSE, # Prior prediction
+    gen_tumor_sizes = TRUE,
+    predict_missing_sizes = FALSE,
+    multilevel_patient = FALSE,
+    multilevel_tumor = FALSE,
+    
+    n_patients,
+    n_trials = 4,
+    patient_trial = sample(4, n_patients, replace = TRUE), 
+    n_patient_tumors = 1 + rbinom(n_patients, 5, 0.4), # We're not yet generatively modeling the number of tumors
+    n_measures = rep(patient_measures, sum(n_patient_tumors)),
+    t_measure = rep(0:(patient_measures - 1), sum(n_patient_tumors)) - t_offset,
+    tumor_size = rep(0, sum(n_measures)),
+    tumor_location = sample(1:50, sum(n_patient_tumors), replace = TRUE), 
+    n_tumor_locations = n_distinct(tumor_location),
+    
+    !!!tumor_priors  
+  )
+}
+
+get_fake_tumor_data <- function(res, patient_measures, t_offset, stan_data) { 
+  res |> 
+    spread_rvars(rep_tumor_size[tumor_index], ndraws = 1) |> 
+    prepare_tumor_size_rvars(patient_measures, t_offset, stan_data) |> 
+    unnest_rvars()
+}
+
+get_tumor_ppc_draws <- function(res, patient_measures, t_offset, stan_data) {
+  res |> 
+    spread_rvars(rep_tumor_size[tumor_index]) |>
+    ungroup() |> 
+    prepare_tumor_size_rvars(patient_measures, t_offset, stan_data) |> 
+    filter(patient_id == 1, tumor_index < 6) |> 
+    unnest_rvars()
+}
+
+get_tumor_prior_fake_data <- function(res, patient_measures, t_offset, stan_data, ndraws = 24) {
+  res |> 
+    spread_rvars(rep_tumor_size[tumor_index], ndraws = ndraws) |> # We'll simulate parameters and data for a number simulations. 
+    ungroup() |> 
+    prepare_tumor_size_rvars(patient_measures, t_offset, stan_data) |> 
+    unnest_rvars() |>
+    # group_split(.draw, .iteration, .chain)
+    nest(fake_data = !c(.draw, .iteration, .chain))
+}
+
+sim_tumor_fake_data <- function(data_row, stan_data, tumor_model, output_dir) {
+  fit <- stan_data |> 
+    list_modify(
+      fit_data = TRUE,
+      gen_tumor_sizes = FALSE,
+      tumor_size = data_row$fake_data[[1]]$tumor_size
+    ) |> 
+    tumor_model$sample(
+      iter_warmup = 200, iter_sampling = 200,
+      parallel_chains = 4,
+      output_basename = str_c("fake_tumor_", data_row$.draw),
+      output_dir = output_dir,
+      init = \(chain_id) lst(
+        pop_tumor_gp_rho = invgamma::rinvgamma(1, 7.3, 7.5),
+        tumor_mean = rnorm(1, 2.8, 0.1),
+        tumor_sd = abs(rnorm(1, 0, 1.25))
+      ),
+      max_treedepth = 15
+    )
+  
+  # fit$save_outputfiles(getOption("cmdstanr_output_dir"), "fake_tumor")
+  # return(fit)
+  
+  data_row |> add_column(fake_fit = list(fit))
+}
+
+get_tumor_prior_fake_data_rvar <- function(res_data, tumor_prior_res) {
+  res_data |> 
+    group_by(.draw) |> 
+    reframe(map_dfr(fake_fit, \(f) gather_rvars(f, pop_tumor_gp_intercept, pop_tumor_gp_alpha, pop_tumor_gp_rho))) |> 
+    left_join(
+      tumor_prior_res |> 
+        gather_rvars(pop_tumor_gp_intercept, pop_tumor_gp_alpha, pop_tumor_gp_rho) |> 
+        unnest_rvars(), by = c(".draw", ".variable"), suffix = c("", "_true")) |> 
+    mutate(.value = .value - .value_true)  
+}
+
+get_tumor_analysis_stan_data <- function(treated_tumor_analysis_data, tumor_priors) {
+  tumor_stan_data <- lst(
+    fit_tumor_data = TRUE,
+    gen_tumor_sizes = TRUE,
+    predict_missing_sizes = TRUE, 
+    multilevel_patient = TRUE,
+    multilevel_tumor = FALSE,
+    
+    !!!prepare_tumor_stan_data(treated_tumor_analysis_data),
+    !!!tumor_priors
+  )
+}
+
+get_all_tumor_size <- function(res, treated_tumor_analysis_data, n_full_measures, .width = 0.8) {
+  res |> 
+    spread_rvars(all_tumor_size[idx]) |> 
+    mutate(
+      usubjid = rep(with(treated_tumor_analysis_data, rep(usubjid, n_tumors)), n_full_measures),
+      trlnkid = rep(treated_tumor_analysis_data |> unnest(patient_tumors) |> pull(trlnkid), n_full_measures),
+    ) |> 
+    left_join(
+      treated_tumor_analysis_data |> 
+        unnest(patient_tumors) |> 
+        select(usubjid, trlnkid, trial, matches("(patient_)?(min|max)_t")), 
+      by = c("usubjid", "trlnkid")
+    ) |> 
+    group_by(usubjid, trlnkid) |> 
+    mutate(week = first(min_t):first(patient_max_t)) |> 
+    ungroup() |> 
+    median_qi(all_tumor_size, .width = .width)
+}
+
+get_early_fake_tumors <- function(fake_tumor_data) {
+  fake_tumor_data |> 
+    group_by(patient_id) |> 
+    filter(t %in% c(max(keep(t, \(x) x <= 0)), min(keep(t, \(x) x > 0)))) 
+}
+
+get_pfs_prior_stan_data <- function(fake_tumor_data, early_fake_tumors, stan_data, n_patients, max_pfs, pfs_priors) {
+  stan_data |> 
+    list_modify(
+      fit_data = FALSE,
+      gen_pfs = TRUE,
+      gen_interval_censored = FALSE,
+      tumor_hazard_type = 1,
+      ignore_interval_censoring = FALSE,
+      add_trial_level = TRUE,
+      add_tumor_location_level = FALSE,
+      fit_post_2nd_meaure_only = FALSE, 
+      
+      pfs = rep(max_pfs, n_patients),
+      death_week = rep(0, n_patients),
+      right_censored = rep(FALSE, n_patients),
+      tumor_size = fake_tumor_data$tumor_size,
+      
+      grid_tumors = array(NA, dim = 0),
+      n_grid_tumors = 0,
+      
+      tumor_grid_range = with(early_fake_tumors, seq(min(tumor_size), max(tumor_size), 1)), 
+      
+      !!!pfs_priors,
+      
+      # !!!tumor_stan_data
+      use_tumor_model = FALSE
+    ) %>% 
+    list_assign(n_tumor_grid_range = length(.$tumor_grid_range))
+}
+
+get_max_t <- function(pfs_prior_stan_data) {
+  with(pfs_prior_stan_data, list_measures(t_measure, n_measures, n_patient_tumors)) |> 
+    map(unlist) |> 
+    map_int(max)
+}
+
+get_pfs_params <- function(res) {
+  res |> 
+    spread_rvars(tumor_stim_trial_intercept[trial],
+                 tumor_stim_trial_coef[trial, t],
+                 log_lambda_gp_alpha,
+                 log_lambda_gp_rho,
+                 log_lambda_gp_intercept
+              ) |>
+  pivot_wider(names_from = t, values_from = tumor_stim_trial_coef, names_prefix = "tumor_stim_coef_")
+}
+
+get_lambda_rvar <- function(res) {
+  res |> 
+    spread_rvars(log_lambda[t], base_pf_cond_prob[t], base_survival[t], one_tumor_survival[t], log_trial_lambda[trial, t]) |>
+    mutate(lambda = exp(log_lambda), trial_lambda = exp(log_trial_lambda)) |>
+    nest(trial_data = contains("trial"))
+}
+
+get_expected_pfs_rvar <- function(res) {
+  res |> 
+    gather_rvars(base_cond_expected_pfs, one_tumor_cond_expected_pfs, base_cond_median_pfs, one_tumor_cond_median_pfs) |>
+    mutate(
+      stat_type = str_extract(.variable, "expected|median"),
+      tumor_size = str_extract(.variable, "base|one_tumor")
+    )
+}
+
+get_disease_progress_prob <- function(res, stan_data, max_t, n = 2) {
+  res |> 
+    spread_rvars(disease_progress_prob[i]) |>
+    mutate(
+      patient_index = rep(seq(stan_data$n_patients), each = max(max_t)), 
+      trial = rep(stan_data$patient_trial, each = max(max_t)), 
+      t = rep(1:max(max_t), stan_data$n_patients),
+    ) |>
+    nest(.by = c(trial, patient_index)) |> 
+    group_by(trial) |> 
+    sample_n(2) |> 
+    ungroup() |> 
+    unnest(data) |> 
+    unnest_rvars()
+}
+
+fit_by_trial <- function(trial, stan_data, pfs_model) {
+  pfs_model$sample(stan_data, iter_warmup = 300, iter_sampling = 300, 
+                  init = create_pfs_initializer(stan_data), parallel_chains = 4,
+                  output_dir = file.path(tmp_dir, "fit"), output_basename = str_glue("two_tumor_trial_pfs_{trial}"))
+}
+
+bind_pooling_res <- function() {
+  map2(two_tumor_trial_loo, split_two_tumor_loo, 
+       \(sep_loo, partial_pooled_loo) loo_compare(lst("Fully Separated" = sep_loo, "Partially Pooled" = partial_pooled_loo))) |> 
+    map_dfr(\(l) as_tibble(l, rownames = "model"), .id = "trial") |> 
+    filter(fct_match(model, "Fully Separated")) |> 
+    ggplot(aes(y = trial)) +
+    geom_col(aes(x = elpd_diff), fill = AZ_platinum, alpha =0.5, position = "dodge") +
+    geom_errorbar(aes(xmin = elpd_diff - se_diff, xmax = elpd_diff + se_diff), width = 0.25) +
+    labs(x = "Difference in log-probability score", y = "Trial") +
+    NULL
+}
+
+get_tumor_design_matrix <- function(stan_data, pfs_functions) { 
+  with(stan_data, {
+    n_screening_t <- pfs_functions$calc_n_screening_t(n_patient_tumors, n_measures, t_measure)
+      
+    pfs_functions$standardize_nonzero_tumor_sizes(tumor_size) |>
+      pluck(3) |> 
+      pfs_functions$prepare_early_tumors_design_matrix(n_patient_tumors, n_measures, t_measure, n_screening_t, 2) |> 
+      magrittr::extract2(1)
+  })
+}
+
+cmdstan_expose_pfs_functions <- function(util_file, pfs_functions_file) {
+  pseudo_model_code <- paste(c("functions {", read_file(util_file), read_file(pfs_functions_file), "}"), collapse="\n")
+  functions_hash <- rlang::hash(pseudo_model_code)
+  model_name <- paste0("pfs-functions-", functions_hash)
+  ## note: cmdstanr somehow only compiles standalone functions
+  ## whenever one is compiling the model (and not allowing to export
+  ## the functions if one is not compiling it). This is why
+  ## force_compile=TRUE is a save option
+  ##pseudo_model <- cmdstanr::cmdstan_model(cmdstanr::write_stan_file(pseudo_model_code), compile_standalone=TRUE, force_compile=TRUE, stanc_options=list(name=paste0("model-functions-", functions_hash)))
+  ##pseudo_model$functions
+  ## but things seem to work ok if we abuse a bit the internals... tested with cmdstanr 0.6.1
+  ## note that we have to set the model name manually to a
+  ## determinstic string (depending only on the stan functions being
+  ## compiled)
+  stan_file <- cmdstanr::write_stan_file(pseudo_model_code)
+  pseudo_model <- cmdstanr::cmdstan_model(stan_file, stanc_options=list(name=model_name))
+  pseudo_model$functions$existing_exe <- FALSE
+  pseudo_model$functions$external <- FALSE
+  stancflags_standalone <- c("--standalone-functions", paste0("--name=", model_name))
+  pseudo_model$functions$hpp_code <- cmdstanr:::get_standalone_hpp(stan_file, stancflags_standalone)
+  pseudo_model$expose_functions(FALSE, FALSE) ## will return the functions in an environment
+  pseudo_model$functions
 }
