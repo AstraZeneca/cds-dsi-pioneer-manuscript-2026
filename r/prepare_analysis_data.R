@@ -91,15 +91,33 @@ prepare_analysis_data <- function(adam_adtr, adam_adtte, adam_adsl, adam_adcm, a
     left_join(# Getting some demographic characteristics
       unnest(adam_adsl, data) |> 
         transmute(
-          studyid, usubjid, country, age, sex, race, ecogbl, hormonr, her2ic1, nreg, stratar, stratav, 
-          region = coalesce(region1, region2)
+          studyid, usubjid, country, age, sex, race, hormonr, her2ihcn, her2ish, nreg, stratar, stratav, stratr1, stratr2, stratr3, prptmyn, 
+          ecogbl = factor(ecogbl, levels = 0:5, ordered = TRUE),
+          region = coalesce(region1, region2),
+          age_group = cut(age, c(0, 18, 40, 65, 75, Inf), right = FALSE, ordered_result = TRUE) 
         ), 
       by = c("studyid", "usubjid"),
       relationship = "one-to-one"
+    ) |>
+    mutate(
+      hist_visceral_disease = if_else(fct_match(trial, c("Breast02", "Breast03")), fct_match(stratr3, "Y"), NA),
+      her2_status = if_else(fct_match(trial, "Breast04"), 
+                            factor(stratr2, levels = 1:2, labels = c("negative", "borderline")),
+                            case_when(her2ihcn <= 1 ~ "negative",
+                                      her2ihcn == 2 & fct_match(her2ish, c("Examined but NE", "Not Evaluable")) ~ NA,
+                                      her2ihcn == 2 & !fct_match(her2ish, c("Positive", "Amplified")) ~ "borderline",
+                                      TRUE ~ "positive"))
     ) |> 
     # Get prior therapy medications per patient
     nest_join(unnest(adam_adcm, data) |> select(usubjid, cmcat, response, cmdecod), by = c("usubjid"), name = "med_data") |> 
-    mutate(med_data = map(med_data, \(cm) mutate(cm, response = str_extract(response, "CR|NA|PR|PD|SD|UNK")))) |> 
+    mutate(
+      med_data = map(med_data, \(cm) mutate(cm, response = str_extract(response, "CR|NA|PR|PD|SD|UNK"))),
+      prior_pertuzumab_treatment = map_lgl(med_data, \(cm) with(cm, any(fct_match(cmcat, "PRIOR CANCER SYSTEMIC THERAPY") & 
+                                                                          str_detect(cmdecod, regex("PERTUZUMAB", ignore_case = TRUE))))),
+      prior_cdk46_inhibit_treatment = map_lgl(med_data, \(cm) with(cm, any(
+        fct_match(cmcat, "PRIOR CANCER SYSTEMIC THERAPY") & str_detect(cmdecod, regex("Palbociclib|Ribociclib|Abemaciclib", ignore_case = TRUE))
+      )))
+    ) |> 
     # Get visit level disease response
     nest_join(
       unnest(adam_adrs, data) |> 
@@ -115,10 +133,23 @@ prepare_analysis_data <- function(adam_adtr, adam_adtte, adam_adsl, adam_adcm, a
               "Best Overall Response (09 months)", 
               "Best Overall Response (12 months)")
           )
-        ) |> 
+        ) |>
         transmute(
           studyid, usubjid, visit, visitnum, week = ady %/% 7, param = factor(param), paramcd = factor(paramcd), 
-          response = factor(avalc, levels = c("CR", "PR", "SD", "NON-CR/NON-PD", "PD", "NE", "NED"), ordered = TRUE)
+          response = factor(avalc, levels = c("CR", "PR", "SD", "NON-CR/NON-PD", "PD", "NE", "NED"), ordered = TRUE),
+        ) %>% 
+        left_join(
+          filter(., fct_match(param, "Overall Response")) |> 
+            arrange(week) |>
+            group_by(usubjid) |> 
+            transmute(
+              usubjid, week, visit, param,
+              confirmed_response = response <= "PR" & lag(response, default = "NE") <= "PR",
+              confirmed_response = accumulate(confirmed_response, \(a, r) a | r)
+            ) |> 
+            ungroup(),
+          by = c("usubjid", "week", "visit", "param"),
+          relationship = "one-to-one"
         ),
       by = c("studyid", "usubjid"),
       name = "disease_response"

@@ -40,7 +40,7 @@ lst(
   # This builds the functions in Stan and makes them available in R. Now if you need these functions in downstream targets, you need to set 
   # cue to be "always"; loading a saved pfs_functions object will not work. Also, it needs to be on the main process as the targets that use it, hence, 
   # we use deployment = "main".
-  tar_target(pfs_functions, cmdstan_expose_pfs_functions(util_stan_file, pfs_functions_file), deployment = "main"), #, cue = tar_cue("always")),
+  tar_target(pfs_functions, cmdstan_expose_pfs_functions(util_stan_file, pfs_functions_file), deployment = "main", cue = tar_cue("always")),
   tar_target(tumor_model, cmdstan_model(tumor_model_file)),
   tar_target(pfs_orr_model, cmdstan_model(pfs_orr_model_file)),
  
@@ -57,9 +57,9 @@ lst(
     ) |> 
       mutate(across(everything(), factor))),
   
-  tar_target(sdtm_dm, read_all_trial_entimice_data(data_details, "deid_dm", "sdtm")),
+  tar_target(sdtm_dm, read_all_trial_entimice_data(data_details, "deid_dm", "sdtm")), # Demographics
   tar_target(sdtm_tu, read_all_trial_entimice_data(data_details, "deid_tu", "sdtm")),
-  tar_target(adam_adtr, read_all_trial_adtr_entimice_data(data_details, sdtm_tu)),
+  tar_target(adam_adtr, read_all_trial_adtr_entimice_data(data_details, sdtm_tu)), # Tumors
   tar_target(adam_adsl, read_all_trial_entimice_data(data_details, "deid_adsl", "adam")),
   tar_target(adam_adcm, read_all_trial_entimice_data(data_details, "deid_adcm", "adam")),
   tar_target(adam_adtte, read_all_trial_adtte_entimice_data(data_details)),
