@@ -260,7 +260,54 @@ real pch_lpmf(
   array[] int right_uncensored, array[] int interval_censored, int ignore_interval_censoring, vector disease_progress_prob, int max_all_t, array[] int patient_2nd_t
 ) {
   return sum(calc_pch_loglik(y, right_uncensored, interval_censored, ignore_interval_censoring, disease_progress_prob, max_all_t, patient_2nd_t));
-} 
+}
+
+/** Convert a ragged vector tumor size measures to a matrix aligned by measurement week
+ *
+ * @param tumor_size Tumor sizes
+ * @param n_patient_tumors Array with the number of tumors per patient.
+ * @param n_measures The number of assessments per tumor.
+ * @param t_measure The week each assessment was done.
+ * @param n_screening_t Number of observed pre-screening assessments per tumor
+ * @param max_measures Number of tumor sizes to include in output, irrespective of when they are actually observed.
+ * @return (Aligned matrix, Actual t used for the columns)
+ */
+tuple(matrix, array[,] int) create_aligned_matrix(vector tumor_size, array[] int n_measures, array[] int t_measure, array[] int n_screening_t, int max_measures) {
+  int n_tumors = size(n_measures);
+  int n_total_measures = sum(n_measures);
+  array[n_total_measures] int t_sort_ind = sort_indices_asc(t_measure);
+  array[n_total_measures] int within_tumor_ind;
+  
+  int last_within_ind = 0;
+  int last_t = min(t_measure) - 1; 
+  
+  for(n in 1:n_total_measures) {
+    if (t_measure[t_sort_ind[n]] != last_t) {
+      last_within_ind += 1;
+    }
+    
+    last_t = t_measure[t_sort_ind[n]];
+    within_tumor_ind[t_sort_ind[n]] = last_within_ind;
+  }
+
+  int n_screening_col = max(n_screening_t);
+  int n_aligned_col = max(max_measures, last_within_ind); 
+  matrix[n_tumors, n_aligned_col] aligned_matrix = rep_matrix(0, n_tumors, n_aligned_col);
+  array[n_tumors, n_aligned_col] int aligned_t = rep_array(0, n_tumors, n_aligned_col);
+  
+  int tumor_pos = 1;
+  
+  for (j in 1:n_tumors) {
+    int tumor_end = tumor_pos + n_measures[j] - 1;
+    
+    aligned_matrix[j, within_tumor_ind[tumor_pos:tumor_end]] = tumor_size[tumor_pos:tumor_end]'; 
+    aligned_t[j, within_tumor_ind[tumor_pos:tumor_end]] = t_measure[tumor_pos:tumor_end]; 
+    
+    tumor_pos = tumor_end + 1;
+  }
+  
+  return (aligned_matrix[, n_screening_col:(max_measures + n_screening_col - 1)], aligned_t[, n_screening_col:(max_measures + n_screening_col - 1)]);
+}
 
 /** Create (n_patients * n_tumors) x max_measures matrix of each tumor's covariates from assessment **order** (not t) = 1, 2, ...., max_measures 
  * What this function actually returns is the last pre-screening measure and the (max_measures - 1) succeeding measures. The second output in the tuple
@@ -286,23 +333,18 @@ tuple(matrix, array[,] int) prepare_early_tumors_design_matrix(
   
   for (i in 1:n_patients) {
     int n_current_tumors = n_patient_tumors[i];
+    int covar_end = covar_pos + n_current_tumors - 1; 
+    int tumor_end = tumor_pos + n_current_tumors - 1;
+    int n_patient_measures = sum(n_measures[tumor_pos:tumor_end]);
+    int tumor_size_end = tumor_size_pos + n_patient_measures - 1;
+   
+    (tumor_covar[covar_pos:covar_end], tumor_covar_t[covar_pos:covar_end]) = create_aligned_matrix(
+      tumor_size[tumor_size_pos:tumor_size_end], n_measures[tumor_pos:tumor_end], t_measure[tumor_size_pos:tumor_size_end], n_screening_t, max_measures
+    );
     
-    for (j in 1:n_current_tumors) {
-      int n_current_measures = n_measures[tumor_pos];
-      int tumor_size_end = tumor_size_pos + n_current_measures - 1; 
-      
-      int measures_found = min(n_current_measures, max_measures);
-      
-      tumor_covar[covar_pos, :measures_found] = 
-        tumor_size[(tumor_size_pos + n_screening_t[tumor_pos] - 1):(tumor_size_pos + n_screening_t[tumor_pos] - 1 + measures_found - 1)]';
-        
-      tumor_covar_t[covar_pos, :measures_found] = 
-        t_measure[(tumor_size_pos + n_screening_t[tumor_pos] - 1):(tumor_size_pos + n_screening_t[tumor_pos] - 1 + measures_found - 1)];
-      
-      covar_pos += 1;
-      tumor_size_pos = tumor_size_end + 1;
-      tumor_pos += 1;
-    }
+    covar_pos = covar_end + 1;
+    tumor_pos = tumor_end + 1;
+    tumor_size_pos = tumor_size_end + 1;
   }
   
   return (tumor_covar, tumor_covar_t);
@@ -380,8 +422,6 @@ tuple(array[,] int, array[] int, matrix, matrix, vector, vector) prepare_early_t
           tumor_covar[, c] = standardize_results.3;
           
           uncentered_tumor_covar[, c] /= tumor_covar_sd[c];
-          
-          // print("Scaling covar ", c, " by ", tumor_covar_sd[c]);
         }
        
         if (tumor_hazard_type == 2 || tumor_hazard_type == 5) {
