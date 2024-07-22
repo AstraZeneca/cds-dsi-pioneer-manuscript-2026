@@ -1,5 +1,7 @@
 project:
   title: "early-predict-bc-survival"
-
-editor: visual
-
+code-fold: true
+code-tools: true
+toc: true
+toc-location: left
+fig-caption-location: margin
