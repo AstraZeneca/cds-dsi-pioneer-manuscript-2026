@@ -1,3 +1,24 @@
+#' Calculate progression-free survival from clinical data for each patient 
+#'
+#' @param progress_week Progress week 
+#' @param death_week Death week 
+#' @param right_censored Right censored 
+#' @param patient_tumors of all the patient's tumors 
+#'
+#' @return The last observed/measured week before progression was detected
+calc_pfs <- function(progress_week, right_censored, patient_tumors) {
+  event_week <- progress_week
+  
+  # Get all the assessment weeks that happened before progression (if not censored). 
+  pre_progress_weeks <- unnest(patient_tumors, tumor_history) |>
+    distinct(week) |>
+    filter(right_censored | week < event_week) |>
+    pull(week)
+  
+  # There are a few patients who just have a single post treatment visit
+  if (length(pre_progress_weeks) > 0) max(pre_progress_weeks) else NA_integer_
+}
+
 prepare_analysis_data <- function(adam_adtr, adam_adtte, adam_adsl, adam_adcm, adam_adrs, pfs_functions) {
   adam_adtr |> 
     unnest(data) |> 
@@ -7,9 +28,9 @@ prepare_analysis_data <- function(adam_adtr, adam_adtte, adam_adsl, adam_adcm, a
       !is.na(trdy), !is.na(aval),
       tracptfl,
       aval > 0, # Drop all zero diameter assessments; these appear to be missing measurements. 
-    ) %>% 
-    select(studyid, idap, trial, 
-           usubjid, trlnkid, trlnkgrp, tuloc, tulat, trtsdt, trtedt, adt, ends_with("fl"), trdy, trtp, trta, visit, visitnum, mmdiam = aval) |> 
+    ) |> 
+    select(studyid, idap, trial,
+           usubjid, trlnkid, trlnkgrp, tuloc, tulat, trtsdt, trtedt, adt, ends_with("fl"), trdy, trtp, trta, visit, visitnum, mmdiam = aval) |>
     mutate(
       week = if_else(trdy > 0, # Is post-treatment day? 
                      trdy, 
@@ -17,30 +38,29 @@ prepare_analysis_data <- function(adam_adtr, adam_adtte, adam_adsl, adam_adcm, a
       treated_week = adt >= trtsdt, # Was this a post-treatment week?
       usubjid = factor(usubjid)
     ) |> 
-    # Turns out that some assessments are not listed in order of the days they were done. Look at subject DS8201-A-U303-10033028.
-    arrange(studyid, usubjid, trlnkid, trdy) |> 
+    arrange(studyid, usubjid, trlnkid, trdy) |>
     # For each patient-tumor row, put all the tumor assessment data in a nested column
-    nest(tumor_history = c(adt, trdy, week, visit, visitnum, tsplitfl, tmergefl, mmdiam, treated_week)) |> 
+    nest(tumor_history = c(adt, trdy, week, visit, visitnum, tsplitfl, tmergefl, mmdiam, treated_week)) |>
     mutate(
       # For some weeks, there are multiple (unscheduled) visits that might happen. I'm just going to use the average for tumor sizes within those
       # weeks.
       tumor_history = map(
-        tumor_history, 
-        \(h) nest(h, visits = c(adt, trdy, visit, visitnum, mmdiam)) |> 
+        tumor_history,
+        \(h) nest(h, visits = c(adt, trdy, visit, visitnum, mmdiam)) |>
           mutate(
             n_week_visits = map_int(visits, nrow),
             mmdiam = map_dbl(visits, \(v) mean(v$mmdiam))
           )
-      ), 
+      ),                                                                                          ,
       
       n_tumor_measures = map_int(tumor_history, nrow), # How many assessments/measurements per tumor
-      
+
       min_t = map_int(tumor_history, \(h) min(h$week)), # First assessment week, per tumor
       max_t = map_int(tumor_history, \(h) max(h$week)), # Last assessment week, per tumor
     ) |> 
-    pack(flags = ends_with("fl")) |> 
+    pack(flags = ends_with("fl")) |>
     # Each row is going to be a patient and all their tumor data are put in a nested column.
-    nest(patient_tumors = !c(studyid, trial, idap, usubjid, trtsdt, trtedt, trtp, trta)) |> 
+    nest(patient_tumors = !c(studyid, trial, idap, usubjid, trtsdt, trtedt, trtp, trta)) |>
     left_join(# Adding a column `n_all_tumors` that counts all the tumors per patient (irrespective of being target tumors or not). 
       adam_adtr |> 
         unnest(data) |> 
@@ -49,12 +69,12 @@ prepare_analysis_data <- function(adam_adtr, adam_adtte, adam_adsl, adam_adcm, a
         count(usubjid, name = "n_all_tumors"),
       by = "usubjid"
     ) |> 
-    rowwise() |> # Per patient 
+    rowwise() |> # Per patient
     mutate(
       patient_min_t = min(patient_tumors$min_t),
       patient_max_t = max(patient_tumors$max_t),
     ) |>
-    ungroup() |> 
+    ungroup() |>
     mutate(
       patient_t_width = patient_max_t - patient_min_t + 1, # Range between first and last assessment
       n_tumors = map_int(patient_tumors, nrow), # Tumors per patient
@@ -67,17 +87,19 @@ prepare_analysis_data <- function(adam_adtr, adam_adtte, adam_adsl, adam_adcm, a
             (fct_match(paramcd, "PFS") & fct_match(studyid, "DS8201-A-U201")),
           fct_match(parqual, "CENTRAL")
         ) |> 
-          select(studyid, usubjid, aval, death = dthfl, dthdt, fpddt, cnsr),
+          select(studyid, usubjid, aval, death = dthfl, dthdt, fpddt, ltmasdt, cnsr),
       by = c("studyid", "usubjid")
     ) |> 
     mutate(
       right_censored = cnsr,
+      last_assessment_week = floor(time_length(ltmasdt - trtsdt, unit = "weeks") + 1), 
       death_week = floor(time_length(dthdt - trtsdt, unit = "weeks") + 1), # Week of death
       progress_week = floor(time_length(fpddt - trtsdt, unit = "weeks") + 1), # Week of disease progression
-      progress_week = if_else(death, coalesce(progress_week, death_week), # If death, progress week is death week
-                                     if_else(right_censored & is.na(progress_week), max(progress_week, na.rm = TRUE), # Get rid of NA 
-                                                                                    progress_week)),
-      aval_week = aval %/% 7,
+      progress_week = case_when(death & right_censored ~ pmin(death_week, last_assessment_week, na.rm = TRUE),
+                                death ~ pmin(death_week, progress_week, na.rm = TRUE), # If death, progress week is death week
+                                right_censored ~ pmin(last_assessment_week, progress_week, na.rm = TRUE),
+                                TRUE ~ progress_week),
+      aval_week = (aval %/% 7) + 1,
       
       treated = # True is getting the same dosage 
         (fct_match(trial, "Breast01") & fct_match(trtp, "5.4 mg/kg")) | 
@@ -127,6 +149,7 @@ prepare_analysis_data <- function(adam_adtr, adam_adtte, adam_adsl, adam_adcm, a
           fct_match(
             param, 
             c("Overall Response", 
+              "Confirmed Best Overall Response",
               "Best Overall Response", 
               "Best Overall Response (03 months)", 
               "Best Overall Response (06 months)", 
@@ -144,8 +167,7 @@ prepare_analysis_data <- function(adam_adtr, adam_adtte, adam_adsl, adam_adcm, a
             group_by(usubjid) |> 
             transmute(
               usubjid, week, visit, param,
-              confirmed_response = response <= "PR" & lag(response, default = "NE") <= "PR",
-              confirmed_response = accumulate(confirmed_response, \(a, r) a | r)
+              objective_response = case_when(response <= "PR" ~ TRUE, response == "PD" ~ FALSE, TRUE ~ NA),
             ) |> 
             ungroup(),
           by = c("usubjid", "week", "visit", "param"),
@@ -153,13 +175,15 @@ prepare_analysis_data <- function(adam_adtr, adam_adtte, adam_adsl, adam_adcm, a
         ),
       by = c("studyid", "usubjid"),
       name = "disease_response"
-    ) %>% 
+    ) |>  
     mutate(
       # The model expects "pfs" to record the number of weeks that were progress free, so I need to find the last *assessment* week before
       # disease progress was detected.
-      pfs = pmap_int(lst(progress_week, death_week, right_censored, patient_tumors), calc_pfs),
-   
-      # Calculate Objective Reponse Rate 
+      pfs = pmap_int(lst(progress_week, right_censored, patient_tumors), calc_pfs),
+    ) |> 
+    filter(!is.na(pfs)) %>% # For 3 patients we can't calculate PFS because there is no visit prior to progression visit
+    mutate(
+      # Calculate Objective Response Rate 
       map_dfr(
         disease_response, \(r) filter(r, fct_match(param, "Overall Response")) |>
           summarize(orr_6wk = any(week <= 6 & response <= "PR"), orr_18wk = any(week <= 18 & response <= "PR"))
@@ -196,7 +220,7 @@ prepare_raw_pfs_analysis_data <- function(analysis_data, pfs_functions) {
 filter_pfs_analysis_data <- function(raw_pfs_data) {
   raw_pfs_data |> 
     filter(
-      !is.na(pfs), pfs >= 0, # No missing pfs and progress must be assured to have happened after treatment
+      !is.na(pfs), !is.na(progress_week), pfs >= 0, # No missing pfs and progress must be assured to have happened after treatment
       patient_min_t <= 0, # At least one screening assessment needed,
       patient_max_t > 0 # and at least one post treatment assessment.
     )
@@ -208,6 +232,46 @@ prepare_orr_analysis_data <- function(analysis_data) {
     mutate(
       wk6_subsample = patient_max_t >= 6,
       wk18_subsample = patient_max_t >=18,
+    )
+}
+
+calc_confirmed_response <- function(response) {
+  conf_resp_data <- filter(response, param == "Overall Response") |> 
+    mutate(
+      confirmed_response = if_else(!xor(objective_response, lag(objective_response, default = NA)), objective_response, NA),
+      confirmed_response_week = lag(week, default = NA)
+    ) 
+  
+  first_conf_week <- conf_resp_data |> 
+    drop_na(confirmed_response) |> 
+    filter(min_rank(week) == 1) 
+ 
+  lst( 
+    confirmed_response = if (nrow(first_conf_week) > 0) pull(first_conf_week, confirmed_response) else NA,
+    confirmed_response_censored = is.na(confirmed_response),
+    confirmed_response_week = if (confirmed_response_censored) max(conf_resp_data$week) else pull(first_conf_week, confirmed_response_week)
+  )
+}
+
+prepare_confirmed_resp_analysis_data <- function(analysis_data) {
+  get_confirmed_response_week <- function(r, c) { 
+    if (!c) (drop_na(r, objective_response) |> pull(week) |> min()) else (filter(r, fct_match(param, "Overall Response")) |> pull(week) |> max())
+  }
+  
+  analysis_data |> 
+    filter(
+      !is.na(pfs), pfs >= 0,
+      fct_match(hormonr, c("NEGATIVE", "POSITIVE")),
+    ) |>  
+    mutate(
+      combined_post_treatment_t_measure = map(t_measure, \(tl) unlist(tl) |> unique() |> keep(\(t) t > 0)),
+      wk6_subsample = map_lgl(combined_post_treatment_t_measure, \(t) length(t) >= 1),
+      wk12_subsample = map_lgl(combined_post_treatment_t_measure, \(t) length(t) >= 2),
+      wk18_subsample = map_lgl(combined_post_treatment_t_measure, \(t) length(t) >= 3),
+      
+      map_dfr(disease_response, calc_confirmed_response),
+      
+      pfs = pmap_int(lst(progress_week = aval_week, right_censored, patient_tumors), calc_pfs),
     )
 }
 
@@ -317,11 +381,89 @@ prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, pfs
   stan_data |> list_assign(grid_tumors = early_tumors, n_grid_tumors = length(early_tumors))
 }
 
+prepare_confirmed_resp_covar_formula <- function(trials) {
+  covar_formula <- ~ factor(age_group, ordered = FALSE) + factor(ecogbl, ordered = FALSE) + hormonr +
+    prior_pertuzumab_treatment + prior_cdk46_inhibit_treatment
+ 
+  if (!any(fct_match(trials, c("Breast01", "Breast04")))) {
+    covar_formula <- update(covar_formula, ~ . + hist_visceral_disease)
+  }
+  
+  if (!any(fct_match(trials, c("Breast03")))) {
+    covar_formula <- update(covar_formula, ~ . + her2_status)
+  }
+  
+  return(covar_formula)
+}
+
+
+
+prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, .confirmed_resp_priors, ..., include_covar = TRUE) {
+  pfs_stan_data <- prepare_pfs_stan_data(analysis_data, ...)
+  
+  stopifnot(pfs_stan_data$n_patients == nrow(analysis_data))
+  
+  covar_design_matrix <- if (include_covar) {
+    modelr::model_matrix(analysis_data, covar_formula)[, -1] |> 
+      as.matrix()
+  } else {
+    array(NA, dim = c(pfs_stan_data$n_patients, 0))
+  }
+  
+  n_covar <- ncol(covar_design_matrix)
+  
+  pfs_stan_data %>% 
+    list_assign(
+      !!!.confirmed_resp_priors,
+      add_trial_level = FALSE,
+      covar_design_matrix = covar_design_matrix,
+      n_covar = n_covar,
+      patient_trial = rep(1, .$n_patients),
+      n_trials = 1,
+      
+      confirmed_response = coalesce(analysis_data$confirmed_response, FALSE),
+      confirmed_response_censored = analysis_data$confirmed_response_censored,
+      confirmed_response_week = analysis_data$confirmed_response_week,
+      
+      experiment_start_week = floor(with(analysis_data, time_length(trtsdt - min(trtsdt), unit = "weeks"))) + 1,
+    ) %>% 
+    list_assign(
+      prediction_week = max(.$experiment_start_week) + max(.$confirmed_response_week), # TODO Hardcoded for now,
+      
+      crcr_covar_effect_sd = rep(.$covar_effect_sd, n_covar),
+      crcr_tumor_stim_pop_coef_sd = .$tumor_stim_pop_coef_sd[1:2],
+    )
+}
+
 get_ic_data <- function(pfs_analysis_data, tumor_priors, pfs_priors, pfs_functions) {
   pfs_analysis_data %>% 
     mutate(
       interval_censoring = prepare_pfs_stan_data(., tumor_priors, pfs_priors, pfs_functions) |>
         with(pfs_functions$identify_censoring(pfs, death_week, n_patient_tumors, n_measures, t_measure)) |> 
         pluck(1)
+    )
+}
+
+filter_conf_resp_missing_covar <- function(analysis_data, covar_formula) {
+  filter(analysis_data, if_all(all_of(all.vars(covar_formula)), \(coef) !is.na(coef)))
+}
+
+prepare_trial_confirmed_resp_stan_data <- function(analysis_data, confirmed_resp_priors, tumor_priors, pfs_priors, pfs_functions) {
+  analysis_data |> 
+    filter(wk12_subsample) |> 
+    nest(.by = trial, .key = "analysis_data")  |> 
+    rowwise() |> 
+    mutate(
+      covar_formula = list(prepare_confirmed_resp_covar_formula(trial)),
+      # Drop rows that have missing covars 
+      analysis_data = list(filter_conf_resp_missing_covar(analysis_data, covar_formula)),
+      stan_data = list(
+        prepare_confirmed_resp_stan_data(
+          covar_formula, analysis_data, 
+          confirmed_resp_priors, .tumor_priors = tumor_priors, .pfs_priors = pfs_priors, 
+          pfs_functions = pfs_functions
+        )
+      ),
+      init_fun = list(create_pfs_initializer(stan_data)), 
     )
 }

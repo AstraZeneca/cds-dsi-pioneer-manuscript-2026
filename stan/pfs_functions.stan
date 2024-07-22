@@ -243,6 +243,108 @@ vector calc_pch_loglik(
   
   return lp;
 }
+/** Calculate the piecewise-constant proportional hazard log-likelihood. This returns the patients vector of log-likelihoods as opposed to the following
+ * pch_lpmf() function. 
+ *
+ * @param pfs Observed number of weeks without disease progression.
+ * @param right_censored Is right censored?
+ * @param interval_censored Number of weeks over which we have interval censoring.
+ * @param ignore_interval_censoring Treat `pfs` as the actual PFS.
+ * @param log_cond_prob_progress Log conditional probability of disease progress at every interval.
+ * @param max_all_t The latest week assessment is done in all the data.
+ * @param patient_2nd_t The week in which the first post-treatment assessment was done.
+ * @return Vector of patient-level log-likelihood.
+ */
+vector calc_pch_loglik2(
+  array[] int pfs, 
+  array[] int right_uncensored, array[] int interval_censored, int ignore_interval_censoring, 
+  vector log_cond_prob_progress, int max_all_t, array[] int patient_2nd_t 
+) 
+{
+  int n_patients = size(pfs);
+  vector[n_patients] lp = rep_vector(0, n_patients);
+  
+  int pfs_interval_pos = 1;
+    
+  for (i in 1:n_patients) {
+    int observed_pfs_interval_end = pfs_interval_pos + pfs[i] - 1; 
+    
+    // Ignoring intervals that were guaranteed for the patient to have survived because of the inclusion criteria in this meta-analysis (not the the original trials).
+    pfs_interval_pos += patient_2nd_t[i] - 1;
+    
+    int unobs_pfs_interval_pos = max(observed_pfs_interval_end + 1, pfs_interval_pos);
+   
+    if (pfs_interval_pos <= observed_pfs_interval_end) { // By incrementing by patient_2nd_t we can end up outside the observed range.
+      // These are the time intervals we are sure that the patient was progression free 
+      // lp[i] += bernoulli_lpmf(0 | disease_progress_prob[pfs_interval_pos:observed_pfs_interval_end]);
+      lp[i] += sum(log_cond_prob_progress[pfs_interval_pos:observed_pfs_interval_end]);
+    }
+    
+    int pfs_interval_end = observed_pfs_interval_end + right_uncensored[i] + interval_censored[i]; 
+    int curr_interval_censored = ignore_interval_censoring ? 0 : interval_censored[i];
+    int unobs_size = pfs_interval_end - unobs_pfs_interval_pos + 1;
+    vector[unobs_size] interval_lp = rep_vector(0, unobs_size);
+ 
+    // The point of this loop is marginalize over all the potential intervals of progression, due to interval censoring. 
+    for (t in 1:unobs_size) {
+      if (t > 1) { // We need to add more possible intervals that the patient remained progression free.
+        // interval_lp[t] = bernoulli_lpmf(0 | disease_progress_prob[unobs_pfs_interval_pos:(unobs_pfs_interval_pos - 2 + t)]);
+        interval_lp[t] = sum(log_cond_prob_progress[unobs_pfs_interval_pos:(unobs_pfs_interval_pos - 2 + t)]); 
+      }
+      
+      // If not right censored add pdf of disease progression. 
+      if (right_uncensored[i]) {
+        // interval_lp[t] += bernoulli_lpmf(1 | disease_progress_prob[unobs_pfs_interval_pos + t - 1]);
+        interval_lp[t] += log1m_exp(log_cond_prob_progress[unobs_pfs_interval_pos + t - 1]); 
+      }
+    }
+   
+    if (curr_interval_censored > 0) {
+      // There are more than one candidate true PFS: sum of the probabilities and then log.
+      lp[i] += log_sum_exp(interval_lp); // - log(curr_interval_censored + 1); 
+    } else if (right_uncensored[i]) {
+      lp[i] += interval_lp[1]; // PFS not observed because of right censoring.
+    }
+    
+    // If generating PFS, jump ahead to the beginning of the next patient's probs.
+    pfs_interval_pos = (max_all_t > 0 ? pfs_interval_pos + max_all_t - (patient_2nd_t[i] - 1) - 1 : pfs_interval_end) + 1;
+  }
+  
+  return lp;
+}
+
+vector calc_comp_risk_pch_loglik(
+  array[] int last_unclass_week,
+  array[] int event_cause,
+  array[] int right_censored,
+  matrix log_cond_prob_surv,
+  int max_confresp_week
+) 
+{
+  int n_patients = size(last_unclass_week);
+  int n_causes = cols(log_cond_prob_surv);
+  vector[n_patients] lp = rep_vector(0, n_patients);
+  
+  int interval_pos = 1;
+    
+  for (i in 1:n_patients) {
+    int interval_end = interval_pos + last_unclass_week[i] - right_censored[i]; 
+    
+    if (right_censored[i]) {
+      if (last_unclass_week[i] > 0) {
+        for (k in 1:n_causes) {
+          lp[i] += sum(log_cond_prob_surv[interval_pos:interval_end, k]); 
+        }
+      }
+    } else {
+      lp[i] = sum(log_cond_prob_surv[interval_pos:(interval_end - 1), event_cause[i]]) + log1m_exp(log_cond_prob_surv[interval_end, event_cause[i]]);
+    }
+    
+    interval_pos += max_confresp_week; 
+  }
+  
+  return lp;
+}
  
 /** This is used to provide and easy to use Stan distribution. It just sums the log-probs. 
  *
@@ -260,6 +362,34 @@ real pch_lpmf(
   array[] int right_uncensored, array[] int interval_censored, int ignore_interval_censoring, vector disease_progress_prob, int max_all_t, array[] int patient_2nd_t
 ) {
   return sum(calc_pch_loglik(y, right_uncensored, interval_censored, ignore_interval_censoring, disease_progress_prob, max_all_t, patient_2nd_t));
+}
+
+/** This is used to provide and easy to use Stan distribution. It just sums the log-probs. 
+ *
+ * @param y Observed number of weeks without disease progression.
+ * @param right_censored Is right censored?
+ * @param interval_censored Number of weeks over which we have interval censoring.
+ * @param ignore_interval_censoring Treat `pfs` as the actual PFS.
+ * @param log_cond_prob_progress Log conditional probability of disease progress at every interval.
+ * @param max_all_t The latest week assessment is done in all the data.
+ * @param patient_2nd_t The week in which the first post-treatment assessment was done.
+ * @return Vector of patient-level log-likelihood.
+ */
+real pch2_lpmf(
+  array[] int y, 
+  array[] int right_uncensored, array[] int interval_censored, int ignore_interval_censoring, vector log_cond_prob_progress, int max_all_t, array[] int patient_2nd_t
+) {
+  return sum(calc_pch_loglik2(y, right_uncensored, interval_censored, ignore_interval_censoring, log_cond_prob_progress, max_all_t, patient_2nd_t));
+}
+
+real comp_risk_pch_lpmf(
+  array[] int last_unclass_week,
+  array[] int event_cause,
+  array[] int right_censored,
+  matrix log_cond_prob_surv,
+  int max_confresp_week
+) {
+  return sum(calc_comp_risk_pch_loglik(last_unclass_week, event_cause, right_censored, log_cond_prob_surv, max_confresp_week));
 }
 
 /** Convert a ragged vector tumor size measures to a matrix aligned by measurement week
@@ -350,7 +480,7 @@ tuple(matrix, array[,] int) prepare_early_tumors_design_matrix(
   return (tumor_covar, tumor_covar_t);
 }
 
-int calc_n_covar_col(int tumor_hazard_type) {
+int calc_n_tumor_covar_col(int tumor_hazard_type) {
   int n_covar_col = 0; // number of columns in covariates design matrix, excluding the intercept. 
   
   if (tumor_hazard_type == 1) {
@@ -366,12 +496,51 @@ int calc_n_covar_col(int tumor_hazard_type) {
   return n_covar_col;
 }
 
+tuple(matrix, matrix, vector, vector) prepare_early_tumor_sums_covar(
+  vector tumor_size, 
+  int n_tumors, array[] int n_patient_tumors, array[] int n_measures, array[] int t_measure, array[] int n_screening_t, int max_measures
+) {
+  int n_patients = size(n_patient_tumors);
+  matrix[n_tumors, 2] tumor_covar; 
+  array[n_tumors, 2] int tumor_covar_t; 
+  matrix[n_patients, 2] tumor_sum_covar; 
+  matrix[n_patients, 2] uncentered_tumor_sum_covar; 
+  
+  (tumor_covar, tumor_covar_t) = prepare_early_tumors_design_matrix(tumor_size, n_patient_tumors, n_measures, t_measure, n_screening_t, max_measures);
+  
+  {
+    int tumor_pos = 1;
+    
+    for (i in 1:n_patients) {
+      int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
+      
+      tumor_sum_covar[i] = rep_row_vector(1, n_patient_tumors[i]) * tumor_covar[tumor_pos:tumor_end];
+      
+      tumor_pos = tumor_end + 1;
+    }
+  }
+  
+  vector[2] tumor_sum_covar_mean;
+  vector[2] tumor_sum_covar_sd;
+  
+  for (c in 1:2) {
+    uncentered_tumor_sum_covar[, c] = tumor_sum_covar[, c];
+    
+    (tumor_sum_covar_mean[c], tumor_sum_covar_sd[c], tumor_sum_covar[, c]) = standardize_tumor_sizes(tumor_sum_covar[, c]);
+    
+    uncentered_tumor_sum_covar[, c] /= tumor_sum_covar_sd[c];
+  }
+  
+  return (tumor_sum_covar, uncentered_tumor_sum_covar, tumor_sum_covar_mean, tumor_sum_covar_sd);
+}
+
 tuple(array[,] int, array[] int, matrix, matrix, vector, vector) prepare_early_tumors_covar(
   vector tumor_size, 
   int tumor_hazard_type, 
-  int n_patients, int n_tumors, array[] int n_patient_tumors, array[] int n_measures, array[] int t_measure, array[] int n_screening_t, int max_measures
+  int n_tumors, array[] int n_patient_tumors, array[] int n_measures, array[] int t_measure, array[] int n_screening_t, int max_measures
 ) {
-  int n_covar_col = calc_n_covar_col(tumor_hazard_type);
+  int n_patients = size(n_patient_tumors);
+  int n_covar_col = calc_n_tumor_covar_col(tumor_hazard_type);
   
   array[n_tumors, max_measures] int tumor_covar_t; // ts (weeks) of the assessments used in the covar design matrix
   array[n_patients] int patient_max_2nd_tumor_t; // What t is the second assessment in the covar design matrix 
@@ -440,9 +609,47 @@ tuple(array[,] int, array[] int, matrix, matrix, vector, vector) prepare_early_t
 }
 
 // Calculate patient-interval conditional probability of disease progression.
+tuple(vector, vector) calc_tumor_stim(
+  matrix tumor_covar,
+  int tumor_hazard_type, array[] int n_patient_tumors,
+  array[] int patient_trial,
+  array[] int tumor_location,
+  real tumor_stim_pop_intercept, vector tumor_stim_trial_intercept, vector tumor_stim_location_intercept, 
+  row_vector tumor_stim_pop_coef, matrix tumor_stim_trial_coef, matrix tumor_stim_location_coef
+) {
+  int n_patients = size(n_patient_tumors);
+  int n_covar_col = cols(tumor_covar);
+  
+  vector[n_patients] total_time_invar_tumor_stim; // This is a sum of the contribution of all a patient's tumors to their hazard 
+  vector[n_patients] total_time_invar_tumor_stim_no_intercept; // This used outside the model, so don't delete it.
+  
+  int tumor_pos = 1;
+
+  for (i in 1:n_patients) {
+    int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
+    array[n_patient_tumors[i]] int patient_tumor_locations = tumor_location[tumor_pos:tumor_end];
+    
+    vector[n_patient_tumors[i]] patient_stim_intercept = 
+      tumor_stim_pop_intercept + tumor_stim_trial_intercept[patient_trial[i]] + tumor_stim_location_intercept[patient_tumor_locations];
+      
+    matrix[n_patient_tumors[i], n_covar_col] patient_stim_coef =
+      rep_matrix(tumor_stim_pop_coef + tumor_stim_trial_coef[patient_trial[i]], n_patient_tumors[i]) + tumor_stim_location_coef[patient_tumor_locations];
+     
+    vector[n_patient_tumors[i]] tumor_stim = linear_tumor_stimulus(patient_stim_intercept, patient_stim_coef, tumor_covar[tumor_pos:tumor_end]);
+    total_time_invar_tumor_stim[i] = tumor_hazard_type > 0 ? sum(tumor_stim) : 0;
+    total_time_invar_tumor_stim_no_intercept[i] = 
+      tumor_hazard_type > 0 ? sum(linear_tumor_stimulus(rep_vector(0, n_patient_tumors[i]), patient_stim_coef, tumor_covar[tumor_pos:tumor_end])) : 0;
+   
+    tumor_pos = tumor_end + 1;
+  }
+
+  return (total_time_invar_tumor_stim, total_time_invar_tumor_stim_no_intercept);    
+}
+
+// Calculate patient-interval conditional probability of disease progression.
 tuple(vector, vector, vector) calc_disease_progress_pred_from_early_tumors(
   array[] int pfs, matrix tumor_covar,
-  int tumor_hazard_type, int n_patients, array[] int n_patient_tumors,
+  int tumor_hazard_type, array[] int n_patient_tumors,
   array[] int patient_trial,
   array[] int tumor_location,
   array[] int right_uncensored, array[] int interval_censored, 
@@ -451,37 +658,28 @@ tuple(vector, vector, vector) calc_disease_progress_pred_from_early_tumors(
   row_vector tumor_stim_pop_coef, matrix tumor_stim_trial_coef, matrix tumor_stim_location_coef,
   int gen_pfs, int max_all_t
 ) {
+  int n_patients = size(n_patient_tumors);
   int n_covar_col = cols(tumor_covar);
   int n_time_periods = gen_pfs ? n_patients * max_all_t : sum(pfs) + sum(right_uncensored) + sum(interval_censored);
   
   vector[n_patients] total_time_invar_tumor_stim; // This is a sum of the contribution of all a patient's tumors to their hazard 
   vector[n_patients] total_time_invar_tumor_stim_no_intercept; // This used outside the model, so don't delete it.
+  
+  (total_time_invar_tumor_stim, total_time_invar_tumor_stim_no_intercept) = calc_tumor_stim(
+    tumor_covar, tumor_hazard_type, n_patient_tumors, patient_trial, tumor_location, 
+    tumor_stim_pop_intercept, tumor_stim_trial_intercept, tumor_stim_location_intercept, tumor_stim_pop_coef, tumor_stim_trial_coef, tumor_stim_location_coef 
+  );
+  
   vector[n_time_periods] disease_progress_pred;
   
-  int tumor_pos = 1;
   int pfs_interval_pos = 1;
 
   for (i in 1:n_patients) {
-    int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
     int n_intervals = gen_pfs ? max_all_t : pfs[i] + right_uncensored[i] + interval_censored[i];
     int pfs_interval_end = pfs_interval_pos + n_intervals - 1; 
-    array[n_patient_tumors[i]] int patient_tumor_locations = tumor_location[tumor_pos:tumor_end];
-    
-    vector[n_patient_tumors[i]] patient_stim_intercept = 
-      tumor_stim_pop_intercept + tumor_stim_trial_intercept[patient_trial[i]] + tumor_stim_location_intercept[patient_tumor_locations];
-      
-    matrix[n_patient_tumors[i], n_covar_col] patient_stim_coef =
-      // rep_matrix(tumor_stim_pop_coef .* exp(tumor_stim_trial_coef[patient_trial[i]]), n_patient_tumors[i]) .* exp(tumor_stim_location_coef[patient_tumor_locations]);
-      rep_matrix(tumor_stim_pop_coef + tumor_stim_trial_coef[patient_trial[i]], n_patient_tumors[i]) + tumor_stim_location_coef[patient_tumor_locations];
-     
-    vector[n_patient_tumors[i]] tumor_stim = linear_tumor_stimulus(patient_stim_intercept, patient_stim_coef, tumor_covar[tumor_pos:tumor_end]);
-    total_time_invar_tumor_stim[i] = tumor_hazard_type > 0 ? sum(tumor_stim) : 0;
-    total_time_invar_tumor_stim_no_intercept[i] = 
-      tumor_hazard_type > 0 ? sum(linear_tumor_stimulus(rep_vector(0, n_patient_tumors[i]), patient_stim_coef, tumor_covar[tumor_pos:tumor_end])) : 0;
    
     disease_progress_pred[pfs_interval_pos:pfs_interval_end] = log_trial_lambda[patient_trial[i], 1:n_intervals] + total_time_invar_tumor_stim[i];
     
-    tumor_pos = tumor_end + 1;
     pfs_interval_pos = pfs_interval_end + 1;
   }
 

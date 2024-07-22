@@ -411,6 +411,16 @@ plot_km <- function(data_list, analysis_data, ...) {
     plot_km_rvars(analysis_data, arm_var = arm, ...)
 }
 
+
+# This function is used to generate a histogram of time-to-events for a single draw
+sample_hist <- function(pred, breaks) {
+  # hist() is a base R function to generate histograms from data and provided breaks.
+  hist(pmax(pmin(pred, max(breaks)), min(breaks)), breaks = breaks, plot = FALSE)$count
+}
+
+# This function is used to treated_pfs_analysis_dataallow us to generate a distribution of histograms
+rvar_sample_hist <- posterior::rfun(sample_hist)
+
 #' Produce a probabilistic histogram from rvar samples
 #' 
 #' The difference between a probabilistic histogram and a regular histogram is that it shows the uncertainty about the distribution. 
@@ -421,14 +431,6 @@ plot_km <- function(data_list, analysis_data, ...) {
 #'
 #' @return ggplot2 plot object
 plot_pfs_hist_posterior <- function(data_list, stan_data, hist_breaks = seq(10, 150, 10)) {
-  # This function is used to generate a histogram of time-to-events for a single draw
-  sample_hist <- function(pred, breaks) {
-    # hist() is a base R function to generate histograms from data and provided breaks.
-    hist(pmin(pred, max(breaks)), breaks = c(0, breaks), plot = FALSE)$count
-  }
-  
-  # This function is used to treated_pfs_analysis_dataallow us to generate a distribution of histograms
-  rvar_sample_hist <- posterior::rfun(sample_hist)
   
   model_labels = c("no_tumor" = "Baseline Model", "tumor_change" = "Proportional Change Model", "two_tumor" = "Linear Model")
   
@@ -436,7 +438,7 @@ plot_pfs_hist_posterior <- function(data_list, stan_data, hist_breaks = seq(10, 
     map_dfr(\(f) spread_rvars(f, rep_pfs[i], rep_right_censored[i]) |> mutate(trial = stan_data$patient_trial), .id = "arm") |> 
     group_by(arm, trial) |> 
     # bindist is the distribution of histogram size at each bin.
-    reframe(t = hist_breaks, bindist = rvar_sample_hist(rep_pfs, hist_breaks)) |> 
+    reframe(t = hist_breaks, bindist = rvar_sample_hist(rep_pfs, c(0, hist_breaks))) |> 
     filter(t < max(t)) %>% 
     bind_rows(
       group_by(., arm, trial) %>%
@@ -592,27 +594,6 @@ get_tumor_hazard_ratio_summary <- function(fit, var, tumor_size_pairs, stan_data
       unnest(.value) |> 
       left_join(p_data, by = "pid") # I need to do this because quantile.rvar just adds indices not the p's
   }
-}
-
-#' Calculate progression-free survival from clinical data for each patient 
-#'
-#' @param progress_week Progress week 
-#' @param death_week Death week 
-#' @param right_censored Right censored 
-#' @param patient_tumors data set of all the patient's tumors 
-#'
-#' @return The last observed/measured week before progression was detected
-calc_pfs <- function(progress_week, death_week, right_censored, patient_tumors) {
-  event_week <- min(progress_week, death_week, na.rm = TRUE) # Whichever happened first, death or DP.
- 
-  # Get all the assessment weeks that happened before progression (if not censored). 
-  pre_progress_weeks <- unnest(patient_tumors, tumor_history) |>
-    distinct(week) |>
-    filter(right_censored | week < event_week) |>
-    pull(week)
-
-  # There are a few patients who just have a single post treatment visit
-  if (length(pre_progress_weeks) > 0) max(pre_progress_weeks) else NA_integer_
 }
 
 get_sim_tumor_stan_data <- function(n_patients, patient_measures, t_offset, tumor_priors) {
