@@ -268,3 +268,18 @@ array[] int calc_n_screening_t(array[] int n_patient_tumors, array[] int n_measu
   
   return n_screening_t;
 }
+
+int num_leq(array[] int x, int y) {
+  int n = 0;
+  array[size(x)] int sorted_x = sort_asc(x);
+  
+  for (i in 1:size(x)) {
+    if (sorted_x[i] <= y) {
+      n += 1;
+    } else {
+      break;
+    }
+  }
+  
+  return n;
+}

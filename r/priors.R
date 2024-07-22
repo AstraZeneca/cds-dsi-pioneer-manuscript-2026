@@ -23,3 +23,18 @@ get_pfs_priors <- function() {
     orr_pop_coef_sd = 0.125 
   )
 }
+
+get_confirmed_resp_priors <- function() {
+  lst(
+    covar_effect_sd = 0.05,
+    tumor_stim_pop_coef_sd = c(0.1, 0.1, 0.1, 0.05, 0.05),
+    
+    log_crcr_lambda_gp_intercept_mean = -5,
+    log_crcr_lambda_gp_intercept_sd = 0.5,
+    log_crcr_lambda_gp_alpha_sd = 0.5,
+    log_crcr_lambda_gp_rho_alpha = 7.3,
+    log_crcr_lambda_gp_rho_beta = 7.5, 
+    log_crcr_lambda_gp_trial_alpha_sd = 0.25,
+    log_crcr_lambda_gp_trial_intercept_sd_sd = 0.25,
+  )
+}

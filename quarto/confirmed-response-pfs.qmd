@@ -1,0 +1,201 @@
+---
+title: "Early Prediction of PFS from Confirmed Response and Tumor Sizes"
+author: "Karim Naguib"
+format: html
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+library(magrittr)
+library(tidyverse)
+library(rlang)
+library(cmdstanr)
+library(loo)
+library(posterior)
+library(tidybayes)
+library(bayesplot)
+library(here)
+library(targets)
+library(colorspace)
+
+# Using different temp directories on SCP and locally.
+tmp_dir <- if (nchar(Sys.getenv("TMP")) > 0) file.path(Sys.getenv("TMPDIR"), "adc-early-predict") else here("temp")
+
+knitr::opts_chunk$set(cache.path = file.path("/wscratch", Sys.getenv("USER"), "adc-early-predict/cache/"))
+
+ggplot2::theme_set(theme_minimal(base_family = "Arial"))
+
+source(here("r", "util.R"))
+source(here("r", "crcr.R"))
+
+tar_config_set(store = file.path(tmp_dir, "_targets"), script = here("_targets.R"))
+```
+
+```{r}
+#| label: load-analysis-data
+#| cache: true
+#| cache-lazy: true
+
+tar_load(c("treated_confirmed_resp_analysis_data", "treated_confirmed_resp_stan_data"))
+```
+
+```{r}
+#| fig-width: 10
+
+treated_confirmed_resp_analysis_data |> 
+  ggplot(aes(confirmed_response_week)) +
+  geom_bar(aes(fill = confirmed_response_censored), alpha = 0.75, position = "stack") +
+  scale_x_continuous("Confirmed Response Week", breaks = (seq(0, 126, by = 12))) +
+  scale_fill_discrete("Censored") +
+  facet_wrap(vars(trial), scales = "free_y") 
+```
+
+```{r}
+tar_read("km_confirmed_response") |> 
+  set_names(c("s", "n", "c", "e")) |>
+  as_tibble() |> 
+  mutate(t = seq(0, n() - 1)) |> 
+  ggplot() +
+  geom_step(aes(t, s), direction = "vh") +
+  scale_x_continuous("Confirmed Response Week", breaks = (seq(0, 126, by = 12))) +
+  labs(y = "Proportion Unclassified") +
+  NULL
+```
+
+```{r}
+treated_confirmed_resp_analysis_data |> 
+  select(trial, n_tumors, t_measure) |> 
+  unnest(t_measure) |> 
+  unnest(t_measure) |> 
+  mutate(epoch = if_else(t_measure <= 0, "pre-screening", "treatment") |> as_factor()) |> 
+  ggplot(aes(t_measure)) +
+  geom_bar(aes(fill = epoch), alpha = 0.5) +
+  scale_fill_discrete("", labels = str_to_title, type = AZ_palette) +
+  scale_x_continuous("Week", breaks = (seq(0, 126, by = 12))) +
+  labs(y = "Count", title = "Number of visits every week") +
+  facet_wrap(vars(trial), scales = "free_y") +
+  theme(legend.position = "top", axis.text.x = element_text(size = 7))
+```
+
+```{r}
+#| fig-height: 5
+#| fig-width: 10 
+
+# treated_confirmed_resp_analysis_data |> 
+#   ggplot() +
+#   geom_segment(aes(x = trtsdt, xend = trtedt, y = usubjid, yend = usubjid), alpha = 0.25) +
+#   labs(title = "Patient treatment start/end timelines", x = "", y = "") +
+#   facet_wrap(vars(trial), ncol = 1, scales = "free") +
+#   theme(axis.text.y = element_blank(), panel.grid.major.y = element_blank()) +
+#   NULL
+
+treated_confirmed_resp_analysis_data |> 
+  mutate(start_offset = time_length(trtsdt - min(trtsdt), unit = "weeks")) |> 
+  ggplot() +
+  stat_ecdf(aes(x = start_offset), alpha = 0.25) +
+  scale_x_continuous("Experiment Entry Week") +
+  labs(title = "Empirical CDF of Experiment Entry", y = "") +
+  facet_wrap(vars(trial), scales = "free") +
+  NULL
+```
+
+```{r}
+
+treated_confirmed_resp_analysis_data |> 
+  ggplot(aes(confirmed_response)) +
+  geom_bar(alpha = 0.25) +
+  facet_wrap(vars(trial), nrow = 1)
+```
+
+# Confirmed Response Competing Risks Model
+
+```{r}
+#| label: load-conf-resp-res 
+
+tar_load(c("prior_confirmed_resp_comp_risk_res", "confirmed_resp_comp_risk_res"))
+```
+
+```{r}
+#| label: conf-resp-hazard-ratio
+#| cache: true
+
+hb <- seq(0, 2, by = 0.1)
+
+conf_resp_hazard_ratios <- lst(prior = prior_confirmed_resp_comp_risk_res, post = confirmed_resp_comp_risk_res) |> 
+  map_dfr(get_conf_resp_hazard_ratios, .id = "fit_type")  
+
+conf_resp_hazard_ratios |> 
+  group_by(trial, fit_type) |> 
+  reframe(t = hb[-1], bindist = rvar_sample_hist(patient_crcr_hazard_ratio, hb)) |> 
+  ggplot(aes(t)) +
+  stat_lineribbon(aes(ydist = bindist, color = fit_type, fill = fit_type),
+                  alpha = 0.25, linewidth = 1,
+                  step = "vh",
+                  .width = c(0.5, 0.8)) +
+  scale_color_discrete(type = AZ_palette, aesthetics = c("color", "fill")) +
+  facet_wrap(vars(trial)) +
+  NULL
+```
+
+```{r}
+
+covar_param <- lst(prior = prior_confirmed_resp_comp_risk_res, post = confirmed_resp_comp_risk_res) |> 
+  map_dfr(get_conf_resp_covar_param, .id = "fit_type") 
+
+covar_param |> 
+  mutate(k = factor(k, levels = 1:2, labels = c("Response", "Non-response"))) |> 
+  ggplot() +
+  stat_halfeye(aes(xdist = crcr_covar_effect, y = factor(covar), color = fit_type, fill = fit_type), alpha = 0.25, .width = 0.8) +
+  scale_y_discrete("Parameter") +
+  scale_color_discrete(type = AZ_palette, aesthetics = c("color", "fill")) +
+  facet_grid(vars(k), vars(trial))
+```
+
+```{r}
+
+tumor_param <- lst(prior = prior_confirmed_resp_comp_risk_res, post = confirmed_resp_comp_risk_res) |> 
+  map_dfr(get_conf_resp_tumor_param, .id = "fit_type") 
+
+tumor_param |> 
+  mutate(k = factor(k, levels = 1:2, labels = c("Response", "Non-response"))) |> 
+  ggplot() +
+  stat_halfeye(aes(xdist = crcr_tumor_stim_pop_coef, y = factor(m), color = fit_type, fill = fit_type), alpha = 0.25, .width = 0.8) +
+  scale_y_discrete("Parameter") +
+  scale_color_discrete(type = AZ_palette, aesthetics = c("color", "fill")) +
+  facet_grid(vars(k), vars(trial))
+```
+
+
+```{r}
+
+conf_resp_cif <- lst(prior = prior_confirmed_resp_comp_risk_res, post = confirmed_resp_comp_risk_res) |> 
+  map_dfr(get_conf_resp_cif, .id = "fit_type") 
+
+conf_resp_prob_confirmed <- conf_resp_cif |> 
+  group_by(fit_type, trial, i, k) |> 
+  filter(min_rank(t) == n()) |> 
+  group_by(fit_type, trial, i) |> 
+  mutate(cif = cif / rvar_sum(cif)) |> 
+  ungroup() |> 
+  filter(k == 2)
+
+conf_resp_cif |> 
+  filter(trial == "Breast04", i == 86) |>
+  ggplot(aes(t)) +
+  stat_lineribbon(aes(ydist = cif, color = fit_type, fill = fit_type), alpha = 0.25, linewidth = 2, .width = c(0.5, 0.8)) +
+  scale_color_discrete(type = AZ_palette, aesthetics = c("color", "fill")) +
+  facet_wrap(vars(k))
+```
+
+```{r}
+conf_resp_prob <- lst(prior = prior_confirmed_resp_comp_risk_res, post = confirmed_resp_comp_risk_res) |> 
+  map_dfr(get_conf_resp_prob, .id = "fit_type") 
+```
+
+# PFS Model
+
+# Prior Prediction
+
+
