@@ -1,6 +1,7 @@
 functions {
   #include "../util.stan"
   #include "../pfs_functions.stan"
+  #include "crcr_functions.stan"
 }
 
 data {
@@ -14,11 +15,8 @@ data {
 
   // This is the data that is shared with the tumor model 
   #include "../base_data.stan"
-  
-  array[n_patients] int<lower = 0, upper = 1> confirmed_response;
-  array[n_patients] int<lower = 1> confirmed_response_week;
-  array[n_patients] int<lower = 0, upper = 1> confirmed_response_censored;
-  
+  #include "crcr_data.stan"
+
   array[n_patients] int<lower = 1> experiment_start_week;
   int<lower = 1> prediction_week; // At what week are starting our analysis
   
@@ -55,22 +53,5 @@ model {
 }
 
 generated quantities {
-  array[n_patients] matrix[max_confresp_week, n_causes] cif; // cumulative incidence function
-  array[n_patients] simplex[n_causes] prob_cause; 
-  
-  for (i in 1:n_patients) { 
-    int patient_prob_pos = 1 + (i - 1) * max_confresp_week; 
-    
-    for (t in 1:max_confresp_week) {
-      cif[i, t] = 
-        exp(sum(log_crcr_cond_prob_surv[patient_prob_pos:(patient_prob_pos + t - 2)]) + log1m_exp(log_crcr_cond_prob_surv[patient_prob_pos + t - 1])); 
-    }
-  
-    for (k in 1:n_causes) {
-      cif[i, , k] = cumulative_sum(cif[i, , k]);
-    }
-    
-    prob_cause[i] = cif[i, max_confresp_week]';
-    prob_cause[i] /= sum(prob_cause[i]); 
-  }
+  #include "crcr_gen_quants.stan"
 }

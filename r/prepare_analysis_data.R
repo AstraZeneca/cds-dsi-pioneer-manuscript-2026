@@ -57,10 +57,13 @@ prepare_analysis_data <- function(adam_adtr, adam_adtte, adam_adsl, adam_adcm, a
 
       min_t = map_int(tumor_history, \(h) min(h$week)), # First assessment week, per tumor
       max_t = map_int(tumor_history, \(h) max(h$week)), # Last assessment week, per tumor
-    ) |> 
+    ) |>
+    group_by(trial) |> 
+    mutate(experiment_start_week = floor(time_length(trtsdt - min(trtsdt), unit = "weeks")) + 1) |> 
+    ungroup() |> 
     pack(flags = ends_with("fl")) |>
     # Each row is going to be a patient and all their tumor data are put in a nested column.
-    nest(patient_tumors = !c(studyid, trial, idap, usubjid, trtsdt, trtedt, trtp, trta)) |>
+    nest(patient_tumors = !c(studyid, trial, idap, usubjid, trtsdt, trtedt, trtp, trta, experiment_start_week)) |>
     left_join(# Adding a column `n_all_tumors` that counts all the tumors per patient (irrespective of being target tumors or not). 
       adam_adtr |> 
         unnest(data) |> 
@@ -99,7 +102,7 @@ prepare_analysis_data <- function(adam_adtr, adam_adtte, adam_adsl, adam_adcm, a
                                 death ~ pmin(death_week, progress_week, na.rm = TRUE), # If death, progress week is death week
                                 right_censored ~ pmin(last_assessment_week, progress_week, na.rm = TRUE),
                                 TRUE ~ progress_week),
-      aval_week = (aval %/% 7) + 1,
+      aval_week = aval %/% 7,
       
       treated = # True is getting the same dosage 
         (fct_match(trial, "Breast01") & fct_match(trtp, "5.4 mg/kg")) | 
@@ -181,7 +184,7 @@ prepare_analysis_data <- function(adam_adtr, adam_adtte, adam_adsl, adam_adcm, a
       # disease progress was detected.
       pfs = pmap_int(lst(progress_week, right_censored, patient_tumors), calc_pfs),
     ) |> 
-    filter(!is.na(pfs)) %>% # For 3 patients we can't calculate PFS because there is no visit prior to progression visit
+    filter(!is.na(pfs) & pfs >= 0) %>% # For 3 patients we can't calculate PFS because there is no visit prior to progression visit
     mutate(
       # Calculate Objective Response Rate 
       map_dfr(
@@ -259,6 +262,7 @@ prepare_confirmed_resp_analysis_data <- function(analysis_data) {
   }
   
   analysis_data |> 
+    mutate(pfs = pmap_int(lst(progress_week = aval_week, right_censored, patient_tumors), calc_pfs)) |> 
     filter(
       !is.na(pfs), pfs >= 0,
       fct_match(hormonr, c("NEGATIVE", "POSITIVE")),
@@ -270,24 +274,24 @@ prepare_confirmed_resp_analysis_data <- function(analysis_data) {
       wk18_subsample = map_lgl(combined_post_treatment_t_measure, \(t) length(t) >= 3),
       
       map_dfr(disease_response, calc_confirmed_response),
-      
-      pfs = pmap_int(lst(progress_week = aval_week, right_censored, patient_tumors), calc_pfs),
     )
 }
 
+get_trial_treated_obs_km <- function(sdata, pfs_functions) {
+  with(sdata, {
+    list(lb = pfs, ub = pfs + interval_censored) |> 
+      map_dfr(function(s) {
+        pfs_functions$estimate_kaplan_meier(s, right_censored, max(s)) |>
+          set_names(c("s", "n", "c", "e")) |>
+          as_tibble() |> 
+          mutate(t = seq(0, n() - 1))
+      }, .id = "btype")
+    }
+  )
+}
+
 get_treated_obs_km <- function(treated_trial_pfs_stan_data, pfs_functions) { 
-  map_dfr(treated_trial_pfs_stan_data, function(sdata) {
-    with(sdata, {
-      list(lb = pfs, ub = pfs + interval_censored) |> 
-        map_dfr(function(s) {
-          pfs_functions$estimate_kaplan_meier(s, right_censored, max(s)) |>
-            set_names(c("s", "n", "c", "e")) |>
-            as_tibble() |> 
-            mutate(t = seq(0, n() - 1))
-        }, .id = "btype")
-      }
-    )
-  }, .id = "trial")
+  map_dfr(treated_trial_pfs_stan_data, \(sdata) get_trial_treated_obs_km(sdata, pfs_functions), .id = "trial")
 }
 
 #' Prepare a user-friendly data set of the first two tumor measures. 
@@ -343,7 +347,10 @@ prepare_tumor_stan_data <- function(analysis_data) {
 #' @return List of variables formatted for use with Stan model.
 prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, pfs_functions, ..., pfs_var = pfs, orr_var = orr_6wk) {
   tumor_stan_data <- prepare_tumor_stan_data(analysis_data)
-  pfs_data <- select(analysis_data, pfs = {{ pfs_var }}, orr = {{ orr_var }}, death_week, right_censored, interval_censored, patient = usubjid) |> 
+  pfs_data <- select(
+      analysis_data, 
+      pfs = {{ pfs_var }}, orr = {{ orr_var }}, death_week, experiment_start_week, right_censored, interval_censored, patient = usubjid
+    ) |> 
     mutate(
       death_week = if_else(right_censored, 0, death_week), # Death week is irrelevant if the data is censored
       patient = factor(patient) 
@@ -382,21 +389,26 @@ prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, pfs
 }
 
 prepare_confirmed_resp_covar_formula <- function(trials) {
-  covar_formula <- ~ factor(age_group, ordered = FALSE) + factor(ecogbl, ordered = FALSE) + hormonr +
-    prior_pertuzumab_treatment + prior_cdk46_inhibit_treatment
- 
+  covar_formula <- ~ 0 + factor(age_group, ordered = FALSE) + factor(ecogbl, ordered = FALSE) + hormonr + prior_cdk46_inhibit_treatment
+  
   if (!any(fct_match(trials, c("Breast01", "Breast04")))) {
     covar_formula <- update(covar_formula, ~ . + hist_visceral_disease)
   }
   
-  if (!any(fct_match(trials, c("Breast03")))) {
+  # if (!any(fct_match(trials, c("Breast03")))) {
+  #   covar_formula <- update(covar_formula, ~ . + her2_status)
+  # }
+  
+  if (!all(fct_match(trials, c("Breast04")))) {
+    covar_formula <- update(covar_formula, ~ . + prior_pertuzumab_treatment)
+  }
+  
+  if (any(fct_match(trials, c("Breast04")))) {
     covar_formula <- update(covar_formula, ~ . + her2_status)
   }
   
   return(covar_formula)
 }
-
-
 
 prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, .confirmed_resp_priors, ..., include_covar = TRUE) {
   pfs_stan_data <- prepare_pfs_stan_data(analysis_data, ...)
@@ -404,7 +416,8 @@ prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, .conf
   stopifnot(pfs_stan_data$n_patients == nrow(analysis_data))
   
   covar_design_matrix <- if (include_covar) {
-    modelr::model_matrix(analysis_data, covar_formula)[, -1] |> 
+    modelr::model_matrix(analysis_data, covar_formula) |> 
+      map_dfc(\(col) scale(col, scale = FALSE)) |> 
       as.matrix()
   } else {
     array(NA, dim = c(pfs_stan_data$n_patients, 0))
@@ -416,23 +429,54 @@ prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, .conf
     list_assign(
       !!!.confirmed_resp_priors,
       add_trial_level = FALSE,
+      use_pfs_covar = TRUE,
       covar_design_matrix = covar_design_matrix,
       n_covar = n_covar,
       patient_trial = rep(1, .$n_patients),
       n_trials = 1,
+      time_varying_conf_resp = FALSE,
+      ignore_interval_censoring = FALSE,
+      
+      prediction_week = array(dim = 0), 
+      n_prediction_weeks = 0,
+      n_bootstrap_samples = 0,
+      n_bootstrap_sample_patients = array(dim = 0),
+      bootstrap_patient = array(dim = 0),
       
       confirmed_response = coalesce(analysis_data$confirmed_response, FALSE),
       confirmed_response_censored = analysis_data$confirmed_response_censored,
       confirmed_response_week = analysis_data$confirmed_response_week,
-      
-      experiment_start_week = floor(with(analysis_data, time_length(trtsdt - min(trtsdt), unit = "weeks"))) + 1,
     ) %>% 
     list_assign(
-      prediction_week = max(.$experiment_start_week) + max(.$confirmed_response_week), # TODO Hardcoded for now,
       
-      crcr_covar_effect_sd = rep(.$covar_effect_sd, n_covar),
-      crcr_tumor_stim_pop_coef_sd = .$tumor_stim_pop_coef_sd[1:2],
+      crcr_covar_effect_sd = rep(.$crcr_covar_effect_sd, n_covar),
+      crcr_tumor_stim_pop_coef_sd = .$crcr_tumor_stim_pop_coef_sd[1:2],
+      
+      covar_effect_sd = rep(.$covar_effect_sd, n_covar),
+      tumor_stim_pop_coef_sd = .$tumor_stim_pop_coef_sd[1:2],
     )
+}
+
+add_bootstrap_sample <- function(stan_data, n_samples, prediction_weeks, n_bootstrap_sample_patients) {
+  stan_data %>% 
+    list_assign(
+      n_prediction_weeks = length(prediction_weeks),
+      prediction_week = prediction_weeks,
+      n_bootstrap_samples = n_samples,
+      n_bootstrap_sample_patients = n_bootstrap_sample_patients,
+      bootstrap_patient = map2(
+        prediction_weeks, n_bootstrap_sample_patients, 
+        \(pw, n) map(seq(n_samples), \(...) sample(.$n_patients, n, replace = TRUE))
+      ) |> unlist()
+    ) 
+}
+
+add_bootstrap_sample_w <- function(stan_data, n_samples, prediction_weeks) {
+  add_bootstrap_sample(stan_data, n_samples, prediction_weeks, map_int(prediction_weeks, \(pw) sum(stan_data$experiment_start_week <= pw))) 
+}
+
+add_bootstrap_sample_n <- function(stan_data, n_samples, n_sample_patients) {
+  add_bootstrap_sample(stan_data, n_samples, map_int(n_sample_patients, \(n) sort(stan_data$experiment_start_week)[n]), n_sample_patients) 
 }
 
 get_ic_data <- function(pfs_analysis_data, tumor_priors, pfs_priors, pfs_functions) {
@@ -466,4 +510,10 @@ prepare_trial_confirmed_resp_stan_data <- function(analysis_data, confirmed_resp
       ),
       init_fun = list(create_pfs_initializer(stan_data)), 
     )
+}
+
+prepare_confirmed_resp_obs_km <- function(all_stan_data, pfs_functions) {
+  all_stan_data |> 
+    rowwise() |> 
+    mutate(obs_km = list(get_trial_treated_obs_km(stan_data, pfs_functions)))
 }

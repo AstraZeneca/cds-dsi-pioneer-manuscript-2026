@@ -1,9 +1,10 @@
 get_conf_resp_hazard_ratios <- function(res) {
-  res |> 
-    select(trial, fit) |> 
-    deframe() |>
-    map_dfr(\(f) spread_rvars(f, patient_log_crcr_hazard_ratio[i, k]), .id = "trial") |> 
-    mutate(patient_crcr_hazard_ratio = exp(patient_log_crcr_hazard_ratio)) 
+   res |> 
+     rowwise() |> 
+     transmute(trial, rv = list(spread_rvars(fit, patient_log_crcr_hazard_ratio[i, k]) |> 
+                                  mutate(patient_crcr_hazard_ratio = exp(patient_log_crcr_hazard_ratio)))) |> 
+     ungroup() |> 
+     unnest(rv)
 }
 
 get_conf_resp_cif <- function(res) {

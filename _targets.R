@@ -8,6 +8,7 @@ library(here)
 library(cmdstanr)
 
 source(here("r", "util.R"))
+source(here("r", "crcr.R"))
 source(here("r", "entimice_functions.R"))
 source(here("r", "prepare_analysis_data.R"))
 source(here("r", "priors.R"))
@@ -29,24 +30,27 @@ lst(
   tar_target(tumor_priors, get_tumor_priors()), 
   tar_target(pfs_priors, get_pfs_priors()),
   tar_target(confirmed_resp_priors, get_confirmed_resp_priors()),
+  tar_target(pfs_conf_resp_priors, get_pfs_conf_resp_priors()),
   
   # Stan models
  
   tar_target(tumor_model_file, here("stan", "tumor.stan"), format = "file"),
   tar_target(pfs_model_file, here("stan", "pfs.stan"), format = "file"),
+  tar_target(pfs2_model_file, here("stan", "pfs2.stan"), format = "file"),
   tar_target(pfs_orr_model_file, here("stan", "pfs_orr.stan"), format = "file"),
-  tar_target(pfs_stratified_model_file, here("stan", "pfs_stratified.stan"), format = "file"),
+  tar_target(pfs_stratified_model_file, here("stan", "pfs-confirmed-response.stan"), format = "file"),
   tar_target(crcr_model_file, here("stan", "crcr", "confresp-comprisk.stan"), format = "file"),
-  tar_target(util_stan_file, here("stan", "util.stan"), format = "file"),
-  tar_target(pfs_functions_file, here("stan", "pfs_functions.stan"), format = "file"),
-  tar_target(pfs_model, cmdstan_model(pfs_model_file, compile_standalone = TRUE, force_recompile = TRUE)), 
+  tar_target(util_stan_file, here("stan", "extern_util.stan"), format = "file"),
+  tar_target(pfs_functions_file, here("stan", "extern_pfs_functions.stan"), format = "file"),
+  tar_target(pfs_model, cmdstan_model(pfs_model_file)), 
+  tar_target(pfs2_model, cmdstan_model(pfs2_model_file)), 
   # This builds the functions in Stan and makes them available in R. Now if you need these functions in downstream targets, you need to set 
   # cue to be "always"; loading a saved pfs_functions object will not work. Also, it needs to be on the main process as the targets that use it, hence, 
   # we use deployment = "main".
   tar_target(pfs_functions, cmdstan_expose_pfs_functions(util_stan_file, pfs_functions_file), deployment = "main"), #cue = tar_cue("always")),
   tar_target(tumor_model, cmdstan_model(tumor_model_file)),
   tar_target(pfs_orr_model, cmdstan_model(pfs_orr_model_file)),
-  tar_target(pfs_stratified_model, cmdstan_model(pfs_stratified_model_file)),
+  tar_target(pfs_cr_model, cmdstan_model(pfs_stratified_model_file)),
   tar_target(crcr_model, cmdstan_model(crcr_model_file)),
  
   # Data 
@@ -91,7 +95,9 @@ lst(
                imap(\(d, tr) prepare_pfs_stan_data(mutate(d, trial = tr), tumor_priors, pfs_priors, pfs_functions)), deployment = "main"),
   tar_target(
     treated_confirmed_resp_stan_data, 
-    prepare_trial_confirmed_resp_stan_data(treated_confirmed_resp_analysis_data, confirmed_resp_priors, tumor_priors, pfs_priors, pfs_functions),
+    prepare_trial_confirmed_resp_stan_data(treated_confirmed_resp_analysis_data, confirmed_resp_priors, tumor_priors, pfs_conf_resp_priors, pfs_functions) |> 
+      prepare_confirmed_resp_obs_km(pfs_functions),
+      # filter(fct_match(trial, str_c("Breast0", 3:4))),
     deployment = "main"
   ),
   tar_target(treated_obs_km, get_treated_obs_km(treated_trial_pfs_stan_data, pfs_functions), deployment = "main"),
@@ -268,53 +274,118 @@ lst(
   
   # tar_target(tumor_design_matrix, get_tumor_design_matrix(treated_pfs_stan_data, pfs_functions)),
   
-  # Stratified survival model
+  # Predicting survival using confirmed response and tumor sizes 
   
-  tar_target(prior_confirmed_resp_comp_risk_res,
-             rowwise(treated_confirmed_resp_stan_data) |> 
-             mutate(fit = list(crcr_model$sample(
-               stan_data |> list_assign(fit_data = FALSE),
-               iter_warmup = 300, iter_sampling = 300, parallel_chains = 4, # init = init_fun,
-               output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("prior_confirmed_resp_comp_risk_", trial)
-             )
-           )), 
-           pattern = map(treated_confirmed_resp_stan_data)
-  ),
+  # tar_target(prior_confirmed_resp_comp_risk_res,
+  #            rowwise(treated_confirmed_resp_stan_data) |> 
+  #            mutate(fit = list(crcr_model$sample(
+  #              stan_data |> list_assign(fit_data = FALSE),
+  #              iter_warmup = 300, iter_sampling = 300, parallel_chains = 4, # init = init_fun,
+  #              output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("prior_confirmed_resp_comp_risk_", trial)
+  #            )
+  #          )), 
+  #          pattern = map(treated_confirmed_resp_stan_data)
+  # ),
+  # 
+  # tar_target(confirmed_resp_comp_risk_res,
+  #            rowwise(treated_confirmed_resp_stan_data) |> 
+  #            mutate(fit = list(crcr_model$sample(
+  #              stan_data,
+  #              iter_warmup = 300, iter_sampling = 300, parallel_chains = 4, # init = init_fun,
+  #              output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("confirmed_resp_comp_risk_", trial)
+  #            )
+  #          )), 
+  #          pattern = map(treated_confirmed_resp_stan_data)
+  # ),
   
-  tar_target(confirmed_resp_comp_risk_res,
-             rowwise(treated_confirmed_resp_stan_data) |> 
-             mutate(fit = list(crcr_model$sample(
-               stan_data,
-               iter_warmup = 300, iter_sampling = 300, parallel_chains = 4, # init = init_fun,
-               output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("confirmed_resp_comp_risk_", trial)
-             )
-           )), 
-           pattern = map(treated_confirmed_resp_stan_data)
-  ),
-  
-  # tar_target(prior_conf_resp_hazard_ratios, get_conf_resp_hazard_ratios(prior_confirmed_resp_comp_risk_res), pattern = map(prior_confirmed_resp_comp_risk_res)),
-  
-  tar_target(prior_stratified_pfs_w12_res,
-             rowwise(treated_wk12_confirmed_resp_stan_data) |> 
-             mutate(fit = list(pfs_stratified_model$sample(
-               stan_data |> list_assign(fit_data = FALSE),
-               iter_warmup = 300, iter_sampling = 300, parallel_chains = 4, # init = init_fun,
-               output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("prior_stratified_pfs_", trial)
-             )
-           )), 
-           pattern = map(treated_wk12_confirmed_resp_stan_data)
-  ),
-  # tar_target(strat_prior_lambda_rvar_list, get_lambda_rvar(prior_stratified_pfs_w12_res$fit[[1]]), pattern = map(prior_stratified_pfs_w12_res)),
-  
-  tar_target(stratified_pfs_w12_res,
-             treated_wk12_confirmed_resp_stan_data |>
+  tar_target(prior_confirmed_resp_pfs_res,
+             treated_confirmed_resp_stan_data |> 
                rowwise() |> 
-               mutate(fit = list(pfs_stratified_model$sample(
-                 stan_data,
-                 iter_warmup = 300, iter_sampling = 300, parallel_chains = 4, # init = init_fun,
-                 output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("stratified_pfs_", trial)
+               mutate(fit = list(pfs_cr_model$sample(
+                 stan_data |> list_assign(fit_data = FALSE),
+                 iter_warmup = 400, iter_sampling = 400, parallel_chains = 4, # init = init_fun,
+                 output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("prior_confirmed_resp_pfs_", trial)
                )
-           )),
-           pattern = map(treated_wk12_confirmed_resp_stan_data)
+             )), 
+           pattern = map(treated_confirmed_resp_stan_data)
   ),
+  
+  tar_target(n_bootstrap_samples, 200),
+  tar_target(prediction_weeks, c(12, 24, 48)),
+  tar_target(n_bootstrap_sample_patients, c(10, 20, 30)),
+  
+  tar_target(confirmed_resp_pfs_res,
+             treated_confirmed_resp_stan_data |> 
+               rowwise() |> 
+               mutate(
+                 stan_data = list(add_bootstrap_sample(stan_data, n_bootstrap_samples, prediction_weeks, n_bootstrap_sample_patients)),
+                 fit = list(pfs_cr_model$sample(
+                   stan_data,
+                   iter_warmup = 400, iter_sampling = 400, parallel_chains = 4, # init = init_fun,
+                   output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("confirmed_resp_pfs_", trial)
+                 )
+             )), 
+           pattern = map(treated_confirmed_resp_stan_data)
+  ),
+  
+  # tar_target(xx,
+  #            treated_confirmed_resp_stan_data |> 
+  #              filter(trial == "Breast02") |> 
+  #              rowwise() |> 
+  #              mutate(
+  #                stan_data = list(add_bootstrap_sample(stan_data, n_bootstrap_samples, prediction_weeks, n_bootstrap_sample_patients)),
+  #                fit = list(pfs_cr_model$sample(
+  #                  stan_data,
+  #                  iter_warmup = 200, iter_sampling = 200, parallel_chains = 4, refresh = 10,  init = 0,
+  #                  output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("xx_", trial)
+  #                )
+  #            )), 
+  # ),
+  
+  # Extracting result rvars from model fit
+  
+  tar_target(prior_conf_resp_median_pfs, get_median_pfs_conf_resp(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
+  tar_target(conf_resp_median_pfs, get_median_pfs_conf_resp(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
+  tar_target(prior_conf_resp_km_est, get_pfs_conf_resp_km_est(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
+  tar_target(conf_resp_km_est, get_pfs_conf_resp_km_est(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
+  tar_target(prior_pfs_conf_resp_marginal_exit_prob, 
+             get_pfs_conf_resp_marginal_exit_prob(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
+  tar_target(pfs_conf_resp_marginal_exit_prob, 
+             get_pfs_conf_resp_marginal_exit_prob(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
+  tar_target(prior_crcr_hazard_ratio, get_conf_resp_hazard_ratios(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
+  tar_target(crcr_hazard_ratio, get_conf_resp_hazard_ratios(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
+  tar_target(prior_pfs_conf_resp_hazard_ratio, get_pfs_conf_resp_log_hazard_ratio(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
+  tar_target(pfs_conf_resp_hazard_ratio, get_pfs_conf_resp_log_hazard_ratio(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
+  tar_target(pfs_conf_resp_bootstrap_median_pfs, 
+             get_pfs_conf_resp_bootstrap_median_pfs(confirmed_resp_pfs_res), 
+             pattern = map(confirmed_resp_pfs_res)),
+  tar_target(prior_conf_resp_cif, get_conf_resp_cif(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
+  tar_target(conf_resp_cif, get_conf_resp_cif(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
+  
+  
+  # tar_target(prior_no_covar_confirmed_resp_pfs_res,
+  #            treated_confirmed_resp_stan_data |> 
+  #              rowwise() |>
+  #              mutate(fit = list(pfs2_model$sample(
+  #                stan_data |> list_assign(use_pfs_covar = FALSE, fit_data = FALSE),
+  #                iter_warmup = 400, iter_sampling = 400, parallel_chains = 4, # init = init_fun,
+  #                output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("prior_confirmed_resp_pfs_", trial)
+  #              )
+  #            )),
+  #          pattern = map(treated_confirmed_resp_stan_data)
+  # ),
+  # 
+  # tar_target(prior_no_covar_sim_pfs, get_sim_pfs_conf_resp(prior_no_covar_confirmed_resp_pfs_res), pattern = map(prior_no_covar_confirmed_resp_pfs_res)),
+  # 
+  # tar_target(no_covar_confirmed_resp_pfs_res,
+  #            treated_confirmed_resp_stan_data |>
+  #              rowwise() |>
+  #              mutate(fit = list(pfs2_model$sample(
+  #                stan_data |> list_assign(use_pfs_covar = FALSE),
+  #                iter_warmup = 400, iter_sampling = 400, parallel_chains = 4, # init = init_fun,
+  #                output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("confirmed_resp_pfs_", trial)
+  #              )
+  #            )),
+  #          pattern = map(treated_confirmed_resp_stan_data)
+  # ),
 )
