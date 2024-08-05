@@ -34,10 +34,4 @@ for (i in 1:n_patients) {
 }
 
 // Not using last_unclassified_response_week 
-int<lower = 0, upper = n_patients> n_early_classified = num_leq(confirmed_response_week, prediction_week);
 array[n_patients] int<lower = 0, upper = 1> early_confirmed_response_censored = confirmed_response_censored;
-
-for (i in sort_indices_asc(confirmed_response_week)[(n_early_classified + 1):]) {
-  early_confirmed_response_censored[i] = 1;
-  last_unclassified_response_week[i] = min(max(prediction_week - experiment_start_week[i] + 1, 0), last_unclassified_response_week[i]); 
-}

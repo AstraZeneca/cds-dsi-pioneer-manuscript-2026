@@ -7,7 +7,7 @@ get_tumor_priors <- function() {
 
 get_pfs_priors <- function() {
   lst(
-    log_lambda_gp_intercept_mean = -5,
+    log_lambda_gp_intercept_mean = -4.5,
     log_lambda_gp_intercept_sd = 0.5,
     log_lambda_gp_alpha_sd = 0.5,
     log_lambda_gp_rho_alpha = 7.3,
@@ -24,14 +24,27 @@ get_pfs_priors <- function() {
   )
 }
 
+get_pfs_conf_resp_priors <- function() {
+  get_pfs_priors() |> 
+    list_assign(
+    log_lambda_gp_intercept_mean = -4.5,
+    log_lambda_gp_intercept_sd = 1,
+    log_lambda_gp_alpha_sd = 1,
+    
+    covar_effect_sd = 0.15,
+    tumor_stim_pop_coef_sd = c(0.2, 0.2, 0.2, 0.15, 0.15),
+    conf_resp_effect_sd = 0.3,
+  )
+}
+
 get_confirmed_resp_priors <- function() {
   lst(
-    covar_effect_sd = 0.05,
-    tumor_stim_pop_coef_sd = c(0.1, 0.1, 0.1, 0.05, 0.05),
+    crcr_covar_effect_sd = 0.15,
+    crcr_tumor_stim_pop_coef_sd = c(0.2, 0.2, 0.2, 0.15, 0.15),
     
-    log_crcr_lambda_gp_intercept_mean = -5,
-    log_crcr_lambda_gp_intercept_sd = 0.5,
-    log_crcr_lambda_gp_alpha_sd = 0.5,
+    log_crcr_lambda_gp_intercept_mean = -4.5,
+    log_crcr_lambda_gp_intercept_sd = 0.3,
+    log_crcr_lambda_gp_alpha_sd = 0.3,
     log_crcr_lambda_gp_rho_alpha = 7.3,
     log_crcr_lambda_gp_rho_beta = 7.5, 
     log_crcr_lambda_gp_trial_alpha_sd = 0.25,

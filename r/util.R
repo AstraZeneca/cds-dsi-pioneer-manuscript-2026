@@ -431,7 +431,6 @@ rvar_sample_hist <- posterior::rfun(sample_hist)
 #'
 #' @return ggplot2 plot object
 plot_pfs_hist_posterior <- function(data_list, stan_data, hist_breaks = seq(10, 150, 10)) {
-  
   model_labels = c("no_tumor" = "Baseline Model", "tumor_change" = "Proportional Change Model", "two_tumor" = "Linear Model")
   
   plot_obj <- data_list |> 
@@ -850,3 +849,64 @@ cmdstan_expose_pfs_functions <- function(util_file, pfs_functions_file) {
   pseudo_model$expose_functions(FALSE, FALSE) ## will return the functions in an environment
   pseudo_model$functions
 }
+
+get_pfs_conf_resp_marginal_exit_prob <- function(res) {
+  res |>
+    ungroup() |> 
+    transmute(trial, prob_rvars = map(fit, \(f) spread_rvars(f, marginal_exit_prob[i, k, t]))) |> 
+    unnest(prob_rvars)
+}
+
+get_sim_pfs_conf_resp <- function(res) {
+  res |>
+    ungroup() |> 
+    transmute(
+      trial,
+      sim_pfs = map2(
+        fit, analysis_data, 
+        \(f, d) spread_rvars(f, sim_pfs[i], sim_censored[i]) |>
+          left_join(transmute(d, i = seq(n()), pfs, right_censored), by = "i", relationship = "one-to-one")
+      )
+    ) |> 
+    unnest(sim_pfs)
+}
+
+get_pfs_conf_resp_km_est <- function(res) {
+  res |> 
+    select(trial, fit) |> 
+    deframe() |> 
+    map_dfr(\(r) spread_rvars(r, km_est[t]), .id = "trial") 
+}
+
+get_median_pfs_conf_resp <- function(res) {
+   res |> 
+     rowwise() |> 
+     transmute(trial, rv = list(spread_rvars(fit, sim_median_pfs))) |> 
+     ungroup() |> 
+     unnest(rv)
+}
+
+get_pfs_conf_resp_log_hazard_ratio <- function(res) {
+   res |> 
+     rowwise() |> 
+     transmute(trial, rv = list(spread_rvars(fit, time_invariant_log_hazard_ratio[i, k]) |> 
+                                  mutate(time_invariant_hazard_ratio = exp(time_invariant_log_hazard_ratio)))) |> 
+     ungroup() |> 
+     unnest(rv)
+}
+
+get_pfs_conf_resp_bootstrap_median_pfs <- function(res) {
+  res |> 
+    rowwise() |> 
+    transmute(
+      trial, rv = list(
+        spread_rvars(fit, bootstrap_median_pfs[p, b]) |>
+          point_interval(bootstrap_median_pfs, .width = 0.8) |> 
+          left_join(enframe(stan_data$n_bootstrap_sample_patients, name = "p", value = "n"), by = "p") |> 
+          left_join(enframe(stan_data$prediction_week, name = "p", value = "prediction_week"), by = "p")
+      )
+    ) |> 
+    ungroup() |> 
+    unnest(rv)  
+}    
+  
