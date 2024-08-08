@@ -438,10 +438,11 @@ prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, .conf
       ignore_interval_censoring = FALSE,
       
       prediction_week = array(dim = 0), 
-      n_prediction_weeks = 0,
+      n_bootstrap_param = 0,
+      n_prediction_weeks = array(dim = 0),
+      recruit_lambda = array(dim = 0), 
+      recruit_phi = 0, 
       n_bootstrap_samples = 0,
-      n_bootstrap_sample_patients = array(dim = 0),
-      bootstrap_patient = array(dim = 0),
       
       confirmed_response = coalesce(analysis_data$confirmed_response, FALSE),
       confirmed_response_censored = analysis_data$confirmed_response_censored,
@@ -457,26 +458,45 @@ prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, .conf
     )
 }
 
-add_bootstrap_sample <- function(stan_data, n_samples, prediction_weeks, n_bootstrap_sample_patients) {
-  stan_data %>% 
+# add_bootstrap_sample <- function(stan_data, n_samples, prediction_weeks, n_bootstrap_sample_patients) {
+#   stan_data %>% 
+#     list_assign(
+#       n_prediction_weeks = length(prediction_weeks),
+#       prediction_week = prediction_weeks,
+#       n_bootstrap_samples = n_samples,
+#       n_bootstrap_sample_patients = n_bootstrap_sample_patients,
+#       bootstrap_patient = map2(
+#         prediction_weeks, n_bootstrap_sample_patients, 
+#         \(pw, n) map(seq(n_samples), \(...) sample(.$n_patients, n, replace = TRUE))
+#       ) |> unlist()
+#     ) 
+# }
+# 
+# add_bootstrap_sample_w <- function(stan_data, n_samples, prediction_weeks) {
+#   add_bootstrap_sample(stan_data, n_samples, prediction_weeks, map_int(prediction_weeks, \(pw) sum(stan_data$experiment_start_week <= pw))) 
+# }
+# 
+# add_bootstrap_sample_n <- function(stan_data, n_samples, n_sample_patients) {
+#   add_bootstrap_sample(stan_data, n_samples, map_int(n_sample_patients, \(n) sort(stan_data$experiment_start_week)[n]), n_sample_patients) 
+# }
+
+add_bootstrap_sample <- function(stan_data, n_samples, recruit_maturity, phi, trials) {
+  eligible_param <- recruit_maturity |> 
+    filter(Pr(n_sample >= 10) >= 0.8) |> 
+    select(trial, lambda, pred_week)
+  
+  if (!is_null(trials)) {
+    eligible_param <- eligible_param |> filter(trial %in% trials) 
+  }
+  
+  stan_data |> 
     list_assign(
-      n_prediction_weeks = length(prediction_weeks),
-      prediction_week = prediction_weeks,
       n_bootstrap_samples = n_samples,
-      n_bootstrap_sample_patients = n_bootstrap_sample_patients,
-      bootstrap_patient = map2(
-        prediction_weeks, n_bootstrap_sample_patients, 
-        \(pw, n) map(seq(n_samples), \(...) sample(.$n_patients, n, replace = TRUE))
-      ) |> unlist()
-    ) 
-}
-
-add_bootstrap_sample_w <- function(stan_data, n_samples, prediction_weeks) {
-  add_bootstrap_sample(stan_data, n_samples, prediction_weeks, map_int(prediction_weeks, \(pw) sum(stan_data$experiment_start_week <= pw))) 
-}
-
-add_bootstrap_sample_n <- function(stan_data, n_samples, n_sample_patients) {
-  add_bootstrap_sample(stan_data, n_samples, map_int(n_sample_patients, \(n) sort(stan_data$experiment_start_week)[n]), n_sample_patients) 
+      n_bootstrap_param = nrow(eligible_param),
+      prediction_week = eligible_param$pred_week, 
+      recruit_lambda = eligible_param$lambda,
+      recruit_phi = phi 
+    )
 }
 
 get_ic_data <- function(pfs_analysis_data, tumor_priors, pfs_priors, pfs_functions) {
@@ -508,7 +528,8 @@ prepare_trial_confirmed_resp_stan_data <- function(analysis_data, confirmed_resp
           pfs_functions = pfs_functions
         )
       ),
-      init_fun = list(create_pfs_initializer(stan_data)), 
+      # init_fun = list(create_pfs_initializer(stan_data)), 
+      init_fun = list(if (fct_match(trial, "Breast02")) 0), 
     )
 }
 

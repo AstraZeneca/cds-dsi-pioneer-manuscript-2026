@@ -900,13 +900,26 @@ get_pfs_conf_resp_bootstrap_median_pfs <- function(res) {
     rowwise() |> 
     transmute(
       trial, rv = list(
-        spread_rvars(fit, bootstrap_median_pfs[p, b]) |>
-          point_interval(bootstrap_median_pfs, .width = 0.8) |> 
-          left_join(enframe(stan_data$n_bootstrap_sample_patients, name = "p", value = "n"), by = "p") |> 
-          left_join(enframe(stan_data$prediction_week, name = "p", value = "prediction_week"), by = "p")
+        spread_rvars(fit, bootstrap_median_pfs[p], n_bootstrap_sample[p], bootstrap_maturity_rate[p]) |>
+          # mutate(bootstrap_maturity_rate = n_bootstrap_mature / n_bootstrap_sample) |> 
+          point_interval(bootstrap_median_pfs, n_bootstrap_sample, bootstrap_maturity_rate, .width = 0.8) |> 
+          left_join(as_tibble(stan_data[c("recruit_lambda", "prediction_week")]) |> mutate(p = seq(n())), by = "p", relationship = "one-to-one")
       )
     ) |> 
     ungroup() |> 
     unnest(rv)  
 }    
   
+get_sample_maturity_rvar <- function(res) {
+  res |>
+    ungroup() |> 
+    transmute(
+      trial,
+      rv = map2(
+        fit, stan_data, 
+        \(f, d) spread_rvars(f, n_sample[l, p], maturity_rate[l, p]) |>
+          bind_cols(expand.grid(d[c("lambda", "pred_week")]))
+      )
+    ) |> 
+    unnest(rv)
+}
