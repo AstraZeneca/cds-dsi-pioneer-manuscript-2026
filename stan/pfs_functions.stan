@@ -235,39 +235,7 @@ vector calc_pch_loglik2(
   return lp;
 }
 
-vector calc_comp_risk_pch_loglik(
-  array[] int last_unclass_week,
-  array[] int event_cause,
-  array[] int right_censored,
-  matrix log_cond_prob_surv,
-  int max_confresp_week
-) 
-{
-  int n_patients = size(last_unclass_week);
-  int n_causes = cols(log_cond_prob_surv);
-  vector[n_patients] lp = rep_vector(0, n_patients);
-  
-  int interval_pos = 1;
-    
-  for (i in 1:n_patients) {
-    int interval_end = interval_pos + last_unclass_week[i] - right_censored[i]; 
-    
-    if (right_censored[i]) {
-      if (last_unclass_week[i] > 0) {
-        for (k in 1:n_causes) {
-          lp[i] += sum(log_cond_prob_surv[interval_pos:interval_end, k]); 
-        }
-      }
-    } else {
-      lp[i] = sum(log_cond_prob_surv[interval_pos:(interval_end - 1), event_cause[i]]) + log1m_exp(log_cond_prob_surv[interval_end, event_cause[i]]);
-    }
-    
-    interval_pos += max_confresp_week; 
-  }
-  
-  return lp;
-}
- 
+
 /** This is used to provide and easy to use Stan distribution. It just sums the log-probs. 
  *
  * @param y Observed number of weeks without disease progression.
@@ -302,16 +270,6 @@ real pch2_lpmf(
   array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring, vector log_cond_prob_progress, int max_all_t, array[] int patient_2nd_t
 ) {
   return sum(calc_pch_loglik2(y, right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_progress, max_all_t, patient_2nd_t));
-}
-
-real comp_risk_pch_lpmf(
-  array[] int last_unclass_week,
-  array[] int event_cause,
-  array[] int right_censored,
-  matrix log_cond_prob_surv,
-  int max_confresp_week
-) {
-  return sum(calc_comp_risk_pch_loglik(last_unclass_week, event_cause, right_censored, log_cond_prob_surv, max_confresp_week));
 }
 
 int calc_n_tumor_covar_col(int tumor_hazard_type) {
@@ -612,17 +570,17 @@ tuple(int, int) survival_time_rng(vector log_cond_prob_surv) {
   return(survival_time, censored);
 }
 
-tuple(int, int, int) competing_risks_survival_time_rng(matrix log_cond_prob_surv) {
-  int n_causes = cols(log_cond_prob_surv);
-  array[n_causes] int cause_survival_time;
-  array[n_causes] int cause_censored;
-  
-  for (k in 1:n_causes) {
-    (cause_survival_time[k], cause_censored[k]) = survival_time_rng(log_cond_prob_surv[, k]); 
-  }
-  
-  return(min(cause_survival_time), sum(cause_censored) == n_causes, sort_indices_asc(cause_survival_time)[1]);
-}
+// tuple(int, int, int) competing_risks_survival_time_rng(matrix log_cond_prob_surv) {
+//   int n_causes = cols(log_cond_prob_surv);
+//   array[n_causes] int cause_survival_time;
+//   array[n_causes] int cause_censored;
+//   
+//   for (k in 1:n_causes) {
+//     (cause_survival_time[k], cause_censored[k]) = survival_time_rng(log_cond_prob_surv[, k]); 
+//   }
+//   
+//   return(min(cause_survival_time), sum(cause_censored) == n_causes, sort_indices_asc(cause_survival_time)[1]);
+// }
 
 /** Survival aggregated over all patients, S(t) = Pr[T > t], t \in {0,..., N} 
  *

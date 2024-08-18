@@ -45,14 +45,6 @@ data {
   
   array[n_patients] int<lower = 1> experiment_start_week; // Week 1 is the first week of the experiment
   
-  // int<lower = 0> n_prediction_weeks;
-  // int<lower = 0> n_bootstrap_samples;
-  // array[n_prediction_weeks] int<lower = 1> prediction_week; // At what week are starting our prediction 
-  // 
-  // array[n_prediction_weeks] int<lower = 1> n_bootstrap_sample_patients;
-  // array[sum(rep_each(n_bootstrap_sample_patients, n_bootstrap_samples))] int<lower = 1, upper = n_patients> bootstrap_patient;
- 
-  
   int<lower = 0> n_bootstrap_param;
   array[n_bootstrap_param] int<lower = 1> prediction_week; // At what week are starting our prediction 
   array[n_bootstrap_param] real<lower = 0> recruit_lambda; // neg binom rate
@@ -245,74 +237,40 @@ generated quantities {
     
     profile("bootstrap") {
       for (p in 1:n_bootstrap_param) {
-        bootstrap_maturity_rate[p] = 0; // rep_vector(0, n_bootstrap_samples); 
+        bootstrap_maturity_rate[p] = 0; 
         
-        // for (b in 1:n_bootstrap_samples) {
-          array[n_patients] int experiment_start = sort_asc(neg_binomial_2_rng(rep_vector(recruit_lambda[p], n_patients), rep_vector(recruit_phi, n_patients)));
-          array[n_patients] int current_bootstrap_pfs;
+        array[n_patients] int experiment_start = sort_asc(neg_binomial_2_rng(rep_vector(recruit_lambda[p], n_patients), rep_vector(recruit_phi, n_patients)));
+        array[n_patients] int current_bootstrap_pfs;
+        
+        int i = 0;
+        
+        while ((i + 1 <= n_patients) && (experiment_start[i + 1] <= prediction_week[p])) {
+          i += 1;
           
-          int i = 0;
+          int current_patient = discrete_range_rng(1, n_patients);
+          int bootstrap_confirmed_response; 
           
-          while ((i + 1 <= n_patients) && (experiment_start[i + 1] <= prediction_week[p])) {
-            i += 1;
-            
-            int current_patient = discrete_range_rng(1, n_patients);
-            int bootstrap_confirmed_response; 
-            
-            if (experiment_start[i] + confirmed_response_week[current_patient] - 1 <= prediction_week[p]) {
-              bootstrap_confirmed_response = confirmed_response[current_patient];
-            } else {
-              // Not observed yet, so let's estimate it.
-              bootstrap_confirmed_response = bernoulli_rng(conf_resp_prob[current_patient, 2]);
-            }
-            
-            // bootstrap_maturity_rate[p, b] += bootstrap_confirmed_response;
-            bootstrap_maturity_rate[p] += bootstrap_confirmed_response;
-            current_bootstrap_pfs[i] = survival_time_rng(mat_log_cond_prob_surv[bootstrap_confirmed_response + 1, , current_patient]).1; 
-          }
-          
-          // n_bootstrap_sample[p, b] = i;
-          n_bootstrap_sample[p] = i;
-          
-          if (n_bootstrap_sample[p] > 0) { 
-            bootstrap_median_pfs[p] = survival_median(current_bootstrap_pfs[:n_bootstrap_sample[p]], max_all_t).1;  
-            bootstrap_maturity_rate[p] /= n_bootstrap_sample[p];
+          if (experiment_start[i] + confirmed_response_week[current_patient] - 1 <= prediction_week[p]) {
+            bootstrap_confirmed_response = confirmed_response[current_patient];
           } else {
-            bootstrap_median_pfs[p] = 0; 
-            bootstrap_maturity_rate[p] = 0;
+            // Not observed yet, so let's estimate it.
+            bootstrap_confirmed_response = bernoulli_rng(conf_resp_prob[current_patient, 2]);
           }
-        // }
+          
+          bootstrap_maturity_rate[p] += bootstrap_confirmed_response;
+          current_bootstrap_pfs[i] = survival_time_rng(mat_log_cond_prob_surv[bootstrap_confirmed_response + 1, , current_patient]).1; 
+        }
+        
+        n_bootstrap_sample[p] = i;
+        
+        if (n_bootstrap_sample[p] > 0) { 
+          bootstrap_median_pfs[p] = survival_median(current_bootstrap_pfs[:n_bootstrap_sample[p]], max_all_t).1;  
+          bootstrap_maturity_rate[p] /= n_bootstrap_sample[p];
+        } else {
+          bootstrap_median_pfs[p] = 0; 
+          bootstrap_maturity_rate[p] = 0;
+        }
       } 
-      
-      // int sample_pos = 1;
-      // for (p in 1:n_prediction_weeks) {
-      //   for (b in 1:n_bootstrap_samples) {
-      //     int sample_end = sample_pos + n_bootstrap_sample_patients[p] - 1; 
-      //     array[n_bootstrap_sample_patients[p]] int current_bootstrap_pfs;
-      //     
-      //     for (i in 1:n_bootstrap_sample_patients[p]) {
-      //       int bootstrap_confirmed_response; 
-      //       int current_patient = bootstrap_patient[sample_pos + i - 1];
-      //       int bootstrap_patient_start_week = sorted_experiment_start_week[discrete_range_rng(1, n_bootstrap_sample_patients[p])];
-      //      
-      //       // I'm not using the bootstrap patient's experiment_start_week: I'm using the first n_boostrap_patients experiment_start_weeks.
-      //       // The assumption is that when a patient starts an experiment is orthogonal to all relevant variables.
-      //       if (bootstrap_patient_start_week + confirmed_response_week[current_patient] - 1 <= prediction_week[p]) {
-      //         bootstrap_confirmed_response = confirmed_response[current_patient];
-      //       } else {
-      //         // Not observed yet, so let's estimate it.
-      //         bootstrap_confirmed_response = bernoulli_rng(conf_resp_prob[current_patient, 2]);
-      //       }
-      //       
-      //       current_bootstrap_pfs[i] = survival_time_rng(mat_log_cond_prob_surv[bootstrap_confirmed_response + 1, , current_patient]).1; 
-      //     }
-      //     
-      //     bootstrap_median_pfs[p, b] = survival_median(current_bootstrap_pfs, max_all_t).1; 
-      //     
-      //     sample_pos = sample_end + 1;
-      //   }
-      // }
     }
   }
 }
-
