@@ -411,6 +411,16 @@ plot_km <- function(data_list, analysis_data, ...) {
     plot_km_rvars(analysis_data, arm_var = arm, ...)
 }
 
+
+# This function is used to generate a histogram of time-to-events for a single draw
+sample_hist <- function(pred, breaks, ...) {
+  # hist() is a base R function to generate histograms from data and provided breaks.
+  hist(pmax(pmin(pred, max(breaks)), min(breaks)), breaks = breaks, plot = FALSE, ...)$count
+}
+
+# This function is used to treated_pfs_analysis_dataallow us to generate a distribution of histograms
+rvar_sample_hist <- posterior::rfun(sample_hist, rvar_dots = FALSE)
+
 #' Produce a probabilistic histogram from rvar samples
 #' 
 #' The difference between a probabilistic histogram and a regular histogram is that it shows the uncertainty about the distribution. 
@@ -421,22 +431,13 @@ plot_km <- function(data_list, analysis_data, ...) {
 #'
 #' @return ggplot2 plot object
 plot_pfs_hist_posterior <- function(data_list, stan_data, hist_breaks = seq(10, 150, 10)) {
-  # This function is used to generate a histogram of time-to-events for a single draw
-  sample_hist <- function(pred, breaks) {
-    # hist() is a base R function to generate histograms from data and provided breaks.
-    hist(pmin(pred, max(breaks)), breaks = c(0, breaks), plot = FALSE)$count
-  }
-  
-  # This function is used to treated_pfs_analysis_dataallow us to generate a distribution of histograms
-  rvar_sample_hist <- posterior::rfun(sample_hist)
-  
   model_labels = c("no_tumor" = "Baseline Model", "tumor_change" = "Proportional Change Model", "two_tumor" = "Linear Model")
   
   plot_obj <- data_list |> 
     map_dfr(\(f) spread_rvars(f, rep_pfs[i], rep_right_censored[i]) |> mutate(trial = stan_data$patient_trial), .id = "arm") |> 
     group_by(arm, trial) |> 
     # bindist is the distribution of histogram size at each bin.
-    reframe(t = hist_breaks, bindist = rvar_sample_hist(rep_pfs, hist_breaks)) |> 
+    reframe(t = hist_breaks, bindist = rvar_sample_hist(rep_pfs, c(0, hist_breaks))) |> 
     filter(t < max(t)) %>% 
     bind_rows(
       group_by(., arm, trial) %>%
@@ -592,27 +593,6 @@ get_tumor_hazard_ratio_summary <- function(fit, var, tumor_size_pairs, stan_data
       unnest(.value) |> 
       left_join(p_data, by = "pid") # I need to do this because quantile.rvar just adds indices not the p's
   }
-}
-
-#' Calculate progression-free survival from clinical data for each patient 
-#'
-#' @param progress_week Progress week 
-#' @param death_week Death week 
-#' @param right_censored Right censored 
-#' @param patient_tumors data set of all the patient's tumors 
-#'
-#' @return The last observed/measured week before progression was detected
-calc_pfs <- function(progress_week, death_week, right_censored, patient_tumors) {
-  event_week <- min(progress_week, death_week, na.rm = TRUE) # Whichever happened first, death or DP.
- 
-  # Get all the assessment weeks that happened before progression (if not censored). 
-  pre_progress_weeks <- unnest(patient_tumors, tumor_history) |>
-    distinct(week) |>
-    filter(right_censored | week < event_week) |>
-    pull(week)
-
-  # There are a few patients who just have a single post treatment visit
-  if (length(pre_progress_weeks) > 0) max(pre_progress_weeks) else NA_integer_
 }
 
 get_sim_tumor_stan_data <- function(n_patients, patient_measures, t_offset, tumor_priors) {
@@ -868,4 +848,78 @@ cmdstan_expose_pfs_functions <- function(util_file, pfs_functions_file) {
   pseudo_model$functions$hpp_code <- cmdstanr:::get_standalone_hpp(stan_file, stancflags_standalone)
   pseudo_model$expose_functions(FALSE, FALSE) ## will return the functions in an environment
   pseudo_model$functions
+}
+
+get_pfs_conf_resp_marginal_exit_prob <- function(res) {
+  res |>
+    ungroup() |> 
+    transmute(trial, prob_rvars = map(fit, \(f) spread_rvars(f, marginal_exit_prob[i, k, t]))) |> 
+    unnest(prob_rvars)
+}
+
+get_sim_pfs_conf_resp <- function(res) {
+  res |>
+    ungroup() |> 
+    transmute(
+      trial,
+      sim_pfs = map2(
+        fit, analysis_data, 
+        \(f, d) spread_rvars(f, sim_pfs[i], sim_censored[i]) |>
+          left_join(transmute(d, i = seq(n()), pfs, right_censored), by = "i", relationship = "one-to-one")
+      )
+    ) |> 
+    unnest(sim_pfs)
+}
+
+get_pfs_conf_resp_km_est <- function(res) {
+  res |> 
+    select(trial, fit) |> 
+    deframe() |> 
+    map_dfr(\(r) spread_rvars(r, km_est[t]), .id = "trial") 
+}
+
+get_median_pfs_conf_resp <- function(res) {
+   res |> 
+     rowwise() |> 
+     transmute(trial, rv = list(spread_rvars(fit, sim_median_pfs))) |> 
+     ungroup() |> 
+     unnest(rv)
+}
+
+get_pfs_conf_resp_log_hazard_ratio <- function(res) {
+   res |> 
+     rowwise() |> 
+     transmute(trial, rv = list(spread_rvars(fit, time_invariant_log_hazard_ratio[i, k]) |> 
+                                  mutate(time_invariant_hazard_ratio = exp(time_invariant_log_hazard_ratio)))) |> 
+     ungroup() |> 
+     unnest(rv)
+}
+
+get_pfs_conf_resp_bootstrap_median_pfs <- function(res) {
+  res |> 
+    rowwise() |> 
+    transmute(
+      trial, rv = list(
+        spread_rvars(fit, bootstrap_median_pfs[p], n_bootstrap_sample[p], bootstrap_maturity_rate[p]) |>
+          # mutate(bootstrap_maturity_rate = n_bootstrap_mature / n_bootstrap_sample) |> 
+          point_interval(bootstrap_median_pfs, n_bootstrap_sample, bootstrap_maturity_rate, .width = 0.8) |> 
+          left_join(as_tibble(stan_data[c("recruit_lambda", "prediction_week")]) |> mutate(p = seq(n())), by = "p", relationship = "one-to-one")
+      )
+    ) |> 
+    ungroup() |> 
+    unnest(rv)  
+}    
+  
+get_sample_maturity_rvar <- function(res) {
+  res |>
+    ungroup() |> 
+    transmute(
+      trial,
+      rv = map2(
+        fit, stan_data, 
+        \(f, d) spread_rvars(f, n_sample[l, p], maturity_rate[l, p]) |>
+          bind_cols(expand.grid(d[c("lambda", "pred_week")]))
+      )
+    ) |> 
+    unnest(rv)
 }

@@ -8,6 +8,7 @@ library(here)
 library(cmdstanr)
 
 source(here("r", "util.R"))
+source(here("r", "crcr.R"))
 source(here("r", "entimice_functions.R"))
 source(here("r", "prepare_analysis_data.R"))
 source(here("r", "priors.R"))
@@ -16,8 +17,8 @@ tmp_dir <- file.path(Sys.getenv("TMPDIR"), "adc-early-predict") |>
   str_replace("^/scratch", "/wscratch") # Some SLURM nodes use the old TMPDIR /scratch
 
 tar_option_set(
-  packages = c("tidyverse", "cmdstanr", "tidybayes", "here"),
-  controller = crew_controller_local(workers = 12, seconds_timeout = 20, launch_max = 10)
+  packages = c("tidyverse", "cmdstanr", "tidybayes", "here", "targets", "posterior"),
+  controller = crew_controller_local(workers = 12, seconds_timeout = 60, launch_max = 20)
 )
 tar_config_set(store = file.path(tmp_dir, "_targets"))
 
@@ -28,21 +29,33 @@ lst(
   
   tar_target(tumor_priors, get_tumor_priors()), 
   tar_target(pfs_priors, get_pfs_priors()),
+  tar_target(confirmed_resp_priors, get_confirmed_resp_priors()),
+  tar_target(pfs_conf_resp_priors, get_pfs_conf_resp_priors()),
   
   # Stan models
  
   tar_target(tumor_model_file, here("stan", "tumor.stan"), format = "file"),
   tar_target(pfs_model_file, here("stan", "pfs.stan"), format = "file"),
+  tar_target(pfs2_model_file, here("stan", "pfs2.stan"), format = "file"),
   tar_target(pfs_orr_model_file, here("stan", "pfs_orr.stan"), format = "file"),
-  tar_target(util_stan_file, here("stan", "util.stan"), format = "file"),
-  tar_target(pfs_functions_file, here("stan", "pfs_functions.stan"), format = "file"),
-  tar_target(pfs_model, cmdstan_model(pfs_model_file, compile_standalone = TRUE, force_recompile = TRUE)), 
+  tar_target(pfs_cr_model_file, here("stan", "pfs-confirmed-response.stan"), format = "file"),
+  tar_target(crcr_model_file, here("stan", "crcr", "confresp-comprisk.stan"), format = "file"),
+  tar_target(util_stan_file, here("stan", "extern_util.stan"), format = "file"),
+  tar_target(pfs_functions_file, here("stan", "extern_pfs_functions.stan"), format = "file"),
+  tar_target(recruit_model_file, here("stan", "recruit.stan"), format = "file"),
+  tar_target(recruit_maturity_model_file, here("stan", "recruit_sample_maturity.stan"), format = "file"),
+  tar_target(pfs_model, cmdstan_model(pfs_model_file)), 
+  tar_target(pfs2_model, cmdstan_model(pfs2_model_file)), 
   # This builds the functions in Stan and makes them available in R. Now if you need these functions in downstream targets, you need to set 
   # cue to be "always"; loading a saved pfs_functions object will not work. Also, it needs to be on the main process as the targets that use it, hence, 
   # we use deployment = "main".
-  tar_target(pfs_functions, cmdstan_expose_pfs_functions(util_stan_file, pfs_functions_file), deployment = "main"), #, cue = tar_cue("always")),
+  tar_target(pfs_functions, cmdstan_expose_pfs_functions(util_stan_file, pfs_functions_file), deployment = "main"), #cue = tar_cue("always")),
   tar_target(tumor_model, cmdstan_model(tumor_model_file)),
   tar_target(pfs_orr_model, cmdstan_model(pfs_orr_model_file)),
+  tar_target(pfs_cr_model, cmdstan_model(pfs_cr_model_file, force_recompile = TRUE, stanc_options = list("O1"))),
+  tar_target(crcr_model, cmdstan_model(crcr_model_file)),
+  tar_target(recruit_model, cmdstan_model(recruit_model_file)),
+  tar_target(recruit_maturity_model, cmdstan_model(recruit_maturity_model_file)),
  
   # Data 
   
@@ -57,9 +70,9 @@ lst(
     ) |> 
       mutate(across(everything(), factor))),
   
-  tar_target(sdtm_dm, read_all_trial_entimice_data(data_details, "deid_dm", "sdtm")),
+  tar_target(sdtm_dm, read_all_trial_entimice_data(data_details, "deid_dm", "sdtm")), # Demographics
   tar_target(sdtm_tu, read_all_trial_entimice_data(data_details, "deid_tu", "sdtm")),
-  tar_target(adam_adtr, read_all_trial_adtr_entimice_data(data_details, sdtm_tu)),
+  tar_target(adam_adtr, read_all_trial_adtr_entimice_data(data_details, sdtm_tu)), # Tumors
   tar_target(adam_adsl, read_all_trial_entimice_data(data_details, "deid_adsl", "adam")),
   tar_target(adam_adcm, read_all_trial_entimice_data(data_details, "deid_adcm", "adam")),
   tar_target(adam_adtte, read_all_trial_adtte_entimice_data(data_details)),
@@ -75,19 +88,102 @@ lst(
   tar_target(unfiltered_pfs_analysis_data, prepare_raw_pfs_analysis_data(tumor_analysis_data, pfs_functions), deployment = "main"),
   tar_target(pfs_analysis_data, filter_pfs_analysis_data(unfiltered_pfs_analysis_data)), 
   tar_target(orr_analysis_data, prepare_orr_analysis_data(tumor_analysis_data)), 
+  tar_target(confirmed_resp_analysis_data, prepare_confirmed_resp_analysis_data(tumor_analysis_data)),
   tar_target(treated_pfs_analysis_data, filter(pfs_analysis_data, treated)),
+  tar_target(treated_confirmed_resp_analysis_data, filter(confirmed_resp_analysis_data, treated)),
   tar_target(treated_pfs_stan_data, prepare_pfs_stan_data(treated_pfs_analysis_data, tumor_priors, pfs_priors, pfs_functions), deployment = "main"),
   tar_target(treated_trial_pfs_stan_data, 
              treated_pfs_analysis_data |> 
                nest(.by = trial) |> 
                deframe() |> 
                imap(\(d, tr) prepare_pfs_stan_data(mutate(d, trial = tr), tumor_priors, pfs_priors, pfs_functions)), deployment = "main"),
+  tar_target(
+    treated_confirmed_resp_stan_data, 
+    prepare_trial_confirmed_resp_stan_data(treated_confirmed_resp_analysis_data, confirmed_resp_priors, tumor_priors, pfs_conf_resp_priors, pfs_functions) |> 
+      prepare_confirmed_resp_obs_km(pfs_functions),
+    deployment = "main"
+  ),
   tar_target(treated_obs_km, get_treated_obs_km(treated_trial_pfs_stan_data, pfs_functions), deployment = "main"),
   tar_target(early_tumor_pairs, get_early_tumor_pairs(treated_pfs_stan_data, pfs_functions), deployment = "main"),  
   tar_target(interval_censoring_data, get_ic_data(pfs_analysis_data, tumor_priors, pfs_priors, pfs_functions), deployment = "main"),
   
   tar_target(km_res_calculated, get_km_res(pfs_analysis_data, "pfs", tumor_priors, pfs_priors, pfs_functions), deployment = "main"),
   tar_target(km_res_from_data, get_km_res(pfs_analysis_data, "progress_week", tumor_priors, pfs_priors, pfs_functions), deployment = "main"),
+  
+  tar_target(km_confirmed_response, 
+             with(treated_confirmed_resp_analysis_data, 
+                  pfs_functions$estimate_kaplan_meier(confirmed_response_week, confirmed_response_censored, max(confirmed_response_week))),
+             deployment = "main"),
+  
+  tar_target(km_trial_confirmed_response, 
+             treated_confirmed_resp_stan_data |> 
+               rowwise() |>
+               mutate(
+                 conf_resp_km = list(with(
+                   stan_data, 
+                   pfs_functions$estimate_kaplan_meier(confirmed_response_week, confirmed_response_censored, max(confirmed_response_week))
+                 )),
+                 
+                 conf_resp_km_calendar = list(with(
+                   stan_data, 
+                   pfs_functions$estimate_kaplan_meier(
+                     confirmed_response_week + experiment_start_week - 1, 
+                     confirmed_response_censored, 
+                     max(confirmed_response_week + experiment_start_week - 1)
+                   )
+                 ))
+               ),
+             deployment = "main"),
+  
+  tar_target(km_confirmed_response_calendar, 
+             with(treated_confirmed_resp_analysis_data, 
+                  pfs_functions$estimate_kaplan_meier(
+                    confirmed_response_week + experiment_start_week - 1, 
+                    confirmed_response_censored, 
+                    max(confirmed_response_week + experiment_start_week - 1))),
+             deployment = "main"),
+  
+  tar_target(recruit_phi, 7.5),
+  
+  tar_target(recruit_stan_data, treated_pfs_stan_data |> list_assign(n_trial_sim = 100)),
+  tar_target(recruit_maturity_stan_data, 
+             treated_confirmed_resp_stan_data |>
+               rowwise() |> 
+               mutate(stan_data = list(list_assign(stan_data, phi = recruit_phi, lambda = seq(25, 75, 10), pred_week = seq(6, 48, 6)) %>%
+                                         list_assign(n_lambda = length(.$lambda), n_pred_week = length(.$pred_week))))),
+  
+  
+ 
+  # Experiment recruitment 
+  
+  tar_target(
+    prior_recruit_fit, 
+    recruit_model$sample(recruit_stan_data |> list_assign(fit_data = FALSE), 
+                         parallel_chains = 4, iter_warmup = 200, iter_sampling = 200, 
+                         output_basename = "prior_recruit", output_dir = file.path(tmp_dir, "fit")) |> 
+      recover_types(select(treated_pfs_analysis_data, trial))
+  ),
+  
+  tar_target(
+    recruit_fit, 
+    recruit_model$sample(recruit_stan_data,
+                         parallel_chains = 4, iter_warmup = 200, iter_sampling = 200, 
+                         output_basename = "recruit", output_dir = file.path(tmp_dir, "fit")) |> 
+      recover_types(select(treated_pfs_analysis_data, trial))
+  ),
+  
+  tar_target(recruit_maturity_res,
+             rowwise(recruit_maturity_stan_data) |>
+             mutate(fit = list(recruit_maturity_model$sample(
+               stan_data,
+               iter_warmup = 300, iter_sampling = 300, parallel_chains = 4, # init = init_fun,
+               output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("recruit_maturity", trial)
+             )
+           )),
+           pattern = map(recruit_maturity_stan_data)
+  ),
+  
+  tar_target(recruit_maturity, get_sample_maturity_rvar(recruit_maturity_res)),
   
   # Tumor simulation 
    
@@ -250,4 +346,124 @@ lst(
                recover_types(treated_pfs_analysis_data)),
   
   # tar_target(tumor_design_matrix, get_tumor_design_matrix(treated_pfs_stan_data, pfs_functions)),
+  
+  # Predicting survival using confirmed response and tumor sizes 
+  
+  # tar_target(prior_confirmed_resp_comp_risk_res,
+  #            rowwise(treated_confirmed_resp_stan_data) |> 
+  #            mutate(fit = list(crcr_model$sample(
+  #              stan_data |> list_assign(fit_data = FALSE),
+  #              iter_warmup = 300, iter_sampling = 300, parallel_chains = 4, # init = init_fun,
+  #              output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("prior_confirmed_resp_comp_risk_", trial)
+  #            )
+  #          )), 
+  #          pattern = map(treated_confirmed_resp_stan_data)
+  # ),
+  # 
+  # tar_target(confirmed_resp_comp_risk_res,
+  #            rowwise(treated_confirmed_resp_stan_data) |> 
+  #            mutate(fit = list(crcr_model$sample(
+  #              stan_data,
+  #              iter_warmup = 300, iter_sampling = 300, parallel_chains = 4, # init = init_fun,
+  #              output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("confirmed_resp_comp_risk_", trial)
+  #            )
+  #          )), 
+  #          pattern = map(treated_confirmed_resp_stan_data)
+  # ),
+  
+  tar_target(prior_confirmed_resp_pfs_res,
+             treated_confirmed_resp_stan_data |> 
+               rowwise() |> 
+               mutate(fit = list(pfs_cr_model$sample(
+                 stan_data |> list_assign(fit_data = FALSE),
+                 iter_warmup = 400, iter_sampling = 400, parallel_chains = 4, init = init_fun,
+                 output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("prior_confirmed_resp_pfs_", trial)
+               )
+             )), 
+           pattern = map(treated_confirmed_resp_stan_data)
+  ),
+  
+  tar_target(n_bootstrap_samples, 200),
+  # tar_target(prediction_weeks, c(12, 24, 48)),
+  # tar_target(n_bootstrap_sample_patients, c(10, 20, 30)),
+  
+  tar_target(confirmed_resp_pfs_res,
+             treated_confirmed_resp_stan_data |> 
+               rowwise() |> 
+               mutate(
+                 # stan_data = list(add_bootstrap_sample(stan_data, n_bootstrap_samples, prediction_weeks, n_bootstrap_sample_patients)),
+                 stan_data = list(add_bootstrap_sample(stan_data, n_bootstrap_samples, recruit_maturity, recruit_phi, trial)),
+                 fit = list(pfs_cr_model$sample(
+                   stan_data,
+                   iter_warmup = 400, iter_sampling = 400, parallel_chains = 4, init = init_fun,
+                   output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("confirmed_resp_pfs_", trial)
+                 )
+             )), 
+           pattern = map(treated_confirmed_resp_stan_data)
+  ),
+  
+  # tar_target(xx,
+  #            treated_confirmed_resp_stan_data |>
+  #              filter(trial == "Breast02") |>
+  #              rowwise() |>
+  #              mutate(
+  #                # stan_data = list(add_bootstrap_sample(stan_data, n_bootstrap_samples, prediction_weeks, n_bootstrap_sample_patients)),
+  #                stan_data = list(add_bootstrap_sample(stan_data, n_bootstrap_samples, recruit_maturity, recruit_phi)),
+  #                fit = list(pfs_cr_model$sample(
+  #                  stan_data,
+  #                  iter_warmup = 200, iter_sampling = 200, refresh = 10, parallel_chains = 4, init = init_fun,
+  #                  output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("xx_", trial)
+  #                )
+  #              )),
+  # ),
+  
+  # Extracting result rvars from model fit
+  
+  tar_target(prior_conf_resp_median_pfs, get_median_pfs_conf_resp(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
+  tar_target(conf_resp_median_pfs, get_median_pfs_conf_resp(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
+  tar_target(prior_conf_resp_km_est, get_pfs_conf_resp_km_est(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
+  tar_target(conf_resp_km_est, get_pfs_conf_resp_km_est(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
+  tar_target(prior_pfs_conf_resp_marginal_exit_prob, 
+             get_pfs_conf_resp_marginal_exit_prob(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
+  tar_target(pfs_conf_resp_marginal_exit_prob, 
+             get_pfs_conf_resp_marginal_exit_prob(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
+  tar_target(prior_crcr_hazard_ratio, get_conf_resp_hazard_ratios(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
+  tar_target(prior_rep_confirmed_response, get_rep_confirmed_response(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
+  tar_target(rep_confirmed_response, get_rep_confirmed_response(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
+  tar_target(crcr_hazard_ratio, get_conf_resp_hazard_ratios(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
+  tar_target(prior_pfs_conf_resp_hazard_ratio, get_pfs_conf_resp_log_hazard_ratio(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
+  tar_target(pfs_conf_resp_hazard_ratio, get_pfs_conf_resp_log_hazard_ratio(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
+  tar_target(pfs_conf_resp_bootstrap_median_pfs, get_pfs_conf_resp_bootstrap_median_pfs(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)), 
+  
+  tar_target(cif_hb, seq(0, 1, by = 0.05)),
+  tar_target(cif_t, seq(1, 100, 10)),
+  tar_target(prior_conf_resp_cif, get_conf_resp_cif(prior_confirmed_resp_pfs_res, cif_t, cif_hb), pattern = map(prior_confirmed_resp_pfs_res)),
+  tar_target(conf_resp_cif, get_conf_resp_cif(confirmed_resp_pfs_res, cif_t, cif_hb), pattern = map(confirmed_resp_pfs_res)),
+  
+  
+  # tar_target(prior_no_covar_confirmed_resp_pfs_res,
+  #            treated_confirmed_resp_stan_data |> 
+  #              rowwise() |>
+  #              mutate(fit = list(pfs2_model$sample(
+  #                stan_data |> list_assign(use_pfs_covar = FALSE, fit_data = FALSE),
+  #                iter_warmup = 400, iter_sampling = 400, parallel_chains = 4, # init = init_fun,
+  #                output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("prior_confirmed_resp_pfs_", trial)
+  #              )
+  #            )),
+  #          pattern = map(treated_confirmed_resp_stan_data)
+  # ),
+  # 
+  # tar_target(prior_no_covar_sim_pfs, get_sim_pfs_conf_resp(prior_no_covar_confirmed_resp_pfs_res), pattern = map(prior_no_covar_confirmed_resp_pfs_res)),
+  # 
+  # tar_target(no_covar_confirmed_resp_pfs_res,
+  #            treated_confirmed_resp_stan_data |>
+  #              rowwise() |>
+  #              mutate(fit = list(pfs2_model$sample(
+  #                stan_data |> list_assign(use_pfs_covar = FALSE),
+  #                iter_warmup = 400, iter_sampling = 400, parallel_chains = 4, # init = init_fun,
+  #                output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("confirmed_resp_pfs_", trial)
+  #              )
+  #            )),
+  #          pattern = map(treated_confirmed_resp_stan_data)
+  # ),
 )
