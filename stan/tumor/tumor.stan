@@ -1,9 +1,9 @@
 functions {
-  #include "util.stan"
+  #include "../util.stan"
 }
 
 data {
-  #include "base_data.stan"
+  #include "../base_data.stan"
   #include "tumor_data.stan"
 }
 

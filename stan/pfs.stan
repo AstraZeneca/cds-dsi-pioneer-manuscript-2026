@@ -24,7 +24,7 @@ data {
   #include "base_data.stan"
   
   // This is the tumor model settings for joint modeling. tumor_data is not a good name.
-  #include "tumor_data.stan"
+  #include "tumor/tumor_data.stan"
     
   array[n_patients] int<lower = 0> pfs; // How many periods after baseline did patient survive.
   array[n_patients] int<lower = 0> death_week; 
@@ -36,85 +36,32 @@ data {
   
   // Hyperparam
   #include "baseline_hazard_hyperparam.stan"
-  
-  real<lower = 0> tumor_stim_pop_intercept_sd;
-  vector<lower = 0>[5] tumor_stim_pop_coef_sd;
-  vector<lower = 0>[6] tumor_stim_trial_coef_sd_sd;
-  vector<lower = 0>[6] tumor_stim_location_coef_sd_sd;
-  
+  #include "tumor_stim_hyperparam.stan"
 }
 
 transformed data {
-  #include "tumor_transformed_data.stan" 
+  #include "tumor/tumor_transformed_data.stan" 
   #include "pfs_transformed_data.stan"
+  #include "tumor_stim_transformed_data.stan"
   
   if (min(n_patient_screening_t) <= 0) {
     reject("We need at least one screening measurement per patient, for now: ", min(n_patient_screening_t));
   }
-    
-  int n_covar_col = calc_n_covar_col(tumor_hazard_type); // number of columns in covariates design matrix, excluding the intercept. 
- 
-  int max_measures = 2; 
-  array[n_tumors, max_measures] int<lower = min(t_measure), upper = max(t_measure)> tumor_covar_t; // ts (weeks) of the assessments used in the covar design matrix
-  array[n_patients] int<lower = min(t_measure), upper = max(t_measure)> patient_max_2nd_tumor_t; // What t is the second assessment in the covar design matrix 
-  matrix[n_tumors, n_covar_col] tumor_covar; // This is the design matrix with the covar in the first two (or _n_) assessments.
-  matrix[n_tumors, n_covar_col] uncentered_tumor_covar; // Just scaled
-  vector[n_covar_col] tumor_covar_mean;
-  vector<lower = 0>[n_covar_col] tumor_covar_sd = rep_vector(0, n_covar_col);
- 
-  (tumor_covar_t, patient_max_2nd_tumor_t, tumor_covar, uncentered_tumor_covar, tumor_covar_mean, tumor_covar_sd) = 
-    prepare_early_tumors_covar(tumor_size, tumor_hazard_type, n_patients, n_tumors, n_patient_tumors, n_measures, t_measure, n_screening_t, max_measures); 
 }
 
 parameters {
   // For joint modeling
-  #include "tumor_parameters.stan"
+  #include "tumor/tumor_parameters.stan"
   
   #include "baseline_hazard_parameters.stan"
-  
-  // Per tumor population-level influence on hazard 
-  real<lower = 0> tumor_stim_pop_intercept; // DO NOT REMOVE; this is a per tumor intercept and not per patient intercept which is included in lambda.
-  row_vector[n_covar_col] tumor_stim_pop_coef;
- 
-  // Trial level hierarchical tumor effect
-  matrix[add_trial_level ? n_trials : 0, n_covar_col + 1] raw_tumor_stim_trial_coef;
-  row_vector<lower = 0>[add_trial_level ? n_covar_col + 1 : 0] tumor_stim_trial_coef_sd;
-  
-  // Organ level hierarchical tumor effect 
-  matrix[add_tumor_location_level ? n_tumor_locations : 0, n_covar_col + 1] raw_tumor_stim_location_coef;
-  row_vector<lower = 0>[add_tumor_location_level ? n_covar_col + 1 : 0] tumor_stim_location_coef_sd;
+  #include "tumor_stim_parameters.stan"
 }
 
 transformed parameters {
-  #include "tumor_transformed_parameters.stan"
+  #include "tumor/tumor_transformed_parameters.stan"
   #include "baseline_hazard_transformed_parameters.stan"
-  
-  // Hazard ratio trial-level parameters 
-  vector[n_trials] tumor_stim_trial_intercept = add_trial_level ? raw_tumor_stim_trial_coef[, 1] * tumor_stim_trial_coef_sd[1] : rep_vector(0, n_trials);
-  matrix[n_trials, n_covar_col] tumor_stim_trial_coef;
-  
-  for (s in 1:n_trials) {
-    if (n_covar_col > 0) { 
-      // TODO Add correlation between intercept and the coefs
-      tumor_stim_trial_coef[s] = add_trial_level ? raw_tumor_stim_trial_coef[s, 2:] .* tumor_stim_trial_coef_sd[2:] : rep_row_vector(0, n_covar_col);
-    }
-    
-  }
-  
-  // Hazard ratio organ-level parameters 
-  vector[n_tumor_locations] tumor_stim_location_intercept;
-  matrix[n_tumor_locations, n_covar_col] tumor_stim_location_coef;
-  
-  tumor_stim_location_intercept = add_tumor_location_level ? raw_tumor_stim_location_coef[, 1] * tumor_stim_location_coef_sd[1] : rep_vector(0, n_tumor_locations);
-  
-  if (n_covar_col > 0) { 
-    for (l in 1:n_tumor_locations) {
-      // TODO Add correlation between intercept and the coefs
-      tumor_stim_location_coef[l] = 
-        add_tumor_location_level ? raw_tumor_stim_location_coef[l, 2:] .* tumor_stim_location_coef_sd[2:] : rep_row_vector(0, n_covar_col);
-    }
-  }
- 
+  #include "tumor_stim_transformed_parameters.stan"
+
   // This is a sum of the contribution of all a patient's tumors to their hazard 
   vector[n_patients] total_time_invar_tumor_stim;
   vector[n_patients] total_time_invar_tumor_stim_no_intercept; // This used outside the model, so don't delete it.
@@ -122,7 +69,7 @@ transformed parameters {
   
   (total_time_invar_tumor_stim, total_time_invar_tumor_stim_no_intercept, disease_progress_pred) = calc_disease_progress_pred_from_early_tumors(
     pfs, tumor_covar,
-    tumor_hazard_type, n_patients, n_patient_tumors,
+    tumor_hazard_type, n_patient_tumors,
     patient_trial,
     tumor_location,
     right_uncensored, interval_censored, 
@@ -137,42 +84,13 @@ transformed parameters {
 
 model {
   // For joint modeling
-  #include "tumor_model.stan"
+  #include "tumor/tumor_model.stan"
   
   // Priors
   
   #include "baseline_hazard_priors.stan"
-  
-  tumor_stim_pop_intercept ~ normal(0, tumor_stim_pop_intercept_sd);
- 
-  if (add_trial_level) { 
-    tumor_stim_trial_coef_sd ~ normal(0, tumor_stim_trial_coef_sd_sd[:(n_covar_col + 1)]);
-    
-    to_vector(raw_tumor_stim_trial_coef) ~ std_normal();
-  }
-  
-  if (add_tumor_location_level) { 
-    tumor_stim_location_coef_sd ~ normal(0, tumor_stim_location_coef_sd_sd[:(n_covar_col + 1)]);
-    to_vector(raw_tumor_stim_location_coef) ~ std_normal();
-  }
-  
-  if ((tumor_hazard_type > 0 && tumor_hazard_type < 4) || tumor_hazard_type > 4) {
-    tumor_stim_pop_coef[1] ~ normal(0, tumor_stim_pop_coef_sd[1]);
+  #include "tumor_stim_priors.stan"
 
-    if (tumor_hazard_type == 1 || tumor_hazard_type == 2) {
-      tumor_stim_pop_coef[2] ~ normal(0, tumor_stim_pop_coef_sd[2]);
-
-      if (tumor_hazard_type == 2 || tumor_hazard_type == 5) {
-        tumor_stim_pop_coef[3] ~ normal(0, tumor_stim_pop_coef_sd[3]);
-      }
-      
-      if (tumor_hazard_type == 5) {
-        tumor_stim_pop_coef[4] ~ normal(0, tumor_stim_pop_coef_sd[4]);
-        tumor_stim_pop_coef[5] ~ normal(0, tumor_stim_pop_coef_sd[5]);
-      }
-    }
-  }
-  
   // Likelihood 
   
   if (fit_data) {
@@ -194,7 +112,7 @@ generated quantities {
   
   if (tumor_hazard_type > 0) {
     one_tumor_pf_cond_prob = 
-      1 - calculate_progress_linear_prob(log_lambda, tumor_stim_pop_intercept, tumor_stim_pop_coef, rep_row_vector(1, n_covar_col)); 
+      1 - calculate_progress_linear_prob(log_lambda, tumor_stim_pop_intercept, tumor_stim_pop_coef, rep_row_vector(1, n_tumor_covar_col)); 
   } else {
     one_tumor_pf_cond_prob = base_pf_cond_prob;
   } 
@@ -208,7 +126,7 @@ generated quantities {
       
       if (tumor_hazard_type > 0) {
         trial_one_tumor_pf_cond_prob[s] = 
-          1 - calculate_progress_linear_prob(log_trial_lambda[s], tumor_stim_trial_intercept[s], tumor_stim_trial_coef[s], rep_row_vector(1, n_covar_col));
+          1 - calculate_progress_linear_prob(log_trial_lambda[s], tumor_stim_trial_intercept[s], tumor_stim_trial_coef[s], rep_row_vector(1, n_tumor_covar_col));
       } else {
         trial_one_tumor_pf_cond_prob[s] = trial_base_pf_cond_prob[s];
       } 

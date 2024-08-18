@@ -1,11 +1,6 @@
 ---
 title: "Early Prediction of Breast Cancer Progress Free Survival"
 author: Karim Naguib
-code-fold: true
-code-tools: true
-toc: true
-toc-location: left
-fig-caption-location: margin
 ---
 
 ```{r}

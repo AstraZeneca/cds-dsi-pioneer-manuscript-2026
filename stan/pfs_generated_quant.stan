@@ -8,9 +8,11 @@ if (fit_data) {
 array[gen_pfs ? n_patients : 0] int<lower = 0> rep_pfs;
 array[gen_pfs ? n_patients : 0] int<lower = 0, upper = 1> rep_right_censored;
 array[gen_pfs ? n_patients : 0] int<lower = 0> rep_interval_censored;
+real<lower = 0> rep_median_pfs = 0;
+vector<lower = 0>[add_trial_level && gen_pfs ? n_trials : 0] rep_trial_median_pfs;
 
 // Kaplan-Meier survival probability, aggregated over generated patients' data.  
-vector<lower = 0, upper = 1>[gen_pfs ? max(t_measure) + 1 : 0] km_est; 
+vector<lower = 0, upper = 1>[gen_pfs ? max_all_t + 1 : 0] km_est; 
 array[add_trial_level && gen_pfs ? n_trials : 0] vector<lower = 0, upper = 1>[max(t_measure) + 1] trial_km_est; 
 
 vector<lower = 0, upper = 1>[gen_pfs ? n_patients : 0] rep_pfs_6mon;
@@ -27,15 +29,6 @@ if (gen_pfs) { // Retrodiction, generating simulated data.
     int t_end = t_pos + n_measures[tumor_pos] - 1; // This is for just one tumor
     int t_all_end = t_pos + sum(n_measures[tumor_pos:tumor_end]) - 1; // For all the patient's tumors 
    
-    // tuple(int, int, int, int) pfs_res = pfs_rng(
-    //   disease_progress_prob[pfs_interval_pos:pfs_interval_end], 
-    //   gen_interval_censored ? t_measure[(t_pos + n_screening_t[tumor_pos]):t_end] : pfs_range_int
-    // );
-    
-    // rep_interval_censored[i] = pfs_res.1;
-    // rep_right_censored[i] = pfs_res.2;
-    // rep_pfs[i] = pfs_res.3;
-    
     int rep_actual_pfs;
     
     (rep_interval_censored[i], rep_right_censored[i], rep_pfs[i], rep_actual_pfs) = pfs_rng(
@@ -43,34 +36,15 @@ if (gen_pfs) { // Retrodiction, generating simulated data.
       gen_interval_censored ? t_measure[(t_pos + n_screening_t[tumor_pos]):t_end] : pfs_range_int
     );
     
-    // int rep_actual_pfs_censored = rep_actual_pfs >= max_all_t; // This means we ran out of marginal probability _not_ censored because of t_measure
-    // int max_t = max(t_measure[t_pos:t_all_end]);
-    
     rep_pfs_6mon[i] = rep_actual_pfs >= 6 * 4; // What about interval censoring?
     rep_pfs_9mon[i] = rep_actual_pfs >= 9 * 4; // What about interval censoring?
-    
-    // if (max_t >= 9 * 4 || (!rep_right_censored[i] && rep_actual_pfs <= 9 * 4)) {
-    //   rep_pfs_6mon[i] = rep_actual_pfs >= 6 * 4; // What about interval censoring?
-    //   rep_pfs_9mon[i] = rep_actual_pfs >= 9 * 4; // What about interval censoring?
-    // } else {
-    //   int n_intervals = 9 * 4 - rep_actual_pfs;
-    //   tuple(vector[n_intervals], vector[n_intervals]) marginal_prob_res = 
-    //     calculate_marginal_dp_prob(disease_progress_prob[(pfs_interval_pos + rep_actual_pfs):(pfs_interval_pos + 9 * 4 - 1)], n_intervals);  
-    //   
-    //   rep_pfs_9mon[i] = 1 - marginal_prob_res.2[9 * 4 - rep_actual_pfs]; 
-    //   
-    //   if (max_t >= 6 * 4 || (!right_censored[i] && rep_actual_pfs <= 6 * 4)) {
-    //     rep_pfs_6mon[i] = rep_actual_pfs >= 6 * 4; // What about interval censoring?
-    //   } else {
-    //     rep_pfs_6mon[i] = 1 - marginal_prob_res.2[6 * 4 - rep_actual_pfs]; 
-    //   }
-    // } 
     
     pfs_interval_pos = pfs_interval_end + 1;
     t_pos += sum(n_measures[tumor_pos:tumor_end]);
     tumor_pos = tumor_end + 1;
   }
   
+  rep_median_pfs = pfs_median(rep_pfs, max_all_t).1; 
   km_est = estimate_kaplan_meier(rep_pfs, rep_right_censored, max_all_t).1; 
   
   if (add_trial_level) {
@@ -80,6 +54,7 @@ if (gen_pfs) { // Retrodiction, generating simulated data.
       int trial_patient_end = trial_patient_pos + n_trial_patients[s] - 1;
       
       trial_km_est[s] = estimate_kaplan_meier(rep_pfs[trial_patient_pos:trial_patient_end], rep_right_censored[trial_patient_pos:trial_patient_end], max_all_t).1; 
+      rep_trial_median_pfs[s] = pfs_median(rep_pfs[trial_patient_pos:trial_patient_end], max_all_t).1; 
       
       trial_patient_pos = trial_patient_end + 1;
     }

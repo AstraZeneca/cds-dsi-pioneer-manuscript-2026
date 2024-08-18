@@ -1,3 +1,5 @@
+#include "extern_util.stan"
+
 /** Calculate the last observed measure for each patient. 
  *
  * @param t_measure The week each assessment was done.
@@ -117,36 +119,6 @@ tuple(real, real, vector) standardize_tumor_sizes(vector tumor_size) {
   return (tumor_mean, tumor_sd, (tumor_size - tumor_mean) / tumor_sd); 
 }
 
-/** Calculate the quantiles of PFS given a vector of exit conditional probabilities.
- *
- * @param exit_prob Marginal probability of disease progression at all the intervals
- * @param p Quantile probabilities
- * @return Quantiles of PFS
- */
-array[] real pfs_quantiles_from_prob(vector exit_prob, array[] real p) {
-  int max_t = rows(exit_prob);
-  int n_p = size(p);
-  array[n_p] int sorted_p_idx = sort_indices_asc(p);
-  vector[max_t + 1] cumul_prob = append_row(0.0, cumulative_sum(exit_prob)); 
-  array[n_p] real q;
-  int pfs = 1;
-  
-  for (p_index in 1:n_p) {
-    real curr_p = p[sorted_p_idx][p_index];
-    real q_part;
-    
-    while (cumul_prob[pfs + 1] < curr_p) {
-      pfs += 1;
-    }
-    
-    q_part = (curr_p - cumul_prob[pfs]) / (cumul_prob[pfs + 1] - cumul_prob[pfs]);
-    
-    q[sorted_p_idx[p_index]] = (pfs - 1) * (1 - q_part) + pfs * q_part; 
-  }
-  
-  return q;
-}
-
 /** Missing measure is defined as one that lies between a _tumor's_ first assessment to the _patient's_ last assessment. Basically,
  * we're counting how many intervals (weeks) we don't have observed assessments of tumor size, for each tumor.
  *
@@ -234,37 +206,25 @@ array[] int calculate_t_missing_measure(
   return t_missing_measure;
 }
 
-/** How many assessments for each tumor were pre-screening assessments (t <= 0).
- *
- * @param n_patient_tumors Array with the number of tumors per patient.
- * @param n_measures The number of assessments per tumor.
- * @param t_measure The week each assessment was done.
- * @return Number of pre-screening observed assessments per tumor
- */
-array[] int calc_n_screening_t(array[] int n_patient_tumors, array[] int n_measures, array[] int t_measure) {
-  int n_patients = size(n_patient_tumors);
-  array[sum(n_patient_tumors)] int n_screening_t = rep_array(0, sum(n_patient_tumors));
+int num_leq(array[] int x, int y) {
+  int n = 0;
+  array[size(x)] int sorted_x = sort_asc(x);
   
-  int tumor_pos = 1;
-  int t_measure_pos = 1;
-  
-  for (i in 1:n_patients) {
-    int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
-    
-    for (j in 1:n_patient_tumors[i]) {
-      int t_measure_end = t_measure_pos + n_measures[tumor_pos + j - 1] - 1;
-      
-      for (tp in t_measure_pos:t_measure_end) {
-        if (t_measure[tp] <= 0) {
-          n_screening_t[tumor_pos + j - 1] += 1;
-        }
-      }
-      
-      t_measure_pos = t_measure_end + 1;
+  for (i in 1:size(x)) {
+    if (sorted_x[i] <= y) {
+      n += 1;
+    } else {
+      break;
     }
-    
-    tumor_pos = tumor_end + 1;
   }
   
-  return n_screening_t;
+  return n;
+}
+
+tuple(array[] int, array[] int) get_mask_idx(array[] int mask) {
+  int n = size(mask);
+  int n_0 = n - sum(mask);
+  array[n] int sorted_idx = sort_indices_asc(mask);
+
+  return(sorted_idx[:n_0], sorted_idx[(n_0 + 1):]); 
 }
