@@ -413,13 +413,13 @@ plot_km <- function(data_list, analysis_data, ...) {
 
 
 # This function is used to generate a histogram of time-to-events for a single draw
-sample_hist <- function(pred, breaks) {
+sample_hist <- function(pred, breaks, ...) {
   # hist() is a base R function to generate histograms from data and provided breaks.
-  hist(pmax(pmin(pred, max(breaks)), min(breaks)), breaks = breaks, plot = FALSE)$count
+  hist(pmax(pmin(pred, max(breaks)), min(breaks)), breaks = breaks, plot = FALSE, ...)$count
 }
 
 # This function is used to treated_pfs_analysis_dataallow us to generate a distribution of histograms
-rvar_sample_hist <- posterior::rfun(sample_hist)
+rvar_sample_hist <- posterior::rfun(sample_hist, rvar_dots = FALSE)
 
 #' Produce a probabilistic histogram from rvar samples
 #' 
