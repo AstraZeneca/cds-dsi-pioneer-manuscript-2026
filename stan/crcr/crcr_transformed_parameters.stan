@@ -2,7 +2,7 @@
 matrix[max_confresp_week, n_causes] log_crcr_lambda; 
 
 // Trial-level variation in log baseline hazard 
-matrix[add_trial_level ? n_trials : 0, n_causes] log_crcr_lambda_gp_trial_intercept;
+// matrix[add_trial_level ? n_trials : 0, n_causes] log_crcr_lambda_gp_trial_intercept;
 
 for (k in 1:n_causes) {
   log_crcr_lambda[, k] = 
@@ -14,7 +14,7 @@ array[n_trials] matrix[max_confresp_week, n_causes] log_crcr_trial_lambda = rep_
 if (add_trial_level) {
   for (k in 1:n_causes) {
     // We're using uncentered hierarchical effects here to reduce divergent transitions
-    log_crcr_lambda_gp_trial_intercept[, k] = raw_log_crcr_lambda_gp_trial_intercept[, k] * log_crcr_lambda_gp_trial_intercept_sd[k];
+    // log_crcr_lambda_gp_trial_intercept[, k] = raw_log_crcr_lambda_gp_trial_intercept[, k] * log_crcr_lambda_gp_trial_intercept_sd[k];
     
     for (s in 1:n_trials) {
       log_crcr_trial_lambda[s, , k] = log_crcr_lambda[, k] +  

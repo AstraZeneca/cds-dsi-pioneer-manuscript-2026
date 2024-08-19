@@ -21,3 +21,5 @@ array[sum(n_measures)] int t_measure; // t <= 0 are screening (baseline) assessm
 
 // [..., ((tumor_size_{i,1,1}, ..., tumor_size_{i, 1, n_measures_i}), ..., (..., tumor_size_{i,j,t},...), ...), ...  ] 
 vector<lower = 0>[sum(n_measures)] tumor_size; // cm 
+
+array[n_patients] int<lower = 1> experiment_start_week; // Week 1 is the first week of the experiment
