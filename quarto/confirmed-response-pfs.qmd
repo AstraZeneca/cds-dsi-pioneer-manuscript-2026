@@ -242,7 +242,7 @@ First, we have a competing risks model of time-to-classification, with a separat
 $$
 \lambda^\textrm{crcr}_r(t;\boldsymbol{x,\theta}^\textrm{crcr}_r) = \lambda^\textrm{crcr}_{0rt}\exp(\boldsymbol{x\beta}^\textrm{crcr}_r),\,r \in \{\textrm{responder, non-responder}\} 
 $$
-and the baseline hazard is distributions as a Gaussian process, $\boldsymbol{\lambda}^\textrm{crcr}_{0r} \sim \mathtt{GP}(^\textrm{crcr}_r)$.
+and the baseline hazard is distributions as a Gaussian process, $\boldsymbol{\lambda}^\textrm{crcr}_{0r} \sim \mathtt{GP}(K^\textrm{crcr}_r)$.
 
 The conditional probability of classification as a responder or non-responder (exiting the state of being unclassified) is
 
@@ -529,7 +529,7 @@ First, we have a progression-free survival model,
 $$
 \lambda^\textrm{pfs}(t;\boldsymbol{x}, r,\boldsymbol{\theta}^\textrm{pfs}) = \lambda^\textrm{pfs}_{0t}\exp(\boldsymbol{x\beta}^\textrm{pfs} + r\rho).
 $$
-and the baseline hazard is distributions as a Gaussian process, $\boldsymbol{\lambda}^\textrm{pfs}_{0} \sim \mathtt{GP}(^\textrm{pfs})$.
+and the baseline hazard is distributions as a Gaussian process, $\boldsymbol{\lambda}^\textrm{pfs}_{0} \sim \mathtt{GP}(K^\textrm{pfs})$.
 
 The conditional probability of progression is
 
