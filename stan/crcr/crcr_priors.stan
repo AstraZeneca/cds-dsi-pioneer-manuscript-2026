@@ -5,7 +5,8 @@ log_crcr_lambda_gp_intercept ~ normal(log_crcr_lambda_gp_intercept_mean, log_crc
 
 if (add_trial_level) { 
   log_crcr_lambda_gp_trial_intercept_sd ~ normal(0, log_crcr_lambda_gp_trial_intercept_sd_sd);
-  to_vector(raw_log_crcr_lambda_gp_trial_intercept) ~ std_normal(); 
+  // to_vector(raw_log_crcr_lambda_gp_trial_intercept) ~ std_normal(); 
+  to_vector(log_crcr_lambda_gp_trial_intercept) ~ normal(0, log_crcr_lambda_gp_trial_intercept_sd); 
   
   log_crcr_lambda_gp_trial_alpha ~ normal(0, log_crcr_lambda_gp_trial_alpha_sd);
   log_crcr_lambda_gp_trial_rho ~ inv_gamma(log_crcr_lambda_gp_rho_alpha, log_crcr_lambda_gp_rho_beta);

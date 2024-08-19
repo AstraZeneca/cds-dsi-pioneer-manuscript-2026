@@ -1,5 +1,3 @@
-#include "extern_util.stan"
-
 /** Calculate the last observed measure for each patient. 
  *
  * @param t_measure The week each assessment was done.

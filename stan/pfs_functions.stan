@@ -1,5 +1,3 @@
-#include "extern_pfs_functions.stan"
-
 /** Simple regression model for the influence of tumors on surival. 
  *
  * @param intercept Vector of tumor-level log hazard ratio model.

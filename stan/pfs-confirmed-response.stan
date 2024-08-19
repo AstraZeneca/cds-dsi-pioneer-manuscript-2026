@@ -1,6 +1,8 @@
 functions {
+  #include "extern_util.stan"
   #include "util.stan"
   #include "pfs_functions.stan"
+  #include "extern_pfs_functions.stan"
   #include "crcr/crcr_functions.stan"
   
   array[] int rep_each(array[] int to_repeat, int repeats) {
@@ -43,12 +45,10 @@ data {
   int<lower = 0> n_covar; 
   matrix[n_patients, n_covar] covar_design_matrix;
   
-  array[n_patients] int<lower = 1> experiment_start_week; // Week 1 is the first week of the experiment
-  
   int<lower = 0> n_bootstrap_param;
   array[n_bootstrap_param] int<lower = 1> prediction_week; // At what week are starting our prediction 
-  array[n_bootstrap_param] real<lower = 0> recruit_lambda; // neg binom rate
-  real<lower = 0> recruit_phi; // neg binom dispersion 
+  // array[n_bootstrap_param] real<lower = 0> recruit_lambda; // neg binom rate
+  // real<lower = 0> recruit_phi; // neg binom dispersion 
 
   // Hyperparam
   #include "baseline_hazard_hyperparam.stan"
@@ -83,6 +83,7 @@ transformed data {
 parameters {
   #include "baseline_hazard_parameters.stan"
   #include "crcr/crcr_parameters.stan"
+  #include "recruit/recruit_parameters.stan"
   
   vector[use_pfs_covar ? 2 : 0] tumor_stim_pop_coef;
   row_vector[use_pfs_covar ? (time_varying_conf_resp ? n_causes + 1 : 1) : 0] conf_resp_effect;
@@ -140,7 +141,8 @@ model {
   // Priors
   
   #include "baseline_hazard_priors.stan"
-  #include "crcr/crcr_priors.stan" 
+  #include "crcr/crcr_priors.stan"
+  #include "recruit/recruit_priors.stan"
   
   if (use_pfs_covar) {
     tumor_stim_pop_coef ~ normal(0, tumor_stim_pop_coef_sd);
@@ -154,6 +156,7 @@ model {
     if (fit_data) {
       if (use_pfs_covar) { 
         last_unclassified_response_week ~ comp_risk_pch(confirmed_response_cause, early_confirmed_response_censored, log_crcr_cond_prob_surv, max_confresp_week);
+        experiment_start_week ~ neg_binomial_2(recruit_lambda[patient_trial], recruit_phi[patient_trial]);  
         
         matrix[n_patients, n_causes] response_lp = append_col( 
           calc_pch_loglik2(
@@ -239,7 +242,7 @@ generated quantities {
       for (p in 1:n_bootstrap_param) {
         bootstrap_maturity_rate[p] = 0; 
         
-        array[n_patients] int experiment_start = sort_asc(neg_binomial_2_rng(rep_vector(recruit_lambda[p], n_patients), rep_vector(recruit_phi, n_patients)));
+        array[n_patients] int experiment_start = sort_asc(neg_binomial_2_rng(rep_vector(recruit_lambda[1], n_patients), rep_vector(recruit_phi[1], n_patients)));
         array[n_patients] int current_bootstrap_pfs;
         
         int i = 0;
