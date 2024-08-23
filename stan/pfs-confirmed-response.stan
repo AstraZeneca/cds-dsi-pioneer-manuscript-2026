@@ -1,22 +1,9 @@
 functions {
+  #include "extern_util.stan"
   #include "util.stan"
   #include "pfs_functions.stan"
+  #include "extern_pfs_functions.stan"
   #include "crcr/crcr_functions.stan"
-  
-  array[] int rep_each(array[] int to_repeat, int repeats) {
-    int n = size(to_repeat);
-    array[n * repeats] int repeated;
-    
-    int pos = 1;
-    
-    for (i in 1:n) {
-      int end = pos + repeats - 1;
-      repeated[pos:end] = rep_array(to_repeat[i], repeats);
-      pos = end + 1;
-    }
-    
-    return(repeated);
-  }
 }
 
 data {
@@ -24,12 +11,10 @@ data {
   int<lower = 0, upper = 1> fit_data; // If 0, just do prior prediction
   int<lower = 0, upper = 1> gen_interval_censored; // Should the generated PFS be interval censored?
   int<lower = 0, upper = 1> ignore_interval_censoring; // Treat observed PFS as true pfs and ignore t_measure.
-  int<lower = 0, upper = 1> time_varying_conf_resp;
-  int<lower = 0, upper = 1> use_pfs_covar;
+  // int<lower = 0, upper = 1> time_varying_conf_resp;
   
   // Hierarchical settings 
   int<lower = 0, upper = 1> add_trial_level;
-  int<lower = 0, upper = 1> add_tumor_location_level;
 
   // This is the data that is shared with the tumor model 
   #include "base_data.stan"
@@ -39,16 +24,11 @@ data {
   array[n_patients] int<lower = 0, upper = 1> right_censored;
  
   #include "crcr/crcr_data.stan" 
- 
-  int<lower = 0> n_covar; 
-  matrix[n_patients, n_covar] covar_design_matrix;
-  
-  array[n_patients] int<lower = 1> experiment_start_week; // Week 1 is the first week of the experiment
   
   int<lower = 0> n_bootstrap_param;
   array[n_bootstrap_param] int<lower = 1> prediction_week; // At what week are starting our prediction 
-  array[n_bootstrap_param] real<lower = 0> recruit_lambda; // neg binom rate
-  real<lower = 0> recruit_phi; // neg binom dispersion 
+  // array[n_bootstrap_param] real<lower = 0> recruit_lambda; // neg binom rate
+  // real<lower = 0> recruit_phi; // neg binom dispersion 
 
   // Hyperparam
   #include "baseline_hazard_hyperparam.stan"
@@ -57,12 +37,15 @@ data {
   vector<lower = 0>[2] tumor_stim_pop_coef_sd;
   real<lower = 0> conf_resp_effect_sd;
   vector<lower = 0>[n_covar] covar_effect_sd;
+ 
+  real<lower = 0> covar_trial_sd_sd;
+  real<lower = 0> covar_trial_corr_eta; 
 }
 
 transformed data {
   int gen_pfs = 1;
   
-  #include "tumor/tumor_transformed_data.stan" 
+  #include "base_transformed_data.stan" 
   #include "pfs_transformed_data.stan"
   #include "crcr/crcr_transformed_data.stan"
   
@@ -78,15 +61,22 @@ transformed data {
   int n_marg_prob_t = 5;
   array[n_marg_prob_t] int marg_prob_t = { 1, 5, 10, 50, 100 };
   int n_marg_prob_patients = 5;
+  
+  int crcr_grain_size = 83;
 }
 
 parameters {
   #include "baseline_hazard_parameters.stan"
   #include "crcr/crcr_parameters.stan"
+  #include "recruit/recruit_parameters.stan"
   
-  vector[use_pfs_covar ? 2 : 0] tumor_stim_pop_coef;
-  row_vector[use_pfs_covar ? (time_varying_conf_resp ? n_causes + 1 : 1) : 0] conf_resp_effect;
-  vector[use_pfs_covar ? n_covar : 0] covar_effect;  
+  vector[n_tumor_covar] tumor_stim_pop_coef;
+  vector[n_covar] covar_effect;  
+  real conf_resp_effect;
+  
+  vector<lower = 0>[add_trial_level ? n_tumor_covar + n_covar + 1 : 0] covar_trial_sd;
+  // cholesky_factor_corr[add_trial_level ? n_tumor_covar + n_covar + 1 : 0] L_covar_trial_corr;
+  matrix[n_tumor_covar + n_covar + 1, add_trial_level ? n_trials : 0] raw_covar_trial_coef;
 }
 
 
@@ -95,43 +85,51 @@ transformed parameters {
   #include "crcr/crcr_transformed_parameters.stan"
   
   matrix<lower = 0, upper = 1>[n_patients, n_causes] conf_resp_prob; 
-  array[n_patients] matrix[max_confresp_week, n_causes + 1] conf_resp_cause_prob; 
   
-  matrix<upper = 0>[n_time_periods, use_pfs_covar ? n_causes + time_varying_conf_resp : 1] log_cond_prob_surv;
-  matrix[n_patients, n_causes] time_invariant_log_hazard_ratio = rep_matrix(0, n_patients, n_causes); 
+  matrix<upper = 0>[n_time_periods, n_causes] log_cond_prob_surv;
+  matrix[n_patients, n_causes] time_invariant_log_hazard_ratio = rep_matrix(tumor_sum_covar * tumor_stim_pop_coef + covar_design_matrix * covar_effect, n_causes);
   
-  profile("log_cond_prob") { // Calculate patient-interval conditional probability of disease progression.
+  time_invariant_log_hazard_ratio[, n_causes] += conf_resp_effect; 
+  
+  matrix[n_tumor_covar + n_covar + 1, add_trial_level ? n_trials : 0] covar_trial_coef;
+  
+  if (add_trial_level) {
+    covar_trial_coef = diag_pre_multiply(covar_trial_sd, raw_covar_trial_coef); 
+    // covar_trial_coef = diag_pre_multiply(covar_trial_sd, L_covar_trial_corr) * raw_covar_trial_coef; 
+  } 
+  
+  profile("log_cond_prob_surv") { // Calculate patient-interval conditional probability of disease progression.
     array[n_patients] matrix[max_confresp_week, n_causes] cif;
     
     (cif, conf_resp_prob) = calc_cif(n_patients, log_crcr_cond_prob_surv, max_confresp_week);
     
     int pfs_interval_pos = 1;
-    int conresp_interval_pos = 1;
-    
-    for (i in 1:n_patients) {
-      conf_resp_cause_prob[i, , :n_causes] = cif[i];
-      conf_resp_cause_prob[i, , n_causes + 1] = 1 - conf_resp_cause_prob[i, , :n_causes] * rep_vector(1, n_causes);
-      
-      int n_intervals = max_all_t;
-      int pfs_interval_end = pfs_interval_pos + n_intervals - 1;
-      
-      vector[n_intervals] hazard_ratio_pred = log_trial_lambda[patient_trial[i], 1:n_intervals];  
-
-      if (!use_pfs_covar) {
-        log_cond_prob_surv[pfs_interval_pos:pfs_interval_end, 1] = - exp(hazard_ratio_pred);
-      } else {
-        time_invariant_log_hazard_ratio[i] = rep_row_vector(tumor_sum_covar[i] * tumor_stim_pop_coef + covar_design_matrix[i] * covar_effect, 2);
-        hazard_ratio_pred += time_invariant_log_hazard_ratio[i, 1];
-        
-        if (time_varying_conf_resp) {
-          log_cond_prob_surv[pfs_interval_pos:pfs_interval_end] = - exp(rep_matrix(hazard_ratio_pred, n_causes + 1) + rep_matrix(conf_resp_effect, n_intervals));
-        } else {
-          log_cond_prob_surv[pfs_interval_pos:pfs_interval_end] = - exp(append_col(hazard_ratio_pred, hazard_ratio_pred + conf_resp_effect[1]));
-          time_invariant_log_hazard_ratio[i, 2] += conf_resp_effect[1]; 
-        }
+    int patient_pos = 1;
+  
+    for (s in 1:n_trials) {
+      int patient_end = patient_pos + n_trial_patients[s] - 1; 
+     
+      if (add_trial_level) { 
+        time_invariant_log_hazard_ratio[patient_pos:patient_end] += rep_matrix(
+          tumor_sum_covar[patient_pos:patient_end] * covar_trial_coef[:n_tumor_covar, s] + 
+          covar_design_matrix[patient_pos:patient_end] * covar_trial_coef[(n_tumor_covar + 1):(n_tumor_covar + n_covar), s], 
+          n_causes 
+        );
+          
+        time_invariant_log_hazard_ratio[patient_pos:patient_end, n_causes] += covar_trial_coef[n_tumor_covar + n_covar + 1, s]; 
       }
-
-      pfs_interval_pos = pfs_interval_end + 1;
+  
+      for (i in patient_pos:patient_end) {
+        int n_intervals = max_all_t;
+        int pfs_interval_end = pfs_interval_pos + n_intervals - 1;
+        
+        log_cond_prob_surv[pfs_interval_pos:pfs_interval_end] = 
+          - exp(rep_matrix(log_trial_lambda[s, 1:n_intervals], n_causes) + rep_matrix(time_invariant_log_hazard_ratio[i], n_intervals));
+  
+        pfs_interval_pos = pfs_interval_end + 1;
+      }
+      
+      patient_pos = patient_end + 1; 
     }
   }
 }
@@ -139,40 +137,55 @@ transformed parameters {
 model {
   // Priors
   
-  #include "baseline_hazard_priors.stan"
-  #include "crcr/crcr_priors.stan" 
+  profile("crcr priors") {
+    #include "crcr/crcr_priors.stan"
+  }
   
-  if (use_pfs_covar) {
+  #include "baseline_hazard_priors.stan"
+  #include "recruit/recruit_priors.stan"
+  
+  profile("pfs priors") {
     tumor_stim_pop_coef ~ normal(0, tumor_stim_pop_coef_sd);
     conf_resp_effect ~ normal(0, conf_resp_effect_sd); 
     covar_effect ~ normal(0, covar_effect_sd);
+    
+    if (add_trial_level) {
+      covar_trial_sd ~ normal(0, covar_trial_sd_sd);
+      // L_covar_trial_corr ~ lkj_corr_cholesky(covar_trial_corr_eta);
+      to_vector(raw_covar_trial_coef) ~ std_normal(); 
+    }
   }
   
   // Likelihood
   
-  profile("likelihood") {
-    if (fit_data) {
-      if (use_pfs_covar) { 
-        last_unclassified_response_week ~ comp_risk_pch(confirmed_response_cause, early_confirmed_response_censored, log_crcr_cond_prob_surv, max_confresp_week);
-        
-        matrix[n_patients, n_causes] response_lp = append_col( 
-          calc_pch_loglik2(
-            pfs, right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_surv[, 1], max_all_t, rep_array(1, n_patients)
-          ),
-          calc_pch_loglik2(
-            pfs, right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_surv[, 2], max_all_t, rep_array(1, n_patients)
-          )
-        );
-        
-        for (i in 1:n_patients) {
-          if (confirmed_response_censored[i]) { // Unclassified
-            target += log_mix(conf_resp_prob[i, 1], response_lp[i, 1], response_lp[i, 2]);
-          } else {
-            target += response_lp[i, confirmed_response_cause[i]];
-          }
+  if (fit_data) {
+    profile("crcr loglik") {
+      target += reduce_sum(
+        partial_sum_crcr_lupmf, last_unclassified_response_week, crcr_grain_size,
+        confirmed_response_cause, early_confirmed_response_censored, log_crcr_cond_prob_surv, max_confresp_week
+      );
+    }
+    
+    // last_unclassified_response_week ~ comp_risk_pch(confirmed_response_cause, early_confirmed_response_censored, log_crcr_cond_prob_surv, max_confresp_week);
+    
+    experiment_start_week ~ neg_binomial_2(recruit_lambda[patient_trial], recruit_phi[patient_trial]);  
+  
+    profile("pfs loglik") {  
+      matrix[n_patients, n_causes] response_lp = append_col( 
+        calc_pch_loglik2(
+          pfs, right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_surv[, 1], max_all_t, rep_array(1, n_patients)
+        ),
+        calc_pch_loglik2(
+          pfs, right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_surv[, 2], max_all_t, rep_array(1, n_patients)
+        )
+      );
+      
+      for (i in 1:n_patients) {
+        if (confirmed_response_censored[i]) { // Unclassified
+          target += log_mix(conf_resp_prob[i, 1], response_lp[i, 1], response_lp[i, 2]);
+        } else {
+          target += response_lp[i, confirmed_response_cause[i]];
         }
-      } else {
-          pfs ~ pch2(right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_surv[, 1], max_all_t, rep_array(1, n_patients));
       }
     }
   }
@@ -225,7 +238,7 @@ generated quantities {
           mat_log_cond_prob_surv[k, , i] = log_cond_prob_surv[pfs_interval_pos:pfs_interval_end, k];
         }
         
-        (sim_pfs[i], sim_censored[i]) = survival_time_rng(mat_log_cond_prob_surv[use_pfs_covar ? sim_confirmed_response[i] + 1 : 1, , i]); 
+        (sim_pfs[i], sim_censored[i]) = survival_time_rng(mat_log_cond_prob_surv[sim_confirmed_response[i] + 1, , i]); 
         
         pfs_interval_pos = pfs_interval_end + 1;
       }
@@ -239,7 +252,7 @@ generated quantities {
       for (p in 1:n_bootstrap_param) {
         bootstrap_maturity_rate[p] = 0; 
         
-        array[n_patients] int experiment_start = sort_asc(neg_binomial_2_rng(rep_vector(recruit_lambda[p], n_patients), rep_vector(recruit_phi, n_patients)));
+        array[n_patients] int experiment_start = sort_asc(neg_binomial_2_rng(rep_vector(recruit_lambda[1], n_patients), rep_vector(recruit_phi[1], n_patients)));
         array[n_patients] int current_bootstrap_pfs;
         
         int i = 0;
@@ -274,3 +287,4 @@ generated quantities {
     }
   }
 }
+
