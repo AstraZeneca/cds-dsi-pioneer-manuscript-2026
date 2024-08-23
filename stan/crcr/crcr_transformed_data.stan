@@ -13,13 +13,13 @@ for (i in 1:max_confresp_week) {
   confresp_range_vec[i] = i - 1; 
 }
 
-matrix[n_patients, 2] tumor_sum_covar; 
-matrix[n_patients, 2] uncentered_tumor_sum_covar; // Just scaled
+matrix[n_patients, n_tumor_covar] tumor_sum_covar; 
+matrix[n_patients, n_tumor_covar] uncentered_tumor_sum_covar; // Just scaled
 vector[2] tumor_sum_covar_mean;
 vector[2] tumor_sum_covar_sd;
 
 (tumor_sum_covar, uncentered_tumor_sum_covar, tumor_sum_covar_mean, tumor_sum_covar_sd) = 
-  prepare_early_tumor_sums_covar(tumor_size, n_tumors, n_patient_tumors, n_measures, t_measure, n_screening_t, 2); 
+  prepare_early_tumor_sums_covar(tumor_size, n_tumors, n_patient_tumors, n_measures, t_measure, n_screening_t, n_tumor_covar); 
   
 int<lower = 0> n_total_confresp_week = sum(confirmed_response_week);
 int<lower = 0> n_crcr_time_periods = max_confresp_week * n_patients;
