@@ -388,30 +388,28 @@ prepare_pfs_stan_data <- function(analysis_data, .tumor_priors, .pfs_priors, pfs
   stan_data |> list_assign(grid_tumors = early_tumors, n_grid_tumors = length(early_tumors))
 }
 
-prepare_confirmed_resp_covar_formula <- function(trials) {
+prepare_confirmed_resp_covar_formula <- function(trials = NULL) {
   covar_formula <- ~ 0 + factor(age_group, ordered = FALSE) + factor(ecogbl, ordered = FALSE) + hormonr + prior_cdk46_inhibit_treatment
   
-  if (!any(fct_match(trials, c("Breast01", "Breast04")))) {
+  if (!is_null(trials) && !any(fct_match(trials, c("Breast01", "Breast04")))) {
     covar_formula <- update(covar_formula, ~ . + hist_visceral_disease)
   }
   
-  # if (!any(fct_match(trials, c("Breast03")))) {
-  #   covar_formula <- update(covar_formula, ~ . + her2_status)
-  # }
-  
-  if (!all(fct_match(trials, c("Breast04")))) {
+  if (!is_null(trials) && !all(fct_match(trials, c("Breast04")))) {
     covar_formula <- update(covar_formula, ~ . + prior_pertuzumab_treatment)
   }
   
-  if (any(fct_match(trials, c("Breast04")))) {
+  if (is_null(trials) || any(fct_match(trials, c("Breast04")))) {
     covar_formula <- update(covar_formula, ~ . + her2_status)
   }
   
   return(covar_formula)
 }
 
-prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, .confirmed_resp_priors, ..., include_covar = TRUE) {
-  pfs_stan_data <- prepare_pfs_stan_data(analysis_data, ...)
+prepare_confirmed_resp_stan_data <- function(
+    covar_formula, analysis_data, .confirmed_resp_priors, .tumor_priors, .pfs_priors, pfs_functions, ..., include_covar = TRUE
+) {
+  pfs_stan_data <- prepare_pfs_stan_data(analysis_data, .tumor_priors, .pfs_priors, pfs_functions)
   
   stopifnot(pfs_stan_data$n_patients == nrow(analysis_data))
   
@@ -432,8 +430,7 @@ prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, .conf
       use_pfs_covar = TRUE,
       covar_design_matrix = covar_design_matrix,
       n_covar = n_covar,
-      patient_trial = rep(1, .$n_patients),
-      n_trials = 1,
+      n_tumor_covar = 2,
       time_varying_conf_resp = FALSE,
       ignore_interval_censoring = FALSE,
       
@@ -449,36 +446,14 @@ prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, .conf
       confirmed_response_week = analysis_data$confirmed_response_week,
     ) %>% 
     list_assign(
-      
       crcr_covar_effect_sd = rep(.$crcr_covar_effect_sd, n_covar),
       crcr_tumor_stim_pop_coef_sd = .$crcr_tumor_stim_pop_coef_sd[1:2],
       
       covar_effect_sd = rep(.$covar_effect_sd, n_covar),
       tumor_stim_pop_coef_sd = .$tumor_stim_pop_coef_sd[1:2],
-    )
+    ) |> 
+    list_assign(...)
 }
-
-# add_bootstrap_sample <- function(stan_data, n_samples, prediction_weeks, n_bootstrap_sample_patients) {
-#   stan_data %>% 
-#     list_assign(
-#       n_prediction_weeks = length(prediction_weeks),
-#       prediction_week = prediction_weeks,
-#       n_bootstrap_samples = n_samples,
-#       n_bootstrap_sample_patients = n_bootstrap_sample_patients,
-#       bootstrap_patient = map2(
-#         prediction_weeks, n_bootstrap_sample_patients, 
-#         \(pw, n) map(seq(n_samples), \(...) sample(.$n_patients, n, replace = TRUE))
-#       ) |> unlist()
-#     ) 
-# }
-# 
-# add_bootstrap_sample_w <- function(stan_data, n_samples, prediction_weeks) {
-#   add_bootstrap_sample(stan_data, n_samples, prediction_weeks, map_int(prediction_weeks, \(pw) sum(stan_data$experiment_start_week <= pw))) 
-# }
-# 
-# add_bootstrap_sample_n <- function(stan_data, n_samples, n_sample_patients) {
-#   add_bootstrap_sample(stan_data, n_samples, map_int(n_sample_patients, \(n) sort(stan_data$experiment_start_week)[n]), n_sample_patients) 
-# }
 
 add_bootstrap_sample <- function(stan_data, n_samples, recruit_maturity, phi, trials) {
   eligible_param <- recruit_maturity |> 
@@ -537,4 +512,24 @@ prepare_confirmed_resp_obs_km <- function(all_stan_data, pfs_functions) {
   all_stan_data |> 
     rowwise() |> 
     mutate(obs_km = list(get_trial_treated_obs_km(stan_data, pfs_functions)))
+}
+
+prepare_confirmed_resp_km <- function(stan_data) {
+  stan_data |> 
+    rowwise() |>
+    mutate(
+      conf_resp_km = list(with(
+        stan_data, 
+        pfs_functions$estimate_kaplan_meier(confirmed_response_week, confirmed_response_censored, max(confirmed_response_week))
+      )),
+    
+      conf_resp_km_calendar = list(with(
+        stan_data, 
+        pfs_functions$estimate_kaplan_meier(
+          confirmed_response_week + experiment_start_week - 1, 
+          confirmed_response_censored, 
+          max(confirmed_response_week + experiment_start_week - 1)
+        )
+      ))
+    )
 }

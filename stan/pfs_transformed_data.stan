@@ -1,9 +1,3 @@
-array[n_trials] int<lower = 0, upper = n_patients> n_trial_patients = rep_array(0, n_trials); // How many patients per trial
-
-for (i in 1:n_patients) {
-  n_trial_patients[patient_trial[i]] += 1;
-}
-
 int<lower = 0, upper = max(pfs) * n_patients> n_total_pfs = sum(pfs);
 
 // These are used for the time interval distance between baseline hazards

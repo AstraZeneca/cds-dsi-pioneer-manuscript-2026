@@ -1,15 +1,15 @@
 functions {
-  #include "util.stan"
-  #include "pfs_functions.stan"
-  #include "crcr/crcr_functions.stan"
+  #include "../extern_util.stan"
+  #include "../util.stan"
+  #include "../extern_pfs_functions.stan"
+  #include "../pfs_functions.stan"
+  #include "../crcr/crcr_functions.stan"
 }
 
 data {
   // This is the data that is shared with the tumor model 
-  #include "base_data.stan"
-  #include "crcr/crcr_data.stan"
-
-  array[n_patients] int<lower = 1> experiment_start_week;
+  #include "../base_data.stan"
+  #include "../crcr/crcr_data.stan"
   
   int<lower = 0> n_covar; 
   matrix[n_patients, n_covar] covar_design_matrix;
@@ -25,7 +25,7 @@ data {
   real<lower = 0> phi;
  
   // Hyperparam
-  #include "crcr/crcr_hyperparam.stan"
+  #include "../crcr/crcr_hyperparam.stan"
 }
 
 transformed data {
@@ -33,22 +33,22 @@ transformed data {
   int<lower = 0, upper = 1> add_trial_level = 0;
   int<lower = 0, upper = 1> add_tumor_location_level = 0;
   
-  #include "tumor/tumor_transformed_data.stan" 
-  #include "crcr/crcr_transformed_data.stan"
+  #include "../tumor/tumor_transformed_data.stan" 
+  #include "../crcr/crcr_transformed_data.stan"
 }
 
 parameters {
-  #include "crcr/crcr_parameters.stan"
+  #include "../crcr/crcr_parameters.stan"
 }
 
 transformed parameters {
-  #include "crcr/crcr_transformed_parameters.stan"
+  #include "../crcr/crcr_transformed_parameters.stan"
 }
 
 model {
   // Priors
  
-  #include "crcr/crcr_priors.stan" 
+  #include "../crcr/crcr_priors.stan" 
   
   // Likelihood
   
