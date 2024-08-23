@@ -257,21 +257,18 @@ The patient level log likelihood is
 $$
 \log \mathcal{L}^\textrm{crcr}_i = (1-C^\textrm{crcr}_i)\log[1 - \exp(-\lambda^\textrm{crcr}_{R_i}(T^\textrm{crcr}_i + 1;\boldsymbol{X_i, \theta^\textrm{crcr}_r}))] + \sum_{r = 0}^1\sum_t^{T^\textrm{crcr}_i} - \lambda^\textrm{crcr}_{r}(t;\boldsymbol{X_i, \theta^\textrm{crcr}_r})
 $$
+
 ```{r}
 #| label: fig-survival-unclassified
 #| fig-cap: Survival plots of time to classification.
 #| cache: true
 
-conf_resp_hb <- seq(0, 144, by = 6)
-
 bind_rows(
-  prior = tar_read("prior_rep_confirmed_response"),
-  posterior = tar_read("rep_confirmed_response"),
+  prior = tar_read("prior_all_rep_confirmed_response_bindist"),
+  posterior = tar_read("all_rep_confirmed_response_bindist"),
   .id = "fit_type"
 ) |> 
-  group_by(trial, fit_type) |> 
-  reframe(t = conf_resp_hb[-length(conf_resp_hb)], bindist = rvar_sample_hist(rep_confirmed_response_week, conf_resp_hb)) |> 
-  ggplot(aes(x = t)) +
+  ggplot(aes(t)) +
   stat_lineribbon(
     aes(ydist = bindist, color = fit_type, fill = fit_type, alpha = fit_type),
     linewidth = 1, step = "hv", .width = c(0.5, 0.8)
@@ -284,7 +281,7 @@ bind_rows(
       reframe(t = conf_resp_hb[-length(conf_resp_hb)], count = sample_hist(confirmed_response_week, conf_resp_hb))
   ) +
   scale_color_discrete("", label = str_to_title, type = AZ_palette, aesthetic = c("color", "fill")) +
-  scale_alpha_manual("", values = c(prior = 0.25, posterior = 0.125)) +
+  scale_alpha_manual("", values = c(prior = 0.125, posterior = 0.25)) +
   scale_linetype_manual("", values = c(Observed = "dotted")) +
   scale_x_continuous("", breaks = seq(0, 150, 12)) +
   facet_wrap(vars(trial), scales = "free_y") +
@@ -298,23 +295,18 @@ bind_rows(
 #| fig-cap: Probabilistic histograms of the hazard ratio in response to patient characteristics, separated by competing risk.
 #| cache: true
 
-hb <- seq(0, 3, by = 0.1)
-
 bind_rows(
-  prior = tar_read("prior_crcr_hazard_ratio"),
-  post = tar_read("crcr_hazard_ratio"),
+  prior = tar_read("prior_all_crcr_hazard_ratio_bindist"),
+  posterior = tar_read("all_crcr_hazard_ratio_bindist"),
   .id = "fit_type"
-) |> 
-  group_by(trial, k, fit_type) |> 
-  reframe(t = hb[-length(hb)], bindist = rvar_sample_hist(patient_crcr_hazard_ratio, hb)) |> 
-  mutate(k = factor(k, levels = 1:2, labels = c("Response", "Non-response"))) |> 
+) |>
   ggplot(aes(t)) +
   stat_lineribbon(aes(ydist = bindist, color = fit_type, fill = fit_type, alpha = fit_type),
                   linewidth = 1,
                   step = "hv",
                   .width = c(0.5, 0.8)) +
   scale_color_discrete("", label = str_to_title, type = AZ_palette, aesthetic = c("color", "fill")) +
-  scale_alpha_manual("", values = c(prior = 0.05, post = 0.25)) +
+  scale_alpha_manual("", values = c(prior = 0.125, posterior = 0.25)) +
   facet_grid(vars(trial), vars(k), scales = "free_y") +
   guides(alpha = "none") +
   NULL
@@ -391,8 +383,8 @@ conf_resp_prob <- lst(prior = prior_confirmed_resp_comp_risk_res, post = confirm
 #| cache: true
 
 bind_rows(
-  prior = tar_read("prior_conf_resp_cif"),
-  posterior = tar_read("conf_resp_cif"),
+  prior = tar_read("prior_all_conf_resp_cif_bindist"),
+  posterior = tar_read("all_conf_resp_cif_bindist"),
   .id = "fit_type"
 ) |> 
   ggplot(aes(p)) +

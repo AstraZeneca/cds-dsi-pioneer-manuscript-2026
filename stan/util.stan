@@ -226,3 +226,18 @@ tuple(array[] int, array[] int) get_mask_idx(array[] int mask) {
 
   return(sorted_idx[:n_0], sorted_idx[(n_0 + 1):]); 
 }
+
+array[] int rep_each(array[] int to_repeat, int repeats) {
+  int n = size(to_repeat);
+  array[n * repeats] int repeated;
+  
+  int pos = 1;
+  
+  for (i in 1:n) {
+    int end = pos + repeats - 1;
+    repeated[pos:end] = rep_array(to_repeat[i], repeats);
+    pos = end + 1;
+  }
+  
+  return(repeated);
+}

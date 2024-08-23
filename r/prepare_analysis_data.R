@@ -430,8 +430,7 @@ prepare_confirmed_resp_stan_data <- function(
       use_pfs_covar = TRUE,
       covar_design_matrix = covar_design_matrix,
       n_covar = n_covar,
-      # patient_trial = rep(1, .$n_patients),
-      # n_trials = 1,
+      n_tumor_covar = 2,
       time_varying_conf_resp = FALSE,
       ignore_interval_censoring = FALSE,
       

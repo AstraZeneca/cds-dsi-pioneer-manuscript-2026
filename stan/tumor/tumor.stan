@@ -10,7 +10,7 @@ data {
 transformed data {
   int use_tumor_model = 1;
   
-  #include "tumor_transformed_data.stan"
+  #include "../base_transformed_data.stan"
 }
 
 parameters {
