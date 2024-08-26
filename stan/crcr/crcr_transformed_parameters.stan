@@ -1,9 +1,10 @@
-// Log baseline hazard
 matrix[max_confresp_week, n_causes] log_crcr_lambda; 
 
-for (k in 1:n_causes) {
-  log_crcr_lambda[, k] = 
-    calc_gp_pred(confresp_range, log_crcr_lambda_gp_intercept[k], log_crcr_lambda_gp_alpha[k], log_crcr_lambda_gp_rho[k], delta, log_crcr_lambda_gp_eta[, k]);
+profile("crcr population baseline hazards") {
+  for (k in 1:n_causes) {
+    log_crcr_lambda[, k] = 
+      calc_gp_pred(confresp_range, log_crcr_lambda_gp_intercept[k], log_crcr_lambda_gp_alpha[k], log_crcr_lambda_gp_rho[k], delta, log_crcr_lambda_gp_eta[, k]);
+  }
 }
 
 array[n_trials] matrix[max_confresp_week, n_causes] log_crcr_trial_lambda = rep_array(log_crcr_lambda, n_trials); // Need to initialize 
@@ -11,21 +12,23 @@ array[n_trials] matrix[max_confresp_week, n_causes] log_crcr_trial_lambda = rep_
 matrix[add_trial_level ? n_trials : 0, n_causes] log_crcr_lambda_gp_trial_intercept;
 array[add_trial_level && add_trial_level_glm ? n_trials : 0] matrix[n_tumor_covar + n_covar, n_causes] crcr_covar_trial_coef;
 
-if (add_trial_level) {
-  log_crcr_lambda_gp_trial_intercept = diag_post_multiply(raw_log_crcr_lambda_gp_trial_intercept, log_crcr_lambda_gp_trial_intercept_sd);
-  
-  for (s in 1:n_trials) {
-    if (add_trial_level_glm) {
-      crcr_covar_trial_coef[s] = diag_pre_multiply(crcr_covar_trial_sd, raw_crcr_covar_trial_coef[s]);
-      // crcr_covar_trial_coef[s] = diag_pre_multiply(crcr_covar_trial_sd, crcr_covar_trial_corr) * raw_crcr_covar_trial_coef[s];
-    }
+profile("crcr multilevel transparam") {
+  if (add_trial_level) {
+    log_crcr_lambda_gp_trial_intercept = diag_post_multiply(raw_log_crcr_lambda_gp_trial_intercept, log_crcr_lambda_gp_trial_intercept_sd);
     
-    for (k in 1:n_causes) {
-      log_crcr_trial_lambda[s, , k] = log_crcr_lambda[, k] +  
-        calc_gp_pred(
-          confresp_range, 
-          log_crcr_lambda_gp_trial_intercept[s, k], log_crcr_lambda_gp_trial_alpha[k], log_crcr_lambda_gp_trial_rho[k], delta, log_crcr_lambda_gp_trial_eta[s, , k]
-        ); 
+    for (s in 1:n_trials) {
+      if (add_trial_level_glm) {
+        crcr_covar_trial_coef[s] = diag_pre_multiply(crcr_covar_trial_sd, raw_crcr_covar_trial_coef[s]);
+        // crcr_covar_trial_coef[s] = diag_pre_multiply(crcr_covar_trial_sd, crcr_covar_trial_corr) * raw_crcr_covar_trial_coef[s];
+      }
+      
+      for (k in 1:n_causes) {
+        log_crcr_trial_lambda[s, , k] = log_crcr_lambda[, k] +  
+          calc_gp_pred(
+            confresp_range, 
+            log_crcr_lambda_gp_trial_intercept[s, k], log_crcr_lambda_gp_trial_alpha[k], log_crcr_lambda_gp_trial_rho[k], delta, log_crcr_lambda_gp_trial_eta[s, , k]
+          ); 
+      }
     }
   }
 }
@@ -35,7 +38,6 @@ matrix[n_patients, n_causes] patient_log_crcr_hazard_ratio = tumor_sum_covar * c
 matrix<upper = 0>[n_crcr_time_periods, n_causes] log_crcr_cond_prob_surv;
 
 profile("log_crcr_cond_prob_surv") { // Calculate patient-interval conditional probability of survival (without a classified response) 
-  int confresp_interval_pos = 1;
   int patient_pos = 1;
   
   for (s in 1:n_trials) {
@@ -48,13 +50,11 @@ profile("log_crcr_cond_prob_surv") { // Calculate patient-interval conditional p
     }
     
     for (i in patient_pos:patient_end) {
-      int n_intervals = max_confresp_week; 
-      int confresp_interval_end = confresp_interval_pos + n_intervals - 1;
+      int confresp_interval_pos = patient_conf_resp_interval_pos[i];
+      int confresp_interval_end = patient_conf_resp_interval_pos[i + 1] - 1;
       
       log_crcr_cond_prob_surv[confresp_interval_pos:confresp_interval_end] = 
-        - exp(log_crcr_trial_lambda[s, 1:n_intervals] + rep_matrix(patient_log_crcr_hazard_ratio[i], n_intervals));
-  
-      confresp_interval_pos = confresp_interval_end + 1;
+        - exp(log_crcr_trial_lambda[s, 1:max_confresp_week] + rep_matrix(patient_log_crcr_hazard_ratio[i], max_confresp_week));
     }
     
     patient_pos = patient_end + 1;
