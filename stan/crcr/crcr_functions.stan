@@ -35,23 +35,22 @@ tuple(array[] matrix, matrix) calc_cif(int n_patients, matrix log_crcr_cond_prob
       cif[i, , k] = cumulative_sum(exp(log_marg_prob[i, , k]));
     }
     
-    // prob_cause[i] = cif[i, max_confresp_week];
+    prob_cause[i] = cif[i, max_confresp_week];
     
-    for (k in 1:n_causes) {
-      if (k == 1) {
-        prob_cause[i, k] = 
-          cif[i, max_confresp_week, k] * prod(1 - cif[i, max_confresp_week, (k + 1):]) + (1.0 / n_causes) * prod(cif[i, max_confresp_week]);
-      } else if (k == n_causes) {
-        prob_cause[i, k] = 
-          prod(1 - cif[i, max_confresp_week, :(k - 1)]) * cif[i, max_confresp_week, k] + (1.0 / n_causes) * prod(cif[i, max_confresp_week]);
-      } else {
-        prob_cause[i, k] = 
-          prod(1 - cif[i, max_confresp_week, :(k - 1)]) * cif[i, max_confresp_week, k] * prod(1 - cif[i, max_confresp_week, (k + 1):]) + 
-          (1.0 / n_causes) * prod(cif[i, max_confresp_week]);
-      }
-    }
+    // for (k in 1:n_causes) {
+    //   if (k == 1) {
+    //     prob_cause[i, k] = 
+    //       cif[i, max_confresp_week, k] * prod(1 - cif[i, max_confresp_week, (k + 1):]) + (1.0 / n_causes) * prod(cif[i, max_confresp_week]);
+    //   } else if (k == n_causes) {
+    //     prob_cause[i, k] = 
+    //       prod(1 - cif[i, max_confresp_week, :(k - 1)]) * cif[i, max_confresp_week, k] + (1.0 / n_causes) * prod(cif[i, max_confresp_week]);
+    //   } else {
+    //     prob_cause[i, k] = 
+    //       prod(1 - cif[i, max_confresp_week, :(k - 1)]) * cif[i, max_confresp_week, k] * prod(1 - cif[i, max_confresp_week, (k + 1):]) + 
+    //       (1.0 / n_causes) * prod(cif[i, max_confresp_week]);
+    //   }
+    // }
     
-    // prob_cause[i] /= sum(prob_cause[i]); 
     prob_cause[i] /= sum(prob_cause[i]); 
   }
   
