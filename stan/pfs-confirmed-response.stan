@@ -4,6 +4,40 @@ functions {
   #include "pfs_functions.stan"
   #include "extern_pfs_functions.stan"
   #include "crcr/crcr_functions.stan"
+  
+  array[] int forecast_pfs_rng(
+    int pred_calendar_week, array[] int start_calendar_week,
+    array[] int patient_ids,
+    array[] int pfs_interval_pos, array[] int pfs, array[] int pfs_right_censored, matrix log_cond_prob_surv,
+    array[] int conf_resp_interval_pos, array[] int conf_resp_week, array[] int conf_resp, array[] int conf_resp_censored, matrix log_crcr_cond_prob_surv
+  ) {
+    int n_sample_patients = size(patient_ids);
+    array[n_sample_patients] int pred_pfs = pfs[patient_ids];
+    
+    for (i in 1:n_sample_patients) {
+      if (pfs_right_censored[patient_ids[i]] || (start_calendar_week[i] + pred_pfs[i] - 1) > pred_calendar_week) {
+        int conf_resp_cause = conf_resp[patient_ids[i]] + 1;
+        
+        int max_weeks_observed = pred_calendar_week - start_calendar_week[i] + 1;
+        
+        if (conf_resp_censored[patient_ids[i]] || (start_calendar_week[i] + conf_resp_week[patient_ids[i]] - 1) > pred_calendar_week) {
+          int n_weeks_obs_unclassified = min(conf_resp_week[patient_ids[i]], max_weeks_observed); 
+          int curr_conf_resp_interval_pos = conf_resp_interval_pos[patient_ids[i]] + n_weeks_obs_unclassified;
+          int curr_conf_resp_interval_end = conf_resp_interval_pos[patient_ids[i] + 1] - 1;
+         
+          conf_resp_cause = competing_risks_survival_time_rng(log_crcr_cond_prob_surv[curr_conf_resp_interval_pos:curr_conf_resp_interval_end]).3; 
+        }
+        
+        int n_weeks_obs_surv = min(pred_pfs[i], max_weeks_observed); 
+        int curr_pfs_interval_pos = pfs_interval_pos[patient_ids[i]] + n_weeks_obs_surv;
+        int curr_pfs_interval_end = pfs_interval_pos[patient_ids[i] + 1] - 1;
+        
+        pred_pfs[i] = n_weeks_obs_surv + survival_time_rng(log_cond_prob_surv[curr_pfs_interval_pos:curr_pfs_interval_end, conf_resp_cause]).1; 
+      }
+    }
+    
+    return pred_pfs;
+  }
 }
 
 data {
@@ -11,24 +45,24 @@ data {
   int<lower = 0, upper = 1> fit_data; // If 0, just do prior prediction
   int<lower = 0, upper = 1> gen_interval_censored; // Should the generated PFS be interval censored?
   int<lower = 0, upper = 1> ignore_interval_censoring; // Treat observed PFS as true pfs and ignore t_measure.
-  // int<lower = 0, upper = 1> time_varying_conf_resp;
   
   // Hierarchical settings 
   int<lower = 0, upper = 1> add_trial_level;
-
+  int<lower = 0, upper = 1> add_trial_level_glm;
+  
   // This is the data that is shared with the tumor model 
   #include "base_data.stan"
+  
+  int<lower = 0, upper = n_trials> leave_out_trial;
+  int<lower = 0> n_bootstrap_sample;
+  int<lower = 0> n_bootstrap_cr_maturity_rates;
+  vector<lower = 0, upper = 1>[n_bootstrap_cr_maturity_rates] bootstrap_cr_maturity_rates;
   
   array[n_patients] int<lower = 0> pfs; // How many periods after baseline did patient survive.
   array[n_patients] int<lower = 0> death_week; 
   array[n_patients] int<lower = 0, upper = 1> right_censored;
  
   #include "crcr/crcr_data.stan" 
-  
-  int<lower = 0> n_bootstrap_param;
-  array[n_bootstrap_param] int<lower = 1> prediction_week; // At what week are starting our prediction 
-  // array[n_bootstrap_param] real<lower = 0> recruit_lambda; // neg binom rate
-  // real<lower = 0> recruit_phi; // neg binom dispersion 
 
   // Hyperparam
   #include "baseline_hazard_hyperparam.stan"
@@ -56,13 +90,9 @@ transformed data {
   
   (obs_confirmed_response, missing_confirmed_response) = get_mask_idx(confirmed_response_censored);
   
-  array[n_patients] int<lower = 1> sorted_experiment_start_week = sort_asc(experiment_start_week);
-  
-  int n_marg_prob_t = 5;
-  array[n_marg_prob_t] int marg_prob_t = { 1, 5, 10, 50, 100 };
-  int n_marg_prob_patients = 5;
-  
   int crcr_grain_size = 83;
+  
+  array[n_patients + 1] int<lower = 1> patient_pfs_interval_pos = linspaced_int_array(n_patients + 1, 1, n_patients * max_all_t + 1);
 }
 
 parameters {
@@ -84,52 +114,45 @@ transformed parameters {
   #include "baseline_hazard_transformed_parameters.stan"
   #include "crcr/crcr_transformed_parameters.stan"
   
-  matrix<lower = 0, upper = 1>[n_patients, n_causes] conf_resp_prob; 
-  
   matrix<upper = 0>[n_time_periods, n_causes] log_cond_prob_surv;
   matrix[n_patients, n_causes] time_invariant_log_hazard_ratio = rep_matrix(tumor_sum_covar * tumor_stim_pop_coef + covar_design_matrix * covar_effect, n_causes);
   
   time_invariant_log_hazard_ratio[, n_causes] += conf_resp_effect; 
   
   matrix[n_tumor_covar + n_covar + 1, add_trial_level ? n_trials : 0] covar_trial_coef;
-  
+ 
   if (add_trial_level) {
     covar_trial_coef = diag_pre_multiply(covar_trial_sd, raw_covar_trial_coef); 
     // covar_trial_coef = diag_pre_multiply(covar_trial_sd, L_covar_trial_corr) * raw_covar_trial_coef; 
   } 
   
-  profile("log_cond_prob_surv") { // Calculate patient-interval conditional probability of disease progression.
-    array[n_patients] matrix[max_confresp_week, n_causes] cif;
-    
-    (cif, conf_resp_prob) = calc_cif(n_patients, log_crcr_cond_prob_surv, max_confresp_week);
-    
-    int pfs_interval_pos = 1;
+  { // Calculate patient-interval conditional probability of disease progression.
     int patient_pos = 1;
-  
-    for (s in 1:n_trials) {
-      int patient_end = patient_pos + n_trial_patients[s] - 1; 
-     
-      if (add_trial_level) { 
-        time_invariant_log_hazard_ratio[patient_pos:patient_end] += rep_matrix(
-          tumor_sum_covar[patient_pos:patient_end] * covar_trial_coef[:n_tumor_covar, s] + 
-          covar_design_matrix[patient_pos:patient_end] * covar_trial_coef[(n_tumor_covar + 1):(n_tumor_covar + n_covar), s], 
-          n_causes 
-        );
-          
-        time_invariant_log_hazard_ratio[patient_pos:patient_end, n_causes] += covar_trial_coef[n_tumor_covar + n_covar + 1, s]; 
-      }
-  
-      for (i in patient_pos:patient_end) {
-        int n_intervals = max_all_t;
-        int pfs_interval_end = pfs_interval_pos + n_intervals - 1;
+    
+    profile("log surv loop") {
+      for (s in 1:n_trials) {
+        int patient_end = patient_pos + n_trial_patients[s] - 1; 
         
-        log_cond_prob_surv[pfs_interval_pos:pfs_interval_end] = 
-          - exp(rep_matrix(log_trial_lambda[s, 1:n_intervals], n_causes) + rep_matrix(time_invariant_log_hazard_ratio[i], n_intervals));
-  
-        pfs_interval_pos = pfs_interval_end + 1;
+        if (add_trial_level) { 
+          time_invariant_log_hazard_ratio[patient_pos:patient_end] += rep_matrix(
+            tumor_sum_covar[patient_pos:patient_end] * covar_trial_coef[:n_tumor_covar, s] + 
+            covar_design_matrix[patient_pos:patient_end] * covar_trial_coef[(n_tumor_covar + 1):(n_tumor_covar + n_covar), s], 
+            n_causes 
+          );
+            
+          time_invariant_log_hazard_ratio[patient_pos:patient_end, n_causes] += covar_trial_coef[n_tumor_covar + n_covar + 1, s]; 
+        }
+    
+        for (i in patient_pos:patient_end) {
+          int pfs_interval_pos = patient_pfs_interval_pos[i];
+          int pfs_interval_end = patient_pfs_interval_pos[i + 1] - 1;
+          
+          log_cond_prob_surv[pfs_interval_pos:pfs_interval_end] = 
+            - exp(rep_matrix(log_trial_lambda[s, 1:max_all_t], n_causes) + rep_matrix(time_invariant_log_hazard_ratio[i], max_all_t));
+        }
+        
+        patient_pos = patient_end + 1; 
       }
-      
-      patient_pos = patient_end + 1; 
     }
   }
 }
@@ -166,8 +189,6 @@ model {
       );
     }
     
-    // last_unclassified_response_week ~ comp_risk_pch(confirmed_response_cause, early_confirmed_response_censored, log_crcr_cond_prob_surv, max_confresp_week);
-    
     experiment_start_week ~ neg_binomial_2(recruit_lambda[patient_trial], recruit_phi[patient_trial]);  
   
     profile("pfs loglik") {  
@@ -180,11 +201,23 @@ model {
         )
       );
       
-      for (i in 1:n_patients) {
-        if (confirmed_response_censored[i]) { // Unclassified
-          target += log_mix(conf_resp_prob[i, 1], response_lp[i, 1], response_lp[i, 2]);
-        } else {
-          target += response_lp[i, confirmed_response_cause[i]];
+      for (s in 1:n_trials) {
+        int patient_pos = trial_patient_pos[s];
+        int patient_end = trial_patient_pos[s + 1] - 1; 
+        
+        if (s != leave_out_trial) {
+          for (i in patient_pos:patient_end) {
+            if (confirmed_response_censored[i]) { // Unclassified
+              int conf_resp_interval_pos = patient_conf_resp_interval_pos[i];
+              int conf_resp_interval_end = patient_conf_resp_interval_pos[i + 1] - 1;
+            
+              real prob_non_response = calc_cif(1, log_crcr_cond_prob_surv[conf_resp_interval_pos:conf_resp_interval_end], max_confresp_week).2[1, 1];
+            
+              target += log_mix(prob_non_response, response_lp[i, 1], response_lp[i, 2]);
+            } else {
+              target += response_lp[i, confirmed_response_cause[i]];
+            }
+          }
         }
       }
     }
@@ -194,97 +227,129 @@ model {
 generated quantities {
   #include "crcr/crcr_gen_quants.stan"
   
-  array[n_marg_prob_patients, n_causes] vector<lower = 0, upper = 1>[n_marg_prob_t] marginal_exit_prob;
-  
-  {
-    int pfs_interval_pos = 1;
-    
-    for (i in 1:n_marg_prob_patients) {
-      int pfs_interval_end = pfs_interval_pos + max(marg_prob_t) - 1;
-      
-      for (k in 1:n_causes) {
-        marginal_exit_prob[i, k] = calculate_marginal_exit_prob(log_cond_prob_surv[pfs_interval_pos:pfs_interval_end, k], max(marg_prob_t))[marg_prob_t];
-      }
-      
-      pfs_interval_pos += max_all_t;
-    }
-  }
-  
   array[n_patients] int<lower = 0, upper = 1> sim_confirmed_response = confirmed_response;
   
-  sim_confirmed_response[missing_confirmed_response] = bernoulli_rng(conf_resp_prob[missing_confirmed_response, 2]);
+  sim_confirmed_response[missing_confirmed_response] = bernoulli_rng(prob_cause[missing_confirmed_response, 2]); 
   
   array[n_patients] int<lower = 0> sim_pfs; 
   array[n_patients] int<lower = 0, upper = 1> sim_censored; 
   
   real<lower = 0> sim_median_pfs;
+  vector<lower = 0>[n_trials] sim_trial_median_pfs;
   
   vector<lower = 0, upper = 1>[max_all_t + 1] km_est; 
+  array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] trial_km_est; 
   
-  vector<lower = 0>[n_bootstrap_param] bootstrap_median_pfs;
-  array[n_bootstrap_param] int<lower = 0, upper = n_patients> n_bootstrap_sample;
-  vector<lower = 0, upper = 1>[n_bootstrap_param] bootstrap_maturity_rate;
+  array[n_bootstrap_cr_maturity_rates] int<lower = 1> bs_prediction_calendar_week = rep_array(1000000, n_bootstrap_cr_maturity_rates);
+  array[n_bootstrap_cr_maturity_rates] int n_bs_sample_classified = rep_array(0, n_bootstrap_cr_maturity_rates); 
+  array[n_bootstrap_cr_maturity_rates] int n_bs_sample_unclassified = rep_array(0, n_bootstrap_cr_maturity_rates); 
+  vector<lower = 0>[n_bootstrap_cr_maturity_rates] bs_median_pfs = rep_vector(max_all_t, n_bootstrap_cr_maturity_rates);
  
   { 
-    int pfs_interval_pos = 1;
     array[n_causes] matrix[max_all_t, n_patients] mat_log_cond_prob_surv;
     
     profile("gen_pfs") {
       for (i in 1:n_patients) {
-        int n_intervals = max_all_t;
-        int pfs_interval_end = pfs_interval_pos + n_intervals - 1;
+        int pfs_interval_pos = patient_pfs_interval_pos[i];
+        int pfs_interval_end = patient_pfs_interval_pos[i + 1] - 1;
         
         for (k in 1:n_causes) {
           mat_log_cond_prob_surv[k, , i] = log_cond_prob_surv[pfs_interval_pos:pfs_interval_end, k];
         }
         
         (sim_pfs[i], sim_censored[i]) = survival_time_rng(mat_log_cond_prob_surv[sim_confirmed_response[i] + 1, , i]); 
-        
-        pfs_interval_pos = pfs_interval_end + 1;
       }
       
       sim_median_pfs = survival_median(sim_pfs, max_all_t).1; 
-      
       km_est = estimate_kaplan_meier(sim_pfs, sim_censored, max_all_t).1; 
+      
+      for (s in 1:n_trials) {
+        int patient_pos = trial_patient_pos[s];
+        int patient_end = trial_patient_pos[s + 1] - 1;
+        
+        sim_trial_median_pfs[s] = survival_median(sim_pfs[patient_pos:patient_end], max_all_t).1; 
+        trial_km_est[s] = estimate_kaplan_meier(sim_pfs[patient_pos:patient_end], sim_censored[patient_pos:patient_end], max_all_t).1; 
+      }
     }
     
+    array[n_bootstrap_sample] int bs_sample_idx;
+    array[n_bootstrap_sample] int bs_start_calendar_week; 
+    array[n_bootstrap_sample] int bs_cr_mature_calendar_week; 
+    array[n_bootstrap_sample] int bs_cr_censored; 
+    vector[n_bootstrap_sample] bs_cr_maturity_rate;
+    
     profile("bootstrap") {
-      for (p in 1:n_bootstrap_param) {
-        bootstrap_maturity_rate[p] = 0; 
+      if (leave_out_trial > 0 && n_bootstrap_sample > 0 && n_bootstrap_cr_maturity_rates > 0) {
+        int patient_pos = trial_patient_pos[leave_out_trial];
+        int patient_end = trial_patient_pos[leave_out_trial + 1] - 1;
         
-        array[n_patients] int experiment_start = sort_asc(neg_binomial_2_rng(rep_vector(recruit_lambda[1], n_patients), rep_vector(recruit_phi[1], n_patients)));
-        array[n_patients] int current_bootstrap_pfs;
+        bs_sample_idx = discrete_range_rng(rep_array(patient_pos, n_bootstrap_sample), rep_array(patient_end, n_bootstrap_sample)); 
         
-        int i = 0;
+        for (bsi in 1:n_bootstrap_sample) {
+          bs_cr_mature_calendar_week[bsi] = sorted_experiment_start_week[patient_pos + bsi - 1] + confirmed_response_week[bs_sample_idx[bsi]] - 1;
+        }
         
-        while ((i + 1 <= n_patients) && (experiment_start[i + 1] <= prediction_week[p])) {
-          i += 1;
+        array[n_bootstrap_sample] int cr_mature_sorted_idx = sort_indices_asc(bs_cr_mature_calendar_week);
+        
+        bs_sample_idx = bs_sample_idx[cr_mature_sorted_idx]; 
+        bs_cr_mature_calendar_week = bs_cr_mature_calendar_week[cr_mature_sorted_idx];
+        bs_cr_censored = confirmed_response_censored[bs_sample_idx];
+        bs_start_calendar_week = sorted_experiment_start_week[patient_pos:(patient_pos + n_bootstrap_sample - 1)][cr_mature_sorted_idx];
+        
+        int mature_rate_pos = 1;
+        
+        for (bsi in 1:n_bootstrap_sample) {
+          bs_cr_maturity_rate[bsi] = 1.0 * (1 - bs_cr_censored[bsi]) / n_bootstrap_sample; 
           
-          int current_patient = discrete_range_rng(1, n_patients);
-          int bootstrap_confirmed_response; 
-          
-          if (experiment_start[i] + confirmed_response_week[current_patient] - 1 <= prediction_week[p]) {
-            bootstrap_confirmed_response = confirmed_response[current_patient];
-          } else {
-            // Not observed yet, so let's estimate it.
-            bootstrap_confirmed_response = bernoulli_rng(conf_resp_prob[current_patient, 2]);
+          if (bsi > 1) {
+            bs_cr_maturity_rate[bsi] += bs_cr_maturity_rate[bsi - 1];
           }
           
-          bootstrap_maturity_rate[p] += bootstrap_confirmed_response;
-          current_bootstrap_pfs[i] = survival_time_rng(mat_log_cond_prob_surv[bootstrap_confirmed_response + 1, , current_patient]).1; 
+          if (mature_rate_pos <= n_bootstrap_cr_maturity_rates && bs_cr_maturity_rate[bsi] >= bootstrap_cr_maturity_rates[mature_rate_pos]) {
+            n_bs_sample_classified[mature_rate_pos] = bsi;
+            bs_prediction_calendar_week[mature_rate_pos] = bs_cr_mature_calendar_week[bsi]; 
+            
+            int n_remaining = n_bootstrap_sample - bsi;
+            array[n_remaining] int remaining_patients, remaining_sort_idx;
+            
+            if (n_remaining > 0) {
+              remaining_sort_idx = sort_indices_asc(bs_start_calendar_week[(bsi + 1):]);
+              remaining_patients = bs_sample_idx[(bsi + 1):][remaining_sort_idx];
+            }
+            
+            for (ri in 1:n_remaining) {
+              if (bs_start_calendar_week[(bsi + 1):][remaining_sort_idx[ri]] <= bs_prediction_calendar_week[mature_rate_pos]) {
+                n_bs_sample_unclassified[mature_rate_pos] += 1; 
+              } else {
+                break;
+              }
+            }
+            
+            int n_bs_sample = n_bs_sample_classified[mature_rate_pos] + n_bs_sample_unclassified[mature_rate_pos];
+            array[n_bs_sample] int bs_pfs;
+            
+            bs_pfs[:n_bs_sample_classified[mature_rate_pos]] = forecast_pfs_rng(
+              bs_prediction_calendar_week[mature_rate_pos], 
+              bs_start_calendar_week[:n_bs_sample_classified[mature_rate_pos]],
+              bs_sample_idx[:n_bs_sample_classified[mature_rate_pos]],
+              patient_pfs_interval_pos, pfs, right_censored, log_cond_prob_surv,
+              patient_conf_resp_interval_pos, confirmed_response_week, confirmed_response, confirmed_response_censored, log_crcr_cond_prob_surv
+            );
+            
+            bs_pfs[(n_bs_sample_classified[mature_rate_pos] + 1):] = forecast_pfs_rng(
+              bs_prediction_calendar_week[mature_rate_pos], 
+              bs_start_calendar_week[(bsi + 1):][remaining_sort_idx[:n_bs_sample_unclassified[mature_rate_pos]]],
+              remaining_patients[:n_bs_sample_unclassified[mature_rate_pos]],
+              patient_pfs_interval_pos, pfs, right_censored, log_cond_prob_surv,
+              patient_conf_resp_interval_pos, confirmed_response_week, confirmed_response, confirmed_response_censored, log_crcr_cond_prob_surv
+            );
+            
+            bs_median_pfs[mature_rate_pos] = survival_median(bs_pfs, max_all_t).1;
+            
+            mature_rate_pos += 1;
+          }
         }
-        
-        n_bootstrap_sample[p] = i;
-        
-        if (n_bootstrap_sample[p] > 0) { 
-          bootstrap_median_pfs[p] = survival_median(current_bootstrap_pfs[:n_bootstrap_sample[p]], max_all_t).1;  
-          bootstrap_maturity_rate[p] /= n_bootstrap_sample[p];
-        } else {
-          bootstrap_median_pfs[p] = 0; 
-          bootstrap_maturity_rate[p] = 0;
-        }
-      } 
+      }
     }
   }
 }
-
