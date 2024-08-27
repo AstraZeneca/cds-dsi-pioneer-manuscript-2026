@@ -26,12 +26,28 @@ get_pfs_conf_resp_km_est <- function(res) {
     map_dfr(\(r) spread_rvars(r, km_est[t]), .id = "trial") 
 }
 
+get_all_pfs_conf_resp_km_est <- function(res, analysis_data = NULL) {
+  if (!is_null(analysis_data)) { 
+    res <- recover_types(res, select(analysis_data, trial))
+  }
+  
+  spread_rvars(res, trial_km_est[trial, t])
+}
+
 get_median_pfs_conf_resp <- function(res) {
    res |> 
      rowwise() |> 
      transmute(trial, rv = list(spread_rvars(fit, sim_median_pfs))) |> 
      ungroup() |> 
      unnest(rv)
+}
+
+get_all_median_pfs_conf_resp <- function(res, analysis_data = NULL) {
+  if (!is_null(analysis_data)) { 
+    res <- recover_types(res, select(analysis_data, trial))
+  }
+  
+   spread_rvars(res, sim_trial_median_pfs[trial]) 
 }
 
 get_pfs_conf_resp_log_hazard_ratio <- function(res) {
@@ -43,18 +59,26 @@ get_pfs_conf_resp_log_hazard_ratio <- function(res) {
      unnest(rv)
 }
 
+get_all_pfs_conf_resp_log_hazard_ratio <- function(res, stan_data) {
+  spread_rvars(res, time_invariant_log_hazard_ratio[i, k]) |>
+    mutate(time_invariant_hazard_ratio = exp(time_invariant_log_hazard_ratio)) |> 
+    left_join(as_tibble(stan_data["patient_trial"]) |> mutate(i = seq(n())), by = "i", relationship = "many-to-one") |> 
+    rename(trial = patient_trial)  
+}
+
 get_pfs_conf_resp_bootstrap_median_pfs <- function(res) {
   res |> 
     rowwise() |> 
     transmute(
       trial, 
       rv = list(
-        spread_rvars(fit, bs_median_pfs[r]) |>
-          point_interval(bs_median_pfs, .width = c(0.5, 0.8)) |> 
+        spread_rvars(fit, bs_median_pfs[r], bs_prediction_calendar_week[r], n_bs_sample_classified[r], n_bs_sample_unclassified[r]) |>
+          mutate(n_bs_sample = n_bs_sample_classified + n_bs_sample_unclassified) |> 
+          point_interval(
+            bs_median_pfs, bs_prediction_calendar_week, n_bs_sample_classified, n_bs_sample_unclassified, n_bs_sample,
+            .width = c(0.5, 0.8)
+          ) |> 
           left_join(as_tibble(stan_data[c("bootstrap_cr_maturity_rates")]) |> mutate(r = seq(n())), by = "r", relationship = "many-to-one")
-        # spread_rvars(fit, bootstrap_median_pfs[p], n_bootstrap_sample[p], bootstrap_maturity_rate[p]) |>
-          # point_interval(bootstrap_median_pfs, n_bootstrap_sample, bootstrap_maturity_rate, .width = 0.8) |> 
-          # left_join(as_tibble(stan_data[c("recruit_lambda", "prediction_week")]) |> mutate(p = seq(n())), by = "p", relationship = "one-to-one")
       )
     ) |> 
     ungroup() |> 
