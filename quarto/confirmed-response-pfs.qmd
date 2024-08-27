@@ -455,6 +455,7 @@ recruit_res_list |>
 ```{r}
 #| label: fig-entry-week-cdf
 #| fig-cap: Cumulative distribution of entry into the experiment over calendar weeks. 
+#| cache: true
 
 ecdf_breaks <- 1:125
 
@@ -478,6 +479,7 @@ Below, we predict sample sizes and (confirmed response) maturity rate: we use th
 ```{r}
 #| label: fig-recruit-sample-size-and-maturity
 #| fig-cap: Simulations to see sample sizes and data maturity with varying prediction weeks and recruitment rates.
+#| cache: true
 
 tar_load("recruit_maturity")
 
@@ -589,9 +591,7 @@ pfs_cr_median_pfs |>
 #| cache: true
 
 bind_rows(
-  # prior = tar_read("prior_conf_resp_km_est"), 
-  # posterior = tar_read("conf_resp_km_est"), 
-  # prior = tar_read("prior_trial_conf_resp_km_est"), 
+  prior = tar_read("prior_trial_conf_resp_km_est"),
   posterior = tar_read("trial_conf_resp_km_est"), 
   .id = "fit_type"
 ) |> 
@@ -643,6 +643,10 @@ bind_rows(
 
 ### Simulations 
 
+Here we are using leave-one-trial-out evaluation of the prediction accuracy of training our models on three trials and holding the fourth out for testing.
+
+::: {.callout-note title="Algorithm" collapse="true"}
+
 * $\mathcal{D}_k$ is the data from trial $k \in \{1,\ldots,K\}$. $K$ is the number of trials available.
 * $B$ is the number of sampling iterations.
 * $\mathcal{M}$ is a set of rates of confirmed response data maturity to test. 
@@ -661,6 +665,8 @@ For every trial $k$,
           * else, let $\tilde{y}^\textrm{cr}_i = y^\textrm{cr}_i$ and predict $\tilde{y}^\textrm{pfs}_i \sim p_\textrm{post}(\cdot\mid y^\textrm{pfs}_i, y^\textrm{cr}_i, \boldsymbol{x}_i)$.
         - else, let $\tilde{y}^\textrm{pfs}_i = y^\textrm{pfs}_i$.
       * Calculate the median of $\boldsymbol{\tilde{y}}^\textrm{pfs}_{kbm}$. 
+      
+:::
           
 
 ```{r}
@@ -689,12 +695,20 @@ pfs_conf_resp_bootstrap_median_pfs |>
       filter(fct_match(fit_type, "posterior")) |>
       mutate(bootstrap_cr_maturity_rates = 0.8)
   ) +
+  geom_text(
+    aes(x = x, y = y, label = str_c("N = ", n)), size = 3, color = AZ_plum, hjust = 1, 
+    data = count(all_confirmed_resp_analysis_data, trial) |> mutate(x = 0.8, y = 110) 
+  ) +
   scale_color_manual("", values = c(AZ_platinum, AZ_plum), aesthetics = c("color", "fill")) +
   labs(x = "Confirmed Response Data Maturity Rate", y = "mPFS") +
   facet_wrap(vars(trial)) +
   coord_cartesian(xlim = c(0.2, 0.8), ylim = c(10, 140))
 ```
 
+* What we are observing here is the probability ranges of leave-one-trial-out prediction, so those intervals combine sampling uncertainty from the bootstrap sample and the prediction model uncertainty.
+  - I cannot make the decision on the acceptability of these wide intervals for decision-making.
+* The models seem to be unbiased since they tend to the full data estimation intervals. Given that this isn’t a hierarchical model this means that the covariates used are doing a relatively good job.
+* There is little improvement as we wait for more data maturity (this is maybe because most patients eventually reach confirmed response, so there is little information here anyway). Perhaps focusing on PFS maturity rate might be more helpful.
 
 ```{r}
 #| fig-cap: Evaluating the change in precision of the predicted distribution of median PFS, in response to changes in the (i) prediction calendar week and (ii) the patient recruitment rate. The prediction model is trained on the full data while simulation uses a bootstrap subsample.
@@ -769,6 +783,16 @@ pfs_conf_resp_bootstrap_median_pfs |>
   theme(legend.position = "bottom") +
   NULL
 ```
+* By the maturity rate of 40% we almost have all the 30 patients in the trial already.
+* We could be making these predictions by week 50, a significant decrease from waiting till everyone (in the full trial sample) has reached confirmed response classification. That is longer than we saw with the previous in-sample evaluation, but that’s comparing apples to oranges.
+ 
+Questions remaining:
+
+* How much would things improve when using a hierarchical model?
+* Would we gain much in updating the model from the small number of patients observed from the held out trial?
+* How much would things improve if we waited for longer PFS maturity?
+* How much would things improve if in included dynamic confirmed response and tumor sizes?
+
 
 ```{r}
 #| fig-cap: Examining how the bootstrap sample size changes in response to changes in prediction calendar week and patient recruitment rate. 
