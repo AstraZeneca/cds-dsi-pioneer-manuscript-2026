@@ -1,3 +1,4 @@
+library(conflicted)
 library(magrittr)
 library(tidyverse)
 library(rlang)
@@ -18,7 +19,7 @@ tmp_dir <- file.path(Sys.getenv("TMPDIR"), "adc-early-predict") |>
   str_replace("^/scratch", "/wscratch") # Some SLURM nodes use the old TMPDIR /scratch
 
 tar_option_set(
-  packages = c("tidyverse", "rlang", "cmdstanr", "tidybayes", "here", "targets", "posterior"),
+  packages = c("conflicted", "tidyverse", "rlang", "cmdstanr", "tidybayes", "here", "targets", "posterior"),
   controller = crew_controller_local(workers = 12, seconds_timeout = 60, launch_max = 20),
   memory = "transient", garbage_collection = TRUE, 
   format = "qs"
@@ -461,35 +462,32 @@ lst(
   tar_target(trial_pfs_conf_resp_hazard_ratio, get_all_pfs_conf_resp_log_hazard_ratio(all_confirmed_resp_pfs_res)),
   
   tar_target(leave_out_trials, unique(all_confirmed_resp_stan_data$patient_trial)),
-  tar_target(bootstrap_cr_maturity_rates, seq(0.2, 0.8, 0.1)),
-  tar_target(n_bootstrap_sample, 30),
   tar_target(
-    bootstrap_confirmed_resp_pfs_res,
-    tibble(
-      trial = leave_out_trials, 
-      stan_data = all_confirmed_resp_stan_data |> 
-        list_assign(
-          leave_out_trial = trial, 
-          n_bootstrap_sample = n_bootstrap_sample, 
-          bootstrap_cr_maturity_rates = bootstrap_cr_maturity_rates, 
-          n_bootstrap_cr_maturity_rates = length(bootstrap_cr_maturity_rates) 
-        ) |> list(), 
-    ) |> 
-      rowwise() |> 
-      mutate(
-        fit = list(pfs_cr_model$sample(
-          stan_data,
-          iter_warmup = 300, iter_sampling = 300, parallel_chains = 4, threads_per_chain = 4, refresh = 0,
-          output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("bs_confirmed_resp_pfs_", trial)
-        ))
-      ),
+    bootstrap_settings,
+    lst(
+      n_bootstrap_sample = 30, 
+      bootstrap_cr_maturity_rates = seq(0.2, 0.8, 0.1),
+      n_bootstrap_cr_maturity_rates = length(bootstrap_cr_maturity_rates), 
+      bootstrap_pfs_maturity_rates = seq(0.2, 0.8, 0.1),
+      n_bootstrap_pfs_maturity_rates = length(bootstrap_pfs_maturity_rates) 
+    )
+  ),
+  
+  tar_target(
+    bootstrap_confirmed_resp_pfs_res, 
+    run_bootstrap_pfs_cr(pfs_cr_model, leave_out_trials, all_confirmed_resp_stan_data, bootstrap_settings), 
     pattern = map(leave_out_trials)
   ),
   
   tar_target(
-    pfs_conf_resp_bootstrap_median_pfs, get_pfs_conf_resp_bootstrap_median_pfs(bootstrap_confirmed_resp_pfs_res), 
-    pattern = map(bootstrap_confirmed_resp_pfs_res)
-  ), 
+    pfs_conf_resp_bootstrap_cr_median_pfs, 
+    get_pfs_conf_resp_bootstrap_cr_median_pfs(bootstrap_confirmed_resp_pfs_res), pattern = map(bootstrap_confirmed_resp_pfs_res)
+  ),
+  
+  tar_target(
+    pfs_conf_resp_bootstrap_pfs_median_pfs, 
+    get_pfs_conf_resp_bootstrap_pfs_median_pfs(bootstrap_confirmed_resp_pfs_res), pattern = map(bootstrap_confirmed_resp_pfs_res)
+  ),
   
   tar_target(prior_confirmed_resp_pfs_res,
              treated_confirmed_resp_stan_data |> 

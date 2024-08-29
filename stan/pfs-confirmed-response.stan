@@ -4,40 +4,7 @@ functions {
   #include "pfs_functions.stan"
   #include "extern_pfs_functions.stan"
   #include "crcr/crcr_functions.stan"
-  
-  array[] int forecast_pfs_rng(
-    int pred_calendar_week, array[] int start_calendar_week,
-    array[] int patient_ids,
-    array[] int pfs_interval_pos, array[] int pfs, array[] int pfs_right_censored, matrix log_cond_prob_surv,
-    array[] int conf_resp_interval_pos, array[] int conf_resp_week, array[] int conf_resp, array[] int conf_resp_censored, matrix log_crcr_cond_prob_surv
-  ) {
-    int n_sample_patients = size(patient_ids);
-    array[n_sample_patients] int pred_pfs = pfs[patient_ids];
-    
-    for (i in 1:n_sample_patients) {
-      if (pfs_right_censored[patient_ids[i]] || (start_calendar_week[i] + pred_pfs[i] - 1) > pred_calendar_week) {
-        int conf_resp_cause = conf_resp[patient_ids[i]] + 1;
-        
-        int max_weeks_observed = pred_calendar_week - start_calendar_week[i] + 1;
-        
-        if (conf_resp_censored[patient_ids[i]] || (start_calendar_week[i] + conf_resp_week[patient_ids[i]] - 1) > pred_calendar_week) {
-          int n_weeks_obs_unclassified = min(conf_resp_week[patient_ids[i]], max_weeks_observed); 
-          int curr_conf_resp_interval_pos = conf_resp_interval_pos[patient_ids[i]] + n_weeks_obs_unclassified;
-          int curr_conf_resp_interval_end = conf_resp_interval_pos[patient_ids[i] + 1] - 1;
-         
-          conf_resp_cause = competing_risks_survival_time_rng(log_crcr_cond_prob_surv[curr_conf_resp_interval_pos:curr_conf_resp_interval_end]).3; 
-        }
-        
-        int n_weeks_obs_surv = min(pred_pfs[i], max_weeks_observed); 
-        int curr_pfs_interval_pos = pfs_interval_pos[patient_ids[i]] + n_weeks_obs_surv;
-        int curr_pfs_interval_end = pfs_interval_pos[patient_ids[i] + 1] - 1;
-        
-        pred_pfs[i] = n_weeks_obs_surv + survival_time_rng(log_cond_prob_surv[curr_pfs_interval_pos:curr_pfs_interval_end, conf_resp_cause]).1; 
-      }
-    }
-    
-    return pred_pfs;
-  }
+  #include "bootstrap/leave_out_trial_bootstrap_functions.stan"
 }
 
 data {
@@ -53,11 +20,8 @@ data {
   // This is the data that is shared with the tumor model 
   #include "base_data.stan"
   
-  int<lower = 0, upper = n_trials> leave_out_trial;
-  int<lower = 0> n_bootstrap_sample;
-  int<lower = 0> n_bootstrap_cr_maturity_rates;
-  vector<lower = 0, upper = 1>[n_bootstrap_cr_maturity_rates] bootstrap_cr_maturity_rates;
-  
+  #include "bootstrap/leave_out_trial_bootstrap_data.stan"
+
   array[n_patients] int<lower = 0> pfs; // How many periods after baseline did patient survive.
   array[n_patients] int<lower = 0> death_week; 
   array[n_patients] int<lower = 0, upper = 1> right_censored;
@@ -226,6 +190,7 @@ model {
 
 generated quantities {
   #include "crcr/crcr_gen_quants.stan"
+  #include "bootstrap/leave_out_trial_bootstrap_gen_quants.stan"
   
   array[n_patients] int<lower = 0, upper = 1> sim_confirmed_response = confirmed_response;
   
@@ -239,12 +204,7 @@ generated quantities {
   
   vector<lower = 0, upper = 1>[max_all_t + 1] km_est; 
   array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] trial_km_est; 
-  
-  array[n_bootstrap_cr_maturity_rates] int<lower = 1> bs_prediction_calendar_week = rep_array(1000000, n_bootstrap_cr_maturity_rates);
-  array[n_bootstrap_cr_maturity_rates] int n_bs_sample_classified = rep_array(0, n_bootstrap_cr_maturity_rates); 
-  array[n_bootstrap_cr_maturity_rates] int n_bs_sample_unclassified = rep_array(0, n_bootstrap_cr_maturity_rates); 
-  vector<lower = 0>[n_bootstrap_cr_maturity_rates] bs_median_pfs = rep_vector(max_all_t, n_bootstrap_cr_maturity_rates);
- 
+
   { 
     array[n_causes] matrix[max_all_t, n_patients] mat_log_cond_prob_surv;
     
@@ -269,86 +229,6 @@ generated quantities {
         
         sim_trial_median_pfs[s] = survival_median(sim_pfs[patient_pos:patient_end], max_all_t).1; 
         trial_km_est[s] = estimate_kaplan_meier(sim_pfs[patient_pos:patient_end], sim_censored[patient_pos:patient_end], max_all_t).1; 
-      }
-    }
-    
-    array[n_bootstrap_sample] int bs_sample_idx;
-    array[n_bootstrap_sample] int bs_start_calendar_week; 
-    array[n_bootstrap_sample] int bs_cr_mature_calendar_week; 
-    array[n_bootstrap_sample] int bs_cr_censored; 
-    vector[n_bootstrap_sample] bs_cr_maturity_rate;
-    
-    profile("bootstrap") {
-      if (leave_out_trial > 0 && n_bootstrap_sample > 0 && n_bootstrap_cr_maturity_rates > 0) {
-        int patient_pos = trial_patient_pos[leave_out_trial];
-        int patient_end = trial_patient_pos[leave_out_trial + 1] - 1;
-        
-        bs_sample_idx = discrete_range_rng(rep_array(patient_pos, n_bootstrap_sample), rep_array(patient_end, n_bootstrap_sample)); 
-        
-        for (bsi in 1:n_bootstrap_sample) {
-          bs_cr_mature_calendar_week[bsi] = sorted_experiment_start_week[patient_pos + bsi - 1] + confirmed_response_week[bs_sample_idx[bsi]] - 1;
-        }
-        
-        array[n_bootstrap_sample] int cr_mature_sorted_idx = sort_indices_asc(bs_cr_mature_calendar_week);
-        
-        bs_sample_idx = bs_sample_idx[cr_mature_sorted_idx]; 
-        bs_cr_mature_calendar_week = bs_cr_mature_calendar_week[cr_mature_sorted_idx];
-        bs_cr_censored = confirmed_response_censored[bs_sample_idx];
-        bs_start_calendar_week = sorted_experiment_start_week[patient_pos:(patient_pos + n_bootstrap_sample - 1)][cr_mature_sorted_idx];
-        
-        int mature_rate_pos = 1;
-        
-        for (bsi in 1:n_bootstrap_sample) {
-          bs_cr_maturity_rate[bsi] = 1.0 * (1 - bs_cr_censored[bsi]) / n_bootstrap_sample; 
-          
-          if (bsi > 1) {
-            bs_cr_maturity_rate[bsi] += bs_cr_maturity_rate[bsi - 1];
-          }
-          
-          if (mature_rate_pos <= n_bootstrap_cr_maturity_rates && bs_cr_maturity_rate[bsi] >= bootstrap_cr_maturity_rates[mature_rate_pos]) {
-            n_bs_sample_classified[mature_rate_pos] = bsi;
-            bs_prediction_calendar_week[mature_rate_pos] = bs_cr_mature_calendar_week[bsi]; 
-            
-            int n_remaining = n_bootstrap_sample - bsi;
-            array[n_remaining] int remaining_patients, remaining_sort_idx;
-            
-            if (n_remaining > 0) {
-              remaining_sort_idx = sort_indices_asc(bs_start_calendar_week[(bsi + 1):]);
-              remaining_patients = bs_sample_idx[(bsi + 1):][remaining_sort_idx];
-            }
-            
-            for (ri in 1:n_remaining) {
-              if (bs_start_calendar_week[(bsi + 1):][remaining_sort_idx[ri]] <= bs_prediction_calendar_week[mature_rate_pos]) {
-                n_bs_sample_unclassified[mature_rate_pos] += 1; 
-              } else {
-                break;
-              }
-            }
-            
-            int n_bs_sample = n_bs_sample_classified[mature_rate_pos] + n_bs_sample_unclassified[mature_rate_pos];
-            array[n_bs_sample] int bs_pfs;
-            
-            bs_pfs[:n_bs_sample_classified[mature_rate_pos]] = forecast_pfs_rng(
-              bs_prediction_calendar_week[mature_rate_pos], 
-              bs_start_calendar_week[:n_bs_sample_classified[mature_rate_pos]],
-              bs_sample_idx[:n_bs_sample_classified[mature_rate_pos]],
-              patient_pfs_interval_pos, pfs, right_censored, log_cond_prob_surv,
-              patient_conf_resp_interval_pos, confirmed_response_week, confirmed_response, confirmed_response_censored, log_crcr_cond_prob_surv
-            );
-            
-            bs_pfs[(n_bs_sample_classified[mature_rate_pos] + 1):] = forecast_pfs_rng(
-              bs_prediction_calendar_week[mature_rate_pos], 
-              bs_start_calendar_week[(bsi + 1):][remaining_sort_idx[:n_bs_sample_unclassified[mature_rate_pos]]],
-              remaining_patients[:n_bs_sample_unclassified[mature_rate_pos]],
-              patient_pfs_interval_pos, pfs, right_censored, log_cond_prob_surv,
-              patient_conf_resp_interval_pos, confirmed_response_week, confirmed_response, confirmed_response_censored, log_crcr_cond_prob_surv
-            );
-            
-            bs_median_pfs[mature_rate_pos] = survival_median(bs_pfs, max_all_t).1;
-            
-            mature_rate_pos += 1;
-          }
-        }
       }
     }
   }
