@@ -66,19 +66,42 @@ get_all_pfs_conf_resp_log_hazard_ratio <- function(res, stan_data) {
     rename(trial = patient_trial)  
 }
 
-get_pfs_conf_resp_bootstrap_median_pfs <- function(res) {
+get_pfs_conf_resp_bootstrap_cr_median_pfs <- function(res) {
   res |> 
     rowwise() |> 
     transmute(
       trial, 
       rv = list(
-        spread_rvars(fit, bs_median_pfs[r], bs_prediction_calendar_week[r], n_bs_sample_classified[r], n_bs_sample_unclassified[r]) |>
-          mutate(n_bs_sample = n_bs_sample_classified + n_bs_sample_unclassified) |> 
+        spread_rvars(
+          fit, bs_cr_median_pfs[r], bs_cr_prediction_calendar_week[r], n_bs_sample_cr_classified[r], n_bs_sample_cr_unclassified[r]
+        ) |>
+          mutate(n_bs_sample_cr = n_bs_sample_cr_classified + n_bs_sample_cr_unclassified) |> 
           point_interval(
-            bs_median_pfs, bs_prediction_calendar_week, n_bs_sample_classified, n_bs_sample_unclassified, n_bs_sample,
+            bs_cr_median_pfs, bs_cr_prediction_calendar_week, n_bs_sample_cr_classified, n_bs_sample_cr_unclassified, n_bs_sample_cr,
             .width = c(0.5, 0.8)
           ) |> 
           left_join(as_tibble(stan_data[c("bootstrap_cr_maturity_rates")]) |> mutate(r = seq(n())), by = "r", relationship = "many-to-one")
+      )
+    ) |> 
+    ungroup() |> 
+    unnest(rv)  
+}    
+
+get_pfs_conf_resp_bootstrap_pfs_median_pfs <- function(res) {
+  res |> 
+    rowwise() |> 
+    transmute(
+      trial, 
+      rv = list(
+        spread_rvars(
+          fit, bs_pfs_median_pfs[r], bs_pfs_prediction_calendar_week[r], n_bs_sample_pfs_progressed[r], n_bs_sample_pfs_surviving[r]
+        ) |>
+          mutate(n_bs_sample_pfs = n_bs_sample_pfs_progressed + n_bs_sample_pfs_surviving) |> 
+          point_interval(
+            bs_pfs_median_pfs, bs_pfs_prediction_calendar_week, n_bs_sample_pfs_progressed, n_bs_sample_pfs_surviving, n_bs_sample_pfs,
+            .width = c(0.5, 0.8)
+          ) |> 
+          left_join(as_tibble(stan_data[c("bootstrap_pfs_maturity_rates")]) |> mutate(r = seq(n())), by = "r", relationship = "many-to-one")
       )
     ) |> 
     ungroup() |> 

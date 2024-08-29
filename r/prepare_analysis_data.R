@@ -438,6 +438,8 @@ prepare_confirmed_resp_stan_data <- function(
       n_bootstrap_sample = 0,
       n_bootstrap_cr_maturity_rates = 0,
       bootstrap_cr_maturity_rates = array(dim = 0),
+      n_bootstrap_pfs_maturity_rates = 0,
+      bootstrap_pfs_maturity_rates = array(dim = 0),
       
       recruit_lambda = array(dim = 0), 
       recruit_phi = 0, 

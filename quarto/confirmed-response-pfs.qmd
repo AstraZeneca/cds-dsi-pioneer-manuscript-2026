@@ -672,34 +672,65 @@ For every trial $k$,
 ```{r}
 #| label: load-bootstrap-mpfs
 
-tar_load("pfs_conf_resp_bootstrap_median_pfs")
+tar_load(c("pfs_conf_resp_bootstrap_cr_median_pfs", "pfs_conf_resp_bootstrap_pfs_median_pfs"))
 ```
 
 ```{r}
-#| label: fig-pfs-conf-resp-bootstrap
+#| label: fig-pfs-conf-resp-bootstrap-cr
 #| fig-cap: Bootstrap sample median PFS prediction ribbons (50 and 80% credible intervals) over a range of confirmed response data maturity rates. Missing ribbons indicate insufficient bootstrap samples at that data maturity rate. The full data intervals shows the 80% credible intervals. 
 
 max_all_t <- 162
 
-pfs_conf_resp_bootstrap_median_pfs |> 
-  filter(bs_median_pfs.upper < max_all_t) |>
+pfs_conf_resp_bootstrap_cr_median_pfs |> 
+  filter(bs_cr_median_pfs.upper < max_all_t) |>
   ggplot(aes(bootstrap_cr_maturity_rates)) +
   geom_lineribbon(
-    aes(y = bs_median_pfs, ymin = bs_median_pfs.lower, ymax = bs_median_pfs.upper, group = .width, color = "Bootstrap", fill = "Bootstrap"), 
-    alpha = 0.25, 
+    aes(y = bs_cr_median_pfs, ymin = bs_cr_median_pfs.lower, ymax = bs_cr_median_pfs.upper, group = .width), 
+    alpha = 0.25, size = 0.5 
+  ) +
+  stat_pointinterval(
+    aes(ydist = sim_trial_median_pfs, color = "Full Data"),
+    .width = 0.8, linewidth = 0.5, 
+    data = \(d) semi_join(pfs_cr_median_pfs, d, by = "trial") |>
+      filter(fct_match(fit_type, "posterior")) |>
+      mutate(bootstrap_cr_maturity_rates = 0.8)
+  ) +
+  geom_text(
+    aes(x = x, y = y, label = str_c("N = ", n), color = "Full Data"), size = 3, hjust = 1, show.legend = FALSE, 
+    data = count(all_confirmed_resp_analysis_data, trial) |> mutate(x = 0.8, y = 110) 
+  ) +
+  scale_color_manual("", values = AZ_pink) +
+  scale_fill_discrete("Credible Intervals", labels = c("0.5" = "50%", "0.8" = "80%"), type = AZ_palette) +
+  labs(x = "Confirmed Response Data Maturity Rate", y = "mPFS") +
+  facet_wrap(vars(trial)) +
+  coord_cartesian(xlim = c(0.2, 0.8), ylim = c(10, 140))
+```
+
+```{r}
+#| label: fig-pfs-conf-resp-bootstrap-pfs
+#| fig-cap: Bootstrap sample median PFS prediction ribbons (50 and 80% credible intervals) over a range of confirmed response data maturity rates. Missing ribbons indicate insufficient bootstrap samples at that data maturity rate. The full data intervals shows the 80% credible intervals. 
+
+pfs_conf_resp_bootstrap_pfs_median_pfs |> 
+  filter(bs_pfs_median_pfs.upper < max_all_t) |>
+  ggplot(aes(bootstrap_pfs_maturity_rates)) +
+  geom_lineribbon(
+    aes(y = bs_pfs_median_pfs, ymin = bs_pfs_median_pfs.lower, ymax = bs_pfs_median_pfs.upper, group = .width), 
+    alpha = 0.25, linewidth = 0.5 
   ) +
   stat_pointinterval(
     aes(ydist = sim_trial_median_pfs, color = "Full Data"),
     .width = 0.8, size = 0.5,
     data = \(d) semi_join(pfs_cr_median_pfs, d, by = "trial") |>
       filter(fct_match(fit_type, "posterior")) |>
-      mutate(bootstrap_cr_maturity_rates = 0.8)
+      mutate(bootstrap_pfs_maturity_rates = 0.8)
   ) +
   geom_text(
-    aes(x = x, y = y, label = str_c("N = ", n)), size = 3, color = AZ_plum, hjust = 1, 
+    aes(x = x, y = y, label = str_c("N = ", n), color = "Full Data"), 
+    size = 3, hjust = 1, show.legend = FALSE, 
     data = count(all_confirmed_resp_analysis_data, trial) |> mutate(x = 0.8, y = 110) 
   ) +
-  scale_color_manual("", values = c(AZ_platinum, AZ_plum), aesthetics = c("color", "fill")) +
+  scale_fill_discrete("Credible Intervals", labels = c("0.5" = "50%", "0.8" = "80%"), type = AZ_palette) +
+  scale_color_manual("", values = AZ_pink) +
   labs(x = "Confirmed Response Data Maturity Rate", y = "mPFS") +
   facet_wrap(vars(trial)) +
   coord_cartesian(xlim = c(0.2, 0.8), ylim = c(10, 140))
