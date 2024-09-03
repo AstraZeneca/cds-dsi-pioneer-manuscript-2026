@@ -37,20 +37,6 @@ tuple(array[] matrix, matrix) calc_cif(int n_patients, matrix log_crcr_cond_prob
     
     prob_cause[i] = cif[i, max_confresp_week];
     
-    // for (k in 1:n_causes) {
-    //   if (k == 1) {
-    //     prob_cause[i, k] = 
-    //       cif[i, max_confresp_week, k] * prod(1 - cif[i, max_confresp_week, (k + 1):]) + (1.0 / n_causes) * prod(cif[i, max_confresp_week]);
-    //   } else if (k == n_causes) {
-    //     prob_cause[i, k] = 
-    //       prod(1 - cif[i, max_confresp_week, :(k - 1)]) * cif[i, max_confresp_week, k] + (1.0 / n_causes) * prod(cif[i, max_confresp_week]);
-    //   } else {
-    //     prob_cause[i, k] = 
-    //       prod(1 - cif[i, max_confresp_week, :(k - 1)]) * cif[i, max_confresp_week, k] * prod(1 - cif[i, max_confresp_week, (k + 1):]) + 
-    //       (1.0 / n_causes) * prod(cif[i, max_confresp_week]);
-    //   }
-    // }
-    
     prob_cause[i] /= sum(prob_cause[i]); 
   }
   
@@ -62,8 +48,6 @@ tuple(int, int, int) competing_risks_survival_time_rng(matrix log_cond_prob_surv
   int n_causes = cols(log_cond_prob_surv);
   
   matrix[n_intervals, n_causes] cond_prob_exit = 1 - exp(log_cond_prob_surv); 
-  // cond_prob_exit[, :n_causes] =  1 - exp(log_cond_prob_surv);
-  // cond_prob_exit[, n_causes + 1] = 1 - cond_prob_exit[, :n_causes] * rep_vector(1, n_causes);
  
   int survival_time = 0;
   int exit_cause = n_causes;
@@ -138,39 +122,3 @@ real partial_sum_crcr_lpmf(
     last_unclass_week | event_cause[start:end], right_censored[start:end], log_cond_prob_surv[patient_interval_pos:patient_interval_end], max_confresp_week
   ));
 }
-
-/*
-vector f(vector phi, vector theta,
-         data array[] real x_r, data array[] int x_i) {
-  int n_trial_patients = x_i[1];
-  int n_all_covar = x_i[2];
- 
-  matrix[n_trial_patients, n_all_covar] trial_covar = to_matrix(x_r[:(n_trial_patients * n_all_covar)], n_trial_patients, n_all_covar);
-  
-           
-  int confresp_interval_pos = 1;
-  int patient_pos = 1;
-  
-  for (s in 1:n_trials) {
-    int patient_end = patient_pos + n_trial_patients - 1;
-   
-    if (add_trial_level) { 
-      patient_log_crcr_hazard_ratio[patient_pos:patient_end] +=
-        tumor_sum_covar[patient_pos:patient_end] * crcr_covar_trial_coef[s, :n_tumor_covar] +
-        covar_design_matrix[patient_pos:patient_end] * crcr_covar_trial_coef[s, (n_tumor_covar + 1):];
-    }
-    
-    for (i in patient_pos:patient_end) {
-      int n_intervals = max_confresp_week; 
-      int confresp_interval_end = confresp_interval_pos + n_intervals - 1;
-      
-      log_crcr_cond_prob_surv[confresp_interval_pos:confresp_interval_end] = 
-        - exp(log_crcr_trial_lambda[s, 1:n_intervals] + rep_matrix(patient_log_crcr_hazard_ratio[i], n_intervals));
-  
-      confresp_interval_pos = confresp_interval_end + 1;
-    }
-    
-    patient_pos = patient_end + 1;
-  }
-}
-*/
