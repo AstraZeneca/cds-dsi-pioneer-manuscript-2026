@@ -850,7 +850,9 @@ cmdstan_expose_pfs_functions <- function(util_file, pfs_functions_file) {
   pseudo_model$functions
 }
 
-run_bootstrap_pfs_cr <- function(model, leave_out_trials, all_confirmed_resp_stan_data, bootstrap_settings) {
+run_bootstrap_pfs_cr <- function(
+    model, leave_out_trials, all_confirmed_resp_stan_data, bootstrap_settings, iter_warmup = 300, iter_sampling = 300
+  ) {
   tibble(
     trial = leave_out_trials,
     stan_data = all_confirmed_resp_stan_data |>
@@ -860,7 +862,7 @@ run_bootstrap_pfs_cr <- function(model, leave_out_trials, all_confirmed_resp_sta
     mutate(
       fit = list(model $sample(
         stan_data,
-        iter_warmup = 300, iter_sampling = 300, parallel_chains = 4, threads_per_chain = 4, refresh = 0,
+        iter_warmup = iter_warmup, iter_sampling = iter_sampling, parallel_chains = 4, threads_per_chain = 4, refresh = 0,
         output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("bs_confirmed_resp_pfs_", trial)
       ))
     )
