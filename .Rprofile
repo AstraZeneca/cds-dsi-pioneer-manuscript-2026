@@ -7,7 +7,8 @@ library(conflicted)
 
 conflicts_prefer(
   dplyr::filter, 
-  posterior::sd, posterior::mad
+  posterior::sd, posterior::mad,
+  rlang::set_names
 )
 
 azcore::azcore_module_load("GLPK")
