@@ -860,7 +860,7 @@ run_bootstrap_pfs_cr <- function(
   ) |>
     rowwise() |>
     mutate(
-      fit = list(model $sample(
+      fit = list(model$sample(
         stan_data,
         iter_warmup = iter_warmup, iter_sampling = iter_sampling, parallel_chains = 4, threads_per_chain = 4, refresh = 0,
         output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("bs_confirmed_resp_pfs_", trial)
