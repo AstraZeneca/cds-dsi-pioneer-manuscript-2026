@@ -479,12 +479,14 @@ recruit_res_list |>
   theme(legend.position = "bottom")
 ```
 
-Below, we predict sample sizes and (confirmed response) maturity rate: we use the recruitment process model to simulate patients entering the trial (at varying rates) as we see how many we have at various prediction calendar weeks. For the maturity rate, we confirmed response classification calendar weeks simulated from the [confirmed response model](#crcr). 
+<!-- Below, we predict sample sizes and (confirmed response) maturity rate: we use the recruitment process model to simulate patients entering the trial (at varying rates) as we see how many we have at various prediction calendar weeks. For the maturity rate, we confirmed response classification calendar weeks simulated from the [confirmed response model](#crcr).  -->
 
 ```{r}
 #| label: fig-recruit-sample-size-and-maturity
 #| fig-cap: Simulations to see sample sizes and data maturity with varying prediction weeks and recruitment rates.
 #| cache: true
+#| eval: false
+#| include: false
 
 tar_load("recruit_maturity")
 
@@ -647,7 +649,7 @@ bind_rows(
 ```
 # Simulations 
 
-Here we are using *leave-one-trial-out* evaluation of the prediction accuracy of training our models on three trials and holding the fourth out for testing. We do this for each trial.^[At this point, we're are pooling all the observed trials and predicting the heldout trial: there is no hierarchical structure (yet) to the model accounting for heterogeneity in the trials not captured by covariates of the model (i.e., baseline characteristics, etc.).]
+Here we are using *leave-one-trial-out* evaluation of the prediction accuracy of training our models on three trials and holding the fourth out for testing. We do this for each trial.^[At this point, we're are pooling all the observed trials and predicting the heldout trial: there is no hierarchical structure (yet) to the model accounting for heterogeneity in the trials not captured by covariates of the model (i.e., baseline characteristics, etc.).] We do not update the model as data from the held-out trial becomes available with increased data maturity rates.
 
 We look at the accuracy of both the median PFS and ORR endpoints:
 
@@ -734,6 +736,10 @@ tar_read("pfs_conf_resp_bootstrap_param") |>
 * While the confirmed response indicator appears to have the strongest effect on hazard, keep in mind that the majority of patients are identified as confirmed responders (see @fig-response-classification). 
 * The _practically_ strongest predictor here is the baseline sum of tumor sizes. Note that the following tumor size assessment does not appear to have a lot of influence. This does not rule out the possibility of a more useful signal in the entire time-series of tumor size changes. 
 * We use relatively conservative priors on these parameters. The influence of both confirmed response and baseline tumor sizes is sufficiently high to overcome this regularization. 
+* Idea: look into the interaction between confirmed response and tumor sizes. Those are likely highly correlated since the former is based on the latter.
+* Other observations: 
+    - Highest age group has reduced hazard. This is probably a survivorship effect: those who survived that long are probably more robust.
+    - Prior CDK46 inhibition treatment is probably an indicator higher risk.
 
 ```{r}
 #| label: load-bootstrap
