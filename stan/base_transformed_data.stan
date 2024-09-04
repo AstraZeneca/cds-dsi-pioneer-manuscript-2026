@@ -4,6 +4,22 @@ for (i in 1:n_patients) {
   n_trial_patients[patient_trial[i]] += 1;
 }
 
+array[n_trials + 1] int<lower = 0, upper = n_patients + 1> trial_patient_pos;
+trial_patient_pos[1] = 1;
+
+for (s in 1:n_trials) {
+  trial_patient_pos[s + 1] = sum(n_trial_patients[:s]) + 1; 
+} 
+
+array[n_patients] int<lower = 1> sorted_experiment_start_week; // = sort_asc(experiment_start_week);
+
+for (s in 1:n_trials) {
+  int patient_pos = trial_patient_pos[s];
+  int patient_end = trial_patient_pos[s + 1] - 1;
+  
+  sorted_experiment_start_week[patient_pos:patient_end] = sort_asc(experiment_start_week[patient_pos:patient_end]);
+} 
+
 real delta = 1e-9; // Used for GP modeling
 
 int min_all_t = min(t_measure);
@@ -95,4 +111,4 @@ array[max(patient_max_t_width)] real all_measure_t; // This is for the GP "proxi
 
 for (t in 1:max(patient_max_t_width)) {
   all_measure_t[t] = t / 12.0; // Why 12? Our intervals are weeks not months. Doesn't matter.  
-} 
+}

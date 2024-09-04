@@ -427,16 +427,20 @@ prepare_confirmed_resp_stan_data <- function(
     list_assign(
       !!!.confirmed_resp_priors,
       add_trial_level = FALSE,
+      add_trial_level_glm = FALSE,
       use_pfs_covar = TRUE,
       covar_design_matrix = covar_design_matrix,
       n_covar = n_covar,
       n_tumor_covar = 2,
       time_varying_conf_resp = FALSE,
       ignore_interval_censoring = FALSE,
+      leave_out_trial = 0,
+      n_bootstrap_sample = 0,
+      n_bootstrap_cr_maturity_rates = 0,
+      bootstrap_cr_maturity_rates = array(dim = 0),
+      n_bootstrap_pfs_maturity_rates = 0,
+      bootstrap_pfs_maturity_rates = array(dim = 0),
       
-      prediction_week = array(dim = 0), 
-      n_bootstrap_param = 0,
-      n_prediction_weeks = array(dim = 0),
       recruit_lambda = array(dim = 0), 
       recruit_phi = 0, 
       n_bootstrap_samples = 0,
@@ -501,7 +505,8 @@ prepare_trial_confirmed_resp_stan_data <- function(analysis_data, confirmed_resp
           covar_formula, analysis_data, 
           confirmed_resp_priors, .tumor_priors = tumor_priors, .pfs_priors = pfs_priors, 
           pfs_functions = pfs_functions
-        )
+        ) %>% 
+          list_assign(patient_trial = rep(1, .$n_patients), n_trials = 1)
       ),
       # init_fun = list(create_pfs_initializer(stan_data)), 
       init_fun = list(if (fct_match(trial, "Breast02")) 0), 
