@@ -1,11 +1,15 @@
 ---
 title: "Early Prediction of PFS from Confirmed Response and Tumor Sizes"
-author: "Karim Naguib"
+author: 
+  - Paul Metcalfe
+  - Karim Naguib
 format: html
 code-fold: true
 reference-location: margin
-fig-cap-location: margin
+fig-cap-location: bottom 
 toc-expand: true 
+toc-depth: 4
+lightbox: true
 ---
 
 ```{r}
@@ -41,10 +45,9 @@ tar_config_set(store = file.path(tmp_dir, "_targets"), script = here("_targets.R
 
 ```{r}
 #| label: load-analysis-data
-#| cache: true
-#| cache-lazy: true
 
-tar_load(c("treated_confirmed_resp_analysis_data", "treated_confirmed_resp_stan_data"))
+tar_load(c("treated_confirmed_resp_analysis_data", "treated_confirmed_resp_stan_data", "all_confirmed_resp_analysis_data"))
+tar_load("all_confirmed_resp_stan_data")
 ```
 
 ```{r}
@@ -62,7 +65,10 @@ treated_confirmed_resp_analysis_data |>
 
 ```{r}
 #| label: fig-response-classification-time
-#| fig-cap: Week patients' confirmed response is known relative to the first week of the study (not the patient).
+#| fig-cap: "Week patients' confirmed response is known." 
+#| fig-subcap:
+#|    - Relative to the first week the patient is in the study.  
+#|    - Relative to the first week of the study (not the patient).
 
 tar_read("km_trial_confirmed_response") |>
   rowwise() |>
@@ -128,18 +134,10 @@ treated_confirmed_resp_analysis_data |>
 #| label: fig-experiment-entry-cdf
 #| fig-cap: Cumulative distribution of patients in the studies over calendar time (relative to the first weeks of the studies).
 
-# treated_confirmed_resp_analysis_data |> 
-#   ggplot() +
-#   geom_segment(aes(x = trtsdt, xend = trtedt, y = usubjid, yend = usubjid), alpha = 0.25) +
-#   labs(title = "Patient treatment start/end timelines", x = "", y = "") +
-#   facet_wrap(vars(trial), ncol = 1, scales = "free") +
-#   theme(axis.text.y = element_blank(), panel.grid.major.y = element_blank()) +
-#   NULL
-
 treated_confirmed_resp_analysis_data |> 
   ggplot() +
   stat_ecdf(aes(x = experiment_start_week, color = trial)) +
-  geom_vline(xintercept = c(12, 24, 48), linetype = "dotted") +
+  # geom_vline(xintercept = c(12, 24, 48), linetype = "dotted") +
   scale_x_continuous("Experiment Entry Calendar Week") +
   labs(title = "Empirical CDF of experiment entry", y = "Proportion of Patients") +
   scale_color_discrete("", type = AZ_palette) +
@@ -158,7 +156,6 @@ treated_confirmed_resp_analysis_data |>
 treated_confirmed_resp_analysis_data |> 
   mutate(
     confirmed_response = factor(confirmed_response, levels = c(TRUE, FALSE), labels = c("Response", "Non-response")) |> 
-      # fct_explicit_na("Unclassified")
       fct_na_value_to_level("Unclassified")
   ) |>  
   ggplot(aes(confirmed_response)) +
@@ -207,6 +204,7 @@ treated_confirmed_resp_analysis_data |>
   geom_bar(aes(prior_cdk46_inhibit_treatment), alpha = 0.25) +
   facet_wrap(vars(trial), nrow = 1)
 ```
+
 ```{r}
 #| label: fig-her2-status
 #| fig-cap: Distribution of HER2 status.
@@ -262,6 +260,8 @@ $$
 #| label: fig-survival-unclassified
 #| fig-cap: Survival plots of time to classification.
 #| cache: true
+
+tar_load("conf_resp_hb")
 
 bind_rows(
   prior = tar_read("prior_all_rep_confirmed_response_bindist"),
@@ -460,6 +460,7 @@ recruit_res_list |>
 ```{r}
 #| label: fig-entry-week-cdf
 #| fig-cap: Cumulative distribution of entry into the experiment over calendar weeks. 
+#| cache: true
 
 ecdf_breaks <- 1:125
 
@@ -478,11 +479,14 @@ recruit_res_list |>
   theme(legend.position = "bottom")
 ```
 
-Below, we predict sample sizes and (confirmed response) maturity rate: we use the recruitment process model to simulate patients entering the trial (at varying rates) as we see how many we have at various prediction calendar weeks. For the maturity rate, we confirmed response classification calendar weeks simulated from the [confirmed response model](#crcr). 
+<!-- Below, we predict sample sizes and (confirmed response) maturity rate: we use the recruitment process model to simulate patients entering the trial (at varying rates) as we see how many we have at various prediction calendar weeks. For the maturity rate, we confirmed response classification calendar weeks simulated from the [confirmed response model](#crcr).  -->
 
 ```{r}
 #| label: fig-recruit-sample-size-and-maturity
 #| fig-cap: Simulations to see sample sizes and data maturity with varying prediction weeks and recruitment rates.
+#| cache: true
+#| eval: false
+#| include: false
 
 tar_load("recruit_maturity")
 
@@ -563,8 +567,8 @@ where $S^\textrm{pfs}(t,\boldsymbol{x}, \boldsymbol{\theta}^\textrm{crcr}, \bold
 #| label: load-mpfs
 
 pfs_cr_median_pfs <- bind_rows(
-  prior = tar_read("prior_conf_resp_median_pfs"), 
-  posterior = tar_read("conf_resp_median_pfs"), 
+  prior = tar_read("prior_trial_conf_resp_median_pfs"), 
+  posterior = tar_read("trial_conf_resp_median_pfs"),
   .id = "fit_type"
 )  
 ```
@@ -576,7 +580,7 @@ pfs_cr_median_pfs <- bind_rows(
 pfs_cr_median_pfs |> 
   ggplot() +
   stat_halfeye(
-    aes(xdist = sim_median_pfs, y = trial, color = fit_type, fill = fit_type, alpha = fit_type), 
+    aes(xdist = sim_trial_median_pfs, y = trial, color = fit_type, fill = fit_type, alpha = fit_type), 
     na.rm = TRUE, 
     .width = c(0.5, 0.8)
   ) +
@@ -584,7 +588,7 @@ pfs_cr_median_pfs |>
   scale_alpha_manual("", values = c(prior = 0.125, posterior = 0.25)) +
   labs(y = "", x = "Median PFS [Weeks]") +
   guides(alpha = "none") +
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom") +
   NULL
 ```
 
@@ -594,8 +598,8 @@ pfs_cr_median_pfs |>
 #| cache: true
 
 bind_rows(
-  prior = tar_read("prior_conf_resp_km_est"), 
-  posterior = tar_read("conf_resp_km_est"), 
+  prior = tar_read("prior_trial_conf_resp_km_est"),
+  posterior = tar_read("trial_conf_resp_km_est"), 
   .id = "fit_type"
 ) |> 
   ggplot() +
@@ -603,7 +607,7 @@ bind_rows(
     aes(x = t, y = s, group = btype, linetype = "Observed Data"), 
     data = tar_read("km_res_calculated") |> filter(treated, fct_match(btype, "lb"))
   ) +
-  stat_lineribbon(aes(x = t - 1, ydist = km_est, color = fit_type, fill = fit_type, alpha = fit_type), step = TRUE, .width = c(0.8)) +
+  stat_lineribbon(aes(x = t - 1, ydist = trial_km_est, color = fit_type, fill = fit_type, alpha = fit_type), step = TRUE, .width = c(0.8)) +
   scale_color_discrete("", label = str_to_title, type = AZ_palette, aesthetic = c("color", "fill")) +
   scale_alpha_manual("", values = c(prior = 0.0625, posterior = 0.25)) +
   scale_linetype_manual("", values = "dashed") +
@@ -611,27 +615,6 @@ bind_rows(
   facet_wrap(vars(trial)) +
   guides(alpha = "none") + 
   theme(legend.position = "bottom")
-```
-
-```{r}
-#| eval: false
-#| include: false
-
-bind_rows(
-  prior = tar_read("prior_pfs_conf_resp_marginal_exit_prob"), 
-  post = tar_read("pfs_conf_resp_marginal_exit_prob"), 
-  .id = "fit_type"
-) |>
-  filter(i <= 3, t <= 5) |> 
-  mutate(k = factor(k, levels = 1:2, labels = c("Response", "Non-response"))) |> 
-  ggplot() +
-  stat_halfeye(
-    aes(xdist = marginal_exit_prob, y = t, color = fit_type, fill = fit_type), 
-    alpha = 0.25, na.rm = TRUE, position = position_dodge(width = 0.5), .width = c(0.5, 0.8)
-  ) +
-  scale_color_discrete("", label = str_to_title, type = AZ_palette, aesthetic = c("color", "fill")) +
-  facet_grid(vars(trial, i), vars(k)) +
-  coord_cartesian(xlim = c(0, 0.1))
 ```
 
 ```{r}
@@ -664,87 +647,386 @@ bind_rows(
   theme(legend.position = "bottom", strip.text.y.left = element_text(angle = 0), strip.placement = "outside") +
   NULL
 ```
+# Simulations 
 
-### Simulations 
+Here we are using *leave-one-trial-out* evaluation of the prediction accuracy of training our models on three trials and holding the fourth out for testing. We do this for each trial.^[At this point, we're are pooling all the observed trials and predicting the heldout trial: there is no hierarchical structure (yet) to the model accounting for heterogeneity in the trials not captured by covariates of the model (i.e., baseline characteristics, etc.).] We do not update the model as data from the held-out trial becomes available with increased data maturity rates.
 
+We look at the accuracy of both the median PFS and ORR endpoints:
+
+1. **Median PFS**: the median progression-free survival time of all the patients _currently in the trial at the point of prediction_. For all patients who are either censored or their PFS would have been observed after the point of prediction, we use the trained model to predict their survival time.
+2. **Objective Response Rate (ORR)**: the proportion of patients currently in the trial at the point of prediction who would eventually be classified as confirmed responders. For those patients who are censored^[Those who exited the trial before we observed their confirmed response classification. This could be problematic if patients select themselves to exit because they don't see improvement in their condition. Ideally, our model should also model another competing risk: voluntary exit.] or their confirmed response occurs after the point of prediction (see @fig-response-classification-time), we use the trained model to predict their eventual classification. 
+
+::: {.callout-note title="Algorithm" collapse="true"}
+
+* $\mathcal{D}_k$ is the data from trial $k \in \{1,\ldots,K\}$. $K$ is the number of trials available.
+* $B$ is the number of sampling iterations.
+* $\mathcal{M}$ is a set of rates of confirmed response data maturity to test. 
+* $y^\textrm{pfs}$ and $y^\textrm{cr}$ are progression-free survival and confirmed response, respectively.
+
+For every trial $k$,
+
+* Train our models on the full data, holding out $\mathcal{D}_k$: $p_\textrm{post}(y^\textrm{cr}, y^\textrm{pfs}\mid \boldsymbol{x})$. 
+* For each sampling iteration, $b \in \{1,\ldots,B\}$, 
+    - Draw a random subsample, $\widetilde{\mathcal{D}}_{kb}$, of 30 patients (with replacement) from $\mathcal{D}_k$.
+    - For each $m \in \mathcal{M}$,
+      * Determine the set of patients who would be in the experiment such that the proportion of patients (out of 30) who have their confirmed response classified is at least $m$, $\widetilde{\mathcal{D}}_{kbm}$.
+      * For each $i \in \widetilde{\mathcal{D}}_{kbm}$,
+        - If $y^\textrm{pfs}_i$ is right censored,
+          * If $y^\textrm{cr}_i$ is unclassified (censored), predict $(\tilde{y}^\textrm{pfs}_i, \tilde{y}^\textrm{cr}_i) \sim p_\textrm{post}(\cdot, \cdot\mid y^\textrm{pfs}_i, y^\textrm{cr}_i, \boldsymbol{x}_i)$.
+          * else, let $\tilde{y}^\textrm{cr}_i = y^\textrm{cr}_i$ and predict $\tilde{y}^\textrm{pfs}_i \sim p_\textrm{post}(\cdot\mid y^\textrm{pfs}_i, y^\textrm{cr}_i, \boldsymbol{x}_i)$.
+        - else, let $\tilde{y}^\textrm{pfs}_i = y^\textrm{pfs}_i$.
+      * Calculate the median of $\boldsymbol{\tilde{y}}^\textrm{pfs}_{kbm}$. 
+      
+:::
+
+```{mermaid}
+flowchart TD
+    all-data[("Trials Data")] -.-> hold-out("Hold out one trial")
+    hold-out -.-> training-data[("Training Data")] & testing-data[("Testing Data")]
+    training-data -.-> model("Train models")
+    model --> increment-mature("Increment maturity rate")
+    increment-mature --> select-patients("Select patients")
+    testing-data -.-> select-patients
+    select-patients --> predict-missing("Predict incomplete data")
+    hold-out --> model
+    model -.-> n1{{"Prediction Model"}}
+    n1 -.-> predict-missing
+    predict-missing --> n2{"Any more maturity rates?"}
+    n2 -- Yes --> increment-mature
+    n2 -- No --> n3{"Any more trials to hold out?"}
+    n3 -- Yes --> hold-out
+    n3 -- No --> n4(["End"])
+    n5(["Start"]) --> hold-out
+     hold-out:::green
+     model:::orange
+     increment-mature:::green
+     select-patients:::orange
+     predict-missing:::orange
+     n1:::pink
+     n2:::blue
+     n4:::purple
+     n5:::purple
+    classDef green fill:#B2DFDB,stroke:#00897B,stroke-width:2px
+    classDef orange fill:#FFE0B2,stroke:#FB8C00,stroke-width:2px
+    classDef blue fill:#BBDEFB,stroke:#1976D2,stroke-width:2px
+    classDef yellow fill:#FFF9C4,stroke:#FBC02D,stroke-width:2px
+    classDef pink fill:#F8BBD0,stroke:#C2185B,stroke-width:2px
+    classDef purple fill:#E1BEE7,stroke:#8E24AA,stroke-width:2px
+```
+       
+Below we look at how each of the PFS model parameters influences the hazard. These are the exponential values of the parameters: they should the multiplication effect on the hazard.
+          
 ```{r}
-#| label: load-bootstrap-mpfs
+#| label: fig-bs-param-est
+#| fig-cap: Posterior distributions of model parameters, shown separately by the trial heldout.
 
-tar_load("pfs_conf_resp_bootstrap_median_pfs")
+tar_read("pfs_conf_resp_bootstrap_param") |> 
+  ggplot(aes(y = covar)) +
+  stat_slabinterval(
+    aes(xdist = .exp_value, justification = 0.5, thickness = after_stat(ggdist::thickness(1)), slab_alpha = after_stat(pdf)),
+    point_interval = NULL, show.legend = FALSE, data = tar_read("prior_pfs_conf_resp_param")
+  ) +
+  stat_pointinterval(aes(xdist = .exp_value, color = trial), point_size = 1, position = "dodge", .width = c(0.5, 0.8)) +
+  geom_vline(xintercept = 1, linetype = "dotted") +
+  scale_color_discrete("", type = AZ_palette) +
+  labs(x = "Exponential of Parameter",  y = "Parameter", caption = "Showing the posterior median, 50% CI, and 80% CI.\nGradient shows the prior.") +
+  NULL
 ```
 
-```{r}
-#| label: fig-pfs-conf-resp-bootstrap
-#| fig-cap: Evaluating the change in precision of the predicted distribution of median PFS, in response to changes in the (i) prediction calendar week and (ii) the patient recruitment rate. The prediction model is trained on the full data while simulation uses a bootstrap subsample.
-#| fig-height: 5 
-#| fig-width: 6
+* While the confirmed response indicator appears to have the strongest effect on hazard, keep in mind that the majority of patients are identified as confirmed responders (see @fig-response-classification). 
+* The _practically_ strongest predictor here is the baseline sum of tumor sizes. Note that the following tumor size assessment does not appear to have a lot of influence. This does not rule out the possibility of a more useful signal in the entire time-series of tumor size changes. 
+* We use relatively conservative priors on these parameters. The influence of both confirmed response and baseline tumor sizes is sufficiently high to overcome this regularization. 
+* Idea: look into the interaction between confirmed response and tumor sizes. Those are likely highly correlated since the former is based on the latter.
+* Other observations: 
+    - Highest age group has reduced hazard. This is probably a survivorship effect: those who survived that long are probably more robust.
+    - Prior CDK46 inhibition treatment is probably an indicator higher risk.
 
-pfs_conf_resp_bootstrap_median_pfs |> 
-  ggplot(aes(x = prediction_week)) +
+```{r}
+#| label: load-bootstrap
+
+tar_load(c("pfs_conf_resp_bootstrap_cr_median_pfs", "pfs_conf_resp_bootstrap_pfs_median_pfs"))
+
+last_mature_week_data <- all_confirmed_resp_analysis_data |> 
+  group_by(trial) |> 
+  summarize(last_mature_week = max((1 - confirmed_response_censored) * (experiment_start_week + confirmed_response_week - 1)))
+
+max_all_t <- max(all_confirmed_resp_analysis_data$patient_max_t)
+```
+
+## In response to varying data maturity of confirmed response classification
+
+In this section, we look at how prediction accuracy changes in response to the maturity of confirmed response: the proportion of patients who have entered the trial at the point of prediction whose confirmed response has been classified (is no longer _stable disease_).
+
+```{r}
+#| label: fig-pfs-conf-resp-bootstrap-cr
+#| fig-cap: Bootstrap sample prediction ribbons (50 and 80% credible intervals) over a range of confirmed response data maturity rates. Missing ribbons indicate insufficient bootstrap samples at that data maturity rate. The full data intervals shows the 80% credible intervals. 
+#| fig-subcap: 
+#|   - Predicting median PFS
+#|   - Predicting ORR
+
+pfs_conf_resp_bootstrap_cr_median_pfs |> 
+  filter(bs_cr_median_pfs.upper < max_all_t) |>
+  group_by(trial, bootstrap_cr_maturity_rates) |> 
+  filter(n() > 1) |> 
+  ungroup() |> 
+  ggplot(aes(bootstrap_cr_maturity_rates)) +
   geom_lineribbon(
-    aes(y = bootstrap_median_pfs, ymin = bootstrap_median_pfs.lower, ymax = bootstrap_median_pfs.upper, color = "Bootstrap", fill = "Bootstrap"),
-    alpha = 0.25
+    aes(y = bs_cr_median_pfs, ymin = bs_cr_median_pfs.lower, ymax = bs_cr_median_pfs.upper, group = .width), 
+    alpha = 0.25, linewidth = 0.5 
   ) +
-  stat_pointinterval(aes(ydist = sim_median_pfs, color = "Full Data"),
+  stat_pointinterval(
+    aes(ydist = sim_trial_median_pfs, color = "Full Data"),
+    .width = 0.8, linewidth = 0.5, 
+    data = \(d) semi_join(pfs_cr_median_pfs, d, by = "trial") |>
+      filter(fct_match(fit_type, "posterior")) |>
+      mutate(bootstrap_cr_maturity_rates = 0.8)
+  ) +
+  geom_text(
+    aes(x = x, y = y, label = str_c("N = ", n), color = "Full Data"), size = 3, hjust = 1, show.legend = FALSE, 
+    data = count(all_confirmed_resp_analysis_data, trial) |> mutate(x = 0.8, y = 110) 
+  ) +
+  scale_color_manual("", values = AZ_plum) +
+  scale_fill_discrete("Credible Intervals", labels = c("0.5" = "50%", "0.8" = "80%"), type = AZ_palette[-1]) +
+  labs(x = "Confirmed Response Data Maturity Rate", y = "mPFS") +
+  facet_wrap(vars(trial)) +
+  coord_cartesian(xlim = c(0.0, 0.8), ylim = c(10, 140))
+
+pfs_conf_resp_bootstrap_cr_median_pfs |> 
+  filter(bs_cr_orr.lower > 0.25) |>
+  group_by(trial, bootstrap_cr_maturity_rates) |> 
+  filter(n() > 1) |> 
+  ungroup() |> 
+  ggplot(aes(bootstrap_cr_maturity_rates)) +
+  geom_lineribbon(
+    aes(y = bs_cr_orr, ymin = bs_cr_orr.lower, ymax = bs_cr_orr.upper, group = .width), 
+    alpha = 0.25, linewidth = 0.5 
+  ) +
+  scale_color_manual("", values = AZ_plum) +
+  scale_fill_discrete("Credible Intervals", labels = c("0.5" = "50%", "0.8" = "80%"), type = AZ_palette[-1]) +
+  labs(x = "Confirmed Response Data Maturity Rate", y = "ORR") +
+  facet_wrap(vars(trial), scales = "free_y") +
+  coord_cartesian(xlim = c(0.0, 0.8), ylim = c(0.5, 1))
+```
+
+
+* What we are observing here is the probability ranges of leave-one-trial-out prediction, so those intervals combine sampling uncertainty from the bootstrap sample and the prediction model uncertainty.
+  - I cannot make the decision on the acceptability of these interval widths for decision-making, for that we need to better characterize the decision risk we are evaluating.
+* The models seem to be unbiased since they tend to the full data estimation intervals. Given that this isn’t a hierarchical model, this means that the covariates used are doing a relatively good job at prediction.
+* There is slow improvement beyond the 20% maturity rate (this is maybe because most patients eventually reach confirmed response, so there is little information here anyway). Perhaps focusing on PFS maturity rate might be more helpful.
+* ORR is high (see @fig-response-classification).
+
+Below, we take a look at how: 
+
+(i) the sample size of patients and 
+(ii) the proportion of patients that have immature (incomplete) endpoint outcomes, which needs to be predicted by the model, 
+
+changes in response to delaying the point of prediction. 
+
+```{r}
+#| label: fig-bootstrap-subsample-size-cr
+#| fig-cap: Bootstrap sample over a range of confirmed response data maturity rates. The dotted lines shows the maximum size of 30 patients.
+#| fig-subcap:
+#|    - The distribution of bootstrap sample sizes.
+#|    - The proportion of patients who need their confirmed response or PFS predicted. 
+
+cr_size_est_data <- pfs_conf_resp_bootstrap_cr_median_pfs |> 
+  mutate(across(starts_with("n_bs_sample"), \(n) if_else(n == 0, 30, n))) |> 
+  select(trial, .width, bootstrap_cr_maturity_rates, contains("predicted_prop"), matches(r"{n_bs_sample_cr(\.(lower|upper))?$}")) |> 
+  rename_with(\(v) str_replace(v, "(_cr|predicted_prop)$", "\\1.median")) |> 
+  pivot_longer(
+    !c(bootstrap_cr_maturity_rates, trial, .width), names_pattern = r"{(.+)\.(lower|upper|median)(?:_prop)?}", names_to = c("variable", ".value")
+  )
+
+cr_size_est_data |> 
+  filter(fct_match(variable, "n_bs_sample_cr")) |> 
+  ggplot(aes(bootstrap_cr_maturity_rates, median)) +
+  geom_lineribbon(aes(ymin = lower, ymax = upper, group = .width), linewidth = 0.5, alpha = 0.25) +
+  geom_hline(yintercept = 30, linetype = "dotted") +
+  scale_fill_discrete("Credible Intervals", labels = c("0.5" = "50%", "0.8" = "80%"), type = AZ_palette[-1]) +
+  labs(x = "Confirmed Response Data Maturity Rate", y = "Prediction Sample Size") +
+  facet_wrap(vars(trial)) +
+  coord_cartesian(ylim = c(0, 30)) +
+  NULL
+
+cr_size_est_data |> 
+  filter(!fct_match(variable, "n_bs_sample_cr")) |>
+  mutate(
+    variable = fct_recode(variable, "confirmed response" = "n_bs_cr_conf_resp_predicted_prop", "PFS" = "n_bs_cr_pfs_predicted_prop")
+  ) |> 
+  ggplot(aes(bootstrap_cr_maturity_rates, median)) +
+  geom_lineribbon(aes(ymin = lower, ymax = upper, group = .width), linewidth = 0.5, alpha = 0.25) +
+  scale_fill_discrete("Credible Intervals", labels = c("0.5" = "50%", "0.8" = "80%"), type = AZ_palette[-1]) +
+  labs(x = "Confirmed Response Data Maturity Rate", y = "Proportion of Sample Predicted") +
+  facet_grid(vars(variable), vars(trial)) +
+  NULL
+```
+
+* But 40% maturity we're almost always dealing with the whole (30) sample of patients.
+* @fig-bootstrap-subsample-size-cr-2 shows the degree to which we are relying on observed endpoint outcomes for out sample predictions. If by the point of prediction we have a small number of observations being predicted, our model is not really adding much. From these results, that does not appear to be the case.
+
+```{r}
+#| label: fig-bootstrap-prediction-week-cr
+#| fig-cap: Bootstrap prediction calendar weeks (50 and 80% probability intervals) over a range of confirmed response data maturity rates. The dotted line indicates the calendar week when the last (uncensored) patient was classified as a confirmed response or non-response. This plot has been rotated to put the time dimension on the x-axis, even though the it is the maturity rate that we manipulate in these simulations, mostly for ease of reading.
+
+pfs_conf_resp_bootstrap_cr_median_pfs |> 
+  filter(bs_cr_prediction_calendar_week.upper < 1e6) |>
+  group_by(trial, bootstrap_cr_maturity_rates) |> 
+  filter(n() > 1) |> 
+  ungroup() |> 
+  left_join(last_mature_week_data, by = "trial") |> 
+  mutate(across(starts_with("bs_prediction_calendar_week"), \(w) if_else(w > 1000, last_mature_week, w))) |> 
+  ggplot(aes(bootstrap_cr_maturity_rates, bs_cr_prediction_calendar_week)) +
+  geom_lineribbon(
+    aes(ymin = bs_cr_prediction_calendar_week.lower, ymax = bs_cr_prediction_calendar_week.upper, group = .width), 
+    linewidth = 0.5, alpha = 0.25 
+  ) +
+  geom_hline(
+    aes(yintercept = last_mature_week, linetype = "Week of last Confirmed Response classification, in the full data."),
+    data = last_mature_week_data 
+  ) +
+  scale_fill_discrete("CI", labels = c("0.5" = "50%", "0.8" = "80%"), type = AZ_palette[-1]) +
+  scale_linetype_manual("", values = "dotted") + 
+  labs(x = "Confirmed Response Data Maturity Rate", y = "Prediction Calendar Week") +
+  facet_wrap(vars(trial)) +
+  coord_flip(ylim = c(10, 200)) +
+  theme(legend.position = "bottom") +
+  NULL
+```
+
+* We could be making these predictions by week 50, a significant decrease from waiting till everyone (in the full trial sample) has reached confirmed response classification. That is longer than we saw with the previous in-sample evaluation, but that’s comparing apples to oranges.
+ 
+Questions remaining:
+
+* How much would things improve when using a hierarchical model?
+* Would we gain much in updating the model from the small number of patients observed from the held out trial?
+* How much would things improve if in included dynamic confirmed response and tumor sizes?
+
+## In response to varying data maturity of PFS
+
+In this section, we repeat the same exercise as above but instead we focus on the maturity of PFS rather than confirmed response. _One challenging aspect to this measure of maturity is that immaturity directly translates to better survival, which differs from confirmed response maturity, a measure of when patients' status is known._ So, the better a treatment preforms, increasing PFS, the harder it becomes to reach any kind of maturity.
+
+```{r}
+#| label: fig-pfs-conf-resp-bootstrap-pfs
+#| fig-cap: Bootstrap sample prediction ribbons (50 and 80% credible intervals) over a range of PFS data maturity rates. Missing ribbons indicate insufficient bootstrap samples at that data maturity rate. The full data intervals shows the 80% credible intervals. 
+#| fig-subcap: 
+#|   - Predicting median PFS
+#|   - Predicting ORR
+
+pfs_conf_resp_bootstrap_pfs_median_pfs |> 
+  filter(bs_pfs_median_pfs.upper < max_all_t) |>
+  group_by(trial, bootstrap_pfs_maturity_rates) |> 
+  filter(n() > 1) |> 
+  ungroup() |> 
+  ggplot(aes(bootstrap_pfs_maturity_rates)) +
+  geom_lineribbon(
+    aes(y = bs_pfs_median_pfs, ymin = bs_pfs_median_pfs.lower, ymax = bs_pfs_median_pfs.upper, group = .width), 
+    alpha = 0.25, linewidth = 0.5 
+  ) +
+  stat_pointinterval(
+    aes(ydist = sim_trial_median_pfs, color = "Full Data"),
     .width = 0.8, size = 0.5,
-    data = \(d) semi_join(pfs_cr_median_pfs, d, by = "trial") |> filter(fct_match(fit_type, "posterior")) |> mutate(prediction_week = 48)
+    data = \(d) semi_join(pfs_cr_median_pfs, d, by = "trial") |>
+      filter(fct_match(fit_type, "posterior")) |>
+      mutate(bootstrap_pfs_maturity_rates = 0.8)
   ) +
-  scale_color_manual("", values = c(AZ_platinum, AZ_plum), aesthetics = c("color", "fill")) +
-  scale_x_continuous("Prediction Calendar Week", breaks = seq(0, 48, 12)) +
-  labs(y = "Median PFS [Weeks]") +
-  facet_grid(
-    col = vars(recruit_lambda), row = vars(trial), 
-    scales = "free", space = "free_x"
+  geom_text(
+    aes(x = x, y = y, label = str_c("N = ", n), color = "Full Data"), 
+    size = 3, hjust = 1, show.legend = FALSE, 
+    data = count(all_confirmed_resp_analysis_data, trial) |> mutate(x = 0.8, y = 110) 
   ) +
-  theme(legend.position = "bottom", axis.text.x = element_text(size = 7), strip.text.y.right = element_text(size = 6.5)) +
-  NULL
+  scale_fill_discrete("Credible Intervals", labels = c("0.5" = "50%", "0.8" = "80%"), type = AZ_palette[-1]) +
+  scale_color_manual("", values = AZ_pink) +
+  labs(x = "PFS Data Maturity Rate", y = "mPFS") +
+  facet_wrap(vars(trial)) +
+  coord_cartesian(xlim = c(0.0, 0.8), ylim = c(10, 140))
+
+pfs_conf_resp_bootstrap_pfs_median_pfs |> 
+  filter(bs_pfs_orr.lower > 0.25) |>
+  filter(bs_pfs_median_pfs.upper < max_all_t) |>
+  group_by(trial, bootstrap_pfs_maturity_rates) |> 
+  filter(n() > 1) |> 
+  ggplot(aes(bootstrap_pfs_maturity_rates)) +
+  geom_lineribbon(
+    aes(y = bs_pfs_orr, ymin = bs_pfs_orr.lower, ymax = bs_pfs_orr.upper, group = .width), alpha = 0.25, linewidth = 0.5 
+  ) +
+  scale_fill_discrete("Credible Intervals", labels = c("0.5" = "50%", "0.8" = "80%"), type = AZ_palette[-1]) +
+  scale_color_manual("", values = AZ_pink) +
+  labs(x = "PFS Data Maturity Rate", y = "ORR") +
+  facet_wrap(vars(trial)) +
+  coord_cartesian(xlim = c(0.0, 0.8), ylim = c(0.5, 1))
 ```
+
+* Given how long it takes to reach any maturity level, we're already dealing with a stronger signal as early as 20% maturity, hence we don't see a lot of improvement as maturity increases beyond that.
 
 ```{r}
-#| label: fig-bootstrap-subsample-size
-#| fig-cap: Examining how the bootstrap sample size changes in response to changes in prediction calendar week and patient recruitment rate. 
-#| fig-height: 5 
-#| fig-width: 6
+#| label: fig-bootstrap-subsample-size-pfs
+#| fig-cap: Bootstrap sample sizes (50 and 80% probability intervals) over a range of PFS data maturity rates. The dotted lines shows the maximum size of 30 patients.
+#| fig-subcap:
+#|    - The distribution of bootstrap sample sizes.
+#|    - The proportion of patients who need their confirmed response or PFS predicted. 
 
-pfs_conf_resp_bootstrap_median_pfs |> 
-  ggplot(aes(x = prediction_week)) +
-  geom_lineribbon(
-    aes(y = n_bootstrap_sample, ymin = n_bootstrap_sample.lower, ymax = n_bootstrap_sample.upper),
-    color = AZ_platinum, fill = AZ_platinum, alpha = 0.25
-  ) +
-  geom_hline(aes(yintercept = n), linetype = "dotted", data = count(treated_confirmed_resp_analysis_data, trial)) +
-  scale_x_continuous("Prediction Week", breaks = seq(0, 48, 12)) +
-  labs(y = "Subsample Size", caption = "The dotted line indicates the full sample size.") +
-  facet_grid(
-    col = vars(recruit_lambda), row = vars(trial), 
-    scales = "free", space = "free_x"
-  ) +
-  theme(legend.position = "bottom", axis.text.x = element_text(size = 7), strip.text.y.right = element_text(size = 6.5)) +
+pfs_size_est_data <- pfs_conf_resp_bootstrap_pfs_median_pfs |> 
+  mutate(across(starts_with("n_bs_sample"), \(n) if_else(n == 0, 30, n))) |> 
+  select(trial, .width, bootstrap_pfs_maturity_rates, contains("predicted_prop"), matches(r"{n_bs_sample_pfs(\.(lower|upper))?$}")) |> 
+  rename_with(\(v) str_replace(v, "(_pfs|predicted_prop)$", "\\1.median")) |> 
+  pivot_longer(
+    !c(bootstrap_pfs_maturity_rates, trial, .width), names_pattern = r"{(.+)\.(lower|upper|median)(?:_prop)?}", names_to = c("variable", ".value")
+  )
+
+pfs_size_est_data |> 
+  filter(fct_match(variable, "n_bs_sample_pfs")) |> 
+  ggplot(aes(bootstrap_pfs_maturity_rates, median)) +
+  geom_lineribbon(aes(ymin = lower, ymax = upper, group = .width), linewidth = 0.5, alpha = 0.25) +
+  geom_hline(yintercept = 30, linetype = "dotted") +
+  scale_fill_discrete("Credible Intervals", labels = c("0.5" = "50%", "0.8" = "80%"), type = AZ_palette[-1]) +
+  labs(x = "PFS Data Maturity Rate", y = "Prediction Sample Size") +
+  facet_wrap(vars(trial)) +
+  coord_cartesian(ylim = c(10, 30)) +
+  NULL
+
+pfs_size_est_data |> 
+  filter(!fct_match(variable, "n_bs_sample_pfs")) |>
+  mutate(
+    variable = fct_recode(variable, "confirmed response" = "n_bs_pfs_conf_resp_predicted_prop", "PFS" = "n_bs_pfs_pfs_predicted_prop")
+  ) |> 
+  ggplot(aes(bootstrap_pfs_maturity_rates, median)) +
+  geom_lineribbon(aes(ymin = lower, ymax = upper, group = .width), linewidth = 0.5, alpha = 0.25) +
+  scale_fill_discrete("Credible Intervals", labels = c("0.5" = "50%", "0.8" = "80%"), type = AZ_palette[-1]) +
+  labs(x = "PFS Data Maturity Rate", y = "Proportion of Sample Predicted") +
+  facet_grid(vars(variable), vars(trial), scales = "free_y") +
   NULL
 ```
 
-Below, we consider how data maturity rate changes. We define data maturity as the proportion of patients who have entered the trial by the prediction week for whose response has been classified.
+* It takes a lot longer to get to any maturity level (see @fig-bootstrap-prediction-week-pfs) so we're dealing with the full sample very quickly.
+* The proportion of patients for whom prediction is needed is significantly diminished.
 
 ```{r}
-#| label: fig-bootstrap-maturity-rate
-#| fig-cap: Examining how data maturity changes in response to changes in prediction calendar week and patient recruitment rate. 
-#| fig-height: 5 
-#| fig-width: 6
+#| label: fig-bootstrap-prediction-week-pfs
+#| fig-cap: Bootstrap prediction calendar weeks (50 and 80% probability intervals) over a range of PFS data maturity rates. The dotted line indicates the calendar week when the last (uncensored) patient was classified as a confirmed response or non-response. This plot has been rotated to put the time dimension on the x-axis, even though the it is the maturity rate that we manipulate in these simulations, mostly for ease of reading.
 
-pfs_conf_resp_bootstrap_median_pfs |> 
-  ggplot(aes(x = prediction_week)) +
+pfs_conf_resp_bootstrap_pfs_median_pfs |> 
+  filter(bs_pfs_prediction_calendar_week.upper < 1e6) |>
+  group_by(trial, bootstrap_pfs_maturity_rates) |> 
+  filter(n() > 1) |> 
+  ungroup() |> 
+  left_join(last_mature_week_data, by = "trial") |> 
+  mutate(across(starts_with("bs_prediction_calendar_week"), \(w) if_else(w > 1000, last_mature_week, w))) |> 
+  ggplot(aes(bootstrap_pfs_maturity_rates, bs_pfs_prediction_calendar_week)) +
   geom_lineribbon(
-    aes(y = bootstrap_maturity_rate, ymin = bootstrap_maturity_rate.lower, ymax = bootstrap_maturity_rate.upper),
-    color = AZ_platinum, fill = AZ_platinum, alpha = 0.25
+    aes(ymin = bs_pfs_prediction_calendar_week.lower, ymax = bs_pfs_prediction_calendar_week.upper, group = .width), 
+    linewidth = 0.5, alpha = 0.25 
   ) +
-  # geom_hline(aes(yintercept = m), linetype = "dotted", 
-  #            data = treated_confirmed_resp_analysis_data |> group_by(trial) |> summarize(m = 1 - mean(confirmed_response_censored))) +
-  scale_x_continuous("Prediction Week", breaks = seq(0, 48, 12)) +
-  labs(y = "Subsample Data Maturity Rate") +
-  facet_grid(
-    col = vars(recruit_lambda), row = vars(trial), 
-    scales = "free", space = "free_x"
+  geom_hline(
+    aes(yintercept = last_mature_week, linetype = "Week of last Confirmed Response classification, in the full data."),
+    data = last_mature_week_data 
   ) +
-  theme(legend.position = "bottom", axis.text.x = element_text(size = 7), strip.text.y.right = element_text(size = 6.5)) +
+  scale_fill_discrete("CI", labels = c("0.5" = "50%", "0.8" = "80%"), type = AZ_palette[-1]) +
+  scale_linetype_manual("", values = "dotted") + 
+  labs(x = "PFS Data Maturity Rate", y = "Prediction Calendar Week") +
+  facet_wrap(vars(trial)) +
+  coord_flip(ylim = c(10, 200)) +
+  theme(legend.position = "bottom") +
   NULL
 ```
+
+One thing that is immediately clear from this plot is that it takes a lot longer to reach any level of maturity: it take around a 100 weeks to get near 50% maturity.

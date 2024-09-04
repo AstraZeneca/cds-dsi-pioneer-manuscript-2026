@@ -568,18 +568,6 @@ tuple(int, int) survival_time_rng(vector log_cond_prob_surv) {
   return(survival_time, censored);
 }
 
-// tuple(int, int, int) competing_risks_survival_time_rng(matrix log_cond_prob_surv) {
-//   int n_causes = cols(log_cond_prob_surv);
-//   array[n_causes] int cause_survival_time;
-//   array[n_causes] int cause_censored;
-//   
-//   for (k in 1:n_causes) {
-//     (cause_survival_time[k], cause_censored[k]) = survival_time_rng(log_cond_prob_surv[, k]); 
-//   }
-//   
-//   return(min(cause_survival_time), sum(cause_censored) == n_causes, sort_indices_asc(cause_survival_time)[1]);
-// }
-
 /** Survival aggregated over all patients, S(t) = Pr[T > t], t \in {0,..., N} 
  *
  * @param last_surv The last observed week that was progression-free
