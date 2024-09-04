@@ -5,20 +5,67 @@ This the directory structure for this project is:
 ``` bash
 quarto/
 ├── deck.qmd                              # revealjs slides deck. Not longer using this, but it still has some useful plots.
-└── early-predict-bc-survival.qmd         # This is the primary notebook in which all analysis is done.
+├── early-predict-bc-survival.qmd         # This is the primary notebook in which all analysis is done.
+└── confirmed-response-pfs.qmd            # Predicting PFS using confirmed response and other baseline characteristics. Leave-one-trial-out cv.
 stan/
 ├── base_data.stan                        # This is the data section to be shared by all models.
+├── baseline_hazard_hyperparam.stan
+├── baseline_hazard_parameters.stan
+├── baseline_hazard_priors.stan
+├── baseline_hazard_transformed_parameters.stan
+├── base_transformed_data.stan
+├── bootstrap                            # Bootstrap simulation code
+│   ├── insample_bootstrap_data.stan
+│   ├── insample_bootstrap_gen_quants.stan
+│   ├── leave_out_trial_bootstrap_data.stan
+│   ├── leave_out_trial_bootstrap_functions.stan
+│   └── leave_out_trial_bootstrap_gen_quants.stan
+├── crcr                                # Competing risk confirmed response survival model
+│   ├── confresp-comprisk
+│   ├── confresp-comprisk.stan
+│   ├── crcr_baseline_hazard_hyperparam.stan
+│   ├── crcr_data.stan
+│   ├── crcr_functions.stan
+│   ├── crcr_gen_quants.stan
+│   ├── crcr_hyperparam.stan
+│   ├── crcr_parameters.stan
+│   ├── crcr_priors.stan
+│   ├── crcr_transformed_data.stan
+│   └── crcr_transformed_parameters.stan
+├── extern_pfs_functions.stan            # Parts of pfs_functions.stan to export
+├── extern_util.stan                     # Parts of util.stan to export
+├── pfs2.stan
+├── pfs-confirmed-response.stan
 ├── pfs_functions.stan                    # Stan functions to be used in the PFS model.
+├── pfs_generated_quant.stan
+├── pfs_orr.stan
 ├── pfs.stan                              # The main PFS model file.
-├── tumor_data.stan                       # This is the tumor model settings data, useful for jointly fitting PFS and tumor models.
-├── tumor_model.stan                      # The code in the model section of the tumor model.
-├── tumor_parameters.stan                 # Parameters used in the tumor model.
-├── tumor.stan                            # Main tumor model file (standalone).
-├── tumor_transformed_data.stan           # Tranformed data section part for the tumor model.
-├── tumor_transformed_parameters.stan     # Transformed parameters section for the tumor model.
+├── pfs_transformed_data.stan
+├── recruit                               # Patient recruitment process model
+│   ├── recruit_parameters.stan
+│   ├── recruit_priors.stan
+│   ├── recruit_sample_maturity.stan
+│   └── recruit.stan
+├── tumor
+│   ├── tumor_data.stan                   # This is the tumor model settings data, useful for jointly fitting PFS and tumor models.
+│   ├── tumor_model.stan                  # The code in the model section of the tumor model.
+│   ├── tumor_parameters.stan             # Parameters used in the tumor model.
+│   ├── tumor.stan                        # Main tumor model file (standalone).
+│   ├── tumor_transformed_data.stan       # Tranformed data section part for the tumor model.
+│   └── tumor_transformed_parameters.stan    # Transformed parameters section for the tumor model.
+├── tumor_stim_hyperparam.stan
+├── tumor_stim_parameters.stan
+├── tumor_stim_priors.stan
+├── tumor_stim_transformed_data.stan
+├── tumor_stim_transformed_parameters.stan
 └── util.stan                             # Utility functions to be shared by all models.
 r/
+├── crcr.R
 ├── download-entimice-data.R              # Script to download data.
+├── entimice_functions.R
+├── posterior.R
+├── prepare_analysis_data.R
+├── priors.R
 ├── sbc.R                                 # Standalone script to run simulation-based calibration.
 ├── sbc.sh                                # SLURM script to run sbc.R.
 └── util.R                                # Shared functions.
