@@ -442,7 +442,8 @@ lst(
       bootstrap_cr_maturity_rates = seq(0.05, 0.8, 0.05),
       n_bootstrap_cr_maturity_rates = length(bootstrap_cr_maturity_rates), 
       bootstrap_pfs_maturity_rates = bootstrap_cr_maturity_rates,
-      n_bootstrap_pfs_maturity_rates = length(bootstrap_pfs_maturity_rates) 
+      n_bootstrap_pfs_maturity_rates = length(bootstrap_pfs_maturity_rates),
+      n_fixed_bootstrap_samples = 10 
     )
   ),
   
@@ -465,8 +466,27 @@ lst(
   ),
   
   tar_target(
+    fixed_bootstrap_cr_median_pfs, 
+    get_fixed_bootstrap_cr_median_pfs(bootstrap_confirmed_resp_pfs_res), pattern = map(bootstrap_confirmed_resp_pfs_res),
+    storage = "worker", retrieval = "worker" 
+  ),
+  
+  tar_target(
+    fixed_bootstrap_pfs_median_pfs, 
+    get_fixed_bootstrap_pfs_median_pfs(bootstrap_confirmed_resp_pfs_res), pattern = map(bootstrap_confirmed_resp_pfs_res),
+    storage = "worker", retrieval = "worker" 
+  ),
+  
+  tar_target(
     pfs_conf_resp_bootstrap_param, 
     get_pfs_pred_param(bootstrap_confirmed_resp_pfs_res), pattern = map(bootstrap_confirmed_resp_pfs_res),
+    storage = "worker", retrieval = "worker" 
+  ),
+  
+  tar_target(
+    bootstrap_cr_median_pfs_draws, 
+    get_cr_median_pfs_draws(bootstrap_confirmed_resp_pfs_res, ndraws = 100),
+    pattern = map(bootstrap_confirmed_resp_pfs_res),
     storage = "worker", retrieval = "worker" 
   ),
   

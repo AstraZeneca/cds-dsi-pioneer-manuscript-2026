@@ -1,3 +1,34 @@
+tuple(array[] int, array[] int, array[] int, array[] int, array[] int, array[] int) get_bootstrap_sample_rng(
+  int n_bootstrap_sample, int leave_out_trial, array[] int trial_patient_pos, 
+  array[] int start_week, 
+  array[] int conf_resp_week, 
+  array[] int pfs, array[] int pfs_right_censored) {
+  array[n_bootstrap_sample] int bs_sample_idx;
+  array[n_bootstrap_sample] int bs_start_calendar_week; 
+  array[n_bootstrap_sample] int bs_cr_mature_calendar_week; 
+  array[n_bootstrap_sample] int bs_pfs_mature_calendar_week; 
+  
+  int patient_pos = trial_patient_pos[leave_out_trial];
+  int patient_end = trial_patient_pos[leave_out_trial + 1] - 1;
+  
+  bs_sample_idx = discrete_range_rng(rep_array(patient_pos, n_bootstrap_sample), rep_array(patient_end, n_bootstrap_sample)); 
+  
+  for (bsi in 1:n_bootstrap_sample) {
+    bs_cr_mature_calendar_week[bsi] = start_week[patient_pos + bsi - 1] + conf_resp_week[bs_sample_idx[bsi]] - 1;
+    bs_pfs_mature_calendar_week[bsi] = start_week[patient_pos + bsi - 1] + pfs[bs_sample_idx[bsi]] - pfs_right_censored[bs_sample_idx[bsi]];
+  }
+  
+  array[n_bootstrap_sample] int cr_mature_sorted_idx = sort_indices_asc(bs_cr_mature_calendar_week);
+  array[n_bootstrap_sample] int pfs_mature_sorted_idx = sort_indices_asc(bs_pfs_mature_calendar_week);
+  
+  bs_start_calendar_week = start_week[patient_pos:(patient_pos + n_bootstrap_sample - 1)];
+  
+  bs_cr_mature_calendar_week = bs_cr_mature_calendar_week[cr_mature_sorted_idx];
+  bs_pfs_mature_calendar_week = bs_pfs_mature_calendar_week[pfs_mature_sorted_idx];
+  
+  return(bs_sample_idx, bs_start_calendar_week, cr_mature_sorted_idx, bs_cr_mature_calendar_week, pfs_mature_sorted_idx, bs_pfs_mature_calendar_week);
+}
+
 tuple(array[] int, array[] int, int, array[] int, array[] int, int) forecast_conf_resp_pfs_rng(
   int pred_calendar_week, array[] int start_calendar_week,
   array[] int patient_ids,

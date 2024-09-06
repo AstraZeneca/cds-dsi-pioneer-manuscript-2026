@@ -27,6 +27,7 @@ library(bayesplot)
 library(here)
 library(targets)
 library(colorspace)
+library(ggrepel)
 
 # Using different temp directories on SCP and locally.
 tmp_dir <- if (nchar(Sys.getenv("TMP")) > 0) file.path(Sys.getenv("TMPDIR"), "adc-early-predict") else here("temp")
@@ -744,7 +745,8 @@ tar_read("pfs_conf_resp_bootstrap_param") |>
 ```{r}
 #| label: load-bootstrap
 
-tar_load(c("pfs_conf_resp_bootstrap_cr_median_pfs", "pfs_conf_resp_bootstrap_pfs_median_pfs"))
+tar_load(c("bootstrap_confirmed_resp_pfs_res", "pfs_conf_resp_bootstrap_cr_median_pfs", "pfs_conf_resp_bootstrap_pfs_median_pfs", 
+           "fixed_bootstrap_cr_median_pfs", "fixed_bootstrap_pfs_median_pfs", "bootstrap_cr_median_pfs_draws"))
 
 last_mature_week_data <- all_confirmed_resp_analysis_data |> 
   group_by(trial) |> 
@@ -758,6 +760,34 @@ max_all_t <- max(all_confirmed_resp_analysis_data$patient_max_t)
 In this section, we look at how prediction accuracy changes in response to the maturity of confirmed response: the proportion of patients who have entered the trial at the point of prediction whose confirmed response has been classified (is no longer _stable disease_).
 
 ```{r}
+#| label: fig-posterior-mpfs-for-subsamples
+#| fig-cap: Showing what the posterior of the mPFS prediction looks like for three bootstrap subsamples per trial.
+
+fixed_bootstrap_cr_median_pfs |>
+  filter(fixed_bs_cr_median_pfs.upper < max_all_t) |>
+  group_by(trial, bootstrap_cr_maturity_rates) |> 
+  filter(n() > 1) |> 
+  ungroup() |>
+  filter(f <= 3) |> #, trial == "Breast04") |> 
+  ggplot(aes(bootstrap_cr_maturity_rates)) +
+  geom_lineribbon(aes(ymin = fixed_bs_cr_median_pfs.lower, ymax = fixed_bs_cr_median_pfs.upper), alpha = 0.25) +
+  stat_pointinterval(
+    aes(ydist = sim_trial_median_pfs, color = "Full Data"),
+    .width = 0.8, linewidth = 0.5, 
+    data = \(d) semi_join(pfs_cr_median_pfs, d, by = "trial") |>
+      filter(fct_match(fit_type, "posterior")) |>
+      mutate(bootstrap_cr_maturity_rates = 0.8)
+  ) +
+  scale_fill_discrete("Bootstrap sample CI", labels = c("0.5" = "50%", "0.8" = "80%"), type = AZ_palette[-(1:3)]) +
+  scale_color_manual("", values = AZ_plum, labels = c("Full Data" = "Complete trial 80% CI\n(all patients)")) +
+  labs(x = "Fraction of patients with known confirmed response", y = "Median PFS") +
+  facet_grid(vars(f), vars(trial), labeller = labeller(f = \(f) str_c("Subsample ", f))) +
+  coord_cartesian(xlim = c(0.0, 0.8), ylim = c(10, 140)) +
+  theme(legend.position = "bottom")
+```
+
+`
+```{r}
 #| label: fig-pfs-conf-resp-bootstrap-cr
 #| fig-cap: Bootstrap sample prediction ribbons (50 and 80% credible intervals) over a range of confirmed response data maturity rates. Missing ribbons indicate insufficient bootstrap samples at that data maturity rate. The full data intervals shows the 80% credible intervals. 
 #| fig-subcap: 
@@ -768,10 +798,10 @@ pfs_conf_resp_bootstrap_cr_median_pfs |>
   filter(bs_cr_median_pfs.upper < max_all_t) |>
   group_by(trial, bootstrap_cr_maturity_rates) |> 
   filter(n() > 1) |> 
-  ungroup() |> 
+  ungroup() |>
   ggplot(aes(bootstrap_cr_maturity_rates)) +
   geom_lineribbon(
-    aes(y = bs_cr_median_pfs, ymin = bs_cr_median_pfs.lower, ymax = bs_cr_median_pfs.upper, group = .width), 
+    aes(y = NULL, ymin = bs_cr_median_pfs.lower, ymax = bs_cr_median_pfs.upper, group = .width), 
     alpha = 0.25, linewidth = 0.5 
   ) +
   stat_pointinterval(
@@ -782,14 +812,17 @@ pfs_conf_resp_bootstrap_cr_median_pfs |>
       mutate(bootstrap_cr_maturity_rates = 0.8)
   ) +
   geom_text(
-    aes(x = x, y = y, label = str_c("N = ", n), color = "Full Data"), size = 3, hjust = 1, show.legend = FALSE, 
-    data = count(all_confirmed_resp_analysis_data, trial) |> mutate(x = 0.8, y = 110) 
+    aes(x = x, y = y, label = str_c("N = ", n), color = "Full Data"), size = 3, hjust = 1, show.legend = FALSE,
+    data = \(d) semi_join(all_confirmed_resp_analysis_data, d, by = "trial") |> count(trial) |> mutate(x = 0.8, y = 110)
   ) +
-  scale_color_manual("", values = AZ_plum) +
-  scale_fill_discrete("Credible Intervals", labels = c("0.5" = "50%", "0.8" = "80%"), type = AZ_palette[-1]) +
-  labs(x = "Confirmed Response Data Maturity Rate", y = "mPFS") +
+  scale_color_manual("", values = AZ_plum, labels = c("Full Data" = "Complete trial 80% CI\n(all patients)")) +
+  scale_fill_discrete("Simulation probability intervals", labels = c("0.5" = "50%", "0.8" = "80%"), type = AZ_palette[-1]) +
+  # labs(x = "Confirmed Response Data Maturity Rate", y = "mPFS") +
+  labs(x = "Fraction of patients with known confirmed response", y = "Median PFS") +
   facet_wrap(vars(trial)) +
-  coord_cartesian(xlim = c(0.0, 0.8), ylim = c(10, 140))
+  coord_cartesian(xlim = c(0.0, 0.8), ylim = c(10, 140)) +
+  theme(legend.position = "bottom") +
+  NULL
 
 pfs_conf_resp_bootstrap_cr_median_pfs |> 
   filter(bs_cr_orr.lower > 0.25) |>
@@ -798,7 +831,7 @@ pfs_conf_resp_bootstrap_cr_median_pfs |>
   ungroup() |> 
   ggplot(aes(bootstrap_cr_maturity_rates)) +
   geom_lineribbon(
-    aes(y = bs_cr_orr, ymin = bs_cr_orr.lower, ymax = bs_cr_orr.upper, group = .width), 
+    aes(y = NULL, ymin = bs_cr_orr.lower, ymax = bs_cr_orr.upper, group = .width), 
     alpha = 0.25, linewidth = 0.5 
   ) +
   scale_color_manual("", values = AZ_plum) +
@@ -806,6 +839,43 @@ pfs_conf_resp_bootstrap_cr_median_pfs |>
   labs(x = "Confirmed Response Data Maturity Rate", y = "ORR") +
   facet_wrap(vars(trial), scales = "free_y") +
   coord_cartesian(xlim = c(0.0, 0.8), ylim = c(0.5, 1))
+```
+
+```{r}
+#| label: fig-db4-with-sample-draws
+#| fig-cap: Showing Breast-04 prediction including a selection of five bootstrap subsamples.
+
+pfs_conf_resp_bootstrap_cr_median_pfs |> 
+  filter(bs_cr_median_pfs.upper < max_all_t) |>
+  group_by(trial, bootstrap_cr_maturity_rates) |> 
+  filter(n() > 1) |> 
+  ungroup() |>
+  filter(fct_match(trial, "Breast04")) |> 
+  ggplot(aes(bootstrap_cr_maturity_rates)) +
+  geom_lineribbon(
+    aes(y = NULL, ymin = bs_cr_median_pfs.lower, ymax = bs_cr_median_pfs.upper, group = .width), 
+    alpha = 0.25, linewidth = 0.5 
+  ) +
+  stat_pointinterval(
+    aes(ydist = sim_trial_median_pfs, color = "Full Data"),
+    .width = 0.8, linewidth = 0.5, 
+    data = \(d) semi_join(pfs_cr_median_pfs, d, by = "trial") |>
+      filter(fct_match(fit_type, "posterior")) |>
+      mutate(bootstrap_cr_maturity_rates = 0.8)
+  ) +
+  geom_line(
+    aes(y = bs_cr_median_pfs, group = .draw), alpha = 0.125,
+    data = \(d) semi_join(bootstrap_cr_median_pfs_draws, d, by = c("trial", "r")) |> filter(.draw <= 5) 
+  ) +
+  scale_color_manual("", values = AZ_plum, labels = c("Full Data" = "Complete trial 80% CI\n(all patients)")) +
+  scale_fill_discrete("Probability Intervals", labels = c("0.5" = "50%", "0.8" = "80%"), type = AZ_palette[-1]) +
+  # labs(x = "Confirmed Response Data Maturity Rate", y = "mPFS") +
+  geom_vline(xintercept = 0.15, linetype = "dotted") +
+  labs(x = "Fraction of patients with known confirmed response", y = "Median PFS") +
+  facet_wrap(vars(trial)) +
+  coord_cartesian(xlim = c(0.0, 0.8)) +
+  theme(legend.position = "bottom") +
+  NULL
 ```
 
 
@@ -831,14 +901,14 @@ changes in response to delaying the point of prediction.
 
 cr_size_est_data <- pfs_conf_resp_bootstrap_cr_median_pfs |> 
   mutate(across(starts_with("n_bs_sample"), \(n) if_else(n == 0, 30, n))) |> 
-  select(trial, .width, bootstrap_cr_maturity_rates, contains("predicted_prop"), matches(r"{n_bs_sample_cr(\.(lower|upper))?$}")) |> 
+  select(trial, .width, bootstrap_cr_maturity_rates, contains("predicted_prop"), matches(r"{n_bs_sample(\.(lower|upper))?$}")) |> 
   rename_with(\(v) str_replace(v, "(_cr|predicted_prop)$", "\\1.median")) |> 
   pivot_longer(
     !c(bootstrap_cr_maturity_rates, trial, .width), names_pattern = r"{(.+)\.(lower|upper|median)(?:_prop)?}", names_to = c("variable", ".value")
   )
 
 cr_size_est_data |> 
-  filter(fct_match(variable, "n_bs_sample_cr")) |> 
+  filter(fct_match(variable, "n_bs_sample")) |> 
   ggplot(aes(bootstrap_cr_maturity_rates, median)) +
   geom_lineribbon(aes(ymin = lower, ymax = upper, group = .width), linewidth = 0.5, alpha = 0.25) +
   geom_hline(yintercept = 30, linetype = "dotted") +
@@ -849,7 +919,7 @@ cr_size_est_data |>
   NULL
 
 cr_size_est_data |> 
-  filter(!fct_match(variable, "n_bs_sample_cr")) |>
+  filter(!fct_match(variable, "n_bs_sample")) |>
   mutate(
     variable = fct_recode(variable, "confirmed response" = "n_bs_cr_conf_resp_predicted_prop", "PFS" = "n_bs_cr_pfs_predicted_prop")
   ) |> 
@@ -967,14 +1037,14 @@ pfs_conf_resp_bootstrap_pfs_median_pfs |>
 
 pfs_size_est_data <- pfs_conf_resp_bootstrap_pfs_median_pfs |> 
   mutate(across(starts_with("n_bs_sample"), \(n) if_else(n == 0, 30, n))) |> 
-  select(trial, .width, bootstrap_pfs_maturity_rates, contains("predicted_prop"), matches(r"{n_bs_sample_pfs(\.(lower|upper))?$}")) |> 
+  select(trial, .width, bootstrap_pfs_maturity_rates, contains("predicted_prop"), matches(r"{n_bs_sample(\.(lower|upper))?$}")) |> 
   rename_with(\(v) str_replace(v, "(_pfs|predicted_prop)$", "\\1.median")) |> 
   pivot_longer(
     !c(bootstrap_pfs_maturity_rates, trial, .width), names_pattern = r"{(.+)\.(lower|upper|median)(?:_prop)?}", names_to = c("variable", ".value")
   )
 
 pfs_size_est_data |> 
-  filter(fct_match(variable, "n_bs_sample_pfs")) |> 
+  filter(fct_match(variable, "n_bs_sample")) |> 
   ggplot(aes(bootstrap_pfs_maturity_rates, median)) +
   geom_lineribbon(aes(ymin = lower, ymax = upper, group = .width), linewidth = 0.5, alpha = 0.25) +
   geom_hline(yintercept = 30, linetype = "dotted") +
@@ -985,7 +1055,7 @@ pfs_size_est_data |>
   NULL
 
 pfs_size_est_data |> 
-  filter(!fct_match(variable, "n_bs_sample_pfs")) |>
+  filter(!fct_match(variable, "n_bs_sample")) |>
   mutate(
     variable = fct_recode(variable, "confirmed response" = "n_bs_pfs_conf_resp_predicted_prop", "PFS" = "n_bs_pfs_pfs_predicted_prop")
   ) |> 
