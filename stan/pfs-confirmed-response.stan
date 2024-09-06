@@ -46,6 +46,7 @@ transformed data {
   #include "base_transformed_data.stan" 
   #include "pfs_transformed_data.stan"
   #include "crcr/crcr_transformed_data.stan"
+  #include "bootstrap/leave_out_trial_bootstrap_transformed_data.stan"
   
   int n_missing_confirmed_response = sum(confirmed_response_censored); 
   int n_obs_confirmed_response = n_patients - n_missing_confirmed_response; 
@@ -58,37 +59,6 @@ transformed data {
   
   array[n_patients + 1] int<lower = 1> patient_pfs_interval_pos = linspaced_int_array(n_patients + 1, 1, n_patients * max_all_t + 1);
   
-  int<lower = 0, upper = n_patients> n_training_patients = n_patients - (leave_out_trial > 0 ? n_trial_patients[leave_out_trial] : 0);
-  int<lower = 0> n_training_crcr_intervals = n_training_patients * max_confresp_week;
-  array[n_training_patients] int<lower = 1, upper = n_patients> training_patients; 
-  array[n_training_crcr_intervals] int<lower = 1, upper = n_patients * max_confresp_week> training_crcr_intervals; 
-  
-  {
-    int patient_pos = 1;
-    int interval_pos = 1;
-    
-    for (s in 1:n_trials) {
-      int n_curr_patients = n_trial_patients[s];
-      int n_curr_intervals = n_curr_patients * max_confresp_week; 
-      int patient_end = patient_pos + n_curr_patients - 1;
-      int interval_end = interval_pos + n_curr_intervals - 1;
-      
-      if (s != leave_out_trial) {
-        int first_patient = s > 1 ? sum(n_trial_patients[:(s - 1)]) + 1 : 1;
-        int last_patient = first_patient + n_trial_patients[s] - 1;
-        
-        training_patients[patient_pos:patient_end] = linspaced_int_array(n_trial_patients[s], first_patient, last_patient); 
-      
-        int first_interval = s > 1 ? sum(n_trial_patients[:(s - 1)]) * max_confresp_week + 1 : 1;
-        int last_interval = first_interval + n_trial_patients[s] * max_confresp_week - 1;
-        
-        training_crcr_intervals[interval_pos:interval_end] = linspaced_int_array(n_trial_patients[s] * max_confresp_week, first_interval, last_interval); 
-        
-        patient_pos = patient_end + 1; 
-        interval_pos = interval_end + 1;
-      }
-    }
-  }
 }
 
 parameters {
