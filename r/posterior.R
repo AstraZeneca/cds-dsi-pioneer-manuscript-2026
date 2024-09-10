@@ -66,7 +66,7 @@ get_all_pfs_conf_resp_log_hazard_ratio <- function(res, stan_data) {
     rename(trial = patient_trial)  
 }
 
-get_pfs_conf_resp_bootstrap_variables <- function(res, bs_sample1, bs_sample2, rates_name, ...) {
+get_pfs_conf_resp_bootstrap_variables <- function(res, bs_sample1, bs_sample2, rates_name, ..., summarize = TRUE) {
   res |> 
     rowwise() |> 
     transmute(
@@ -76,12 +76,15 @@ get_pfs_conf_resp_bootstrap_variables <- function(res, bs_sample1, bs_sample2, r
           mutate(
             n_bs_sample = {{ bs_sample1 }} + {{ bs_sample2 }},
             across(ends_with("predicted"), \(n)  n / n_bs_sample, .names = "{.col}_prop")
-          ) |> 
-          unnest_rvars() |> # na.rm = TRUE doesn't work in point_interval() if using rvars.  
-          point_interval(
-            na.rm = TRUE, # if n_bs_sample is 0, we'll get some NaNs. These are few so we'll bite the bullet and drop them.
-            .width = c(0.5, 0.8)
-          ) |> 
+          ) %>% { 
+            if (summarize) {
+              unnest_rvars(.) |> # na.rm = TRUE doesn't work in point_interval() if using rvars.  
+                point_interval(
+                  na.rm = TRUE, # if n_bs_sample is 0, we'll get some NaNs. These are few so we'll bite the bullet and drop them.
+                  .width = c(0.5, 0.8)
+                ) 
+            } else .
+          } |> 
           left_join(as_tibble(stan_data[rates_name]) |> mutate(r = seq(n())), by = "r", relationship = "many-to-one")
       )
     ) |> 
@@ -111,7 +114,8 @@ get_fixed_bootstrap_cr_median_pfs <- function(res) {
   get_pfs_conf_resp_bootstrap_variables(
     res, n_bs_sample_cr_classified, n_bs_sample_cr_unclassified, "bootstrap_cr_maturity_rates",
     fixed_bs_cr_median_pfs[r, f], fixed_bs_cr_orr[r, f], n_bs_sample_cr_classified[r], n_bs_sample_cr_unclassified[r],
-    n_fixed_bs_cr_conf_resp_predicted[r, f], n_fixed_bs_cr_pfs_predicted[r, f]
+    n_fixed_bs_cr_conf_resp_predicted[r, f], n_fixed_bs_cr_pfs_predicted[r, f],
+    summarize = FALSE
   ) |> 
     select(!c(n_bs_sample, n_bs_sample_cr_classified, n_bs_sample_cr_unclassified))
 }
@@ -120,7 +124,8 @@ get_fixed_bootstrap_pfs_median_pfs <- function(res) {
   get_pfs_conf_resp_bootstrap_variables(
     res, n_bs_sample_pfs_progressed, n_bs_sample_pfs_surviving, "bootstrap_pfs_maturity_rates",
     fixed_bs_pfs_median_pfs[r, f], fixed_bs_pfs_orr[r, f], n_bs_sample_pfs_progressed[r], n_bs_sample_pfs_surviving[r],
-    n_fixed_bs_pfs_conf_resp_predicted[r, f], n_fixed_bs_pfs_pfs_predicted[r, f]
+    n_fixed_bs_pfs_conf_resp_predicted[r, f], n_fixed_bs_pfs_pfs_predicted[r, f],
+    summarize = FALSE
   ) |> 
     select(!c(n_bs_sample, n_bs_sample_pfs_progressed, n_bs_sample_pfs_surviving))
 }
