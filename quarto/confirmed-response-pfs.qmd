@@ -763,7 +763,7 @@ In this section, we look at how prediction accuracy changes in response to the m
 #| label: fig-posterior-mpfs-for-subsamples
 #| fig-cap: Showing what the posterior of the mPFS prediction looks like for three bootstrap subsamples for Breast-04.
 
-prediction_focus <- tibble(cr_f = c(0.15, 0.3, 0.5))
+prediction_focus <- tibble(cr_f = c(0.1, 0.15, 0.5))
 
 fixed_db4_subsample <- fixed_bootstrap_cr_median_pfs |>
   filter(map_lgl(fixed_bs_cr_median_pfs, \(mpfs) quantile(mpfs, probs = 0.8) < max_all_t), trial == "Breast04") |>   
@@ -815,7 +815,7 @@ fixed_bootstrap_cr_median_pfs |>
   scale_color_discrete("Fraction of patients with known response", type = AZ_palette, aesthetics = c("color", "fill")) +
   labs(x = "Median PFS [weeks]", y = "") +
   theme(legend.position = "bottom") +
-  coord_cartesian(xlim = c(25, 125)) +
+  coord_cartesian(xlim = c(25, 140)) +
   NULL
   
 ```
