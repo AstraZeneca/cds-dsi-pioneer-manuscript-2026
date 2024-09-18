@@ -97,8 +97,12 @@ get_pfs_conf_resp_bootstrap_cr_median_pfs <- function(res) {
     res, n_bs_sample_cr_classified, n_bs_sample_cr_unclassified, "bootstrap_cr_maturity_rates",
     bs_cr_prediction_calendar_week[r], n_bs_sample_cr_classified[r], n_bs_sample_cr_unclassified[r],
     bs_cr_median_pfs[r], bs_cr_orr[r],
-    n_bs_cr_conf_resp_predicted[r], n_bs_cr_pfs_predicted[r]
-  )
+    n_bs_cr_conf_resp_predicted[r], n_bs_cr_pfs_predicted[r],
+    summarize = FALSE
+  ) |> 
+    mutate(log_bs_cr_median_pfs = log(bs_cr_median_pfs)) |> 
+    unnest_rvars() |> # na.rm = TRUE doesn't work in point_interval() if using rvars.  
+    point_interval(na.rm = TRUE, .width = c(0.5, 0.8))
 }
 
 get_pfs_conf_resp_bootstrap_pfs_median_pfs <- function(res) {
