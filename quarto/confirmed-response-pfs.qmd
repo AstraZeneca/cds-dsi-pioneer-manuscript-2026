@@ -842,10 +842,6 @@ pfs_conf_resp_bootstrap_cr_median_pfs |>
       filter(fct_match(fit_type, "posterior")) |>
       mutate(bootstrap_cr_maturity_rates = 0.8)
   ) +
-  # geom_line(
-  #   aes(y = bs_cr_median_pfs, group = .draw), alpha = 0.125,
-  #   data = \(d) semi_join(bootstrap_cr_median_pfs_draws, d, by = c("trial", "r")) |> filter(.draw <= 5) 
-  # ) +
   geom_line(
     aes(y = fixed_bs_cr_median_pfs, group = f, alpha = selected), 
     linewidth = 0.75, show.legend = FALSE,
@@ -865,6 +861,41 @@ pfs_conf_resp_bootstrap_cr_median_pfs |>
   NULL
 ```
 
+```{r}
+#| label: fig-log-db4-with-sample-draws
+#| fig-cap: Showing Breast-04 prediction including a selection of five bootstrap subsamples.
+
+pfs_conf_resp_bootstrap_cr_median_pfs |> 
+  filter(bs_cr_median_pfs.upper < max_all_t) |>
+  group_by(trial, bootstrap_cr_maturity_rates) |> 
+  filter(n() > 1) |> 
+  ungroup() |>
+  filter(fct_match(trial, "Breast04")) |> 
+  ggplot(aes(bootstrap_cr_maturity_rates)) +
+  geom_lineribbon(
+    aes(y = NULL, ymin = log_bs_cr_median_pfs.lower, ymax = log_bs_cr_median_pfs.upper, group = .width), 
+    alpha = 0.25, linewidth = 0.5 
+  ) +
+  stat_pointinterval(
+    aes(ydist = log_sim_trial_median_pfs, color = "Full Data"),
+    .width = 0.8, linewidth = 0.5, 
+    data = \(d) semi_join(pfs_cr_median_pfs, d, by = "trial") |>
+      filter(fct_match(fit_type, "posterior")) |>
+      mutate(bootstrap_cr_maturity_rates = 0.05, log_sim_trial_median_pfs = log(sim_trial_median_pfs))
+  ) +
+  scale_color_manual("", values = AZ_palette[4], labels = c("Full Data" = "Complete trial 80% CI\n(all patients)")) +
+  scale_fill_discrete("Percentage of samples", labels = c("0.5" = "50%", "0.8" = "80%"), type = AZ_palette[-1]) +
+  scale_alpha_manual("", values = c("TRUE" = 0.5, "FALSE" = 0.125)) +
+  geom_vline(xintercept = 0.15, linetype = "dotted") +
+  labs(
+    title = "Predicted median PFS for 600 different samples from Breast-04", 
+    x = "Fraction of patients with known response", y = "Log Median PFS [weeks]"
+  ) +
+  # facet_wrap(vars(trial)) +
+  coord_cartesian(xlim = c(0.0, 0.8)) +
+  theme(legend.position = "bottom") +
+  NULL
+```
 `
 ```{r}
 #| label: fig-pfs-conf-resp-bootstrap-cr
