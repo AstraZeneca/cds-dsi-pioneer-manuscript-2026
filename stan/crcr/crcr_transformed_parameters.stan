@@ -23,11 +23,11 @@ profile("crcr multilevel transparam") {
       }
       
       for (k in 1:n_causes) {
-        log_crcr_trial_lambda[s, , k] = log_crcr_lambda[, k] +  
-          calc_gp_pred(
-            confresp_range, 
-            log_crcr_lambda_gp_trial_intercept[s, k], log_crcr_lambda_gp_trial_alpha[k], log_crcr_lambda_gp_trial_rho[k], delta, log_crcr_lambda_gp_trial_eta[s, , k]
-          ); 
+        log_crcr_trial_lambda[s, , k] = log_crcr_lambda[, k] + log_crcr_lambda_gp_trial_intercept[s, k];
+          // calc_gp_pred(
+          //   confresp_range, 
+          //   log_crcr_lambda_gp_trial_intercept[s, k], log_crcr_lambda_gp_trial_alpha[k], log_crcr_lambda_gp_trial_rho[k], delta, log_crcr_lambda_gp_trial_eta[s, , k]
+          // ); 
       }
     }
   }

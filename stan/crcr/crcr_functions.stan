@@ -79,28 +79,35 @@ vector calc_comp_risk_pch_loglik(
   array[] int last_unclass_week,
   array[] int event_cause,
   array[] int right_censored,
+  array[] int interval_censored,
   matrix log_cond_prob_surv,
-  int max_confresp_week
+  data int max_confresp_week
 ) 
 {
   int n_patients = size(last_unclass_week);
   int n_causes = cols(log_cond_prob_surv);
-  vector[n_patients] lp = rep_vector(0, n_patients);
+  vector[n_patients] lp;
   
   int interval_pos = 1;
     
   for (i in 1:n_patients) {
+    if (right_censored[i] && interval_censored[i] > 0) {
+      fatal_error("Interval censoring not allowed with right censored observations.");
+    }
+    
     int interval_end = interval_pos + last_unclass_week[i] - 1; 
     
-    if (last_unclass_week[i] > 0) {
-      for (k in 1:n_causes) {
-        lp[i] += sum(log_cond_prob_surv[interval_pos:interval_end, k]);
-      }
+    real reuse_lp = sum(log_cond_prob_surv[interval_pos:interval_end]);
+    
+    vector[interval_censored[i] + 1] ic_mix_lp = rep_vector(reuse_lp - log(interval_censored[i] + 1), interval_censored[i] + 1);
+    
+    for (c in 0:interval_censored[i]) {
+      ic_mix_lp[c + 1] += 
+        sum(log_cond_prob_surv[(interval_end + 1):(interval_end + c)]) + 
+        (1 - right_censored[i]) * log1m_exp(log_cond_prob_surv[interval_end + c + 1, event_cause[i]]);
     }
     
-    if (!right_censored[i]) {
-      lp[i] += log1m_exp(log_cond_prob_surv[interval_end + 1, event_cause[i]]);
-    }
+    lp[i] = log_sum_exp(ic_mix_lp); 
     
     interval_pos += max_confresp_week; 
   }
@@ -108,17 +115,22 @@ vector calc_comp_risk_pch_loglik(
   return lp;
 }
  
-real comp_risk_pch_lpmf(array[] int last_unclass_week, array[] int event_cause, array[] int right_censored, matrix log_cond_prob_surv, int max_confresp_week) {
-  return sum(calc_comp_risk_pch_loglik(last_unclass_week, event_cause, right_censored, log_cond_prob_surv, max_confresp_week));
+real comp_risk_pch_lpmf(
+  array[] int last_unclass_week, array[] int event_cause, array[] int right_censored, array[] int interval_censored, matrix log_cond_prob_surv, int max_confresp_week
+) {
+  return sum(calc_comp_risk_pch_loglik(last_unclass_week, event_cause, right_censored, interval_censored, log_cond_prob_surv, max_confresp_week));
 }
 
 real partial_sum_crcr_lpmf(
-  array[] int last_unclass_week, int start, int end, array[] int event_cause, array[] int right_censored, matrix log_cond_prob_surv, int max_confresp_week
+  array[] int last_unclass_week, int start, int end, 
+  array[] int event_cause, array[] int right_censored, array[] int interval_censored, matrix log_cond_prob_surv, int max_confresp_week
 ) {
   int patient_interval_pos = 1 + (start - 1) * max_confresp_week; 
   int patient_interval_end = end * max_confresp_week; 
   
   return(comp_risk_pch_lpmf(
-    last_unclass_week | event_cause[start:end], right_censored[start:end], log_cond_prob_surv[patient_interval_pos:patient_interval_end], max_confresp_week
+    last_unclass_week | event_cause[start:end], 
+                        right_censored[start:end], interval_censored[start:end], 
+                        log_cond_prob_surv[patient_interval_pos:patient_interval_end], max_confresp_week
   ));
 }
