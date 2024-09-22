@@ -95,11 +95,10 @@ vector calc_comp_risk_pch_loglik(
       fatal_error("Interval censoring not allowed with right censored observations.");
     }
     
-    int interval_end = interval_pos + last_unclass_week[i] - 1; 
+    int interval_end = interval_pos + last_unclass_week[i] - 1;
     
     real reuse_lp = sum(log_cond_prob_surv[interval_pos:interval_end]);
-    
-    vector[interval_censored[i] + 1] ic_mix_lp = rep_vector(reuse_lp - log(interval_censored[i] + 1), interval_censored[i] + 1);
+    vector[interval_censored[i] + 1] ic_mix_lp = rep_vector(reuse_lp, interval_censored[i] + 1);
     
     for (c in 0:interval_censored[i]) {
       ic_mix_lp[c + 1] += 
@@ -107,7 +106,7 @@ vector calc_comp_risk_pch_loglik(
         (1 - right_censored[i]) * log1m_exp(log_cond_prob_surv[interval_end + c + 1, event_cause[i]]);
     }
     
-    lp[i] = log_sum_exp(ic_mix_lp); 
+    lp[i] = log_sum_exp(ic_mix_lp) - log(interval_censored[i] + 1); 
     
     interval_pos += max_confresp_week; 
   }
