@@ -243,7 +243,7 @@ calc_confirmed_response <- function(response) {
     mutate(
       confirmed_response = if_else(!xor(objective_response, lag(objective_response, default = NA)), objective_response, NA),
       confirmed_response_week = lag(week, default = NA),
-      confirmed_response_interval_censored = confirmed_response_week - lag(week, n = 2L, default = 0)
+      confirmed_response_interval_censored = confirmed_response_week - (lag(week, n = 2L, default = 0) + 1)
     ) 
   
   first_conf_week <- conf_resp_data |> 

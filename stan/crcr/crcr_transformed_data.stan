@@ -30,7 +30,7 @@ array[n_patients] int<lower = 1, upper = n_causes> confirmed_response_cause;
 
 for (i in 1:n_patients) {
   last_unclassified_response_week[i] = 
-    confirmed_response_week[i] - confirmed_response_censored[i] * (confirmed_response_interval_censored[i] * (1 - ignore_interval_censoring) + 1);
+    confirmed_response_week[i] - (1 - confirmed_response_censored[i]) * (confirmed_response_interval_censored[i] * (1 - ignore_interval_censoring) + 1);
   confirmed_response_cause[i] = confirmed_response[i] + 1;
 }
 
