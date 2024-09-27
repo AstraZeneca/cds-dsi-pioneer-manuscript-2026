@@ -80,6 +80,27 @@ get_conf_resp_tumor_param <- function(res) {
     map_dfr(\(f) spread_rvars(f, crcr_tumor_stim_pop_coef[m, k]), .id = "trial") 
 }
 
+get_all_conf_resp_lambda_trial_intercept <- function(res) {
+  spread_rvars(res, log_crcr_lambda_gp_trial_intercept[trial, k]) |> 
+    mutate(
+      crcr_lambda_gp_trial_intercept = exp(log_crcr_lambda_gp_trial_intercept),
+      k = factor(k, levels = 1:2, labels = c("Non-response", "Response"))
+    )
+}
+
+get_all_conf_resp_lambda_trial_intercept_bindist <- function(res, hb) {
+  get_all_conf_resp_lambda_trial_intercept(res) |> 
+    group_by(k) |> 
+    reframe(p = hb[-1], bindist = rvar_sample_hist(crcr_lambda_gp_trial_intercept, hb, freq = FALSE))  
+}
+
+get_all_conf_resp_lambda <- function(res) {
+  spread_rvars(res, log_crcr_lambda[t, k]) |> 
+    mutate(
+      crcr_lambda = exp(log_crcr_lambda), 
+      k = factor(k, levels = 1:2, labels = c("Non-response", "Response"))
+    )
+}
 
 get_all_rep_confirmed_response <- function(res, stan_data) {
   spread_rvars(res, rep_confirmed_response_week[i], rep_confirmed_response_censored[i], rep_confirmed_response[i]) |> 
@@ -90,4 +111,64 @@ get_all_rep_confirmed_response_bindist <- function(res, stan_data, hb) {
   get_all_rep_confirmed_response(res, stan_data) |> 
     group_by(trial) |> 
     reframe(t = hb[-length(hb)], bindist = rvar_sample_hist(rep_confirmed_response_week, hb))  
+}
+
+get_all_rep_confirmed_trial_lambda_residual <- function(res) {
+  spread_rvars(res, log_crcr_trial_lambda_residual[trial, t, k]) |> 
+    mutate(crcr_trial_lambda_residual = exp(log_crcr_trial_lambda_residual)) |> 
+    point_interval(log_crcr_trial_lambda_residual, crcr_trial_lambda_residual, .width = c(0.5, 0.8)) |> 
+    mutate(k = factor(k, levels = 1:2, labels = c("Non-response", "Response")))
+}
+
+get_all_cr_pred_param <- function(res) {
+  gather_rvars(res, crcr_tumor_stim_pop_coef[m, k], crcr_covar_effect[m, k]) |> 
+    mutate(.exp_value = exp(.value)) |> 
+    mutate(
+      covar = case_when(
+        fct_match(.variable, "crcr_tumor_stim_pop_coef") & m == 1 ~ "baseline sum of tumor sizes",
+        fct_match(.variable, "crcr_tumor_stim_pop_coef") & m == 2 ~ "first post-treatment sum of tumor sizes",
+        m == 1 ~ "age in [18, 40)",
+        m == 2 ~ "age in [40, 65)",
+        m == 3 ~ "age in [65, 75)",
+        m == 4 ~ "age in [75, Inf)",
+        m == 5 ~ "ecog",
+        m == 6 ~ "hr status: positive",
+        m == 7 ~ "prior cdk46 inhibit treatment",
+        m == 8 ~ "her2 status: negative",
+        m == 9 ~ "her2 status: positive"
+      ) |> as_factor(),
+      k = factor(k, levels = 1:2, labels = c("Non-response", "Response"))
+    )
+}
+
+get_all_cr_trial_pred_param <- function(res) {
+  gather_rvars(res, crcr_covar_trial_coef[trial, m, k]) |> 
+    mutate(.exp_value = exp(.value)) |> 
+    mutate(
+      covar = case_when(
+        m == 1 ~ "baseline sum of tumor sizes",
+        m == 2 ~ "first post-treatment sum of tumor sizes",
+        m == 3 ~ "age in [18, 40)",
+        m == 4 ~ "age in [40, 65)",
+        m == 5 ~ "age in [65, 75)",
+        m == 6 ~ "age in [75, Inf)",
+        m == 7 ~ "ecog",
+        m == 8 ~ "hr status: positive",
+        m == 9 ~ "prior cdk46 inhibit treatment",
+        m == 10 ~ "her2 status: negative",
+        m == 11 ~ "her2 status: positive"
+      ) |> as_factor(),
+      k = factor(k, levels = 1:2, labels = c("Non-response", "Response"))
+    )
+}
+
+get_all_rep_confirmed_trial_lambda_residual_draws <- function(res, ndraws = NULL) {
+  spread_rvars(res, log_crcr_trial_lambda_residual[trial, t, k]) |> 
+    mutate(
+      log_crcr_trial_lambda_residual = thin_draws(log_crcr_trial_lambda_residual),
+      crcr_trial_lambda_residual = exp(log_crcr_trial_lambda_residual),
+      k = factor(k, levels = 1:2, labels = c("Non-response", "Response"))
+    ) |>
+    unnest_rvars() |> 
+    filter(is_null(ndraws) | (.draw <= ndraws))
 }

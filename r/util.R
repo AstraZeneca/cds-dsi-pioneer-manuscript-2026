@@ -176,6 +176,23 @@ create_pfs_initializer <- function(stan_data) {
   }
 }
 
+create_crcr_initializer <- function(stan_data, n_causes = 2) {
+  function(chain_id) {
+    init_vals <- lst(
+      log_crcr_lambda_gp_intercept = with(stan_data, rnorm(n_causes, log_crcr_lambda_gp_intercept_mean, log_crcr_lambda_gp_intercept_sd)) 
+    )
+    
+    if (stan_data$add_trial_level) {
+      init_vals <- init_vals |> 
+        list_assign(
+          log_crcr_lambda_gp_trial_intercept_sd = with(stan_data, rnorm(n_causes, sd = log_crcr_lambda_gp_trial_intercept_sd_sd))
+        )
+    }
+   
+    return(init_vals) 
+  }
+}
+
 #' Run Stan sampling on given simulation data. 
 #'
 #' @param settings Stan data/settings 
