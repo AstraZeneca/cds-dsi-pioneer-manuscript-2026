@@ -7,6 +7,7 @@ profile("crcr population baseline hazards") {
   }
 }
 
+array[add_trial_level ? n_trials : 0] matrix[max_confresp_week, n_causes] log_crcr_trial_lambda_residual;
 array[n_trials] matrix[max_confresp_week, n_causes] log_crcr_trial_lambda = rep_array(log_crcr_lambda, n_trials); // Need to initialize 
 
 matrix[add_trial_level ? n_trials : 0, n_causes] log_crcr_lambda_gp_trial_intercept;
@@ -18,16 +19,16 @@ profile("crcr multilevel transparam") {
     
     for (s in 1:n_trials) {
       if (add_trial_level_glm) {
-        crcr_covar_trial_coef[s] = diag_pre_multiply(crcr_covar_trial_sd, raw_crcr_covar_trial_coef[s]);
-        // crcr_covar_trial_coef[s] = diag_pre_multiply(crcr_covar_trial_sd, crcr_covar_trial_corr) * raw_crcr_covar_trial_coef[s];
+        crcr_covar_trial_coef[s] = diag_pre_multiply(crcr_covar_trial_sd, L_crcr_covar_trial_corr) * raw_crcr_covar_trial_coef[s];
       }
       
       for (k in 1:n_causes) {
-        log_crcr_trial_lambda[s, , k] = log_crcr_lambda[, k] + log_crcr_lambda_gp_trial_intercept[s, k];
-          // calc_gp_pred(
-          //   confresp_range, 
-          //   log_crcr_lambda_gp_trial_intercept[s, k], log_crcr_lambda_gp_trial_alpha[k], log_crcr_lambda_gp_trial_rho[k], delta, log_crcr_lambda_gp_trial_eta[s, , k]
-          // ); 
+        log_crcr_trial_lambda_residual[s, , k] = calc_gp_pred(
+          confresp_range,
+          log_crcr_lambda_gp_trial_intercept[s, k], log_crcr_lambda_gp_trial_alpha[k], log_crcr_lambda_gp_trial_rho[k], delta, log_crcr_lambda_gp_trial_eta[s, , k]
+        );
+        
+        log_crcr_trial_lambda[s, , k] = log_crcr_lambda[, k] + log_crcr_trial_lambda_residual[s, , k];
       }
     }
   }

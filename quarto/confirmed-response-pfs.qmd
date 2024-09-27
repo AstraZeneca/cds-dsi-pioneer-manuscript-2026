@@ -226,6 +226,27 @@ treated_confirmed_resp_analysis_data |>
   facet_wrap(vars(trial))
 ```
 
+```{r}
+all_confirmed_resp_analysis_data |> 
+  select(starts_with("confirmed_response")) |> 
+  bind_cols(
+    tar_read("early_tumor_sums") |> 
+      pluck(1) |> 
+      as_tibble()  
+  ) |> 
+  ggplot(aes(V1, V2)) +
+  geom_point(aes(color = confirmed_response_week), alpha = 0.8) +
+  geom_abline(slope = 1, linetype = "dotted") +
+  scale_colour_gradientn("Week", values = c(0, 10, 20, 30, 40, 50, 60, 70, 80, 160) / 160, colors = terrain.colors(10)) +
+  labs(x = "Baseline", y = "First Post-treatment") +
+  facet_wrap(
+    vars(confirmed_response), 
+    labeller = labeller(confirmed_response = c("TRUE" = "Responder", "FALSE" = "Non-responder"))) +
+  coord_fixed() +
+  theme(legend.position = "bottom")
+```
+
+
 # Model
 
 ## Confirmed Response Competing Risks Model {#crcr}
@@ -292,8 +313,164 @@ bind_rows(
 ```
 
 ```{r}
+#| label: fig-baseline-hazard
+#| fig-cap: Population (top) level baseline hazard  
+
+bind_rows(
+  prior = tar_read("prior_all_conf_resp_lambda"),
+  posterior = tar_read("all_conf_resp_lambda"),
+  .id = "fit_type"
+) |>
+  ggplot(aes(t)) +
+  geom_line(
+    aes(y = crcr_lambda, color = fit_type, group = str_c(fit_type, .draw)),
+    alpha = 0.25,
+    data = \(d) unnest_rvars(d) |>
+      ungroup() %>%
+      semi_join(
+        distinct(., fit_type, k, .draw) |>
+          group_by(fit_type, k) |>
+          slice_sample(n = 25)
+      )
+  ) +
+  stat_lineribbon(aes(ydist = crcr_lambda, fill = fit_type, color = fit_type), alpha = 0.25, linewidth = 0, .width = 0.8) +
+  scale_color_discrete("", label = str_to_title, type = AZ_palette, aesthetic = c("color", "fill")) +
+  facet_wrap(vars(k), scales = "free_y") +
+  theme(legend.position = "bottom") + 
+  coord_cartesian(ylim = c(0, 0.4))
+```
+
+```{r}
+#| label: fig-trial-level-intercepts
+#| fig-cap: These probabilistic histogram show the trial-level GP baseline hazard intercepts.
+
+bind_rows(
+  prior = tar_read("prior_all_conf_resp_lambda_trial_intercept_bindist"),
+  posterior = tar_read("all_conf_resp_lambda_trial_intercept_bindist"),
+  .id = "fit_type"
+) |>
+  ggplot(aes(p)) +
+  stat_lineribbon(
+    aes(ydist = bindist, color = fit_type, fill = fit_type, alpha = fit_type),
+    linewidth = 1, step = "hv", .width = c(0.5, 0.8)
+  ) +
+  scale_color_discrete("", label = str_to_title, type = AZ_palette, aesthetic = c("color", "fill")) +
+  scale_alpha_manual("", values = c(prior = 0.125, posterior = 0.25)) +
+  labs(x = "", y = "") +
+  facet_wrap(vars(k)) +
+  coord_cartesian(xlim = c(0, 2)) +
+  guides(alpha = "none") +
+  NULL
+
+```
+
+```{r}
+#| label: fig-trial-level-intercepts-density
+#| fig-cap: Prior and posterior density of the trial-level GP baseline hazard intercepts. 
+#| fig-height: 6
+
+bind_rows(
+  prior = tar_read("prior_all_conf_resp_lambda_trial_intercept"),
+  posterior = tar_read("all_conf_resp_lambda_trial_intercept"),
+  .id = "fit_type"
+) |>
+  ggplot() +
+  stat_slab(
+    aes(xdist = crcr_lambda_gp_trial_intercept, color = fit_type, fill = fit_type, alpha = fit_type, group = str_c(fit_type, trial)),
+  ) +
+  scale_color_discrete("", label = str_to_title, type = AZ_palette, aesthetic = c("color", "fill")) +
+  scale_alpha_manual("", values = c(prior = 0.25, posterior = 0.25)) +
+  labs(x = "", y = "") +
+  facet_grid(vars(trial), vars(k)) +
+  coord_cartesian(xlim = c(0, 2), ylim = c(0, 0.25)) +
+  guides(alpha = "none") +
+  NULL
+```
+
+
+
+```{r}
+#| label: fig-trial-level-baseline-hazard-residual
+#| fig-cap: Trial level baseline hazard residual.
+#| fig-height: 6
+
+bind_rows(
+  prior = tar_read("prior_all_cr_lambda_trial_residual"),
+  posterior = tar_read("all_cr_lambda_trial_residual"),
+  .id = "fit_type"
+) |>
+  ggplot(aes(t, crcr_trial_lambda_residual)) +
+  geom_lineribbon(
+    aes(ymin = crcr_trial_lambda_residual.lower, ymax = crcr_trial_lambda_residual.upper, fill = fit_type, color = fit_type, group = .width), 
+    alpha = 0.2, linewidth = 0.5
+  ) + 
+  geom_line(
+    aes(color = fit_type, group = str_c(fit_type, .draw)), alpha = 0.1,
+    data = bind_rows(
+      prior = tar_read("prior_all_cr_lambda_trial_residual_draws"),
+      posterior = tar_read("all_cr_lambda_trial_residual_draws"),
+      .id = "fit_type"
+    ) 
+  ) +
+  scale_color_discrete("", label = str_to_title, type = AZ_palette, aesthetic = c("color", "fill")) +
+  facet_grid(vars(trial), vars(k)) +
+  coord_cartesian(ylim = c(0, 2))
+```
+
+```{r}
+#| label: fig-covar-effects-on-risk
+#| fig-cap: Confirmed response risk parameters.
+
+bind_rows(
+  prior = tar_read("prior_all_cr_coef"),
+  posterior = tar_read("all_cr_coef"),
+  .id = "fit_type"
+) |> 
+  ggplot(aes(y = covar)) +
+  stat_pointinterval(aes(xdist = .exp_value, color = fit_type), point_size = 1, position = "dodge", .width = c(0.5, 0.8)) +
+  geom_vline(xintercept = 1, linetype = "dotted") +
+  scale_color_discrete("", labels = str_to_title, type = AZ_palette) +
+  labs(x = "Exponential of Parameter",  y = "Parameter", caption = "Showing the posterior median, 50% CI, and 80% CI.") +
+  facet_grid(vars(.variable), vars(k), scales = "free", space = "free_y") +
+  theme(legend.position = "bottom", strip.text.y = element_blank()) +
+  NULL
+```
+
+
+```{r}
+#| label: fig-trial-level-cr-param-residuals
+#| fig-cap: Confirmed response risk trial-level parameter residuals. 
+#| fig-height: 6
+
+bind_rows(
+  prior = tar_read("prior_all_cr_trial_coef_residual"),
+  posterior = tar_read("all_cr_trial_coef_residual"),
+  .id = "fit_type"
+) |> 
+  ggplot(aes(xdist = .exp_value, y = covar)) +
+  stat_slabinterval(
+    aes(justification = 0.5, thickness = after_stat(ggdist::thickness(1)), slab_alpha = after_stat(pdf)),
+    point_interval = NULL, show.legend = FALSE, data = \(d) filter(d, fct_match(fit_type, "prior")) 
+  ) +
+  stat_pointinterval(
+    aes(color = trial), 
+    point_size = 1, position = "dodge", .width = c(0.5, 0.8), 
+    data = \(d) filter(d, fct_match(fit_type, "posterior"))
+  ) +
+  geom_vline(xintercept = 1, linetype = "dotted") +
+  scale_color_discrete("", labels = str_to_title, type = AZ_palette) +
+  labs(x = "Exponential of Parameter",  y = "Parameter", caption = "Showing the posterior median, 50% CI, and 80% CI.") +
+  facet_grid(vars(.variable), vars(k), scales = "free", space = "free_y") +
+  theme(legend.position = "bottom", strip.text.y = element_blank()) +
+  coord_cartesian(xlim = c(0.5, 1.5)) +
+  NULL
+```
+
+
+```{r}
 #| label: fig-conf-resp-hazard-ratio
 #| fig-cap: Probabilistic histograms of the hazard ratio in response to patient characteristics, separated by competing risk.
+#| fig-height: 6
 #| cache: true
 
 bind_rows(
