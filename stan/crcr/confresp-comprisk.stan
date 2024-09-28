@@ -13,7 +13,6 @@ data {
   
   // Hierarchical settings 
   int<lower = 0, upper = 1> add_trial_level;
-  int<lower = 0, upper = 1> add_trial_level_glm;
 
   // This is the data that is shared with the tumor model 
   #include "../base_data.stan"
