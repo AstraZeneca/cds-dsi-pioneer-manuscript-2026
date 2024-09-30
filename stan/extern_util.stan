@@ -33,3 +33,18 @@ array[] int calc_n_screening_t(array[] int n_patient_tumors, array[] int n_measu
   
   return n_screening_t;
 }
+
+/** Scale tumor sizes by the standard deviation of all tumors and demean.
+ * 
+ * @param tumor_size Observed tumor sizes
+ * @return (Mean tumor size, Std deviation of tumor sizes, Standardized tumor sizes)
+ */
+tuple(real, real, vector) standardize_tumor_sizes(vector tumor_size) {
+  real tumor_mean;
+  real tumor_sd;
+  
+  tumor_mean = mean(tumor_size); 
+  tumor_sd = sd(tumor_size); 
+  
+  return (tumor_mean, tumor_sd, (tumor_size - tumor_mean) / tumor_sd); 
+}
