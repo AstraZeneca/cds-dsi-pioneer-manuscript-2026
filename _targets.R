@@ -1,4 +1,3 @@
-library(conflicted)
 library(magrittr)
 library(tidyverse)
 library(rlang)
@@ -15,8 +14,7 @@ source(here("r", "entimice_functions.R"))
 source(here("r", "prepare_analysis_data.R"))
 source(here("r", "priors.R"))
 
-tmp_dir <- file.path(Sys.getenv("TMPDIR"), "adc-early-predict") |> 
-  str_replace("^/scratch", "/wscratch") # Some SLURM nodes use the old TMPDIR /scratch
+tmp_dir <- file.path(Sys.getenv("TMPDIR"), "adc-early-predict")  
 
 tar_option_set(
   packages = c("conflicted", "tidyverse", "rlang", "cmdstanr", "tidybayes", "here", "targets", "posterior"),
@@ -26,8 +24,6 @@ tar_option_set(
   error = "continue"
 )
 tar_config_set(store = file.path(tmp_dir, "_targets"))
-
-options(cmdstanr_output_dir = file.path(tmp_dir, "fit"))
 
 lst(
   # Prior hyperparameters
@@ -145,7 +141,7 @@ lst(
     all_confirmed_resp_stan_data,
     prepare_confirmed_resp_stan_data(
       all_confirmed_resp_covar_formula, all_confirmed_resp_analysis_data, 
-      .tumor_priors = tumor_priors, .pfs_priors = pfs_conf_resp_priors, 
+      # .tumor_priors = tumor_priors, .pfs_priors = pfs_conf_resp_priors, 
       pfs_functions = pfs_functions
     ), 
     deployment = "main"
@@ -363,6 +359,7 @@ lst(
   tar_target(cif_t, seq(1, 100, 10)),
   tar_target(conf_resp_hb, seq(0, 144, by = 6)),
   tar_target(crcr_hazard_ratio_hb, seq(0, 3, by = 0.1)),
+  tar_target(pfs_hazard_ratio_hb, seq(0, 3, by = 0.1)),
   
   tar_target(
     prior_confirmed_resp_comp_risk_res,
@@ -380,8 +377,8 @@ lst(
   tar_target(
     confirmed_resp_comp_risk_res,
     all_confirmed_resp_stan_data |> 
-      add_confirmed_resp_priors(confirmed_resp_priors) |> 
-      list_assign(add_trial_level = TRUE, add_trial_level_glm = TRUE) %>% 
+      add_pfs_crcr_priors(confirmed_resp_priors, tumor_priors, pfs_priors) |> 
+      list_assign(add_trial_level = TRUE) %>% 
       crcr_model$sample(
         iter_warmup = 300, iter_sampling = 300, 
         parallel_chains = 4, threads_per_chain = 4, init = create_crcr_initializer(.),
@@ -394,30 +391,39 @@ lst(
   
   tar_target(
     prior_all_confirmed_resp_pfs_res,
-    pfs_cr_model$sample(
-      all_confirmed_resp_stan_data |> 
-        add_confirmed_resp_priors(confirmed_resp_priors) |> 
-        list_assign(fit_data = FALSE),
-      iter_warmup = 300, iter_sampling = 300, parallel_chains = 4, threads_per_chain = 1,
-      output_dir = file.path(tmp_dir, "fit"), output_basename = "prior_confirmed_resp_pfs"
-    )
+    all_confirmed_resp_stan_data |> 
+      add_pfs_crcr_priors(confirmed_resp_priors, tumor_priors, pfs_conf_resp_priors) |> 
+      list_assign(fit_data = FALSE, add_trial_level = TRUE) %>% 
+      pfs_cr_model$sample(
+        iter_warmup = 300, iter_sampling = 300, 
+        parallel_chains = 4, threads_per_chain = 1,
+        init = create_pfs_crcr_initializer(.),
+        output_dir = file.path(tmp_dir, "fit"), output_basename = "prior_confirmed_resp_pfs"
+      ) |> 
+      recover_types(select(all_confirmed_resp_analysis_data, trial))
   ),
   
   tar_target(
     all_confirmed_resp_pfs_res,
-    pfs_cr_model$sample(
-      all_confirmed_resp_stan_data |> 
-        add_confirmed_resp_priors(confirmed_resp_priors),  
-      iter_warmup = 300, iter_sampling = 300, parallel_chains = 4, threads_per_chain = 4, 
-      output_dir = file.path(tmp_dir, "fit"), output_basename = "confirmed_resp_pfs"
-    )
+    all_confirmed_resp_stan_data |> 
+      add_pfs_crcr_priors(confirmed_resp_priors, tumor_priors, pfs_conf_resp_priors) |> 
+      list_assign(add_trial_level = TRUE, add_trial_level_glm = TRUE) %>% 
+      pfs_cr_model$sample(
+        iter_warmup = 300, iter_sampling = 300, 
+        parallel_chains = 4, threads_per_chain = 4, 
+        init = create_pfs_crcr_initializer(.),
+        output_dir = file.path(tmp_dir, "fit"), output_basename = "confirmed_resp_pfs"
+      ) |> 
+      recover_types(select(all_confirmed_resp_analysis_data, trial))
   ),
   
-  tar_target(prior_crcr_res, prior_confirmed_resp_comp_risk_res),
-  tar_target(crcr_res, confirmed_resp_comp_risk_res),
-  # tar_target(prior_crcr_res, prior_all_confirmed_resp_pfs_res),
-  # tar_target(crcr_res, all_confirmed_resp_pfs_res),
+  tar_target(prior_crcr_res, prior_all_confirmed_resp_pfs_res),
+  tar_target(crcr_res, all_confirmed_resp_pfs_res),
   
+  # CRCR results
+  
+  tar_target(prior_all_rep_confirmed_response_bindist, get_all_rep_confirmed_response_bindist(prior_crcr_res, all_confirmed_resp_stan_data, conf_resp_hb)),
+  tar_target(all_rep_confirmed_response_bindist, get_all_rep_confirmed_response_bindist(crcr_res, all_confirmed_resp_stan_data, conf_resp_hb)),
   tar_target(prior_all_conf_resp_lambda_trial_intercept, get_all_conf_resp_lambda_trial_intercept(prior_crcr_res)),
   tar_target(prior_all_conf_resp_lambda_trial_intercept_bindist, get_all_conf_resp_lambda_trial_intercept_bindist(prior_crcr_res, crcr_hazard_ratio_hb)),
   tar_target(all_conf_resp_lambda_trial_intercept, get_all_conf_resp_lambda_trial_intercept(crcr_res)),
@@ -432,46 +438,49 @@ lst(
   tar_target(all_cr_coef, get_all_cr_pred_param(crcr_res)),
   tar_target(prior_all_cr_trial_coef_residual, get_all_cr_trial_pred_param(prior_crcr_res)),
   tar_target(all_cr_trial_coef_residual, get_all_cr_trial_pred_param(crcr_res)),
+  tar_target(prior_all_crcr_hazard_ratio_bindist, get_all_conf_resp_hazard_ratios_bindist(prior_crcr_res, all_confirmed_resp_stan_data, crcr_hazard_ratio_hb)),
+  tar_target(all_crcr_hazard_ratio_bindist, get_all_conf_resp_hazard_ratios_bindist(crcr_res, all_confirmed_resp_stan_data, crcr_hazard_ratio_hb)),
+  tar_target(prior_all_conf_resp_cif_bindist, get_all_conf_resp_cif_bindist(prior_crcr_res, all_confirmed_resp_stan_data, cif_t, cif_hb, ndraws = 300)),
+  tar_target(all_conf_resp_cif_bindist, get_all_conf_resp_cif_bindist(crcr_res, all_confirmed_resp_stan_data, cif_t, cif_hb, ndraws = 300)),
   
+  # PFS results
+ 
+  tar_target(prior_conf_resp_pfs_lambda, get_all_pfs_crcr_lambda(prior_all_confirmed_resp_pfs_res)), 
+  tar_target(conf_resp_pfs_lambda, get_all_pfs_crcr_lambda(all_confirmed_resp_pfs_res)), 
+  tar_target(prior_conf_resp_pfs_lambda_trial_intercept, get_all_pfs_crcr_lambda_trial_intercept(prior_all_confirmed_resp_pfs_res)),
+  tar_target(conf_resp_pfs_lambda_trial_intercept, get_all_pfs_crcr_lambda_trial_intercept(all_confirmed_resp_pfs_res)),
+  tar_target(prior_conf_resp_pfs_trial_lambda_residual, get_all_pfs_crcr_trial_lambda_residual(prior_all_confirmed_resp_pfs_res)), 
+  tar_target(conf_resp_pfs_trial_lambda_residual, get_all_pfs_crcr_trial_lambda_residual(all_confirmed_resp_pfs_res)), 
   tar_target(
-    prior_all_rep_confirmed_response_bindist, get_all_rep_confirmed_response_bindist(prior_crcr_res, all_confirmed_resp_stan_data, conf_resp_hb)
+    prior_all_conf_resp_pfs_lambda_trial_residual_draws, get_all_pfs_crcr_trial_lambda_residual_draws(prior_all_confirmed_resp_pfs_res, 50), 
+    storage = "worker", retrieval = "worker"
   ),
   tar_target(
-    all_rep_confirmed_response_bindist, get_all_rep_confirmed_response_bindist(crcr_res, all_confirmed_resp_stan_data, conf_resp_hb)
+    all_conf_resp_pfs_lambda_trial_residual_draws, get_all_pfs_crcr_trial_lambda_residual_draws(all_confirmed_resp_pfs_res, 50), 
+    storage = "worker", retrieval = "worker"
   ),
   tar_target(
-    prior_all_crcr_hazard_ratio_bindist, 
-    get_all_conf_resp_hazard_ratios_bindist(prior_crcr_res, all_confirmed_resp_stan_data, crcr_hazard_ratio_hb)
-  ),
-  tar_target(
-    all_crcr_hazard_ratio_bindist, 
-    get_all_conf_resp_hazard_ratios_bindist(crcr_res, all_confirmed_resp_stan_data, crcr_hazard_ratio_hb)
-  ),
-  tar_target(
-    prior_all_conf_resp_cif_bindist, 
-    get_all_conf_resp_cif_bindist(prior_crcr_res, all_confirmed_resp_stan_data, cif_t, cif_hb, ndraws = 300)
-  ),
-  tar_target(
-    all_conf_resp_cif_bindist, 
-    get_all_conf_resp_cif_bindist(crcr_res, all_confirmed_resp_stan_data, cif_t, cif_hb, ndraws = 300)
-  ),
-  
-  tar_target(
-    prior_trial_conf_resp_median_pfs, 
-    get_all_median_pfs_conf_resp(prior_crcr_res, all_confirmed_resp_analysis_data),
+    prior_trial_conf_resp_median_pfs, get_all_median_pfs_conf_resp(prior_all_confirmed_resp_pfs_res, all_confirmed_resp_analysis_data), 
     storage = "worker", retrieval = "worker" 
   ),
   tar_target(
-    trial_conf_resp_median_pfs, 
-    get_all_median_pfs_conf_resp(crcr_res, all_confirmed_resp_analysis_data),
+    trial_conf_resp_median_pfs, get_all_median_pfs_conf_resp(all_confirmed_resp_pfs_res, all_confirmed_resp_analysis_data), 
     storage = "worker", retrieval = "worker" 
   ),
   tar_target(prior_trial_conf_resp_km_est, get_all_pfs_conf_resp_km_est(prior_all_confirmed_resp_pfs_res, all_confirmed_resp_analysis_data)),
   tar_target(trial_conf_resp_km_est, get_all_pfs_conf_resp_km_est(all_confirmed_resp_pfs_res, all_confirmed_resp_analysis_data)),
-  tar_target(prior_trial_pfs_conf_resp_hazard_ratio, get_all_pfs_conf_resp_log_hazard_ratio(prior_all_confirmed_resp_pfs_res)),
-  tar_target(trial_pfs_conf_resp_hazard_ratio, get_all_pfs_conf_resp_log_hazard_ratio(all_confirmed_resp_pfs_res)),
+  tar_target(
+    prior_trial_pfs_conf_resp_hazard_ratio_bindist, 
+    get_all_pfs_conf_resp_hazard_ratio_bindist(prior_all_confirmed_resp_pfs_res, all_confirmed_resp_stan_data, pfs_hazard_ratio_hb)
+  ),
+  tar_target(
+    trial_pfs_conf_resp_hazard_ratio_bindist, 
+    get_all_pfs_conf_resp_hazard_ratio_bindist(all_confirmed_resp_pfs_res, all_confirmed_resp_stan_data, pfs_hazard_ratio_hb)
+  ),
   tar_target(prior_pfs_conf_resp_param, get_all_pfs_pred_param(prior_all_confirmed_resp_pfs_res), storage = "worker", retrieval = "worker"),
   tar_target(pfs_conf_resp_param, get_all_pfs_pred_param(all_confirmed_resp_pfs_res), storage = "worker", retrieval = "worker"),
+  tar_target(prior_pfs_conf_resp_trial_param, get_all_pfs_trial_pred_param(prior_all_confirmed_resp_pfs_res), storage = "worker", retrieval = "worker"),
+  tar_target(pfs_conf_resp_trial_param, get_all_pfs_trial_pred_param(all_confirmed_resp_pfs_res), storage = "worker", retrieval = "worker"),
   
   # Leave-one-trial-out bootstrap
   
@@ -490,7 +499,14 @@ lst(
   
   tar_target(
     bootstrap_confirmed_resp_pfs_res, 
-    run_bootstrap_pfs_cr(pfs_cr_model, leave_out_trials, add_confirmed_resp_priors(all_confirmed_resp_stan_data, confirmed_resp_priors), bootstrap_settings), # iter_warmup = 2, iter_sampling = 2), 
+    all_confirmed_resp_stan_data |> 
+      add_pfs_crcr_priors(confirmed_resp_priors, tumor_priors, pfs_conf_resp_priors) |>  
+      run_bootstrap_pfs_cr(
+        pfs_cr_model, 
+        leave_out_trials, 
+        bootstrap_settings,
+        output_dir = file.path(tmp_dir, "fit") 
+      ), # iter_warmup = 2, iter_sampling = 2), 
     pattern = map(leave_out_trials)
   ),
   
@@ -533,39 +549,39 @@ lst(
   
   # PFS CR separately
   
-  tar_target(prior_confirmed_resp_pfs_res,
-             treated_confirmed_resp_stan_data |> 
-               rowwise() |> 
-               mutate(
-                 stan_data = stan_data |> list_assign(fit_data = FALSE) |> list(),
-                 fit = list(pfs_cr_model$sample(
-                   stan_data,
-                   iter_warmup = 400, iter_sampling = 400, parallel_chains = 4, threads_per_chain = 4, init = init_fun,
-                   output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("prior_confirmed_resp_pfs_", trial)
-                 )
-             )), 
-           pattern = map(treated_confirmed_resp_stan_data)
-  ),
-  
-  tar_target(confirmed_resp_pfs_res,
-             treated_confirmed_resp_stan_data |> 
-               rowwise() |> 
-               mutate(
-                 fit = list(pfs_cr_model$sample(
-                   stan_data,
-                   iter_warmup = 400, iter_sampling = 400, parallel_chains = 4, threads_per_chain = 4, init = init_fun,
-                   output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("confirmed_resp_pfs_", trial)
-                 )
-             )), 
-           pattern = map(treated_confirmed_resp_stan_data)
-  ),
-  
-  # Extracting result rvars from model fit
-  
-  tar_target(prior_conf_resp_median_pfs, get_median_pfs_conf_resp(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
-  tar_target(conf_resp_median_pfs, get_median_pfs_conf_resp(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
-  tar_target(prior_conf_resp_km_est, get_pfs_conf_resp_km_est(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
-  tar_target(conf_resp_km_est, get_pfs_conf_resp_km_est(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
+  # tar_target(prior_confirmed_resp_pfs_res,
+  #            treated_confirmed_resp_stan_data |> 
+  #              rowwise() |> 
+  #              mutate(
+  #                stan_data = stan_data |> list_assign(fit_data = FALSE) |> list(),
+  #                fit = list(pfs_cr_model$sample(
+  #                  stan_data,
+  #                  iter_warmup = 400, iter_sampling = 400, parallel_chains = 4, threads_per_chain = 4, init = init_fun,
+  #                  output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("prior_confirmed_resp_pfs_", trial)
+  #                )
+  #            )), 
+  #          pattern = map(treated_confirmed_resp_stan_data)
+  # ),
+  # 
+  # tar_target(confirmed_resp_pfs_res,
+  #            treated_confirmed_resp_stan_data |> 
+  #              rowwise() |> 
+  #              mutate(
+  #                fit = list(pfs_cr_model$sample(
+  #                  stan_data,
+  #                  iter_warmup = 400, iter_sampling = 400, parallel_chains = 4, threads_per_chain = 4, init = init_fun,
+  #                  output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("confirmed_resp_pfs_", trial)
+  #                )
+  #            )), 
+  #          pattern = map(treated_confirmed_resp_stan_data)
+  # ),
+  # 
+  # # Extracting result rvars from model fit
+  # 
+  # tar_target(prior_conf_resp_median_pfs, get_median_pfs_conf_resp(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
+  # tar_target(conf_resp_median_pfs, get_median_pfs_conf_resp(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
+  # tar_target(prior_conf_resp_km_est, get_pfs_conf_resp_km_est(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
+  # tar_target(conf_resp_km_est, get_pfs_conf_resp_km_est(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
   # tar_target(prior_pfs_conf_resp_marginal_exit_prob, 
   #            get_pfs_conf_resp_marginal_exit_prob(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
   # tar_target(pfs_conf_resp_marginal_exit_prob, 
@@ -574,8 +590,8 @@ lst(
   # tar_target(prior_rep_confirmed_response, get_rep_confirmed_response(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
   # tar_target(rep_confirmed_response, get_rep_confirmed_response(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
   # tar_target(crcr_hazard_ratio, get_conf_resp_hazard_ratios(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
-  tar_target(prior_pfs_conf_resp_hazard_ratio, get_pfs_conf_resp_log_hazard_ratio(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
-  tar_target(pfs_conf_resp_hazard_ratio, get_pfs_conf_resp_log_hazard_ratio(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
+  # tar_target(prior_pfs_conf_resp_hazard_ratio, get_pfs_conf_resp_log_hazard_ratio(prior_confirmed_resp_pfs_res), pattern = map(prior_confirmed_resp_pfs_res)),
+  # tar_target(pfs_conf_resp_hazard_ratio, get_pfs_conf_resp_log_hazard_ratio(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)),
   # tar_target(pfs_conf_resp_bootstrap_median_pfs, get_pfs_conf_resp_bootstrap_median_pfs(confirmed_resp_pfs_res), pattern = map(confirmed_resp_pfs_res)), 
   # tar_target(prior_conf_resp_cif, get_conf_resp_cif(prior_confirmed_resp_pfs_res, cif_t, cif_hb), pattern = map(prior_confirmed_resp_pfs_res)),
   # tar_target(conf_resp_cif, get_conf_resp_cif(confirmed_resp_pfs_res, cif_t, cif_hb), pattern = map(confirmed_resp_pfs_res)),

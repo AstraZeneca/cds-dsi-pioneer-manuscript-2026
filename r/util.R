@@ -185,11 +185,31 @@ create_crcr_initializer <- function(stan_data, n_causes = 2) {
     if (stan_data$add_trial_level) {
       init_vals <- init_vals |> 
         list_assign(
-          log_crcr_lambda_gp_trial_intercept_sd = with(stan_data, rnorm(n_causes, sd = log_crcr_lambda_gp_trial_intercept_sd_sd))
+          log_crcr_lambda_gp_trial_intercept_sd = with(stan_data, abs(rnorm(n_causes, sd = log_crcr_lambda_gp_trial_intercept_sd_sd)))
         )
     }
    
     return(init_vals) 
+  }
+}
+
+create_pfs_crcr_initializer <- function(stan_data, n_causes = 2) {
+  crcr_init_fun <- create_crcr_initializer(stan_data, n_causes)
+  
+  function(chain_id) {
+    init_vals <- crcr_init_fun(chain_id) |> 
+      list_assign(
+        log_lambda_gp_intercept = with(stan_data, rnorm(1, log_lambda_gp_intercept_mean, log_lambda_gp_intercept_sd))
+      )
+    
+    if (stan_data$add_trial_level) {
+       init_vals <- init_vals |>  
+        list_assign(
+          log_lambda_gp_trial_intercept_sd = with(stan_data, abs(rnorm(1, sd = log_lambda_gp_trial_intercept_sd_sd)))
+        )  
+    }
+    
+    return(init_vals)
   }
 }
 
@@ -868,7 +888,7 @@ cmdstan_expose_pfs_functions <- function(util_file, pfs_functions_file) {
 }
 
 run_bootstrap_pfs_cr <- function(
-    model, leave_out_trials, all_confirmed_resp_stan_data, bootstrap_settings, iter_warmup = 300, iter_sampling = 300
+    all_confirmed_resp_stan_data, model, leave_out_trials, bootstrap_settings, iter_warmup = 300, iter_sampling = 300, ...
   ) {
   tibble(
     trial = leave_out_trials,
@@ -880,7 +900,9 @@ run_bootstrap_pfs_cr <- function(
       fit = list(model$sample(
         stan_data,
         iter_warmup = iter_warmup, iter_sampling = iter_sampling, parallel_chains = 4, threads_per_chain = 4, refresh = 0,
-        output_dir = file.path(tmp_dir, "fit"), output_basename = str_c("bs_confirmed_resp_pfs_", trial)
+        output_basename = str_c("bs_confirmed_resp_pfs_", trial),
+        init = create_pfs_crcr_initializer(stan_data),
+        ...
       ))
     )
 }

@@ -27,17 +27,19 @@ get_pfs_priors <- function() {
 get_pfs_conf_resp_priors <- function() {
   get_pfs_priors() |> 
     list_assign(
-    log_lambda_gp_intercept_mean = -4.5,
-    log_lambda_gp_intercept_sd = 1,
-    log_lambda_gp_alpha_sd = 1,
-    
-    covar_effect_sd = 0.15,
-    tumor_stim_pop_coef_sd = c(0.2, 0.2, 0.2, 0.15, 0.15),
-    conf_resp_effect_sd = 0.3,
-    
-    covar_trial_sd_sd = 0.1, 
-    covar_trial_corr_eta = 2
-  )
+      log_lambda_gp_intercept_mean = -2.5,
+      log_lambda_gp_intercept_sd = 0.75,
+      log_lambda_gp_alpha_sd = 1,
+      log_lambda_gp_rho_alpha = 3,
+      log_lambda_gp_rho_beta = 10, 
+      
+      covar_effect_sd = 0.15,
+      tumor_stim_pop_coef_sd = c(0.2, 0.2, 0.2, 0.15, 0.15),
+      conf_resp_effect_sd = 0.3,
+      
+      covar_trial_sd_sd = 0.1, 
+      covar_trial_corr_eta = 2
+    )
 }
 
 get_confirmed_resp_priors <- function(n_tumor_covar, n_strat_covar) {

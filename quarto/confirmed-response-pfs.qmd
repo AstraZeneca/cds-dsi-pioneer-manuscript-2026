@@ -313,8 +313,9 @@ bind_rows(
 ```
 
 ```{r}
-#| label: fig-baseline-hazard
+#| label: fig-crcr-baseline-hazard
 #| fig-cap: Population (top) level baseline hazard  
+#| cache: true
 
 bind_rows(
   prior = tar_read("prior_all_conf_resp_lambda"),
@@ -330,7 +331,8 @@ bind_rows(
       semi_join(
         distinct(., fit_type, k, .draw) |>
           group_by(fit_type, k) |>
-          slice_sample(n = 25)
+          slice_sample(n = 25),
+        by = join_by(fit_type, k, .draw)
       )
   ) +
   stat_lineribbon(aes(ydist = crcr_lambda, fill = fit_type, color = fit_type), alpha = 0.25, linewidth = 0, .width = 0.8) +
@@ -343,6 +345,7 @@ bind_rows(
 ```{r}
 #| label: fig-trial-level-intercepts
 #| fig-cap: These probabilistic histogram show the trial-level GP baseline hazard intercepts.
+#| include: false
 
 bind_rows(
   prior = tar_read("prior_all_conf_resp_lambda_trial_intercept_bindist"),
@@ -365,7 +368,7 @@ bind_rows(
 ```
 
 ```{r}
-#| label: fig-trial-level-intercepts-density
+#| label: fig-crcr-trial-level-intercepts-density
 #| fig-cap: Prior and posterior density of the trial-level GP baseline hazard intercepts. 
 #| fig-height: 6
 
@@ -390,9 +393,10 @@ bind_rows(
 
 
 ```{r}
-#| label: fig-trial-level-baseline-hazard-residual
+#| label: fig-crcr-trial-level-baseline-hazard-residual
 #| fig-cap: Trial level baseline hazard residual.
 #| fig-height: 6
+#| cache: true
 
 bind_rows(
   prior = tar_read("prior_all_cr_lambda_trial_residual"),
@@ -418,7 +422,7 @@ bind_rows(
 ```
 
 ```{r}
-#| label: fig-covar-effects-on-risk
+#| label: fig-crcr-covar-effects-on-risk
 #| fig-cap: Confirmed response risk parameters.
 
 bind_rows(
@@ -579,7 +583,6 @@ bind_rows(
   theme(legend.position = "bottom", axis.text.x = element_blank(), strip.text.y.left = element_text(angle = 0), strip.placement = "outside") +
   NULL
 ```
-
 
 ## Recruitment Process
 
@@ -742,6 +745,83 @@ $$
 where $S^\textrm{pfs}(t,\boldsymbol{x}, \boldsymbol{\theta}^\textrm{crcr}, \boldsymbol{\theta}^\textrm{pfs}) = \prod_{\tau = 1}^t \Pr[Y^\textrm{pfs}_{\tau} = 0 \mid Y^\textrm{pfs}_{\tau-1} = 0, \boldsymbol{x}, \boldsymbol{\theta}^\textrm{crcr}, \boldsymbol{\theta}^\textrm{pfs}]$ is the probability of remaining progress free up to week $t$.
 
 ```{r}
+#| label: fig-pfs-crcr-baseline-hazard
+#| fig-cap: Population (top) level baseline hazard  
+
+bind_rows(
+  prior = tar_read("prior_conf_resp_pfs_lambda"),
+  posterior = tar_read("conf_resp_pfs_lambda"),
+  .id = "fit_type"
+) |>
+  ggplot(aes(t)) +
+  geom_line(
+    aes(y = lambda, color = fit_type, group = str_c(fit_type, .draw)),
+    alpha = 0.25,
+    data = \(d) unnest_rvars(d) |>
+      ungroup() %>%
+      semi_join(
+        distinct(., fit_type, .draw) |>
+          group_by(fit_type) |>
+          slice_sample(n = 25),
+        by = join_by(fit_type, .draw)
+      )
+  ) +
+  stat_lineribbon(aes(ydist = lambda, fill = fit_type, color = fit_type), alpha = 0.25, linewidth = 0, .width = 0.8) +
+  scale_color_discrete("", label = str_to_title, type = AZ_palette, aesthetic = c("color", "fill")) +
+  theme(legend.position = "bottom") + 
+  coord_cartesian(ylim = c(0, 0.4))
+```
+
+```{r}
+#| label: fig-pfs-crcr-trial-level-intercepts-density
+#| fig-cap: Prior and posterior density of the trial-level GP baseline hazard intercepts. 
+
+bind_rows(
+  prior = tar_read("prior_conf_resp_pfs_lambda_trial_intercept"),
+  posterior = tar_read("conf_resp_pfs_lambda_trial_intercept"),
+  .id = "fit_type"
+) |>
+  ggplot() +
+  stat_slab(
+    aes(xdist = lambda_gp_trial_intercept, color = fit_type, fill = fit_type, alpha = fit_type, group = str_c(fit_type, trial)),
+  ) +
+  scale_color_discrete("", label = str_to_title, type = AZ_palette, aesthetic = c("color", "fill")) +
+  scale_alpha_manual("", values = c(prior = 0.25, posterior = 0.25)) +
+  labs(x = "", y = "") +
+  facet_wrap(vars(trial)) +
+  coord_cartesian(xlim = c(0, 2), ylim = c(0, 0.25)) +
+  guides(alpha = "none") +
+  NULL
+```
+
+```{r}
+#| label: fig-pfs-crcr-trial-level-baseline-hazard-residual
+#| fig-cap: Trial level baseline hazard residual.
+
+bind_rows(
+  prior = tar_read("prior_conf_resp_pfs_trial_lambda_residual"),
+  posterior = tar_read("conf_resp_pfs_trial_lambda_residual"),
+  .id = "fit_type"
+) |>
+  ggplot(aes(t, trial_lambda_residual)) +
+  geom_lineribbon(
+    aes(ymin = trial_lambda_residual.lower, ymax = trial_lambda_residual.upper, fill = fit_type, color = fit_type, group = .width), 
+    alpha = 0.2, linewidth = 0.5
+  ) + 
+  geom_line(
+    aes(color = fit_type, group = str_c(fit_type, .draw)), alpha = 0.1,
+    data = bind_rows(
+      prior = tar_read("prior_all_conf_resp_pfs_lambda_trial_residual_draws"),
+      posterior = tar_read("all_conf_resp_pfs_lambda_trial_residual_draws"),
+      .id = "fit_type"
+    )
+  ) +
+  scale_color_discrete("", label = str_to_title, type = AZ_palette, aesthetic = c("color", "fill")) +
+  facet_wrap(vars(trial)) +
+  coord_cartesian(ylim = c(0, 2))
+```
+
+```{r}
 #| label: load-mpfs
 
 pfs_cr_median_pfs <- bind_rows(
@@ -801,16 +881,11 @@ bind_rows(
 #| fig-width: 10
 #| cache: true
 
-hb <- seq(0, 3, by = 0.1)
-
 bind_rows(
-  prior = tar_read("prior_pfs_conf_resp_hazard_ratio"),
-  posterior = tar_read("pfs_conf_resp_hazard_ratio"),
+  prior = tar_read("prior_trial_pfs_conf_resp_hazard_ratio_bindist"),
+  posterior = tar_read("trial_pfs_conf_resp_hazard_ratio_bindist"),
   .id = "fit_type"
 ) |>   
-  group_by(trial, k, fit_type) |> 
-  reframe(t = hb[-1], bindist = rvar_sample_hist(time_invariant_hazard_ratio, hb)) |> 
-  mutate(k = factor(k, levels = 1:2, labels = c("Non-response", "Response"))) |> 
   ggplot(aes(t)) +
   stat_lineribbon(aes(ydist = bindist, color = fit_type, fill = fit_type, alpha = fit_type),
                   linewidth = 1,
@@ -825,6 +900,63 @@ bind_rows(
   theme(legend.position = "bottom", strip.text.y.left = element_text(angle = 0), strip.placement = "outside") +
   NULL
 ```
+
+```{r}
+#| label: fig-pfs-crcr-covar-effects-on-risk
+#| fig-cap: Confirmed response risk parameters.
+
+bind_rows(
+  prior = tar_read("prior_pfs_conf_resp_param"),
+  posterior = tar_read("pfs_conf_resp_param"),
+  .id = "fit_type"
+) |> 
+  ggplot(aes(y = covar)) +
+  stat_pointinterval(aes(xdist = .exp_value, color = fit_type), point_size = 1, position = "dodge", .width = c(0.5, 0.8)) +
+  geom_vline(xintercept = 1, linetype = "dotted") +
+  scale_color_discrete("", labels = str_to_title, type = AZ_palette) +
+  labs(x = "Exponential of Parameter",  y = "Parameter", caption = "Showing the posterior median, 50% CI, and 80% CI.") +
+  facet_grid(vars(.variable), scales = "free", space = "free_y") +
+  theme(legend.position = "bottom", strip.text.y = element_blank()) +
+  NULL
+```
+
+* While the confirmed response indicator appears to have the strongest effect on hazard, keep in mind that the majority of patients are identified as confirmed responders (see @fig-response-classification). 
+* The _practically_ strongest predictor here is the baseline sum of tumor sizes. Note that the following tumor size assessment does not appear to have a lot of influence. This does not rule out the possibility of a more useful signal in the entire time-series of tumor size changes. 
+* We use relatively conservative priors on these parameters. The influence of both confirmed response and baseline tumor sizes is sufficiently high to overcome this regularization. 
+* Idea: look into the interaction between confirmed response and tumor sizes. Those are likely highly correlated since the former is based on the latter.
+* Other observations: 
+    - Highest age group has reduced hazard. This is probably a survivorship effect: those who survived that long are probably more robust.
+    - Prior CDK46 inhibition treatment is probably an indicator higher risk.
+
+
+```{r}
+#| label: fig-trial-level-pfs-cr-param-residuals
+#| fig-cap: PFS trial-level parameter residuals. 
+
+bind_rows(
+  prior = tar_read("prior_pfs_conf_resp_trial_param"),
+  posterior = tar_read("pfs_conf_resp_trial_param"),
+  .id = "fit_type"
+) |> 
+  ggplot(aes(xdist = .exp_value, y = covar)) +
+  stat_slabinterval(
+    aes(justification = 0.5, thickness = after_stat(ggdist::thickness(1)), slab_alpha = after_stat(pdf)),
+    point_interval = NULL, show.legend = FALSE, data = \(d) filter(d, fct_match(fit_type, "prior")) 
+  ) +
+  stat_pointinterval(
+    aes(color = trial), 
+    point_size = 1, position = "dodge", .width = c(0.5, 0.8), 
+    data = \(d) filter(d, fct_match(fit_type, "posterior"))
+  ) +
+  geom_vline(xintercept = 1, linetype = "dotted") +
+  scale_color_discrete("", labels = str_to_title, type = AZ_palette) +
+  labs(x = "Exponential of Parameter",  y = "Parameter", caption = "Showing the posterior median, 50% CI, and 80% CI.") +
+  facet_grid(vars(.variable), scales = "free", space = "free_y") +
+  theme(legend.position = "bottom", strip.text.y = element_blank()) +
+  coord_cartesian(xlim = c(0.5, 1.5)) +
+  NULL
+```
+
 # Simulations 
 
 Here we are using *leave-one-trial-out* evaluation of the prediction accuracy of training our models on three trials and holding the fourth out for testing. We do this for each trial.^[At this point, we're are pooling all the observed trials and predicting the heldout trial: there is no hierarchical structure (yet) to the model accounting for heterogeneity in the trials not captured by covariates of the model (i.e., baseline characteristics, etc.).] We do not update the model as data from the held-out trial becomes available with increased data maturity rates.
@@ -892,33 +1024,6 @@ flowchart TD
     classDef purple fill:#E1BEE7,stroke:#8E24AA,stroke-width:2px
 ```
        
-Below we look at how each of the PFS model parameters influences the hazard. These are the exponential values of the parameters: they should the multiplication effect on the hazard.
-          
-```{r}
-#| label: fig-bs-param-est
-#| fig-cap: Posterior distributions of model parameters, shown separately by the trial heldout.
-
-tar_read("pfs_conf_resp_bootstrap_param") |> 
-  ggplot(aes(y = covar)) +
-  stat_slabinterval(
-    aes(xdist = .exp_value, justification = 0.5, thickness = after_stat(ggdist::thickness(1)), slab_alpha = after_stat(pdf)),
-    point_interval = NULL, show.legend = FALSE, data = tar_read("prior_pfs_conf_resp_param")
-  ) +
-  stat_pointinterval(aes(xdist = .exp_value, color = trial), point_size = 1, position = "dodge", .width = c(0.5, 0.8)) +
-  geom_vline(xintercept = 1, linetype = "dotted") +
-  scale_color_discrete("", type = AZ_palette) +
-  labs(x = "Exponential of Parameter",  y = "Parameter", caption = "Showing the posterior median, 50% CI, and 80% CI.\nGradient shows the prior.") +
-  NULL
-```
-
-* While the confirmed response indicator appears to have the strongest effect on hazard, keep in mind that the majority of patients are identified as confirmed responders (see @fig-response-classification). 
-* The _practically_ strongest predictor here is the baseline sum of tumor sizes. Note that the following tumor size assessment does not appear to have a lot of influence. This does not rule out the possibility of a more useful signal in the entire time-series of tumor size changes. 
-* We use relatively conservative priors on these parameters. The influence of both confirmed response and baseline tumor sizes is sufficiently high to overcome this regularization. 
-* Idea: look into the interaction between confirmed response and tumor sizes. Those are likely highly correlated since the former is based on the latter.
-* Other observations: 
-    - Highest age group has reduced hazard. This is probably a survivorship effect: those who survived that long are probably more robust.
-    - Prior CDK46 inhibition treatment is probably an indicator higher risk.
-
 ```{r}
 #| label: load-bootstrap
 
@@ -940,11 +1045,11 @@ In this section, we look at how prediction accuracy changes in response to the m
 #| label: fig-posterior-mpfs-for-subsamples
 #| fig-cap: Showing what the posterior of the mPFS prediction looks like for three bootstrap subsamples for Breast-04.
 
-prediction_focus <- tibble(cr_f = c(0.1, 0.15, 0.5))
+prediction_focus <- tibble(cr_f = c(0.05, 0.1, 0.5))
 
 fixed_db4_subsample <- fixed_bootstrap_cr_median_pfs |>
   filter(map_lgl(fixed_bs_cr_median_pfs, \(mpfs) quantile(mpfs, probs = 0.8) < max_all_t), trial == "Breast04") |>   
-  mutate(selected = f == 2)  
+  mutate(selected = f == 3)  
 
 fixed_db4_subsample |>
   filter(selected) |> 
@@ -976,7 +1081,7 @@ fixed_db4_subsample |>
 #| fig-height: 3
 
 fixed_bootstrap_cr_median_pfs |>
-  filter(f == 2, trial == "Breast04") |>
+  filter(f == 3, trial == "Breast04") |>
   semi_join(mutate(prediction_focus, cr_f2 = cr_f + 0.01), by = join_by(bootstrap_cr_maturity_rates >= cr_f, bootstrap_cr_maturity_rates < cr_f2)) |>  
   filter(map_lgl(fixed_bs_cr_median_pfs, \(mpfs) quantile(mpfs, probs = 0.8) < max_all_t)) |> 
   ggplot() +
@@ -992,7 +1097,7 @@ fixed_bootstrap_cr_median_pfs |>
   scale_color_discrete("Fraction of patients with known response", type = AZ_palette, aesthetics = c("color", "fill")) +
   labs(x = "Median PFS [weeks]", y = "") +
   theme(legend.position = "bottom") +
-  coord_cartesian(xlim = c(25, 140)) +
+  coord_cartesian(xlim = c(0, 100)) +
   NULL
   
 ```
@@ -1172,7 +1277,7 @@ cr_size_est_data |>
   NULL
 
 cr_size_est_data |> 
-  filter(!fct_match(variable, "n_bs_sample")) |>
+  filter(!fct_match(variable, "n_bs_sample"), !is.na(variable)) |>
   mutate(
     variable = fct_recode(variable, "confirmed response" = "n_bs_cr_conf_resp_predicted_prop", "PFS" = "n_bs_cr_pfs_predicted_prop")
   ) |> 
@@ -1308,7 +1413,7 @@ pfs_size_est_data |>
   NULL
 
 pfs_size_est_data |> 
-  filter(!fct_match(variable, "n_bs_sample")) |>
+  filter(!fct_match(variable, "n_bs_sample"), !is.na(variable)) |>
   mutate(
     variable = fct_recode(variable, "confirmed response" = "n_bs_pfs_conf_resp_predicted_prop", "PFS" = "n_bs_pfs_pfs_predicted_prop")
   ) |> 

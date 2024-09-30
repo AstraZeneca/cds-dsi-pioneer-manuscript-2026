@@ -408,10 +408,8 @@ prepare_confirmed_resp_covar_formula <- function(trials = NULL) {
   return(covar_formula)
 }
 
-prepare_confirmed_resp_stan_data <- function(
-    covar_formula, analysis_data, .tumor_priors, .pfs_priors, pfs_functions, ..., include_covar = TRUE
-) {
-  pfs_stan_data <- prepare_pfs_stan_data(analysis_data, .tumor_priors, .pfs_priors, pfs_functions)
+prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, pfs_functions, ..., include_covar = TRUE) {
+  pfs_stan_data <- prepare_pfs_stan_data(analysis_data, NULL, NULL, pfs_functions)
   
   stopifnot(pfs_stan_data$n_patients == nrow(analysis_data))
   
@@ -427,34 +425,29 @@ prepare_confirmed_resp_stan_data <- function(
   
   pfs_stan_data %>% 
     list_assign(
-      add_trial_level = FALSE,
-      add_trial_level_glm = FALSE,
-      use_pfs_covar = TRUE,
+      add_trial_level = TRUE,
       covar_design_matrix = covar_design_matrix,
       n_covar = n_covar,
       n_tumor_covar = 2,
       time_varying_conf_resp = FALSE,
       ignore_interval_censoring = FALSE,
+      
       leave_out_trial = 0,
       n_bootstrap_sample = 0,
       n_bootstrap_cr_maturity_rates = 0,
       bootstrap_cr_maturity_rates = array(dim = 0),
       n_bootstrap_pfs_maturity_rates = 0,
       bootstrap_pfs_maturity_rates = array(dim = 0),
+      n_fixed_bootstrap_samples = 0, 
       
       recruit_lambda = array(dim = 0), 
       recruit_phi = 0, 
-      n_bootstrap_samples = 0,
       
       confirmed_response = coalesce(analysis_data$confirmed_response, FALSE),
       confirmed_response_censored = analysis_data$confirmed_response_censored,
       confirmed_response_interval_censored = analysis_data$confirmed_response_interval_censored,
       confirmed_response_week = analysis_data$confirmed_response_week,
-    ) %>% 
-    list_assign(
-      covar_effect_sd = rep(.$covar_effect_sd, n_covar),
-      tumor_stim_pop_coef_sd = .$tumor_stim_pop_coef_sd[1:2],
-    ) |> 
+    ) |>  
     list_assign(...)
 }
 
@@ -464,6 +457,15 @@ add_confirmed_resp_priors <- function(stan_data, priors) {
     list_assign(
       crcr_covar_effect_sd = rep(.$crcr_covar_effect_sd, .$n_covar),
       crcr_tumor_stim_pop_coef_sd = .$crcr_tumor_stim_pop_coef_sd[1:2],
+    )
+}
+
+add_pfs_crcr_priors <- function(stan_data, crcr_priors, tumor_priors, pfs_priors) {
+  add_confirmed_resp_priors(stan_data, crcr_priors) |> 
+    list_assign(!!!tumor_priors, !!!pfs_priors) %>% 
+    list_assign(
+      covar_effect_sd = rep(.$covar_effect_sd, .$n_covar),
+      tumor_stim_pop_coef_sd = .$tumor_stim_pop_coef_sd[1:2],
     )
 }
 
