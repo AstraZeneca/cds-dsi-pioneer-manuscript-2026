@@ -2,6 +2,8 @@ int n_causes = 2;
 
 int max_confresp_week = max(confirmed_response_week);
 
+print("max_confresp_week = ", max_confresp_week);
+
 // These are used for the time interval distance between baseline hazards
 array[max_confresp_week] real confresp_range;
 array[max_confresp_week] int confresp_range_int;

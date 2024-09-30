@@ -4,6 +4,8 @@ for (i in 1:n_patients) {
   n_trial_patients[patient_trial[i]] += 1;
 }
 
+print("n_trial_patients = ", n_trial_patients);
+
 array[n_trials + 1] int<lower = 0, upper = n_patients + 1> trial_patient_pos;
 trial_patient_pos[1] = 1;
 
