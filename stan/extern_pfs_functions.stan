@@ -175,3 +175,42 @@ tuple(matrix, array[,] int) prepare_early_tumors_design_matrix(
   
   return (tumor_covar, tumor_covar_t);
 }
+
+tuple(matrix, matrix, vector, vector) prepare_early_tumor_sums_covar(
+  vector tumor_size, 
+  array[] int n_patient_tumors, array[] int n_measures, array[] int t_measure, array[] int n_screening_t, int max_measures
+) {
+  int n_tumors = sum(n_patient_tumors);
+  int n_patients = size(n_patient_tumors);
+  matrix[n_tumors, 2] tumor_covar; 
+  array[n_tumors, 2] int tumor_covar_t; 
+  matrix[n_patients, 2] tumor_sum_covar; 
+  matrix[n_patients, 2] uncentered_tumor_sum_covar; 
+  
+  (tumor_covar, tumor_covar_t) = prepare_early_tumors_design_matrix(tumor_size, n_patient_tumors, n_measures, t_measure, n_screening_t, max_measures);
+  
+  {
+    int tumor_pos = 1;
+    
+    for (i in 1:n_patients) {
+      int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
+      
+      tumor_sum_covar[i] = ones_row_vector(n_patient_tumors[i]) * tumor_covar[tumor_pos:tumor_end];
+      
+      tumor_pos = tumor_end + 1;
+    }
+  }
+  
+  vector[2] tumor_sum_covar_mean;
+  vector[2] tumor_sum_covar_sd;
+  
+  for (c in 1:2) {
+    uncentered_tumor_sum_covar[, c] = tumor_sum_covar[, c];
+    
+    (tumor_sum_covar_mean[c], tumor_sum_covar_sd[c], tumor_sum_covar[, c]) = standardize_tumor_sizes(tumor_sum_covar[, c]);
+    
+    uncentered_tumor_sum_covar[, c] /= tumor_sum_covar_sd[c];
+  }
+  
+  return (tumor_sum_covar, uncentered_tumor_sum_covar, tumor_sum_covar_mean, tumor_sum_covar_sd);
+}

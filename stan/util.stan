@@ -102,21 +102,6 @@ vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, 
 //   return calc_gp_pred(x, intercept, alpha, 1e-9, eta);
 // }  
 
-/** Scale tumor sizes by the standard deviation of all tumors and demean.
- * 
- * @param tumor_size Observed tumor sizes
- * @return (Mean tumor size, Std deviation of tumor sizes, Standardized tumor sizes)
- */
-tuple(real, real, vector) standardize_tumor_sizes(vector tumor_size) {
-  real tumor_mean;
-  real tumor_sd;
-  
-  tumor_mean = mean(tumor_size); 
-  tumor_sd = sd(tumor_size); 
-  
-  return (tumor_mean, tumor_sd, (tumor_size - tumor_mean) / tumor_sd); 
-}
-
 /** Missing measure is defined as one that lies between a _tumor's_ first assessment to the _patient's_ last assessment. Basically,
  * we're counting how many intervals (weeks) we don't have observed assessments of tumor size, for each tumor.
  *

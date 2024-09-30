@@ -3,10 +3,13 @@ int<lower = 0> n_training_crcr_intervals = n_training_patients * max_confresp_we
 array[n_training_patients] int<lower = 1, upper = n_patients> training_patients; 
 array[n_training_crcr_intervals] int<lower = 1, upper = n_patients * max_confresp_week> training_crcr_intervals; 
 
-int<lower = 0, upper = n_patients> n_testing_patients = n_trial_patients[leave_out_trial];
+int<lower = 0, upper = n_patients> n_testing_patients = leave_out_trial > 0 ? n_trial_patients[leave_out_trial] : 0;
 int<lower = 0> n_testing_crcr_intervals = n_testing_patients * max_confresp_week;
 array[n_testing_patients] int<lower = 1, upper = n_patients> testing_patients; 
 array[n_testing_crcr_intervals] int<lower = 1, upper = n_patients * max_confresp_week> testing_crcr_intervals; 
+
+print("n_patients = ", n_patients, ", n_testing_patients = ", n_testing_patients);
+print("n_testing_crcr_intervals = ", n_testing_crcr_intervals);
 
 {
   int training_patient_pos = 1;

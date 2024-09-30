@@ -15,16 +15,11 @@ if (add_trial_level) {
   log_crcr_lambda_gp_trial_intercept_sd ~ normal(0, log_crcr_lambda_gp_trial_intercept_sd_sd);
   to_vector(raw_log_crcr_lambda_gp_trial_intercept) ~ std_normal(); 
   
-  if (add_trial_level_glm) {
-    crcr_covar_trial_sd ~ normal(0, crcr_covar_trial_sd_sd);
-    // crcr_covar_trial_corr ~ lkj_corr_cholesky(crcr_covar_trial_corr_eta);
-  }
+  crcr_covar_trial_sd ~ normal(0, crcr_covar_trial_sd_sd);
+  L_crcr_covar_trial_corr ~ lkj_corr_cholesky(crcr_covar_trial_corr_eta);
   
   for (s in 1:n_trials) {
-    if (add_trial_level_glm) {
-      to_vector(raw_crcr_covar_trial_coef[s]) ~ std_normal();
-    }
-      
+    to_vector(raw_crcr_covar_trial_coef[s]) ~ std_normal();
     to_vector(log_crcr_lambda_gp_trial_eta[s]) ~ std_normal();
   }
 }

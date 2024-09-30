@@ -59,11 +59,20 @@ get_pfs_conf_resp_log_hazard_ratio <- function(res) {
      unnest(rv)
 }
 
-get_all_pfs_conf_resp_log_hazard_ratio <- function(res, stan_data) {
+get_all_pfs_conf_resp_hazard_ratio <- function(res, stan_data) {
   spread_rvars(res, time_invariant_log_hazard_ratio[i, k]) |>
-    mutate(time_invariant_hazard_ratio = exp(time_invariant_log_hazard_ratio)) |> 
+    mutate(
+      time_invariant_hazard_ratio = exp(time_invariant_log_hazard_ratio),
+      k = factor(k, levels = 1:2, labels = c("Non-response", "Response")) 
+    ) |> 
     left_join(as_tibble(stan_data["patient_trial"]) |> mutate(i = seq(n())), by = "i", relationship = "many-to-one") |> 
     rename(trial = patient_trial)  
+}
+
+get_all_pfs_conf_resp_hazard_ratio_bindist <- function(res, stan_data, hb) {
+  get_all_pfs_conf_resp_hazard_ratio(res, stan_data) |> 
+    group_by(trial, k) |> 
+    reframe(t = hb[-length(hb)], bindist = rvar_sample_hist(time_invariant_hazard_ratio, hb))  
 }
 
 get_pfs_conf_resp_bootstrap_variables <- function(res, bs_sample1, bs_sample2, rates_name, ..., summarize = TRUE) {
@@ -133,7 +142,6 @@ get_fixed_bootstrap_pfs_median_pfs <- function(res) {
   ) |> 
     select(!c(n_bs_sample, n_bs_sample_pfs_progressed, n_bs_sample_pfs_surviving))
 }
-
   
 get_sample_maturity_rvar <- function(res) {
   res |>
@@ -147,6 +155,23 @@ get_sample_maturity_rvar <- function(res) {
       )
     ) |> 
     unnest(rv)
+}
+
+get_all_pfs_crcr_trial_lambda_residual <- function(res) {
+  spread_rvars(res, log_trial_lambda_residual[trial, t]) |> 
+    mutate(trial_lambda_residual = exp(log_trial_lambda_residual)) |> 
+    point_interval(log_trial_lambda_residual, trial_lambda_residual, .width = c(0.5, 0.8))  
+}
+
+
+get_all_pfs_crcr_trial_lambda_residual_draws <- function(res, ndraws = NULL) {
+  spread_rvars(res, log_trial_lambda_residual[trial, t]) |> 
+    mutate(
+      log_trial_lambda_residual = thin_draws(log_trial_lambda_residual),
+      trial_lambda_residual = exp(log_trial_lambda_residual)
+    ) |> 
+    unnest_rvars() |> 
+    filter(is_null(ndraws) | (.draw <= ndraws))
 }
 
 get_all_pfs_pred_param <- function(res) {
@@ -167,7 +192,28 @@ get_all_pfs_pred_param <- function(res) {
         m == 7 ~ "prior cdk46 inhibit treatment",
         m == 8 ~ "her2 status: negative",
         m == 9 ~ "her2 status: positive"
-      )
+      ) |> as_factor()
+    )
+}
+
+get_all_pfs_trial_pred_param <- function(res) {
+  gather_rvars(res, covar_trial_coef[m, trial]) |> 
+    mutate(.exp_value = exp(.value)) |> 
+    mutate(
+      covar = case_when(
+        m == 1 ~ "baseline sum of tumor sizes",
+        m == 2 ~ "first post-treatment sum of tumor sizes",
+        m == 3 ~ "age in [18, 40)",
+        m == 4 ~ "age in [40, 65)",
+        m == 5 ~ "age in [65, 75)",
+        m == 6 ~ "age in [75, Inf)",
+        m == 7 ~ "ecog",
+        m == 8 ~ "hr status: positive",
+        m == 9 ~ "prior cdk46 inhibit treatment",
+        m == 10 ~ "her2 status: negative",
+        m == 11 ~ "her2 status: positive",
+        m == 12 ~ "confirmed response",
+      ) |> as_factor()
     )
 }
 
@@ -191,3 +237,14 @@ get_cr_median_pfs_draws <- function(res, ndraws = Inf) {
     ) |> 
     unnest(rv)
 }
+
+get_all_pfs_crcr_lambda <- function(res) {
+  spread_rvars(res, log_lambda[t]) |> 
+    mutate(lambda = exp(log_lambda)) 
+}
+
+get_all_pfs_crcr_lambda_trial_intercept <- function(res) {
+  spread_rvars(res, log_lambda_gp_trial_intercept[trial]) |> 
+    mutate(lambda_gp_trial_intercept = exp(log_lambda_gp_trial_intercept))
+}
+
