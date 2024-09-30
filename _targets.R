@@ -10,9 +10,9 @@ library(cmdstanr)
 source(here("r", "util.R"))
 source(here("r", "posterior.R"))
 source(here("r", "crcr.R"))
-source(here("r", "entimice_functions.R"))
-source(here("r", "prepare_analysis_data.R"))
-source(here("r", "priors.R"))
+source(here("r", "entimice", "entimice_functions.R"))
+source(here("r", "breast", "prepare_analysis_data.R"))
+source(here("r", "breast", "priors.R"))
 
 tmp_dir <- file.path(Sys.getenv("TMPDIR"), "adc-early-predict")  
 
@@ -23,8 +23,6 @@ tar_option_set(
   format = "qs",
   error = "continue"
 )
-tar_config_set(store = file.path(tmp_dir, "_targets"))
-
 lst(
   # Prior hyperparameters
   
