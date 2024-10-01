@@ -138,7 +138,8 @@ lst(
     endometrial_adam_adsl, 
     read_all_trial_entimice_data(endometrial_data_details, "epu_adsl", "adam", team_dir = endometrial_data_path) |> 
       unnest(data) |> 
-      rename(ecogbl = blecog)
+      rename(ecogbl = blecog) |> 
+      mutate(continent = countrycode::countrycode(country, origin = "iso3c", destination = "continent"))
   ),
   
   tar_target(endometrial_adam_adlb, read_all_trial_entimice_data(endometrial_data_details, "epu_adlb", "adam", team_dir = endometrial_data_path) |> unnest(data)),
@@ -158,7 +159,10 @@ lst(
     lung_adam_adsl, 
     base_read_entimice_data(file.path(lung_data_path, "adsl.rds")) |> 
       filter(fct_match(actarmcd, "S1-B4P")) |> 
-      mutate(country = countrycode::countrycode(country, origin = "country.name", destination = "iso3c"))
+      mutate(
+        country = countrycode::countrycode(country, origin = "country.name", destination = "iso3c"),
+        continent = countrycode::countrycode(country, origin = "iso3c", destination = "continent"),
+      )
   ),
   
   tar_target(lung_adam_adlb, base_read_entimice_data(file.path(lung_data_path, "adlb.rds")) |> semi_join(lung_adam_adsl, by = "usubjid")),
