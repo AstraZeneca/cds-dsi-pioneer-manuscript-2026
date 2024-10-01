@@ -1,0 +1,3 @@
+main:
+  store: /wscratch/kmjq089/pioneer/_targets
+  as_job: yes
