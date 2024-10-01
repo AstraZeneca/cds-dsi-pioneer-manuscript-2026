@@ -2,9 +2,7 @@
   "bioconductor.version": null,
   "external.libraries": [
     "/opt/scp/services/ewfscp/software/ewfutils-1.2/libraries/R", 
-    "/opt/scp/services/azcore/coreutils/0.1.0/libraries/R/4.3.1",   
-    "/opt/scp/apps/gen-2021a/software/R/4.3.1-foss-2021a-core/lib64/R/site-library",
-    "/opt/scp/apps/gen-2021a/software/R/4.3.1-foss-2021a-core/lib64/R/library"
+    "/opt/scp/services/azcore/coreutils/0.1.0/libraries/R/4.3.1"   
   ],
   "ignored.packages": [
     "azcore",
