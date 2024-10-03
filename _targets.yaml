@@ -1,3 +1,7 @@
 main:
   store: /wscratch/kmjq089/pioneer/_targets
   as_job: yes
+endometrial_to_lung:
+  script: endometrial_to_lung_targets.R
+  store: /scratch/kmjq089/pioneer/_targets/endometrial_to_lung
+  as_job: yes
