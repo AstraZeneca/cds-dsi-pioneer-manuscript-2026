@@ -1,7 +1,6 @@
 {
   "bioconductor.version": null,
   "external.libraries": [
-    "/opt/scp/services/ewfscp/software/ewfutils-1.2/libraries/R", 
     "/opt/scp/services/azcore/coreutils/0.1.0/libraries/R/4.3.1"   
   ],
   "ignored.packages": [
