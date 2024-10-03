@@ -5,13 +5,17 @@ library(targets)
 library(crew)
 library(here)
 
+source(here("r", "util.R"))
+source(here("r", "prepare_analysis_data.R"))
+
+source(here("r", "entimice", "entimice_functions.R"))
+
 source(here("r", "breast", "util.R"))
 source(here("r", "breast", "crcr.R"))
-source(here("r", "entimice", "entimice_functions.R"))
 source(here("r", "breast", "prepare_analysis_data.R"))
 source(here("r", "breast", "priors.R"))
 
-tmp_dir <- file.path(Sys.getenv("TMPDIR"), "adc-early-predict")  
+tmp_dir <- file.path(Sys.getenv("TMPDIR"), "pioneer")  
 
 tar_option_set(
   packages = c("tidyverse", "rlang", "here", "targets"),
@@ -121,56 +125,4 @@ lst(
     ),
     deployment = "main"
   ),
-  
-  # Endometrial Data
-  
-  tar_target(endometrial_data_path, "/wscratch/kmjq089/workspaces/endometrial"),
-  
-  tar_target(
-    endometrial_data_details, 
-    tribble(
-      ~study,          ~ idap,           ~ trial, 
-      "d9311c00001",   "cdap_20240827",  "Endometrial",
-    ) |> 
-      mutate(across(everything(), factor))),
-  
-  tar_target(
-    endometrial_adam_adsl, 
-    read_all_trial_entimice_data(endometrial_data_details, "epu_adsl", "adam", team_dir = endometrial_data_path) |> 
-      unnest(data) |> 
-      rename(ecogbl = blecog) |> 
-      mutate(continent = countrycode::countrycode(country, origin = "iso3c", destination = "continent"))
-  ),
-  
-  tar_target(endometrial_adam_adlb, read_all_trial_entimice_data(endometrial_data_details, "epu_adlb", "adam", team_dir = endometrial_data_path) |> unnest(data)),
-  tar_target(endometrial_adam_adtte, read_all_trial_entimice_data(endometrial_data_details, "epu_adtte", "adam", team_dir = endometrial_data_path) |> unnest(data)),
-  tar_target(endometrial_adam_adtr, read_all_trial_entimice_data(endometrial_data_details, "epu_adtr", "adam", team_dir = endometrial_data_path) |> unnest(data)),
-  tar_target(endometrial_adam_adresp, read_all_trial_entimice_data(endometrial_data_details, "epu_adresp", "adam", team_dir = endometrial_data_path) |> unnest(data)),
-  tar_target(endometrial_adam_adeff, read_all_trial_entimice_data(endometrial_data_details, "epu_adeff", "adam", team_dir = endometrial_data_path) |> unnest(data)),
-  tar_target(endometrial_adam_admh, read_all_trial_entimice_data(endometrial_data_details, "epu_admh", "adam", team_dir = endometrial_data_path) |> unnest(data)),
-  tar_target(endometrial_adam_adcm, read_all_trial_entimice_data(endometrial_data_details, "epu_adcm", "adam", team_dir = endometrial_data_path) |> unnest(data)),
-  tar_target(endometrial_adam_advs, read_all_trial_entimice_data(endometrial_data_details, "epu_advs", "adam", team_dir = endometrial_data_path) |> unnest(data)),
-  
-  # Lung Data
- 
-  tar_target(lung_data_path, "/wscratch/kmjq089/workspaces/az8205/"),
-  
-  tar_target(
-    lung_adam_adsl, 
-    base_read_entimice_data(file.path(lung_data_path, "adsl.rds")) |> 
-      filter(fct_match(actarmcd, "S1-B4P")) |> 
-      mutate(
-        country = countrycode::countrycode(country, origin = "country.name", destination = "iso3c"),
-        continent = countrycode::countrycode(country, origin = "iso3c", destination = "continent"),
-      )
-  ),
-  
-  tar_target(lung_adam_adlb, base_read_entimice_data(file.path(lung_data_path, "adlb.rds")) |> semi_join(lung_adam_adsl, by = "usubjid")),
-  tar_target(lung_adam_adtte, base_read_entimice_data(file.path(lung_data_path, "adtte.rds")) |> semi_join(lung_adam_adsl, by = "usubjid")),
-  tar_target(lung_adam_adtr, base_read_entimice_data(file.path(lung_data_path, "adtr.rds")) |> semi_join(lung_adam_adsl, by = "usubjid")),
-  tar_target(lung_adam_adresp, base_read_entimice_data(file.path(lung_data_path, "adresp.rds")) |> semi_join(lung_adam_adsl, by = "usubjid")),
-  tar_target(lung_adam_adeff, base_read_entimice_data(file.path(lung_data_path, "adeff.rds")) |> semi_join(lung_adam_adsl, by = "usubjid")),
-  tar_target(lung_adam_admh, base_read_entimice_data(file.path(lung_data_path, "admh.rds")) |> semi_join(lung_adam_adsl, by = "usubjid")),
-  tar_target(lung_adam_adcm, base_read_entimice_data(file.path(lung_data_path, "adcm.rds")) |> semi_join(lung_adam_adsl, by = "usubjid")),
-  tar_target(lung_adam_advs, base_read_entimice_data(file.path(lung_data_path, "advs.rds")) |> semi_join(lung_adam_adsl, by = "usubjid")),
 )
