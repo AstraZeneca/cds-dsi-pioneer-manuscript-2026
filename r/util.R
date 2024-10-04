@@ -1,3 +1,32 @@
+#' Convert Kaplan-Meier estimates to a tibble (data frame) format 
+#'
+#' @param trt_data Analysis data 
+#' @param key Identifier for the data group (e.g., treatment arm)
+#' @param pfs_var Name of variable were PFS is stored in the data 
+#'
+#' @return tibble object with Kaplan-Meier results.
+km_to_tibble <- function(trt_data, key, pfs_var, pfs_functions) { 
+  with(
+    base_prepare_pfs_stan_data(trt_data, pfs_var = pfs_var, pfs_functions), {
+      interval_censored <- pfs_functions$identify_censoring(pfs, death_week, n_patient_tumors, n_measures, t_measure)[[1]]
+      
+      map_dfr(list(lb = pfs, ub = pfs + interval_censored), function(s) {
+        pfs_functions$estimate_kaplan_meier(s, right_censored, max(s)) |>
+          set_names(c("s", "n", "c", "e")) |>
+          as_tibble() |> 
+          mutate(t = seq(0, n() - 1))
+      }, .id = "btype")
+    }) |> 
+    bind_cols(key)
+}
+
+get_km_res <- function(analysis_data, pfs_var, pfs_functions, ...) {
+  analysis_data |>
+    group_by(trial, ...) |>  
+    group_map(\(trt_data, key) km_to_tibble(trt_data, key, pfs_var, pfs_functions), .keep = TRUE) |>  
+    bind_rows() 
+} 
+
 cmdstan_expose_pfs_functions <- function(util_file, pfs_functions_file) {
   pseudo_model_code <- paste(c("functions {", read_file(util_file), read_file(pfs_functions_file), "}"), collapse="\n")
   functions_hash <- rlang::hash(pseudo_model_code)
