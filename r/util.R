@@ -50,3 +50,51 @@ cmdstan_expose_pfs_functions <- function(util_file, pfs_functions_file) {
   pseudo_model$expose_functions(FALSE, FALSE) ## will return the functions in an environment
   pseudo_model$functions
 }
+
+add_confirmed_resp_priors <- function(stan_data, priors) {
+  stan_data |> 
+    list_assign(!!!priors) %>% 
+    list_assign(
+      crcr_covar_effect_sd = rep(.$crcr_covar_effect_sd, .$n_covar),
+      crcr_tumor_stim_pop_coef_sd = .$crcr_tumor_stim_pop_coef_sd[1:2],
+    )
+}
+
+add_pfs_crcr_priors <- function(stan_data, crcr_priors, tumor_priors, pfs_priors) {
+  add_confirmed_resp_priors(stan_data, crcr_priors) |> 
+    list_assign(!!!tumor_priors, !!!pfs_priors) %>% 
+    list_assign(
+      covar_effect_sd = rep(.$covar_effect_sd, .$n_covar),
+      tumor_stim_pop_coef_sd = .$tumor_stim_pop_coef_sd[1:2],
+    )
+}
+
+create_pfs_crcr_initializer <- function(stan_data, n_causes = 2) {
+  crcr_init_fun <- create_crcr_initializer(stan_data, n_causes)
+  
+  function(chain_id) {
+    init_vals <- crcr_init_fun(chain_id) |> 
+      list_assign(
+        log_lambda_gp_intercept = with(stan_data, rnorm(1, log_lambda_gp_intercept_mean, log_lambda_gp_intercept_sd))
+      )
+    
+    if (stan_data$add_trial_level) {
+       init_vals <- init_vals |>  
+        list_assign(
+          log_lambda_gp_trial_intercept_sd = with(stan_data, abs(rnorm(1, sd = log_lambda_gp_trial_intercept_sd_sd)))
+        )  
+    }
+    
+    return(init_vals)
+  }
+}
+
+# This function is used to generate a histogram of time-to-events for a single draw
+sample_hist <- function(pred, breaks, ...) {
+  # hist() is a base R function to generate histograms from data and provided breaks.
+  hist(pmax(pmin(pred, max(breaks)), min(breaks)), breaks = breaks, plot = FALSE, ...)$count
+}
+
+# This function is used to treated_pfs_analysis_dataallow us to generate a distribution of histograms
+rvar_sample_hist <- posterior::rfun(sample_hist, rvar_dots = FALSE)
+
