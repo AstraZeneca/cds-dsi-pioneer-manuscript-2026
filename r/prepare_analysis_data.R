@@ -51,7 +51,7 @@ prepare_tumor_stan_data <- function(analysis_data) {
     n_trials = n_distinct(analysis_data$trial),
     tumor_location = unnest(analysis_data, patient_tumors) |> pull(tuloc) |> factor(),
     n_tumor_locations = nlevels(tumor_location), 
-    patient_trial = analysis_data$trial,
+    patient_trial = factor(analysis_data$trial),
     n_patient_tumors = analysis_data$n_tumors,
     n_measures = analysis_data$n_measures |> unlist(),
     t_measure = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$week) |> unlist(),
