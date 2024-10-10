@@ -5,3 +5,7 @@ endometrial_to_lung_data:
   script: endometrial_to_lung_data_targets.R
   store: !expr file.path("/scratch", Sys.info()["user"], "pioneer/_targets/endometrial_to_lung/analysis_data")
   as_job: yes
+endometrial_to_lung_analysis:
+  script: endometrial_to_lung_analysis_targets.R
+  store: !expr file.path("/scratch", Sys.info()["user"], "pioneer/_targets/endometrial_to_lung/analysis")
+  as_job: yes
