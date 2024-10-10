@@ -16,3 +16,4 @@ conflicts_prefer(
   rlang::set_names,
 )
 
+options(yaml.eval.expr = TRUE)
