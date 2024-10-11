@@ -47,8 +47,9 @@ get_confirmed_resp_priors <- function(n_tumor_covar, n_strat_covar) {
     crcr_covar_effect_sd = 0.2,
     crcr_tumor_stim_pop_coef_sd = c(0.5, 0.5, 0.2, 0.15, 0.15),
     
-    log_crcr_lambda_gp_intercept_mean = -2.5,
+    log_crcr_lambda_gp_intercept_mean = rep(-2.5, 2),
     log_crcr_lambda_gp_intercept_sd = 0.75,
+    
     log_crcr_lambda_gp_alpha_sd = 0.6,
     log_crcr_lambda_gp_rho_alpha = 3,
     log_crcr_lambda_gp_rho_beta = 10,
