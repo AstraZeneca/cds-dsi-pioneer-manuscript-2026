@@ -92,18 +92,26 @@ base_prepare_pfs_stan_data <- function(analysis_data, ..., pfs_var = pfs) {
     list_assign(...)
 }
 
-prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, ..., include_covar = TRUE) {
-  pfs_stan_data <- base_prepare_pfs_stan_data(analysis_data)
-  
-  stopifnot(pfs_stan_data$n_patients == nrow(analysis_data))
+prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, ..., include_covar = TRUE, scale_numeric = TRUE) {
+  incomplete_patients <- c() 
   
   covar_design_matrix <- if (include_covar) {
+    incomplete_patients <- which(!complete.cases(select(analysis_data, all_of(all.vars(covar_formula)))))
+    
+    if (!is_empty(incomplete_patients)) {
+      analysis_data <- slice(analysis_data, -incomplete_patients)
+      warning(length(incomplete_patients), " patients have incompelete cases and have been removed.")
+    }
+    
     modelr::model_matrix(analysis_data, covar_formula) |> 
-      map_dfc(\(col) scale(col, scale = FALSE)) |> 
+      map_dfc(\(col) scale(col, scale = is.numeric(col) & scale_numeric)) |> 
       as.matrix()
   } else {
-    array(NA, dim = c(pfs_stan_data$n_patients, 0))
+    array(NA, dim = c(nrow(analysis_data), 0))
   }
+  
+  pfs_stan_data <- base_prepare_pfs_stan_data(analysis_data)
+  stopifnot(pfs_stan_data$n_patients == nrow(analysis_data))
   
   n_covar <- ncol(covar_design_matrix)
   
