@@ -66,23 +66,26 @@ tuple(vector, array[] int, array[] int, array[] int) estimate_kaplan_meier(array
   vector[max_t + 1] s = rep_vector(1.0, max_t + 1);
   array[max_t + 1] int at_risk = rep_array(n, max_t + 1);
   array[max_t + 1] int n_right_censored = rep_array(0, max_t + 1);
-  array[max_t + 1] int n_exited; // = rep_array(0, max_t + 1);
+  array[max_t + 1] int n_exited = rep_array(0, max_t + 1); 
   
-  for (t in 0:max_t) {
-    n_exited[t + 1] = 0; // How many saw disease progression (exited) in current interval.
-    real prev_s = t > 0 ? s[t] : 1.0;
-   
-    // The + 1 after pfs is because pfs is the last surviving week, not the exit week. 
-    while ((n > 0) && (pfs_pos <= n_pfs) && (right_censored[sorted_pfs_idx[pfs_pos]] || (pfs[sorted_pfs_idx[pfs_pos]] <= t))) {
-      n_exited[t + 1] += !right_censored[sorted_pfs_idx[pfs_pos]];
-      n_right_censored[t + 1] += right_censored[sorted_pfs_idx[pfs_pos]];
+  for (t in 1:(max_t + 1)) {
+    real prev_s = t > 1 ? s[t - 1] : 1.0;
+    
+    while ((n > 0) && (pfs_pos <= n_pfs) && (pfs[sorted_pfs_idx[pfs_pos]] <= t)) {
+      if (t <= max_t) {
+        // Remember that we define "pfs" as the last interval survived not the interval of exit.
+        n_exited[t + 1] += !right_censored[sorted_pfs_idx[pfs_pos]]; 
+      }
+      
+      n_right_censored[t] += right_censored[sorted_pfs_idx[pfs_pos]];
      
-      pfs_pos += 1;
+      pfs_pos += 1; 
+      
     }
   
-    s[t + 1] = n > 0 ? prev_s * (n - n_exited[t + 1]) / n : prev_s;
-    at_risk[t + 1] = n; 
-    n -= n_exited[t + 1] + n_right_censored[t + 1];
+    s[t] = n > 0 ? prev_s * (n - n_exited[t]) / n : prev_s;
+    at_risk[t] = n; 
+    n -= n_exited[t] + n_right_censored[t];
   }
   
   return (s, at_risk, n_right_censored, n_exited); 
