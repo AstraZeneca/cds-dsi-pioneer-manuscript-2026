@@ -5,25 +5,45 @@
 #' @param pfs_var Name of variable were PFS is stored in the data 
 #'
 #' @return tibble object with Kaplan-Meier results.
-km_to_tibble <- function(trt_data, key, pfs_var, pfs_functions) { 
-  with(
-    base_prepare_pfs_stan_data(trt_data, pfs_var = pfs_var, pfs_functions), {
-      interval_censored <- pfs_functions$identify_censoring(pfs, death_week, n_patient_tumors, n_measures, t_measure)[[1]]
-      
-      map_dfr(list(lb = pfs, ub = pfs + interval_censored), function(s) {
-        pfs_functions$estimate_kaplan_meier(s, right_censored, max(s)) |>
-          set_names(c("s", "n", "c", "e")) |>
-          as_tibble() |> 
-          mutate(t = seq(0, n() - 1))
-      }, .id = "btype")
-    }) |> 
+km_to_tibble <- function(trt_data, key, pfs_var) { 
+  stan_data <- base_prepare_pfs_stan_data(trt_data, pfs_var = pfs_var) |> 
+    magrittr::extract(c("pfs", "interval_censored", "right_censored"))
+  
+  lst(
+    lb = survfit2(Surv(pfs + 1, right_censored) ~ 1, stan_data),
+    ub = survfit2(Surv(pfs + interval_censored + 1, right_censored) ~ 1, stan_data),
+  ) |> 
+    map_dfr(\(r) broom::tidy(r), .id = "btype") |>  
+    select(s = estimate, n = n.risk, c = n.censor, e = n.event) |> 
     bind_cols(key)
+  
+  # map_dfr(list(lb = 0, ub = pfs + interval_censored), \(s) survfit2(Surv(s + 1, right_censored) ~ 1, stan_data) |> broom::tidy(), .id = "btype") |> 
+  #   bind_cols(key)
+    
+  # with(
+  #   base_prepare_pfs_stan_data(trt_data, pfs_var = pfs_var), {
+  #     # interval_censored <- pfs_functions$identify_censoring(pfs, death_week, n_patient_tumors, n_measures, t_measure)[[1]]
+  #     
+  #     map_dfr(list(lb = pfs, ub = pfs + interval_censored), function(s, stan_data) {
+  #       survfit2(
+  #         Surv(s + 1, right_censored) ~ 1, 
+  #         data = as_tibble(stan_data[c("confirmed_response_week", "confirmed_response_censored")])
+  #       ) |> 
+  #         broom::tidy()
+  #       
+  #       # pfs_functions$estimate_kaplan_meier(s, right_censored, max(s)) |>
+  #       #   set_names(c("s", "n", "c", "e")) |>
+  #       #   as_tibble() |> 
+  #       #   mutate(t = seq(0, n() - 1))
+  #     }, stan_data = base_prepare_pfs_stan_data(trt_data, pfs_var = pfs_var), .id = "btype")
+  #   }) |> 
+  #   bind_cols(key)
 }
 
-get_km_res <- function(analysis_data, pfs_var, pfs_functions, ...) {
+get_km_res <- function(analysis_data, pfs_var, ...) {
   analysis_data |>
     group_by(trial, ...) |>  
-    group_map(\(trt_data, key) km_to_tibble(trt_data, key, pfs_var, pfs_functions), .keep = TRUE) |>  
+    group_map(\(trt_data, key) km_to_tibble(trt_data, key, pfs_var), .keep = TRUE) |>  
     bind_rows() 
 } 
 
