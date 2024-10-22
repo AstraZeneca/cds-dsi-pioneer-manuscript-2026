@@ -101,7 +101,11 @@ prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, ..., 
   incomplete_patients <- c() 
   
   covar_design_matrix <- if (include_covar) {
-    incomplete_patients <- which(!complete.cases(select(analysis_data, all_of(all.vars(covar_formula)))))
+    incomplete_patients <- select(analysis_data, all_of(all.vars(covar_formula))) |> 
+      map_if(is.ordered, \(f) factor(f, ordered = FALSE)) |> 
+      complete.cases() |> 
+      not() |> 
+      which()
     
     if (!is_empty(incomplete_patients)) {
       analysis_data <- slice(analysis_data, -incomplete_patients)
@@ -117,6 +121,7 @@ prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, ..., 
   
   pfs_stan_data <- base_prepare_pfs_stan_data(analysis_data)
   stopifnot(pfs_stan_data$n_patients == nrow(analysis_data))
+  stopifnot(pfs_stan_data$n_patients == nrow(covar_design_matrix))
   
   n_covar <- ncol(covar_design_matrix)
   
