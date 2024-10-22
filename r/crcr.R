@@ -43,18 +43,14 @@ get_all_conf_resp_hazard_ratios_bindist <- function(res, stan_data, hb) {
     reframe(t = hb[-length(hb)], bindist = rvar_sample_hist(patient_crcr_hazard_ratio, hb))  
 }
 
-get_conf_resp_cif <- function(res, which_t, hb) {
-  res |> 
-    select(trial, fit) |> 
-    deframe() |>
-    map_dfr(
-      \(f) spread_rvars(f, cif[i, t, k]) |> 
-        filter(t %in% which_t) |> 
-        group_by(t, k) |> 
-        reframe(p = hb[-1], cif_bindist = rvar_sample_hist(cif, hb, freq = FALSE)) |> 
-        mutate(k = factor(k, levels = 1:2, labels = c("Non-response", "Response"))),  
-      .id = "trial" 
-    )
+get_crcr_last_cif <- function(res, stan_data) {
+  res |>
+    spread_rvars(cif[i, t, k]) |> 
+    # mutate(cif = thin_draws(cif)) |> 
+    filter(min_rank(desc(t)) == 1) |>
+    point_interval(cif, .width = c(0.5, 0.8)) |> 
+    left_join(as_tibble(stan_data[c("patient_trial", "patient")]) |> mutate(i = seq(n())), by = "i", relationship = "many-to-one") |> 
+    mutate(k = factor(k, levels = 1:2, labels = c("Non-response", "Response")))
 }
 
 get_all_conf_resp_cif_bindist <- function(res, stan_data, which_t, hb, ndraws = NULL) {
@@ -119,7 +115,7 @@ get_all_conf_resp_lambda <- function(res) {
     )
 }
 
-get_all_rep_confirmed_response <- function(res, stan_data) {
+get_all_rep_confirmed_response <- function(res, stan_data = NULL) {
   spread_rvars(res, rep_confirmed_response_week[i], rep_confirmed_response_censored[i], rep_confirmed_response[i]) |> 
     mutate(trial = stan_data$patient_trial)  
 }
@@ -146,4 +142,55 @@ get_all_rep_confirmed_trial_lambda_residual_draws <- function(res, ndraws = NULL
     ) |>
     unnest_rvars() |> 
     filter(is_null(ndraws) | (.draw <= ndraws))
+}
+
+prepare_cmprsk_data <- function(analysis_data) {
+  analysis_data |> 
+    transmute(
+      confirmed_response_week, 
+      confirmed_response_status = factor(confirmed_response, levels = c(FALSE, TRUE), labels = c("non-response", "response")) |>
+        fct_na_value_to_level("censored") |> 
+        fct_relevel("censored")
+    )
+}
+
+get_obs_cif_data <- function(analysis_data) {
+  analysis_data |> 
+    prepare_cmprsk_data() |> 
+    with(cmprsk::cuminc(confirmed_response_week, confirmed_response_status, cencode = "censored")) |> 
+    map_dfr(identity, .id = "outcome") |> 
+    mutate(outcome = str_remove(outcome, r"{^\d+\s+}")) |> 
+    rename(estimate = est)
+  
+    # Not using tidycmprsk because it can't handle data that has a single observed outcome
+    # cuminc(Surv(confirmed_response_week, confirmed_response_status) ~ 1, .) |> 
+    # tidy()
+}
+
+get_crcr_predict_cif <- function(res) {
+  res |> 
+    get_all_rep_confirmed_response() |> 
+    transmute(
+      i,
+      confirmed_response_week = rep_confirmed_response_week, 
+      confirmed_response_status = rvar_factor(rep_confirmed_response, levels = c(2, 0:1), labels = c("censored", "non-response", "response")) 
+    ) |> 
+    unnest_rvars() |> 
+    nest(draw_data = !.draw) |> 
+    transmute(
+      .draw,
+      cif = map(draw_data, 
+                \(d) with(d, cmprsk::cuminc(confirmed_response_week, confirmed_response_status)) |>
+                  map_dfr(identity, .id = "outcome") |> 
+                  mutate(outcome = str_remove(outcome, r"{^\d+\s+}")) |> 
+                  rename(estimate = est)
+      )
+    ) |> 
+    unnest(cif)
+}
+
+get_crcr_objective_response <- function(res, stan_data) {
+  spread_rvars(res, rep_confirmed_response_forced[i], prob_cause[i, k]) |> 
+    filter(k == 2) |> 
+    bind_cols(stan_data[c("patient", "objective_response", "confirmed_response", "confirmed_response_censored")])
 }
