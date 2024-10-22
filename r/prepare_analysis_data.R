@@ -165,7 +165,7 @@ prepare_confirmed_resp_km <- function(stan_data) {
       conf_resp_km = list(broom::tidy(survfit2(
         Surv(confirmed_response_week, 1 - confirmed_response_censored) ~ 1, 
         data = as_tibble(stan_data[c("confirmed_response_week", "confirmed_response_censored")])
-      )) |> select(s = estimate, n = n.risk, c = n.censor, e = n.event)),
+      )) |> transmute(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event)),
     
       # conf_resp_km_calendar = list(with(
       #   stan_data, 
@@ -179,6 +179,6 @@ prepare_confirmed_resp_km <- function(stan_data) {
       conf_resp_km_calendar = list(broom::tidy(survfit2(
         Surv(confirmed_response_week + experiment_start_week - 1, 1 - confirmed_response_censored) ~ 1, 
         data = as_tibble(stan_data[c("confirmed_response_week", "experiment_start_week", "confirmed_response_censored")])
-      )) |> select(s = estimate, n = n.risk, c = n.censor, e = n.event)),
+      )) |> transmute(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event)),
     )
 }

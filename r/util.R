@@ -10,11 +10,11 @@ km_to_tibble <- function(trt_data, key, pfs_var) {
     magrittr::extract(c("pfs", "interval_censored", "right_censored"))
   
   lst(
-    lb = survfit2(Surv(pfs + 1, right_censored) ~ 1, stan_data),
-    ub = survfit2(Surv(pfs + interval_censored + 1, right_censored) ~ 1, stan_data),
+    lb = survfit2(Surv(pfs + 1, 1 - right_censored) ~ 1, stan_data),
+    ub = survfit2(Surv(pfs + interval_censored + 1, 1 - right_censored) ~ 1, stan_data),
   ) |> 
-    map_dfr(\(r) broom::tidy(r), .id = "btype") |>  
-    select(s = estimate, n = n.risk, c = n.censor, e = n.event) |> 
+    map_dfr(broom::tidy, .id = "btype") |>  
+    select(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event, btype) |> 
     bind_cols(key)
   
   # map_dfr(list(lb = 0, ub = pfs + interval_censored), \(s) survfit2(Surv(s + 1, right_censored) ~ 1, stan_data) |> broom::tidy(), .id = "btype") |> 
