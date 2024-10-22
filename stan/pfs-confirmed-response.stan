@@ -11,7 +11,8 @@ data {
   // Model settings
   int<lower = 0, upper = 1> fit_data; // If 0, just do prior prediction
   int<lower = 0, upper = 1> gen_interval_censored; // Should the generated PFS be interval censored?
-  int<lower = 0, upper = 1> ignore_interval_censoring; // Treat observed PFS as true pfs and ignore t_measure.
+  int<lower = 0, upper = 1> crcr_ignore_interval_censoring; // Treat observed confirmed response week as true and ignore t_measure.
+  int<lower = 0, upper = 1> pfs_ignore_interval_censoring; // Treat observed PFS as true pfs and ignore t_measure.
   
   // Hierarchical settings 
   int<lower = 0, upper = 1> add_trial_level;
@@ -155,14 +156,14 @@ model {
           partial_sum_crcr_lupmf, last_unclassified_response_week[training_patients], crcr_grain_size,
           confirmed_response_cause[training_patients], 
           early_confirmed_response_censored[training_patients], 
-          ignore_interval_censoring ? zeros_int_array(n_training_patients) : confirmed_response_interval_censored[training_patients], 
+          crcr_ignore_interval_censoring ? zeros_int_array(n_training_patients) : confirmed_response_interval_censored[training_patients], 
           log_crcr_cond_prob_surv[training_crcr_intervals], max_confresp_week
         );
       } else {
         target += reduce_sum(
           partial_sum_crcr_lupmf, last_unclassified_response_week, crcr_grain_size,
           confirmed_response_cause, 
-          early_confirmed_response_censored, ignore_interval_censoring ? zeros_int_array(n_patients) : confirmed_response_interval_censored, 
+          early_confirmed_response_censored, crcr_ignore_interval_censoring ? zeros_int_array(n_patients) : confirmed_response_interval_censored, 
           log_crcr_cond_prob_surv, max_confresp_week
         );
       }
@@ -173,10 +174,10 @@ model {
     profile("pfs loglik") {  
       matrix[n_patients, n_causes] response_lp = append_col( 
         calc_pch_loglik2(
-          pfs, right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_surv[, 1], max_all_t, rep_array(1, n_patients)
+          pfs, right_censored, interval_censored, pfs_ignore_interval_censoring, log_cond_prob_surv[, 1], max_all_t, rep_array(1, n_patients)
         ),
         calc_pch_loglik2(
-          pfs, right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_surv[, 2], max_all_t, rep_array(1, n_patients)
+          pfs, right_censored, interval_censored, pfs_ignore_interval_censoring, log_cond_prob_surv[, 2], max_all_t, rep_array(1, n_patients)
         )
       );
       
