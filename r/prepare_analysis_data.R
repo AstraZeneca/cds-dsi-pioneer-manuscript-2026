@@ -135,6 +135,7 @@ prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, ..., 
       recruit_lambda = array(dim = 0), 
       recruit_phi = 0, 
       
+      objective_response = analysis_data$objective_response,
       confirmed_response = coalesce(analysis_data$confirmed_response, FALSE),
       confirmed_response_censored = analysis_data$confirmed_response_censored,
       confirmed_response_interval_censored = analysis_data$confirmed_response_interval_censored,
