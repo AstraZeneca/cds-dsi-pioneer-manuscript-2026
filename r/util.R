@@ -16,28 +16,6 @@ km_to_tibble <- function(trt_data, key, pfs_var) {
     map_dfr(broom::tidy, .id = "btype") |>  
     select(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event, btype) |> 
     bind_cols(key)
-  
-  # map_dfr(list(lb = 0, ub = pfs + interval_censored), \(s) survfit2(Surv(s + 1, right_censored) ~ 1, stan_data) |> broom::tidy(), .id = "btype") |> 
-  #   bind_cols(key)
-    
-  # with(
-  #   base_prepare_pfs_stan_data(trt_data, pfs_var = pfs_var), {
-  #     # interval_censored <- pfs_functions$identify_censoring(pfs, death_week, n_patient_tumors, n_measures, t_measure)[[1]]
-  #     
-  #     map_dfr(list(lb = pfs, ub = pfs + interval_censored), function(s, stan_data) {
-  #       survfit2(
-  #         Surv(s + 1, right_censored) ~ 1, 
-  #         data = as_tibble(stan_data[c("confirmed_response_week", "confirmed_response_censored")])
-  #       ) |> 
-  #         broom::tidy()
-  #       
-  #       # pfs_functions$estimate_kaplan_meier(s, right_censored, max(s)) |>
-  #       #   set_names(c("s", "n", "c", "e")) |>
-  #       #   as_tibble() |> 
-  #       #   mutate(t = seq(0, n() - 1))
-  #     }, stan_data = base_prepare_pfs_stan_data(trt_data, pfs_var = pfs_var), .id = "btype")
-  #   }) |> 
-  #   bind_cols(key)
 }
 
 get_km_res <- function(analysis_data, pfs_var, ...) {
