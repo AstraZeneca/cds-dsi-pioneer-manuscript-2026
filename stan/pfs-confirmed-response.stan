@@ -13,6 +13,8 @@ data {
   int<lower = 0, upper = 1> gen_interval_censored; // Should the generated PFS be interval censored?
   int<lower = 0, upper = 1> crcr_ignore_interval_censoring; // Treat observed confirmed response week as true and ignore t_measure.
   int<lower = 0, upper = 1> pfs_ignore_interval_censoring; // Treat observed PFS as true pfs and ignore t_measure.
+  int<lower = 0, upper = 1> gen_log_lik;
+  int<lower = 0, upper = 1> prior_sense;
   
   // Hierarchical settings 
   int<lower = 0, upper = 1> add_trial_level;
@@ -48,6 +50,7 @@ transformed data {
   #include "pfs_transformed_data.stan"
   #include "crcr/crcr_transformed_data.stan"
   #include "bootstrap/leave_out_trial_bootstrap_transformed_data.stan"
+  #include "fixed_bootstrap_transformed_data.stan"
   
   int n_missing_confirmed_response = sum(confirmed_response_censored); 
   int n_obs_confirmed_response = n_patients - n_missing_confirmed_response; 
@@ -122,6 +125,11 @@ transformed parameters {
       }
     }
   }
+  
+  matrix<upper = 0>[n_patients, n_causes] patient_response_lp = append_col( 
+    calc_pch_loglik2(pfs, right_censored, interval_censored, pfs_ignore_interval_censoring, log_cond_prob_surv[, 1], max_all_t, rep_array(1, n_patients)),
+    calc_pch_loglik2(pfs, right_censored, interval_censored, pfs_ignore_interval_censoring, log_cond_prob_surv[, 2], max_all_t, rep_array(1, n_patients))
+  );
 }
 
 model {
@@ -170,33 +178,22 @@ model {
     }
     
     // PFS model
-  
-    profile("pfs loglik") {  
-      matrix[n_patients, n_causes] response_lp = append_col( 
-        calc_pch_loglik2(
-          pfs, right_censored, interval_censored, pfs_ignore_interval_censoring, log_cond_prob_surv[, 1], max_all_t, rep_array(1, n_patients)
-        ),
-        calc_pch_loglik2(
-          pfs, right_censored, interval_censored, pfs_ignore_interval_censoring, log_cond_prob_surv[, 2], max_all_t, rep_array(1, n_patients)
-        )
-      );
       
-      for (s in 1:n_trials) {
-        int patient_pos = trial_patient_pos[s];
-        int patient_end = trial_patient_pos[s + 1] - 1; 
-        
-        if (s != leave_out_trial) {
-          for (i in patient_pos:patient_end) {
-            if (confirmed_response_censored[i]) { // Unclassified
-              int conf_resp_interval_pos = patient_conf_resp_interval_pos[i];
-              int conf_resp_interval_end = patient_conf_resp_interval_pos[i + 1] - 1;
-            
-              real prob_non_response = calc_cif(1, log_crcr_cond_prob_surv[conf_resp_interval_pos:conf_resp_interval_end], max_confresp_week).2[1, 1];
-            
-              target += log_mix(prob_non_response, response_lp[i, 1], response_lp[i, 2]);
-            } else {
-              target += response_lp[i, confirmed_response_cause[i]];
-            }
+    for (s in 1:n_trials) {
+      int patient_pos = trial_patient_pos[s];
+      int patient_end = trial_patient_pos[s + 1] - 1; 
+      
+      if (s != leave_out_trial) {
+        for (i in patient_pos:patient_end) {
+          if (confirmed_response_censored[i]) { // Unclassified
+            int conf_resp_interval_pos = patient_conf_resp_interval_pos[i];
+            int conf_resp_interval_end = patient_conf_resp_interval_pos[i + 1] - 1;
+          
+            real prob_non_response = calc_cif(1, log_crcr_cond_prob_surv[conf_resp_interval_pos:conf_resp_interval_end], max_confresp_week).2[1, 1];
+          
+            target += log_mix(prob_non_response, patient_response_lp[i, 1], patient_response_lp[i, 2]);
+          } else {
+            target += patient_response_lp[i, confirmed_response_cause[i]];
           }
         }
       }
@@ -246,6 +243,47 @@ generated quantities {
         sim_trial_median_pfs[s] = survival_median(sim_pfs[patient_pos:patient_end], max_all_t).1; 
         trial_km_est[s] = estimate_kaplan_meier(sim_pfs[patient_pos:patient_end], sim_censored[patient_pos:patient_end], max_all_t).1; 
       }
+    }
+  }
+  
+  vector[gen_log_lik || prior_sense ? n_training_patients : 0] log_lik = rep_vector(0, gen_log_lik || prior_sense ? n_training_patients : 0);
+  real lprior = 0;
+
+  #include "crcr/crcr_log_lik_prior_sense.stan"
+  
+  if (gen_log_lik || prior_sense) {
+    int log_lik_pos = 1;
+    
+    for (s in 1:n_trials) {
+      int patient_pos = trial_patient_pos[s];
+      int patient_end = trial_patient_pos[s + 1] - 1; 
+      
+      if (s != leave_out_trial) {
+        for (i in patient_pos:patient_end) {
+          if (confirmed_response_censored[i]) { // Unclassified
+            int conf_resp_interval_pos = patient_conf_resp_interval_pos[i];
+            int conf_resp_interval_end = patient_conf_resp_interval_pos[i + 1] - 1;
+          
+            real prob_non_response = calc_cif(1, log_crcr_cond_prob_surv[conf_resp_interval_pos:conf_resp_interval_end], max_confresp_week).2[1, 1];
+          
+            log_lik[log_lik_pos] += log_mix(prob_non_response, patient_response_lp[i, 1], patient_response_lp[i, 2]);
+          } else {
+            log_lik[log_lik_pos] += patient_response_lp[i, confirmed_response_cause[i]];
+          }
+          
+          log_lik_pos += 1;
+        }
+      }
+    }
+  }
+  
+  if (prior_sense) {
+    lprior += normal_lpdf(log_lambda_gp_alpha | 0, log_lambda_gp_alpha_sd) + inv_gamma_lpdf(log_lambda_gp_rho | log_lambda_gp_rho_alpha, log_lambda_gp_rho_beta) +
+      normal_lpdf(log_lambda_gp_intercept | log_lambda_gp_intercept_mean, log_lambda_gp_intercept_sd);
+    
+    if (add_trial_level) {
+      lprior += normal_lpdf(log_lambda_gp_trial_intercept_sd | 0, log_lambda_gp_trial_intercept_sd_sd) + normal_lpdf(log_lambda_gp_trial_alpha | 0, log_lambda_gp_trial_alpha_sd) +
+      inv_gamma_lpdf(log_lambda_gp_trial_rho | log_lambda_gp_rho_alpha, log_lambda_gp_rho_beta);
     }
   }
 }
