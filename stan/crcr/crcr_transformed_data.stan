@@ -1,6 +1,6 @@
 int n_causes = 2;
 
-int max_confresp_week = max(confirmed_response_week);
+int max_confresp_week = max(max(confirmed_response_week), extend_max_confresp_week);
 
 print("max_confresp_week = ", max_confresp_week);
 
