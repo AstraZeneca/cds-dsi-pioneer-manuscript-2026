@@ -14,7 +14,10 @@ data {
   int<lower = 0, upper = 1> prior_sense;
   
   // Hierarchical settings 
-  int<lower = 0, upper = 1> add_trial_level;
+  int<lower = 0, upper = 1> add_trial_level_baseline_hazard;
+  int<lower = 0, upper = 1> add_trial_level_prop_hazard;
+  int<lower = 0, upper = 1 - add_trial_level_baseline_hazard> separate_baseline_hazard;
+  int<lower = 0, upper = 1 - add_trial_level_prop_hazard> separate_prop_hazard;
 
   // This is the data that is shared with the tumor model 
   #include "../base_data.stan"
@@ -49,12 +52,6 @@ model {
   if (fit_data) {
     profile("loglik") {
       // last_unclassified_response_week ~ comp_risk_pch(confirmed_response_cause, early_confirmed_response_censored, log_crcr_cond_prob_surv, max_confresp_week);
-      // target += reduce_sum(
-      //   partial_sum_crcr_lupmf, last_unclassified_response_week, grain_size,
-      //   confirmed_response_cause, 
-      //   early_confirmed_response_censored, crcr_ignore_interval_censoring ? zeros_int_array(n_patients) : confirmed_response_interval_censored, 
-      //   log_crcr_cond_prob_surv, max_confresp_week
-      // );
       
       if (leave_out_trial > 0) {
         target += reduce_sum(

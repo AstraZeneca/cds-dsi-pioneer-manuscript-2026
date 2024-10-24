@@ -42,7 +42,7 @@ get_pfs_conf_resp_priors <- function() {
     )
 }
 
-get_confirmed_resp_priors <- function(n_tumor_covar, n_strat_covar) {
+get_confirmed_resp_priors <- function(n_tumor_covar) {
   lst(
     crcr_covar_effect_sd = 0.2,
     crcr_tumor_stim_pop_coef_sd = c(0.5, 0.5, 0.2, 0.15, 0.15),

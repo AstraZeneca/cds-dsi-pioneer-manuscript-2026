@@ -82,6 +82,10 @@ base_prepare_pfs_stan_data <- function(analysis_data, ..., pfs_var = pfs) {
     gen_interval_censored = FALSE,
     pfs_ignore_interval_censoring = FALSE,
     add_trial_level = FALSE,
+    add_trial_level_baseline_hazard = FALSE,
+    add_trial_level_prop_hazard = FALSE,
+    separate_baseline_hazard = FALSE,
+    separate_prop_hazard = FALSE,
     add_tumor_location_level = FALSE,
     fit_post_2nd_meaure_only = TRUE,
     

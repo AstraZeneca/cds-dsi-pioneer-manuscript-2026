@@ -1,10 +1,15 @@
 create_crcr_initializer <- function(stan_data, n_causes = 2) {
   function(chain_id) {
+    sep_trial <- if (stan_data$separate_baseline_hazard) stan_data$n_trials else 1 
+    
     init_vals <- lst(
-      log_crcr_lambda_gp_intercept = with(stan_data, rnorm(n_causes, log_crcr_lambda_gp_intercept_mean, log_crcr_lambda_gp_intercept_sd)) 
+      log_crcr_lambda_gp_intercept = matrix(
+        with(stan_data, rnorm(n_causes * sep_trial, t(log_crcr_lambda_gp_intercept_mean), t(log_crcr_lambda_gp_intercept_sd))),
+        nrow = sep_trial, byrow = TRUE
+      )
     )
     
-    if (stan_data$add_trial_level) {
+    if (stan_data$add_trial_level_baseline_hazard) {
       init_vals <- init_vals |> 
         list_assign(
           log_crcr_lambda_gp_trial_intercept_sd = with(stan_data, abs(rnorm(n_causes, sd = log_crcr_lambda_gp_trial_intercept_sd_sd)))
@@ -107,12 +112,19 @@ get_all_conf_resp_lambda_trial_intercept_bindist <- function(res, hb) {
     reframe(p = hb[-1], bindist = rvar_sample_hist(crcr_lambda_gp_trial_intercept, hb, freq = FALSE))  
 }
 
-get_all_conf_resp_lambda <- function(res) {
-  spread_rvars(res, log_crcr_lambda[t, k]) |> 
+get_all_conf_resp_lambda <- function(res, stan_data = NULL) {
+  rv <- spread_rvars(res, log_crcr_lambda[trial, t, k]) |> 
     mutate(
       crcr_lambda = exp(log_crcr_lambda), 
       k = factor(k, levels = 1:2, labels = c("Non-response", "Response"))
     )
+  
+  if (!is_null(stan_data)) {
+    rv <- rv |> 
+      mutate(trial = factor(trial, labels = levels(stan_data$patient_trial)))
+  }
+  
+  return(rv)
 }
 
 get_all_rep_confirmed_response <- function(res, stan_data = NULL) {
@@ -167,18 +179,17 @@ get_obs_cif_data <- function(analysis_data) {
     # tidy()
 }
 
-get_crcr_predict_cif <- function(res) {
-  res |> 
-    get_all_rep_confirmed_response() |> 
+get_crcr_predict_cif <- function(res, stan_data = NULL) {
+  get_all_rep_confirmed_response(res, stan_data) |> 
     transmute(
-      i,
+      trial, i,
       confirmed_response_week = rep_confirmed_response_week, 
       confirmed_response_status = rvar_factor(rep_confirmed_response, levels = c(2, 0:1), labels = c("censored", "non-response", "response")) 
     ) |> 
     unnest_rvars() |> 
-    nest(draw_data = !.draw) |> 
+    nest(draw_data = !c(trial, .draw)) |> 
     transmute(
-      .draw,
+      trial, .draw,
       cif = map(draw_data, 
                 \(d) with(d, cmprsk::cuminc(confirmed_response_week, confirmed_response_status)) |>
                   map_dfr(identity, .id = "outcome") |> 
@@ -193,4 +204,18 @@ get_crcr_objective_response <- function(res, stan_data) {
   spread_rvars(res, rep_confirmed_response_forced[i], prob_cause[i, k]) |> 
     filter(k == 2) |> 
     bind_cols(stan_data[c("patient", "objective_response", "confirmed_response", "confirmed_response_censored")])
+}
+
+get_crcr_pred_param <- function(res, stan_data) {
+  gather_rvars(res, crcr_covar_trial_coef[trial, m, k]) |> 
+    mutate(.exp_value = exp(.value)) |> 
+    mutate(
+      covar = case_when(
+        m == 1 ~ "baseline sum of tumor sizes",
+        m == 2 ~ "first post-treatment sum of tumor sizes",
+        TRUE ~ colnames(stan_data$covar_design_matrix)[pmax(1, m - 2)] |> str_replace(r"{factor\((.+),\sordered\s=\sFALSE\)}", "\\1 ")
+      ) |> as_factor(),
+      trial = factor(trial, labels = levels(stan_data$patient_trial)),
+      k = factor(k, levels = 1:2, labels = c("Non-response", "Response"))
+    )
 }

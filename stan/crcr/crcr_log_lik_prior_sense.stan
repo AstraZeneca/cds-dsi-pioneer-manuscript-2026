@@ -18,19 +18,25 @@ if (gen_log_lik || prior_sense) {
 }
 
 if (prior_sense) {
-  lprior += normal_lpdf(log_crcr_lambda_gp_alpha | 0, log_crcr_lambda_gp_alpha_sd) +
-    inv_gamma_lpdf(log_crcr_lambda_gp_rho | log_crcr_lambda_gp_rho_alpha, log_crcr_lambda_gp_rho_beta) +
-    normal_lpdf(log_crcr_lambda_gp_intercept | log_crcr_lambda_gp_intercept_mean, log_crcr_lambda_gp_intercept_sd); 
-  
-  for (k in 1:n_causes) {
-    lprior += normal_lpdf(crcr_tumor_stim_pop_coef[, k] | 0, crcr_tumor_stim_pop_coef_sd) + normal_lpdf(crcr_covar_effect[, k] | 0, crcr_covar_effect_sd);
+  for (s in 1:(separate_baseline_hazard ? n_trials : 1)) {
+    lprior += normal_lpdf(to_vector(log_crcr_lambda_gp_alpha[s]) | 0, log_crcr_lambda_gp_alpha_sd[s]) +
+      inv_gamma_lpdf(to_vector(log_crcr_lambda_gp_rho[s]) | log_crcr_lambda_gp_rho_alpha[s], log_crcr_lambda_gp_rho_beta[s]) +
+      normal_lpdf(to_vector(log_crcr_lambda_gp_intercept[s]) | log_crcr_lambda_gp_intercept_mean[s], log_crcr_lambda_gp_intercept_sd[s]); 
   }
   
-  if (add_trial_level) {
+  for (s in 1:(separate_prop_hazard ? n_trials : 1)) {
+    for (k in 1:n_causes) {
+      lprior += normal_lpdf(crcr_tumor_stim_pop_coef[s, , k] | 0, crcr_tumor_stim_pop_coef_sd) + normal_lpdf(crcr_covar_effect[s, , k] | 0, crcr_covar_effect_sd);
+    }
+  }
+  
+  if (add_trial_level_baseline_hazard) {
     lprior += normal_lpdf(log_crcr_lambda_gp_trial_alpha | 0, log_crcr_lambda_gp_trial_alpha_sd) +
       inv_gamma_lpdf(log_crcr_lambda_gp_trial_rho | log_crcr_lambda_gp_rho_alpha, log_crcr_lambda_gp_rho_beta) +
-      normal_lpdf(log_crcr_lambda_gp_trial_intercept_sd | 0, log_crcr_lambda_gp_trial_intercept_sd_sd) +
-      normal_lpdf(crcr_covar_trial_sd | 0, crcr_covar_trial_sd_sd) +
-      lkj_corr_cholesky_lpdf(L_crcr_covar_trial_corr | crcr_covar_trial_corr_eta);
+      normal_lpdf(log_crcr_lambda_gp_trial_intercept_sd | 0, log_crcr_lambda_gp_trial_intercept_sd_sd);
+  }
+  
+  if (add_trial_level_prop_hazard) {
+    lprior += normal_lpdf(crcr_covar_trial_sd | 0, crcr_covar_trial_sd_sd) + lkj_corr_cholesky_lpdf(L_crcr_covar_trial_corr | crcr_covar_trial_corr_eta);
   }
 }
