@@ -4,7 +4,7 @@ profile("crcr population baseline hazards") {
   for (s in 1:(separate_baseline_hazard ? n_trials : 1)) {
     for (k in 1:n_causes) {
       log_crcr_lambda[s, , k] = 
-        calc_gp_pred(confresp_range, log_crcr_lambda_gp_intercept[k, s], log_crcr_lambda_gp_alpha[s, k], log_crcr_lambda_gp_rho[s, k], delta, log_crcr_lambda_gp_eta[s, , k]);
+        calc_gp_pred(confresp_range, log_crcr_lambda_gp_intercept[s, k], log_crcr_lambda_gp_alpha[s, k], log_crcr_lambda_gp_rho[s, k], delta, log_crcr_lambda_gp_eta[s, , k]);
     }
   }
 }
