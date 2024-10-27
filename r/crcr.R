@@ -1,25 +1,3 @@
-create_crcr_initializer <- function(stan_data, n_causes = 2) {
-  function(chain_id) {
-    sep_trial <- if (stan_data$separate_baseline_hazard) stan_data$n_trials else 1 
-    
-    init_vals <- lst(
-      log_crcr_lambda_gp_intercept = matrix(
-        with(stan_data, rnorm(n_causes * sep_trial, t(log_crcr_lambda_gp_intercept_mean), t(log_crcr_lambda_gp_intercept_sd))),
-        nrow = sep_trial, byrow = TRUE
-      )
-    )
-    
-    if (stan_data$add_trial_level_baseline_hazard) {
-      init_vals <- init_vals |> 
-        list_assign(
-          log_crcr_lambda_gp_trial_intercept_sd = with(stan_data, abs(rnorm(n_causes, sd = log_crcr_lambda_gp_trial_intercept_sd_sd)))
-        )
-    }
-   
-    return(init_vals) 
-  }
-}
-
 get_conf_resp_hazard_ratios <- function(res) {
    res |> 
      rowwise() |> 
