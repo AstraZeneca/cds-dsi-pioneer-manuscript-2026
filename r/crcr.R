@@ -113,9 +113,9 @@ get_all_conf_resp_lambda_trial_intercept_bindist <- function(res, hb) {
 }
 
 get_all_conf_resp_lambda <- function(res, stan_data = NULL) {
-  rv <- spread_rvars(res, log_crcr_lambda[trial, t, k]) |> 
+  rv <- spread_rvars(res, log_crcr_trial_lambda[trial, t, k]) |> 
     mutate(
-      crcr_lambda = exp(log_crcr_lambda), 
+      crcr_trial_lambda = exp(log_crcr_trial_lambda), 
       k = factor(k, levels = 1:2, labels = c("Non-response", "Response"))
     )
   
