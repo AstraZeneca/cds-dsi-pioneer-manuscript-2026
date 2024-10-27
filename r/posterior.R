@@ -195,9 +195,12 @@ get_cr_median_pfs_draws <- function(res, ndraws = Inf) {
     unnest(rv)
 }
 
-get_all_pfs_crcr_lambda <- function(res) {
-  spread_rvars(res, log_lambda[t]) |> 
-    mutate(lambda = exp(log_lambda)) 
+get_all_pfs_crcr_lambda <- function(res, stan_data = NULL) {
+  spread_rvars(res, log_trial_lambda[trial, t]) |> 
+    mutate(
+      trial_lambda = exp(log_trial_lambda), 
+      trial = if (!is_null(stan_data)) factor(trial, labels = levels(stan_data$patient_trial))
+    )
 }
 
 get_all_pfs_crcr_lambda_trial_intercept <- function(res) {
@@ -205,3 +208,33 @@ get_all_pfs_crcr_lambda_trial_intercept <- function(res) {
     mutate(lambda_gp_trial_intercept = exp(log_lambda_gp_trial_intercept))
 }
 
+get_crcr_pfs_pred_param <- function(res, stan_data) {
+  gather_rvars(res, covar_trial_coef[trial, m]) |> 
+    mutate(.exp_value = exp(.value)) |> 
+    mutate(
+      covar = case_when(
+        m == 1 ~ "baseline sum of tumor sizes",
+        m == 2 ~ "first post-treatment sum of tumor sizes",
+        m < max(m) ~ colnames(stan_data$covar_design_matrix)[pmax(1, m - 2)] |> str_replace(r"{factor\((.+),\sordered\s=\sFALSE\)}", "\\1 "),
+        m == max(m) ~ "confirmed response"
+      ) |> as_factor()
+    )
+}
+
+get_powerscaled_variables <- function(res, metadata, stan_data) {
+  metadata |> 
+    rowwise() |> 
+    mutate(
+      ps = list(
+        if (alpha == 1) res else powerscale(res, alpha = alpha, component = component, variable = c("log_crcr_trial_lambda", "log_trial_lambda"))
+      ),
+      baseline_hazard_rvar = list(
+        gather_rvars(ps, log_crcr_trial_lambda[trial, t, k], log_trial_lambda[trial, t]) |> 
+          mutate(
+            .exp_value = exp(.value),
+            trial = factor(trial, labels = levels(stan_data$patient_trial)),
+            k = factor(k, levels = 1:2, labels = c("Non-response", "Response")) 
+          )
+      )
+    )
+}

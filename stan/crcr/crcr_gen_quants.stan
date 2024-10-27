@@ -23,3 +23,11 @@ for (i in 1:n_patients) {
 
 
 real<lower = 0, upper = 1> rep_orr = mean(rep_confirmed_response_forced);
+vector<lower = 0, upper = 1>[n_trials] rep_trial_orr;
+
+for (s in 1:n_trials) {
+  int patient_pos = trial_patient_pos[s];
+  int patient_end = trial_patient_pos[s + 1] - 1;
+  
+  rep_trial_orr[s] = mean(rep_confirmed_response_forced[patient_pos:patient_end]);
+}
