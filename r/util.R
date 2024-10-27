@@ -67,26 +67,6 @@ add_pfs_crcr_priors <- function(stan_data, crcr_priors, tumor_priors, pfs_priors
     )
 }
 
-create_pfs_crcr_initializer <- function(stan_data, n_causes = 2) {
-  crcr_init_fun <- create_crcr_initializer(stan_data, n_causes)
-  
-  function(chain_id) {
-    init_vals <- crcr_init_fun(chain_id) |> 
-      list_assign(
-        log_lambda_gp_intercept = with(stan_data, rnorm(1, log_lambda_gp_intercept_mean, log_lambda_gp_intercept_sd))
-      )
-    
-    if (stan_data$add_trial_level) {
-       init_vals <- init_vals |>  
-        list_assign(
-          log_lambda_gp_trial_intercept_sd = with(stan_data, abs(rnorm(1, sd = log_lambda_gp_trial_intercept_sd_sd)))
-        )  
-    }
-    
-    return(init_vals)
-  }
-}
-
 # This function is used to generate a histogram of time-to-events for a single draw
 sample_hist <- function(pred, breaks, ...) {
   # hist() is a base R function to generate histograms from data and provided breaks.
