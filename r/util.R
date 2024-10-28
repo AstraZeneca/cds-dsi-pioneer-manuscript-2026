@@ -76,3 +76,17 @@ sample_hist <- function(pred, breaks, ...) {
 # This function is used to treated_pfs_analysis_dataallow us to generate a distribution of histograms
 rvar_sample_hist <- posterior::rfun(sample_hist, rvar_dots = FALSE)
 
+name_coef_indices <- function(data, coef_idx_col, trial_col, stan_data) {
+  data |> 
+    mutate(
+      covar = case_when(
+        {{ coef_idx_col }} == 1 ~ "baseline sum of tumor sizes",
+        {{ coef_idx_col }} == 2 ~ "first post-treatment sum of tumor sizes",
+        {{ coef_idx_col }} - 2 <= ncol(stan_data$covar_design_matrix) ~ 
+          colnames(stan_data$covar_design_matrix)[pmax(1, {{ coef_idx_col }} - 2)] |> 
+          str_replace(r"{factor\((.+),\sordered\s=\sFALSE\)}", "\\1 "),
+        TRUE ~ "confirmed response"
+      ) |> as_factor(),
+      trial = factor({{ trial_col }}, labels = levels(stan_data$patient_trial)),
+    )
+}
