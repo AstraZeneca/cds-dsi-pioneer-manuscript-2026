@@ -187,13 +187,6 @@ get_crcr_objective_response <- function(res, stan_data) {
 get_crcr_pred_param <- function(res, stan_data) {
   gather_rvars(res, crcr_covar_trial_coef[trial, m, k]) |> 
     mutate(.exp_value = exp(.value)) |> 
-    mutate(
-      covar = case_when(
-        m == 1 ~ "baseline sum of tumor sizes",
-        m == 2 ~ "first post-treatment sum of tumor sizes",
-        TRUE ~ colnames(stan_data$covar_design_matrix)[pmax(1, m - 2)] |> str_replace(r"{factor\((.+),\sordered\s=\sFALSE\)}", "\\1 ")
-      ) |> as_factor(),
-      trial = factor(trial, labels = levels(stan_data$patient_trial)),
-      k = factor(k, levels = 1:2, labels = c("Non-response", "Response"))
-    )
+    name_coef_indices(m, trial, stan_data) |> 
+    mutate(k = factor(k, levels = 1:2, labels = c("Non-response", "Response")))
 }
