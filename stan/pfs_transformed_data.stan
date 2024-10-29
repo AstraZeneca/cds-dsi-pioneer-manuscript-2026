@@ -11,13 +11,10 @@ for (i in 1:max_all_t) {
   pfs_range_vec[i] = i - 1; 
 }
 
-// Censoring information calculated from PFS and t_measure; no need to pass it in. 
-array[n_patients] int<lower = 0> interval_censored = rep_array(0, n_patients);
 array[n_patients] int<lower = 0, upper = 1> right_uncensored = rep_array(0, n_patients);
 
 {
   tuple(array[n_patients] int, array[n_patients] int) censoring_res = identify_censoring(pfs, death_week, n_patient_tumors, n_measures, t_measure);
-  interval_censored = censoring_res.1;
   
   for (i in 1:n_patients) {
       right_uncensored[i] = 1 - right_censored[i];
@@ -32,6 +29,5 @@ array[n_patients] int<lower = 0, upper = 1> right_uncensored = rep_array(0, n_pa
 }
 
 // If generating PFS we need to calculate probs for all possible time intervals, otherwise only up to observed PFS. 
-int<lower = 0> n_time_periods = 
-  gen_pfs ? n_patients * max_all_t : n_total_pfs + sum(right_uncensored) + sum(interval_censored);
+int<lower = 0> n_time_periods = gen_pfs ? n_patients * max_all_t : n_total_pfs + sum(right_uncensored) + sum(interval_censored);
   
