@@ -9,8 +9,8 @@ for (s in 1:(separate_baseline_hazard ? n_trials : 1)) {
 
 for (k in 1:n_causes) {
   for (s in 1:(separate_prop_hazard ? n_trials : 1)) {
-    crcr_tumor_stim_pop_coef[s, , k] ~ normal(0, crcr_tumor_stim_pop_coef_sd);
-    crcr_covar_effect[s, , k] ~ normal(0, crcr_covar_effect_sd);
+    crcr_tumor_stim_pop_coef[s, , k] ~ normal(crcr_tumor_stim_pop_coef_mean, crcr_tumor_stim_pop_coef_sd);
+    crcr_covar_effect[s, , k] ~ normal(crcr_covar_effect_mean, crcr_covar_effect_sd);
   }
 }
 
