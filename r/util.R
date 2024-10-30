@@ -53,8 +53,10 @@ add_confirmed_resp_priors <- function(stan_data, priors) {
   stan_data |> 
     list_assign(!!!priors) %>% 
     list_assign(
-      crcr_covar_effect_sd = rep(.$crcr_covar_effect_sd, .$n_covar),
-      crcr_tumor_stim_pop_coef_sd = .$crcr_tumor_stim_pop_coef_sd[1:2],
+      # crcr_covar_effect_mean = rep(.$crcr_covar_effect_mean, .$n_covar),
+      # crcr_covar_effect_sd = rep(.$crcr_covar_effect_sd, .$n_covar),
+      crcr_tumor_stim_pop_coef_mean = .$crcr_tumor_stim_pop_coef_mean[1:(.$n_tumor_covar)],
+      crcr_tumor_stim_pop_coef_sd = .$crcr_tumor_stim_pop_coef_sd[1:(.$n_tumor_covar)],
     )
 }
 

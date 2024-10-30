@@ -235,11 +235,13 @@ get_powerscaled_variables <- function(res, metadata, stan_data) {
 get_coef_powerscale_table_data <- function(coef_ps_sense, prior_crcr_coef, crcr_coef, prior_crcr_pfs_coef, crcr_pfs_coef, stan_data) {
   plot_coef <- function(d) {
     ggplot(d) + 
-      stat_slab(aes(xdist = .exp_value, color = fit_type), fill = NA, linewidth = 2, show.legend = FALSE) +
-      geom_vline(xintercept = 1, linetype = "dashed", linewidth = 2) +
+      stat_slab(aes(xdist = .value, color = fit_type), fill = NA, linewidth = 2, show.legend = TRUE) +
+      # geom_vline(xintercept = 1, linetype = "dashed", linewidth = 2) +
       scale_color_discrete("", label = str_to_title, type = AZ_palette, aesthetic = c("color", "fill")) +
       labs(x = "", y = "") +
-      theme(axis.text.y = element_blank(), axis.text.x = element_text(size = 15)) +
+      theme(axis.text.y = element_blank(), axis.text.x = element_text(size = 25), legend.text = element_text(size = 20)) +
+      # coord_cartesian(xlim = c(0, 4)) +
+      theme(legend.position = "bottom") +
       NULL
   }
   
