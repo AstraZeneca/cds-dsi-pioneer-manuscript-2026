@@ -40,7 +40,9 @@ data {
   
   // TODO these priors should also be separable by trials if separate_prop_hazard == 1. 
   vector<lower = 0>[2] tumor_stim_pop_coef_sd;
+  real conf_resp_effect_mean;
   real<lower = 0> conf_resp_effect_sd;
+  vector[n_covar] covar_effect_mean;
   vector<lower = 0>[n_covar] covar_effect_sd;
  
   real<lower = 0> covar_trial_sd_sd;
@@ -151,8 +153,8 @@ model {
   profile("pfs priors") {
     for (s in 1:(separate_prop_hazard ? n_trials : 1)) {
       tumor_stim_pop_coef[s] ~ normal(0, tumor_stim_pop_coef_sd);
-      conf_resp_effect[s] ~ normal(0, conf_resp_effect_sd); 
-      covar_effect[s] ~ normal(0, covar_effect_sd);
+      conf_resp_effect[s] ~ normal(conf_resp_effect_mean, conf_resp_effect_sd); 
+      covar_effect[s] ~ normal(covar_effect_mean, covar_effect_sd);
     }
     
     if (add_trial_level_prop_hazard) {

@@ -64,7 +64,6 @@ add_pfs_crcr_priors <- function(stan_data, crcr_priors, tumor_priors, pfs_priors
   add_confirmed_resp_priors(stan_data, crcr_priors) |> 
     list_assign(!!!tumor_priors, !!!pfs_priors) %>% 
     list_assign(
-      covar_effect_sd = rep(.$covar_effect_sd, .$n_covar),
       tumor_stim_pop_coef_sd = .$tumor_stim_pop_coef_sd[1:2],
     )
 }
