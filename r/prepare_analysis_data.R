@@ -117,6 +117,7 @@ prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, ..., 
     }
     
     modelr::model_matrix(analysis_data, covar_formula) |> 
+      select(!any_of("(Intercept)")) |> 
       map_dfc(\(col) scale(col, scale = is.numeric(col) & scale_numeric)) |> 
       as.matrix()
   } else {
