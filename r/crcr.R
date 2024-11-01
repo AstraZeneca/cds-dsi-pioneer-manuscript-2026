@@ -107,7 +107,7 @@ get_all_conf_resp_lambda <- function(res, stan_data = NULL) {
 
 get_all_rep_confirmed_response <- function(res, stan_data = NULL) {
   spread_rvars(res, rep_confirmed_response_week[i], rep_confirmed_response_censored[i], rep_confirmed_response[i]) |> 
-    mutate(trial = stan_data$patient_trial)  
+    mutate(trial = stan_data$patient_trial, usubjid = stan_data$patient)  
 }
 
 get_all_rep_confirmed_response_bindist <- function(res, stan_data, hb) {

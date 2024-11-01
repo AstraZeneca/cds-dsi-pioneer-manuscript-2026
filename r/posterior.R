@@ -5,6 +5,11 @@ get_pfs_conf_resp_marginal_exit_prob <- function(res) {
     unnest(prob_rvars)
 }
 
+get_trial_sim_crcr_pfs <- function(res, stan_data) {
+  spread_rvars(res, sim_pfs[i], sim_censored[i]) |>
+    mutate(usubjid = stan_data$patient)
+}
+
 get_sim_pfs_conf_resp <- function(res) {
   res |>
     ungroup() |> 
