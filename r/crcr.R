@@ -190,3 +190,8 @@ get_crcr_pred_param <- function(res, stan_data) {
     name_coef_indices(m, trial, stan_data) |> 
     mutate(k = factor(k, levels = 1:2, labels = c("Non-response", "Response")))
 }
+
+get_crcr_covar_trial_sd <- function(res, stan_data) {
+  spread_rvars(res, crcr_covar_trial_sd[m]) |> 
+    name_coef_indices(m, NULL, stan_data)
+}

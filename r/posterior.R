@@ -267,3 +267,8 @@ get_coef_powerscale_table_data <- function(coef_ps_sense, prior_crcr_coef, crcr_
     name_coef_indices(m, trial, stan_data) |> 
     select(var, covar, k, prior, likelihood, diagnosis, plot_obj) 
 }
+
+get_covar_trial_sd <- function(res, stan_data) {
+  spread_rvars(res, covar_trial_sd[m]) |> 
+    name_coef_indices(m, NULL, stan_data)
+}

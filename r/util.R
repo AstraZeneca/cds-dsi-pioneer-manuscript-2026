@@ -51,21 +51,18 @@ cmdstan_expose_pfs_functions <- function(util_file, pfs_functions_file) {
 
 add_confirmed_resp_priors <- function(stan_data, priors) {
   stan_data |> 
-    list_assign(!!!priors) %>% 
-    list_assign(
-      # crcr_covar_effect_mean = rep(.$crcr_covar_effect_mean, .$n_covar),
-      # crcr_covar_effect_sd = rep(.$crcr_covar_effect_sd, .$n_covar),
-      crcr_tumor_stim_pop_coef_mean = .$crcr_tumor_stim_pop_coef_mean[1:(.$n_tumor_covar)],
-      crcr_tumor_stim_pop_coef_sd = .$crcr_tumor_stim_pop_coef_sd[1:(.$n_tumor_covar)],
-    )
+    list_assign(!!!priors) 
+    # list_assign(
+    #   crcr_tumor_stim_pop_coef_sd = .$crcr_tumor_stim_pop_coef_sd,
+    # )
 }
 
 add_pfs_crcr_priors <- function(stan_data, crcr_priors, tumor_priors, pfs_priors) {
   add_confirmed_resp_priors(stan_data, crcr_priors) |> 
-    list_assign(!!!tumor_priors, !!!pfs_priors) %>% 
-    list_assign(
-      tumor_stim_pop_coef_sd = .$tumor_stim_pop_coef_sd[1:2],
-    )
+    list_assign(!!!tumor_priors, !!!pfs_priors)  
+    # list_assign(
+    #   tumor_stim_pop_coef_sd = .$tumor_stim_pop_coef_sd[1:2],
+    # )
 }
 
 # This function is used to generate a histogram of time-to-events for a single draw
@@ -88,7 +85,7 @@ name_coef_indices <- function(data, coef_idx_col, trial_col, stan_data) {
           str_replace(r"{factor\((.+),\sordered\s=\sFALSE\)}", "\\1 "),
         TRUE ~ "confirmed response"
       ) |> as_factor(),
-      trial = factor({{ trial_col }}, labels = levels(stan_data$patient_trial)),
+      trial = if(!is_null(trial_col)) factor({{ trial_col }}, labels = levels(stan_data$patient_trial)),
     )
 }
 

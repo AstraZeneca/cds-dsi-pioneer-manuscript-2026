@@ -530,6 +530,27 @@ tuple(int, int) survival_time_rng(vector log_cond_prob_surv) {
   return(survival_time, censored);
 }
 
+int interval_censored_survival_time_rng(vector ic_log_cond_prob_surv) {
+  int interval_censored = rows(ic_log_cond_prob_surv);
+  vector[interval_censored] marginal_prob_exit = exp(cumulative_sum(append_row(0, ic_log_cond_prob_surv))[:(interval_censored + 1)] + log1m_exp(ic_log_cond_prob_surv));
+
+  marginal_prob_exit /= sum(marginal_prob_exit);
+
+  return categorical_rng(marginal_prob_exit) - 1;
+}
+
+tuple(int, int) survival_time_rng(vector log_cond_prob_surv, int event_time, int right_censored, int interval_censored) {
+  int survival_time = event_time, forecast_right_censored = right_censored;
+  
+  if (right_censored) {
+    (survival_time, forecast_right_censored) = survival_time_rng(log_cond_prob_surv[(event_time + 1):]);
+  } else if (interval_censored > 0) {
+    survival_time += interval_censored_survival_time_rng(log_cond_prob_surv[(event_time + 1):(event_time + interval_censored + 1)]);
+  }
+  
+  return(survival_time, forecast_right_censored);
+}
+
 /** Survival aggregated over all patients, S(t) = Pr[T > t], t \in {0,..., N} 
  *
  * @param last_surv The last observed week that was progression-free
