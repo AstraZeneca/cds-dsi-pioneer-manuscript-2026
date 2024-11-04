@@ -88,6 +88,7 @@ base_prepare_pfs_stan_data <- function(analysis_data, ..., pfs_var = pfs) {
     separate_prop_hazard = FALSE,
     add_tumor_location_level = FALSE,
     fit_post_2nd_meaure_only = TRUE,
+    log_lik_trial = 0,
     
     fit_tumor_data = FALSE,
     gen_tumor_sizes = FALSE,
@@ -142,6 +143,7 @@ prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, ..., 
       gen_log_lik = FALSE,
       prior_sense = FALSE,
       
+      log_lik_trial = 0,
       leave_out_trial = 0,
       n_bootstrap_sample = 0,
       n_bootstrap_cr_maturity_rates = 0,
