@@ -3,6 +3,8 @@ array[n_patients] int<lower = 1> confirmed_response_week;
 array[n_patients] int<lower = 0, upper = 1> confirmed_response_censored;
 array[n_patients] int<lower = 0> confirmed_response_interval_censored;
 
+int<lower = 1> extend_max_confresp_week;
+
 int n_tumor_covar;
 int<lower = 0> n_covar; 
 

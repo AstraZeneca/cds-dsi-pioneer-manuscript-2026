@@ -25,7 +25,7 @@ for (s in 1:n_trials) {
 real delta = 1e-9; // Used for GP modeling
 
 int min_all_t = min(t_measure);
-int<lower = min_all_t> max_all_t = max(t_measure);
+int<lower = min_all_t> max_all_t = max(max(t_measure), extend_max_all_t);
 array[sum(n_measures)] int<lower = 1> patient_t_measure_idx; // The index of each t relative to the first t per patient
 array[n_patients] int<lower = 0> patient_max_t_width; // The number of intervals from the first to the last measurement per patient
 

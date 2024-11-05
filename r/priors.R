@@ -24,7 +24,7 @@ get_pfs_priors <- function() {
   )
 }
 
-get_pfs_conf_resp_priors <- function() {
+get_pfs_conf_resp_priors <- function(stan_data) {
   get_pfs_priors() |> 
     list_assign(
       log_lambda_gp_intercept_mean = -2.5,
@@ -33,8 +33,10 @@ get_pfs_conf_resp_priors <- function() {
       log_lambda_gp_rho_alpha = 3,
       log_lambda_gp_rho_beta = 10, 
       
-      covar_effect_sd = 0.15,
+      covar_effect_mean = rep(0, stan_data$n_covar),
+      covar_effect_sd = rep(0.15, stan_data$n_covar),
       tumor_stim_pop_coef_sd = c(0.2, 0.2, 0.2, 0.15, 0.15),
+      conf_resp_effect_mean = 0,
       conf_resp_effect_sd = 0.3,
       
       covar_trial_sd_sd = 0.1, 
@@ -42,9 +44,11 @@ get_pfs_conf_resp_priors <- function() {
     )
 }
 
-get_confirmed_resp_priors <- function(n_tumor_covar, n_strat_covar) {
+get_confirmed_resp_priors <- function() {
   lst(
+    crcr_covar_effect_mean = 0,
     crcr_covar_effect_sd = 0.2,
+    crcr_tumor_stim_pop_coef_mean = rep(0, 5),
     crcr_tumor_stim_pop_coef_sd = c(0.5, 0.5, 0.2, 0.15, 0.15),
     
     log_crcr_lambda_gp_intercept_mean = rep(-2.5, 2),

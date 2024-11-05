@@ -82,6 +82,10 @@ base_prepare_pfs_stan_data <- function(analysis_data, ..., pfs_var = pfs) {
     gen_interval_censored = FALSE,
     pfs_ignore_interval_censoring = FALSE,
     add_trial_level = FALSE,
+    add_trial_level_baseline_hazard = FALSE,
+    add_trial_level_prop_hazard = FALSE,
+    separate_baseline_hazard = FALSE,
+    separate_prop_hazard = FALSE,
     add_tumor_location_level = FALSE,
     fit_post_2nd_meaure_only = TRUE,
     
@@ -101,7 +105,11 @@ prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, ..., 
   incomplete_patients <- c() 
   
   covar_design_matrix <- if (include_covar) {
-    incomplete_patients <- which(!complete.cases(select(analysis_data, all_of(all.vars(covar_formula)))))
+    incomplete_patients <- select(analysis_data, all_of(all.vars(covar_formula))) |> 
+      map_if(is.ordered, \(f) factor(f, ordered = FALSE)) |> 
+      complete.cases() |> 
+      not() |> 
+      which()
     
     if (!is_empty(incomplete_patients)) {
       analysis_data <- slice(analysis_data, -incomplete_patients)
@@ -109,6 +117,7 @@ prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, ..., 
     }
     
     modelr::model_matrix(analysis_data, covar_formula) |> 
+      select(!any_of("(Intercept)")) |> 
       map_dfc(\(col) scale(col, scale = is.numeric(col) & scale_numeric)) |> 
       as.matrix()
   } else {
@@ -117,6 +126,7 @@ prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, ..., 
   
   pfs_stan_data <- base_prepare_pfs_stan_data(analysis_data)
   stopifnot(pfs_stan_data$n_patients == nrow(analysis_data))
+  stopifnot(pfs_stan_data$n_patients == nrow(covar_design_matrix))
   
   n_covar <- ncol(covar_design_matrix)
   
@@ -148,6 +158,9 @@ prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, ..., 
       confirmed_response_censored = analysis_data$confirmed_response_censored,
       confirmed_response_interval_censored = analysis_data$confirmed_response_interval_censored,
       confirmed_response_week = analysis_data$confirmed_response_week,
+      
+      extend_max_confresp_week = 1,
+      extend_max_all_t = 1
     ) |>  
     list_assign(...)
 }
@@ -156,28 +169,10 @@ prepare_confirmed_resp_km <- function(stan_data) {
   stan_data |> 
     rowwise() |>
     mutate(
-      # conf_resp_km = list(with(
-      #   stan_data, 
-      #   pfs_functions$estimate_kaplan_meier(
-      #     confirmed_response_week - (1 - confirmed_response_censored), # this function expects survival time not response week so we -1 for uncensored  
-      #     confirmed_response_censored, 
-      #     max(confirmed_response_week)
-      #   )
-      # )),
-      
       conf_resp_km = list(broom::tidy(survfit2(
         Surv(confirmed_response_week, 1 - confirmed_response_censored) ~ 1, 
         data = as_tibble(stan_data[c("confirmed_response_week", "confirmed_response_censored")])
       )) |> transmute(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event)),
-    
-      # conf_resp_km_calendar = list(with(
-      #   stan_data, 
-      #   pfs_functions$estimate_kaplan_meier(
-      #     confirmed_response_week + experiment_start_week - 1, 
-      #     confirmed_response_censored, 
-      #     max(confirmed_response_week + experiment_start_week - 1)
-      #   )
-      # )),
       
       conf_resp_km_calendar = list(broom::tidy(survfit2(
         Surv(confirmed_response_week + experiment_start_week - 1, 1 - confirmed_response_censored) ~ 1, 
