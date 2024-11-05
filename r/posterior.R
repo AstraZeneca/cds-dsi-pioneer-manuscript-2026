@@ -195,9 +195,12 @@ get_cr_median_pfs_draws <- function(res, ndraws = Inf) {
     unnest(rv)
 }
 
-get_all_pfs_crcr_lambda <- function(res) {
-  spread_rvars(res, log_lambda[t]) |> 
-    mutate(lambda = exp(log_lambda)) 
+get_all_pfs_crcr_lambda <- function(res, stan_data = NULL) {
+  spread_rvars(res, log_trial_lambda[trial, t]) |> 
+    mutate(
+      trial_lambda = exp(log_trial_lambda), 
+      trial = if (!is_null(stan_data)) factor(trial, labels = levels(stan_data$patient_trial))
+    )
 }
 
 get_all_pfs_crcr_lambda_trial_intercept <- function(res) {
@@ -205,3 +208,57 @@ get_all_pfs_crcr_lambda_trial_intercept <- function(res) {
     mutate(lambda_gp_trial_intercept = exp(log_lambda_gp_trial_intercept))
 }
 
+get_crcr_pfs_pred_param <- function(res, stan_data) {
+  gather_rvars(res, covar_trial_coef[trial, m]) |> 
+    mutate(.exp_value = exp(.value)) |> 
+    name_coef_indices(m, trial, stan_data)
+}
+
+get_powerscaled_variables <- function(res, metadata, stan_data) {
+  metadata |> 
+    rowwise() |> 
+    mutate(
+      ps = list(
+        if (alpha == 1) res else powerscale(res, alpha = alpha, component = component, variable = c("log_crcr_trial_lambda", "log_trial_lambda"))
+      ),
+      baseline_hazard_rvar = list(
+        gather_rvars(ps, log_crcr_trial_lambda[trial, t, k], log_trial_lambda[trial, t]) |> 
+          mutate(
+            .exp_value = exp(.value),
+            trial = factor(trial, labels = levels(stan_data$patient_trial)),
+            k = factor(k, levels = 1:2, labels = c("Non-response", "Response")) 
+          )
+      ),
+    )
+}
+
+get_coef_powerscale_table_data <- function(coef_ps_sense, prior_crcr_coef, crcr_coef, prior_crcr_pfs_coef, crcr_pfs_coef, stan_data) {
+  plot_coef <- function(d) {
+    ggplot(d) + 
+      stat_slab(aes(xdist = .exp_value, color = fit_type), fill = NA, linewidth = 2, show.legend = TRUE) +
+      geom_vline(xintercept = 1, linetype = "dashed", linewidth = 2) +
+      scale_color_discrete("", label = str_to_title, type = AZ_palette, aesthetic = c("color", "fill")) +
+      labs(x = "", y = "") +
+      theme(axis.text.y = element_blank(), axis.text.x = element_text(size = 25), legend.text = element_text(size = 20)) +
+      coord_cartesian(xlim = c(0, 4)) +
+      theme(legend.position = "bottom") +
+      NULL
+  }
+  
+  coef_plots <- bind_rows(
+    bind_rows(prior = prior_crcr_coef, posterior = crcr_coef, .id = "fit_type"),
+    bind_rows(prior = prior_crcr_pfs_coef, posterior = crcr_pfs_coef, .id = "fit_type")
+  ) |> 
+    nest(coef_data = !c(.variable, m, k)) |> 
+    mutate(plot_obj = map(coef_data, plot_coef)) 
+  
+  coef_ps_sense |> 
+    tidyr::separate_wider_regex(variable, c(var = ".+", r"{\[}", trial = r"{\d+}", ",", m = r"{\d+}", r"{,?}", k = r"{(?:\d+)?}", ".*")) |> 
+    mutate(
+      across(c(m, k, trial), as.integer),
+      k = factor(k, levels = 1:2, labels = c("Non-response", "Response"))
+    ) |> 
+    left_join(coef_plots, by = c("var" = ".variable", "k", "m")) |> 
+    name_coef_indices(m, trial, stan_data) |> 
+    select(var, covar, k, prior, likelihood, diagnosis, plot_obj) 
+}
