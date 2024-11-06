@@ -6,7 +6,7 @@ get_pfs_conf_resp_marginal_exit_prob <- function(res) {
 }
 
 get_trial_sim_crcr_pfs <- function(res, stan_data) {
-  spread_rvars(res, sim_pfs[i], sim_censored[i]) |>
+  spread_rvars(res, sim_pfs[i], sim_censored[i], forecast_pfs[i], forecast_censored[i]) |>
     mutate(usubjid = stan_data$patient)
 }
 
@@ -36,7 +36,7 @@ get_all_pfs_conf_resp_km_est <- function(res, analysis_data = NULL) {
     res <- recover_types(res, select(analysis_data, trial))
   }
   
-  spread_rvars(res, trial_km_est[trial, t])
+  spread_rvars(res, trial_km_est[trial, t], forecast_trial_km_est[trial, t])
 }
 
 get_median_pfs_conf_resp <- function(res) {
@@ -52,8 +52,9 @@ get_all_median_pfs_conf_resp <- function(res, analysis_data = NULL) {
     res <- recover_types(res, select(analysis_data, trial))
   }
   
-   spread_rvars(res, sim_trial_median_pfs[trial]) 
+   spread_rvars(res, sim_trial_median_pfs[trial], forecast_trial_median_pfs[trial]) 
 }
+
 
 get_pfs_conf_resp_log_hazard_ratio <- function(res) {
    res |> 
