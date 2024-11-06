@@ -23,14 +23,14 @@ calc_pfs <- function(progress_week, right_censored, patient_tumors) {
 calc_confirmed_response <- function(response) {
   conf_resp_data <- response |> 
     mutate(
-      # confirmed_response = if_else(!xor(objective_response, lag(objective_response, default = NA)), objective_response, NA),
       confirmed_response = case_when(
         !objective_response ~ FALSE,
         objective_response & lag(objective_response, default = NA) ~ TRUE 
       ), 
-      # confirmed_response_week = lag(week, default = NA),
+      # "confirmed response" needs two consecutive CR/PR so we need to lag by 1
       confirmed_response_week = if_else(confirmed_response, lag(week, default = NA), week),
-      confirmed_response_interval_censored = confirmed_response_week - (lag(week, n = 2L, default = 0) + 1)
+      confirmed_response_interval_censored = # Here lag by 2 
+        confirmed_response_week - (if_else(confirmed_response, lag(week, n = 2L, default = 0), lag(week, default = 0)) + 1)
     ) 
   
   first_conf_week <- conf_resp_data |> 
