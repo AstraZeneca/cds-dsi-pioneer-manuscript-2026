@@ -106,7 +106,10 @@ get_all_conf_resp_lambda <- function(res, stan_data = NULL) {
 }
 
 get_all_rep_confirmed_response <- function(res, stan_data = NULL) {
-  spread_rvars(res, rep_confirmed_response_week[i], rep_confirmed_response_censored[i], rep_confirmed_response[i]) |> 
+  spread_rvars(
+    res, rep_confirmed_response_week[i], rep_confirmed_response_censored[i], rep_confirmed_response[i],
+    forecast_confirmed_response_week[i], forecast_confirmed_response_censored[i], forecast_confirmed_response[i]
+  ) |> 
     mutate(trial = stan_data$patient_trial, usubjid = stan_data$patient)  
 }
 
@@ -181,7 +184,8 @@ get_crcr_predict_cif <- function(res, stan_data = NULL) {
 get_crcr_objective_response <- function(res, stan_data) {
   spread_rvars(res, rep_confirmed_response_forced[i], prob_cause[i, k]) |> 
     filter(k == 2) |> 
-    bind_cols(stan_data[c("patient", "objective_response", "confirmed_response", "confirmed_response_censored")])
+    bind_cols(stan_data[c("patient_trial", "patient", "objective_response", "confirmed_response", "confirmed_response_censored")]) |> 
+    rename(trial = patient_trial)
 }
 
 get_crcr_pred_param <- function(res, stan_data) {
