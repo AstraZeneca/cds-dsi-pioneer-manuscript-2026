@@ -518,34 +518,30 @@ tuple(int, int) survival_time_rng(vector log_cond_prob_surv) {
   
   int censored = survival_time >= n_intervals; 
   
-  // vector[n_intervals + 1] marginal_exit_prob;
-  // marginal_exit_prob[:n_intervals] = calculate_marginal_exit_prob(log_cond_prob_surv, n_intervals);
-  // marginal_exit_prob[n_intervals + 1] = 1 - sum(marginal_exit_prob[:n_intervals]);
-  // 
-  // int survival_time = categorical_rng(marginal_exit_prob);
-  // int censored = survival_time > n_intervals; 
-  
-  // survival_time -= censored; // The interval before 
-  
   return(survival_time, censored);
 }
 
 int interval_censored_survival_time_rng(vector ic_log_cond_prob_surv) {
-  int interval_censored = rows(ic_log_cond_prob_surv);
-  vector[interval_censored] marginal_prob_exit = exp(cumulative_sum(append_row(0, ic_log_cond_prob_surv))[:(interval_censored + 1)] + log1m_exp(ic_log_cond_prob_surv));
+  int n = rows(ic_log_cond_prob_surv);
+  vector[n] marginal_prob_exit = exp(cumulative_sum(append_row(0, ic_log_cond_prob_surv))[:n] + log1m_exp(ic_log_cond_prob_surv));
 
   marginal_prob_exit /= sum(marginal_prob_exit);
 
   return categorical_rng(marginal_prob_exit) - 1;
 }
 
-tuple(int, int) survival_time_rng(vector log_cond_prob_surv, int event_time, int right_censored, int interval_censored) {
-  int survival_time = event_time, forecast_right_censored = right_censored;
+tuple(int, int) survival_time_rng(vector log_cond_prob_surv, int obs_surv_time, int right_censored, int interval_censored) {
+  int n = rows(log_cond_prob_surv);
+  int survival_time = obs_surv_time, forecast_right_censored = right_censored;
   
   if (right_censored) {
-    (survival_time, forecast_right_censored) = survival_time_rng(log_cond_prob_surv[(event_time + 1):]);
+    // Check that we are not at the highest interval; we don't have any estimated probability after that. 
+    if (obs_surv_time < n) {
+      (survival_time, forecast_right_censored) = survival_time_rng(log_cond_prob_surv[(obs_surv_time + 1):]);
+      survival_time += obs_surv_time;
+    }
   } else if (interval_censored > 0) {
-    survival_time += interval_censored_survival_time_rng(log_cond_prob_surv[(event_time + 1):(event_time + interval_censored + 1)]);
+    survival_time += interval_censored_survival_time_rng(log_cond_prob_surv[(obs_surv_time + 1):(obs_surv_time + interval_censored + 1)]);
   }
   
   return(survival_time, forecast_right_censored);
