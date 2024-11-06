@@ -21,7 +21,7 @@ for (i in 1:n_patients) {
   
   if (confirmed_response_censored[i] || confirmed_response_interval_censored[i] > 0) {
     (forecast_confirmed_response_week[i], forecast_confirmed_response_censored[i], forecast_confirmed_response[i]) = competing_risks_survival_time_rng(
-      patient_log_crcr_cond_prob_surv, confirmed_response[i], confirmed_response_week[i], confirmed_response_censored[i], confirmed_response_interval_censored[i]
+      patient_log_crcr_cond_prob_surv, confirmed_response[i] + 1, last_unclassified_response_week[i], confirmed_response_censored[i], confirmed_response_interval_censored[i]
     );
     
     forecast_confirmed_response[i] -= 1;
