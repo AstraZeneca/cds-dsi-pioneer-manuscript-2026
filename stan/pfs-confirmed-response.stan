@@ -264,9 +264,13 @@ generated quantities {
       
       sim_median_pfs = survival_median(sim_pfs, max_all_t).1; 
       km_est = estimate_kaplan_meier(sim_pfs, sim_censored, max_all_t).1; 
+      sim_pfs6 = calc_pfs_n(sim_pfs, 6 * 365.25 / (7 * 12));
+      sim_pfs9 = calc_pfs_n(sim_pfs, 9 * 365.25 / (7 * 12));
       
       forecast_median_pfs = survival_median(forecast_pfs, max_all_t).1; 
       forecast_km_est = estimate_kaplan_meier(forecast_pfs, forecast_censored, max_all_t).1; 
+      forecast_pfs6 = calc_pfs_n(forecast_pfs, 6 * 365.25 / (7 * 12));
+      forecast_pfs9 = calc_pfs_n(forecast_pfs, 9 * 365.25 / (7 * 12));
       
       for (s in 1:n_trials) {
         int patient_pos = trial_patient_pos[s];
@@ -274,9 +278,13 @@ generated quantities {
         
         sim_trial_median_pfs[s] = survival_median(sim_pfs[patient_pos:patient_end], max_all_t).1; 
         trial_km_est[s] = estimate_kaplan_meier(sim_pfs[patient_pos:patient_end], sim_censored[patient_pos:patient_end], max_all_t).1; 
+        sim_trial_pfs6[s] = calc_pfs_n(sim_pfs[patient_pos:patient_end], 6 * 365.25 / (7 * 12));
+        sim_trial_pfs9[s] = calc_pfs_n(sim_pfs[patient_pos:patient_end], 9 * 365.25 / (7 * 12));
         
         forecast_trial_median_pfs[s] = survival_median(forecast_pfs[patient_pos:patient_end], max_all_t).1; 
         forecast_trial_km_est[s] = estimate_kaplan_meier(forecast_pfs[patient_pos:patient_end], forecast_censored[patient_pos:patient_end], max_all_t).1; 
+        forecast_trial_pfs6[s] = calc_pfs_n(forecast_pfs[patient_pos:patient_end], 6 * 365.25 / (7 * 12));
+        forecast_trial_pfs9[s] = calc_pfs_n(forecast_pfs[patient_pos:patient_end], 9 * 365.25 / (7 * 12));
       }
     }
   }

@@ -55,6 +55,13 @@ get_all_median_pfs_conf_resp <- function(res, analysis_data = NULL) {
    spread_rvars(res, sim_trial_median_pfs[trial], forecast_trial_median_pfs[trial]) 
 }
 
+get_pfs_n <- function(res, analysis_data = NULL) {
+  if (!is_null(analysis_data)) { 
+    res <- recover_types(res, select(analysis_data, trial))
+  }
+  
+   spread_rvars(res, sim_trial_pfs6[trial], sim_trial_pfs9[trial], forecast_trial_pfs6[trial], forecast_trial_pfs9[trial]) 
+}
 
 get_pfs_conf_resp_log_hazard_ratio <- function(res) {
    res |> 

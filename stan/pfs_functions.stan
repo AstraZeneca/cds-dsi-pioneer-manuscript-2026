@@ -507,6 +507,18 @@ tuple(real, int) survival_median(array[] int surv_time, int last_surv_time) {
   return(q[1], c[1]);
 }
 
+real calc_pfs_n(array[] int surv_time, real n) {
+  int n_patients = size(surv_time);
+  array[n_patients] int sorted_surv_time = sort_desc(surv_time);
+  int pfs_n = 0;
+  
+  while (pfs_n < n_patients && sorted_surv_time[pfs_n + 1] >= n) {
+    pfs_n += 1;
+  }
+  
+  return 1.0 * pfs_n / n_patients;
+}
+
 tuple(int, int) survival_time_rng(vector log_cond_prob_surv) {
   int n_intervals = rows(log_cond_prob_surv);
  
