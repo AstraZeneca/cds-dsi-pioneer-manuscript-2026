@@ -88,6 +88,8 @@ base_prepare_pfs_stan_data <- function(analysis_data, ..., pfs_var = pfs) {
     separate_prop_hazard = FALSE,
     add_tumor_location_level = FALSE,
     fit_post_2nd_meaure_only = TRUE,
+    pfs_only = FALSE,
+    no_tumor_effects = FALSE,
     log_lik_trial = 0,
     
     fit_tumor_data = FALSE,
