@@ -60,7 +60,7 @@ plot_unclassified_survival <- function(res_data, analysis_data, conf_resp_hb) {
 plot_cif <- function(res_data, obs_cif_data) {
   ggplot(res_data, aes(time, estimate)) +
     stat_lineribbon(aes(fill = fit_type), linewidth = 0, alpha = 0.25, .width = c(0.5, 0.8)) +
-    geom_step(aes(y = estimate, linetype = "Observed"), direction = "vh", data = obs_cif_data) +
+    geom_step(aes(y = estimate, linetype = "Observed"), direction = "vh", data = \(d) semi_join(obs_cif_data, d, by = "trial")) +
     scale_linetype_manual("", values = c(Observed = "dashed")) +
     labs(y = "CIF") +
     NULL
@@ -138,4 +138,17 @@ plot_surv_ppc <- function(ppc_data, surv_interval_col, ic_col, rc_col, rep_surv_
       color = guide_legend("")  # Keep only the confirmed_response legend
     ) +
     NULL
+}
+
+plot_km <- function(res_data, obs_km_data, km_est, group = fit_type) {
+  ggplot(res_data) +
+    geom_step(
+      aes(x = t, y = s, group = btype, linetype = "Observed Data"), 
+      data = \(d) semi_join(obs_km_data, d, by = "trial")
+    ) +
+    stat_lineribbon(aes(x = t - 1, ydist = {{ km_est }}, color = {{ group }}, fill = {{ group }}, alpha = {{ group }}), .width = 0.8) +
+    scale_linetype_manual("", values = "dotted") +
+    labs(y = "Survival Probability") +
+    guides(alpha = "none") + 
+    theme(legend.position = "bottom")
 }
