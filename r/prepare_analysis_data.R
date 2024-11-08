@@ -104,15 +104,19 @@ base_prepare_pfs_stan_data <- function(analysis_data, ..., pfs_var = pfs) {
     list_assign(...)
 }
 
+identify_incomplete_cases <- function(analysis_data, covar_formula) {
+  select(analysis_data, all_of(all.vars(covar_formula))) |> 
+    map_if(is.ordered, \(f) factor(f, ordered = FALSE)) |> 
+    complete.cases() |> 
+    not() |> 
+    which()
+}
+
 prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, ..., include_covar = TRUE, scale_numeric = TRUE) {
   incomplete_patients <- c() 
   
   covar_design_matrix <- if (include_covar) {
-    incomplete_patients <- select(analysis_data, all_of(all.vars(covar_formula))) |> 
-      map_if(is.ordered, \(f) factor(f, ordered = FALSE)) |> 
-      complete.cases() |> 
-      not() |> 
-      which()
+    incomplete_patients <- identify_incomplete_cases(analysis_data, covar_formula) 
     
     if (!is_empty(incomplete_patients)) {
       analysis_data <- slice(analysis_data, -incomplete_patients)
