@@ -89,3 +89,42 @@ name_coef_indices <- function(data, coef_idx_col, trial_col, stan_data) {
     )
 }
 
+simplex_allocate <- function(simplex, total) {
+  # Input validation
+  if (abs(sum(simplex) - 1) > 1e-10) {
+    stop("Input vector must sum to 1")
+  }
+  if (total %% 1 != 0) {
+    stop("total must be an integer")
+  }
+  
+  # Initial allocation using floor after multiplication
+  raw_allocation <- simplex * total
+  initial_allocation <- floor(raw_allocation)
+  
+  # Calculate remaining amount to distribute
+  remainder <- total - sum(initial_allocation)
+  
+  if (remainder > 0) {
+    # Get fractional parts
+    fractional_parts <- raw_allocation - initial_allocation
+    # Get indices that would sort in descending order
+    sorted_indices <- order(fractional_parts, decreasing = TRUE)
+    
+    # Only distribute up to the remainder amount
+    result <- initial_allocation
+    if (remainder > 0) {
+      result[sorted_indices[1:remainder]] <- result[sorted_indices[1:remainder]] + 1
+    }
+    return(result)
+  } else {
+    return(initial_allocation)
+  }
+}
+
+stack_draws <- function(rvs, simplex) {
+  map2(rvs, simplex_allocate(simplex, ndraws(rvs[1])), \(rv, n) resample_draws(rv, ndraws = n)) |> 
+    map(\(d) as.vector(draws_of(d))) |> 
+    purrr::flatten_dbl() |> 
+    rvar()
+}
