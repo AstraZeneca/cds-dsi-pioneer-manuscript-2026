@@ -14,8 +14,6 @@ for (i in 1:max_all_t) {
 array[n_patients] int<lower = 0, upper = 1> right_uncensored = rep_array(0, n_patients);
 
 {
-  tuple(array[n_patients] int, array[n_patients] int) censoring_res = identify_censoring(pfs, death_week, n_patient_tumors, n_measures, t_measure);
-  
   for (i in 1:n_patients) {
       right_uncensored[i] = 1 - right_censored[i];
       

@@ -189,6 +189,8 @@ array[] int calculate_t_missing_measure(
   return t_missing_measure;
 }
 
+/** Get number of values in x that are less than or equal to y
+ */
 int num_leq(array[] int x, int y) {
   int n = 0;
   array[size(x)] int sorted_x = sort_asc(x);
@@ -204,6 +206,10 @@ int num_leq(array[] int x, int y) {
   return n;
 }
 
+/** Identify which elements in a binary array are 0 and which are 1.
+ * @param mask Binary array
+ * @return tuple(indices of 0 elements, indices of 1 elements)
+ */
 tuple(array[] int, array[] int) get_mask_idx(array[] int mask) {
   int n = size(mask);
   int n_0 = n - sum(mask);
@@ -212,6 +218,8 @@ tuple(array[] int, array[] int) get_mask_idx(array[] int mask) {
   return(sorted_idx[:n_0], sorted_idx[(n_0 + 1):]); 
 }
 
+/** Repeat each value a specific number of times.
+ */
 array[] int rep_each(array[] int to_repeat, int repeats) {
   int n = size(to_repeat);
   array[n * repeats] int repeated;
@@ -225,4 +233,8 @@ array[] int rep_each(array[] int to_repeat, int repeats) {
   }
   
   return(repeated);
+}
+
+real months_to_weeks(int mon) {
+  return mon * 365.25 / (7 * 12);
 }
