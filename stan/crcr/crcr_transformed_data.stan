@@ -1,4 +1,4 @@
-int n_causes = 2;
+int n_causes = 2; // We only have confirmed response and non-response
 
 int max_confresp_week = max(max(confirmed_response_week), extend_max_confresp_week);
 
