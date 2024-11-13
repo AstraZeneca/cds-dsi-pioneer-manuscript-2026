@@ -75,6 +75,19 @@ tuple(int, int, int) competing_risks_survival_time_rng(matrix log_cond_prob_surv
   return(survival_time, survival_time >= n_intervals, exit_cause);
 }
 
+tuple(int, int, int) competing_risks_survival_time_rng(matrix log_cond_prob_surv, int exit_cause, int event_time, int right_censored, int interval_censored) {
+  int survival_time = event_time, forecast_right_censored = right_censored, forecast_exit_cause = exit_cause;
+  
+  if (right_censored) {
+    (survival_time, forecast_right_censored, forecast_exit_cause) = competing_risks_survival_time_rng(log_cond_prob_surv[(event_time + 1):]);
+    survival_time += event_time;
+  } else if (interval_censored > 0) {
+    survival_time += interval_censored_survival_time_rng(log_cond_prob_surv[(event_time + 1):(event_time + interval_censored + 1), exit_cause]); 
+  }
+  
+  return(survival_time, forecast_right_censored, forecast_exit_cause);
+}
+
 vector calc_comp_risk_pch_loglik(
   array[] int last_unclass_week,
   array[] int event_cause,
