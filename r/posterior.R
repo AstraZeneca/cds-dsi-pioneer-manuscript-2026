@@ -5,6 +5,11 @@ get_pfs_conf_resp_marginal_exit_prob <- function(res) {
     unnest(prob_rvars)
 }
 
+get_trial_sim_crcr_pfs <- function(res, stan_data) {
+  spread_rvars(res, sim_pfs[i], sim_censored[i], forecast_pfs[i], forecast_censored[i]) |>
+    mutate(usubjid = stan_data$patient)
+}
+
 get_sim_pfs_conf_resp <- function(res) {
   res |>
     ungroup() |> 
@@ -31,7 +36,7 @@ get_all_pfs_conf_resp_km_est <- function(res, analysis_data = NULL) {
     res <- recover_types(res, select(analysis_data, trial))
   }
   
-  spread_rvars(res, trial_km_est[trial, t])
+  spread_rvars(res, trial_km_est[trial, t], forecast_trial_km_est[trial, t])
 }
 
 get_median_pfs_conf_resp <- function(res) {
@@ -47,7 +52,15 @@ get_all_median_pfs_conf_resp <- function(res, analysis_data = NULL) {
     res <- recover_types(res, select(analysis_data, trial))
   }
   
-   spread_rvars(res, sim_trial_median_pfs[trial]) 
+   spread_rvars(res, sim_trial_median_pfs[trial], forecast_trial_median_pfs[trial]) 
+}
+
+get_pfs_n <- function(res, analysis_data = NULL) {
+  if (!is_null(analysis_data)) { 
+    res <- recover_types(res, select(analysis_data, trial))
+  }
+  
+   spread_rvars(res, sim_trial_pfs6[trial], sim_trial_pfs9[trial], forecast_trial_pfs6[trial], forecast_trial_pfs9[trial]) 
 }
 
 get_pfs_conf_resp_log_hazard_ratio <- function(res) {
@@ -261,4 +274,9 @@ get_coef_powerscale_table_data <- function(coef_ps_sense, prior_crcr_coef, crcr_
     left_join(coef_plots, by = c("var" = ".variable", "k", "m")) |> 
     name_coef_indices(m, trial, stan_data) |> 
     select(var, covar, k, prior, likelihood, diagnosis, plot_obj) 
+}
+
+get_covar_trial_sd <- function(res, stan_data) {
+  spread_rvars(res, covar_trial_sd[m]) |> 
+    name_coef_indices(m, NULL, stan_data)
 }

@@ -23,6 +23,8 @@ data {
   #include "../base_data.stan"
   #include "crcr_data.stan"
   #include "../bootstrap/leave_out_trial_bootstrap_data.stan"
+  
+  int<lower = 0, upper = n_trials> log_lik_trial; 
  
   // Hyperparam
   #include "crcr_hyperparam.stan"
@@ -80,4 +82,13 @@ generated quantities {
   real lprior = 0;
 
   #include "crcr_log_lik_prior_sense.stan"
+  
+  vector[(gen_log_lik || prior_sense) && log_lik_trial > 0 && leave_out_trial == 0 ? n_trial_patients[log_lik_trial] : 0] trial_log_lik;
+  
+  if (rows(trial_log_lik) > 0) {
+    int pos = trial_patient_pos[log_lik_trial];
+    int end = trial_patient_pos[log_lik_trial + 1] - 1;
+    
+    trial_log_lik = log_lik[pos:end];
+  }
 }

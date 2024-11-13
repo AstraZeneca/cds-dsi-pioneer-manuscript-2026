@@ -105,15 +105,22 @@ get_all_conf_resp_lambda <- function(res, stan_data = NULL) {
   return(rv)
 }
 
-get_all_rep_confirmed_response <- function(res, stan_data = NULL) {
-  spread_rvars(res, rep_confirmed_response_week[i], rep_confirmed_response_censored[i], rep_confirmed_response[i]) |> 
-    mutate(trial = stan_data$patient_trial)  
+get_all_confirmed_response <- function(res, stan_data = NULL) {
+  spread_rvars(
+    res, rep_confirmed_response_week[i], rep_confirmed_response_censored[i], rep_confirmed_response[i],
+    forecast_confirmed_response_week[i], forecast_confirmed_response_censored[i], forecast_confirmed_response[i]
+  ) |> 
+    mutate(trial = stan_data$patient_trial, usubjid = stan_data$patient)  
 }
 
-get_all_rep_confirmed_response_bindist <- function(res, stan_data, hb) {
-  get_all_rep_confirmed_response(res, stan_data) |> 
+get_all_confirmed_response_bindist <- function(res, stan_data, hb) {
+  get_all_confirmed_response(res, stan_data) |> 
     group_by(trial) |> 
-    reframe(t = hb[-length(hb)], bindist = rvar_sample_hist(rep_confirmed_response_week, hb))  
+    reframe(
+      t = hb[-length(hb)], 
+      bindist = rvar_sample_hist(rep_confirmed_response_week, hb), 
+      forecast_bindist = rvar_sample_hist(forecast_confirmed_response_week, hb) 
+    )
 }
 
 get_all_rep_confirmed_trial_lambda_residual <- function(res) {
@@ -157,12 +164,12 @@ get_obs_cif_data <- function(analysis_data) {
     # tidy()
 }
 
-get_crcr_predict_cif <- function(res, stan_data = NULL) {
-  get_all_rep_confirmed_response(res, stan_data) |> 
+get_crcr_predict_cif <- function(res, stan_data = NULL, week_col = rep_confirmed_response_week, reponse_col = rep_confirmed_response) {
+  get_all_confirmed_response(res, stan_data) |> 
     transmute(
       trial, i,
-      confirmed_response_week = rep_confirmed_response_week, 
-      confirmed_response_status = rvar_factor(rep_confirmed_response, levels = c(2, 0:1), labels = c("censored", "non-response", "response")) 
+      confirmed_response_week = {{ week_col }}, 
+      confirmed_response_status = rvar_factor({{ reponse_col }}, levels = c(2, 0:1), labels = c("censored", "non-response", "response")) 
     ) |> 
     unnest_rvars() |> 
     nest(draw_data = !c(trial, .draw)) |> 
@@ -181,7 +188,8 @@ get_crcr_predict_cif <- function(res, stan_data = NULL) {
 get_crcr_objective_response <- function(res, stan_data) {
   spread_rvars(res, rep_confirmed_response_forced[i], prob_cause[i, k]) |> 
     filter(k == 2) |> 
-    bind_cols(stan_data[c("patient", "objective_response", "confirmed_response", "confirmed_response_censored")])
+    bind_cols(stan_data[c("patient_trial", "patient", "objective_response", "confirmed_response", "confirmed_response_censored")]) |> 
+    rename(trial = patient_trial)
 }
 
 get_crcr_pred_param <- function(res, stan_data) {
@@ -189,4 +197,9 @@ get_crcr_pred_param <- function(res, stan_data) {
     mutate(.exp_value = exp(.value)) |> 
     name_coef_indices(m, trial, stan_data) |> 
     mutate(k = factor(k, levels = 1:2, labels = c("Non-response", "Response")))
+}
+
+get_crcr_covar_trial_sd <- function(res, stan_data) {
+  spread_rvars(res, crcr_covar_trial_sd[m]) |> 
+    name_coef_indices(m, NULL, stan_data)
 }

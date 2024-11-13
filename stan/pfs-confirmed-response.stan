@@ -15,6 +15,8 @@ data {
   int<lower = 0, upper = 1> pfs_ignore_interval_censoring; // Treat observed PFS as true pfs and ignore t_measure.
   int<lower = 0, upper = 1> gen_log_lik;
   int<lower = 0, upper = 1> prior_sense;
+  int<lower = 0, upper = 1> pfs_only;
+  int<lower = 0, upper = 1> no_tumor_effects;
   
   // Hierarchical settings 
   int<lower = 0, upper = 1> add_trial_level_baseline_hazard;
@@ -26,6 +28,8 @@ data {
   #include "base_data.stan"
   
   #include "bootstrap/leave_out_trial_bootstrap_data.stan"
+  
+  int<lower = 0, upper = n_trials> log_lik_trial;
 
   array[n_patients] int<lower = 0> pfs; // How many periods after baseline did patient survive.
   array[n_patients] int<lower = 0> death_week; 
@@ -39,11 +43,11 @@ data {
   #include "crcr/crcr_hyperparam.stan"
   
   // TODO these priors should also be separable by trials if separate_prop_hazard == 1. 
-  vector<lower = 0>[2] tumor_stim_pop_coef_sd;
-  real conf_resp_effect_mean;
-  real<lower = 0> conf_resp_effect_sd;
-  vector[n_covar] covar_effect_mean;
-  vector<lower = 0>[n_covar] covar_effect_sd;
+  array[separate_prop_hazard ? n_trials : 1] vector<lower = 0>[2] tumor_stim_pop_coef_sd;
+  array[separate_prop_hazard ? n_trials : 1] real conf_resp_effect_mean;
+  array[separate_prop_hazard ? n_trials : 1] real<lower = 0> conf_resp_effect_sd;
+  array[separate_prop_hazard ? n_trials : 1] vector[n_covar] covar_effect_mean;
+  array[separate_prop_hazard ? n_trials : 1] vector<lower = 0>[n_covar] covar_effect_sd;
  
   real<lower = 0> covar_trial_sd_sd;
   real<lower = 0> covar_trial_corr_eta; 
@@ -105,20 +109,31 @@ transformed parameters {
     profile("log surv loop") {
       for (s in 1:n_trials) {
         int patient_end = patient_pos + n_trial_patients[s] - 1; 
-        
-        covar_trial_coef[s] = 
-          append_row(append_row(tumor_stim_pop_coef[separate_prop_hazard ? s : 1], covar_effect[separate_prop_hazard ? s : 1]), conf_resp_effect[separate_prop_hazard ? s : 1]); 
+       
+        covar_trial_coef[s, :n_tumor_covar] = no_tumor_effects ? rep_vector(0, n_tumor_covar) : tumor_stim_pop_coef[separate_prop_hazard ? s : 1];
+        covar_trial_coef[s, (n_tumor_covar + 1):(n_tumor_covar + n_covar)] = covar_effect[separate_prop_hazard ? s : 1];
+        covar_trial_coef[s, n_tumor_covar + n_covar + 1] = pfs_only ? 0 : conf_resp_effect[separate_prop_hazard ? s : 1]; 
           
         if (add_trial_level_prop_hazard) {
-          covar_trial_coef[s] += covar_trial_coef_residual[, s];
+          covar_trial_coef[s, (n_tumor_covar + 1):(n_tumor_covar + n_covar)] += covar_trial_coef_residual[(n_tumor_covar + 1):(n_tumor_covar + n_covar), s];
+          
+          if (!no_tumor_effects) {
+            covar_trial_coef[s, :n_tumor_covar] += covar_trial_coef_residual[:n_tumor_covar, s];
+          }
+          
+          if (!pfs_only) {
+            covar_trial_coef[s, n_tumor_covar + n_covar + 1] += covar_trial_coef_residual[n_tumor_covar + n_covar + 1, s];
+          }
         }
         
         time_invariant_log_hazard_ratio[patient_pos:patient_end] = rep_matrix(
           tumor_sum_covar[patient_pos:patient_end] * covar_trial_coef[s, :n_tumor_covar] + 
           covar_design_matrix[patient_pos:patient_end] * covar_trial_coef[s, (n_tumor_covar + 1):(n_tumor_covar + n_covar)], 
           n_causes);
-          
-        time_invariant_log_hazard_ratio[patient_pos:patient_end, n_causes] += covar_trial_coef[s, n_tumor_covar + n_covar + 1];
+         
+        if (!pfs_only) { 
+          time_invariant_log_hazard_ratio[patient_pos:patient_end, n_causes] += covar_trial_coef[s, n_tumor_covar + n_covar + 1];
+        }
     
         for (i in patient_pos:patient_end) {
           int pfs_interval_pos = patient_pfs_interval_pos[i];
@@ -152,9 +167,9 @@ model {
   
   profile("pfs priors") {
     for (s in 1:(separate_prop_hazard ? n_trials : 1)) {
-      tumor_stim_pop_coef[s] ~ normal(0, tumor_stim_pop_coef_sd);
-      conf_resp_effect[s] ~ normal(conf_resp_effect_mean, conf_resp_effect_sd); 
-      covar_effect[s] ~ normal(covar_effect_mean, covar_effect_sd);
+      tumor_stim_pop_coef[s] ~ normal(0, tumor_stim_pop_coef_sd[s]);
+      conf_resp_effect[s] ~ normal(conf_resp_effect_mean[s], conf_resp_effect_sd[s]); 
+      covar_effect[s] ~ normal(covar_effect_mean[s], covar_effect_sd[s]);
     }
     
     if (add_trial_level_prop_hazard) {
@@ -223,11 +238,23 @@ generated quantities {
   array[n_patients] int<lower = 0> sim_pfs; 
   array[n_patients] int<lower = 0, upper = 1> sim_censored; 
   
+  array[n_patients] int<lower = 0> forecast_pfs; 
+  array[n_patients] int<lower = 0, upper = 1> forecast_censored; 
+  
   real<lower = 0> sim_median_pfs;
   vector<lower = 0>[n_trials] sim_trial_median_pfs;
   
+  real<lower = 0> forecast_median_pfs;
+  vector<lower = 0>[n_trials] forecast_trial_median_pfs;
+  
   vector<lower = 0, upper = 1>[max_all_t + 1] km_est; 
   array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] trial_km_est; 
+  
+  vector<lower = 0, upper = 1>[max_all_t + 1] forecast_km_est; 
+  array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] forecast_trial_km_est; 
+  
+  real<lower = 0, upper = 1> sim_pfs6, sim_pfs9, forecast_pfs6, forecast_pfs9;
+  vector<lower = 0, upper = 1>[n_trials] sim_trial_pfs6, sim_trial_pfs9, forecast_trial_pfs6, forecast_trial_pfs9;
 
   { 
     array[n_causes] matrix[max_all_t, n_patients] mat_log_cond_prob_surv;
@@ -241,11 +268,25 @@ generated quantities {
           mat_log_cond_prob_surv[k, , i] = log_cond_prob_surv[pfs_interval_pos:pfs_interval_end, k];
         }
         
+        if (right_censored[i] || interval_censored[i]) {
+          (forecast_pfs[i], forecast_censored[i]) = survival_time_rng(mat_log_cond_prob_surv[sim_confirmed_response[i] + 1, , i], pfs[i], right_censored[i], interval_censored[i]);
+        } else {
+          forecast_censored[i] = 0;
+          forecast_pfs[i] = pfs[i];
+        }
+        
         (sim_pfs[i], sim_censored[i]) = survival_time_rng(mat_log_cond_prob_surv[sim_confirmed_response[i] + 1, , i]); 
       }
       
       sim_median_pfs = survival_median(sim_pfs, max_all_t).1; 
       km_est = estimate_kaplan_meier(sim_pfs, sim_censored, max_all_t).1; 
+      sim_pfs6 = calc_pfs_n(sim_pfs, 6 * 365.25 / (7 * 12));
+      sim_pfs9 = calc_pfs_n(sim_pfs, 9 * 365.25 / (7 * 12));
+      
+      forecast_median_pfs = survival_median(forecast_pfs, max_all_t).1; 
+      forecast_km_est = estimate_kaplan_meier(forecast_pfs, forecast_censored, max_all_t).1; 
+      forecast_pfs6 = calc_pfs_n(forecast_pfs, 6 * 365.25 / (7 * 12));
+      forecast_pfs9 = calc_pfs_n(forecast_pfs, 9 * 365.25 / (7 * 12));
       
       for (s in 1:n_trials) {
         int patient_pos = trial_patient_pos[s];
@@ -253,6 +294,13 @@ generated quantities {
         
         sim_trial_median_pfs[s] = survival_median(sim_pfs[patient_pos:patient_end], max_all_t).1; 
         trial_km_est[s] = estimate_kaplan_meier(sim_pfs[patient_pos:patient_end], sim_censored[patient_pos:patient_end], max_all_t).1; 
+        sim_trial_pfs6[s] = calc_pfs_n(sim_pfs[patient_pos:patient_end], 6 * 365.25 / (7 * 12));
+        sim_trial_pfs9[s] = calc_pfs_n(sim_pfs[patient_pos:patient_end], 9 * 365.25 / (7 * 12));
+        
+        forecast_trial_median_pfs[s] = survival_median(forecast_pfs[patient_pos:patient_end], max_all_t).1; 
+        forecast_trial_km_est[s] = estimate_kaplan_meier(forecast_pfs[patient_pos:patient_end], forecast_censored[patient_pos:patient_end], max_all_t).1; 
+        forecast_trial_pfs6[s] = calc_pfs_n(forecast_pfs[patient_pos:patient_end], 6 * 365.25 / (7 * 12));
+        forecast_trial_pfs9[s] = calc_pfs_n(forecast_pfs[patient_pos:patient_end], 9 * 365.25 / (7 * 12));
       }
     }
   }
@@ -288,8 +336,8 @@ generated quantities {
   
   if (prior_sense) {
     for (s in 1:(separate_prop_hazard ? n_trials : 1)) {
-      lprior += normal_lpdf(tumor_stim_pop_coef[s] | 0, tumor_stim_pop_coef_sd) + normal_lpdf(covar_effect[s] | 0, covar_effect_sd) +
-        normal_lpdf(conf_resp_effect[s] | 0, conf_resp_effect_sd); 
+      lprior += normal_lpdf(tumor_stim_pop_coef[s] | 0, tumor_stim_pop_coef_sd[s]) + normal_lpdf(covar_effect[s] | covar_effect_mean[s], covar_effect_sd[s]) +
+        normal_lpdf(conf_resp_effect[s] | conf_resp_effect_sd[s], conf_resp_effect_sd[s]); 
     }
     
     if (add_trial_level_prop_hazard) {
@@ -299,4 +347,13 @@ generated quantities {
   
   #include "crcr/crcr_log_lik_prior_sense.stan"
   #include "baseline_hazard/baseline_hazard_log_lik_prior_sense.stan"
+  
+  vector[(gen_log_lik || prior_sense) && log_lik_trial > 0 && leave_out_trial == 0 ? n_trial_patients[log_lik_trial] : 0] trial_log_lik;
+  
+  if (rows(trial_log_lik) > 0) {
+    int pos = trial_patient_pos[log_lik_trial];
+    int end = trial_patient_pos[log_lik_trial + 1] - 1;
+    
+    trial_log_lik = log_lik[pos:end];
+  }
 }

@@ -26,7 +26,8 @@ if (prior_sense) {
   
   for (s in 1:(separate_prop_hazard ? n_trials : 1)) {
     for (k in 1:n_causes) {
-      lprior += normal_lpdf(crcr_tumor_stim_pop_coef[s, , k] | 0, crcr_tumor_stim_pop_coef_sd) + normal_lpdf(crcr_covar_effect[s, , k] | 0, crcr_covar_effect_sd);
+      lprior += normal_lpdf(crcr_tumor_stim_pop_coef[s, , k] | 0, crcr_tumor_stim_pop_coef_sd[s]) + 
+        normal_lpdf(crcr_covar_effect[s, , k] | crcr_covar_effect_mean[s], crcr_covar_effect_sd[s]);
     }
   }
   

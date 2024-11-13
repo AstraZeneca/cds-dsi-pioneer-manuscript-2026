@@ -29,6 +29,8 @@ int<lower = min_all_t> max_all_t = max(max(t_measure), extend_max_all_t);
 array[sum(n_measures)] int<lower = 1> patient_t_measure_idx; // The index of each t relative to the first t per patient
 array[n_patients] int<lower = 0> patient_max_t_width; // The number of intervals from the first to the last measurement per patient
 
+print("max_all_t = ", max_all_t);
+
 int<lower = 0> n_tumors = sum(n_patient_tumors);
 
 // Same as n_measures and t_measure but for the missing measurement intervals 

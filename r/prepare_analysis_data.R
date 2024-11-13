@@ -23,14 +23,14 @@ calc_pfs <- function(progress_week, right_censored, patient_tumors) {
 calc_confirmed_response <- function(response) {
   conf_resp_data <- response |> 
     mutate(
-      # confirmed_response = if_else(!xor(objective_response, lag(objective_response, default = NA)), objective_response, NA),
       confirmed_response = case_when(
         !objective_response ~ FALSE,
         objective_response & lag(objective_response, default = NA) ~ TRUE 
       ), 
-      # confirmed_response_week = lag(week, default = NA),
+      # "confirmed response" needs two consecutive CR/PR so we need to lag by 1
       confirmed_response_week = if_else(confirmed_response, lag(week, default = NA), week),
-      confirmed_response_interval_censored = confirmed_response_week - (lag(week, n = 2L, default = 0) + 1)
+      confirmed_response_interval_censored = # Here lag by 2 
+        confirmed_response_week - (if_else(confirmed_response, lag(week, n = 2L, default = 0), lag(week, default = 0)) + 1)
     ) 
   
   first_conf_week <- conf_resp_data |> 
@@ -88,6 +88,9 @@ base_prepare_pfs_stan_data <- function(analysis_data, ..., pfs_var = pfs) {
     separate_prop_hazard = FALSE,
     add_tumor_location_level = FALSE,
     fit_post_2nd_meaure_only = TRUE,
+    pfs_only = FALSE,
+    no_tumor_effects = FALSE,
+    log_lik_trial = 0,
     
     fit_tumor_data = FALSE,
     gen_tumor_sizes = FALSE,
@@ -101,15 +104,19 @@ base_prepare_pfs_stan_data <- function(analysis_data, ..., pfs_var = pfs) {
     list_assign(...)
 }
 
+identify_incomplete_cases <- function(analysis_data, covar_formula) {
+  select(analysis_data, all_of(all.vars(covar_formula))) |> 
+    map_if(is.ordered, \(f) factor(f, ordered = FALSE)) |> 
+    complete.cases() |> 
+    not() |> 
+    which()
+}
+
 prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, ..., include_covar = TRUE, scale_numeric = TRUE) {
   incomplete_patients <- c() 
   
   covar_design_matrix <- if (include_covar) {
-    incomplete_patients <- select(analysis_data, all_of(all.vars(covar_formula))) |> 
-      map_if(is.ordered, \(f) factor(f, ordered = FALSE)) |> 
-      complete.cases() |> 
-      not() |> 
-      which()
+    incomplete_patients <- identify_incomplete_cases(analysis_data, covar_formula) 
     
     if (!is_empty(incomplete_patients)) {
       analysis_data <- slice(analysis_data, -incomplete_patients)
@@ -142,6 +149,7 @@ prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, ..., 
       gen_log_lik = FALSE,
       prior_sense = FALSE,
       
+      log_lik_trial = 0,
       leave_out_trial = 0,
       n_bootstrap_sample = 0,
       n_bootstrap_cr_maturity_rates = 0,
