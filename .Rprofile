@@ -14,6 +14,7 @@ conflicts_prefer(
   dplyr::filter, dplyr::lag,
   posterior::sd, posterior::mad,
   rlang::set_names,
+  purrr::flatten_dbl,
 )
 
 options(yaml.eval.expr = TRUE)
