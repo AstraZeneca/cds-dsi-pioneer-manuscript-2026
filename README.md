@@ -11,11 +11,11 @@ We predict outcomes using a Bayesian multilevel piece-wise constant proportional
 .
 ├── endometrial_to_lung_targets.R                                        # Endometrial to LUNG project targets file
 ├── _targets.R                                                        # Obsolete
-└── quarto                                                            # Notebooks
-    ├── confirmed-response-pfs.qmd                                    # Breast notebook
-    ├── deck.qmd                                                      # Old deck
-    ├── endometrial-to-lung.qmd                                         # Endometrial to LUNG notebook
-    └── early-predict-bc-survival.qmd                                 # Old Breast notebook
+├── quarto                                                            # Notebooks
+│   ├── confirmed-response-pfs.qmd                                    # Breast notebook
+│   ├── deck.qmd                                                      # Old deck
+│   ├── endometrial-to-lung.qmd                                         # Endometrial to LUNG notebook
+│   └── early-predict-bc-survival.qmd                                 # Old Breast notebook
 ├── r
 │   ├── crcr.R                                                        # Common CRCR utility/posterior functions
 │   ├── breast                                                # Breast project specific functions
@@ -99,16 +99,29 @@ We predict outcomes using a Bayesian multilevel piece-wise constant proportional
     └── util.stan                                                    # General utility functions
 ```
 
-# Setup
+# Workflow
 
-1. Use `r/download-entimice-data.R` to download the studies data.
-2. Render or execute the code in `quarto/early-predict-bc-survival.qmd`. This file is divided into two main sections:
-    i. A tumor-size dynamics model using Gaussian processes.
-    ii. The main survival model conditional on early tumor-size assessments.
-3. There are a few supplementary plots also generated in `quarto/deck.qmd`.
+1. Packages
+    - Make sure the package {renv} is installed on your system.
+    - Run `renv::restore()`.
+    - If you encounter installation problems for a particular package, run `renv::install("<package name>@<version>", type = "source")` where the version is same as located in the "renv.lock" file.
+3. Install CmdStan by running `cmdstanr::install_cmdstan()`.
+4. Run the project-specific script (below) to download your data.
+5. Make analysis pipeline.
+    - Make sure the correct TAR_PROJECT value is used for your project (see projects in "_targets.yaml").
+    - Execute `targets::tar_make()`.
+6. Build the project-specific notebook.
 
 # Projects
 
 ## Breast-01 to -04
 
+* Data script: "r/entimice/download-breast-entimice-data.R"
+* {targets} project: [[not yet available]]
+* Notebook: "quarto/confirmed-response-pfs.qmd"
+
 ## Predicting LUNG from Endometrial
+
+* Data scripts: "r/entimice/download-endometrial-entimice-data.R" and "r/entimice/download-lung-entimice-data.R".
+* {targets} project: _endometrial_to_lung_
+* Notebook: "quarto/endometrial-to-lung.qmd". URL: https://rstudio-connect.seml.scp.astrazeneca.net/endometrial-to-lung/endometrial-to-lung.html
