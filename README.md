@@ -5,12 +5,41 @@ This repository is used by PIONEER projects for predicting PFS and ORR outcomes 
 
 We predict outcomes using a Bayesian multilevel piece-wise constant proportional hazard survival model for PFS and, similarly, a competing risks model for confirmed response status (which we use as predictor in the PFS model).
 
-# Project Structure
+# Repo Structure
 
 ``` bash
 .
 ├── endometrial_to_lung_targets.R                                        # Endometrial to LUNG project targets file
 ├── _targets.R                                                        # Obsolete
+└── quarto                                                            # Notebooks
+    ├── confirmed-response-pfs.qmd                                    # Breast notebook
+    ├── deck.qmd                                                      # Old deck
+    ├── endometrial-to-lung.qmd                                         # Endometrial to LUNG notebook
+    └── early-predict-bc-survival.qmd                                 # Old Breast notebook
+├── r
+│   ├── crcr.R                                                        # Common CRCR utility/posterior functions
+│   ├── breast                                                # Breast project specific functions
+│   │   ├── bg.R                             
+│   │   ├── crcr.R
+│   │   ├── posterior.R
+│   │   ├── prepare_analysis_data.R
+│   │   ├── sbc.R
+│   │   └── util.R
+│   ├── endometrial-to-lung                                             # Endometrial to LUNG specific functions (see similarly names files below)
+│   │   ├── prepare_analysis_data.R
+│   │   └── priors.R
+│   ├── entimice                                                      # Scripts to download analysis datasets
+│   │   ├── download-lung-entimice-data.R
+│   │   ├── download-breast-entimice-data.R
+│   │   ├── download-endometrial-entimice-data.R
+│   │   └── entimice_functions.R
+│   ├── initializers.R                                                # Common Stan initializers
+│   ├── plot_functions.R                                              # Common plot functions
+│   ├── posterior.R                                                   # Common functions for extracting samples from Stan fit objects
+│   ├── prepare_analysis_data.R                                       # Common functions used for analysis and Stan data preparation
+│   ├── priors.R                                                      # Common prior specification
+│   ├── table_functions.R                                             # Common functions to generate {gt} tables
+│   └── util.R                                                        # Common utility functions
 └── stan                                                              # Stan statistical models folder
     ├── base_data.stan                                                # Data shared between all models
     ├── baseline_hazard                                               # GP PFS baseline hazard files
@@ -68,20 +97,6 @@ We predict outcomes using a Bayesian multilevel piece-wise constant proportional
     │   ├── tumor.stan                                               # Standalone model
     │   └── tumor_transformed_parameters.stan
     └── util.stan                                                    # General utility functions
-quarto/
-├── deck.qmd                              # revealjs slides deck. Not longer using this, but it still has some useful plots.
-├── early-predict-bc-survival.qmd         # This is the primary notebook in which all analysis is done.
-└── confirmed-response-pfs.qmd            # Predicting PFS using confirmed response and other baseline characteristics. Leave-one-trial-out cv.
-r/
-├── crcr.R
-├── download-entimice-data.R              # Script to download data.
-├── entimice_functions.R
-├── posterior.R
-├── prepare_analysis_data.R
-├── priors.R
-├── sbc.R                                 # Standalone script to run simulation-based calibration.
-├── sbc.sh                                # SLURM script to run sbc.R.
-└── util.R                                # Shared functions.
 ```
 
 # Setup
