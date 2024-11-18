@@ -15,5 +15,5 @@ endometrial_to_lung_impute:
   store: !expr file.path("/scratch", Sys.info()["user"], "pioneer/_targets/endometrial_to_lung/impute")
 endometrial_to_lung_june_impute:
   inherits: endometrial_to_lung
-  script: endometrial_to_lung_targets_impute.R
+  script: endometrial_to_lung_targets_june_impute.R
   store: !expr file.path("/scratch", Sys.info()["user"], "pioneer/_targets/endometrial_to_lung/june_impute")
