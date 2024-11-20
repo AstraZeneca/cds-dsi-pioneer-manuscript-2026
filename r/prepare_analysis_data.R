@@ -117,6 +117,7 @@ prepare_confirmed_resp_stan_data <- function(
 ) {
   handle_missing_covar <- arg_match(handle_missing_covar)
   covar_design_matrix <- array(NA, dim = c(nrow(analysis_data), 0))
+  imputed_patients <- NULL
   
   if (include_covar) {
     incomplete_patients <- identify_incomplete_cases(analysis_data, covar_formula) 
@@ -136,6 +137,7 @@ prepare_confirmed_resp_stan_data <- function(
       } else {
         warning(length(incomplete_patients), " patients have incompelete cases. Missing covariates will be imputed.")
         stopifnot(scale_numeric)
+        imputed_patients <- incomplete_patients
       }
     }
     
@@ -157,7 +159,7 @@ prepare_confirmed_resp_stan_data <- function(
   
   n_covar <- ncol(covar_design_matrix)
   
-  pfs_stan_data %>% 
+  pfs_stan_data |>  
     list_assign(
       add_trial_level = TRUE,
       covar_design_matrix = covar_design_matrix,
@@ -188,7 +190,9 @@ prepare_confirmed_resp_stan_data <- function(
       confirmed_response_week = analysis_data$confirmed_response_week,
       
       extend_max_confresp_week = 1,
-      extend_max_all_t = 1
+      extend_max_all_t = 1,
+      
+      imputed_patients = imputed_patients,
     ) |>  
     list_assign(...)
 }
