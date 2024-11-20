@@ -165,3 +165,18 @@ plot_gng <- function(res_data, outcome, lrv_tv, model_type_names) {
     facet_grid(vars(model_type), switch = "y", labeller = labeller(model_type = model_type_names)) +
     theme(strip.placement = "outside", strip.text.y.left = element_text(angle = 0))
 }
+
+plot_simple_gng <- function(res_data, outcome, color_col, lrv_tv, model_type_names, outcome_desc = "") {
+  res_data |> 
+    ggplot() +
+    stat_interval(
+      aes(y = model_type, xdist = {{ outcome }}, color = {{ color_col }}, color_ramp = after_stat(level)), 
+      position = "dodge", .width = c(0.6, 0.8)
+    ) +
+    geom_vline(xintercept = lrv_tv, linetype = "dashed") +
+    scale_x_continuous(outcome_desc, sec.axis = sec_axis(identity, breaks = lrv_tv, labels = c("LRV", "TV"))) +
+    scale_y_discrete("", labels = model_type_names) +
+    scale_color_discrete("Sample", type = AZ_palette, labels = \(l) str_replace(l, "_", " ") |> str_to_title()) +
+    scale_color_ramp_discrete(name = "Credible Intervals") +
+    NULL
+}
