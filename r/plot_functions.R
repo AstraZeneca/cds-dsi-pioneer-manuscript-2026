@@ -152,3 +152,16 @@ plot_km <- function(res_data, obs_km_data, km_est, group = fit_type) {
     guides(alpha = "none") + 
     theme(legend.position = "bottom")
 }
+
+plot_gng <- function(res_data, outcome, lrv_tv, model_type_names) {
+  res_data |> 
+    ggplot() +
+    stat_interval(aes(y = data_cut, xdist = {{ outcome }}, color = impute_type, color_ramp = after_stat(level)),  position = "dodge", .width = c(0.6, 0.8)) +
+    geom_vline(xintercept = lrv_tv, linetype = "dashed") +
+    scale_x_continuous("", sec.axis = sec_axis(identity, breaks = lrv_tv, labels = c("LRV", "TV"))) +
+    scale_y_discrete("", labels = str_to_title) +
+    scale_color_discrete("Sample", type = AZ_palette, labels = \(l) str_replace(l, "_", " ") |> str_to_title()) +
+    scale_color_ramp_discrete(name = "Credible Intervals") +
+    facet_grid(vars(model_type), switch = "y", labeller = labeller(model_type = model_type_names)) +
+    theme(strip.placement = "outside", strip.text.y.left = element_text(angle = 0))
+}
