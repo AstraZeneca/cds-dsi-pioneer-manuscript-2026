@@ -112,24 +112,46 @@ identify_incomplete_cases <- function(analysis_data, covar_formula) {
     which()
 }
 
-prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, ..., include_covar = TRUE, scale_numeric = TRUE) {
-  incomplete_patients <- c() 
+prepare_confirmed_resp_stan_data <- function(
+    covar_formula, analysis_data, ..., include_covar = TRUE, scale_numeric = TRUE, handle_missing_covar = c("drop", "mean_impute")
+) {
+  handle_missing_covar <- arg_match(handle_missing_covar)
+  covar_design_matrix <- array(NA, dim = c(nrow(analysis_data), 0))
+  imputed_patients <- NULL
   
-  covar_design_matrix <- if (include_covar) {
+  if (include_covar) {
     incomplete_patients <- identify_incomplete_cases(analysis_data, covar_formula) 
     
+    covar_design_matrix <- withr::with_options(
+      c(na.action = if (handle_missing_covar == "drop") na.omit else na.pass), 
+      modelr::model_matrix(analysis_data, covar_formula)
+    ) |> 
+      select(!any_of("(Intercept)")) |> 
+      mutate(across(everything(), \(col) scale(col, center = FALSE, scale = is.numeric(col) & scale_numeric)))
+    
     if (!is_empty(incomplete_patients)) {
-      analysis_data <- slice(analysis_data, -incomplete_patients)
-      warning(length(incomplete_patients), " patients have incompelete cases and have been removed.")
+      if (handle_missing_covar == "drop") {
+        warning(length(incomplete_patients), " patients have incompelete cases and have been removed.")
+        
+        analysis_data <- slice(analysis_data, -incomplete_patients)
+      } else {
+        warning(length(incomplete_patients), " patients have incompelete cases. Missing covariates will be imputed.")
+        stopifnot(scale_numeric)
+        imputed_patients <- incomplete_patients
+      }
     }
     
-    modelr::model_matrix(analysis_data, covar_formula) |> 
-      select(!any_of("(Intercept)")) |> 
-      map_dfc(\(col) scale(col, scale = is.numeric(col) & scale_numeric)) |> 
-      as.matrix()
-  } else {
-    array(NA, dim = c(nrow(analysis_data), 0))
-  }
+    covar_design_matrix <- bind_cols(covar_design_matrix, select(analysis_data, trial)) |> 
+      group_by(trial) |> 
+      mutate(across(everything(), \(col) scale(col, scale = FALSE) |> coalesce(0))) |> 
+      ungroup() |> 
+      select(!trial)
+    
+    if (!is_empty(incomplete_patients) && handle_missing_covar != "drop") {
+      warning(length(incomplete_patients), " patients have incompelete cases. Missing covariates will be imputed.")
+      stopifnot(scale_numeric)
+    }
+  } 
   
   pfs_stan_data <- base_prepare_pfs_stan_data(analysis_data)
   stopifnot(pfs_stan_data$n_patients == nrow(analysis_data))
@@ -137,7 +159,7 @@ prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, ..., 
   
   n_covar <- ncol(covar_design_matrix)
   
-  pfs_stan_data %>% 
+  pfs_stan_data |>  
     list_assign(
       add_trial_level = TRUE,
       covar_design_matrix = covar_design_matrix,
@@ -168,7 +190,9 @@ prepare_confirmed_resp_stan_data <- function(covar_formula, analysis_data, ..., 
       confirmed_response_week = analysis_data$confirmed_response_week,
       
       extend_max_confresp_week = 1,
-      extend_max_all_t = 1
+      extend_max_all_t = 1,
+      
+      imputed_patients = imputed_patients,
     ) |>  
     list_assign(...)
 }

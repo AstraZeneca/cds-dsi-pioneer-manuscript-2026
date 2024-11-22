@@ -128,3 +128,15 @@ stack_draws <- function(rvs, simplex) {
     purrr::flatten_dbl() |> 
     rvar()
 }
+
+get_patient_pointwise_loo <- function(model_loo, stan_data) {
+  as_tibble(stan_data[c("patient", "patient_trial")]) |> 
+    rename(trial = patient_trial) |> 
+    mutate(
+      pareto_k_influence = loo::pareto_k_influence_values(model_loo), imputed = row_number() %in% stan_data$imputed_patients,
+      elpd_loo = loo::pointwise(model_loo, "elpd_loo")
+    )
+}
+
+weeks_to_months <- function(weeks) weeks * 7 * 12 / 365.25
+months_to_weeks <- function(months) months / weeks_to_months(1) 
