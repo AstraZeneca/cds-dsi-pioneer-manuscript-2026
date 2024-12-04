@@ -15,6 +15,7 @@ for (k in 1:n_causes) {
 }
 
 if (add_trial_level_baseline_hazard) { 
+  // TODO Look further into how to make this fully hierarchical
   log_crcr_lambda_gp_trial_alpha ~ normal(0, log_crcr_lambda_gp_trial_alpha_sd);
   log_crcr_lambda_gp_trial_rho ~ inv_gamma(log_crcr_lambda_gp_rho_alpha, log_crcr_lambda_gp_rho_beta);
   
