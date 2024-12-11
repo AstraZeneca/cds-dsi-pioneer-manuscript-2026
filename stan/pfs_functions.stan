@@ -445,3 +445,33 @@ tuple(vector, array[] int, array[] int, array[,] int) estimate_kaplan_meier(arra
 
   return (s, at_risk, n_right_censored, n_exited);
 }
+
+real calc_c_index(array[] int pfs, array[] int right_censored, vector risk_score) {
+  int n_patients = size(pfs);
+  int n_concord = 0;
+  int n_ranked = 0;
+  
+  for (i in 1:n_patients) {
+    for (j in 1:n_patients) {
+      if (i != j && pfs[i] > pfs[j] && !right_censored[j]) {
+        n_ranked += 1;
+        n_concord += risk_score[i] < risk_score[j]; 
+      }
+    }
+  }
+  
+  return 1.0 * n_concord / n_ranked;
+}
+
+real calc_c_index(
+  array[] int pfs, array[] int right_censored, array[] int confirmed_response, array[] int confirmed_response_censored, matrix log_risk_score, vector prob_confirmed_response
+) {
+  int n_patients = size(pfs);
+  vector[n_patients] risk_score;
+  
+  for (i in 1:n_patients) {
+    risk_score[i] = confirmed_response_censored[i] ? log_mix(prob_confirmed_response[i], log_risk_score[i, 1], log_risk_score[i, 2]) : log_risk_score[i, confirmed_response[i] + 1]; 
+  }
+  
+  return calc_c_index(pfs, right_censored, risk_score);
+}
