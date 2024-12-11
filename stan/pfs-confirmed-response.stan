@@ -160,6 +160,15 @@ transformed parameters {
     // If responder
     calc_pch_loglik(pfs, right_censored, interval_censored, pfs_ignore_interval_censoring, log_cond_prob_surv[, 2], max_all_t, rep_array(1, n_patients))
   );
+  
+  vector<lower = 0, upper = 1>[n_patients] prob_non_response;
+  
+  for (i in 1:n_patients) {
+    int conf_resp_interval_pos = patient_conf_resp_interval_pos[i];
+    int conf_resp_interval_end = patient_conf_resp_interval_pos[i + 1] - 1;
+    
+    prob_non_response[i] = calc_cif(1, log_crcr_cond_prob_surv[conf_resp_interval_pos:conf_resp_interval_end], max_confresp_week).2[1, 1];
+  }
 }
 
 model {
@@ -221,9 +230,7 @@ model {
             int conf_resp_interval_pos = patient_conf_resp_interval_pos[i];
             int conf_resp_interval_end = patient_conf_resp_interval_pos[i + 1] - 1;
           
-            real prob_non_response = calc_cif(1, log_crcr_cond_prob_surv[conf_resp_interval_pos:conf_resp_interval_end], max_confresp_week).2[1, 1];
-          
-            target += log_mix(prob_non_response, patient_response_lp[i, 1], patient_response_lp[i, 2]);
+            target += log_mix(prob_non_response[i], patient_response_lp[i, 1], patient_response_lp[i, 2]);
           } else {
             target += patient_response_lp[i, confirmed_response_cause[i]];
           }
@@ -309,6 +316,20 @@ generated quantities {
     }
   }
   
+  vector<lower = 0, upper = 1>[n_trials] trial_c_index;
+  
+  for (s in 1:n_trials) {
+    int patient_pos = trial_patient_pos[s];
+    int patient_end = trial_patient_pos[s + 1] - 1;
+    
+    trial_c_index[s] = calc_c_index(
+      pfs[patient_pos:patient_end], right_censored[patient_pos:patient_end], 
+      confirmed_response[patient_pos:patient_end], confirmed_response_censored[patient_pos:patient_end],
+      time_invariant_log_hazard_ratio,
+      prob_non_response[patient_pos:patient_end] 
+    );
+  }
+  
   vector[gen_log_lik || prior_sense ? n_training_patients : 0] log_lik = rep_vector(0, gen_log_lik || prior_sense ? n_training_patients : 0);
   real lprior = 0;
 
@@ -325,9 +346,7 @@ generated quantities {
             int conf_resp_interval_pos = patient_conf_resp_interval_pos[i];
             int conf_resp_interval_end = patient_conf_resp_interval_pos[i + 1] - 1;
           
-            real prob_non_response = calc_cif(1, log_crcr_cond_prob_surv[conf_resp_interval_pos:conf_resp_interval_end], max_confresp_week).2[1, 1];
-          
-            log_lik[log_lik_pos] += log_mix(prob_non_response, patient_response_lp[i, 1], patient_response_lp[i, 2]);
+            log_lik[log_lik_pos] += log_mix(prob_non_response[i], patient_response_lp[i, 1], patient_response_lp[i, 2]);
           } else {
             log_lik[log_lik_pos] += patient_response_lp[i, confirmed_response_cause[i]];
           }
