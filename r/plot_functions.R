@@ -146,12 +146,8 @@ plot_surv_ppc <- function(ppc_data, surv_interval_col, ic_col, rc_col, rep_surv_
 
 plot_km <- function(res_data, obs_km_data, km_est, group = fit_type) {
   ggplot(res_data) +
-    geom_step(
-      aes(x = t, y = s, group = btype, linetype = "Observed Data"), 
-      data = \(d) semi_join(obs_km_data, d, by = "trial")
-    ) +
-    stat_lineribbon(aes(x = t - 1, ydist = {{ km_est }}, color = {{ group }}, fill = {{ group }}, alpha = {{ group }}), .width = 0.8) +
-    scale_linetype_manual("", values = "dotted") +
+    geom_step(aes(x = t, y = s, group = btype, color = btype), linewidth = 0.5, alpha = 0.5, data = \(d) semi_join(obs_km_data, d, by = "trial")) +
+    stat_lineribbon(aes(x = t - 1, ydist = {{ km_est }}, fill = {{ group }}, alpha = {{ group }}), linewidth = 0, .width = 0.8) +
     labs(y = "Survival Probability") +
     guides(alpha = "none") + 
     theme(legend.position = "bottom")
