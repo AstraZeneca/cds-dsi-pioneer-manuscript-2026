@@ -222,7 +222,7 @@ get_all_pfs_crcr_lambda_trial_intercept <- function(res) {
 }
 
 get_crcr_pfs_pred_param <- function(res, stan_data) {
-  gather_rvars(res, covar_trial_coef[trial, m]) |> 
+  gather_rvars(res, covar_trial_coef[trial, m], covar_effect[trial, m], tumor_stim_pop_coef[trial, m]) |> 
     mutate(.exp_value = exp(.value)) |> 
     name_coef_indices(m, trial, stan_data)
 }
@@ -233,47 +233,71 @@ get_powerscaled_variables <- function(res, metadata, stan_data) {
     mutate(
       ps = list(
         if (alpha == 1) res else powerscale(res, alpha = alpha, component = component, variable = c("log_crcr_trial_lambda", "log_trial_lambda"))
-      ),
+      )
+    ) |> 
+    transmute(
+      alpha, component,
       baseline_hazard_rvar = list(
         gather_rvars(ps, log_crcr_trial_lambda[trial, t, k], log_trial_lambda[trial, t]) |> 
           mutate(
             .exp_value = exp(.value),
             trial = factor(trial, labels = levels(stan_data$patient_trial)),
             k = factor(k, levels = 1:2, labels = c("Non-response", "Response")) 
-          )
-      ),
+          ) |>  
+          point_interval(.value, .exp_value, .width = c(0.5, 0.8))
+      ) 
     )
 }
 
-get_coef_powerscale_table_data <- function(coef_ps_sense, prior_crcr_coef, crcr_coef, prior_crcr_pfs_coef, crcr_pfs_coef, stan_data) {
-  plot_coef <- function(d) {
-    ggplot(d) + 
-      stat_slab(aes(xdist = .exp_value, color = fit_type), fill = NA, linewidth = 2, show.legend = TRUE) +
-      geom_vline(xintercept = 1, linetype = "dashed", linewidth = 2) +
-      scale_color_discrete("", label = str_to_title, type = AZ_palette, aesthetic = c("color", "fill")) +
-      labs(x = "", y = "") +
-      theme(axis.text.y = element_blank(), axis.text.x = element_text(size = 25), legend.text = element_text(size = 20)) +
-      coord_cartesian(xlim = c(0, 4)) +
-      theme(legend.position = "bottom") +
-      NULL
-  }
-  
+plot_coef <- function(d, xvar) {
+  ggplot(d) + 
+    stat_slab(aes(xdist = {{ xvar }}, color = fit_type), fill = NA, linewidth = 2, show.legend = TRUE) +
+    geom_vline(xintercept = 1, linetype = "dashed", linewidth = 2) +
+    scale_color_discrete("", label = str_to_title, type = AZ_palette, aesthetic = c("color", "fill")) +
+    labs(x = "", y = "") +
+    theme(axis.text.y = element_blank(), axis.text.x = element_text(size = 25), legend.text = element_text(size = 20)) +
+    coord_cartesian(xlim = c(0, 4)) +
+    theme(legend.position = "bottom") +
+    NULL
+}
+
+get_coef_powerscale_table_data <- function(coef_ps_sense, prior_crcr_coef, crcr_coef, prior_crcr_pfs_coef, crcr_pfs_coef, stan_data, trial_col = NULL) {
   coef_plots <- bind_rows(
     bind_rows(prior = prior_crcr_coef, posterior = crcr_coef, .id = "fit_type"),
     bind_rows(prior = prior_crcr_pfs_coef, posterior = crcr_pfs_coef, .id = "fit_type")
-  ) |> 
+  ) |>
+    filter(fct_match(.variable, c("crcr_covar_effect", "covar_effect", "crcr_tumor_stim_pop_coef", "tumor_stim_pop_coef"))) |> 
     nest(coef_data = !c(.variable, m, k)) |> 
-    mutate(plot_obj = map(coef_data, plot_coef)) 
+    mutate(plot_obj = map(coef_data, \(d) plot_coef(d, .exp_value))) 
   
   coef_ps_sense |> 
+    filter(!str_detect(variable, "trial_sd")) |> 
     tidyr::separate_wider_regex(variable, c(var = ".+", r"{\[}", trial = r"{\d+}", ",", m = r"{\d+}", r"{,?}", k = r"{(?:\d+)?}", ".*")) |> 
     mutate(
       across(c(m, k, trial), as.integer),
       k = factor(k, levels = 1:2, labels = c("Non-response", "Response"))
     ) |> 
     left_join(coef_plots, by = c("var" = ".variable", "k", "m")) |> 
-    name_coef_indices(m, trial, stan_data) |> 
+    name_coef_indices(m, trial_col, stan_data) |> 
     select(var, covar, k, prior, likelihood, diagnosis, plot_obj) 
+}
+
+get_coef_sd_powerscale_table_data <- function(coef_ps_sense, prior_crcr_coef_sd, crcr_coef_sd, prior_crcr_pfs_coef_sd, crcr_pfs_coef_sd, stan_data) {
+  coef_plots <- bind_rows(
+    crcr_covar_trial_sd = bind_rows(prior = prior_crcr_coef_sd, posterior = crcr_coef_sd, .id = "fit_type") |> rename(.exp_value = crcr_covar_trial_sd),
+    covar_trial_sd = bind_rows(prior = prior_crcr_pfs_coef_sd, posterior = crcr_pfs_coef_sd, .id = "fit_type") |> rename(.exp_value = covar_trial_sd),
+    .id = ".variable"
+  ) |>
+    nest(coef_sd_data = !c(.variable, m)) |> 
+    mutate(plot_obj = map(coef_sd_data, \(d) plot_coef(d, .exp_value))) 
+  
+  coef_ps_sense |> 
+    filter(str_detect(variable, "trial_sd")) |> 
+    tidyr::separate_wider_regex(variable, c(var = ".+", r"{\[}", m = r"{\d+}", "]")) |> 
+    mutate(m = as.integer(m)) |> 
+    left_join(coef_plots, by = c("m", "var" = ".variable")) |> 
+    name_coef_indices(m, NULL, stan_data) |> 
+    select(var, covar, prior, likelihood, diagnosis, plot_obj) 
 }
 
 get_covar_trial_sd <- function(res, stan_data) {
@@ -289,4 +313,12 @@ add_stacked_results <- function(res_data, stacking_weights, ...) {
         group_by(fit_type, trial) |> 
         summarize(model_type = "stacked", across(c(...), \(res) stack_draws(res, weight))) 
     )
+}
+
+get_trial_c_index <- function(res, analysis_data = NULL) {
+  if (!is_null(analysis_data)) { 
+    res <- recover_types(res, select(analysis_data, trial))
+  }
+  
+  spread_rvars(res, trial_c_index[trial])
 }
