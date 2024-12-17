@@ -332,6 +332,10 @@ generated quantities {
   
   vector[gen_log_lik || prior_sense ? n_training_patients : 0] log_lik = rep_vector(0, gen_log_lik || prior_sense ? n_training_patients : 0);
   real lprior = 0;
+  
+  #include "crcr/crcr_log_lik_prior_sense.stan"
+  
+  vector[gen_log_lik || prior_sense ? n_training_patients : 0] crcr_log_lik = log_lik; 
 
   if (gen_log_lik || prior_sense) {
     int log_lik_pos = 1;
@@ -368,15 +372,16 @@ generated quantities {
     }
   }
   
-  #include "crcr/crcr_log_lik_prior_sense.stan"
   #include "baseline_hazard/baseline_hazard_log_lik_prior_sense.stan"
   
   vector[(gen_log_lik || prior_sense) && log_lik_trial > 0 && leave_out_trial == 0 ? n_trial_patients[log_lik_trial] : 0] trial_log_lik;
+  vector[(gen_log_lik || prior_sense) && log_lik_trial > 0 && leave_out_trial == 0 ? n_trial_patients[log_lik_trial] : 0] trial_crcr_log_lik;
   
   if (rows(trial_log_lik) > 0) {
     int pos = trial_patient_pos[log_lik_trial];
     int end = trial_patient_pos[log_lik_trial + 1] - 1;
     
     trial_log_lik = log_lik[pos:end];
+    trial_crcr_log_lik = crcr_log_lik[pos:end];
   }
 }
