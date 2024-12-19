@@ -1,4 +1,4 @@
-array[separate_baseline_hazard ? n_trials : 1] matrix[max_confresp_week, n_causes] log_crcr_lambda; 
+array[separate_baseline_hazard ? n_trials : 1] matrix[max_confresp_week, n_causes] log_crcr_lambda; // log baseline hazard
 
 profile("crcr population baseline hazards") {
   for (s in 1:(separate_baseline_hazard ? n_trials : 1)) {
@@ -9,11 +9,14 @@ profile("crcr population baseline hazards") {
   }
 }
 
-array[add_trial_level_baseline_hazard ? n_trials : 0] matrix[max_confresp_week, n_causes] log_crcr_trial_lambda_residual;
+// Trial level variation in log baseline hazard
+array[add_trial_level_baseline_hazard ? n_trials : 0] matrix[max_confresp_week, n_causes] log_crcr_trial_lambda_residual; 
 array[n_trials] matrix[max_confresp_week, n_causes] log_crcr_trial_lambda = separate_baseline_hazard ? log_crcr_lambda : rep_array(log_crcr_lambda[1], n_trials); 
 
 matrix[add_trial_level_baseline_hazard ? n_trials : 0, n_causes] log_crcr_lambda_gp_trial_intercept;
 array[n_trials] matrix[n_tumor_covar + n_covar, n_causes] crcr_covar_trial_coef;
+
+// Trial level variation in prop hazard parameters
 array[add_trial_level_prop_hazard ? n_trials : 0] matrix[n_tumor_covar + n_covar, n_causes] crcr_covar_trial_coef_residual;
 
 if (add_trial_level_baseline_hazard) {
@@ -42,9 +45,9 @@ for (s in 1:n_trials) {
   }
 }
 
-matrix[n_patients, n_causes] patient_log_crcr_hazard_ratio;
+matrix[n_patients, n_causes] patient_log_crcr_hazard_ratio; // Log proportional hazard
 
-matrix<upper = 0>[n_crcr_time_periods, n_causes] log_crcr_cond_prob_surv;
+matrix<upper = 0>[n_crcr_time_periods, n_causes] log_crcr_cond_prob_surv; // Log conditional probability of remaining unclassified
 
 profile("log_crcr_cond_prob_surv") { // Calculate patient-interval conditional probability of survival (without a classified response) 
   int patient_pos = 1;
@@ -53,8 +56,7 @@ profile("log_crcr_cond_prob_surv") { // Calculate patient-interval conditional p
     int patient_end = patient_pos + n_trial_patients[s] - 1;
    
     patient_log_crcr_hazard_ratio[patient_pos:patient_end] =
-      tumor_sum_covar[patient_pos:patient_end] * crcr_covar_trial_coef[s, :n_tumor_covar] +
-      covar_design_matrix[patient_pos:patient_end] * crcr_covar_trial_coef[s, (n_tumor_covar + 1):];
+      tumor_sum_covar[patient_pos:patient_end] * crcr_covar_trial_coef[s, :n_tumor_covar] + covar_design_matrix[patient_pos:patient_end] * crcr_covar_trial_coef[s, (n_tumor_covar + 1):];
     
     for (i in patient_pos:patient_end) {
       int confresp_interval_pos = patient_conf_resp_interval_pos[i];

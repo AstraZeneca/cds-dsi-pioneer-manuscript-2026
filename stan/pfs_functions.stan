@@ -84,6 +84,12 @@ tuple(vector, vector) calculate_marginal_dp_prob(vector cond_pf_prob, int max_al
   return(exp(marginal_dp_log_prob), fmax(0, 1 - dp_cdf));
 }
 
+/** Calculate the marginal probability of disease progression at every interval.
+ *
+ * @param log_cond_prob_surv The vector of log conditional probabilities of survival
+ * @param max_all_t The number of intervals for each patient 
+ * @return Vector of log marginal probabilities
+ */
 vector calculate_marginal_exit_prob(vector log_cond_prob_surv, int max_all_t) {
   vector[max_all_t] marginal_log_exit_prob;
 
@@ -101,73 +107,7 @@ vector calculate_marginal_exit_prob(vector log_cond_prob_surv, int max_all_t) {
 /** Calculate the piecewise-constant proportional hazard log-likelihood. This returns the patients vector of log-likelihoods as opposed to the following
  * pch_lpmf() function. 
  *
- * @param pfs Observed number of weeks without disease progression.
- * @param right_censored Is right censored?
- * @param interval_censored Number of weeks over which we have interval censoring.
- * @param ignore_interval_censoring Treat `pfs` as the actual PFS.
- * @param disease_progress_prob Conditional probability of disease progress at every interval.
- * @param max_all_t The latest week assessment is done in all the data.
- * @param patient_2nd_t The week in which the first post-treatment assessment was done.
- * @return Vector of patient-level log-likelihood.
- */
-vector calc_pch_loglik(
-  array[] int pfs, 
-  array[] int right_uncensored, array[] int interval_censored, int ignore_interval_censoring, 
-  vector disease_progress_prob, int max_all_t, array[] int patient_2nd_t 
-) 
-{
-  int n_patients = size(pfs);
-  vector[n_patients] lp = rep_vector(0, n_patients);
-  
-  int pfs_interval_pos = 1;
-    
-  for (i in 1:n_patients) {
-    int observed_pfs_interval_end = pfs_interval_pos + pfs[i] - 1; 
-    
-    // Ignoring intervals that were guaranteed for the patient to have survived because of the inclusion criteria in this meta-analysis (not the the original trials).
-    pfs_interval_pos += patient_2nd_t[i] - 1;
-    
-    int unobs_pfs_interval_pos = max(observed_pfs_interval_end + 1, pfs_interval_pos);
-   
-    if (pfs_interval_pos <= observed_pfs_interval_end) { // By incrementing by patient_2nd_t we can end up outside the observed range.
-      // These are the time intervals we are sure that the patient was progression free 
-      lp[i] += bernoulli_lpmf(0 | disease_progress_prob[pfs_interval_pos:observed_pfs_interval_end]);
-    }
-    
-    int pfs_interval_end = observed_pfs_interval_end + right_uncensored[i] + interval_censored[i]; 
-    int curr_interval_censored = ignore_interval_censoring ? 0 : interval_censored[i];
-    // vector[curr_interval_censored + right_uncensored[i]] interval_lp = rep_vector(0, curr_interval_censored + right_uncensored[i]);
-    int unobs_size = pfs_interval_end - unobs_pfs_interval_pos + 1;
-    vector[unobs_size] interval_lp = rep_vector(0, unobs_size);
- 
-    // The point of this loop is marginalize over all the potential intervals of progression, due to interval censoring. 
-    // for (t in 1:(curr_interval_censored + right_uncensored[i])) {
-    for (t in 1:unobs_size) {
-      if (t > 1) { // We need to add more possible intervals that the patient remained progression free.
-        interval_lp[t] = bernoulli_lpmf(0 | disease_progress_prob[unobs_pfs_interval_pos:(unobs_pfs_interval_pos - 2 + t)]);
-      }
-      
-      // If not right censored add pdf of disease progression. 
-      if (right_uncensored[i]) {
-        interval_lp[t] += bernoulli_lpmf(1 | disease_progress_prob[unobs_pfs_interval_pos + t - 1]);
-      }
-    }
-   
-    if (curr_interval_censored > 0) {
-      // There are more than one candidate true PFS: sum of the probabilities and then log.
-      lp[i] += log_sum_exp(interval_lp); // - log(curr_interval_censored + 1); 
-    } else if (right_uncensored[i]) {
-      lp[i] += interval_lp[1]; // PFS not observed because of right censoring.
-    }
-    
-    // If generating PFS, jump ahead to the beginning of the next patient's probs.
-    pfs_interval_pos = (max_all_t > 0 ? pfs_interval_pos + max_all_t - (patient_2nd_t[i] - 1) - 1 : pfs_interval_end) + 1;
-  }
-  
-  return lp;
-}
-/** Calculate the piecewise-constant proportional hazard log-likelihood. This returns the patients vector of log-likelihoods as opposed to the following
- * pch_lpmf() function. 
+ * Use log probabilities for numerical stability.
  *
  * @param pfs Observed number of weeks without disease progression.
  * @param right_censored Is right censored?
@@ -178,7 +118,7 @@ vector calc_pch_loglik(
  * @param patient_2nd_t The week in which the first post-treatment assessment was done.
  * @return Vector of patient-level log-likelihood.
  */
-vector calc_pch_loglik2(
+vector calc_pch_loglik(
   array[] int pfs, 
   array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring, 
   vector log_cond_prob_surv, int max_all_t, array[] int patient_2nd_t 
@@ -233,25 +173,6 @@ vector calc_pch_loglik2(
   return lp;
 }
 
-
-/** This is used to provide and easy to use Stan distribution. It just sums the log-probs. 
- *
- * @param y Observed number of weeks without disease progression.
- * @param right_censored Is right censored?
- * @param interval_censored Number of weeks over which we have interval censoring.
- * @param ignore_interval_censoring Treat `pfs` as the actual PFS.
- * @param disease_progress_prob Conditional probability of disease progress at every interval.
- * @param max_all_t The latest week assessment is done in all the data.
- * @param patient_2nd_t The week in which the first post-treatment assessment was done.
- * @return Vector of patient-level log-likelihood.
- */
-real pch_lpmf(
-  array[] int y, 
-  array[] int right_uncensored, array[] int interval_censored, int ignore_interval_censoring, vector disease_progress_prob, int max_all_t, array[] int patient_2nd_t
-) {
-  return sum(calc_pch_loglik(y, right_uncensored, interval_censored, ignore_interval_censoring, disease_progress_prob, max_all_t, patient_2nd_t));
-}
-
 /** This is used to provide and easy to use Stan distribution. It just sums the log-probs. 
  *
  * @param y Observed number of weeks without disease progression.
@@ -263,104 +184,15 @@ real pch_lpmf(
  * @param patient_2nd_t The week in which the first post-treatment assessment was done.
  * @return Vector of patient-level log-likelihood.
  */
-real pch2_lpmf(
+real pch_lpmf(
   array[] int y, 
   array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring, vector log_cond_prob_progress, int max_all_t, array[] int patient_2nd_t
 ) {
-  return sum(calc_pch_loglik2(y, right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_progress, max_all_t, patient_2nd_t));
+  return sum(calc_pch_loglik(y, right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_progress, max_all_t, patient_2nd_t));
 }
 
-int calc_n_tumor_covar_col(int tumor_hazard_type) {
-  int n_covar_col = 0; // number of columns in covariates design matrix, excluding the intercept. 
-  
-  if (tumor_hazard_type == 1) {
-    n_covar_col = 2;
-  } else if (tumor_hazard_type == 2) {
-    n_covar_col = 3;
-  } else if (tumor_hazard_type == 3) {
-    n_covar_col = 1;
-  } else if (tumor_hazard_type == 5) {
-    n_covar_col = 5;
-  }
-  
-  return n_covar_col;
-}
-
-tuple(array[,] int, array[] int, matrix, matrix, vector, vector) prepare_early_tumors_covar(
-  vector tumor_size, 
-  int tumor_hazard_type, 
-  int n_tumors, array[] int n_patient_tumors, array[] int n_measures, array[] int t_measure, array[] int n_screening_t, int max_measures
-) {
-  int n_patients = size(n_patient_tumors);
-  int n_covar_col = calc_n_tumor_covar_col(tumor_hazard_type);
-  
-  array[n_tumors, max_measures] int tumor_covar_t; // ts (weeks) of the assessments used in the covar design matrix
-  array[n_patients] int patient_max_2nd_tumor_t; // What t is the second assessment in the covar design matrix 
-  matrix[n_tumors, n_covar_col] tumor_covar; // This is the design matrix with the covar in the first two (or _n_) assessments.
-  matrix[n_tumors, n_covar_col] uncentered_tumor_covar; // Just scaled
-  vector[n_covar_col] tumor_covar_mean;
-  vector[n_covar_col] tumor_covar_sd = rep_vector(0, n_covar_col);
-  
-  { // Preparing all the tumor covariates data 
-    tuple(matrix[n_tumors, 2], array[n_tumors, 2] int) prep_res = 
-      prepare_early_tumors_design_matrix(tumor_size, n_patient_tumors, n_measures, t_measure, n_screening_t, max_measures);
-      
-    tumor_covar_t = prep_res.2;
-    
-    int tumor_pos = 1;
-    
-    for (i in 1:n_patients) {
-      int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
-      
-      patient_max_2nd_tumor_t[i] = max(tumor_covar_t[tumor_pos:tumor_end, 2]);
-      
-      tumor_pos = tumor_end + 1;
-    }
-    
-    if (tumor_hazard_type > 0) {
-      if (tumor_hazard_type == 1 || tumor_hazard_type == 2 || tumor_hazard_type == 5) {  
-        tumor_covar[, 1:2] = prep_res.1;
-        
-        if (tumor_hazard_type == 2) {
-          tumor_covar[, 3] = tumor_covar[, 2] .* tumor_covar[, 1];
-        }
-        
-        if (tumor_hazard_type == 3) {
-          tumor_covar[, 3] = tumor_covar[, 2] ./ tumor_covar[, 1];
-        }
-        
-        if (tumor_hazard_type == 5) {
-          tumor_covar[, 4] = tumor_covar[, 1]^2;
-          tumor_covar[, 5] = tumor_covar[, 2]^2;
-        }
-        
-        for (c in 1:n_covar_col) {
-          uncentered_tumor_covar[, c] = tumor_covar[, c];
-          
-          tuple(real, real, vector[n_tumors]) standardize_results = standardize_tumor_sizes(tumor_covar[, c]);
-          tumor_covar_mean[c] = standardize_results.1;
-          tumor_covar_sd[c] = standardize_results.2;
-          tumor_covar[, c] = standardize_results.3;
-          
-          uncentered_tumor_covar[, c] /= tumor_covar_sd[c];
-        }
-       
-        if (tumor_hazard_type == 2 || tumor_hazard_type == 5) {
-          tumor_covar[, 3] = rep_vector(0, n_tumors);
-        }
-      } else if (tumor_hazard_type == 3) {
-        matrix[n_tumors, 2] covar = prep_res.1;
-        
-        tumor_covar[, 1] = (covar[, 2] - covar[, 1]) ./ covar[, 1];
-        uncentered_tumor_covar[, 1] = tumor_covar[, 1];
-      } 
-    } 
-  }
-  
-  return (tumor_covar_t, patient_max_2nd_tumor_t, tumor_covar, uncentered_tumor_covar, tumor_covar_mean, tumor_covar_sd);
-}
-
-// Calculate patient-interval conditional probability of disease progression.
+/** Calculate patient-interval conditional probability of disease progression.
+ */
 tuple(vector, vector) calc_tumor_stim(
   matrix tumor_covar,
   int tumor_hazard_type, array[] int n_patient_tumors,
@@ -398,7 +230,8 @@ tuple(vector, vector) calc_tumor_stim(
   return (total_time_invar_tumor_stim, total_time_invar_tumor_stim_no_intercept);    
 }
 
-// Calculate patient-interval conditional probability of disease progression.
+/** Calculate patient-interval conditional probability of disease progression.
+ */
 tuple(vector, vector, vector) calc_disease_progress_pred_from_early_tumors(
   array[] int pfs, matrix tumor_covar,
   int tumor_hazard_type, array[] int n_patient_tumors,
@@ -438,36 +271,15 @@ tuple(vector, vector, vector) calc_disease_progress_pred_from_early_tumors(
   return (total_time_invar_tumor_stim, total_time_invar_tumor_stim_no_intercept, disease_progress_pred);    
 }
 
-/** Calculate the quantiles of PFS given a vector of exit conditional probabilities.
+/** Calculate the quantiles of the given sample PFS. 
+ * 
+ * Mostly used to calculate median PFS.
  *
- * @param exit_prob Marginal probability of disease progression at all the intervals
- * @param p Quantile probabilities
- * @return Quantiles of PFS
+ * @param surv_time Patient survival times
+ * @param last_surv_time Interval beyond which we assume right censoring. This might not be a problem for lower quantiles.
+ * @param p Percentiles to calculate
+ * @return tuple(quantiles, patients we could not calculate quantiles using because of right censoring)
  */
-array[] real pfs_quantiles_from_prob(vector exit_prob, array[] real p) {
-  int max_t = rows(exit_prob);
-  int n_p = size(p);
-  array[n_p] int sorted_p_idx = sort_indices_asc(p);
-  vector[max_t + 1] cumul_prob = append_row(0.0, cumulative_sum(exit_prob)); 
-  array[n_p] real q;
-  int pfs = 1;
-  
-  for (p_index in 1:n_p) {
-    real curr_p = p[sorted_p_idx][p_index];
-    real q_part;
-    
-    while (cumul_prob[pfs + 1] < curr_p) {
-      pfs += 1;
-    }
-    
-    q_part = (curr_p - cumul_prob[pfs]) / (cumul_prob[pfs + 1] - cumul_prob[pfs]);
-    
-    q[sorted_p_idx[p_index]] = (pfs - 1) * (1 - q_part) + pfs * q_part; 
-  }
-  
-  return q;
-}
-
 tuple(vector, array[] int) survival_quantiles(array[] int surv_time, int last_surv_time, vector p) {
   int N = size(surv_time);
   int P = num_elements(p); // Number of percentiles
@@ -499,6 +311,12 @@ tuple(vector, array[] int) survival_quantiles(array[] int surv_time, int last_su
   return (quantiles, cannot_calculate);
 }
 
+/** Calculate median PFS
+ *
+ * @param surv_time Patient survival times
+ * @param last_surv_time Interval beyond which we assume right censoring. This might not be a problem for lower quantiles.
+ * @return tuple(median, patients we could not calculate quantiles using because of right censoring)
+ */
 tuple(real, int) survival_median(array[] int surv_time, int last_surv_time) {
   vector[1] q;
   array[1] int c;
@@ -507,6 +325,12 @@ tuple(real, int) survival_median(array[] int surv_time, int last_surv_time) {
   return(q[1], c[1]);
 }
 
+/** Calculate the proportion of patients who survived beyond time time n (PFSn).
+ * 
+ * @param surv_time Patient survival times
+ * @param n
+ * @return Proportion surviving >= n
+ */
 real calc_pfs_n(array[] int surv_time, real n) {
   int n_patients = size(surv_time);
   array[n_patients] int sorted_surv_time = sort_desc(surv_time);
@@ -519,6 +343,11 @@ real calc_pfs_n(array[] int surv_time, real n) {
   return 1.0 * pfs_n / n_patients;
 }
 
+/** Generate survival times given log conditional probabilites of survival
+ *
+ * @param log_cond_prob_surv Log conditional probability of survival at each interval
+ * @return tuple(survival time, right censored)
+ */
 tuple(int, int) survival_time_rng(vector log_cond_prob_surv) {
   int n_intervals = rows(log_cond_prob_surv);
  
@@ -533,6 +362,11 @@ tuple(int, int) survival_time_rng(vector log_cond_prob_surv) {
   return(survival_time, censored);
 }
 
+/** Generate a survival time within the range of interval censored intervals.
+ *
+ * @param ic_log_cond_prob_surv Log conditional probability of survival at each interval within the IC range.
+ * @return time after the left bound of the IC range
+ */ 
 int interval_censored_survival_time_rng(vector ic_log_cond_prob_surv) {
   int n = rows(ic_log_cond_prob_surv);
   vector[n] marginal_prob_exit = exp(cumulative_sum(append_row(0, ic_log_cond_prob_surv))[:n] + log1m_exp(ic_log_cond_prob_surv));
@@ -542,6 +376,14 @@ int interval_censored_survival_time_rng(vector ic_log_cond_prob_surv) {
   return categorical_rng(marginal_prob_exit) - 1;
 }
 
+/** Forecast survival time.
+ *
+ * @param log_cond_prob_surv The vector of log conditional probabilities of survival
+ * @param event_time Observed survival time 
+ * @param right_censored
+ * @param interval_censored
+ * @return tuple(last interval before progress, is patient right censored)
+ */
 tuple(int, int) survival_time_rng(vector log_cond_prob_surv, int obs_surv_time, int right_censored, int interval_censored) {
   int n = rows(log_cond_prob_surv);
   int survival_time = obs_surv_time, forecast_right_censored = right_censored;
@@ -602,4 +444,34 @@ tuple(vector, array[] int, array[] int, array[,] int) estimate_kaplan_meier(arra
   }
 
   return (s, at_risk, n_right_censored, n_exited);
+}
+
+real calc_c_index(array[] int pfs, array[] int right_censored, vector risk_score) {
+  int n_patients = size(pfs);
+  int n_concord = 0;
+  int n_ranked = 0;
+  
+  for (i in 1:n_patients) {
+    for (j in 1:n_patients) {
+      if (i != j && pfs[i] > pfs[j] && !right_censored[j]) {
+        n_ranked += 1;
+        n_concord += risk_score[i] < risk_score[j]; 
+      }
+    }
+  }
+  
+  return 1.0 * n_concord / n_ranked;
+}
+
+real calc_c_index(
+  array[] int pfs, array[] int right_censored, array[] int confirmed_response, array[] int confirmed_response_censored, matrix log_risk_score, vector prob_confirmed_response
+) {
+  int n_patients = size(pfs);
+  vector[n_patients] risk_score;
+  
+  for (i in 1:n_patients) {
+    risk_score[i] = confirmed_response_censored[i] ? log_mix(prob_confirmed_response[i], log_risk_score[i, 1], log_risk_score[i, 2]) : log_risk_score[i, confirmed_response[i] + 1]; 
+  }
+  
+  return calc_c_index(pfs, right_censored, risk_score);
 }

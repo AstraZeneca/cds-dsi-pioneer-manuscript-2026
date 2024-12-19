@@ -139,4 +139,5 @@ get_patient_pointwise_loo <- function(model_loo, stan_data) {
 }
 
 weeks_to_months <- function(weeks) weeks * 7 * 12 / 365.25
+label_weeks_to_months <- scales::label_number(scale = weeks_to_months(1))
 months_to_weeks <- function(months) months / weeks_to_months(1) 

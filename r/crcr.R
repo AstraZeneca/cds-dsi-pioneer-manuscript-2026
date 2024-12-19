@@ -193,7 +193,7 @@ get_crcr_objective_response <- function(res, stan_data) {
 }
 
 get_crcr_pred_param <- function(res, stan_data) {
-  gather_rvars(res, crcr_covar_trial_coef[trial, m, k]) |> 
+  gather_rvars(res, crcr_covar_trial_coef[trial, m, k], crcr_covar_effect[trial, m, k], crcr_tumor_stim_pop_coef[trial, m, k]) |> 
     mutate(.exp_value = exp(.value)) |> 
     name_coef_indices(m, trial, stan_data) |> 
     mutate(k = factor(k, levels = 1:2, labels = c("Non-response", "Response")))
