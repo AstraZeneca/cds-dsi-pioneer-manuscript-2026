@@ -1,3 +1,8 @@
+/*
+ * Standalone script for the confirmed response competing risk survival (CRCR) model. This is mostly helpful when debugging the CRCR model in isolation. Most of the code
+ * is included from other files.
+ */
+
 functions {
   #include "../extern_util.stan"
   #include "../util.stan"
@@ -10,20 +15,22 @@ data {
   // Model settings
   int<lower = 0, upper = 1> fit_data; // If 0, just do prior prediction
   int<lower = 0, upper = 1> crcr_ignore_interval_censoring; // Treat observed intervals as true intervals 
-  int<lower = 0, upper = 1> gen_log_lik;
-  int<lower = 0, upper = 1> prior_sense;
+  int<lower = 0, upper = 1> gen_log_lik; // Generate log likelihood
+  int<lower = 0, upper = 1> prior_sense; // Calculate prior sensitivity info for {priorsense}
   
   // Hierarchical settings 
   int<lower = 0, upper = 1> add_trial_level_baseline_hazard;
   int<lower = 0, upper = 1> add_trial_level_prop_hazard;
-  int<lower = 0, upper = 1 - add_trial_level_baseline_hazard> separate_baseline_hazard;
+  // Separate trials but not multilevel
+  int<lower = 0, upper = 1 - add_trial_level_baseline_hazard> separate_baseline_hazard; 
   int<lower = 0, upper = 1 - add_trial_level_prop_hazard> separate_prop_hazard;
 
   // This is the data that is shared with the tumor model 
   #include "../base_data.stan"
   #include "crcr_data.stan"
   #include "../bootstrap/leave_out_trial_bootstrap_data.stan"
-  
+ 
+  // Calculating log likelihood for a single trial. Useful if you want to compare the preformance of a model using a single trial with one that is multilevel. 
   int<lower = 0, upper = n_trials> log_lik_trial; 
  
   // Hyperparam
@@ -35,7 +42,7 @@ transformed data {
   #include "crcr_transformed_data.stan"
   #include "../bootstrap/leave_out_trial_bootstrap_transformed_data.stan"
   
-  int grain_size = 83;
+  int grain_size = 83; // For reduce_sum()
 }
 
 parameters {

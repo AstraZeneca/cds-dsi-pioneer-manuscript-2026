@@ -192,7 +192,7 @@ prepare_confirmed_resp_stan_data <- function(
       extend_max_confresp_week = 1,
       extend_max_all_t = 1,
       
-      imputed_patients = imputed_patients,
+      imputed_patients = imputed_patients %||% array(dim = 0),
     ) |>  
     list_assign(...)
 }

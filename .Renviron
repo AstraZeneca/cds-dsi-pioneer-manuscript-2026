@@ -4,3 +4,5 @@ RENV_CONFIG_SANDBOX_ENABLED=false
 RENV_CONFIG_SYNCHRONIZED_CHECK=false
 
 TAR_PROJECT=endometrial_to_lung
+
+CMDSTAN=~/.cmdstan/cmdstan-2.35.0/

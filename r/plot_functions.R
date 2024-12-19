@@ -81,7 +81,9 @@ plot_hazard_ratio <- function(res_data) {
 }
 
 plot_crcr_covar_coef <- function(res_data) {
-  select(res_data, !.value) |> 
+  res_data |> 
+    filter(fct_match(.variable, "crcr_covar_trial_coef")) |> 
+    select(!.value) |> 
     pivot_wider(names_from = k, values_from = .exp_value) |> 
     mutate(tumor = str_detect(covar, "tumor sizes"), hazard_ratio = Response / `Non-response`) |> 
     ggplot(aes(y = covar)) +
@@ -94,7 +96,9 @@ plot_crcr_covar_coef <- function(res_data) {
 }
 
 plot_pfs_covar_coef <- function(res_data) {
-  ggplot(res_data, aes(y = covar)) +
+  res_data |> 
+    filter(fct_match(.variable, "covar_trial_coef")) |> 
+    ggplot(aes(y = covar)) +
     stat_pointinterval(aes(xdist = .exp_value, color = fit_type), point_size = 1, position = "dodge", .width = c(0.5, 0.8)) +
     geom_vline(xintercept = 1, linetype = "dotted") +
     labs(x = "Exponential of Parameter",  y = "Parameter", caption = "Showing the posterior median, 50% CI, and 80% CI.") +
@@ -142,12 +146,8 @@ plot_surv_ppc <- function(ppc_data, surv_interval_col, ic_col, rc_col, rep_surv_
 
 plot_km <- function(res_data, obs_km_data, km_est, group = fit_type) {
   ggplot(res_data) +
-    geom_step(
-      aes(x = t, y = s, group = btype, linetype = "Observed Data"), 
-      data = \(d) semi_join(obs_km_data, d, by = "trial")
-    ) +
-    stat_lineribbon(aes(x = t - 1, ydist = {{ km_est }}, color = {{ group }}, fill = {{ group }}, alpha = {{ group }}), .width = 0.8) +
-    scale_linetype_manual("", values = "dotted") +
+    geom_step(aes(x = t, y = s, group = btype, color = btype), linewidth = 0.5, alpha = 0.5, data = \(d) semi_join(obs_km_data, d, by = "trial")) +
+    stat_lineribbon(aes(x = t - 1, ydist = {{ km_est }}, fill = {{ group }}, alpha = {{ group }}), linewidth = 0, .width = 0.8) +
     labs(y = "Survival Probability") +
     guides(alpha = "none") + 
     theme(legend.position = "bottom")
