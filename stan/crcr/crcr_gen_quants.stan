@@ -58,3 +58,8 @@ for (s in 1:n_trials) {
   rep_trial_orr[s] = mean(rep_confirmed_response_forced[patient_pos:patient_end]);
   forecast_trial_orr[s] = mean(forecast_confirmed_response_forced[patient_pos:patient_end]);
 }
+
+// Impute confirmed response status if needed 
+array[n_patients] int<lower = 0, upper = 1> sim_confirmed_response = confirmed_response;
+sim_confirmed_response[missing_confirmed_response] = bernoulli_rng(prob_cause[missing_confirmed_response, 2]); 
+ 
