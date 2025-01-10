@@ -18,26 +18,26 @@ if (gen_log_lik || prior_sense) {
 }
 
 if (prior_sense) {
-  for (s in 1:(separate_baseline_hazard ? n_trials : 1)) {
+  for (s in 1:n_base_separate_trials) {
     lprior += normal_lpdf(to_vector(log_crcr_lambda_gp_alpha[s]) | 0, log_crcr_lambda_gp_alpha_sd[s]) +
       inv_gamma_lpdf(to_vector(log_crcr_lambda_gp_rho[s]) | log_crcr_lambda_gp_rho_alpha[s], log_crcr_lambda_gp_rho_beta[s]) +
       normal_lpdf(to_vector(log_crcr_lambda_gp_intercept[s]) | log_crcr_lambda_gp_intercept_mean[s], log_crcr_lambda_gp_intercept_sd[s]); 
   }
   
-  for (s in 1:(separate_prop_hazard ? n_trials : 1)) {
+  if (add_trial_level_baseline_hazard) {
+    lprior += normal_lpdf(log_crcr_lambda_gp_trial_alpha | 0, log_crcr_lambda_gp_trial_alpha_sd) +
+      inv_gamma_lpdf(log_crcr_lambda_gp_trial_rho | log_crcr_lambda_gp_rho_alpha[1], log_crcr_lambda_gp_rho_beta[1]) +
+      normal_lpdf(log_crcr_lambda_gp_trial_intercept_sd | 0, log_crcr_lambda_gp_trial_intercept_sd_sd);
+  }
+  
+  for (s in 1:n_prop_separate_trials) {
     for (k in 1:n_causes) {
       lprior += normal_lpdf(crcr_tumor_stim_pop_coef[s, , k] | 0, crcr_tumor_stim_pop_coef_sd[s]) + 
         normal_lpdf(crcr_covar_effect[s, , k] | crcr_covar_effect_mean[s], crcr_covar_effect_sd[s]);
     }
   }
   
-  if (add_trial_level_baseline_hazard) {
-    lprior += normal_lpdf(log_crcr_lambda_gp_trial_alpha | 0, log_crcr_lambda_gp_trial_alpha_sd) +
-      inv_gamma_lpdf(log_crcr_lambda_gp_trial_rho | log_crcr_lambda_gp_rho_alpha, log_crcr_lambda_gp_rho_beta) +
-      normal_lpdf(log_crcr_lambda_gp_trial_intercept_sd | 0, log_crcr_lambda_gp_trial_intercept_sd_sd);
-  }
-  
-  if (add_trial_level_prop_hazard) {
+  if (add_trial_level_prop_hazard && !no_prop_hazard) {
     lprior += normal_lpdf(crcr_covar_trial_sd | 0, crcr_covar_trial_sd_sd) + lkj_corr_cholesky_lpdf(L_crcr_covar_trial_corr | crcr_covar_trial_corr_eta);
   }
 }

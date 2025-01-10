@@ -116,3 +116,8 @@ array[max(patient_max_t_width)] real all_measure_t; // This is for the GP "proxi
 for (t in 1:max(patient_max_t_width)) {
   all_measure_t[t] = t / 12.0; // Why 12? Our intervals are weeks not months. Doesn't matter.  
 }
+
+int n_base_separate_trials = separate_baseline_hazard ? n_trials : 1;
+int n_prop_separate_trials = (1 - no_prop_hazard) * (separate_prop_hazard ? n_trials : 1);
+
+print("n_base_separate_trials = ", n_base_separate_trials, ", n_prop_separate_trials = ", n_prop_separate_trials);

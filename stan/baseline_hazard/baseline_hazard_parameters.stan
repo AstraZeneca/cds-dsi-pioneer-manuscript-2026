@@ -1,8 +1,8 @@
 // Baseline hazard GP parameters
-vector<lower = 0>[separate_baseline_hazard ? n_trials : 1] log_lambda_gp_alpha;
-vector<lower = 0>[separate_baseline_hazard ? n_trials : 1] log_lambda_gp_rho;
-array[separate_baseline_hazard ? n_trials : 1] vector[max_all_t] log_lambda_gp_eta;
-vector[separate_baseline_hazard ? n_trials : 1] log_lambda_gp_intercept;
+vector<lower = 0>[n_base_separate_trials] log_lambda_gp_alpha;
+vector<lower = 0>[n_base_separate_trials] log_lambda_gp_rho;
+array[n_base_separate_trials] vector[max_all_t] log_lambda_gp_eta;
+vector[n_base_separate_trials] log_lambda_gp_intercept;
 
 // Trial level hierarchical effect on baseline hazard 
 real<lower = 0> log_lambda_gp_trial_alpha;
