@@ -90,18 +90,19 @@ tuple(vector, vector) calculate_marginal_dp_prob(vector cond_pf_prob, int max_al
  * @param max_all_t The number of intervals for each patient 
  * @return Vector of log marginal probabilities
  */
-vector calculate_marginal_exit_prob(vector log_cond_prob_surv, int max_all_t) {
-  vector[max_all_t] marginal_log_exit_prob;
+vector calculate_log_marginal_exit_prob(vector log_cond_prob_surv) {
+  int T = rows(log_cond_prob_surv);
+  vector[T] log_marginal_exit_prob;
 
-  for (m in 1:max_all_t) {
-    marginal_log_exit_prob[m] = log1m_exp(log_cond_prob_surv[m]);
+  for (t in 1:T) {
+    log_marginal_exit_prob[t] = log1m_exp(log_cond_prob_surv[t]);
     
-    if (m > 1) {
-      marginal_log_exit_prob[m] += sum(log_cond_prob_surv[1:(m - 1)]);
+    if (t > 1) {
+      log_marginal_exit_prob[t] += sum(log_cond_prob_surv[1:(t - 1)]);
     }
   }
   
-  return(exp(marginal_log_exit_prob));
+  return(log_marginal_exit_prob);
 }  
 
 /** Calculate the piecewise-constant proportional hazard log-likelihood. This returns the patients vector of log-likelihoods as opposed to the following
