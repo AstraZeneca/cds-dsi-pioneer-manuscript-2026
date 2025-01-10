@@ -38,6 +38,8 @@ data {
 }
 
 transformed data {
+  int no_prop_hazard = 0; // Move this to the data section if we want to be able to turn the prop hazard off
+  
   #include "../base_transformed_data.stan" 
   #include "crcr_transformed_data.stan"
   #include "../bootstrap/leave_out_trial_bootstrap_transformed_data.stan"
