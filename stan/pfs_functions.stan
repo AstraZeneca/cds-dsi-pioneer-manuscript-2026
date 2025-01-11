@@ -476,3 +476,45 @@ real calc_c_index(
   
   return calc_c_index(pfs, right_censored, risk_score);
 }
+
+matrix calc_admin_brier_score(
+  array[] int pfs, array[] int admin_right_censored_week, array[] int interval_censored, int ignore_interval_censoring, vector prob_non_response, array[] matrix log_cond_prob_surv
+) {
+  int n_patients = cols(log_cond_prob_surv[1]);
+  int T = rows(log_cond_prob_surv[1]);
+  int n_causes = size(log_cond_prob_surv);
+ 
+  if (n_causes != 2) {
+    fatal_error("Only supports two causes.");
+  }
+  
+  matrix[n_patients, T] brier_score_t = rep_matrix(0, n_patients, T);
+  
+  for (t in 1:T) {
+    real brier_scale = 0;
+    
+    for (i in 1:n_patients) {
+      if (admin_right_censored_week[i] >= t) {
+        brier_scale += 1;
+        
+        int curr_interval_censored = ignore_interval_censoring ? 0 : interval_censored[i]; 
+        real observed_event = 1.0 * min(max(0, pfs[i] + curr_interval_censored + 1 - t), curr_interval_censored + 1) / (curr_interval_censored + 1);
+        
+        brier_score_t[i, t] = square((1 - exp(log_mix( // Prob[T > t]
+          prob_non_response[i], 
+          log_sum_exp(calculate_log_marginal_exit_prob(log_cond_prob_surv[1, :t, i])), // log Prob[T <= t | non-responder] 
+          log_sum_exp(calculate_log_marginal_exit_prob(log_cond_prob_surv[2, :t, i]))  // log Prob[T <= t | responder] 
+        ))) - observed_event);
+      }
+    }
+   
+    if (brier_scale > 0) {
+      brier_score_t[t] /= brier_scale; 
+    } else { // No more patients with admin censoring after t: set the loss to zero.
+      break;
+    }
+    
+  }
+  
+  return brier_score_t;
+}
