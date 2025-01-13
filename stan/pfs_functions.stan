@@ -509,7 +509,7 @@ matrix calc_admin_brier_score(
     }
    
     if (brier_scale > 0) {
-      brier_score_t[t] /= brier_scale; 
+      brier_score_t[, t] /= brier_scale; 
     } else { // No more patients with admin censoring after t: set the loss to zero.
       break;
     }
