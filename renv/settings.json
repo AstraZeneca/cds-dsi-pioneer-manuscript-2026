@@ -1,8 +1,6 @@
 {
   "bioconductor.version": null,
-  "external.libraries": [
-    "/opt/scp/services/azcore/coreutils/0.1.0/libraries/R/4.3.1"   
-  ],
+  "external.libraries": [],
   "ignored.packages": [
     "azcore",
     "rseed"
@@ -14,7 +12,7 @@
   ],
   "ppm.enabled": null,
   "ppm.ignored.urls": [],
-  "r.version": "4.3.1",
+  "r.version": "4.3.2",
   "snapshot.type": "implicit",
   "use.cache": true,
   "vcs.ignore.cellar": true,
