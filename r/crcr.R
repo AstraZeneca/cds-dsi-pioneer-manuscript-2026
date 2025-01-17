@@ -203,3 +203,8 @@ get_crcr_covar_trial_sd <- function(res, stan_data) {
   spread_rvars(res, crcr_covar_trial_sd[m]) |> 
     name_coef_indices(m, NULL, stan_data)
 }
+
+get_orr <- function(res, analysis_data) {
+  recover_types(res, analysis_data) |> 
+    spread_rvars(rep_trial_orr[trial], forecast_trial_orr[trial], forecast_trial_subpop_orr[trial]) 
+}
