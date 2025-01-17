@@ -9,4 +9,5 @@ int n_tumor_covar; // Number of tumor size sum covariates
 int<lower = 0> n_covar; // Number of covariates other than tumor size
 
 matrix[n_patients, n_covar] covar_design_matrix; // Design matrix for covariates other than tumor size
-  
+
+array[n_patients] int<lower = 0, upper = 1> orr_pop;

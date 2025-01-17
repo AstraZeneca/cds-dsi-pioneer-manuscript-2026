@@ -190,6 +190,8 @@ prepare_confirmed_resp_stan_data <- function(
       confirmed_response_interval_censored = analysis_data$confirmed_response_interval_censored,
       confirmed_response_week = analysis_data$confirmed_response_week,
       
+      orr_pop = analysis_data$orr_pop,
+      
       extend_max_confresp_week = 1,
       extend_max_all_t = 1,
       

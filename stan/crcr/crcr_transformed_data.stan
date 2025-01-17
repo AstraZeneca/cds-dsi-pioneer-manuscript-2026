@@ -48,4 +48,27 @@ array[n_obs_confirmed_response] int<lower = 1, upper = n_patients> obs_confirmed
 array[n_missing_confirmed_response] int<lower = 1, upper = n_patients> missing_confirmed_response;
 
 (obs_confirmed_response, missing_confirmed_response) = get_mask_idx(confirmed_response_censored);
+
+array[n_trials] int<lower = 0> n_trial_orr_pop;
+array[sum(orr_pop)] int<lower = 1> trial_orr_pop;
+
+{
+  int trial_orr_pop_pos = 1;
+  
+  for (s in 1:n_trials) {
+    int patient_pos = trial_patient_pos[s];
+    int patient_end = trial_patient_pos[s + 1] - 1;
+   
+    n_trial_orr_pop[s] = sum(orr_pop[patient_pos:patient_end]);
+    
+    print("trial ", s, ": n = ", n_trial_patients[s], ", n_orr_pop = ", n_trial_orr_pop[s]);
+    
+    for (i in 1:n_trial_patients[s]) {
+      if (orr_pop[patient_pos + i - 1]) {
+        trial_orr_pop[trial_orr_pop_pos] = i;
+        trial_orr_pop_pos += 1;
+      }
+    }
+  }
+}
   

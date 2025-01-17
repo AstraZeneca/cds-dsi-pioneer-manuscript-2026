@@ -50,13 +50,23 @@ vector<lower = 0, upper = 1>[n_trials] rep_trial_orr;
 
 real<lower = 0, upper = 1> forecast_orr = mean(forecast_confirmed_response_forced);
 vector<lower = 0, upper = 1>[n_trials] forecast_trial_orr;
+vector<lower = 0, upper = 1>[n_trials] forecast_trial_subpop_orr;
 
-for (s in 1:n_trials) {
-  int patient_pos = trial_patient_pos[s];
-  int patient_end = trial_patient_pos[s + 1] - 1;
+{
+  int orr_pop_pos = 1;
   
-  rep_trial_orr[s] = mean(rep_confirmed_response_forced[patient_pos:patient_end]);
-  forecast_trial_orr[s] = mean(forecast_confirmed_response_forced[patient_pos:patient_end]);
+  for (s in 1:n_trials) {
+    int patient_pos = trial_patient_pos[s];
+    int patient_end = trial_patient_pos[s + 1] - 1;
+    
+    int orr_pop_end = orr_pop_pos + n_trial_orr_pop[s] - 1; 
+    
+    rep_trial_orr[s] = mean(rep_confirmed_response_forced[patient_pos:patient_end]);
+    forecast_trial_orr[s] = mean(forecast_confirmed_response_forced[patient_pos:patient_end]);
+    forecast_trial_subpop_orr[s] = mean(forecast_confirmed_response_forced[patient_pos:patient_end][trial_orr_pop[orr_pop_pos:orr_pop_end]]);
+    
+    orr_pop_pos = orr_pop_end + 1;
+  }
 }
 
 // Impute confirmed response status if needed 
