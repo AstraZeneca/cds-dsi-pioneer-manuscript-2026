@@ -70,14 +70,14 @@ model {
           confirmed_response_cause[training_patients], 
           early_confirmed_response_censored[training_patients], 
           crcr_ignore_interval_censoring ? zeros_int_array(n_training_patients) : confirmed_response_interval_censored[training_patients], 
-          log_crcr_cond_prob_surv[training_crcr_intervals], max_confresp_week
+          log_crcr_cond_prob_surv[training_crcr_intervals]
         );
       } else {
         target += reduce_sum(
           partial_sum_crcr_lupmf, last_unclassified_response_week, grain_size,
           confirmed_response_cause, 
           early_confirmed_response_censored, crcr_ignore_interval_censoring ? zeros_int_array(n_patients) : confirmed_response_interval_censored, 
-          log_crcr_cond_prob_surv, max_confresp_week
+          log_crcr_cond_prob_surv
         );
       }
     }

@@ -186,7 +186,7 @@ get_crcr_predict_cif <- function(res, stan_data = NULL, week_col = rep_confirmed
 }
 
 get_crcr_objective_response <- function(res, stan_data) {
-  spread_rvars(res, rep_confirmed_response_forced[i], prob_cause[i, k]) |> 
+  spread_rvars(res, rep_confirmed_response_forced[i], prob_cause[k, i]) |> 
     filter(k == 2) |> 
     bind_cols(stan_data[c("patient_trial", "patient", "objective_response", "confirmed_response", "confirmed_response_censored")]) |> 
     rename(trial = patient_trial)
