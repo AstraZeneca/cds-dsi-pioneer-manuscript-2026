@@ -18,10 +18,12 @@ array[sum(n_patient_tumors)] int<lower = 1, upper = n_tumor_locations> tumor_loc
 // The periods of each measurement per tumor. 
 // [..., (t_{i,j,1}, ..., t_{i,j,n_measures_{i,j}}}), ... ]
 array[sum(n_measures)] int t_measure; // t <= 0 are screening (baseline) assessments (measurements)
+array[sum(n_measures)] int t_day_measure; // t <= 0 are screening (baseline) assessments (measurements)
 
 // [..., ((tumor_size_{i,1,1}, ..., tumor_size_{i, 1, n_measures_i}), ..., (..., tumor_size_{i,j,t},...), ...), ...  ] 
 vector<lower = 0>[sum(n_measures)] tumor_size; // cm 
 
-array[n_patients] int<lower = 1> experiment_start_week; // Week 1 is the first week of the experiment
+array[n_patients] int<lower = 1> calendar_week; // Week 1 is the first week of the experiment (week when treatment started)
+array[n_patients] int<lower = 1> calendar_day; // Day 1 is the first day of the experiment (day when treatment started)
 
 int<lower = 1> extend_max_all_t;

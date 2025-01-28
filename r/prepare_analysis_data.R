@@ -60,6 +60,7 @@ prepare_tumor_stan_data <- function(analysis_data) {
     n_patient_tumors = analysis_data$n_tumors,
     n_measures = analysis_data$n_measures |> unlist(),
     t_measure = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$week) |> unlist(),
+    t_day_measure = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$day) |> unlist(),
     tumor_size = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$mmdiam / 10) |> unlist(),
   )
 }
@@ -68,7 +69,7 @@ base_prepare_pfs_stan_data <- function(analysis_data, ..., pfs_var = pfs) {
   tumor_stan_data <- prepare_tumor_stan_data(analysis_data)
   pfs_data <- select(
       analysis_data, 
-      pfs = {{ pfs_var }}, death_week, experiment_start_week, right_censored, admin_right_censored_week, interval_censored, patient = usubjid
+      pfs = {{ pfs_var }}, death_week, calendar_week, calendar_day, right_censored, admin_right_censored_week, interval_censored, patient = usubjid
     ) |> 
     mutate(
       death_week = if_else(right_censored, 0, death_week), # Death week is irrelevant if the data is censored
@@ -210,8 +211,8 @@ prepare_confirmed_resp_km <- function(stan_data) {
       )) |> transmute(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event)),
       
       conf_resp_km_calendar = list(broom::tidy(survfit2(
-        Surv(confirmed_response_week + experiment_start_week - 1, 1 - confirmed_response_censored) ~ 1, 
-        data = as_tibble(stan_data[c("confirmed_response_week", "experiment_start_week", "confirmed_response_censored")])
+        Surv(confirmed_response_week + calendar_week - 1, 1 - confirmed_response_censored) ~ 1, 
+        data = as_tibble(stan_data[c("confirmed_response_week", "calendar_week", "confirmed_response_censored")])
       )) |> transmute(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event)),
     )
 }
