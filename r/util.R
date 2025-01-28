@@ -1,3 +1,11 @@
+sample_and_save <- function(model, ..., output_dir, output_basename) {
+  fit <- model$sample(...)
+  fit$save_output_files(dir = output_dir, basename = output_basename, random = FALSE)
+  fit$save_profile_files(dir = output_dir, basename = output_basename, random = FALSE)
+  
+  return(fit)
+}
+
 #' Convert Kaplan-Meier estimates to a tibble (data frame) format 
 #'
 #' @param trt_data Analysis data 
