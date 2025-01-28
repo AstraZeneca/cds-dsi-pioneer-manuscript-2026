@@ -56,7 +56,7 @@ profile("leave-one-trial-out bootstrap") {
       
       (bs_sample_idx, bs_start_calendar_week, cr_mature_sorted_idx, bs_cr_mature_calendar_week, pfs_mature_sorted_idx, bs_pfs_mature_calendar_week) = 
         get_bootstrap_sample_rng(
-          n_bootstrap_sample, leave_out_trial, trial_patient_pos, sorted_experiment_start_week, confirmed_response_week, pfs, right_censored
+          n_bootstrap_sample, leave_out_trial, trial_patient_pos, sorted_calendar_week, confirmed_response_week, pfs, right_censored
         );
       
       (n_bs_sample_cr_classified, n_bs_sample_cr_unclassified, bs_cr_prediction_calendar_week, 

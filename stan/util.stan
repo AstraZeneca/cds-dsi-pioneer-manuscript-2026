@@ -66,6 +66,13 @@ vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, real d
   return intercept + L_K * eta;
 }  
 
+row_vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, real delta, row_vector eta) {
+  int n_x = size(x);
+  matrix[n_x, n_x] L_K = calc_gp_cholesky_vcov(x, alpha, rho, delta); 
+  
+  return intercept + eta * L_K;
+}  
+
 /** This is the calculation needed to extrapolate a GP that is fit using observed y and x. We are predicting for x*.
  * For details, see Rasmussen' and Williams' "Gaussian Processes for Machine Learning".
  *
@@ -237,4 +244,8 @@ array[] int rep_each(array[] int to_repeat, int repeats) {
 
 real months_to_weeks(int mon) {
   return mon * 365.25 / (7 * 12);
+}
+
+int calendar_date_to_study_date(int first_calendar_date, int calendar_date) {
+  return calendar_date - first_calendar_date + 1;
 }

@@ -6,26 +6,33 @@ for (i in 1:n_patients) {
 
 print("n_trial_patients = ", n_trial_patients);
 
-array[n_trials + 1] int<lower = 0, upper = n_patients + 1> trial_patient_pos;
+array[n_trials + 1] int<lower = 1, upper = n_patients + 1> trial_patient_pos;
 trial_patient_pos[1] = 1;
 
 for (s in 1:n_trials) {
   trial_patient_pos[s + 1] = sum(n_trial_patients[:s]) + 1; 
 } 
 
-array[n_patients] int<lower = 1> sorted_experiment_start_week; // = sort_asc(experiment_start_week);
+// Positions of the first n_measure per patient
+array[n_patients + 1] int<lower = 1, upper = sum(n_patient_tumors) + 1> patient_tumor_pos;
+patient_tumor_pos[1] = 1;
 
-for (s in 1:n_trials) {
-  int patient_pos = trial_patient_pos[s];
-  int patient_end = trial_patient_pos[s + 1] - 1;
-  
-  sorted_experiment_start_week[patient_pos:patient_end] = sort_asc(experiment_start_week[patient_pos:patient_end]);
+for (i in 1:n_patients) {
+  patient_tumor_pos[i + 1] = sum(n_patient_tumors[:i]) + 1; 
+} 
+
+// Positions of the first t_measure or tumor size per patient
+array[n_patients + 1] int<lower = 1, upper = sum(n_measures) + 1> patient_tumor_measure_pos;
+patient_tumor_measure_pos[1] = 1;
+
+for (i in 1:n_patients) {
+  patient_tumor_measure_pos[i + 1] = sum(n_measures[:patient_tumor_pos[i]]) + 1; 
 } 
 
 real delta = 1e-9; // Used for GP modeling
 
 int min_all_t = min(t_measure);
-int<lower = min_all_t> max_all_t = max(max(t_measure), extend_max_all_t);
+int<lower = min_all_t> max_all_t = max(max(t_measure) + 1, extend_max_all_t);
 array[sum(n_measures)] int<lower = 1> patient_t_measure_idx; // The index of each t relative to the first t per patient
 array[n_patients] int<lower = 0> patient_max_t_width; // The number of intervals from the first to the last measurement per patient
 
