@@ -166,9 +166,9 @@ plot_gng <- function(res_data, outcome, lrv_tv, model_type_names) {
     theme(strip.placement = "outside", strip.text.y.left = element_text(angle = 0))
 }
 
-plot_simple_gng <- function(res_data, outcome, color_col, lrv_tv, model_type_names, outcome_desc = "", decision_prob = c(0.2, 0.9)) {
+plot_simple_gng <- function(res_data, outcome, color_col, lrv_tv, model_type_names, y_col = model_type, outcome_desc = "", decision_prob = c(0.2, 0.9)) {
   res_data |> 
-    ggplot(aes(y = model_type)) +
+    ggplot(aes(y = {{ y_col }})) +
     stat_interval(
       aes(xdist = {{ outcome }}, color = {{ color_col }}, color_ramp = after_stat(level)), 
       position = "dodge", .width = c(0.6, 0.8)
