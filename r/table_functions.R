@@ -60,7 +60,7 @@ get_mpfs_table_data <- function(res_data, lrv, tv) {
   res_data |> 
     filter(fct_match(fit_type, "posterior"), fct_match(trial, "lung")) |> 
     mutate(
-      across(ends_with("median_pfs"), \(x) x * 7 * 12 / 365.25),
+      across(ends_with("median_pfs"), weeks_to_months),
       p_lrv = Pr(forecast_trial_median_pfs > lrv), 
       p_tv = Pr(forecast_trial_median_pfs > tv)
     ) |> 
@@ -83,7 +83,7 @@ get_pfs6_table_data <- function(res_data, lrv, tv) {
 get_orr_table_data <- function(res_data, lrv, tv) {
   res_data |> 
     filter(fct_match(fit_type, "posterior"), fct_match(trial, "lung")) |> 
-    mutate(p_lrv = Pr(forecast_trial_orr > lrv), p_tv = Pr(forecast_trial_orr > tv)) |> 
+    mutate(p_lrv = Pr(forecast_trial_subpop_orr > lrv), p_tv = Pr(forecast_trial_subpop_orr > tv)) |> 
     point_interval(forecast_trial_orr, .width = 0.8) |> 
     select(model_type, .lower, post_median = forecast_trial_orr, .upper, p_lrv, p_tv)
 }
