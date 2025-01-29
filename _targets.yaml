@@ -6,7 +6,7 @@ main:
 
 endometrial_to_lung:
   script: endometrial_to_lung_targets.R
- store: !expr file.path(output_path, "_targets/endometrial_to_lung")
+  store: !expr file.path(output_path, "_targets/endometrial_to_lung")
   as_job: yes
 endometrial_to_lung_dco2:
   inherits: endometrial_to_lung
