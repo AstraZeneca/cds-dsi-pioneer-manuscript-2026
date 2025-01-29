@@ -83,6 +83,16 @@
       ],
       "Hash": "6b868847b365672d6c1677b1608da9ed"
     },
+    "RcppParallel": {
+      "Package": "RcppParallel",
+      "Version": "5.1.10",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R"
+      ],
+      "Hash": "34ee3ba92c1b2df651980325523ed22a"
+    },
     "V8": {
       "Package": "V8",
       "Version": "6.0.0",
@@ -1561,6 +1571,19 @@
       ],
       "Hash": "1cba04a4e9414bdefc9dcaa99649a8dc"
     },
+    "qs2": {
+      "Package": "qs2",
+      "Version": "0.1.4",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R",
+        "Rcpp",
+        "RcppParallel",
+        "stringfish"
+      ],
+      "Hash": "0b821571b2f7af824b0bd45e09592dc2"
+    },
     "quadprog": {
       "Package": "quadprog",
       "Version": "1.5-8",
@@ -1830,6 +1853,18 @@
         "stringr"
       ],
       "Hash": "3838071b66e0c566d55cc26bd6e27bf4"
+    },
+    "stringfish": {
+      "Package": "stringfish",
+      "Version": "0.16.0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R",
+        "Rcpp",
+        "RcppParallel"
+      ],
+      "Hash": "b7eb79470319ae71d4b5ed9cd7bf7294"
     },
     "stringi": {
       "Package": "stringi",
