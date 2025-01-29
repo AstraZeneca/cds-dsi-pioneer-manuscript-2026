@@ -238,7 +238,7 @@ get_powerscaled_variables <- function(res, metadata, stan_data) {
     transmute(
       alpha, component,
       baseline_hazard_rvar = list(
-        gather_rvars(ps, log_crcr_trial_lambda[trial, t, k], log_trial_lambda[trial, t]) |> 
+        gather_rvars(ps, log_crcr_trial_lambda[k, trial, t], log_trial_lambda[trial, t]) |> 
           mutate(
             .exp_value = exp(.value),
             trial = factor(trial, labels = levels(stan_data$patient_trial)),

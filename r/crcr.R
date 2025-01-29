@@ -77,7 +77,7 @@ get_conf_resp_tumor_param <- function(res) {
 }
 
 get_all_conf_resp_lambda_trial_intercept <- function(res) {
-  spread_rvars(res, log_crcr_lambda_gp_trial_intercept[trial, k]) |> 
+  spread_rvars(res, log_crcr_lambda_gp_trial_intercept[k, trial]) |> 
     mutate(
       crcr_lambda_gp_trial_intercept = exp(log_crcr_lambda_gp_trial_intercept),
       k = factor(k, levels = 1:2, labels = c("Non-response", "Response"))
@@ -91,7 +91,7 @@ get_all_conf_resp_lambda_trial_intercept_bindist <- function(res, hb) {
 }
 
 get_all_conf_resp_lambda <- function(res, stan_data = NULL) {
-  rv <- spread_rvars(res, log_crcr_trial_lambda[trial, t, k]) |> 
+  rv <- spread_rvars(res, log_crcr_trial_lambda[k, trial, t]) |> 
     mutate(
       crcr_trial_lambda = exp(log_crcr_trial_lambda), 
       k = factor(k, levels = 1:2, labels = c("Non-response", "Response"))
@@ -124,14 +124,14 @@ get_all_confirmed_response_bindist <- function(res, stan_data, hb) {
 }
 
 get_all_rep_confirmed_trial_lambda_residual <- function(res) {
-  spread_rvars(res, log_crcr_trial_lambda_residual[trial, t, k]) |> 
+  spread_rvars(res, log_crcr_trial_lambda_residual[k, trial, t]) |> 
     mutate(crcr_trial_lambda_residual = exp(log_crcr_trial_lambda_residual)) |> 
     point_interval(log_crcr_trial_lambda_residual, crcr_trial_lambda_residual, .width = c(0.5, 0.8)) |> 
     mutate(k = factor(k, levels = 1:2, labels = c("Non-response", "Response")))
 }
 
 get_all_rep_confirmed_trial_lambda_residual_draws <- function(res, ndraws = NULL) {
-  spread_rvars(res, log_crcr_trial_lambda_residual[trial, t, k]) |> 
+  spread_rvars(res, log_crcr_trial_lambda_residual[k, trial, t]) |> 
     mutate(
       log_crcr_trial_lambda_residual = thin_draws(log_crcr_trial_lambda_residual),
       crcr_trial_lambda_residual = exp(log_crcr_trial_lambda_residual),
@@ -193,7 +193,7 @@ get_crcr_objective_response <- function(res, stan_data) {
 }
 
 get_crcr_pred_param <- function(res, stan_data) {
-  gather_rvars(res, crcr_covar_trial_coef[trial, m, k], crcr_covar_effect[trial, m, k], crcr_tumor_stim_pop_coef[trial, m, k]) |> 
+  gather_rvars(res, crcr_covar_trial_coef[k, trial, m], crcr_covar_effect[k, trial, m], crcr_tumor_stim_pop_coef[k, trial, m]) |> 
     mutate(.exp_value = exp(.value)) |> 
     name_coef_indices(m, trial, stan_data) |> 
     mutate(k = factor(k, levels = 1:2, labels = c("Non-response", "Response")))
