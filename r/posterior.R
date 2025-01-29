@@ -305,3 +305,21 @@ get_covar_trial_sd <- function(res, stan_data) {
     name_coef_indices(m, NULL, stan_data)
 }
 
+get_joint_gng_prob <- function(mpfs_res_data, pfs6_res_data, orr_res_data, mpfs_cutoffs, pfs6_cutoffs, orr_cutoffs) {
+  cutoffs <- bind_rows(mpfs = mpfs_cutoffs, pfs6 = pfs6_cutoffs, orr = orr_cutoffs, .id = "endpoint")
+
+  bind_rows(
+    mpfs = select(mpfs_res_data, model_type, fit_type, trial, endpoint_forecast_val = forecast_trial_median_pfs) |> 
+      mutate(endpoint_forecast_val = weeks_to_months(endpoint_forecast_val)),
+    pfs6 = select(pfs6_res_data, model_type, fit_type, trial, endpoint_forecast_val = forecast_trial_pfs6),
+    orr = select(orr_res_data, model_type, fit_type, trial, endpoint_forecast_val = forecast_trial_subpop_orr),
+    .id = "endpoint"
+  ) |> 
+    left_join(cutoffs, by = "endpoint") |> 
+    pivot_wider(id_cols = c(model_type, fit_type, trial), names_from = endpoint, values_from = c(lrv, tv, endpoint_forecast_val)) |> 
+    mutate(
+      p_tv = Pr(endpoint_forecast_val_mpfs > tv_mpfs & endpoint_forecast_val_pfs6 > tv_pfs6 & endpoint_forecast_val_orr > tv_orr), 
+      p_lrv = Pr(endpoint_forecast_val_mpfs > lrv_mpfs & endpoint_forecast_val_pfs6 > lrv_pfs6 & endpoint_forecast_val_orr > lrv_orr)
+    ) 
+}
+
