@@ -9,6 +9,13 @@
     ]
   },
   "Packages": {
+    "BH": {
+      "Package": "BH",
+      "Version": "1.87.0-1",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "468d9a03ba57f22ebde50060fd13ba9f"
+    },
     "DBI": {
       "Package": "DBI",
       "Version": "1.2.3",
@@ -72,6 +79,13 @@
         "R"
       ],
       "Hash": "470851b6d5d0ac559e9d01bb352b4021"
+    },
+    "RApiSerialize": {
+      "Package": "RApiSerialize",
+      "Version": "0.1.4",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "363cffb978c5b0e8042623638e984574"
     },
     "RColorBrewer": {
       "Package": "RColorBrewer",
@@ -1719,6 +1733,20 @@
       ],
       "Hash": "1cba04a4e9414bdefc9dcaa99649a8dc"
     },
+    "qs": {
+      "Package": "qs",
+      "Version": "0.27.2",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "BH",
+        "R",
+        "RApiSerialize",
+        "Rcpp",
+        "stringfish"
+      ],
+      "Hash": "54716cfa710dfa4fa63eae0244661478"
+    },
     "qs2": {
       "Package": "qs2",
       "Version": "0.1.4",
@@ -2148,6 +2176,27 @@
         "lifecycle"
       ],
       "Hash": "213b6b8ed5afbf934843e6c3b090d418"
+    },
+    "tarchetypes": {
+      "Package": "tarchetypes",
+      "Version": "0.11.0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R",
+        "dplyr",
+        "fs",
+        "parallel",
+        "rlang",
+        "secretbase",
+        "targets",
+        "tibble",
+        "tidyselect",
+        "utils",
+        "vctrs",
+        "withr"
+      ],
+      "Hash": "cf140014f9d00f97f4bd22d961e20471"
     },
     "targets": {
       "Package": "targets",
