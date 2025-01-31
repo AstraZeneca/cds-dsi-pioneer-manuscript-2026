@@ -42,15 +42,15 @@ is_domino <- !is.na(Sys.getenv("IS_DOMINO")) && Sys.getenv("IS_DOMINO") == "true
 
 if (is_domino) {
   output_path <- "/mnt/data/analysis-results"
-  # output_path <- "/mnt/artifacts"
-  # output_path <- "/domino/datasets/local/analysis-output"
   logs_path <- "/mnt/artifacts"
   data_path <- "/mnt/data/endometrial-to-lung"
+  fit_output_timestamp <- FALSE
 } else {
   user <- Sys.info()["user"]
   output_path <- file.path("/scratch", user, "pioneer")
   logs_path <- output_path
   data_path <- "/scratch/ewfteams/dpo0160"
+  fit_output_timestamp <- TRUE 
   
   options(
     renv.config.external.library = "/opt/scp/services/azcore/coreutils/0.1.0/libraries/R/4.3.1",
