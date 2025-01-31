@@ -1,71 +1,49 @@
 functions {
   #include "functions.stan"
  
-  tuple(array[] int, array[] int) cutoff_visits(int cutoff_calendar_week, array[] int patient_calendar_week, array[] int t_measure, array[] int patient_tumor_measure_pos) {
-    int n_patients = size(patient_calendar_week);
+  tuple(array[] int, array[] int, array[] int, array[] int, array[] int) cutoff_visits(
+    int cutoff_calendar_day, array[] int patient_calendar_day, array[] int t_measure, array[] int t_day_measure, array[] int patient_tumor_measure_pos
+  ) {
+    int n_patients = size(patient_calendar_day);
     
     // 0 is the default sentinel value if last visit is negative 
     array[n_patients] int last_visit = rep_array(0, n_patients); 
-    array[n_patients] int first_testing_visit = rep_array(0, n_patients);
+    array[n_patients] int first_testing_visit_week = rep_array(0, n_patients);
+    array[n_patients] int first_testing_visit_day = rep_array(0, n_patients);
+    
+    // array[n_patients] int last_testing_visit_calendar_week;
+    array[n_patients] int last_testing_visit_calendar_day;
     
     for (i in 1:n_patients) {
       int t_measure_pos = patient_tumor_measure_pos[i]; 
       int t_measure_end = patient_tumor_measure_pos[i + 1] - 1; 
       int n_patient_measures = t_measure_end - t_measure_pos + 1;
-      int patient_cutoff_study_week = calendar_week_to_study_week(patient_calendar_week[i], cutoff_calendar_week); 
+      int patient_cutoff_study_day = calendar_date_to_study_date(patient_calendar_day[i], cutoff_calendar_day); 
       
-      array[n_patient_measures] int sorted_patient_measure_t = sort_asc(t_measure[t_measure_pos:t_measure_end]);
+      array[n_patient_measures] int patient_t_measure = t_measure[t_measure_pos:t_measure_end];
+      array[n_patient_measures] int patient_t_day_measure = t_day_measure[t_measure_pos:t_measure_end];
+      array[n_patient_measures] int patient_measure_t_sort_idx = sort_indices_asc(patient_t_day_measure);
       int t_idx = 0;
       
-      while (t_idx < n_patient_measures && sorted_patient_measure_t[t_idx + 1] <= patient_cutoff_study_week) {
+      while (t_idx < n_patient_measures && patient_t_day_measure[patient_measure_t_sort_idx[t_idx + 1]] <= patient_cutoff_study_day) {
         t_idx += 1;
       }
       
       if (t_idx > 0) {  
-        last_visit[i] = sorted_patient_measure_t[t_idx]; 
+        last_visit[i] = t_measure[t_measure_pos:t_measure_end][patient_measure_t_sort_idx[t_idx]]; 
       }
       
       if (t_idx < n_patient_measures) {
-        first_testing_visit[i] = sorted_patient_measure_t[t_idx + 1];
+        first_testing_visit_week[i] = patient_t_measure[patient_measure_t_sort_idx[t_idx + 1]];
+        first_testing_visit_day[i] = patient_t_day_measure[patient_measure_t_sort_idx[t_idx + 1]];
       }
+      
+      // last_testing_visit_calendar_week[i] = patient_calendar_day[i] + patient_t_measure[patient_measure_t_sort_idx[n_patient_measures]];
+      last_testing_visit_calendar_day[i] = patient_calendar_day[i] + patient_t_day_measure[patient_measure_t_sort_idx[n_patient_measures]] - 1;
     }
     
-    return (last_visit, first_testing_visit);
+    return (last_visit, first_testing_visit_week, first_testing_visit_day, last_testing_visit_calendar_day);
   } 
-  
-  tuple(array[] int, array[] int, array[] int) identify_cutoff_training_and_testing_patients(
-     array[] int calendar_week, int cutoff_calendar_week, array[] int last_visit, int n_training_patients, 
-    int n_confresp_testing_patients, array[] int last_unclass_week, array[] int confresp_right_censored, array[] int confresp_interval_censored, 
-    int n_pfs_testing_patients, array[] int pfs, array[] int pfs_right_censored, array[] int pfs_interval_censored
-  ) {
-    int n_patients = size(calendar_week);
-    
-    array[n_training_patients] int training_patients;
-    array[n_confresp_testing_patients] int confresp_testing_patients_training_idx;
-    array[n_pfs_testing_patients] int pfs_testing_patients_training_idx;
-    
-    int training_pos = 1, pfs_testing_pos = 1, confresp_testing_pos = 1;
-    
-    for (i in 1:n_patients) {
-      if (last_visit[i] > 0) {
-        training_patients[training_pos] = i;
-        
-        if (calendar_week[i] + pfs[i] - pfs_right_censored[i] + pfs_interval_censored[i] > cutoff_calendar_week) {
-          pfs_testing_patients_training_idx[pfs_testing_pos] = training_pos;
-          pfs_testing_pos += 1;
-          
-          if (calendar_week[i] + last_unclass_week[i] - confresp_right_censored[i] + confresp_interval_censored[i] > cutoff_calendar_week) {
-            confresp_testing_patients_training_idx[confresp_testing_pos] = training_pos;
-            confresp_testing_pos += 1;
-          }
-        }
-        
-        training_pos += 1;
-      }
-    }
-    
-    return (training_patients, confresp_testing_patients_training_idx, pfs_testing_patients_training_idx);
-  }
  
   tuple(array[] int, array[] int, array[] int) cutoff_surv_data(array[] int last_visit, array[] int event_week, array[] int right_censored, array[] int interval_censored) {
     int n_patients = size(last_visit);
@@ -84,52 +62,102 @@ functions {
     
     return(new_event_week, new_right_censored, new_interval_censored);
   } 
+
+  /** Calculate the number of cuts that represent futures.
+   */
+  int calc_n_oos_log_lik(array[] int sorted_last_visit_day, int cutoff_calendar_day, int cutoff_calendar_day_increment) {
+    int n_oos_log_lik = 0;
+    int n_patients = size(sorted_last_visit_day); 
+    int n_remaining_testing_patients = n_patients; 
+    int curr_cutoff_calendar_day = cutoff_calendar_day;
+    int curr_patient_idx = 1;
+    
+    while (curr_patient_idx <= n_patients) {
+      while (curr_patient_idx <= n_patients && (sorted_last_visit_day[curr_patient_idx] <= curr_cutoff_calendar_day || sorted_last_visit_day[curr_patient_idx] <= 0)) {
+        curr_patient_idx += 1;
+      }
+      
+      if (curr_patient_idx <= n_patients) {
+        n_oos_log_lik += 1;
+      }
+      
+      curr_cutoff_calendar_day += cutoff_calendar_day_increment - 1;
+    }
+   
+    return n_oos_log_lik; 
+  }
+ 
+  /** Get the indices within the array of sorted last visit that will be used in all the LFO cuts.
+   *
+   * Each such index will indicate the first patient (in the sorted array) to be in each cut. In each future cut, the patients are a subset of the previous cut's
+   * patients.
+   */
+  array[] int get_oos_patients_idx(int n_oos_log_lik, array[] int sorted_last_visit_day, int cutoff_calendar_day, int cutoff_calendar_day_increment) {
+    array[n_oos_log_lik] int patient_idx;
+    int n_patients = size(sorted_last_visit_day); 
+    int n_remaining_testing_patients = n_patients; 
+    int curr_cutoff_calendar_day = cutoff_calendar_day;
+    int curr_patient_idx = 1;
+    int patient_idx_pos = 1;
+    
+    while (curr_patient_idx <= n_patients) {
+      // while (last_visit_day_sort_idx[curr_patient_idx] <= curr_cutoff_calendar_day && curr_patient_idx <= n_patients && n_remaining_patients > 0) {
+      while (curr_patient_idx <= n_patients && sorted_last_visit_day[curr_patient_idx] <= curr_cutoff_calendar_day) {
+        curr_patient_idx += 1;
+      }
+      
+      if (curr_patient_idx <= n_patients) {
+        patient_idx[patient_idx_pos] = curr_patient_idx;
+      }
+      
+      curr_cutoff_calendar_day += cutoff_calendar_day_increment - 1;
+    }
+    
+    return patient_idx; 
+  } 
 }
 
 data {
   #include "data.stan"
   
-  int<lower = 1, upper = max(calendar_week)> cutoff_calendar_week;
+  int<lower = 1> cutoff_calendar_day;
+  int<lower = 1> cutoff_calendar_day_increment;
 }
 
 transformed data {
   #include "transformed_data.stan"
   
-  array[n_patients] int<lower = min(t_measure), upper = max(t_measure)> cutoff_last_visit;
-  array[n_patients] int<lower = min(t_measure), upper = max(t_measure)> after_cutoff_first_visit;
+  array[n_patients] int<lower = min(t_measure), upper = max(t_measure)> cutoff_last_visit_week;
+  array[n_patients] int<lower = min(t_measure), upper = max(t_measure)> after_cutoff_first_visit_week;
+  array[n_patients] int<lower = min(t_day_measure), upper = max(t_day_measure)> after_cutoff_first_visit_day;
+  // array[n_patients] int<lower = min(t_measure), upper = max(t_measure)> after_cutoff_last_visit_week;
+  array[n_patients] int<lower = 1> after_cutoff_last_visit_calendar_day;
   
-  (cutoff_last_visit, after_cutoff_first_visit) = cutoff_visits(cutoff_calendar_week, calendar_week, t_measure, patient_tumor_measure_pos);
+  (cutoff_last_visit_week, after_cutoff_first_visit_week, after_cutoff_first_visit_day, after_cutoff_last_visit_calendar_day) = 
+    cutoff_visits(cutoff_calendar_day, calendar_day, t_measure, t_day_measure, patient_tumor_measure_pos);
   
-  int<lower = 1, upper = n_patients> n_pfs_testing_patients = 0;
-  int<lower = 0, upper = n_pfs_testing_patients> n_confresp_testing_patients = 0;
-  int<lower = n_pfs_testing_patients, upper = n_patients> n_training_patients = 0;
+  int<lower = 0, upper = n_patients> n_training_patients = 0;
   
   for (i in 1:n_patients) {
-    if (cutoff_last_visit[i] > 0) {
+    if (cutoff_last_visit_week[i] > 0) {
       n_training_patients += 1;
-      
-      if (calendar_week[i] + pfs[i] - right_censored[i] + interval_censored[i] > cutoff_calendar_week) {
-        n_pfs_testing_patients += 1;
-        
-        if (calendar_week[i] + last_unclassified_response_week[i] - confirmed_response_censored[i] + confirmed_response_interval_censored[i] > cutoff_calendar_week) {
-          n_confresp_testing_patients += 1;
-        }
-      }
     }
   }
   
-  print("n_training_patients = ", n_training_patients, ", n_pfs_testing_patients = ", n_pfs_testing_patients, ", n_confresp_testing_patients = ", n_confresp_testing_patients);
+  print("n_training_patients = ", n_training_patients);
   
   array[n_training_patients] int<lower = 1, upper = n_patients> training_patients;
-  array[n_confresp_testing_patients] int<lower = 1, upper = n_training_patients> confresp_testing_patients_training_idx; // Index in training_patients 
-  array[n_pfs_testing_patients] int<lower = 1, upper = n_training_patients> pfs_testing_patients_training_idx; // Index in training_patients 
   
-  (training_patients, confresp_testing_patients_training_idx, pfs_testing_patients_training_idx) = 
-    identify_cutoff_training_and_testing_patients(
-      calendar_week, cutoff_calendar_week, cutoff_last_visit, n_training_patients, 
-      n_confresp_testing_patients, last_unclassified_response_week, confirmed_response_censored, confirmed_response_interval_censored,
-      n_pfs_testing_patients, pfs, right_censored, interval_censored
-    );
+  {
+    int training_pos = 1;
+    
+    for (i in 1:n_patients) {
+      if (cutoff_last_visit_week[i] > 0) {
+        training_patients[training_pos] = i;
+        training_pos += 1;
+      }
+    }
+  }
   
   array[n_training_patients] int<lower = 0> training_last_unclassified_response_week = last_unclassified_response_week[training_patients];
   array[n_training_patients] int<lower = 0, upper = 1> training_confirmed_response_censored = confirmed_response_censored[training_patients];
@@ -137,7 +165,7 @@ transformed data {
   
   (training_last_unclassified_response_week, training_confirmed_response_censored, training_confirmed_response_interval_censored) =
     cutoff_surv_data(
-      cutoff_last_visit[training_patients], training_last_unclassified_response_week, training_confirmed_response_censored, training_confirmed_response_interval_censored
+      cutoff_last_visit_week[training_patients], training_last_unclassified_response_week, training_confirmed_response_censored, training_confirmed_response_interval_censored
     ); 
     
   array[n_training_patients] int<lower = 0> training_pfs = pfs[training_patients]; // How many periods after baseline did patient survive.
@@ -145,7 +173,16 @@ transformed data {
   array[n_training_patients] int<lower = 0> training_interval_censored = interval_censored[training_patients];
 
   (training_pfs, training_right_censored, training_interval_censored) =
-    cutoff_surv_data(cutoff_last_visit[training_patients], training_pfs, training_right_censored, training_interval_censored);
+    cutoff_surv_data(cutoff_last_visit_week[training_patients], training_pfs, training_right_censored, training_interval_censored);
+    
+    
+  array[n_patients] int<lower = 1, upper = n_patients> after_cutoff_last_visit_calendar_day_sort_idx = sort_indices_asc(after_cutoff_last_visit_calendar_day);
+    
+  int<lower = 0> n_oos_log_lik = 
+    calc_n_oos_log_lik(after_cutoff_last_visit_calendar_day[after_cutoff_last_visit_calendar_day_sort_idx], cutoff_calendar_day, cutoff_calendar_day_increment);
+  
+  array[n_oos_log_lik] int<lower = 1, upper = n_patients> n_pfs_testing_patients = 
+    get_oos_patients_idx(n_oos_log_lik, after_cutoff_last_visit_calendar_day[after_cutoff_last_visit_calendar_day_sort_idx], cutoff_calendar_day, cutoff_calendar_day_increment);
 }
 
 parameters {
@@ -198,6 +235,11 @@ model {
 }
 
 generated quantities {
+ 
+   
+  // vector<upper = 1>[n_pfs_testing_patients] oos_log_lik = zeros_vector(n_pfs_testing_patients);
+  
+  /*
   vector<upper = 1>[n_pfs_testing_patients] oos_log_lik = zeros_vector(n_pfs_testing_patients);
   
   {
@@ -238,4 +280,5 @@ generated quantities {
     
     oos_log_lik = temp_log_lik[pfs_testing_patients_training_idx];
   }
+  */
 }
