@@ -66,7 +66,7 @@ get_conf_resp_covar_param <- function(res) {
   res |> 
     select(trial, fit) |> 
     deframe() |>
-    map_dfr(\(f) spread_rvars(f, crcr_covar_effect[covar, k]), .id = "trial") 
+    map_dfr(\(f) spread_rvars(f, crcr_covar_effect[k, covar]), .id = "trial") 
 }
 
 get_conf_resp_tumor_param <- function(res) {
