@@ -249,3 +249,40 @@ real months_to_weeks(int mon) {
 int calendar_date_to_study_date(int first_calendar_date, int calendar_date) {
   return calendar_date - first_calendar_date + 1;
 }
+
+array[] int calendar_date_to_study_date(array[] int first_calendar_date, array[] int calendar_date) {
+  int n = size(first_calendar_date);
+  array[n] int study_date;
+  
+  for (i in 1:n) {
+    study_date[i] = calendar_date_to_study_date(first_calendar_date[i], calendar_date[i]);
+  }
+  
+  return study_date;
+}
+
+array[] int calendar_date_to_study_date(array[] int first_calendar_date, int calendar_date) {
+  int n = size(first_calendar_date);
+  array[n] int study_date;
+  
+  for (i in 1:n) {
+    study_date[i] = calendar_date_to_study_date(first_calendar_date[i], calendar_date);
+  }
+  
+  return study_date;
+}
+
+int study_date_to_calendar_date(int first_calendar_date, int study_date) {
+  return first_calendar_date + study_date - 1;
+}
+
+array[] int study_date_to_calendar_date(array[] int first_calendar_date, array[] int study_date) {
+  int n = size(first_calendar_date);
+  array[n] int calendar_date;
+  
+  for (i in 1:n) {
+    calendar_date[i] = study_date_to_calendar_date(first_calendar_date[i], study_date[i]);
+  }
+  
+  return calendar_date;
+}
