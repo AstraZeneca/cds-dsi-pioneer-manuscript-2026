@@ -29,6 +29,7 @@ calc_confirmed_response <- function(response) {
       ), 
       # "confirmed response" needs two consecutive CR/PR so we need to lag by 1
       confirmed_response_week = if_else(confirmed_response, lag(week, default = NA), week),
+      confirmed_response_day = if_else(confirmed_response, lag(day, default = NA), day),
       confirmed_response_interval_censored = # Here lag by 2 
         confirmed_response_week - (if_else(confirmed_response, lag(week, n = 2L, default = 0), lag(week, default = 0)) + 1)
     ) 
@@ -41,6 +42,7 @@ calc_confirmed_response <- function(response) {
     confirmed_response = if (nrow(first_conf_week) > 0) pull(first_conf_week, confirmed_response) else NA,
     confirmed_response_censored = is.na(confirmed_response),
     confirmed_response_interval_censored = if (confirmed_response_censored) 0 else pull(first_conf_week, confirmed_response_interval_censored), 
+    confirmed_response_day = if (confirmed_response_censored) max(response$day, na.rm = TRUE) else pull(first_conf_week, confirmed_response_day),
     confirmed_response_week = if (confirmed_response_censored) max(response$week, na.rm = TRUE) else pull(first_conf_week, confirmed_response_week)
   )
 }
@@ -189,6 +191,7 @@ prepare_confirmed_resp_stan_data <- function(
       confirmed_response = coalesce(analysis_data$confirmed_response, FALSE),
       confirmed_response_censored = analysis_data$confirmed_response_censored,
       confirmed_response_interval_censored = analysis_data$confirmed_response_interval_censored,
+      confirmed_response_day = analysis_data$confirmed_response_day,
       confirmed_response_week = analysis_data$confirmed_response_week,
       
       orr_pop = analysis_data$orr_pop,
