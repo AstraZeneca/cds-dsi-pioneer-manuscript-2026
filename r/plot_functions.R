@@ -186,3 +186,27 @@ plot_simple_gng <- function(res_data, outcome, color_col, lrv_tv, model_type_nam
     scale_color_ramp_discrete(name = "Credible Intervals", range = c(0.25, 0.5)) +
     NULL
 }
+
+plot_patient_timelines <- function(analysis_data) {
+  analysis_data |> 
+    unnest(patient_tumors) |>
+    unnest(tumor_history, names_sep = "_") |> 
+    distinct(usubjid, trtsdt, right_censored, day = tumor_history_day, visit_date = tumor_history_adt) |> 
+    nest(visits = c(day, visit_date)) |> 
+    mutate(map_dfr(visits, \(v) summarize(v, first_visit = min(visit_date), last_visit = max(visit_date)))) |> 
+    mutate(usubjid = fct_reorder(usubjid, first_visit)) |> 
+    ggplot(aes(y = usubjid)) +
+    geom_segment(aes(x = first_visit, xend = last_visit, yend = usubjid)) +
+    geom_point(aes(x = visit_date, shape = "visit"), size = 2, data = \(d) unnest(d, visits) |> filter(visit_date < last_visit)) +
+    geom_point(aes(x = trtsdt, shape = "treat"), size = 2) +
+    geom_point(aes(x = last_visit, color = right_censored, shape = "last"), size = 2) +
+    geom_vline(xintercept = c(lubridate::ymd("2024-06-30"), lubridate::ymd("2024-10-31")), linetype = "dashed", color = AZ_platinum) +
+    annotate("text", x = lubridate::ymd("2024-6-30") - days(40), y = 2, label = "DCO 1") +
+    annotate("text", x = lubridate::ymd("2024-10-31") - days(40), y = 2, label = "DCO 2") +
+    labs(x = "Calendar Time", y = "Patients") +
+    scale_color_discrete("", label = c("FALSE" = "Progression", "TRUE" = "Censored"), type = AZ_palette) +
+    scale_shape_manual(
+      "", values = c("visit" = 124, "treat" = 5, "last" = 19), labels = c("visit" = "Visit", "treat" = "Treatment Start", "last" = "Last Visit")
+    ) +
+    theme(axis.text.y = element_blank(), panel.grid.major.y = element_blank(), legend.position = "inside", legend.position.inside = c(0.25, 0.8))
+}
