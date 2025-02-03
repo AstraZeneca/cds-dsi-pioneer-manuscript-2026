@@ -163,8 +163,9 @@ functions {
 data {
   #include "data.stan"
   
-  int<lower = 1> cutoff_calendar_day;
-  int<lower = 1> cutoff_calendar_day_increment;
+  int<lower = 1> n_oos_log_lik;
+  array[n_oos_log_lik] int<lower = 1> cutoff_calendar_day;
+  // int<lower = 1> cutoff_calendar_day_increment;
 }
 
 transformed data {
@@ -178,7 +179,7 @@ transformed data {
   array[n_patients] int<lower = 1> after_cutoff_last_visit_calendar_day;
   
   (cutoff_last_visit_week, after_cutoff_first_visit_week, after_cutoff_first_visit_day, after_cutoff_last_visit_calendar_day) = 
-    cutoff_visits(cutoff_calendar_day, calendar_day, t_measure, t_day_measure, patient_tumor_measure_pos);
+    cutoff_visits(cutoff_calendar_day[1], calendar_day, t_measure, t_day_measure, patient_tumor_measure_pos);
   
   int<lower = 0, upper = n_patients> n_training_patients = 0;
   
@@ -223,17 +224,17 @@ transformed data {
     
   array[n_patients] int<lower = 1, upper = n_patients> after_cutoff_last_visit_calendar_day_sort_idx = sort_indices_asc(after_cutoff_last_visit_calendar_day);
     
-  int<lower = 0> n_oos_log_lik = 
-    calc_n_oos_log_lik(after_cutoff_last_visit_calendar_day[after_cutoff_last_visit_calendar_day_sort_idx], cutoff_calendar_day, cutoff_calendar_day_increment);
+  // int<lower = 0> n_oos_log_lik = 
+  //   calc_n_oos_log_lik(after_cutoff_last_visit_calendar_day[after_cutoff_last_visit_calendar_day_sort_idx], cutoff_calendar_day, cutoff_calendar_day_increment);
     
-  array[n_oos_log_lik] int oos_cutoff_calendar_days = linspaced_int_array(n_oos_log_lik, cutoff_calendar_day, cutoff_calendar_day + cutoff_calendar_day_increment * (n_oos_log_lik - 1)); 
+  // array[n_oos_log_lik] int oos_cutoff_calendar_days = linspaced_int_array(n_oos_log_lik, cutoff_calendar_day, cutoff_calendar_day + cutoff_calendar_day_increment * (n_oos_log_lik - 1)); 
   
   array[n_oos_log_lik] int<lower = 1, upper = n_patients> pfs_testing_patient_idx = 
-    get_oos_patients_idx(after_cutoff_last_visit_calendar_day[after_cutoff_last_visit_calendar_day_sort_idx], oos_cutoff_calendar_days);
+    get_oos_patients_idx(after_cutoff_last_visit_calendar_day[after_cutoff_last_visit_calendar_day_sort_idx], cutoff_calendar_day);
     
   array[n_oos_log_lik, n_patients] int<lower = 0, upper = n_patients> oos_patient_first_testing_visit_week =
     get_first_testing_visit_week(
-      pfs_testing_patient_idx, after_cutoff_last_visit_calendar_day_sort_idx, oos_cutoff_calendar_days, calendar_day, t_measure, t_day_measure, patient_tumor_measure_pos
+      pfs_testing_patient_idx, after_cutoff_last_visit_calendar_day_sort_idx, cutoff_calendar_day, calendar_day, t_measure, t_day_measure, patient_tumor_measure_pos
     );
     
   array[n_patients] int confirmed_response_calendar_day = study_date_to_calendar_date(calendar_day, confirmed_response_day);
@@ -246,14 +247,17 @@ parameters {
 transformed parameters {
   #include "transformed_parameters.stan"
   
-  matrix[n_training_patients, n_causes] training_patient_response_lp; 
+  matrix[n_training_patients, no_prop_hazard || pfs_only ? 1 : n_causes] training_patient_response_lp; 
   
   training_patient_response_lp[, 1] = calc_pch_loglik(
     training_pfs, training_right_censored, training_interval_censored, pfs_ignore_interval_censoring, log_cond_prob_surv[1, training_patients]
   );
-  training_patient_response_lp[, 2] = calc_pch_loglik(
-    training_pfs, training_right_censored, training_interval_censored, pfs_ignore_interval_censoring, log_cond_prob_surv[2, training_patients]
-  );
+  
+  if (!(no_prop_hazard || pfs_only)) {
+    training_patient_response_lp[, 2] = calc_pch_loglik(
+      training_pfs, training_right_censored, training_interval_censored, pfs_ignore_interval_censoring, log_cond_prob_surv[2, training_patients]
+    );
+  }
 }
 
 model {
@@ -276,57 +280,68 @@ model {
     
     // PFS model
     
-    for (idx in 1:n_training_patients) {
-      int actual_patient_id = training_patients[idx];
-      
-      if (training_confirmed_response_censored[idx]) { // Unclassified
-        target += log_mix(prob_non_response[actual_patient_id], training_patient_response_lp[idx, 1], training_patient_response_lp[idx, 2]);
-      } else {
-        target += training_patient_response_lp[idx, confirmed_response_cause[actual_patient_id]];
+    if (no_prop_hazard || pfs_only) {
+      target += sum(training_patient_response_lp[, 1]);
+    } else {
+      for (idx in 1:n_training_patients) {
+        int actual_patient_id = training_patients[idx];
+        
+        if (training_confirmed_response_censored[idx]) { // Unclassified
+          target += log_mix(prob_non_response[actual_patient_id], training_patient_response_lp[idx, 1], training_patient_response_lp[idx, 2]);
+        } else {
+          target += training_patient_response_lp[idx, confirmed_response_cause[actual_patient_id]];
+        }
       }
     }
   }
 }
 
 generated quantities {
-  array[n_oos_log_lik] vector<upper = 0>[n_patients] oos_log_lik = rep_array(zeros_vector(n_patients), n_oos_log_lik);
+  array[n_oos_log_lik] vector[n_patients] oos_log_lik = rep_array(zeros_vector(n_patients), n_oos_log_lik);
   
   for (n in 1:n_oos_log_lik) {
     int n_curr_patients = n_patients - pfs_testing_patient_idx[n] + 1;
     array[n_curr_patients] int curr_patients = after_cutoff_last_visit_calendar_day_sort_idx[pfs_testing_patient_idx[n]:];  
     array[n_curr_patients] int testing_start_week = oos_patient_first_testing_visit_week[n, curr_patients];
     
-    matrix[n_curr_patients, n_causes] testing_patient_response_lp; 
+    matrix[n_curr_patients, no_prop_hazard || pfs_only ? 1 : n_causes] testing_patient_response_lp; 
     
     testing_patient_response_lp[, 1] =
       calc_pch_loglik(
         pfs[curr_patients], right_censored[curr_patients], interval_censored[curr_patients], pfs_ignore_interval_censoring, log_cond_prob_surv[1, curr_patients], testing_start_week
       );
-    testing_patient_response_lp[, 2] =
-      calc_pch_loglik(
-        pfs[curr_patients], right_censored[curr_patients], interval_censored[curr_patients], pfs_ignore_interval_censoring, log_cond_prob_surv[2, curr_patients], testing_start_week
-      );
+      
+    if (!(no_prop_hazard || pfs_only)) {
+      testing_patient_response_lp[, 2] =
+        calc_pch_loglik(
+          pfs[curr_patients], right_censored[curr_patients], interval_censored[curr_patients], pfs_ignore_interval_censoring, log_cond_prob_surv[2, curr_patients], testing_start_week
+        );
+    }
     
     array[n_curr_patients] int curr_confirmed_response_calendar_day = confirmed_response_calendar_day[curr_patients]; 
     array[n_curr_patients] int confirmed_response_calendar_day_sort_idx = sort_indices_asc(curr_confirmed_response_calendar_day);
     array[n_curr_patients] int curr_sorted_confirmed_response_calendar_day = curr_confirmed_response_calendar_day[confirmed_response_calendar_day_sort_idx];
     int found_conf_resp_from = 0;
     int conf_resp_from = 1;
-        
-    for (i_idx in 1:n_curr_patients) {
-      int i = curr_patients[i_idx];
-
-      if (confirmed_response_censored[i]) { // Unclassified
-        oos_log_lik[n, i] += log_mix(prob_non_response[i], testing_patient_response_lp[i_idx, 1], testing_patient_response_lp[i_idx, 2]);
-      } else {
-        oos_log_lik[n, i] += testing_patient_response_lp[i_idx, confirmed_response_cause[i]];
-      }
-      
-      if (!found_conf_resp_from) { 
-        if (curr_sorted_confirmed_response_calendar_day[i_idx] > oos_cutoff_calendar_days[n]) {
-          found_conf_resp_from = 1;
+    
+    if (no_prop_hazard || pfs_only) {
+      oos_log_lik[n, curr_patients] += testing_patient_response_lp[, 1];
+    } else {
+      for (i_idx in 1:n_curr_patients) {
+        int i = curr_patients[i_idx];
+  
+        if (confirmed_response_censored[i]) { // Unclassified
+          oos_log_lik[n, i] += log_mix(prob_non_response[i], testing_patient_response_lp[i_idx, 1], testing_patient_response_lp[i_idx, 2]);
         } else {
-          conf_resp_from += 1;
+          oos_log_lik[n, i] += testing_patient_response_lp[i_idx, confirmed_response_cause[i]];
+        }
+        
+        if (!found_conf_resp_from) { 
+          if (curr_sorted_confirmed_response_calendar_day[i_idx] > cutoff_calendar_day[n]) {
+            found_conf_resp_from = 1;
+          } else {
+            conf_resp_from += 1;
+          }
         }
       }
     }
