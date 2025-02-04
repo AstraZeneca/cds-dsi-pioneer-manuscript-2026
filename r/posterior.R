@@ -305,20 +305,3 @@ get_covar_trial_sd <- function(res, stan_data) {
     name_coef_indices(m, NULL, stan_data)
 }
 
-add_stacked_results <- function(res_data, stacking_weights, ...) {
-  left_join(res_data, stacking_weights, by = c("model_type", "trial")) |>  
-    mutate(weight = as.numeric(weight)) %>%
-    bind_rows(
-      filter(., !is.na(weight)) |> 
-        group_by(fit_type, trial) |> 
-        summarize(model_type = "stacked", across(c(...), \(res) stack_draws(res, weight))) 
-    )
-}
-
-get_trial_c_index <- function(res, analysis_data = NULL) {
-  if (!is_null(analysis_data)) { 
-    res <- recover_types(res, select(analysis_data, trial))
-  }
-  
-  spread_rvars(res, trial_c_index[trial])
-}

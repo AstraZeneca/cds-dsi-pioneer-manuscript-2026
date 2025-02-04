@@ -9,7 +9,9 @@ matrix exit_log_marginal_prob(matrix log_crcr_cond_prob_surv) {
   matrix[max_confresp_week, n_causes] log_marg_prob; 
   
   for (t in 1:max_confresp_week) {
-    log_marg_prob[t] = sum(log_crcr_cond_prob_surv[1:(t - 1)]) + log1m_exp(log_crcr_cond_prob_surv[t]); 
+    for (k in 1:n_causes) {
+      log_marg_prob[t, k] = sum(log_crcr_cond_prob_surv[1:(t - 1), k]) + log1m_exp(log_crcr_cond_prob_surv[t, k]); 
+    }
   }
   
   return(log_marg_prob);
@@ -28,7 +30,9 @@ array[] matrix exit_log_marginal_prob(int n_patients, matrix log_crcr_cond_prob_
   
   for (i in 1:n_patients) { 
     int patient_prob_pos = 1 + (i - 1) * max_confresp_week; 
-    log_marg_prob[i] = exit_log_marginal_prob(log_crcr_cond_prob_surv[patient_prob_pos:(patient_prob_pos + max_confresp_week - 1)]);
+    int patient_prob_end = 1 + i * max_confresp_week - 1; 
+    
+    log_marg_prob[i] = exit_log_marginal_prob(log_crcr_cond_prob_surv[patient_prob_pos:patient_prob_end]);
   }
   
   return(log_marg_prob);

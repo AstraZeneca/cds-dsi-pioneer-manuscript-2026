@@ -40,3 +40,12 @@ for (i in 1:n_patients) {
 array[n_patients] int<lower = 0, upper = 1> early_confirmed_response_censored = confirmed_response_censored;
 
 array[n_patients + 1] int<lower = 1> patient_conf_resp_interval_pos = linspaced_int_array(n_patients + 1, 1, n_patients * max_confresp_week + 1);
+
+// Indices of the observed and missing confirmed response values 
+int n_missing_confirmed_response = sum(confirmed_response_censored); 
+int n_obs_confirmed_response = n_patients - n_missing_confirmed_response; 
+array[n_obs_confirmed_response] int<lower = 1, upper = n_patients> obs_confirmed_response;
+array[n_missing_confirmed_response] int<lower = 1, upper = n_patients> missing_confirmed_response;
+
+(obs_confirmed_response, missing_confirmed_response) = get_mask_idx(confirmed_response_censored);
+  

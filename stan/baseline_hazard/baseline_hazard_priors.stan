@@ -2,7 +2,7 @@ log_lambda_gp_alpha ~ normal(0, log_lambda_gp_alpha_sd);
 log_lambda_gp_rho ~ inv_gamma(log_lambda_gp_rho_alpha, log_lambda_gp_rho_beta);
 log_lambda_gp_intercept ~ normal(log_lambda_gp_intercept_mean, log_lambda_gp_intercept_sd);
 
-for (s in 1:(separate_baseline_hazard ? n_trials : 1)) {
+for (s in 1:n_base_separate_trials) {
   log_lambda_gp_eta[s] ~ std_normal();
 }
 
