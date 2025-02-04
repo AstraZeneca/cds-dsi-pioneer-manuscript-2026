@@ -267,13 +267,15 @@ model {
 }
 
 generated quantities {
-  array[n_oos_log_lik] vector[n_patients] oos_log_lik = rep_array(zeros_vector(n_patients), n_oos_log_lik);
+  vector[n_oos_log_lik] oos_log_lik = rep_vector(0, n_oos_log_lik);
+  // array[n_oos_log_lik] vector[n_patients] oos_log_lik = rep_array(zeros_vector(n_patients), n_oos_log_lik);
   
   for (n in 1:n_oos_log_lik) {
     int n_curr_patients = n_patients - pfs_testing_patient_idx[n] + 1;
     array[n_curr_patients] int curr_patients = after_cutoff_last_visit_calendar_day_sort_idx[pfs_testing_patient_idx[n]:];  
     array[n_curr_patients] int testing_start_week = oos_patient_first_testing_visit_week[n, curr_patients];
-    
+   
+    vector[n_curr_patients] curr_log_lik = rep_vector(0, n_curr_patients); 
     matrix[n_curr_patients, no_prop_hazard || pfs_only ? 1 : n_causes] testing_patient_response_lp; 
     
     testing_patient_response_lp[, 1] =
@@ -295,15 +297,18 @@ generated quantities {
     int conf_resp_from = 1;
     
     if (no_prop_hazard || pfs_only) {
-      oos_log_lik[n, curr_patients] += testing_patient_response_lp[, 1];
+      // oos_log_lik[n, curr_patients] += testing_patient_response_lp[, 1];
+      curr_log_lik += testing_patient_response_lp[, 1];
     } else {
       for (i_idx in 1:n_curr_patients) {
         int i = curr_patients[i_idx];
   
         if (confirmed_response_censored[i]) { // Unclassified
-          oos_log_lik[n, i] += log_mix(prob_non_response[i], testing_patient_response_lp[i_idx, 1], testing_patient_response_lp[i_idx, 2]);
+          // oos_log_lik[n, i] += log_mix(prob_non_response[i], testing_patient_response_lp[i_idx, 1], testing_patient_response_lp[i_idx, 2]);
+          curr_log_lik[i_idx] += log_mix(prob_non_response[i], testing_patient_response_lp[i_idx, 1], testing_patient_response_lp[i_idx, 2]);
         } else {
-          oos_log_lik[n, i] += testing_patient_response_lp[i_idx, confirmed_response_cause[i]];
+          // oos_log_lik[n, i] += testing_patient_response_lp[i_idx, confirmed_response_cause[i]];
+          curr_log_lik[i_idx] += testing_patient_response_lp[i_idx, confirmed_response_cause[i]];
         }
         
         if (!found_conf_resp_from) { 
@@ -320,11 +325,14 @@ generated quantities {
       int n_curr_conf_resp_patients = n_curr_patients - conf_resp_from + 1;
       array[n_curr_conf_resp_patients] int curr_conf_resp_patients = curr_patients[confirmed_response_calendar_day_sort_idx[conf_resp_from:]];
 
-      oos_log_lik[n, curr_conf_resp_patients] += calc_pch_loglik(
+      // oos_log_lik[n, curr_conf_resp_patients] += calc_pch_loglik(
+      curr_log_lik[conf_resp_from:] += calc_pch_loglik(
         last_unclassified_response_week[curr_conf_resp_patients], confirmed_response_cause[curr_conf_resp_patients],
         early_confirmed_response_censored[curr_conf_resp_patients], confirmed_response_interval_censored[curr_conf_resp_patients], 0,
         log_crcr_cond_prob_surv[, curr_conf_resp_patients], testing_start_week[confirmed_response_calendar_day_sort_idx[conf_resp_from:]]
       );
     }
+    
+    oos_log_lik[n] = sum(curr_log_lik);
   }
 }
