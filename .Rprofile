@@ -1,5 +1,6 @@
-
 if (file.exists("~/.Rprofile")) source("~/.Rprofile")
+
+source("renv/activate.R")
 
 is_domino <- !is.na(Sys.getenv("IS_DOMINO")) && Sys.getenv("IS_DOMINO") == "true"
 
@@ -13,15 +14,16 @@ if (is_domino) {
   output_path <- file.path("/scratch", user, "pioneer")
   logs_path <- output_path
   data_path <- "/scratch/ewfteams/dpo0160"
-  fit_output_timestamp <- TRUE 
-  
+  fit_output_timestamp <- TRUE
+
   options(
     renv.config.external.libraries = "/opt/scp/services/azcore/coreutils/0.1.0/libraries/R/4.3.1",
     renv.config.ignored.packages = c("azcore", "rseed")
   )
+  
+  source("renv/activate.R")
 }
 
-source("renv/activate.R")
 
 library(conflicted)
 
