@@ -1,7 +1,7 @@
 // Log baseline hazard
-array[separate_baseline_hazard ? n_trials : 1] vector[max_all_t] log_lambda;
+array[n_base_separate_trials] vector[max_all_t] log_lambda;
 
-for (s in 1:(separate_baseline_hazard ? n_trials : 1)) {
+for (s in 1:n_base_separate_trials) {
   log_lambda[s] = calc_gp_pred(pfs_range, log_lambda_gp_intercept[s], log_lambda_gp_alpha[s], log_lambda_gp_rho[s], delta, log_lambda_gp_eta[s]);
 }
 
@@ -16,8 +16,7 @@ if (add_trial_level_baseline_hazard) {
   log_lambda_gp_trial_intercept = raw_log_lambda_gp_trial_intercept * log_lambda_gp_trial_intercept_sd;
   
   for (s in 1:n_trials) {
-    log_trial_lambda_residual[s] = 
-      calc_gp_pred(pfs_range, log_lambda_gp_trial_intercept[s], log_lambda_gp_trial_alpha, log_lambda_gp_trial_rho, delta, log_lambda_gp_trial_eta[s]); 
-      log_trial_lambda[s] += log_trial_lambda_residual[s];
+    log_trial_lambda_residual[s] = calc_gp_pred(pfs_range, log_lambda_gp_trial_intercept[s], log_lambda_gp_trial_alpha, log_lambda_gp_trial_rho, delta, log_lambda_gp_trial_eta[s]); 
+    log_trial_lambda[s] += log_trial_lambda_residual[s];
   }
 }

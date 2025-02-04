@@ -68,7 +68,7 @@ base_prepare_pfs_stan_data <- function(analysis_data, ..., pfs_var = pfs) {
   tumor_stan_data <- prepare_tumor_stan_data(analysis_data)
   pfs_data <- select(
       analysis_data, 
-      pfs = {{ pfs_var }}, death_week, experiment_start_week, right_censored, interval_censored, patient = usubjid
+      pfs = {{ pfs_var }}, death_week, experiment_start_week, right_censored, admin_right_censored_week, interval_censored, patient = usubjid
     ) |> 
     mutate(
       death_week = if_else(right_censored, 0, death_week), # Death week is irrelevant if the data is censored
@@ -89,6 +89,7 @@ base_prepare_pfs_stan_data <- function(analysis_data, ..., pfs_var = pfs) {
     add_tumor_location_level = FALSE,
     fit_post_2nd_meaure_only = TRUE,
     pfs_only = FALSE,
+    no_prop_hazard = FALSE,
     no_tumor_effects = FALSE,
     log_lik_trial = 0,
     

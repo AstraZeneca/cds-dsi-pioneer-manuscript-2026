@@ -1,5 +1,5 @@
-array[n_patients] matrix[max_confresp_week, n_causes] cif; // cumulative incidence function
-matrix[n_patients, n_causes] prob_cause; // Approx probability of exiting to each of the competing risks
+array[n_patients] matrix<lower = 0>[max_confresp_week, n_causes] cif; // cumulative incidence function. Couldn't add an upper constraint because in prior predict we get 1 + epsilons.
+matrix<lower = 0, upper = 1>[n_patients, n_causes] prob_cause; // Approx probability of exiting to each of the competing risks
 
 (cif, prob_cause) = calc_cif(n_patients, log_crcr_cond_prob_surv, max_confresp_week);
 
@@ -58,3 +58,8 @@ for (s in 1:n_trials) {
   rep_trial_orr[s] = mean(rep_confirmed_response_forced[patient_pos:patient_end]);
   forecast_trial_orr[s] = mean(forecast_confirmed_response_forced[patient_pos:patient_end]);
 }
+
+// Impute confirmed response status if needed 
+array[n_patients] int<lower = 0, upper = 1> sim_confirmed_response = confirmed_response;
+sim_confirmed_response[missing_confirmed_response] = bernoulli_rng(prob_cause[missing_confirmed_response, 2]); 
+ 
