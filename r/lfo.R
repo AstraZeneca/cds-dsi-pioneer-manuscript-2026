@@ -9,7 +9,7 @@ get_lfo_cutoff_days <- function(first_cutoff_date, last_date, first_cutoff_day_i
   ) 
 }
 
-lfo <- function(model, stan_data, cutoffs, basename, k_threshold = 0.7, ...) {
+lfo <- function(model, stan_data, cutoffs, basename, k_threshold = 0.7, ..., lean = TRUE) {
   refit_n <- min(cutoffs$n)
   
   psis_results <- stan_data |>
@@ -23,7 +23,13 @@ lfo <- function(model, stan_data, cutoffs, basename, k_threshold = 0.7, ...) {
       timestamp = fit_output_timestamp
     ) |> 
     lfo_log_lik() |> 
-    mutate(refit_n)
+    mutate(refit_n, n = n + refit_n - 1) |> 
+    left_join(select(cutoffs, n, cutoff_date, cutoff_calendar_day), by = "n")
+  
+  if (lean) {
+    psis_results <- psis_results |> 
+    select(n, refit_n, contains("E_log_lik"), k)
+  }
   
   next_cutoffs <- psis_results |> 
     filter(!is.na(k), k > k_threshold, n > refit_n) %>%

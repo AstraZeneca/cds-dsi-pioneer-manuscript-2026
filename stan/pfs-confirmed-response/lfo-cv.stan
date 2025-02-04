@@ -61,30 +61,6 @@ functions {
     return(new_event_week, new_right_censored, new_interval_censored);
   } 
 
-  /** Calculate the number of cuts that represent futures.
-   */
-  int calc_n_oos_log_lik(array[] int sorted_last_visit_calendar_day, int cutoff_calendar_day, int cutoff_calendar_day_increment) {
-    int n_oos_log_lik = 0;
-    int n_patients = size(sorted_last_visit_calendar_day); 
-    int n_remaining_testing_patients = n_patients; 
-    int curr_cutoff_calendar_day = cutoff_calendar_day;
-    int curr_patient_idx = 1;
-    
-    while (curr_patient_idx <= n_patients) {
-      while (curr_patient_idx <= n_patients && sorted_last_visit_calendar_day[curr_patient_idx] <= curr_cutoff_calendar_day) {
-        curr_patient_idx += 1;
-      }
-      
-      if (curr_patient_idx <= n_patients) {
-        n_oos_log_lik += 1;
-      }
-      
-      curr_cutoff_calendar_day += cutoff_calendar_day_increment;
-    }
-   
-    return n_oos_log_lik; 
-  }
- 
   /** Get the indices within the array of sorted last visit that will be used in all the LFO cuts.
    *
    * Each such index will indicate the first patient (in the sorted array) to be in each cut. In each future cut, the patients are a subset of the previous cut's
@@ -165,7 +141,6 @@ data {
   
   int<lower = 1> n_oos_log_lik;
   array[n_oos_log_lik] int<lower = 1> cutoff_calendar_day;
-  // int<lower = 1> cutoff_calendar_day_increment;
 }
 
 transformed data {
@@ -224,11 +199,6 @@ transformed data {
     
   array[n_patients] int<lower = 1, upper = n_patients> after_cutoff_last_visit_calendar_day_sort_idx = sort_indices_asc(after_cutoff_last_visit_calendar_day);
     
-  // int<lower = 0> n_oos_log_lik = 
-  //   calc_n_oos_log_lik(after_cutoff_last_visit_calendar_day[after_cutoff_last_visit_calendar_day_sort_idx], cutoff_calendar_day, cutoff_calendar_day_increment);
-    
-  // array[n_oos_log_lik] int oos_cutoff_calendar_days = linspaced_int_array(n_oos_log_lik, cutoff_calendar_day, cutoff_calendar_day + cutoff_calendar_day_increment * (n_oos_log_lik - 1)); 
-  
   array[n_oos_log_lik] int<lower = 1, upper = n_patients> pfs_testing_patient_idx = 
     get_oos_patients_idx(after_cutoff_last_visit_calendar_day[after_cutoff_last_visit_calendar_day_sort_idx], cutoff_calendar_day);
     
