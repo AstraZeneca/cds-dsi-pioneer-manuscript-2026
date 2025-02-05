@@ -22,7 +22,8 @@ create_crcr_initializer <- function(stan_data, n_causes = 2) {
   }
 }
 
-create_crcr_pfs_initializer <- function(stan_data, n_causes = 2, prop_hazard = TRUE) {
+create_crcr_pfs_initializer <- function(stan_data, n_causes = 2) {
+  prop_hazard <- !stan_data$no_prop_hazard 
   crcr_init_fun <- create_crcr_initializer(stan_data, n_causes)
   baseline_sep_trial <- if (stan_data$separate_baseline_hazard) stan_data$n_trials else 1 
   prop_sep_trial <- if (stan_data$separate_prop_hazard) stan_data$n_trials else 1 
