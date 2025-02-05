@@ -9,7 +9,7 @@ get_lfo_cutoff_days <- function(first_cutoff_date, last_date, first_cutoff_day_i
   ) 
 }
 
-lfo <- function(model, stan_data, cutoffs, basename, k_threshold = 0.7, ..., lean = TRUE) {
+lfo <- function(model, stan_data, cutoffs, basename, k_threshold = 0.7, lean = TRUE) {
   refit_n <- min(cutoffs$n)
   
   psis_results <- stan_data |>
@@ -18,7 +18,7 @@ lfo <- function(model, stan_data, cutoffs, basename, k_threshold = 0.7, ..., lea
       model,
       .,
       iter_warmup = 300, iter_sampling = 500, parallel_chains = 4, threads_per_chain = 4, adapt_delta = 0.9,
-      init = create_crcr_pfs_initializer(., ...),
+      init = create_crcr_pfs_initializer(.),
       output_dir = file.path(output_path, "fit"), output_basename = str_glue("{basename}-{refit_n}"),
       timestamp = fit_output_timestamp
     ) |> 
