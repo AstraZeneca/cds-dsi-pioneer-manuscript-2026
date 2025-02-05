@@ -9,7 +9,13 @@ get_lfo_cutoff_days <- function(first_cutoff_date, last_date, first_cutoff_day_i
   ) 
 }
 
-lfo <- function(model, stan_data, cutoffs, basename, k_threshold = 0.7, lean = TRUE) {
+lfo <- function(model, stan_data, cutoffs, basename, k_threshold = 0.7, lean = TRUE, verbose = FALSE) {
+  if (verbose) {
+    cat("Startin on:\n")
+    print(cutoffs)
+    cat("\n")
+  }
+  
   refit_n <- min(cutoffs$n)
   
   psis_results <- stan_data |>
@@ -34,6 +40,12 @@ lfo <- function(model, stan_data, cutoffs, basename, k_threshold = 0.7, lean = T
   next_cutoffs <- psis_results |> 
     filter(!is.na(k), k > k_threshold, n > refit_n) %>%
     semi_join(cutoffs, ., by = "n")
+  
+  if (verbose) {
+    cat("LFO results:\n")
+    print(psis_results)
+    cat("\n")
+  }
   
   if (nrow(next_cutoffs) > 0) {
     return(bind_rows(psis_results, lfo(model, stan_data, next_cutoffs, basename, k_threshold, ...)))
