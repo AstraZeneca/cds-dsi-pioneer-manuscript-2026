@@ -48,7 +48,7 @@ lfo <- function(model, stan_data, cutoffs, basename, k_threshold = 0.7, lean = T
   }
   
   if (nrow(next_cutoffs) > 0) {
-    return(bind_rows(psis_results, lfo(model, stan_data, next_cutoffs, basename, k_threshold, ...)))
+    return(bind_rows(psis_results, lfo(model, stan_data, next_cutoffs, basename, k_threshold)))
   } else {
     return(psis_results)
   }
