@@ -244,7 +244,7 @@ model {
         confirmed_response_cause[training_patients], 
         training_confirmed_response_censored, 
         crcr_ignore_interval_censoring ? zeros_int_array(n_training_patients) : training_confirmed_response_interval_censored, 
-        log_crcr_cond_prob_surv
+        log_crcr_cond_prob_surv[, training_patients]
       );
     }
     
