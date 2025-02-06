@@ -11,7 +11,7 @@ functions {
     array[n_patients] int first_testing_visit_week = rep_array(0, n_patients);
     array[n_patients] int first_testing_visit_day = rep_array(0, n_patients);
     
-    array[n_patients] int last_testing_visit_calendar_day;
+    array[n_patients] int last_visit_calendar_day;
     
     for (i in 1:n_patients) {
       int t_measure_pos = patient_tumor_measure_pos[i]; 
@@ -37,10 +37,10 @@ functions {
         first_testing_visit_day[i] = patient_t_day_measure[patient_measure_t_sort_idx[t_idx + 1]];
       }
       
-      last_testing_visit_calendar_day[i] = patient_calendar_day[i] + patient_t_day_measure[patient_measure_t_sort_idx[n_patient_measures]] - 1;
+      last_visit_calendar_day[i] = patient_calendar_day[i] + patient_t_day_measure[patient_measure_t_sort_idx[n_patient_measures]] - 1;
     }
     
-    return (last_visit, first_testing_visit_week, first_testing_visit_day, last_testing_visit_calendar_day);
+    return (last_visit, first_testing_visit_week, first_testing_visit_day, last_visit_calendar_day);
   } 
  
   tuple(array[] int, array[] int, array[] int) cutoff_surv_data(array[] int last_visit, array[] int event_week, array[] int right_censored, array[] int interval_censored) {
@@ -148,14 +148,14 @@ transformed data {
   
   // Training metadata 
   
-  array[n_patients] int<lower = min(t_measure), upper = max(t_measure)> cutoff_last_visit_week;
+  array[n_patients] int<lower = min(t_measure), upper = max(t_measure)> cutoff_last_visit_week; // Last visit before cutoff
   array[n_patients] int<lower = min(t_measure), upper = max(t_measure)> after_cutoff_first_visit_week;
   array[n_patients] int<lower = min(t_day_measure), upper = max(t_day_measure)> after_cutoff_first_visit_day;
-  array[n_patients] int<lower = 1> after_cutoff_last_visit_calendar_day;
+  array[n_patients] int<lower = 1> last_visit_calendar_day;
   
-  (cutoff_last_visit_week, after_cutoff_first_visit_week, after_cutoff_first_visit_day, after_cutoff_last_visit_calendar_day) = 
+  (cutoff_last_visit_week, after_cutoff_first_visit_week, after_cutoff_first_visit_day, last_visit_calendar_day) = 
     cutoff_visits(cutoff_calendar_day[1], calendar_day, t_measure, t_day_measure, patient_tumor_measure_pos);
-  
+    
   int<lower = 0, upper = n_patients> n_training_patients = 0;
   
   for (i in 1:n_patients) {
@@ -197,14 +197,14 @@ transformed data {
     
   // Testing metadata 
     
-  array[n_patients] int<lower = 1, upper = n_patients> after_cutoff_last_visit_calendar_day_sort_idx = sort_indices_asc(after_cutoff_last_visit_calendar_day);
+  array[n_patients] int<lower = 1, upper = n_patients> last_visit_calendar_day_sort_idx = sort_indices_asc(last_visit_calendar_day);
     
   array[n_oos_log_lik] int<lower = 1, upper = n_patients> pfs_testing_patient_idx = 
-    get_oos_patients_idx(after_cutoff_last_visit_calendar_day[after_cutoff_last_visit_calendar_day_sort_idx], cutoff_calendar_day);
+    get_oos_patients_idx(last_visit_calendar_day[last_visit_calendar_day_sort_idx], cutoff_calendar_day);
     
   array[n_oos_log_lik, n_patients] int<lower = 0, upper = n_patients> oos_patient_first_testing_visit_week =
     get_first_testing_visit_week(
-      pfs_testing_patient_idx, after_cutoff_last_visit_calendar_day_sort_idx, cutoff_calendar_day, calendar_day, t_measure, t_day_measure, patient_tumor_measure_pos
+      pfs_testing_patient_idx, last_visit_calendar_day_sort_idx, cutoff_calendar_day, calendar_day, t_measure, t_day_measure, patient_tumor_measure_pos
     );
     
   array[n_patients] int confirmed_response_calendar_day = study_date_to_calendar_date(calendar_day, confirmed_response_day);
@@ -272,7 +272,7 @@ generated quantities {
   
   for (n in 1:n_oos_log_lik) {
     int n_curr_patients = n_patients - pfs_testing_patient_idx[n] + 1;
-    array[n_curr_patients] int curr_patients = after_cutoff_last_visit_calendar_day_sort_idx[pfs_testing_patient_idx[n]:];  
+    array[n_curr_patients] int curr_patients = last_visit_calendar_day_sort_idx[pfs_testing_patient_idx[n]:];  
     array[n_curr_patients] int testing_start_week = oos_patient_first_testing_visit_week[n, curr_patients];
    
     vector[n_curr_patients] curr_log_lik = rep_vector(0, n_curr_patients); 
