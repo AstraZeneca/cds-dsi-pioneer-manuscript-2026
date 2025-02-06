@@ -25,8 +25,8 @@ for (i in 1:n_patients) {
 array[n_patients + 1] int<lower = 1, upper = sum(n_measures) + 1> patient_tumor_measure_pos;
 patient_tumor_measure_pos[1] = 1;
 
-for (i in 1:n_patients) {
-  patient_tumor_measure_pos[i + 1] = sum(n_measures[:patient_tumor_pos[i]]) + 1; 
+for (i in 2:(n_patients + 1)) {
+  patient_tumor_measure_pos[i] = sum(n_measures[:(patient_tumor_pos[i] - 1)]) + 1; 
 } 
 
 real delta = 1e-9; // Used for GP modeling
