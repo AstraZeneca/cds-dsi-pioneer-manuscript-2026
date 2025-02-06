@@ -123,9 +123,6 @@ real partial_sum_crcr_lpmf(
   array[] int last_unclass_week, int start, int end, 
   array[] int event_cause, array[] int right_censored, array[] int interval_censored, array[] matrix log_cond_prob_surv
 ) {
-  // int patient_interval_pos = 1 + (start - 1) * max_confresp_week; 
-  // int patient_interval_end = end * max_confresp_week; 
-  
   return pch_lpmf(last_unclass_week | event_cause[start:end], right_censored[start:end], interval_censored[start:end], 0, log_cond_prob_surv[, start:end]);
 }
 

@@ -112,7 +112,7 @@ vector calc_pch_loglik(
 {
   int n_exit_types = size(log_cond_prob_surv), n_patients = rows(log_cond_prob_surv[1]);
   vector[n_patients] lp = zeros_vector(n_patients);
- 
+  
   for (i in 1:n_patients) {
     int interval_pos = 1;
     
@@ -120,7 +120,7 @@ vector calc_pch_loglik(
       fatal_error("Interval censoring not allowed with right censored observations. Patient ", i, ".");
     }
     
-    int interval_end = interval_pos + last_surv_week[i] - 1;
+    int interval_end = last_surv_week[i];
     interval_pos += start_from[i] - 1;  
     
     for (k in 1:n_exit_types) {
