@@ -15,7 +15,7 @@ vector<lower = 0>[add_trial_level_baseline_hazard ? n_causes : 0] log_crcr_lambd
 array[n_causes] matrix[add_trial_level_baseline_hazard ? n_trials : 0, max_confresp_week] log_crcr_lambda_gp_trial_eta;
 // matrix[add_trial_level_baseline_hazard ? n_trials : 0, n_causes] raw_log_crcr_lambda_gp_trial_intercept;
 array[n_causes] vector[add_trial_level_baseline_hazard ? n_trials : 0] raw_log_crcr_lambda_gp_trial_intercept;
-vector[add_trial_level_baseline_hazard ? n_causes : 0] log_crcr_lambda_gp_trial_intercept_sd;
+vector<lower = 0>[add_trial_level_baseline_hazard ? n_causes : 0] log_crcr_lambda_gp_trial_intercept_sd;
 
 // GLM parameters
 // array[n_prop_separate_trials] matrix[n_tumor_covar, n_causes] crcr_tumor_stim_pop_coef;
