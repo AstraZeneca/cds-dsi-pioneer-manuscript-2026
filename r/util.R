@@ -1,7 +1,11 @@
-sample_and_save <- function(model, ..., output_dir, output_basename, timestamp = TRUE) {
+sample_and_save <- function(model, ..., output_dir, output_basename, timestamp = TRUE, no_save = FALSE) {
   fit <- model$sample(...)
-  fit$save_output_files(dir = output_dir, basename = output_basename, random = FALSE, timestamp = timestamp)
-  fit$save_profile_files(dir = output_dir, basename = output_basename, random = FALSE, timestamp = timestamp)
+  browser()
+  
+  if (!no_save) {
+    fit$save_output_files(dir = output_dir, basename = output_basename, random = FALSE, timestamp = timestamp)
+    fit$save_profile_files(dir = output_dir, basename = output_basename, random = FALSE, timestamp = timestamp)
+  }
   
   return(fit)
 }
