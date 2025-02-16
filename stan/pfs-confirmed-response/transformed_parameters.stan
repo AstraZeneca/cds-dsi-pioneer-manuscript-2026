@@ -8,16 +8,17 @@ array[n_causes] vector[no_prop_hazard ? 0 : n_patients] time_invariant_log_hazar
 array[add_trial_level_prop_hazard && !no_prop_hazard ? n_trials : 0] vector[n_tumor_covar + n_covar + 1] covar_trial_coef_residual; // Multilevel variations
 array[no_prop_hazard ? 0 : n_trials] vector[n_tumor_covar + n_covar + 1] covar_trial_coef;
 
-cholesky_factor_cov[add_trial_level_prop_hazard && !no_prop_hazard ? n_tumor_covar + n_covar + 1 : 1] L_covar_trial_cov;
+// cholesky_factor_cov[add_trial_level_prop_hazard && !no_prop_hazard ? n_tumor_covar + n_covar + 1 : 1] L_covar_trial_cov;
 
 if (add_trial_level_prop_hazard && !no_prop_hazard) {
-  L_covar_trial_cov = diag_pre_multiply(covar_trial_sd, L_covar_trial_corr);
+  // L_covar_trial_cov = diag_pre_multiply(covar_trial_sd, L_covar_trial_corr);
  
   for (s in 1:n_trials) { 
-    covar_trial_coef_residual[s] = L_covar_trial_cov * raw_covar_trial_coef[s];
+    // covar_trial_coef_residual[s] = L_covar_trial_cov * raw_covar_trial_coef[s];
+    covar_trial_coef_residual[s] = covar_trial_sd .* raw_covar_trial_coef[s];
   }
 } else {
-  L_covar_trial_cov[1, 1] = 1; 
+  // L_covar_trial_cov[1, 1] = 1; 
 }
 
 { // Calculate patient-interval conditional probability of disease progression.

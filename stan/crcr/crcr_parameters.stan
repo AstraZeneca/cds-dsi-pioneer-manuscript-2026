@@ -17,5 +17,5 @@ array[n_causes, n_prop_separate_trials] vector[no_prop_hazard ? 0 : n_covar] crc
 
 // GLM hierarchical parameters
 vector<lower = 0>[add_trial_level_prop_hazard && !no_prop_hazard ? n_tumor_covar + n_covar : 0] crcr_covar_trial_sd;
-cholesky_factor_corr[add_trial_level_prop_hazard && !no_prop_hazard ? n_tumor_covar + n_covar : 0] L_crcr_covar_trial_corr;
 array[n_causes, add_trial_level_prop_hazard && !no_prop_hazard ? n_trials : 0] vector[n_tumor_covar + n_covar] raw_crcr_covar_trial_coef;
+// cholesky_factor_corr[add_trial_level_prop_hazard && !no_prop_hazard ? n_tumor_covar + n_covar : 0] L_crcr_covar_trial_corr;

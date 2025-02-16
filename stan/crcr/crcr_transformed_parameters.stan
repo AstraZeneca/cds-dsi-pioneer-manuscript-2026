@@ -42,21 +42,22 @@ if (add_trial_level_baseline_hazard) {
   }
 }
 
-cholesky_factor_cov[add_trial_level_prop_hazard && !no_prop_hazard ? n_tumor_covar + n_covar : 1] L_crcr_covar_trial_cov;
-
-if (no_prop_hazard || !add_trial_level_prop_hazard) {
-  L_crcr_covar_trial_cov[1, 1] = 1; 
-}
+// cholesky_factor_cov[add_trial_level_prop_hazard && !no_prop_hazard ? n_tumor_covar + n_covar : 1] L_crcr_covar_trial_cov;
+// 
+// if (no_prop_hazard || !add_trial_level_prop_hazard) {
+//   L_crcr_covar_trial_cov[1, 1] = 1; 
+// }
 
 if (!no_prop_hazard) {
-  if (add_trial_level_prop_hazard) {
-    L_crcr_covar_trial_cov = diag_pre_multiply(crcr_covar_trial_sd, L_crcr_covar_trial_corr);
-  }
+  // if (add_trial_level_prop_hazard) {
+  //   L_crcr_covar_trial_cov = diag_pre_multiply(crcr_covar_trial_sd, L_crcr_covar_trial_corr);
+  // }
   
   for (k in 1:n_causes) {
     for (s in 1:n_trials) {
       if (add_trial_level_prop_hazard) {
-        crcr_covar_trial_coef_residual[k, s] = L_crcr_covar_trial_cov * raw_crcr_covar_trial_coef[k, s];
+        // crcr_covar_trial_coef_residual[k, s] = L_crcr_covar_trial_cov * raw_crcr_covar_trial_coef[k, s];
+        crcr_covar_trial_coef_residual[k, s] = crcr_covar_trial_sd .* raw_crcr_covar_trial_coef[k, s];
         crcr_covar_trial_coef[k, s] = append_row(crcr_tumor_stim_pop_coef[k, 1], crcr_covar_effect[k, 1]) + crcr_covar_trial_coef_residual[k, s];
       } else if (separate_prop_hazard) {
         crcr_covar_trial_coef[k, s] = append_row(crcr_tumor_stim_pop_coef[k, s], crcr_covar_effect[k, s]);
