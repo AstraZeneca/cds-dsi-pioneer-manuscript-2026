@@ -1,6 +1,5 @@
 sample_and_save <- function(model, ..., output_dir, output_basename, timestamp = TRUE, no_save = FALSE) {
   fit <- model$sample(...)
-  browser()
   
   if (!no_save) {
     fit$save_output_files(dir = output_dir, basename = output_basename, random = FALSE, timestamp = timestamp)
