@@ -29,7 +29,7 @@ if (add_trial_level_baseline_hazard) {
 
 if (add_trial_level_prop_hazard && !no_prop_hazard) {
   crcr_covar_trial_sd ~ normal(0, crcr_covar_trial_sd_sd);
-  L_crcr_covar_trial_corr ~ lkj_corr_cholesky(crcr_covar_trial_corr_eta);
+  // L_crcr_covar_trial_corr ~ lkj_corr_cholesky(crcr_covar_trial_corr_eta);
  
   for (k in 1:n_causes) { 
     for (s in 1:n_trials) {
