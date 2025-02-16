@@ -107,55 +107,58 @@ row_vector calculate_log_marginal_exit_prob(row_vector log_cond_prob_surv) {
 
 vector calc_pch_loglik(
   array[] int last_surv_week, array[] int exit_event, array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring, 
-  array[] matrix log_cond_prob_surv, array[] int start_from
-) 
-{
+  array[] matrix log_cond_prob_surv, array[] int start_from, array[] int end_at
+) {
   int n_exit_types = size(log_cond_prob_surv), n_patients = rows(log_cond_prob_surv[1]);
   vector[n_patients] lp = zeros_vector(n_patients);
   
   for (i in 1:n_patients) {
-    int interval_pos = 1;
+    int interval_pos = start_from[i];
+    int interval_end = min(end_at[i], last_surv_week[i]);
+    int effective_right_censored = right_censored[i] || interval_end < last_surv_week[i] + (1 - ignore_interval_censoring) * interval_censored[i];
     
-    if (right_censored[i] && interval_censored[i] > 0) {
-      fatal_error("Interval censoring not allowed with right censored observations. Patient ", i, ".");
-    }
-    
-    int interval_end = last_surv_week[i];
-    interval_pos += start_from[i] - 1;  
-    
-    for (k in 1:n_exit_types) {
-      lp[i] += sum(log_cond_prob_surv[k, i, interval_pos:interval_end]); // loglik for the known survival part
-    }
-    
-    int curr_interval_censored = ignore_interval_censoring ? 0 : interval_censored[i];
-    // For IC, I need to create a mixture of all the possible true intervals of exit.
-    vector[curr_interval_censored + 1] ic_mix_lp = zeros_vector(curr_interval_censored + 1); // rep_vector(reuse_lp, curr_interval_censored + 1);
-    
-    for (c in 0:curr_interval_censored) {
-      if (interval_end + 1 > num_elements(log_cond_prob_surv[1, i])) {
-        fatal_error(i, ": last_surv_week[i] = ", last_surv_week[i], ", right_censored[i] = ", right_censored[i], ", interval_pos = ", interval_pos, ", interval_end = ", interval_end, ", c = ", c);
+    if (interval_pos <= interval_end) {
+      if (right_censored[i] && interval_censored[i] > 0) {
+        fatal_error("Interval censoring not allowed with right censored observations. Patient ", i, ".");
       }
-     
-      if (c > 0) { 
-        for (k in 1:n_exit_types) {
-          ic_mix_lp[c + 1] += sum(log_cond_prob_surv[k, i, (interval_end + 1):(interval_end + c)]);
+      
+      for (k in 1:n_exit_types) {
+        lp[i] += sum(log_cond_prob_surv[k, i, interval_pos:interval_end]); // loglik for the known survival part
+      }
+      
+      int curr_interval_censored = ignore_interval_censoring || effective_right_censored ? 0 : interval_censored[i];
+      // For IC, I need to create a mixture of all the possible true intervals of exit.
+      vector[curr_interval_censored + 1] ic_mix_lp = zeros_vector(curr_interval_censored + 1); 
+      
+      for (c in 0:curr_interval_censored) {
+        if (c > 0) { 
+          for (k in 1:n_exit_types) {
+            ic_mix_lp[c + 1] += sum(log_cond_prob_surv[k, i, (interval_end + 1):(interval_end + c)]);
+          }
+        }
+       
+        if (!effective_right_censored) { 
+          ic_mix_lp[c + 1] += log1m_exp(log_cond_prob_surv[exit_event[i], i, interval_end + c + 1]);
         }
       }
-     
-      if (!right_censored[i]) { 
-        ic_mix_lp[c + 1] += log1m_exp(log_cond_prob_surv[exit_event[i], i, interval_end + c + 1]);
-      }
-    }
-   
-    if (curr_interval_censored > 0) { 
-      lp[i] += log_sum_exp(ic_mix_lp) - log(curr_interval_censored + 1); 
-    } else {
-      lp[i] += ic_mix_lp[1] - log(1); 
+      
+      lp[i] += curr_interval_censored > 0 ? log_sum_exp(ic_mix_lp) - log(curr_interval_censored + 1) : ic_mix_lp[1]; 
     }
   }
   
   return lp;
 }
+
+vector calc_pch_loglik(
+  array[] int last_surv_week, array[] int exit_event, array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring, 
+  array[] matrix log_cond_prob_surv, array[] int start_from
+) {
+  int max_all_t = cols(log_cond_prob_surv[1]);
+  
+  return calc_pch_loglik(
+    last_surv_week, exit_event, right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_surv, start_from, rep_array(max_all_t, size(start_from))
+  );
+} 
 
 vector calc_pch_loglik(
   array[] int last_surv_week, array[] int exit_event, array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring, array[] matrix log_cond_prob_surv
@@ -177,6 +180,15 @@ vector calc_pch_loglik(
   int n_patients = size(last_surv_week);
   
   return calc_pch_loglik(last_surv_week, ones_int_array(n_patients), right_censored, interval_censored, ignore_interval_censoring, { log_cond_prob_surv }, start_from);
+}
+
+vector calc_pch_loglik(
+  array[] int last_surv_week, array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring, matrix log_cond_prob_surv, 
+  array[] int start_from, array[] int end_at
+) {
+  int n_patients = size(last_surv_week);
+  
+  return calc_pch_loglik(last_surv_week, ones_int_array(n_patients), right_censored, interval_censored, ignore_interval_censoring, { log_cond_prob_surv }, start_from, end_at);
 }
 
 /** Calculate the piecewise-constant proportional hazard log-likelihood. This returns the patients vector of log-likelihoods as opposed to the following
@@ -232,16 +244,24 @@ real pch_lpmf(
 
 real pch_lpmf(
   array[] int y, 
-  array[] int right_censored, array[] int exit_event, array[] int interval_censored, int ignore_interval_censoring, array[] matrix log_cond_prob_progress, array[] int start_from
+  array[] int exit_event, array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring, array[] matrix log_cond_prob_progress, 
+  array[] int start_from, array[] int end_at
+) {
+  return sum(calc_pch_loglik(y, exit_event, right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_progress, start_from, end_at));
+}
+
+real pch_lpmf(
+  array[] int y, 
+  array[] int exit_event, array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring, array[] matrix log_cond_prob_progress, array[] int start_from
 ) {
   return sum(calc_pch_loglik(y, exit_event, right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_progress, start_from));
 }
 
 real pch_lpmf(
   array[] int y, 
-  array[] int right_censored, array[] int exit_event, array[] int interval_censored, int ignore_interval_censoring, array[] matrix log_cond_prob_progress
+  array[] int exit_event, array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring, array[] matrix log_cond_prob_progress
 ) {
-  return sum(calc_pch_loglik(y, right_censored, exit_event, interval_censored, ignore_interval_censoring, log_cond_prob_progress, ones_int_array(size(y))));
+  return sum(calc_pch_loglik(y, exit_event, right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_progress, ones_int_array(size(y))));
 }
 
 /** Calculate patient-interval conditional probability of disease progression.
