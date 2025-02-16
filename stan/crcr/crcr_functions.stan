@@ -1,38 +1,35 @@
-/** Calculate the marginal probability of exit/event at every interval, separately for each competing risk. 
- *
- * @param log_crcr_cond_prob_surv The matrix of log conditional probabilities of survival
- * @return Matrix of log marginal probabilities
- */
-array[] row_vector exit_log_marginal_prob(array[] row_vector log_crcr_cond_prob_surv) {
-  int n_causes = size(log_crcr_cond_prob_surv), max_confresp_week = cols(log_crcr_cond_prob_surv[1]);
+array[] matrix exit_log_marginal_prob(array[] matrix log_crcr_cond_prob_surv) {
+  int n_causes = size(log_crcr_cond_prob_surv);
+  int n_patients = rows(log_crcr_cond_prob_surv[1]);
+  int max_confresp_week = cols(log_crcr_cond_prob_surv[1]);
   
-  array[n_causes] row_vector[max_confresp_week] log_marg_prob; 
+  array[n_causes] matrix[n_patients, max_confresp_week] log_marg_prob;
   
-  for (k in 1:n_causes) {
+  for (i in 1:n_patients) {
+    vector[max_confresp_week] log_surv = zeros_vector(max_confresp_week);
+    
+    // Calculate overall survival probability
     for (t in 1:max_confresp_week) {
-      log_marg_prob[k, t] = sum(log_crcr_cond_prob_surv[k, 1:(t - 1)]) + log1m_exp(log_crcr_cond_prob_surv[k, t]); 
+      log_surv[t] = sum(log_crcr_cond_prob_surv[, i, t]);
+     
+      if (t > 1) { 
+        log_surv[t] += log_surv[t-1];
+      }
+    }
+   
+    // Calculate marginal probability for each cause
+    for (k in 1:n_causes) {
+      for (t in 1:max_confresp_week) {
+        log_marg_prob[k, i, t] = log1m_exp(log_crcr_cond_prob_surv[k, i, t]);
+        
+        if (t > 1) { 
+          log_marg_prob[k, i, t] += log_surv[t-1];
+        }
+      }
     }
   }
   
-  return(log_marg_prob);
-}
-
-/** Calculate the marginal probability of exit/event at every interval, separately for each competing risk, for all patients.  
- *
- * @param n_patients Number of patients
- * @param log_crcr_cond_prob_surv The matrix of log conditional probabilities of survival
- * @param max_confresp_week The number of intervals for each patient 
- * @return Array of matrices of log marginal probabilities
- */
-array[] matrix exit_log_marginal_prob(array[] matrix log_crcr_cond_prob_surv) {
-  int n_causes = size(log_crcr_cond_prob_surv), n_patients = rows(log_crcr_cond_prob_surv[1]), max_confresp_week = cols(log_crcr_cond_prob_surv[1]);
-  array[n_causes] matrix[n_patients, max_confresp_week] log_marg_prob; 
-  
-  for (i in 1:n_patients) { 
-    log_marg_prob[, i] = exit_log_marginal_prob(log_crcr_cond_prob_surv[, i]);
-  }
-  
-  return(log_marg_prob);
+  return log_marg_prob;
 }
 
 /** Calculate the cumulative incidence function (CIF) per patient and competing risk.
@@ -42,26 +39,25 @@ array[] matrix exit_log_marginal_prob(array[] matrix log_crcr_cond_prob_surv) {
  * @param max_confresp_week The number of intervals for each patient 
  * @return tuple of patient level CIF information and the approximate probability of each patient exiting to each of the competing risks. 
  */
-tuple(array[] matrix, matrix) calc_cif(array[] matrix log_crcr_cond_prob_surv) {
-  int n_causes = size(log_crcr_cond_prob_surv), n_patients = rows(log_crcr_cond_prob_surv[1]), max_confresp_week = cols(log_crcr_cond_prob_surv[1]);
+array[] matrix calc_log_cif(array[] matrix log_crcr_cond_prob_surv) {
+  int n_causes = size(log_crcr_cond_prob_surv);
+  int n_patients = rows(log_crcr_cond_prob_surv[1]);
+  int max_confresp_week = cols(log_crcr_cond_prob_surv[1]);
   
   array[n_causes] matrix[n_patients, max_confresp_week] log_marg_prob = exit_log_marginal_prob(log_crcr_cond_prob_surv); 
   
-  array[n_causes] matrix[n_patients, max_confresp_week] cif; // cumulative incidence function
-  matrix[n_causes, n_patients] prob_cause; 
+  array[n_causes] matrix[n_patients, max_confresp_week] log_cif;
   
-  for (i in 1:n_patients) { 
+  for (i in 1:n_patients) {
     for (k in 1:n_causes) {
-      cif[k, i] = cumulative_sum(exp(log_marg_prob[k, i]));
-    
-      prob_cause[k, i] = cif[k, i, max_confresp_week];
+      for (t in 1:max_confresp_week) {
+        log_cif[k, i, t] = log_sum_exp(log_marg_prob[k, i, :t]);
+      }
     }
-    
-    prob_cause[, i] /= sum(prob_cause[, i]); 
   }
   
-  return(cif, prob_cause);
-}
+  return log_cif;
+} 
 
 /** Generate a survival profile for a single patient.
  *
