@@ -67,20 +67,48 @@ log_mean_exp <- function(x) {
 
 lfo_pointwise_log_lik <- function(res) {
   res |> 
-    spread_rvars(oos_log_lik[n]) |>
-    rowwise() |> 
-    mutate(E_log_lik = log_mean_exp(posterior::draws_of(oos_log_lik[1]))) |> 
-    ungroup()
+    spread_rvars(oos_log_lik[n, m]) %>% {
+      inner_join(
+        filter(., m == max(m)) |> select(!m), 
+        filter(., n == 1) |> select(!n), 
+        by = c("n" = "m"), suffix = c("", "_log_ratio"))
+    } |> 
+    mutate(
+      fit = map(min_rank(n), \(nr) if (nr == 1) res),
+      oos_log_lik_log_ratio = lag(oos_log_lik_log_ratio),
+      original_E_log_lik = map_dbl(oos_log_lik, \(ll) log_mean_exp(posterior::draws_of(ll)))
+    )
 }
 
 lfo_log_lik <- function(res) {
   res |> 
     lfo_pointwise_log_lik() |>
     mutate(
-      log_ratio = map(oos_log_lik, posterior::rvar_sum), 
-      psis_obj = map(log_ratio, \(lr) suppressWarnings(loo::psis(posterior::draws_of(lr)))),
-      k = lag(map_dbl(psis_obj, loo::pareto_k_values), default = NA_real_),
-      lwt = lag(map(psis_obj, \(o) weights(o, normalize = TRUE)[, 1]), default = NA),
-      approx_E_log_lik = map2_dbl(oos_log_lik, lwt, \(ll, lw) if (is_null(lw)) NA_real_ else log_sum_exp(lw + posterior::draws_of(ll)))
-    )  
+      psis_obj = map_if(oos_log_lik_log_ratio, \(lr) !is.na(lr), \(lr) suppressWarnings(loo::psis(posterior::draws_of(lr))), .else = \(lr) NA),
+      k = unlist(map_if(psis_obj, \(p) !is_na(p), loo::pareto_k_values)),
+      lwt = map_if(psis_obj, \(p) !is_na(p), \(o) weights(o, normalize = TRUE)[, 1]),
+      approx_E_log_lik = map2_vec(oos_log_lik, lwt, \(lr, lw) log_sum_exp(lw + posterior::draws_of(lr))),
+    )
+}
+
+clean_lfo_results <- function(lfo_res) {
+  lfo_res |> 
+    group_by(n) |> 
+    filter(min_rank(refit_n) == n()) |> 
+    ungroup() |> 
+    mutate(E_log_lik = if_else(is.na(k), original_E_log_lik, approx_E_log_lik))
+}
+
+lfo_stacking_weights <- function(...) {
+  model_log_lik <- rlang::dots_list(..., .named = TRUE)
+
+  model_log_lik |> 
+    map_dfr(clean_lfo_results, .id = "model") |> 
+    select(model, n, E_log_lik) |> 
+    pivot_wider(names_from = model, values_from = E_log_lik) |> 
+    select(!n) |> 
+    as.matrix() |> 
+    loo::stacking_weights() |> 
+    c() |> 
+    set_names(names(model_log_lik))
 }
