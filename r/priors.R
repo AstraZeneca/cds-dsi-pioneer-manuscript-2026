@@ -8,7 +8,7 @@ get_tumor_priors <- function() {
 get_pfs_priors <- function() {
   lst(
     log_lambda_gp_intercept_mean = -4.5,
-    log_lambda_gp_intercept_sd = 0.5,
+    log_lambda_gp_intercept_sd = 0.25,
     log_lambda_gp_alpha_sd = 0.5,
     log_lambda_gp_rho_alpha = 7.3,
     log_lambda_gp_rho_beta = 7.5, 
@@ -28,7 +28,7 @@ get_pfs_conf_resp_priors <- function(stan_data) {
   get_pfs_priors() |> 
     list_assign(
       log_lambda_gp_intercept_mean = -2.5,
-      log_lambda_gp_intercept_sd = 0.75,
+      log_lambda_gp_intercept_sd = 0.5,
       log_lambda_gp_alpha_sd = 1,
       log_lambda_gp_rho_alpha = 3,
       log_lambda_gp_rho_beta = 10, 
