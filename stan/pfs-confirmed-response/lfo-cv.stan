@@ -269,7 +269,10 @@ model {
         int actual_patient_id = training_patients[idx];
         
         if (training_confirmed_response_censored[idx]) { // Unclassified
-          target += log_mix(prob_non_response[actual_patient_id], training_patient_response_lp[idx, 1], training_patient_response_lp[idx, 2]);
+          // target += log_mix(prob_non_response[i], training_patient_response_lp[i, 1], training_patient_response_lp[i, 2]);
+          
+          target += log_sum_exp(log_cif[1, i, max_confresp_week] + training_patient_response_lp[i, 1], log_cif[2, i, max_confresp_week] + training_patient_response_lp[i, 2]) -
+            log_sum_exp(log_cif[1, i, max_confresp_week], log_cif[2, i, max_confresp_week]);
         } else {
           target += training_patient_response_lp[idx, confirmed_response_cause[actual_patient_id]];
         }
@@ -309,16 +312,14 @@ generated quantities {
     int found_conf_resp_from = 0;
     int conf_resp_from = 1;
     
-    if (no_prop_hazard || pfs_only) {
-      curr_log_lik += testing_patient_response_lp[, 1];
-    } else {
-      for (i_idx in 1:n_curr_patients) {
-        int i = curr_patients[i_idx]; // This is the actual ID of the patient, i.e, their position in the full data.
-  
-        if (confirmed_response_censored[i]) { // Unclassified
-          curr_log_lik[i_idx] += log_mix(prob_non_response[i], testing_patient_response_lp[i_idx, 1], testing_patient_response_lp[i_idx, 2]);
-        } else {
-          curr_log_lik[i_idx] += testing_patient_response_lp[i_idx, confirmed_response_cause[i]];
+          if (confirmed_response_censored[i]) { // Unclassified
+            // curr_log_lik[i_idx] += log_mix(prob_non_response[i], testing_patient_response_lp[i_idx, 1], testing_patient_response_lp[i_idx, 2]);
+            curr_log_lik[i_idx] += 
+              log_sum_exp(log_cif[1, i, max_confresp_week] + testing_patient_response_lp[i_idx, 1], log_cif[2, i, max_confresp_week] + testing_patient_response_lp[i_idx, 2]) -
+              log_sum_exp(log_cif[1, i, max_confresp_week], log_cif[2, i, max_confresp_week]);
+          } else {
+            curr_log_lik[i_idx] += testing_patient_response_lp[i_idx, confirmed_response_cause[i]];
+          }
         }
        
         // We need to find which patient is the first to have their confirmed response classification after the cutoff day. All following patients

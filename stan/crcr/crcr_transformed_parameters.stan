@@ -97,5 +97,4 @@ profile("log_crcr_cond_prob_surv") { // Calculate patient-interval conditional p
   }
 }
 
-row_vector<lower = 0, upper = 1>[n_patients] prob_non_response = calc_cif(log_crcr_cond_prob_surv).2[1]; //rep_vector(1, n_patients);
-
+array[n_causes] matrix<upper = 1e-6>[n_patients, max_confresp_week] log_cif = calc_log_cif(log_crcr_cond_prob_surv);
