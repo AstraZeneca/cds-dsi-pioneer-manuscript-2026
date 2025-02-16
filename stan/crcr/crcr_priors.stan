@@ -7,10 +7,12 @@ for (k in 1:n_causes) {
   }
   
   to_vector(log_crcr_lambda_gp_eta[k]) ~ std_normal();
-  
-  for (s in 1:n_prop_separate_trials) {
-    crcr_tumor_stim_pop_coef[k, s] ~ normal(0, crcr_tumor_stim_pop_coef_sd[s]);
-    crcr_covar_effect[k, s] ~ normal(crcr_covar_effect_mean[s], crcr_covar_effect_sd[s]);
+ 
+  if (!no_prop_hazard) { 
+    for (s in 1:n_prop_separate_trials) {
+      crcr_tumor_stim_pop_coef[k, s] ~ normal(0, crcr_tumor_stim_pop_coef_sd[s]);
+      crcr_covar_effect[k, s] ~ normal(crcr_covar_effect_mean[s], crcr_covar_effect_sd[s]);
+    }
   }
 }
 
