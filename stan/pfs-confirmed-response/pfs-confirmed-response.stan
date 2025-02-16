@@ -79,7 +79,9 @@ model {
         } else {
           for (i in patient_pos:patient_end) {
             if (confirmed_response_censored[i]) { // Unclassified
-              target += log_mix(prob_non_response[i], patient_response_lp[i, 1], patient_response_lp[i, 2]);
+              // target += log_mix(prob_non_response[i], patient_response_lp[i, 1], patient_response_lp[i, 2]);
+              target += log_sum_exp(log_cif[1, i, max_confresp_week] + patient_response_lp[i, 1], log_cif[2, i, max_confresp_week] + patient_response_lp[i, 2]) -
+                log_sum_exp(log_cif[1, i, max_confresp_week], log_cif[2, i, max_confresp_week]);
             } else {
               target += patient_response_lp[i, confirmed_response_cause[i]];
             }
@@ -210,7 +212,10 @@ generated quantities {
             int conf_resp_interval_pos = patient_conf_resp_interval_pos[i];
             int conf_resp_interval_end = patient_conf_resp_interval_pos[i + 1] - 1;
           
-            log_lik[log_lik_pos] += log_mix(prob_non_response[i], patient_response_lp[i, 1], patient_response_lp[i, 2]);
+            // log_lik[log_lik_pos] += log_mix(prob_non_response[i], patient_response_lp[i, 1], patient_response_lp[i, 2]);
+            log_lik[log_lik_pos] += log_sum_exp(log_cif[1, i, max_confresp_week] + patient_response_lp[i, 1], log_cif[2, i, max_confresp_week] + patient_response_lp[i, 2]) -
+              log_sum_exp(log_cif[1, i, max_confresp_week], log_cif[2, i, max_confresp_week]);
+            
           } else {
             log_lik[log_lik_pos] += patient_response_lp[i, confirmed_response_cause[i]];
           }
