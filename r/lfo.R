@@ -9,37 +9,37 @@ get_lfo_cutoff_days <- function(first_cutoff_date, last_date, first_cutoff_day_i
   ) 
 }
 
-lfo <- function(model, stan_data, cutoffs, basename, k_threshold = 0.7, lean = TRUE, verbose = FALSE) {
+lfo <- function(model, stan_data, cutoffs, output_path, basename, output_timestamp = FALSE, refit_n = min(cutoffs$n), k_threshold = 0.7, lean = TRUE, verbose = FALSE, exact = FALSE) {
   if (verbose) {
     cat("Startin on:\n")
     print(cutoffs)
     cat("\n")
   }
   
-  refit_n <- min(cutoffs$n)
+  remaining_cutoffs <- cutoffs |> filter(n >= refit_n) 
   
   psis_results <- stan_data |>
-    list_assign(cutoff_calendar_day = cutoffs$cutoff_calendar_day, n_oos_log_lik = nrow(cutoffs)) %>%
+    list_assign(cutoff_calendar_day = remaining_cutoffs$cutoff_calendar_day, n_cutoffs = nrow(remaining_cutoffs)) %>%
     sample_and_save(
       model,
       .,
-      iter_warmup = 300, iter_sampling = 500, parallel_chains = 4, threads_per_chain = 4, adapt_delta = 0.9,
+      iter_warmup = 300, iter_sampling = 500, parallel_chains = 4, adapt_delta = 0.9,
       init = create_crcr_pfs_initializer(.),
       output_dir = file.path(output_path, "fit"), output_basename = str_glue("{basename}-{refit_n}"),
-      timestamp = fit_output_timestamp
+      timestamp = output_timestamp
     ) |> 
     lfo_log_lik() |> 
     mutate(refit_n, n = n + refit_n - 1) |> 
-    left_join(select(cutoffs, n, cutoff_date, cutoff_calendar_day), by = "n")
+    left_join(select(remaining_cutoffs, n, cutoff_date, cutoff_calendar_day), by = "n")
   
   if (lean) {
     psis_results <- psis_results |> 
-    select(n, refit_n, contains("log_lik"), k)
+      select(!c(psis_obj, lwt))
   }
   
   next_cutoffs <- psis_results |> 
-    filter(!is.na(k), k > k_threshold, n > refit_n) %>%
-    semi_join(cutoffs, ., by = "n")
+    filter(!is.na(k), k > k_threshold | exact, n > refit_n) %>%
+    semi_join(remaining_cutoffs, ., by = "n")
   
   if (verbose) {
     cat("LFO results:\n")
@@ -48,7 +48,7 @@ lfo <- function(model, stan_data, cutoffs, basename, k_threshold = 0.7, lean = T
   }
   
   if (nrow(next_cutoffs) > 0) {
-    return(bind_rows(psis_results, lfo(model, stan_data, next_cutoffs, basename, k_threshold)))
+    return(bind_rows(psis_results, lfo(model, stan_data, cutoffs, output_path, basename,  output_timestamp, refit_n = min(next_cutoffs$n), k_threshold, lean, verbose)))
   } else {
     return(psis_results)
   }
