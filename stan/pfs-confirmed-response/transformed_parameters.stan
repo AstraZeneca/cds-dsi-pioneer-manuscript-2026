@@ -23,7 +23,7 @@ if (add_trial_level_prop_hazard && !no_prop_hazard) {
 
 { // Calculate patient-interval conditional probability of disease progression.
   int patient_pos = 1;
-  int n_used_causes = no_prop_hazard ? 1 : n_causes;
+  int n_used_causes = no_prop_hazard || pfs_only ? 1 : n_causes;
   
   profile("log surv loop") {
     for (s in 1:n_trials) {
@@ -62,7 +62,7 @@ if (add_trial_level_prop_hazard && !no_prop_hazard) {
       for (k in 1:n_used_causes) {
         log_cond_prob_surv[k, patient_pos:patient_end] = rep_matrix(log_trial_lambda[s], n_trial_patients[s]);
           
-        if (!no_prop_hazard && !pfs_only) {
+        if (!no_prop_hazard) {
           log_cond_prob_surv[k, patient_pos:patient_end] += rep_matrix(time_invariant_log_hazard_ratio[k, patient_pos:patient_end], max_all_t);
         }
         
