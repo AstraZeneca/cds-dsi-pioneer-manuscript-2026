@@ -48,7 +48,7 @@ lfo <- function(model, stan_data, cutoffs, output_path, basename, output_timesta
   }
   
   if (nrow(next_cutoffs) > 0) {
-    return(bind_rows(psis_results, lfo(model, stan_data, cutoffs, output_path, basename,  output_timestamp, refit_n = min(next_cutoffs$n), k_threshold, lean, verbose)))
+    return(bind_rows(psis_results, lfo(model, stan_data, cutoffs, output_path, basename, output_timestamp, refit_n = min(next_cutoffs$n), k_threshold, lean, verbose)))
   } else {
     return(psis_results)
   }
@@ -67,7 +67,7 @@ log_mean_exp <- function(x) {
 
 lfo_pointwise_log_lik <- function(res) {
   res |> 
-    spread_rvars(oos_log_lik[n, m]) %>% {
+    spread_rvars(oos_log_lik[n, m], oos_pfs_log_lik[n, m], oos_crcr_log_lik[n, m]) %>% {
       inner_join(
         filter(., m == max(m)) |> select(!m), 
         filter(., n == 1) |> select(!n), 
@@ -75,28 +75,46 @@ lfo_pointwise_log_lik <- function(res) {
     } |> 
     mutate(
       fit = map(min_rank(n), \(nr) if (nr == 1) res),
-      oos_log_lik_log_ratio = lag(oos_log_lik_log_ratio),
-      original_E_log_lik = map_dbl(oos_log_lik, \(ll) log_mean_exp(posterior::draws_of(ll)))
-    )
+      across(ends_with("log_ratio"), lag),
+      across(ends_with("log_lik"), \(oos_ll) map_dbl(oos_ll, \(ll) log_mean_exp(posterior::draws_of(ll))), .names = "original_E_log_lik_{.col}")
+    ) |> 
+    rename(original_E_log_lik = original_E_log_lik_oos_log_lik) |> 
+    rename_with(\(col) str_replace(col, "_log_lik_oos_(pfs|crcr)_log_lik", r"{_\1_log_lik}"), starts_with("original_E_log_lik"))
 }
 
 lfo_log_lik <- function(res) {
   res |> 
     lfo_pointwise_log_lik() |>
     mutate(
-      psis_obj = map_if(oos_log_lik_log_ratio, \(lr) !is.na(lr), \(lr) suppressWarnings(loo::psis(posterior::draws_of(lr))), .else = \(lr) NA),
-      k = unlist(map_if(psis_obj, \(p) !is_na(p), loo::pareto_k_values)),
-      lwt = map_if(psis_obj, \(p) !is_na(p), \(o) weights(o, normalize = TRUE)[, 1]),
+      across(
+        ends_with("log_ratio"), 
+        \(oos_lr) map_if(oos_lr, \(lr) !is.na(lr), \(lr) suppressWarnings(loo::psis(posterior::draws_of(lr))), .else = \(lr) NA),
+        .names = "psis_obj_{.col}"
+      ),
+    ) |> 
+    rename_with(\(col) str_replace(col, "_oos((?:_pfs|_crcr)?)_log_lik_log_ratio", r"{\1}"), starts_with("psis_obj")) |>
+    mutate(
+      across(starts_with("psis_obj"), \(po) unlist(map_if(po, \(p) !is_na(p), loo::pareto_k_values)), .names = "k_{.col}"),
+      across(starts_with("psis_obj"), \(po) map_if(psis_obj, \(p) !is_na(p), \(o) weights(o, normalize = TRUE)[, 1]), .names = "lwt_{.col}")
+    ) |> 
+    rename_with(\(col) str_replace(col, "_psis_obj((?:_pfs|_crcr)?)", r"{\1}"), c(starts_with("lwt_"), starts_with("k_"))) |>
+    mutate(
       approx_E_log_lik = map2_vec(oos_log_lik, lwt, \(lr, lw) log_sum_exp(lw + posterior::draws_of(lr))),
+      approx_E_log_lik_pfs = map2_vec(oos_pfs_log_lik, lwt_pfs, \(lr, lw) log_sum_exp(lw + posterior::draws_of(lr))),
+      approx_E_log_lik_crcr = map2_vec(oos_crcr_log_lik, lwt_pfs, \(lr, lw) log_sum_exp(lw + posterior::draws_of(lr))),
     )
 }
 
 clean_lfo_results <- function(lfo_res) {
   lfo_res |> 
-    group_by(n) |> 
-    filter(min_rank(refit_n) == n()) |> 
+    group_by(n) %>% 
+    filter(if (has_name(., "refit_n")) min_rank(refit_n) == n() else TRUE) |> 
     ungroup() |> 
-    mutate(E_log_lik = if_else(is.na(k), original_E_log_lik, approx_E_log_lik))
+    mutate(
+      E_log_lik = if_else(is.na(k), original_E_log_lik, approx_E_log_lik),
+      E_log_lik_pfs = if_else(is.na(k_pfs), original_E_pfs_log_lik, approx_E_log_lik_pfs),
+      E_log_lik_crcr = if_else(is.na(k_crcr), original_E_crcr_log_lik, approx_E_log_lik_crcr),
+    )
 }
 
 lfo_stacking_weights <- function(...) {
