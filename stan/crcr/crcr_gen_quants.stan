@@ -1,4 +1,5 @@
 vector[n_patients] log_odds_confirmed_response; 
+matrix<upper = 1e-6>[n_causes, n_patients] log_prob_cause;
 
 // Posterior predicted outcomes
 array[n_patients] int<lower = 1> rep_confirmed_response_week;
@@ -18,6 +19,7 @@ for (i in 1:n_patients) {
   (rep_confirmed_response_week[i], rep_confirmed_response_censored[i], rep_confirmed_response[i]) = competing_risks_survival_time_rng(patient_log_crcr_cond_prob_surv);
   
   log_odds_confirmed_response[i] = log_cif[2, i, max_confresp_week] - log_cif[1, i, max_confresp_week];
+  log_prob_cause[, i] = to_vector(log_cif[, i, max_confresp_week]) - log_sum_exp(log_cif[, i, max_confresp_week]);
     
   rep_confirmed_response[i] -= 1;
   rep_confirmed_response_week[i] += 1 - rep_confirmed_response_censored[i];

@@ -46,15 +46,16 @@ get_all_conf_resp_cif_bindist <- function(res, stan_data, which_t, hb, ndraws = 
     mutate(k = factor(k, levels = 1:2, labels = c("Non-response", "Response")))
 }
 
-get_conf_resp_prob <- function(res) {
+oet_conf_resp_prob <- function(res) {
   res |>
     ungroup() |> 
     transmute(
       trial,
       prob_cause_rvars = map2(
         fit, analysis_data, 
-        \(f, d) spread_rvars(f, prob_cause[i, k]) |>
-          filter(k == 2) |> 
+        \(f, d) spread_rvars(f, log_prob_cause[i, k]) |>
+          filter(k == 2) |>
+          mutate(prob_cause = exp(log_prob_cause)) |> 
           select(!k) |> 
           left_join(transmute(d, i = seq(n()), confirmed_response), by = "i", relationship = "one-to-one")
       )
@@ -186,8 +187,9 @@ get_crcr_predict_cif <- function(res, stan_data = NULL, week_col = rep_confirmed
 }
 
 get_crcr_objective_response <- function(res, stan_data) {
-  spread_rvars(res, rep_confirmed_response_forced[i], prob_cause[k, i]) |> 
-    filter(k == 2) |> 
+  spread_rvars(res, rep_confirmed_response_forced[i], log_prob_cause[k, i]) |> 
+    filter(k == 2) |>
+    mutate(prob_cause = exp(log_prob_cause)) |> 
     bind_cols(stan_data[c("patient_trial", "patient", "objective_response", "confirmed_response", "confirmed_response_censored")]) |> 
     rename(trial = patient_trial)
 }
