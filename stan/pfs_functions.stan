@@ -537,20 +537,28 @@ real calc_c_index(array[] int pfs, array[] int right_censored, vector risk_score
 }
 
 real calc_c_index(
-  array[] int pfs, array[] int right_censored, array[] int confirmed_response, array[] int confirmed_response_censored, array[] vector log_risk_score, row_vector prob_confirmed_response
+  array[] int pfs, array[] int right_censored, 
+  array[] int confirmed_response, array[] int confirmed_response_censored, 
+  array[] vector log_risk_score, array[] vector log_last_cif 
 ) {
   int n_patients = size(pfs);
   vector[n_patients] risk_score;
   
   for (i in 1:n_patients) {
-    risk_score[i] = confirmed_response_censored[i] ? log_mix(prob_confirmed_response[i], log_risk_score[1, i], log_risk_score[2, i]) : log_risk_score[confirmed_response[i] + 1, i]; 
+    risk_score[i] = 
+      confirmed_response_censored[i] ? 
+      log_sum_exp(log_last_cif[1, i] + log_risk_score[1, i], log_last_cif[2, i] + log_risk_score[2, i]) - log_sum_exp(log_last_cif[1, i], log_last_cif[2, i]) :
+      log_risk_score[confirmed_response[i] + 1, i];
   }
   
   return calc_c_index(pfs, right_censored, risk_score);
 }
 
 matrix calc_admin_brier_score(
-  array[] int pfs, array[] int admin_right_censored_week, array[] int interval_censored, int ignore_interval_censoring, vector prob_non_response, array[] matrix log_cond_prob_surv
+  array[] int pfs, array[] int admin_right_censored_week, array[] int interval_censored, 
+  array[] int cause, array[] int cause_right_censored, 
+  int ignore_interval_censoring, 
+  array[] vector log_last_cif, array[] matrix log_cond_prob_surv
 ) {
   int n_patients = rows(log_cond_prob_surv[1]);
   int T = cols(log_cond_prob_surv[1]);
@@ -574,12 +582,15 @@ matrix calc_admin_brier_score(
         
         real log_risk_score; // Prob[T > t]
        
-        if (n_causes > 1) { 
-          log_risk_score = log_mix( 
-            prob_non_response[i], 
-            log_sum_exp(calculate_log_marginal_exit_prob(log_cond_prob_surv[1, i, :t])), // log Prob[T <= t | non-responder] 
-            log_sum_exp(calculate_log_marginal_exit_prob(log_cond_prob_surv[2, i, :t]))  // log Prob[T <= t | responder] 
-          );
+        if (n_causes > 1) {
+          if (cause_right_censored[i]) {
+            log_risk_score = log_sum_exp(
+              log_last_cif[1, i] + log_sum_exp(calculate_log_marginal_exit_prob(log_cond_prob_surv[1, i, :t])), 
+              log_last_cif[2, i] + log_sum_exp(calculate_log_marginal_exit_prob(log_cond_prob_surv[2, i, :t]))) - 
+              log_sum_exp(log_last_cif[1, i], log_last_cif[2, i]);
+          } else {
+            log_risk_score = log_sum_exp(calculate_log_marginal_exit_prob(log_cond_prob_surv[cause[i], i, :t]));
+          }
         } else {
           log_risk_score = log_sum_exp(calculate_log_marginal_exit_prob(log_cond_prob_surv[1, i, :t]));
         }
