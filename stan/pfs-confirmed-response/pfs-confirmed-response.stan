@@ -79,7 +79,6 @@ model {
         } else {
           for (i in patient_pos:patient_end) {
             if (confirmed_response_censored[i]) { // Unclassified
-              // target += log_mix(prob_non_response[i], patient_response_lp[i, 1], patient_response_lp[i, 2]);
               target += log_sum_exp(log_cif[1, i, max_confresp_week] + patient_response_lp[i, 1], log_cif[2, i, max_confresp_week] + patient_response_lp[i, 2]) -
                 log_sum_exp(log_cif[1, i, max_confresp_week], log_cif[2, i, max_confresp_week]);
             } else {
@@ -118,17 +117,10 @@ generated quantities {
   matrix<lower = 0, upper = 1>[fit_data ? n_patients : 0, max_all_t] admin_brier_score;
 
   { 
-    // array[n_causes] matrix[max_all_t, n_patients] mat_log_cond_prob_surv;
-    vector[n_patients] brier_prob_non_response;
-    
     profile("gen_pfs") {
       for (i in 1:n_patients) {
         int pfs_interval_pos = patient_pfs_interval_pos[i];
         int pfs_interval_end = patient_pfs_interval_pos[i + 1] - 1;
-        
-        // for (k in 1:n_causes) {
-        //   mat_log_cond_prob_surv[k, , i] = log_cond_prob_surv[pfs_interval_pos:pfs_interval_end, no_prop_hazard || pfs_only ? 1 : k];
-        // }
         
         if (right_censored[i] || interval_censored[i]) {
           (forecast_pfs[i], forecast_censored[i]) = 
@@ -139,12 +131,13 @@ generated quantities {
         }
         
         (sim_pfs[i], sim_censored[i]) = survival_time_rng(log_cond_prob_surv[no_prop_hazard ? 1 : sim_confirmed_response[i] + 1, i]); 
-        
-        brier_prob_non_response[i] = confirmed_response_censored[i] ? prob_non_response[i] : 1 - confirmed_response[i]; 
       }
      
       if (fit_data) { 
-        admin_brier_score = calc_admin_brier_score(pfs, admin_right_censored_week, interval_censored, pfs_ignore_interval_censoring, brier_prob_non_response, log_cond_prob_surv); 
+        admin_brier_score = calc_admin_brier_score(
+          pfs, admin_right_censored_week, interval_censored, 
+          confirmed_response_cause, confirmed_response_censored,
+          pfs_ignore_interval_censoring, log_cif[, , max_confresp_week], log_cond_prob_surv); 
       }
       
       sim_median_pfs = survival_median(sim_pfs, max_all_t).1; 
@@ -185,7 +178,8 @@ generated quantities {
         pfs[patient_pos:patient_end], right_censored[patient_pos:patient_end], 
         confirmed_response[patient_pos:patient_end], confirmed_response_censored[patient_pos:patient_end],
         time_invariant_log_hazard_ratio,
-        prob_non_response[patient_pos:patient_end] 
+        // prob_non_response[patient_pos:patient_end] 
+        log_cif[,, max_confresp_week] 
       );
     }
   }
@@ -212,7 +206,6 @@ generated quantities {
             int conf_resp_interval_pos = patient_conf_resp_interval_pos[i];
             int conf_resp_interval_end = patient_conf_resp_interval_pos[i + 1] - 1;
           
-            // log_lik[log_lik_pos] += log_mix(prob_non_response[i], patient_response_lp[i, 1], patient_response_lp[i, 2]);
             log_lik[log_lik_pos] += log_sum_exp(log_cif[1, i, max_confresp_week] + patient_response_lp[i, 1], log_cif[2, i, max_confresp_week] + patient_response_lp[i, 2]) -
               log_sum_exp(log_cif[1, i, max_confresp_week], log_cif[2, i, max_confresp_week]);
             
@@ -233,7 +226,7 @@ generated quantities {
     }
     
     if (add_trial_level_prop_hazard) {
-      lprior += normal_lpdf(covar_trial_sd | 0, covar_trial_sd_sd) + lkj_corr_cholesky_lpdf(L_covar_trial_corr | covar_trial_corr_eta);
+      lprior += normal_lpdf(covar_trial_sd | 0, covar_trial_sd_sd); // + lkj_corr_cholesky_lpdf(L_covar_trial_corr | covar_trial_corr_eta);
     }
   }
   
