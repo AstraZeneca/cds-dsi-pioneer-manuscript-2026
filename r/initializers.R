@@ -1,6 +1,7 @@
 create_crcr_initializer <- function(stan_data, n_causes = 2) {
   base_sep_trial <- if (stan_data$separate_baseline_hazard) stan_data$n_trials else 1 
   prop_sep_trial <- if (stan_data$separate_prop_hazard) stan_data$n_trials else 1 
+  max_confresp_week <- max(max(stan_data$confirmed_response_week), stan_data$extend_max_confresp_week)
   
   function(chain_id) {
     init_vals <- lst(
@@ -10,7 +11,13 @@ create_crcr_initializer <- function(stan_data, n_causes = 2) {
         ncol = base_sep_trial, byrow = FALSE 
       ),
       # array[n_causes] vector<lower = 0>[n_base_separate_trials] log_crcr_lambda_gp_alpha;
-      # log_crcr_lambda_gp_alpha = matrix(0.001 + abs(rnorm(n_causes * sep_trial, sd = stan_data$log_crcr_lambda_gp_alpha_sd)), nrow = n_causes)
+      log_crcr_lambda_gp_alpha = matrix(abs(rnorm(n_causes * base_sep_trial, sd = stan_data$log_crcr_lambda_gp_alpha_sd)), nrow = n_causes),
+
+      # array[n_causes] vector<lower = 0>[n_base_separate_trials] log_crcr_lambda_gp_rho;
+      log_crcr_lambda_gp_rho = with(stan_data, matrix(invgamma::rinvgamma(n_causes * base_sep_trial, log_crcr_lambda_gp_rho_alpha, log_crcr_lambda_gp_rho_beta), nrow = n_causes)),
+
+      # array[n_causes] matrix[n_base_separate_trials, max_confresp_week] log_crcr_lambda_gp_eta;
+      log_crcr_lambda_gp_eta = rnorm(n_causes * base_sep_trial * max_confresp_week) |> array(c(n_causes, base_sep_trial, max_confresp_week))
     )
     
     # if (!stan_data$no_prop_hazard) {
@@ -61,10 +68,20 @@ create_crcr_pfs_initializer <- function(stan_data, n_causes = 2) {
   crcr_init_fun <- create_crcr_initializer(stan_data, n_causes)
   baseline_sep_trial <- if (stan_data$separate_baseline_hazard) stan_data$n_trials else 1 
   prop_sep_trial <- if (stan_data$separate_prop_hazard) stan_data$n_trials else 1 
+  max_confresp_week <- max(max(stan_data$t_measure), stan_data$extend_max_all_t)
   
   function(chain_id) {
     init_vals <- crcr_init_fun(chain_id) |> 
       list_assign(
+        # vector<lower = 0>[n_base_separate_trials] log_lambda_gp_alpha;
+        log_lambda_gp_alpha = abs(rnorm(baseline_sep_trial, stan_data$log_lambda_gp_alpha_sd)),
+        
+        # vector<lower = 0>[n_base_separate_trials] log_lambda_gp_rho;
+        log_lambda_gp_rho = with(stan_data, invgamma::rinvgamma(baseline_sep_trial, log_lambda_gp_rho_alpha, log_lambda_gp_rho_beta)),
+        
+        # matrix[n_base_separate_trials, max_all_t] log_lambda_gp_eta;
+        log_lambda_gp_eta = matrix(rnorm(baseline_sep_trial * (max_confresp_week + 1)), nrow = baseline_sep_trial),
+        
         # vector[n_base_separate_trials] log_lambda_gp_intercept;
         log_lambda_gp_intercept = with(stan_data, rnorm(baseline_sep_trial, log_lambda_gp_intercept_mean, log_lambda_gp_intercept_sd)),
         
