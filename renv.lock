@@ -1036,6 +1036,20 @@
       ],
       "Hash": "d6db1667059d027da730decdc214b959"
     },
+    "gridExtra": {
+      "Package": "gridExtra",
+      "Version": "2.3",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "grDevices",
+        "graphics",
+        "grid",
+        "gtable",
+        "utils"
+      ],
+      "Hash": "7d7f283939f563670a697165b2cf5560"
+    },
     "gt": {
       "Package": "gt",
       "Version": "0.11.1",
@@ -1251,6 +1265,13 @@
         "vctrs"
       ],
       "Hash": "9a93b743b2461ba06ba3b5df12011145"
+    },
+    "invgamma": {
+      "Package": "invgamma",
+      "Version": "1.1",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "d124cd1623454d8aeaaec5d67cf1d146"
     },
     "isoband": {
       "Package": "isoband",
@@ -2146,6 +2167,18 @@
         "stringr"
       ],
       "Hash": "3838071b66e0c566d55cc26bd6e27bf4"
+    },
+    "solvebio": {
+      "Package": "solvebio",
+      "Version": "2.15.1",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "httr",
+        "jsonlite",
+        "mime"
+      ],
+      "Hash": "f01ca0ffdc98b3afdc0d0e6789640ca7"
     },
     "spatial": {
       "Package": "spatial",
