@@ -52,16 +52,16 @@ model {
       if (leave_out_trial > 0) {
         target += reduce_sum(
           partial_sum_crcr_lupmf, last_unclassified_response_week[training_patients], crcr_grain_size,
-          confirmed_response_cause[training_patients], 
-          early_confirmed_response_censored[training_patients], 
-          crcr_ignore_interval_censoring ? zeros_int_array(n_training_patients) : confirmed_response_interval_censored[training_patients], 
+          confirmed_response_cause[training_patients],
+          early_confirmed_response_censored[training_patients],
+          crcr_ignore_interval_censoring ? zeros_int_array(n_training_patients) : confirmed_response_interval_censored[training_patients],
           log_crcr_cond_prob_surv[training_crcr_intervals]
         );
       } else {
         target += reduce_sum(
           partial_sum_crcr_lupmf, last_unclassified_response_week, crcr_grain_size,
-          confirmed_response_cause, 
-          early_confirmed_response_censored, crcr_ignore_interval_censoring ? zeros_int_array(n_patients) : confirmed_response_interval_censored, 
+          confirmed_response_cause,
+          early_confirmed_response_censored, crcr_ignore_interval_censoring ? zeros_int_array(n_patients) : confirmed_response_interval_censored,
           log_crcr_cond_prob_surv
         );
       }
@@ -71,8 +71,8 @@ model {
       
     for (s in 1:n_trials) {
       int patient_pos = trial_patient_pos[s];
-      int patient_end = trial_patient_pos[s + 1] - 1; 
-      
+      int patient_end = trial_patient_pos[s + 1] - 1;
+
       if (s != leave_out_trial) {
         if (no_prop_hazard || pfs_only) {
           target += sum(patient_response_lp[patient_pos:patient_end, 1]);
@@ -130,7 +130,7 @@ generated quantities {
           forecast_pfs[i] = pfs[i];
         }
         
-        (sim_pfs[i], sim_censored[i]) = survival_time_rng(log_cond_prob_surv[no_prop_hazard ? 1 : sim_confirmed_response[i] + 1, i]); 
+        (sim_pfs[i], sim_censored[i]) = survival_time_rng(log_cond_prob_surv[no_prop_hazard || pfs_only ? 1 : sim_confirmed_response[i] + 1, i]); 
       }
      
       if (fit_data) { 
