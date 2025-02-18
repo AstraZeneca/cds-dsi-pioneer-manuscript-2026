@@ -10,7 +10,5 @@ raw_log_lambda_gp_trial_intercept ~ std_normal();
 // TODO separate hyperparam for these parameters 
 log_lambda_gp_trial_alpha ~ normal(0, log_lambda_gp_trial_alpha_sd);
 log_lambda_gp_trial_rho ~ inv_gamma(log_lambda_gp_rho_alpha, log_lambda_gp_rho_beta);
+to_vector(log_lambda_gp_trial_eta) ~ std_normal();
 
-if (add_trial_level_baseline_hazard) { 
-  to_vector(log_lambda_gp_trial_eta) ~ std_normal();
-}
