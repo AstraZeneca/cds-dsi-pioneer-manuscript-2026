@@ -9,7 +9,7 @@ get_lfo_cutoff_days <- function(first_cutoff_date, last_date, first_cutoff_day_i
   ) 
 }
 
-lfo <- function(model, stan_data, cutoffs, output_path, basename, output_timestamp = FALSE, refit_n = min(cutoffs$n), k_threshold = 0.7, lean = TRUE, verbose = FALSE, exact = FALSE) {
+lfo <- function(stan_data, model, cutoffs, output_path, basename, output_timestamp = FALSE, refit_n = min(cutoffs$n), k_threshold = 0.7, lean = TRUE, verbose = FALSE, exact = FALSE) {
   if (verbose) {
     cat("Startin on:\n")
     print(cutoffs)
