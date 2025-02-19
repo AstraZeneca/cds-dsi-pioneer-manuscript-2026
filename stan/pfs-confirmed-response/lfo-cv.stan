@@ -62,6 +62,8 @@ functions {
       if (curr_patient_idx <= n_patients) {
         patient_idx[patient_idx_pos] = curr_patient_idx;
         patient_idx_pos += 1;
+      } else {
+        print("Warning: no patients have any visits after cutoff ", patient_idx_pos);
       }
     }
 
@@ -167,7 +169,7 @@ transformed data {
   // The patient-specific week to start using for log likelihood calculation 
   array[n_cutoffs, n_patients] int<lower = 0> oos_patient_first_testing_visit_week;
   array[n_cutoffs, n_cutoffs, n_patients] int oos_patient_last_testing_visit_week;
-  
+ 
   (oos_patient_first_testing_visit_week, oos_patient_last_testing_visit_week) = get_testing_visit_week_bounds(
     pfs_testing_patient_idx, last_visit_calendar_day_sort_idx, cutoff_calendar_day, calendar_day, t_measure, t_day_measure, patient_tumor_measure_pos
   );
