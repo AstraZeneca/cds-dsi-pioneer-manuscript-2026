@@ -68,7 +68,7 @@ create_crcr_pfs_initializer <- function(stan_data, n_causes = 2) {
   crcr_init_fun <- create_crcr_initializer(stan_data, n_causes)
   baseline_sep_trial <- if (stan_data$separate_baseline_hazard) stan_data$n_trials else 1 
   prop_sep_trial <- if (stan_data$separate_prop_hazard) stan_data$n_trials else 1 
-  max_confresp_week <- max(max(stan_data$t_measure), stan_data$extend_max_all_t)
+  max_all_t <- max(max(stan_data$t_measure) + 1, stan_data$extend_max_all_t)
   
   function(chain_id) {
     init_vals <- crcr_init_fun(chain_id) |> 
@@ -80,7 +80,7 @@ create_crcr_pfs_initializer <- function(stan_data, n_causes = 2) {
         log_lambda_gp_rho = with(stan_data, invgamma::rinvgamma(baseline_sep_trial, log_lambda_gp_rho_alpha, log_lambda_gp_rho_beta)),
         
         # matrix[n_base_separate_trials, max_all_t] log_lambda_gp_eta;
-        log_lambda_gp_eta = matrix(rnorm(baseline_sep_trial * (max_confresp_week + 1)), nrow = baseline_sep_trial),
+        log_lambda_gp_eta = matrix(rnorm(baseline_sep_trial * max_all_t), nrow = baseline_sep_trial),
         
         # vector[n_base_separate_trials] log_lambda_gp_intercept;
         log_lambda_gp_intercept = with(stan_data, rnorm(baseline_sep_trial, log_lambda_gp_intercept_mean, log_lambda_gp_intercept_sd)),
