@@ -217,8 +217,6 @@ model {
       
       for (i in 1:n_patients) {
         if (confirmed_response_censored[i] || confirmed_response_day[i] > cutoff_last_visit_day[i]) { // Unclassified
-          // target += log_mix(prob_non_response[i], training_patient_response_lp[i, 1], training_patient_response_lp[i, 2]);
-          
           target += log_sum_exp(log_cif[1, i, max_confresp_week] + training_patient_response_lp[i, 1], log_cif[2, i, max_confresp_week] + training_patient_response_lp[i, 2]) -
             log_sum_exp(log_cif[1, i, max_confresp_week], log_cif[2, i, max_confresp_week]);
         } else {
@@ -269,7 +267,6 @@ generated quantities {
           int i = curr_patients[i_idx]; // This is the actual ID of the patient, i.e, their position in the full data.
     
           if (confirmed_response_censored[i]) { // Unclassified
-            // curr_log_lik[i_idx] += log_mix(prob_non_response[i], testing_patient_response_lp[i_idx, 1], testing_patient_response_lp[i_idx, 2]);
             curr_log_lik[i_idx] += 
               log_sum_exp(log_cif[1, i, max_confresp_week] + testing_patient_response_lp[i_idx, 1], log_cif[2, i, max_confresp_week] + testing_patient_response_lp[i_idx, 2]) -
               log_sum_exp(log_cif[1, i, max_confresp_week], log_cif[2, i, max_confresp_week]);
