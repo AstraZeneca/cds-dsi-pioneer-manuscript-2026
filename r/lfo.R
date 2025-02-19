@@ -25,10 +25,11 @@ lfo <- function(
     sample_and_save(
       model,
       .,
-      iter_warmup = 300, iter_sampling = 500, parallel_chains = 4, adapt_delta = 0.9,
+      iter_warmup = iter_warmup, iter_sampling = iter_sampling, parallel_chains = 4, adapt_delta = 0.9,
       init = create_crcr_pfs_initializer(.),
       output_dir = file.path(output_path, "fit"), output_basename = str_glue("{basename}-{refit_n}"),
-      timestamp = output_timestamp
+      timestamp = output_timestamp, 
+      ...
     ) |> 
     lfo_log_lik() |> 
     mutate(refit_n, n = n + refit_n - 1) |> 
