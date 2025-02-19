@@ -9,7 +9,9 @@ get_lfo_cutoff_days <- function(first_cutoff_date, last_date, first_cutoff_day_i
   ) 
 }
 
-lfo <- function(stan_data, model, cutoffs, output_path, basename, output_timestamp = FALSE, refit_n = min(cutoffs$n), k_threshold = 0.7, lean = TRUE, verbose = FALSE, exact = FALSE) {
+lfo <- function(
+    stan_data, model, cutoffs, output_path, basename, 
+     output_timestamp = FALSE, refit_n = min(cutoffs$n), k_threshold = 0.7, lean = TRUE, verbose = FALSE, exact = FALSE, iter_warmup = 300, iter_sampling = 500, ...) {
   if (verbose) {
     cat("Startin on:\n")
     print(cutoffs)
@@ -48,7 +50,12 @@ lfo <- function(stan_data, model, cutoffs, output_path, basename, output_timesta
   }
   
   if (nrow(next_cutoffs) > 0) {
-    return(bind_rows(psis_results, lfo(model, stan_data, cutoffs, output_path, basename, output_timestamp, refit_n = min(next_cutoffs$n), k_threshold, lean, verbose)))
+    return(bind_rows(
+      psis_results, 
+      lfo(
+        stan_data, model, cutoffs, output_path, basename, output_timestamp, refit_n = min(next_cutoffs$n), k_threshold, lean, verbose, exact, iter_warmup, iter_sampling, ...
+      )
+    ))
   } else {
     return(psis_results)
   }
