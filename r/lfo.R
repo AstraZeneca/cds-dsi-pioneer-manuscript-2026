@@ -53,9 +53,7 @@ lfo <- function(
   if (nrow(next_cutoffs) > 0) {
     return(bind_rows(
       psis_results, 
-      lfo(
-        stan_data, model, cutoffs, output_path, basename, output_timestamp, refit_n = min(next_cutoffs$n), k_threshold, lean, verbose, exact, iter_warmup, iter_sampling, ...
-      )
+      lfo(stan_data, model, cutoffs, output_path, basename, output_timestamp, refit_n = min(next_cutoffs$n), k_threshold, lean, verbose, exact, iter_warmup, iter_sampling, ...)
     ))
   } else {
     return(psis_results)
