@@ -70,7 +70,7 @@ row_vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, re
   int n_x = size(x);
   matrix[n_x, n_x] L_K = calc_gp_cholesky_vcov(x, alpha, rho, delta); 
   
-  return intercept + eta * L_K;
+  return intercept + eta * L_K';
 }  
 
 /** This is the calculation needed to extrapolate a GP that is fit using observed y and x. We are predicting for x*.
