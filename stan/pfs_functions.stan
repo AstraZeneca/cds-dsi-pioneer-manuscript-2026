@@ -115,7 +115,7 @@ vector calc_pch_loglik(
   for (i in 1:n_patients) {
     int interval_pos = start_from[i];
     int interval_end = min(end_at[i], last_surv_week[i]);
-    int effective_right_censored = right_censored[i] || interval_end < last_surv_week[i] + (1 - ignore_interval_censoring) * interval_censored[i];
+    int effective_right_censored = right_censored[i] || (end_at[i] < last_surv_week[i] + (1 - ignore_interval_censoring) * interval_censored[i]);
     
     if (interval_pos <= interval_end) {
       if (right_censored[i] && interval_censored[i] > 0) {
