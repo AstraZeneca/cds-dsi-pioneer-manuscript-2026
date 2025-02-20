@@ -463,11 +463,11 @@
       "Version": "0.8.1.9000",
       "Source": "GitHub",
       "RemoteType": "github",
+      "RemoteHost": "api.github.com",
       "RemoteUsername": "stan-dev",
       "RemoteRepo": "cmdstanr",
       "RemoteRef": "master",
-      "RemoteSha": "3ae9080c190eba634fd659ca83261d9fe34b5cad",
-      "RemoteHost": "api.github.com",
+      "RemoteSha": "4e056be9ba0a56192980e8df46a2f6c79982256f",
       "Requirements": [
         "R",
         "R6",
@@ -479,7 +479,7 @@
         "rlang",
         "withr"
       ],
-      "Hash": "327b29a56650acb67ea7d8e4e7a94bf9"
+      "Hash": "f82d0d1d1615fa38f829003c3036e92c"
     },
     "cmprsk": {
       "Package": "cmprsk",
@@ -811,6 +811,29 @@
         "methods"
       ],
       "Hash": "7f48af39fa27711ea5fbd183b399920d"
+    },
+    "fst": {
+      "Package": "fst",
+      "Version": "0.9.8",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R",
+        "Rcpp",
+        "fstcore"
+      ],
+      "Hash": "34637e000c63c3de8d8aafceb82fd082"
+    },
+    "fstcore": {
+      "Package": "fstcore",
+      "Version": "0.10.0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R",
+        "Rcpp"
+      ],
+      "Hash": "cadf9fe02c318c5dc3a782c8c98c9e1c"
     },
     "gargle": {
       "Package": "gargle",
@@ -2192,6 +2215,35 @@
         "utils"
       ],
       "Hash": "f27a078d834614513608da2c08031130"
+    },
+    "stantargets": {
+      "Package": "stantargets",
+      "Version": "0.1.2.9000",
+      "Source": "GitHub",
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteUsername": "ropensci",
+      "RemoteRepo": "stantargets",
+      "RemoteRef": "main",
+      "RemoteSha": "cb444e39450949a3bd68c82f335deb4c748758ed",
+      "Requirements": [
+        "R",
+        "cmdstanr",
+        "fs",
+        "fst",
+        "posterior",
+        "purrr",
+        "qs2",
+        "rlang",
+        "secretbase",
+        "stats",
+        "tarchetypes",
+        "targets",
+        "tibble",
+        "tidyselect",
+        "withr"
+      ],
+      "Hash": "e7307e0dea108df9cd856f8d2182c652"
     },
     "stringfish": {
       "Package": "stringfish",
