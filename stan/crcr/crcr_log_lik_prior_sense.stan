@@ -3,7 +3,7 @@ if (gen_log_lik || prior_sense) {
     log_lik += calc_pch_loglik(
       last_unclassified_response_week[training_patients],
       confirmed_response_cause[training_patients], 
-      early_confirmed_response_censored[training_patients], 
+      confirmed_response_censored[training_patients], 
       confirmed_response_interval_censored[training_patients], 
       crcr_ignore_interval_censoring,
       log_crcr_cond_prob_surv[training_patients]
@@ -12,7 +12,7 @@ if (gen_log_lik || prior_sense) {
     log_lik += calc_pch_loglik(
       last_unclassified_response_week,
       confirmed_response_cause, 
-      early_confirmed_response_censored, confirmed_response_interval_censored, crcr_ignore_interval_censoring,
+      confirmed_response_censored, confirmed_response_interval_censored, crcr_ignore_interval_censoring,
       log_crcr_cond_prob_surv
     );
   }
