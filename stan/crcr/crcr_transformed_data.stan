@@ -36,9 +36,6 @@ for (i in 1:n_patients) {
   confirmed_response_cause[i] = confirmed_response[i] + 1;
 }
 
-// Not using last_unclassified_response_week 
-array[n_patients] int<lower = 0, upper = 1> early_confirmed_response_censored = confirmed_response_censored;
-
 array[n_patients + 1] int<lower = 1> patient_conf_resp_interval_pos = linspaced_int_array(n_patients + 1, 1, n_patients * max_confresp_week + 1);
 
 // Indices of the observed and missing confirmed response values 
