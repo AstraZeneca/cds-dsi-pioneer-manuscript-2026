@@ -100,6 +100,17 @@ name_coef_indices <- function(data, coef_idx_col, trial_col, stan_data) {
     )
 }
 
+get_fake_stan_data_list <- function(prior_res, origin_stan_data, n = 5) {
+  get_all_confirmed_response(prior_res) |> 
+    select(starts_with("rep_")) |> 
+    unnest_rvars() |> 
+    filter(.draw <= n) |> 
+    rename_with(\(n) str_remove(n, "^rep_")) |>
+    select(!c(.chain, .iteration)) |> 
+    group_by(.draw) |>
+    group_map(\(d, k, ...) list_assign(origin_stan_data, !!!d, draw = first(k$.draw), confirmed_response_interval_censored = rep(0, nrow(d)))) 
+}
+
 weeks_to_months <- function(weeks) weeks * 7 * 12 / 365.25
 label_weeks_to_months <- scales::label_number(scale = weeks_to_months(1))
 months_to_weeks <- function(months) months / weeks_to_months(1) 
