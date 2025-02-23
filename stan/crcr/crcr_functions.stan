@@ -68,13 +68,14 @@ tuple(int, int, int) competing_risks_survival_time_rng(array[] row_vector log_co
   int n_intervals = cols(log_cond_prob_surv[1]);
   int n_causes = size(log_cond_prob_surv);
   
-  matrix[n_causes, n_intervals] cond_prob_exit = 1 - exp(to_matrix(log_cond_prob_surv));
+  matrix[n_causes, n_intervals] mat_log_cond_prov_surv = to_matrix(log_cond_prob_surv);
+  matrix[n_causes, n_intervals] log_odds_cond_prob_exit = log1m_exp(mat_log_cond_prov_surv) - mat_log_cond_prov_surv;
  
   int survival_time = 0;
   int exit_cause = n_causes;
   
   for (t in 1:n_intervals) {
-    array[n_causes] int exit_causes = bernoulli_rng(cond_prob_exit[, t]);
+    array[n_causes] int exit_causes = bernoulli_logit_rng(log_odds_cond_prob_exit[, t]);
     int num_exits = sum(exit_causes);
   
     if (num_exits == 0) { // Didn't exit to any of the competing risks
