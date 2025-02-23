@@ -17,16 +17,22 @@ plot_baseline_hazard <- function(res_data, lambda_var, ...) {
     theme(legend.position = "bottom")
 }
 
-plot_crcr_baseline_hazard <- function(res_data, analysis_data) {
-  plot_baseline_hazard(res_data, crcr_trial_lambda, k) +
-    geom_rug(
-      aes(x = confirmed_response_week),
-      alpha = 0.5,
-      data = analysis_data |>
-        filter(!confirmed_response_censored) |>
-        mutate(k = if_else(confirmed_response, "Response", "Non-response"))
-    ) +
+plot_crcr_baseline_hazard <- function(res_data, analysis_data = NULL) {
+  po <- plot_baseline_hazard(res_data, crcr_trial_lambda, k) +
     facet_grid(vars(trial), vars(k), scales = "free_y")
+  
+  if (!is_null(analysis_data)) {
+    po <- po +
+      geom_rug(
+        aes(x = confirmed_response_week),
+        alpha = 0.5,
+        data = analysis_data |>
+          filter(!confirmed_response_censored) |>
+          mutate(k = if_else(confirmed_response, "Response", "Non-response"))
+      )
+  }
+  
+  return(po)
 }
 
 plot_pfs_baseline_hazard <- function(res_data, analysis_data) {
