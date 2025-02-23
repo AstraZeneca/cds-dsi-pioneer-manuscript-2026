@@ -50,6 +50,8 @@ real<lower = 0, upper = 1> forecast_orr = mean(forecast_confirmed_response_force
 vector<lower = 0, upper = 1>[n_trials] forecast_trial_orr;
 vector<lower = 0, upper = 1>[n_trials] forecast_trial_subpop_orr;
 
+array[n_causes, n_trials] row_vector<upper = 1e-6>[max_confresp_week] log_trial_cif;
+
 {
   int orr_pop_pos = 1;
   
@@ -64,6 +66,12 @@ vector<lower = 0, upper = 1>[n_trials] forecast_trial_subpop_orr;
     forecast_trial_subpop_orr[s] = mean(forecast_confirmed_response_forced[patient_pos:patient_end][trial_orr_pop[orr_pop_pos:orr_pop_end]]);
     
     orr_pop_pos = orr_pop_end + 1;
+  
+    for (k in 1:n_causes) {
+      for (t in 1:max_confresp_week) {
+        log_trial_cif[k, s, t] = log_sum_exp(log_cif[k, patient_pos:patient_end, t]) - log(n_trial_patients[s]);
+      }
+    }  
   }
 }
 
