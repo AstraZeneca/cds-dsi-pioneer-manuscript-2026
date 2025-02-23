@@ -78,15 +78,13 @@ profile("log_crcr_cond_prob_surv") { // Calculate patient-interval conditional p
     int patient_end = patient_pos + n_trial_patients[s] - 1;
   
     for (k in 1:n_causes) {
-      if (!no_prop_hazard) { 
-        patient_log_crcr_hazard_ratio[k, patient_pos:patient_end] =
-          tumor_sum_covar[patient_pos:patient_end] * crcr_covar_trial_coef[k, s, :n_tumor_covar] + 
-          covar_design_matrix[patient_pos:patient_end] * crcr_covar_trial_coef[k, s, (n_tumor_covar + 1):];
-      }
-      
       log_crcr_cond_prob_surv[k, patient_pos:patient_end] = rep_matrix(log_crcr_trial_lambda[k, s], n_trial_patients[s]);
         
       if (!no_prop_hazard) {
+        patient_log_crcr_hazard_ratio[k, patient_pos:patient_end] =
+          tumor_sum_covar[patient_pos:patient_end] * crcr_covar_trial_coef[k, s, :n_tumor_covar] + 
+          covar_design_matrix[patient_pos:patient_end] * crcr_covar_trial_coef[k, s, (n_tumor_covar + 1):];
+        
         log_crcr_cond_prob_surv[k, patient_pos:patient_end] += rep_matrix(patient_log_crcr_hazard_ratio[k, patient_pos:patient_end], max_confresp_week);
       }
       
