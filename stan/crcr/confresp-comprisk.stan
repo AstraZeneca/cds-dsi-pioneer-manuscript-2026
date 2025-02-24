@@ -17,13 +17,13 @@ data {
   int<lower = 0, upper = 1> crcr_ignore_interval_censoring; // Treat observed intervals as true intervals 
   int<lower = 0, upper = 1> gen_log_lik; // Generate log likelihood
   int<lower = 0, upper = 1> prior_sense; // Calculate prior sensitivity info for {priorsense}
+  int<lower = 0, upper = 1> no_prop_hazard; 
   
   // Hierarchical settings 
   int<lower = 0, upper = 1> add_trial_level_baseline_hazard;
   int<lower = 0, upper = 1> add_trial_level_prop_hazard;
-  // Separate trials but not multilevel
-  int<lower = 0, upper = 1 - add_trial_level_baseline_hazard> separate_baseline_hazard; 
-  int<lower = 0, upper = 1 - add_trial_level_prop_hazard> separate_prop_hazard;
+  int<lower = 0, upper = 1> separate_baseline_hazard;
+  int<lower = 0, upper = 1> separate_prop_hazard;
 
   // This is the data that is shared with the tumor model 
   #include "../base_data.stan"
@@ -38,7 +38,6 @@ data {
 }
 
 transformed data {
-  int no_prop_hazard = 0; // Move this to the data section if we want to be able to turn the prop hazard off
   
   #include "../base_transformed_data.stan" 
   #include "crcr_transformed_data.stan"
@@ -65,18 +64,20 @@ model {
       // last_unclassified_response_week ~ comp_risk_pch(confirmed_response_cause, early_confirmed_response_censored, log_crcr_cond_prob_surv, max_confresp_week);
       
       if (leave_out_trial > 0) {
-        target += reduce_sum(
-          partial_sum_crcr_lupmf, last_unclassified_response_week[training_patients], grain_size,
-          confirmed_response_cause[training_patients], 
-          early_confirmed_response_censored[training_patients], 
-          crcr_ignore_interval_censoring ? zeros_int_array(n_training_patients) : confirmed_response_interval_censored[training_patients], 
-          log_crcr_cond_prob_surv[training_crcr_intervals]
-        );
+        fatal_error("This code is out of date and needs to be fixed. The structure of log_crcr_cond_prob_surv has changed.");
+        // target += reduce_sum(
+        //   partial_sum_crcr_lupmf, last_unclassified_response_week[training_patients], grain_size,
+        //   confirmed_response_cause[training_patients], 
+        //   confirmed_response_censored[training_patients], 
+        //   crcr_ignore_interval_censoring ? zeros_int_array(n_training_patients) : confirmed_response_interval_censored[training_patients], 
+        //   log_crcr_cond_prob_surv[, training_crcr_intervals]
+        // );
       } else {
         target += reduce_sum(
           partial_sum_crcr_lupmf, last_unclassified_response_week, grain_size,
           confirmed_response_cause, 
-          early_confirmed_response_censored, crcr_ignore_interval_censoring ? zeros_int_array(n_patients) : confirmed_response_interval_censored, 
+          confirmed_response_censored, 
+          crcr_ignore_interval_censoring ? zeros_int_array(n_patients) : confirmed_response_interval_censored, 
           log_crcr_cond_prob_surv
         );
       }
