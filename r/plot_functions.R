@@ -187,8 +187,16 @@ plot_simple_gng <- function(res_data, outcome, color_col, lrv_tv, model_type_nam
     NULL
 }
 
+add_dco_to_plot <- function(plot, label_offset_x = - days(40), label_offset_y = 2) {
+  plot +
+    geom_vline(xintercept = c(lubridate::ymd("2024-04-22"), lubridate::ymd("2024-07-31"), lubridate::ymd("2024-10-31")), linetype = "dashed", color = AZ_platinum) +
+    annotate("text", x = lubridate::ymd("2024-04-22") + label_offset_x, y = label_offset_y, label = "DCO 0") +
+    annotate("text", x = lubridate::ymd("2024-07-31") + label_offset_x, y = label_offset_y, label = "DCO 1") +
+    annotate("text", x = lubridate::ymd("2024-10-31") + label_offset_x, y = label_offset_y, label = "DCO 2") 
+}
+
 plot_patient_timelines <- function(analysis_data) {
-  analysis_data |> 
+  plot <- analysis_data |> 
     unnest(patient_tumors) |>
     unnest(tumor_history, names_sep = "_") |> 
     distinct(usubjid, trtsdt, right_censored, day = tumor_history_day, visit_date = tumor_history_adt) |> 
@@ -200,13 +208,12 @@ plot_patient_timelines <- function(analysis_data) {
     geom_point(aes(x = visit_date, shape = "visit"), size = 2, data = \(d) unnest(d, visits) |> filter(visit_date < last_visit)) +
     geom_point(aes(x = trtsdt, shape = "treat"), size = 2) +
     geom_point(aes(x = last_visit, color = right_censored, shape = "last"), size = 2) +
-    geom_vline(xintercept = c(lubridate::ymd("2024-06-30"), lubridate::ymd("2024-10-31")), linetype = "dashed", color = AZ_platinum) +
-    annotate("text", x = lubridate::ymd("2024-6-30") - days(40), y = 2, label = "DCO 1") +
-    annotate("text", x = lubridate::ymd("2024-10-31") - days(40), y = 2, label = "DCO 2") +
     labs(x = "Calendar Time", y = "Patients") +
     scale_color_discrete("", label = c("FALSE" = "Progression", "TRUE" = "Censored"), type = AZ_palette) +
     scale_shape_manual(
       "", values = c("visit" = 124, "treat" = 5, "last" = 19), labels = c("visit" = "Visit", "treat" = "Treatment Start", "last" = "Last Visit")
     ) +
     theme(axis.text.y = element_blank(), panel.grid.major.y = element_blank(), legend.position = "inside", legend.position.inside = c(0.25, 0.8))
+  
+  add_dco_to_plot(plot) 
 }
