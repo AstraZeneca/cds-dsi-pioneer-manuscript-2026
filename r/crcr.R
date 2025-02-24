@@ -186,6 +186,16 @@ get_crcr_predict_cif <- function(res, stan_data = NULL, week_col = rep_confirmed
     unnest(cif)
 }
 
+get_crcr_predict_cif2 <- function(res, analysis_data) {
+  cif <- res |>
+    recover_types(analysis_data[, "trial"]) |> 
+    spread_rvars(log_trial_cif[k, trial, t]) |>
+    mutate(
+      k = factor(k, levels = 1:2, labels = c("non-response", "response")), 
+      trial_cif = exp(log_trial_cif)
+    )
+}
+
 get_crcr_objective_response <- function(res, stan_data) {
   spread_rvars(res, rep_confirmed_response_forced[i], log_prob_cause[k, i]) |> 
     filter(k == 2) |>

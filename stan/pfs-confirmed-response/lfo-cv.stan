@@ -301,7 +301,7 @@ generated quantities {
         array[n_curr_conf_resp_patients] int curr_conf_resp_patients = curr_patients[curr_cutoff_patients_idx];
         vector[n_curr_conf_resp_patients] curr_crcr_log_lik = calc_pch_loglik(
           last_unclassified_response_week[curr_conf_resp_patients], confirmed_response_cause[curr_conf_resp_patients],
-          early_confirmed_response_censored[curr_conf_resp_patients], confirmed_response_interval_censored[curr_conf_resp_patients], 0,
+          confirmed_response_censored[curr_conf_resp_patients], confirmed_response_interval_censored[curr_conf_resp_patients], 0,
           log_crcr_cond_prob_surv[, curr_conf_resp_patients], testing_start_week[curr_cutoff_patients_idx], testing_end_week[curr_cutoff_patients_idx]
         );
   

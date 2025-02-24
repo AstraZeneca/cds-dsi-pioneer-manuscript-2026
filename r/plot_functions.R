@@ -17,16 +17,22 @@ plot_baseline_hazard <- function(res_data, lambda_var, ...) {
     theme(legend.position = "bottom")
 }
 
-plot_crcr_baseline_hazard <- function(res_data, analysis_data) {
-  plot_baseline_hazard(res_data, crcr_trial_lambda, k) +
-    geom_rug(
-      aes(x = confirmed_response_week),
-      alpha = 0.5,
-      data = analysis_data |>
-        filter(!confirmed_response_censored) |>
-        mutate(k = if_else(confirmed_response, "Response", "Non-response"))
-    ) +
+plot_crcr_baseline_hazard <- function(res_data, analysis_data = NULL) {
+  po <- plot_baseline_hazard(res_data, crcr_trial_lambda, k) +
     facet_grid(vars(trial), vars(k), scales = "free_y")
+  
+  if (!is_null(analysis_data)) {
+    po <- po +
+      geom_rug(
+        aes(x = confirmed_response_week),
+        alpha = 0.5,
+        data = analysis_data |>
+          filter(!confirmed_response_censored) |>
+          mutate(k = if_else(confirmed_response, "Response", "Non-response"))
+      )
+  }
+  
+  return(po)
 }
 
 plot_pfs_baseline_hazard <- function(res_data, analysis_data) {
@@ -57,10 +63,19 @@ plot_unclassified_survival <- function(res_data, analysis_data, conf_resp_hb) {
     NULL 
 }
 
-plot_cif <- function(res_data, obs_cif_data) {
-  ggplot(res_data, aes(time, estimate)) +
+plot_cif <- function(res_data, obs_cif_data, time = time, estimate = estimate) {
+  ggplot(res_data, aes({{ time }}, {{ estimate }})) +
     stat_lineribbon(aes(fill = fit_type), linewidth = 0, alpha = 0.25, .width = c(0.5, 0.8)) +
-    geom_step(aes(y = estimate, linetype = "Observed"), direction = "vh", data = \(d) semi_join(obs_cif_data, d, by = "trial")) +
+    geom_step(aes(x = time, y = estimate, linetype = "Observed"), direction = "vh", data = \(d) semi_join(obs_cif_data, d, by = "trial")) +
+    scale_linetype_manual("", values = c(Observed = "dashed")) +
+    labs(y = "CIF") +
+    NULL
+}
+
+plot_cif2 <- function(res_data, obs_cif_data) {
+  ggplot(res_data) +
+    stat_lineribbon(aes(x = t, ydist = trial_cif, fill = fit_type), linewidth = 0, alpha = 0.25, .width = c(0.5, 0.8)) +
+    geom_step(aes(x = time, y = estimate, linetype = "Observed"), direction = "vh", data = \(d) semi_join(obs_cif_data, d, by = "trial")) +
     scale_linetype_manual("", values = c(Observed = "dashed")) +
     labs(y = "CIF") +
     NULL
