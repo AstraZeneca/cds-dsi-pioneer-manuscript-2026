@@ -479,7 +479,7 @@
         "rlang",
         "withr"
       ],
-      "Hash": "f82d0d1d1615fa38f829003c3036e92c"
+      "Hash": "90dde1d68f2b9a72acc85a41666606ff"
     },
     "cmprsk": {
       "Package": "cmprsk",
@@ -681,6 +681,28 @@
         "vctrs"
       ],
       "Hash": "76e94de462aa18ea966a38956ecf4497"
+    },
+    "dplyover": {
+      "Package": "dplyover",
+      "Version": "0.0.8.9002",
+      "Source": "GitHub",
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteUsername": "TimTeaFan",
+      "RemoteRepo": "dplyover",
+      "RemoteRef": "main",
+      "RemoteSha": "f0cd984586bafdc0dc78fc4ead2d76ba50d9370e",
+      "Requirements": [
+        "R",
+        "dplyr",
+        "glue",
+        "purrr",
+        "rlang",
+        "tibble",
+        "tidyselect",
+        "vctrs"
+      ],
+      "Hash": "ea56a2357d0137d46381c083119bab10"
     },
     "dplyr": {
       "Package": "dplyr",
