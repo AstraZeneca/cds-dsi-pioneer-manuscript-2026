@@ -7,7 +7,7 @@ functions {
     int n_patients = size(patient_calendar_day);
     
     // 0 is the default sentinel value if last visit is negative 
-    array[n_patients] int last_visit_day = rep_array(0, n_patients), last_visit_week = rep_array(0, n_patients); 
+    array[n_patients] int last_visit_day = zeros_int_array(n_patients), last_visit_week = zeros_int_array(n_patients); 
 
     array[n_patients] int last_visit_calendar_day;
     
