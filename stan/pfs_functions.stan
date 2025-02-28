@@ -136,8 +136,6 @@ vector calc_pch_loglik(
       // For IC, I need to create a mixture of all the possible true intervals of exit.
       vector[curr_interval_censored + 1] ic_mix_lp = zeros_vector(curr_interval_censored + 1); 
       
-      // print(i, ": [", interval_pos, ", ", interval_end, "], curr_interval_censored = ", curr_interval_censored);
-      
       for (c in 0:curr_interval_censored) {
         if (c > 0) { 
           for (k in 1:n_exit_types) {
@@ -147,12 +145,6 @@ vector calc_pch_loglik(
        
         if (!effective_right_censored) { 
           ic_mix_lp[c + 1] += log1m_exp(log_cond_prob_surv[exit_event[i], i, interval_end + c + 1]);
-          
-          // for (k in 1:n_exit_types) {
-          //   if (k != exit_event[i]) {
-          //     ic_mix_lp[c + 1] += log_cond_prob_surv[k, i, interval_end + c + 1];
-          //   }
-          // }
         }
       }
       
