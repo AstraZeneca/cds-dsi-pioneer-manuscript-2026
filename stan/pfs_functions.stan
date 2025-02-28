@@ -115,11 +115,8 @@ vector calc_pch_loglik(
   for (i in 1:n_patients) {
     int interval_pos = max(0, start_from[i]);
     int interval_end = min(end_at[i], last_surv_week[i]);
-    int effective_right_censored = right_censored[i] || (end_at[i] < last_surv_week[i] + (1 - ignore_interval_censoring) * interval_censored[i]);
+    int effective_right_censored = right_censored[i] || (end_at[i] < last_surv_week[i] + (1 - ignore_interval_censoring) * interval_censored[i] + 1);
     int curr_interval_censored = ignore_interval_censoring || effective_right_censored ? 0 : interval_censored[i];
-    
-    // print(i, ": [", interval_pos, ", ", interval_end, "], right_censored[i] = ", right_censored[i], ", effective_right_censored = ", effective_right_censored,
-    //       ", start_from[i] = ", start_from[i], ", end_at[i] = ", end_at[i], ", last_surv_week[i] = ", last_surv_week[i]);
     
     if (right_censored[i] && interval_censored[i] > 0) {
       fatal_error("Interval censoring not allowed with right censored observations. Patient ", i, ".");
@@ -132,7 +129,10 @@ vector calc_pch_loglik(
     }
     
     if ((interval_pos <= interval_end) || (interval_end + curr_interval_censored + 1 >= interval_pos)) {
-      interval_end = max(interval_end, interval_pos - 1);
+      int old_interval_end = interval_end, old_interval_censored = curr_interval_censored;
+      interval_end = max(old_interval_end, interval_pos - 1);
+      curr_interval_censored = max(0, curr_interval_censored - (interval_end - old_interval_end));   
+      
       // For IC, I need to create a mixture of all the possible true intervals of exit.
       vector[curr_interval_censored + 1] ic_mix_lp = zeros_vector(curr_interval_censored + 1); 
       
