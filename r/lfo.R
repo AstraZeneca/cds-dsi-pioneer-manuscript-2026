@@ -36,12 +36,12 @@ lfo <- function(
     left_join(select(remaining_cutoffs, n, cutoff_date, cutoff_calendar_day), by = "n")
   
   if (lean) {
-    psis_results <- psis_results |> 
-      select(!c(psis_obj, lwt))
+    psis_results <- psis_results |>
+      select(!c(starts_with("psis"), starts_with("lwt"), fit))
   }
   
   next_cutoffs <- psis_results |> 
-    filter(!is.na(k), k > k_threshold | exact, n > refit_n) %>%
+    filter(!map_lgl(k, is_null), map_dbl(k, max) > k_threshold | exact, n > refit_n) %>%
     semi_join(remaining_cutoffs, ., by = "n")
   
   if (verbose) {
@@ -69,46 +69,41 @@ log_sum_exp <- function(x) {
 # more stable than log(mean(exp(x)))
 log_mean_exp <- function(x) {
   log_sum_exp(x) - log(length(x))
-} 
-
-lfo_pointwise_log_lik <- function(res) {
-  res |> 
-    spread_rvars(oos_log_lik[n, m], oos_pfs_log_lik[n, m], oos_crcr_log_lik[n, m]) %>% {
-      inner_join(
-        filter(., m == max(m)) |> select(!m), 
-        filter(., n == 1) |> select(!n), 
-        by = c("n" = "m"), suffix = c("", "_log_ratio"))
-    } |> 
-    mutate(
-      fit = map(min_rank(n), \(nr) if (nr == 1) res),
-      across(ends_with("log_ratio"), lag),
-      across(ends_with("log_lik"), \(oos_ll) map_dbl(oos_ll, \(ll) log_mean_exp(posterior::draws_of(ll))), .names = "original_E_log_lik_{.col}")
-    ) |> 
-    rename(original_E_log_lik = original_E_log_lik_oos_log_lik) |> 
-    rename_with(\(col) str_replace(col, "_log_lik_oos_(pfs|crcr)_log_lik", r"{_\1_log_lik}"), starts_with("original_E_log_lik"))
 }
 
 lfo_log_lik <- function(res) {
   res |> 
-    lfo_pointwise_log_lik() |>
+    spread_rvars(patient_log_lik[n, m, i], patient_pfs_log_lik[n, m, i], patient_crcr_log_lik[n, m, i]) |>
+    filter(map_lgl(patient_log_lik, \(l) any(l != 0))) %>% {
+      inner_join(
+        filter(., m == max(m)) |> select(!m), 
+        filter(., n == 1) |> select(!n), 
+        by = c("n" = "m", "i"), suffix = c("", "_log_ratio"))
+    } |> 
+    group_by(n) |> 
+    summarize(across(matches("^patient(_pfs|_crcr)?_log_lik"), \(l) list(draws_of(l)))) |> 
     mutate(
+      fit = map(min_rank(n), \(nr) if (nr == 1) res),
+      across(matches("^patient(_pfs|_crcr)?_log_lik$"), \(l) map(l, \(ln) plyr::aaply(ln, 2, log_mean_exp)), .names = "mean_{.col}"),
+      across(matches("^patient(_pfs|_crcr)?_log_lik_log_ratio$"), \(l) map(l, \(ln) suppressWarnings(loo::psis(ln))), .names = "psis_{.col}"), 
       across(
-        ends_with("log_ratio"), 
-        \(oos_lr) map_if(oos_lr, \(lr) !is.na(lr), \(lr) suppressWarnings(loo::psis(posterior::draws_of(lr))), .else = \(lr) NA),
-        .names = "psis_obj_{.col}"
+        starts_with("psis"), 
+        lst(k = \(po) map(po, loo::pareto_k_values), lwt = \(po) map(po, \(pon) weights(pon, normalize = TRUE))), 
+        .names = "{.fn}_{.col}"
       ),
+      across(matches("^(psis|lwt|k)"), lag),
+      dplyover::across2(
+        matches("^patient(_pfs|_crcr)?_log_lik$"), matches("^lwt(_pfs|crcr)?"), 
+        \(l, w) map2(l, w, \(ln, wn) if (!is_null(wn)) plyr::aaply(wn + ln, 2, log_mean_exp)), .names = "approx_mean_{xcol}"),
+      across(matches("^(approx_)?mean"), \(m) map_dbl(m, sum), .names = "E_{.col}")
     ) |> 
-    rename_with(\(col) str_replace(col, "_oos((?:_pfs|_crcr)?)_log_lik_log_ratio", r"{\1}"), starts_with("psis_obj")) |>
-    mutate(
-      across(starts_with("psis_obj"), \(po) unlist(map_if(po, \(p) !is_na(p), loo::pareto_k_values)), .names = "k_{.col}"),
-      across(starts_with("psis_obj"), \(po) map_if(psis_obj, \(p) !is_na(p), \(o) weights(o, normalize = TRUE)[, 1]), .names = "lwt_{.col}")
-    ) |> 
-    rename_with(\(col) str_replace(col, "_psis_obj((?:_pfs|_crcr)?)", r"{\1}"), c(starts_with("lwt_"), starts_with("k_"))) |>
-    mutate(
-      approx_E_log_lik = map2_vec(oos_log_lik, lwt, \(lr, lw) log_sum_exp(lw + posterior::draws_of(lr))),
-      approx_E_log_lik_pfs = map2_vec(oos_pfs_log_lik, lwt_pfs, \(lr, lw) log_sum_exp(lw + posterior::draws_of(lr))),
-      approx_E_log_lik_crcr = map2_vec(oos_crcr_log_lik, lwt_pfs, \(lr, lw) log_sum_exp(lw + posterior::draws_of(lr))),
-    )
+    rename_with(\(n) str_replace_all(
+      n, 
+      c(r"{log_lik_log_ratio}" = "log_ratio",
+        r"{(k|lwt)_psis_patient(_pfs|_crcr)?_log_ratio}" = r"{\1\2}", 
+        r"{^psis_patient(_pfs|_crcr)?_log_ratio}" = r"{psis\1}",
+        r"{E_(approx_)?mean}" = r"{\1E}")
+    ))  
 }
 
 clean_lfo_results <- function(lfo_res) {
