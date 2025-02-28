@@ -230,6 +230,8 @@ model {
 }
 
 generated quantities {
+  array[n_cutoffs, n_cutoffs] vector[n_patients] patient_log_lik, patient_pfs_log_lik, patient_crcr_log_lik;
+  
   matrix[n_cutoffs, n_cutoffs] oos_log_lik = rep_matrix(0, n_cutoffs, n_cutoffs); 
   matrix[n_cutoffs, n_cutoffs] oos_pfs_log_lik = rep_matrix(0, n_cutoffs, n_cutoffs); 
   matrix[n_cutoffs, n_cutoffs] oos_crcr_log_lik = rep_matrix(0, n_cutoffs, n_cutoffs); 
@@ -239,10 +241,16 @@ generated quantities {
     array[n_curr_patients] int curr_patients = last_visit_calendar_day_sort_idx[pfs_testing_patient_idx[n]:]; // Who are these patients
     array[n_curr_patients] int testing_start_week = oos_patient_first_testing_visit_week[n, curr_patients]; // Which intervals do we start from
     
+    for (m in 1:n_cutoffs) {
+      patient_log_lik[n, m] = zeros_vector(n_patients);
+      patient_pfs_log_lik[n, m] = zeros_vector(n_patients);
+      patient_crcr_log_lik[n, m] = zeros_vector(n_patients);
+    }
+    
     for (m in n:n_cutoffs) {
       array[n_curr_patients] int testing_end_week = m < n_cutoffs ? oos_patient_last_testing_visit_week[n, m + 1, curr_patients] : rep_array(max_all_t, n_curr_patients);
     
-      vector[n_curr_patients] curr_log_lik = rep_vector(0, n_curr_patients); 
+      vector[n_curr_patients] curr_log_lik = zeros_vector(n_curr_patients); 
       matrix[n_curr_patients, no_prop_hazard || pfs_only ? 1 : n_causes] testing_patient_response_lp; 
       
       // Get the PFS log likelihoods for the testing intervals/weeks. 
@@ -278,6 +286,9 @@ generated quantities {
         }
       }
       
+      patient_pfs_log_lik[n, m, curr_patients] = curr_log_lik;
+      oos_pfs_log_lik[n, m] = sum(curr_log_lik);
+      
       // Get the confirmed response log likelihoods for the testing frame. 
       array[n_curr_patients] int curr_confirmed_response_calendar_day = confirmed_response_calendar_day[curr_patients]; 
       array[n_curr_patients] int confirmed_response_calendar_day_sort_idx = sort_indices_asc(curr_confirmed_response_calendar_day);
@@ -294,8 +305,6 @@ generated quantities {
           conf_resp_from += 1;
         }
       }
-      
-      oos_pfs_log_lik[n, m] = sum(curr_log_lik);
      
       if (found_conf_resp_from) { // We could end up with none found if for these patients their PFS is after cutoff but their confirmed response is observed before.
         int n_curr_conf_resp_patients = n_curr_patients - conf_resp_from + 1;
@@ -306,11 +315,13 @@ generated quantities {
           confirmed_response_censored[curr_conf_resp_patients], confirmed_response_interval_censored[curr_conf_resp_patients], 0,
           log_crcr_cond_prob_surv[, curr_conf_resp_patients], testing_start_week[curr_cutoff_patients_idx], testing_end_week[curr_cutoff_patients_idx]
         );
-  
+ 
+        patient_crcr_log_lik[n, m, curr_patients[curr_cutoff_patients_idx]] = curr_crcr_log_lik; 
         curr_log_lik[curr_cutoff_patients_idx] += curr_crcr_log_lik;
         oos_crcr_log_lik[n, m] = sum(curr_crcr_log_lik);
       }
       
+      patient_log_lik[n, m, curr_patients] = curr_log_lik; 
       oos_log_lik[n, m] = sum(curr_log_lik);
     }
   }
