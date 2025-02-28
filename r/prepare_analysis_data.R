@@ -174,6 +174,7 @@ prepare_confirmed_resp_stan_data <- function(
       crcr_ignore_interval_censoring = FALSE,
       gen_log_lik = FALSE,
       prior_sense = FALSE,
+      train_beyond_cutoff = FALSE,
       
       log_lik_trial = 0,
       leave_out_trial = 0,
