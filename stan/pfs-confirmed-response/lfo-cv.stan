@@ -142,6 +142,8 @@ functions {
 data {
   #include "data.stan"
   
+  int<lower = 0, upper = 1> train_beyond_cutoff;
+  
   int<lower = 1> n_cutoffs;
   array[n_cutoffs] int<lower = 1> cutoff_calendar_day;
 }
@@ -197,14 +199,14 @@ model {
       confirmed_response_interval_censored,
       crcr_ignore_interval_censoring,
       log_crcr_cond_prob_surv,
-      ones_int_array(n_patients), cutoff_last_visit_week
+      ones_int_array(n_patients), train_beyond_cutoff ? rep_array(max_confresp_week, n_patients) : cutoff_last_visit_week
     );
     
     matrix[n_patients, no_prop_hazard || pfs_only ? 1 : n_causes] training_patient_response_lp;
 
     training_patient_response_lp[, 1] = calc_pch_loglik(
       pfs, right_censored, interval_censored, pfs_ignore_interval_censoring, log_cond_prob_surv[1],
-      ones_int_array(n_patients), cutoff_last_visit_week
+      ones_int_array(n_patients), train_beyond_cutoff ? rep_array(max_all_t, n_patients) : cutoff_last_visit_week
     );
 
     if (no_prop_hazard || pfs_only) {
@@ -212,7 +214,7 @@ model {
     } else {
       training_patient_response_lp[, 2] = calc_pch_loglik(
         pfs, right_censored, interval_censored, pfs_ignore_interval_censoring, log_cond_prob_surv[2],
-        ones_int_array(n_patients), cutoff_last_visit_week
+        ones_int_array(n_patients), train_beyond_cutoff ? rep_array(max_all_t, n_patients) : cutoff_last_visit_week 
       );
       
       for (i in 1:n_patients) {
