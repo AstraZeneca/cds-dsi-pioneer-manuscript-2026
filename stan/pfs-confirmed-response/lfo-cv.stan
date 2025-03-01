@@ -167,6 +167,9 @@ transformed data {
   // would have visits after so should also be in the testing frame. This _idx array should have increasing values as we can use fewer and fewer patients for testing
   // as the cutoff date increases.
   array[n_cutoffs] int<lower = 1, upper = n_patients> pfs_testing_patient_idx = get_oos_patients_idx(last_visit_calendar_day[last_visit_calendar_day_sort_idx], cutoff_calendar_day);
+  
+  int<lower = 0, upper = n_patients> n_all_testing_patients = n_patients - pfs_testing_patient_idx[1] + 1;
+  array[n_all_testing_patients] int<lower = 1, upper = n_patients> all_testing_patients = last_visit_calendar_day_sort_idx[pfs_testing_patient_idx[1]:];
    
   // The patient-specific week to start using for log likelihood calculation 
   array[n_cutoffs, n_patients] int<lower = 0> oos_patient_first_testing_visit_week;
@@ -230,21 +233,22 @@ model {
 }
 
 generated quantities {
-  array[n_cutoffs, n_cutoffs] vector[n_patients] patient_log_lik, patient_pfs_log_lik, patient_crcr_log_lik;
+  array[n_cutoffs, n_cutoffs] vector[n_all_testing_patients] patient_log_lik, patient_pfs_log_lik, patient_crcr_log_lik;
   
-  matrix[n_cutoffs, n_cutoffs] oos_log_lik = rep_matrix(0, n_cutoffs, n_cutoffs); 
-  matrix[n_cutoffs, n_cutoffs] oos_pfs_log_lik = rep_matrix(0, n_cutoffs, n_cutoffs); 
-  matrix[n_cutoffs, n_cutoffs] oos_crcr_log_lik = rep_matrix(0, n_cutoffs, n_cutoffs); 
+  // matrix[n_cutoffs, n_cutoffs] oos_log_lik = rep_matrix(0, n_cutoffs, n_cutoffs); 
+  // matrix[n_cutoffs, n_cutoffs] oos_pfs_log_lik = rep_matrix(0, n_cutoffs, n_cutoffs); 
+  // matrix[n_cutoffs, n_cutoffs] oos_crcr_log_lik = rep_matrix(0, n_cutoffs, n_cutoffs); 
   
   for (n in 1:n_cutoffs) {
     int n_curr_patients = n_patients - pfs_testing_patient_idx[n] + 1; // How many patients after the current patient index
+    int curr_first_testing_patient_idx = n_all_testing_patients - n_curr_patients + 1; 
     array[n_curr_patients] int curr_patients = last_visit_calendar_day_sort_idx[pfs_testing_patient_idx[n]:]; // Who are these patients
     array[n_curr_patients] int testing_start_week = oos_patient_first_testing_visit_week[n, curr_patients]; // Which intervals do we start from
     
     for (m in 1:n_cutoffs) {
-      patient_log_lik[n, m] = zeros_vector(n_patients);
-      patient_pfs_log_lik[n, m] = zeros_vector(n_patients);
-      patient_crcr_log_lik[n, m] = zeros_vector(n_patients);
+      patient_log_lik[n, m] = zeros_vector(n_all_testing_patients);
+      patient_pfs_log_lik[n, m] = zeros_vector(n_all_testing_patients);
+      patient_crcr_log_lik[n, m] = zeros_vector(n_all_testing_patients);
     }
     
     for (m in n:n_cutoffs) {
@@ -286,8 +290,8 @@ generated quantities {
         }
       }
       
-      patient_pfs_log_lik[n, m, curr_patients] = curr_log_lik;
-      oos_pfs_log_lik[n, m] = sum(curr_log_lik);
+      patient_pfs_log_lik[n, m, curr_first_testing_patient_idx:] = curr_log_lik;
+      // oos_pfs_log_lik[n, m] = sum(curr_log_lik);
       
       // Get the confirmed response log likelihoods for the testing frame. 
       array[n_curr_patients] int curr_confirmed_response_calendar_day = confirmed_response_calendar_day[curr_patients]; 
@@ -296,7 +300,7 @@ generated quantities {
       
       int found_conf_resp_from = 0, conf_resp_from = 1;
       
-      while (!found_conf_resp_from) {
+      while (!found_conf_resp_from && conf_resp_from <= n_curr_patients) {
         // We need to find which patient is the first to have their confirmed response classification after the cutoff day. All following patients
         // in the _sort_idx array should also be included
         if (curr_sorted_confirmed_response_calendar_day[conf_resp_from] > cutoff_calendar_day[n]) {
@@ -316,13 +320,14 @@ generated quantities {
           log_crcr_cond_prob_surv[, curr_conf_resp_patients], testing_start_week[curr_cutoff_patients_idx], testing_end_week[curr_cutoff_patients_idx]
         );
  
-        patient_crcr_log_lik[n, m, curr_patients[curr_cutoff_patients_idx]] = curr_crcr_log_lik; 
+        // patient_crcr_log_lik[n, m, curr_first_testing_patient_idx:][curr_cutoff_patients_idx] = curr_crcr_log_lik; 
+        patient_crcr_log_lik[n, m, (curr_first_testing_patient_idx + conf_resp_from - 1):] = curr_crcr_log_lik; 
         curr_log_lik[curr_cutoff_patients_idx] += curr_crcr_log_lik;
-        oos_crcr_log_lik[n, m] = sum(curr_crcr_log_lik);
+        // oos_crcr_log_lik[n, m] = sum(curr_crcr_log_lik);
       }
       
-      patient_log_lik[n, m, curr_patients] = curr_log_lik; 
-      oos_log_lik[n, m] = sum(curr_log_lik);
+      patient_log_lik[n, m, curr_first_testing_patient_idx:] = curr_log_lik; 
+      // oos_log_lik[n, m] = sum(curr_log_lik);
     }
   }
 }
