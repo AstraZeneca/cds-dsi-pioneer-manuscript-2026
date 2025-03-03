@@ -1,6 +1,7 @@
 get_trial_loo <- function(res, log_lik_var = "trial_log_lik", moment_match = TRUE, ...) {
   res$loo(log_lik_var, moment_match = moment_match, save_psis = TRUE, ...)
 }
+
 add_stacked_results <- function(res_data, stacking_weights, ...) {
   left_join(res_data, stacking_weights, by = c("model_type", "trial")) |>  
     mutate(weight = as.numeric(weight)) %>%
