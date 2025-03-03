@@ -77,22 +77,6 @@ lfo_drop_bad_approx <- function(lfo_res) {
     ungroup()  
 }
 
-redo_lfo_results <- function(lfo_res, lean = FALSE) {
-  new_res <- lfo_res |> 
-    lfo_drop_bad_approx() |> 
-    arrange(n) |> 
-    group_by(refit_n) |> 
-    reframe(lfo_log_lik(first(fit), max_n = n())) |>   
-    mutate(n = n + refit_n - 1)
-  
-  if (lean) {
-    new_res <- new_res |>
-      select(n, contains("E_"))
-  }
-  
-  return(new_res)
-}
-
 # more stable than log(sum(exp(x))) 
 log_sum_exp <- function(x) {
   max_x <- max(x)  
@@ -105,11 +89,25 @@ log_mean_exp <- function(x) {
 }
 
 lfo_log_lik <- function(res, max_n = Inf, future_window = 1) {
-  psis_resample <- function(l, w) map2(l, w, \(ln, wn) if (!is_null(wn)) plyr::aaply(ln + wn, 2, log_sum_exp))
-  
   res |> 
     spread_rvars(patient_log_lik[n, m, i], patient_pfs_log_lik[n, m, i], patient_crcr_log_lik[n, m, i]) |>
-    filter(map_lgl(patient_log_lik, \(l) any(l != 0)), m >= n) |>  
+    lfo_log_lik_rvar(max_n, future_window)
+}
+
+psis_resample <- function(l, w, recalc_full = FALSE) { #, negative_only = TRUE) {
+  map2(l, w, function(ln, wn) { 
+    if (!is_null(wn)) {
+      plyr::aaply(ln, 2, \(lni) log_sum_exp(lni + wn * all(wn < 0))) 
+    } else if (recalc_full) { 
+      plyr::aaply(ln, 2, log_mean_exp)
+    }
+  })
+}
+
+lfo_log_lik_rvar <- function(log_lik_rvar, max_n = Inf, future_window = 1) {
+  log_lik_rvar |>   
+    # filter(map_lgl(patient_log_lik, \(l) any(l != 0)), m >= n) |>  
+    filter(m >= n) |>
     group_by(n, m) |> 
     summarize(across(matches("^patient(_pfs|_crcr)?_log_lik"), \(l) list(draws_of(l))), .groups = "drop") |>
     (function(d) {
@@ -125,9 +123,17 @@ lfo_log_lik <- function(res, max_n = Inf, future_window = 1) {
     })() |>
     filter(n <= max_n) |> 
     mutate(
-      fit = map(min_rank(n), \(nr) if (nr == 1) res),
-      across(matches("^patient(_pfs|_crcr)?_log_lik(_w)?$"), \(l) map(l, \(ln) plyr::aaply(ln, 2, log_mean_exp)), .names = "mean_{.col}"),
-      across(matches("^patient(_pfs|_crcr)?_log_lik_log_ratio$"), \(l) map(l, \(ln) suppressWarnings(loo::psis(rowSums(ln)))), .names = "psis_{.col}"), 
+      # fit = map(min_rank(n), \(nr) if (nr == 1) res),
+      across(
+        matches("^patient(_pfs|_crcr)?_log_lik(_w)?$"), 
+        \(l) map(l, \(ln) plyr::aaply(ln[, colSums(ln) < 0], 2, \(lni) log_mean_exp(lni))), 
+        .names = "mean_{.col}"
+      ),
+      across(
+        matches("^patient(_pfs|_crcr)?_log_lik_log_ratio$"),
+        \(l) map(l, \(ln) suppressWarnings(loo::psis(rowSums(ln)))), 
+        .names = "psis_{.col}"
+      ), 
       across(
         starts_with("psis"), 
         lst(k = \(po) map_dbl(po, loo::pareto_k_values), lwt = \(po) map(po, \(pon) weights(pon, normalize = TRUE)[, 1])), 
@@ -150,6 +156,22 @@ lfo_log_lik <- function(res, max_n = Inf, future_window = 1) {
     rename_with(\(n) str_replace(n, r"{E_(approx_)?mean}", r"{\1E}"))
 }
 
+redo_lfo_results <- function(lfo_res, lean = FALSE) {
+  new_res <- lfo_res |> 
+    lfo_drop_bad_approx() |> 
+    arrange(n) |> 
+    group_by(refit_n) |> 
+    reframe(lfo_log_lik(first(fit), max_n = n())) |>   
+    mutate(n = n + refit_n - 1)
+  
+  if (lean) {
+    new_res <- new_res |>
+      select(n, contains("E_"), k)
+  }
+  
+  return(new_res)
+}
+
 clean_lfo_results <- function(lfo_res) {
   lfo_res |> 
     lfo_drop_bad_approx() |> 
@@ -161,6 +183,38 @@ clean_lfo_results <- function(lfo_res) {
       E_pfs_log_lik_w = if_else(is.na(k), E_patient_pfs_log_lik_w, approx_E_patient_pfs_log_lik_w),
       E_crcr_log_lik_w = if_else(is.na(k), E_patient_crcr_log_lik_w, approx_E_patient_crcr_log_lik_w),
     )
+}
+
+lfo_bootstrap_elpd <- function(lfo_res, n_bootstrap = 1000) {
+  get_patient_subset_col <- function(ln, i) {
+    n_early_patients <- length(i) - ncol(ln)
+    ln[, discard(i, \(x) x < n_early_patients) - n_early_patients]
+  } 
+  
+  origin_res <- lfo_res |> 
+    lfo_drop_bad_approx() |> 
+    arrange(n)
+  
+  n_lfo_patients <- ncol(first(origin_res$patient_log_lik))
+  
+  map_dfr(seq(n_bootstrap), function(b) {
+    bootstrap_i <- sample(n_lfo_patients, n_lfo_patients, replace = TRUE)
+   
+    origin_res |>
+      mutate(
+        across(matches("^patient(_pfs|_crcr)?_log_lik(_w)?$"), \(l)  map(l, \(ln) get_patient_subset_col(ln, bootstrap_i))),
+        dplyover::across2(
+          matches("^patient(_pfs|_crcr)?_log_lik$"), matches("^lwt(_pfs|crcr)?"), \(l, lw) psis_resample(l, lw, recalc_full = TRUE), .names = "mean_{xcol}"
+        ),
+        dplyover::across2(
+          matches("^patient(_pfs|_crcr)?_log_lik_w$"), matches("^lwt(_pfs|crcr)?"), \(l, lw) psis_resample(l, lw, recalc_full = TRUE), .names = "mean_{xcol}"
+        ),
+      ) |> 
+      transmute(across(matches("^mean"), \(m) map_dbl(m, \(mn) if (!is_null(mn)) sum(mn) else NA_real_), .names = "E_{.col}")) |> 
+      rename_with(\(n) str_replace(n, r"{E_(approx_)?mean_patient}", r"{\1E}")) |> 
+      summarize(across(everything(), sum))
+  }) |> 
+    summarize(across(everything(), sd))
 }
 
 lfo_stacking_weights <- function(..., log_lik_var = E_log_lik) {
