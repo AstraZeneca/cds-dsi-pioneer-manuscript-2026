@@ -213,12 +213,11 @@ lfo_bootstrap_elpd <- function(lfo_res, n_bootstrap = 1000) {
       transmute(across(matches("^mean"), \(m) map_dbl(m, \(mn) if (!is_null(mn)) sum(mn) else NA_real_), .names = "E_{.col}")) |> 
       rename_with(\(n) str_replace(n, r"{E_(approx_)?mean_patient}", r"{\1E}")) |> 
       summarize(across(everything(), sum))
-  }) |> 
-    summarize(across(everything(), sd))
+  }) 
 }
 
-lfo_stacking_weights <- function(..., log_lik_var = E_log_lik) {
-  model_log_lik <- rlang::dots_list(..., .named = TRUE)
+lfo_stacking_weights <- function(model_log_lik, log_lik_var = E_log_lik) {
+  # model_log_lik <- rlang::dots_list(..., .named = TRUE)
 
   model_log_lik |> 
     map_dfr(clean_lfo_results, .id = "model") |> 
