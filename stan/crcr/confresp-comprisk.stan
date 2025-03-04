@@ -35,6 +35,7 @@ data {
 }
 
 transformed data {
+  int n_causes = 2; // We only have confirmed response and non-response
   
   #include "../base_transformed_data.stan" 
   #include "crcr_transformed_data.stan"
