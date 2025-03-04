@@ -7,6 +7,8 @@ data {
 }
 
 transformed data {
+  int n_causes = 2; // We only have confirmed response and non-response
+  
   #include "transformed_data.stan"
  
   // The calendar_week used to be an offset within trials and now it is global. Be careful with old bootstrap code that might have relied on the 
@@ -19,7 +21,8 @@ transformed data {
     
     sorted_calendar_week[patient_pos:patient_end] = sort_asc(calendar_week[patient_pos:patient_end]);
   }
-  
+ 
+  int leave_out_trial = 0; 
   int n_training_patients = n_patients;
 }
 
