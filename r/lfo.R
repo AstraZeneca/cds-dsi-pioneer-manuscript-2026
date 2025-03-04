@@ -126,7 +126,7 @@ lfo_log_lik_rvar <- function(log_lik_rvar, max_n = Inf, future_window = 1) {
       # fit = map(min_rank(n), \(nr) if (nr == 1) res),
       across(
         matches("^patient(_pfs|_crcr)?_log_lik(_w)?$"), 
-        \(l) map(l, \(ln) plyr::aaply(ln[, colSums(ln) < 0], 2, \(lni) log_mean_exp(lni))), 
+        \(l) map(l, \(ln) plyr::aaply(ln, 2, \(lni) log_mean_exp(lni))), 
         .names = "mean_{.col}"
       ),
       across(
