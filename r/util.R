@@ -60,7 +60,18 @@ add_pfs_crcr_priors <- function(stan_data, crcr_priors, tumor_priors, pfs_priors
     list_assign(!!!tumor_priors, !!!pfs_priors)  
 }
 
-# This function is used to generate a histogram of time-to-events for a single draw
+#' Generate a histogram of time-to-events for a single draw
+#'
+#' This function creates a histogram of time-to-event data for a single draw from a
+#' posterior distribution. It uses R's base hist() function but returns only the counts,
+#' not the full histogram object.
+#'
+#' @param pred A numeric vector of predicted time-to-event values
+#' @param breaks A numeric vector specifying the breakpoints between histogram cells
+#' @param ... Additional arguments passed to hist()
+#'
+#' @return A numeric vector of counts for each histogram bin
+#'
 sample_hist <- function(pred, breaks, ...) {
   # hist() is a base R function to generate histograms from data and provided breaks.
   hist(pmax(pmin(pred, max(breaks)), min(breaks)), breaks = breaks, plot = FALSE, ...)$count
@@ -69,6 +80,27 @@ sample_hist <- function(pred, breaks, ...) {
 # This function is used to treated_pfs_analysis_dataallow us to generate a distribution of histograms
 rvar_sample_hist <- posterior::rfun(sample_hist, rvar_dots = FALSE)
 
+
+Claude 3.5 Sonnet
+
+2:33:38 pm
+
+Certainly! Here's the documentation for the name_coef_indices function:
+
+#' Name coefficient indices with meaningful labels
+#'
+#' This function takes a data frame with coefficient indices and adds meaningful labels
+#' to these coefficients based on their index and the provided Stan data. It also
+#' optionally adds trial labels.
+#'
+#' @param data A data frame containing the coefficient indices to be named
+#' @param coef_idx_col The name of the column in 'data' that contains the coefficient indices
+#' @param trial_col The name of the column in 'data' that contains trial identifiers (optional)
+#' @param stan_data A list containing Stan data, including 'covar_design_matrix' and 'patient_trial'
+#'
+#' @return A modified data frame with additional columns:
+#'   - 'covar': A factor column with meaningful names for each coefficient
+#'   - 'trial': A factor column with trial labels (if trial_col is provided)
 name_coef_indices <- function(data, coef_idx_col, trial_col, stan_data) {
   data |> 
     mutate(
@@ -82,17 +114,6 @@ name_coef_indices <- function(data, coef_idx_col, trial_col, stan_data) {
       ) |> as_factor(),
       trial = if(!is_null(trial_col)) factor({{ trial_col }}, labels = levels(stan_data$patient_trial)),
     )
-}
-
-get_fake_stan_data_list <- function(prior_res, origin_stan_data, n = 5) {
-  get_all_confirmed_response(prior_res) |> 
-    select(starts_with("rep_")) |> 
-    unnest_rvars() |> 
-    filter(.draw <= n) |> 
-    rename_with(\(n) str_remove(n, "^rep_")) |>
-    select(!c(.chain, .iteration)) |> 
-    group_by(.draw) |>
-    group_map(\(d, k, ...) list_assign(origin_stan_data, !!!d, draw = first(k$.draw), confirmed_response_interval_censored = rep(0, nrow(d)))) 
 }
 
 weeks_to_months <- function(weeks) weeks * 7 * 12 / 365.25
