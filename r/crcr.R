@@ -165,28 +165,7 @@ get_obs_cif_data <- function(analysis_data) {
     # tidy()
 }
 
-get_crcr_predict_cif <- function(res, stan_data = NULL, week_col = rep_confirmed_response_week, reponse_col = rep_confirmed_response) {
-  get_all_confirmed_response(res, stan_data) |> 
-    transmute(
-      trial, i,
-      confirmed_response_week = {{ week_col }}, 
-      confirmed_response_status = rvar_factor({{ reponse_col }}, levels = c(2, 0:1), labels = c("censored", "non-response", "response")) 
-    ) |> 
-    unnest_rvars() |> 
-    nest(draw_data = !c(trial, .draw)) |> 
-    transmute(
-      trial, .draw,
-      cif = map(draw_data, 
-                \(d) with(d, cmprsk::cuminc(confirmed_response_week, confirmed_response_status)) |>
-                  map_dfr(identity, .id = "outcome") |> 
-                  mutate(outcome = str_remove(outcome, r"{^\d+\s+}")) |> 
-                  rename(estimate = est)
-      )
-    ) |> 
-    unnest(cif)
-}
-
-get_crcr_predict_cif2 <- function(res, analysis_data) {
+get_crcr_predict_cif <- function(res, analysis_data) {
   cif <- res |>
     recover_types(analysis_data[, "trial"]) |> 
     spread_rvars(log_trial_cif[k, trial, t]) |>
