@@ -8,7 +8,7 @@ get_conf_resp_hazard_ratios <- function(res) {
 }
 
 get_all_conf_resp_hazard_ratios <- function(res, stan_data, ndraws = NULL) {
-  spread_rvars(res, patient_log_crcr_hazard_ratio[i, k], ndraws = ndraws) |> 
+  spread_rvars(res, patient_log_crcr_hazard_ratio[k, i], ndraws = ndraws) |> 
     left_join(
       as_tibble(stan_data["patient_trial"]) |> 
         transmute(trial = patient_trial, i = seq(n())), 
