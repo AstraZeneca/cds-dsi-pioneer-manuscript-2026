@@ -83,14 +83,14 @@ get_pfs_n <- function(res, analysis_data = NULL) {
 get_pfs_conf_resp_log_hazard_ratio <- function(res) {
    res |> 
      rowwise() |> 
-     transmute(trial, rv = list(spread_rvars(fit, time_invariant_log_hazard_ratio[i, k]) |> 
+     transmute(trial, rv = list(spread_rvars(fit, time_invariant_log_hazard_ratio[k, i]) |> 
                                   mutate(time_invariant_hazard_ratio = exp(time_invariant_log_hazard_ratio)))) |> 
      ungroup() |> 
      unnest(rv)
 }
 
 get_all_pfs_conf_resp_hazard_ratio <- function(res, stan_data) {
-  spread_rvars(res, time_invariant_log_hazard_ratio[i, k]) |>
+  spread_rvars(res, time_invariant_log_hazard_ratio[k, i]) |>
     mutate(
       time_invariant_hazard_ratio = exp(time_invariant_log_hazard_ratio),
       k = factor(k, levels = 1:2, labels = c("Non-response", "Response")) 
@@ -293,14 +293,14 @@ get_joint_gng_prob <- function(mpfs_res_data, pfs6_res_data, orr_res_data, mpfs_
 get_conf_resp_hazard_ratios <- function(res) {
    res |> 
      rowwise() |> 
-     transmute(trial, rv = list(spread_rvars(fit, patient_log_crcr_hazard_ratio[i, k]) |> 
+     transmute(trial, rv = list(spread_rvars(fit, patient_log_crcr_hazard_ratio[k, i]) |> 
                                   mutate(patient_crcr_hazard_ratio = exp(patient_log_crcr_hazard_ratio)))) |> 
      ungroup() |> 
      unnest(rv)
 }
 
 get_all_conf_resp_hazard_ratios <- function(res, stan_data, ndraws = NULL) {
-  spread_rvars(res, patient_log_crcr_hazard_ratio[i, k], ndraws = ndraws) |> 
+  spread_rvars(res, patient_log_crcr_hazard_ratio[k, i], ndraws = ndraws) |> 
     left_join(
       as_tibble(stan_data["patient_trial"]) |> 
         transmute(trial = patient_trial, i = seq(n())), 
