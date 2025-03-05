@@ -66,14 +66,14 @@ get_pfs_n <- function(res, analysis_data = NULL) {
 get_pfs_conf_resp_log_hazard_ratio <- function(res) {
    res |> 
      rowwise() |> 
-     transmute(trial, rv = list(spread_rvars(fit, time_invariant_log_hazard_ratio[i, k]) |> 
+     transmute(trial, rv = list(spread_rvars(fit, time_invariant_log_hazard_ratio[k, i]) |> 
                                   mutate(time_invariant_hazard_ratio = exp(time_invariant_log_hazard_ratio)))) |> 
      ungroup() |> 
      unnest(rv)
 }
 
 get_all_pfs_conf_resp_hazard_ratio <- function(res, stan_data) {
-  spread_rvars(res, time_invariant_log_hazard_ratio[i, k]) |>
+  spread_rvars(res, time_invariant_log_hazard_ratio[k, i]) |>
     mutate(
       time_invariant_hazard_ratio = exp(time_invariant_log_hazard_ratio),
       k = factor(k, levels = 1:2, labels = c("Non-response", "Response")) 
