@@ -80,13 +80,6 @@ sample_hist <- function(pred, breaks, ...) {
 # This function is used to treated_pfs_analysis_dataallow us to generate a distribution of histograms
 rvar_sample_hist <- posterior::rfun(sample_hist, rvar_dots = FALSE)
 
-
-Claude 3.5 Sonnet
-
-2:33:38 pm
-
-Certainly! Here's the documentation for the name_coef_indices function:
-
 #' Name coefficient indices with meaningful labels
 #'
 #' This function takes a data frame with coefficient indices and adds meaningful labels
