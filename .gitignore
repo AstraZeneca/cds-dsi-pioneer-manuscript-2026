@@ -10,7 +10,7 @@
 ### Above combination will ignore all files without extension ###
 
 # History files
-.Rhistory
+*.Rhistory
 .Rapp.history
 
 # Session Data files

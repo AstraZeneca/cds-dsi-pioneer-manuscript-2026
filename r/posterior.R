@@ -66,14 +66,14 @@ get_pfs_n <- function(res, analysis_data = NULL) {
 get_pfs_conf_resp_log_hazard_ratio <- function(res) {
    res |> 
      rowwise() |> 
-     transmute(trial, rv = list(spread_rvars(fit, time_invariant_log_hazard_ratio[i, k]) |> 
+     transmute(trial, rv = list(spread_rvars(fit, time_invariant_log_hazard_ratio[k, i]) |> 
                                   mutate(time_invariant_hazard_ratio = exp(time_invariant_log_hazard_ratio)))) |> 
      ungroup() |> 
      unnest(rv)
 }
 
 get_all_pfs_conf_resp_hazard_ratio <- function(res, stan_data) {
-  spread_rvars(res, time_invariant_log_hazard_ratio[i, k]) |>
+  spread_rvars(res, time_invariant_log_hazard_ratio[k, i]) |>
     mutate(
       time_invariant_hazard_ratio = exp(time_invariant_log_hazard_ratio),
       k = factor(k, levels = 1:2, labels = c("Non-response", "Response")) 
@@ -238,7 +238,7 @@ get_powerscaled_variables <- function(res, metadata, stan_data) {
     transmute(
       alpha, component,
       baseline_hazard_rvar = list(
-        gather_rvars(ps, log_crcr_trial_lambda[trial, t, k], log_trial_lambda[trial, t]) |> 
+        gather_rvars(ps, log_crcr_trial_lambda[k, trial, t], log_trial_lambda[trial, t]) |> 
           mutate(
             .exp_value = exp(.value),
             trial = factor(trial, labels = levels(stan_data$patient_trial)),
@@ -303,5 +303,23 @@ get_coef_sd_powerscale_table_data <- function(coef_ps_sense, prior_crcr_coef_sd,
 get_covar_trial_sd <- function(res, stan_data) {
   spread_rvars(res, covar_trial_sd[m]) |> 
     name_coef_indices(m, NULL, stan_data)
+}
+
+get_joint_gng_prob <- function(mpfs_res_data, pfs6_res_data, orr_res_data, mpfs_cutoffs, pfs6_cutoffs, orr_cutoffs) {
+  cutoffs <- bind_rows(mpfs = mpfs_cutoffs, pfs6 = pfs6_cutoffs, orr = orr_cutoffs, .id = "endpoint")
+
+  bind_rows(
+    mpfs = select(mpfs_res_data, model_type, fit_type, trial, endpoint_forecast_val = forecast_trial_median_pfs) |> 
+      mutate(endpoint_forecast_val = weeks_to_months(endpoint_forecast_val)),
+    pfs6 = select(pfs6_res_data, model_type, fit_type, trial, endpoint_forecast_val = forecast_trial_pfs6),
+    orr = select(orr_res_data, model_type, fit_type, trial, endpoint_forecast_val = forecast_trial_subpop_orr),
+    .id = "endpoint"
+  ) |> 
+    left_join(cutoffs, by = "endpoint") |> 
+    pivot_wider(id_cols = c(model_type, fit_type, trial), names_from = endpoint, values_from = c(lrv, tv, endpoint_forecast_val)) |> 
+    mutate(
+      p_tv = Pr(endpoint_forecast_val_mpfs > tv_mpfs & endpoint_forecast_val_pfs6 > tv_pfs6 & endpoint_forecast_val_orr > tv_orr), 
+      p_lrv = Pr(endpoint_forecast_val_mpfs > lrv_mpfs & endpoint_forecast_val_pfs6 > lrv_pfs6 & endpoint_forecast_val_orr > lrv_orr)
+    ) 
 }
 

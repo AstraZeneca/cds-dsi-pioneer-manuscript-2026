@@ -1,3 +1,18 @@
+sample_and_save <- function(model, ..., output_dir, output_basename, timestamp = TRUE, no_save = FALSE) {
+  if (!no_save && !timestamp) {
+    fit <- model$sample(..., output_dir = output_dir, output_basename = output_basename)
+  } else { 
+    fit <- model$sample(...)
+    
+    if (!no_save) {
+      fit$save_output_files(dir = output_dir, basename = output_basename, random = FALSE, timestamp = timestamp)
+      fit$save_profile_files(dir = output_dir, basename = output_basename, random = FALSE, timestamp = timestamp)
+    }
+  }
+  
+  return(fit)
+}
+
 #' Convert Kaplan-Meier estimates to a tibble (data frame) format 
 #'
 #' @param trt_data Analysis data 
@@ -87,6 +102,17 @@ name_coef_indices <- function(data, coef_idx_col, trial_col, stan_data) {
       ) |> as_factor(),
       trial = if(!is_null(trial_col)) factor({{ trial_col }}, labels = levels(stan_data$patient_trial)),
     )
+}
+
+get_fake_stan_data_list <- function(prior_res, origin_stan_data, n = 5) {
+  get_all_confirmed_response(prior_res) |> 
+    select(starts_with("rep_")) |> 
+    unnest_rvars() |> 
+    filter(.draw <= n) |> 
+    rename_with(\(n) str_remove(n, "^rep_")) |>
+    select(!c(.chain, .iteration)) |> 
+    group_by(.draw) |>
+    group_map(\(d, k, ...) list_assign(origin_stan_data, !!!d, draw = first(k$.draw), confirmed_response_interval_censored = rep(0, nrow(d)))) 
 }
 
 weeks_to_months <- function(weeks) weeks * 7 * 12 / 365.25

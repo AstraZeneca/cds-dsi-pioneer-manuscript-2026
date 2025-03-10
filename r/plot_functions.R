@@ -17,16 +17,22 @@ plot_baseline_hazard <- function(res_data, lambda_var, ...) {
     theme(legend.position = "bottom")
 }
 
-plot_crcr_baseline_hazard <- function(res_data, analysis_data) {
-  plot_baseline_hazard(res_data, crcr_trial_lambda, k) +
-    geom_rug(
-      aes(x = confirmed_response_week),
-      alpha = 0.5,
-      data = analysis_data |>
-        filter(!confirmed_response_censored) |>
-        mutate(k = if_else(confirmed_response, "Response", "Non-response"))
-    ) +
+plot_crcr_baseline_hazard <- function(res_data, analysis_data = NULL) {
+  po <- plot_baseline_hazard(res_data, crcr_trial_lambda, k) +
     facet_grid(vars(trial), vars(k), scales = "free_y")
+  
+  if (!is_null(analysis_data)) {
+    po <- po +
+      geom_rug(
+        aes(x = confirmed_response_week),
+        alpha = 0.5,
+        data = analysis_data |>
+          filter(!confirmed_response_censored) |>
+          mutate(k = if_else(confirmed_response, "Response", "Non-response"))
+      )
+  }
+  
+  return(po)
 }
 
 plot_pfs_baseline_hazard <- function(res_data, analysis_data) {
@@ -58,9 +64,9 @@ plot_unclassified_survival <- function(res_data, analysis_data, conf_resp_hb) {
 }
 
 plot_cif <- function(res_data, obs_cif_data) {
-  ggplot(res_data, aes(time, estimate)) +
-    stat_lineribbon(aes(fill = fit_type), linewidth = 0, alpha = 0.25, .width = c(0.5, 0.8)) +
-    geom_step(aes(y = estimate, linetype = "Observed"), direction = "vh", data = \(d) semi_join(obs_cif_data, d, by = "trial")) +
+  ggplot(res_data) +
+    stat_lineribbon(aes(x = t, ydist = trial_cif, fill = fit_type), linewidth = 0, alpha = 0.25, .width = c(0.5, 0.8)) +
+    geom_step(aes(x = time, y = estimate, linetype = "Observed"), direction = "vh", data = \(d) semi_join(obs_cif_data, d, by = "trial")) +
     scale_linetype_manual("", values = c(Observed = "dashed")) +
     labs(y = "CIF") +
     NULL
@@ -166,9 +172,9 @@ plot_gng <- function(res_data, outcome, lrv_tv, model_type_names) {
     theme(strip.placement = "outside", strip.text.y.left = element_text(angle = 0))
 }
 
-plot_simple_gng <- function(res_data, outcome, color_col, lrv_tv, model_type_names, outcome_desc = "", decision_prob = c(0.2, 0.9)) {
+plot_simple_gng <- function(res_data, outcome, color_col, lrv_tv, model_type_names, y_col = model_type, outcome_desc = "", decision_prob = c(0.2, 0.9)) {
   res_data |> 
-    ggplot(aes(y = model_type)) +
+    ggplot(aes(y = {{ y_col }})) +
     stat_interval(
       aes(xdist = {{ outcome }}, color = {{ color_col }}, color_ramp = after_stat(level)), 
       position = "dodge", .width = c(0.6, 0.8)
@@ -185,4 +191,35 @@ plot_simple_gng <- function(res_data, outcome, color_col, lrv_tv, model_type_nam
     scale_color_discrete("Sample", type = AZ_palette, labels = \(l) str_replace(l, "_", " ") |> str_to_title()) +
     scale_color_ramp_discrete(name = "Credible Intervals", range = c(0.25, 0.5)) +
     NULL
+}
+
+add_dco_to_plot <- function(plot, label_offset_x = - days(40), label_offset_y = 2) {
+  plot +
+    geom_vline(xintercept = c(lubridate::ymd("2024-04-22"), lubridate::ymd("2024-07-31"), lubridate::ymd("2024-10-31")), linetype = "dashed", color = AZ_platinum) +
+    annotate("text", x = lubridate::ymd("2024-04-22") + label_offset_x, y = label_offset_y, label = "DCO 0") +
+    annotate("text", x = lubridate::ymd("2024-07-31") + label_offset_x, y = label_offset_y, label = "DCO 1") +
+    annotate("text", x = lubridate::ymd("2024-10-31") + label_offset_x, y = label_offset_y, label = "DCO 2") 
+}
+
+plot_patient_timelines <- function(analysis_data) {
+  plot <- analysis_data |> 
+    unnest(patient_tumors) |>
+    unnest(tumor_history, names_sep = "_") |> 
+    distinct(usubjid, trtsdt, right_censored, day = tumor_history_day, visit_date = tumor_history_adt) |> 
+    nest(visits = c(day, visit_date)) |> 
+    mutate(map_dfr(visits, \(v) summarize(v, first_visit = min(visit_date), last_visit = max(visit_date)))) |> 
+    mutate(usubjid = fct_reorder(usubjid, first_visit)) |> 
+    ggplot(aes(y = usubjid)) +
+    geom_segment(aes(x = first_visit, xend = last_visit, yend = usubjid)) +
+    geom_point(aes(x = visit_date, shape = "visit"), size = 2, data = \(d) unnest(d, visits) |> filter(visit_date < last_visit)) +
+    geom_point(aes(x = trtsdt, shape = "treat"), size = 2) +
+    geom_point(aes(x = last_visit, color = right_censored, shape = "last"), size = 2) +
+    labs(x = "Calendar Time", y = "Patients") +
+    scale_color_discrete("", label = c("FALSE" = "Progression", "TRUE" = "Censored"), type = AZ_palette) +
+    scale_shape_manual(
+      "", values = c("visit" = 124, "treat" = 5, "last" = 19), labels = c("visit" = "Visit", "treat" = "Treatment Start", "last" = "Last Visit")
+    ) +
+    theme(axis.text.y = element_blank(), panel.grid.major.y = element_blank(), legend.position = "inside", legend.position.inside = c(0.25, 0.8))
+  
+  add_dco_to_plot(plot) 
 }

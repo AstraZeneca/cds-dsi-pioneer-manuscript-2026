@@ -8,7 +8,7 @@ get_conf_resp_hazard_ratios <- function(res) {
 }
 
 get_all_conf_resp_hazard_ratios <- function(res, stan_data, ndraws = NULL) {
-  spread_rvars(res, patient_log_crcr_hazard_ratio[i, k], ndraws = ndraws) |> 
+  spread_rvars(res, patient_log_crcr_hazard_ratio[k, i], ndraws = ndraws) |> 
     left_join(
       as_tibble(stan_data["patient_trial"]) |> 
         transmute(trial = patient_trial, i = seq(n())), 
@@ -46,15 +46,16 @@ get_all_conf_resp_cif_bindist <- function(res, stan_data, which_t, hb, ndraws = 
     mutate(k = factor(k, levels = 1:2, labels = c("Non-response", "Response")))
 }
 
-get_conf_resp_prob <- function(res) {
+oet_conf_resp_prob <- function(res) {
   res |>
     ungroup() |> 
     transmute(
       trial,
       prob_cause_rvars = map2(
         fit, analysis_data, 
-        \(f, d) spread_rvars(f, prob_cause[i, k]) |>
-          filter(k == 2) |> 
+        \(f, d) spread_rvars(f, log_prob_cause[i, k]) |>
+          filter(k == 2) |>
+          mutate(prob_cause = exp(log_prob_cause)) |> 
           select(!k) |> 
           left_join(transmute(d, i = seq(n()), confirmed_response), by = "i", relationship = "one-to-one")
       )
@@ -66,7 +67,7 @@ get_conf_resp_covar_param <- function(res) {
   res |> 
     select(trial, fit) |> 
     deframe() |>
-    map_dfr(\(f) spread_rvars(f, crcr_covar_effect[covar, k]), .id = "trial") 
+    map_dfr(\(f) spread_rvars(f, crcr_covar_effect[k, covar]), .id = "trial") 
 }
 
 get_conf_resp_tumor_param <- function(res) {
@@ -77,7 +78,7 @@ get_conf_resp_tumor_param <- function(res) {
 }
 
 get_all_conf_resp_lambda_trial_intercept <- function(res) {
-  spread_rvars(res, log_crcr_lambda_gp_trial_intercept[trial, k]) |> 
+  spread_rvars(res, log_crcr_lambda_gp_trial_intercept[k, trial]) |> 
     mutate(
       crcr_lambda_gp_trial_intercept = exp(log_crcr_lambda_gp_trial_intercept),
       k = factor(k, levels = 1:2, labels = c("Non-response", "Response"))
@@ -91,7 +92,7 @@ get_all_conf_resp_lambda_trial_intercept_bindist <- function(res, hb) {
 }
 
 get_all_conf_resp_lambda <- function(res, stan_data = NULL) {
-  rv <- spread_rvars(res, log_crcr_trial_lambda[trial, t, k]) |> 
+  rv <- spread_rvars(res, log_crcr_trial_lambda[k, trial, t]) |> 
     mutate(
       crcr_trial_lambda = exp(log_crcr_trial_lambda), 
       k = factor(k, levels = 1:2, labels = c("Non-response", "Response"))
@@ -124,14 +125,14 @@ get_all_confirmed_response_bindist <- function(res, stan_data, hb) {
 }
 
 get_all_rep_confirmed_trial_lambda_residual <- function(res) {
-  spread_rvars(res, log_crcr_trial_lambda_residual[trial, t, k]) |> 
+  spread_rvars(res, log_crcr_trial_lambda_residual[k, trial, t]) |> 
     mutate(crcr_trial_lambda_residual = exp(log_crcr_trial_lambda_residual)) |> 
     point_interval(log_crcr_trial_lambda_residual, crcr_trial_lambda_residual, .width = c(0.5, 0.8)) |> 
     mutate(k = factor(k, levels = 1:2, labels = c("Non-response", "Response")))
 }
 
 get_all_rep_confirmed_trial_lambda_residual_draws <- function(res, ndraws = NULL) {
-  spread_rvars(res, log_crcr_trial_lambda_residual[trial, t, k]) |> 
+  spread_rvars(res, log_crcr_trial_lambda_residual[k, trial, t]) |> 
     mutate(
       log_crcr_trial_lambda_residual = thin_draws(log_crcr_trial_lambda_residual),
       crcr_trial_lambda_residual = exp(log_crcr_trial_lambda_residual),
@@ -164,36 +165,26 @@ get_obs_cif_data <- function(analysis_data) {
     # tidy()
 }
 
-get_crcr_predict_cif <- function(res, stan_data = NULL, week_col = rep_confirmed_response_week, reponse_col = rep_confirmed_response) {
-  get_all_confirmed_response(res, stan_data) |> 
-    transmute(
-      trial, i,
-      confirmed_response_week = {{ week_col }}, 
-      confirmed_response_status = rvar_factor({{ reponse_col }}, levels = c(2, 0:1), labels = c("censored", "non-response", "response")) 
-    ) |> 
-    unnest_rvars() |> 
-    nest(draw_data = !c(trial, .draw)) |> 
-    transmute(
-      trial, .draw,
-      cif = map(draw_data, 
-                \(d) with(d, cmprsk::cuminc(confirmed_response_week, confirmed_response_status)) |>
-                  map_dfr(identity, .id = "outcome") |> 
-                  mutate(outcome = str_remove(outcome, r"{^\d+\s+}")) |> 
-                  rename(estimate = est)
-      )
-    ) |> 
-    unnest(cif)
+get_crcr_predict_cif <- function(res, analysis_data) {
+  cif <- res |>
+    recover_types(analysis_data[, "trial"]) |> 
+    spread_rvars(log_trial_cif[k, trial, t]) |>
+    mutate(
+      k = factor(k, levels = 1:2, labels = c("non-response", "response")), 
+      trial_cif = exp(log_trial_cif)
+    )
 }
 
 get_crcr_objective_response <- function(res, stan_data) {
-  spread_rvars(res, rep_confirmed_response_forced[i], prob_cause[i, k]) |> 
-    filter(k == 2) |> 
+  spread_rvars(res, rep_confirmed_response_forced[i], log_prob_cause[k, i]) |> 
+    filter(k == 2) |>
+    mutate(prob_cause = exp(log_prob_cause)) |> 
     bind_cols(stan_data[c("patient_trial", "patient", "objective_response", "confirmed_response", "confirmed_response_censored")]) |> 
     rename(trial = patient_trial)
 }
 
 get_crcr_pred_param <- function(res, stan_data) {
-  gather_rvars(res, crcr_covar_trial_coef[trial, m, k], crcr_covar_effect[trial, m, k], crcr_tumor_stim_pop_coef[trial, m, k]) |> 
+  gather_rvars(res, crcr_covar_trial_coef[k, trial, m], crcr_covar_effect[k, trial, m], crcr_tumor_stim_pop_coef[k, trial, m]) |> 
     mutate(.exp_value = exp(.value)) |> 
     name_coef_indices(m, trial, stan_data) |> 
     mutate(k = factor(k, levels = 1:2, labels = c("Non-response", "Response")))
@@ -202,4 +193,9 @@ get_crcr_pred_param <- function(res, stan_data) {
 get_crcr_covar_trial_sd <- function(res, stan_data) {
   spread_rvars(res, crcr_covar_trial_sd[m]) |> 
     name_coef_indices(m, NULL, stan_data)
+}
+
+get_orr <- function(res, analysis_data) {
+  recover_types(res, analysis_data) |> 
+    spread_rvars(rep_trial_orr[trial], forecast_trial_orr[trial], forecast_trial_subpop_orr[trial]) 
 }

@@ -29,6 +29,7 @@ calc_confirmed_response <- function(response) {
       ), 
       # "confirmed response" needs two consecutive CR/PR so we need to lag by 1
       confirmed_response_week = if_else(confirmed_response, lag(week, default = NA), week),
+      confirmed_response_day = if_else(confirmed_response, lag(day, default = NA), day),
       confirmed_response_interval_censored = # Here lag by 2 
         confirmed_response_week - (if_else(confirmed_response, lag(week, n = 2L, default = 0), lag(week, default = 0)) + 1)
     ) 
@@ -41,6 +42,7 @@ calc_confirmed_response <- function(response) {
     confirmed_response = if (nrow(first_conf_week) > 0) pull(first_conf_week, confirmed_response) else NA,
     confirmed_response_censored = is.na(confirmed_response),
     confirmed_response_interval_censored = if (confirmed_response_censored) 0 else pull(first_conf_week, confirmed_response_interval_censored), 
+    confirmed_response_day = if (confirmed_response_censored) max(response$day, na.rm = TRUE) else pull(first_conf_week, confirmed_response_day),
     confirmed_response_week = if (confirmed_response_censored) max(response$week, na.rm = TRUE) else pull(first_conf_week, confirmed_response_week)
   )
 }
@@ -60,6 +62,7 @@ prepare_tumor_stan_data <- function(analysis_data) {
     n_patient_tumors = analysis_data$n_tumors,
     n_measures = analysis_data$n_measures |> unlist(),
     t_measure = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$week) |> unlist(),
+    t_day_measure = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$day) |> unlist(),
     tumor_size = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$mmdiam / 10) |> unlist(),
   )
 }
@@ -68,7 +71,7 @@ base_prepare_pfs_stan_data <- function(analysis_data, ..., pfs_var = pfs) {
   tumor_stan_data <- prepare_tumor_stan_data(analysis_data)
   pfs_data <- select(
       analysis_data, 
-      pfs = {{ pfs_var }}, death_week, experiment_start_week, right_censored, admin_right_censored_week, interval_censored, patient = usubjid
+      pfs = {{ pfs_var }}, death_week, calendar_week, calendar_day, right_censored, admin_right_censored_week, interval_censored, patient = usubjid
     ) |> 
     mutate(
       death_week = if_else(right_censored, 0, death_week), # Death week is irrelevant if the data is censored
@@ -171,6 +174,7 @@ prepare_confirmed_resp_stan_data <- function(
       crcr_ignore_interval_censoring = FALSE,
       gen_log_lik = FALSE,
       prior_sense = FALSE,
+      train_beyond_cutoff = FALSE,
       
       log_lik_trial = 0,
       leave_out_trial = 0,
@@ -188,7 +192,10 @@ prepare_confirmed_resp_stan_data <- function(
       confirmed_response = coalesce(analysis_data$confirmed_response, FALSE),
       confirmed_response_censored = analysis_data$confirmed_response_censored,
       confirmed_response_interval_censored = analysis_data$confirmed_response_interval_censored,
+      confirmed_response_day = analysis_data$confirmed_response_day,
       confirmed_response_week = analysis_data$confirmed_response_week,
+      
+      orr_pop = analysis_data$orr_pop,
       
       extend_max_confresp_week = 1,
       extend_max_all_t = 1,
@@ -208,8 +215,8 @@ prepare_confirmed_resp_km <- function(stan_data) {
       )) |> transmute(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event)),
       
       conf_resp_km_calendar = list(broom::tidy(survfit2(
-        Surv(confirmed_response_week + experiment_start_week - 1, 1 - confirmed_response_censored) ~ 1, 
-        data = as_tibble(stan_data[c("confirmed_response_week", "experiment_start_week", "confirmed_response_censored")])
+        Surv(confirmed_response_week + calendar_week - 1, 1 - confirmed_response_censored) ~ 1, 
+        data = as_tibble(stan_data[c("confirmed_response_week", "calendar_week", "confirmed_response_censored")])
       )) |> transmute(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event)),
     )
 }
