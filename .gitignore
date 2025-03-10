@@ -1,5 +1,16 @@
+# Ignore all
+*
+
+# Unignore all with extensions
+!*.*
+
+# Unignore all dirs
+!*/
+
+### Above combination will ignore all files without extension ###
+
 # History files
-.Rhistory
+*.Rhistory
 .Rapp.history
 
 # Session Data files
@@ -20,6 +31,7 @@
 
 # RStudio files
 .Rproj.user/
+*.Rproj
 
 # produced vignettes
 vignettes/*.html
@@ -36,9 +48,6 @@ vignettes/*.pdf
 *.utf8.md
 *.knit.md
 
-# R Environment Variables
-.Renviron
-
 # pkgdown site
 docs/
 
@@ -49,3 +58,10 @@ po/*~
 rsconnect/
 
 /.quarto/
+
+quarto/*.pdf
+quarto/*.html
+quarto/*_files/
+
+_extensions/
+_targets/

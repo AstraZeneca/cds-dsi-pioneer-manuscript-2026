@@ -1,17 +1,7 @@
 {
   "bioconductor.version": null,
-  "external.libraries": [
-    "/opt/scp/services/ewfscp/software/ewfutils-1.2/libraries/R", 
-    "/opt/scp/services/azcore/corepackages/3.0.1/libraries/R/4.3.1", 
-    "/opt/scp/services/azcore/coreutils/0.1.0/libraries/R/4.3.1",   
-    "/opt/scp/software/R/4.3.1-foss-2021a-core/lib64/R/site-library",
-    "/opt/scp/software/R/4.3.1-foss-2021a-core/lib64/R/library"   
-  ],
-  "ignored.packages": [
-    "azcore",
-    "rseed",
-    "Matrix"
-  ],
+  "external.libraries": [],
+  "ignored.packages": [],
   "package.dependency.fields": [
     "Imports",
     "Depends",
@@ -19,8 +9,8 @@
   ],
   "ppm.enabled": null,
   "ppm.ignored.urls": [],
-  "r.version": "4.3.1",
-  "snapshot.type": "implicit",
+  "r.version": "4.3.2",
+  "snapshot.type": "all",
   "use.cache": true,
   "vcs.ignore.cellar": true,
   "vcs.ignore.library": true,
