@@ -1,70 +1,147 @@
-matrix exit_log_marginal_prob(matrix log_crcr_cond_prob_surv) {
-  int max_confresp_week = rows(log_crcr_cond_prob_surv);
-  int n_causes = cols(log_crcr_cond_prob_surv);
-  matrix[max_confresp_week, n_causes] log_marg_prob; 
+/**
+ * Calculate Log Marginal Probabilities of Exit for Competing Risks
+ *
+ * This function computes the log marginal probabilities of exit for each cause
+ * in a competing risks scenario, based on the conditional survival probabilities.
+ *
+ * The function performs the following steps:
+ * 1. Calculates the overall survival probability for each patient at each time point.
+ * 2. Computes the marginal probability of exit for each cause, patient, and time point.
+ *
+ * The marginal probability of exit for cause k at time t is calculated as:
+ * P(Exit due to cause k at time t) = P(Survive until t-1) * P(Exit due to cause k at t | Survived until t-1)
+ *
+ * Note: All probabilities are computed and returned in log scale for numerical stability.
+ *
+ * @param log_crcr_cond_prob_surv Array of matrices containing log conditional 
+ *        survival probabilities for each cause, patient, and time point.
+ *        Dimensions: [n_causes, n_patients, max_confresp_week]
+ *
+ * @return Array of matrices containing log marginal probabilities of exit
+ *         for each cause, patient, and time point.
+ *         Dimensions: [n_causes, n_patients, max_confresp_week]
+ */
+array[] matrix exit_log_marginal_prob(array[] matrix log_crcr_cond_prob_surv) {
+  int n_causes = size(log_crcr_cond_prob_surv);
+  int n_patients = rows(log_crcr_cond_prob_surv[1]);
+  int max_confresp_week = cols(log_crcr_cond_prob_surv[1]);
   
-  for (t in 1:max_confresp_week) {
-    log_marg_prob[t] = sum(log_crcr_cond_prob_surv[1:(t - 1)]) + log1m_exp(log_crcr_cond_prob_surv[t]); 
-  }
+  array[n_causes] matrix[n_patients, max_confresp_week] log_marg_prob;
   
-  return(log_marg_prob);
-}
-
-array[] matrix exit_log_marginal_prob(int n_patients, matrix log_crcr_cond_prob_surv, int max_confresp_week) {
-  int n_causes = cols(log_crcr_cond_prob_surv);
-  array[n_patients] matrix[max_confresp_week, n_causes] log_marg_prob; 
+  for (i in 1:n_patients) {
+    vector[max_confresp_week] log_surv = zeros_vector(max_confresp_week);
   
-  for (i in 1:n_patients) { 
-    int patient_prob_pos = 1 + (i - 1) * max_confresp_week; 
-    log_marg_prob[i] = exit_log_marginal_prob(log_crcr_cond_prob_surv[patient_prob_pos:(patient_prob_pos + max_confresp_week - 1)]);
-  }
+    // Calculate overall survival probability
+    for (t in 1:max_confresp_week) {
+      log_surv[t] = sum(log_crcr_cond_prob_surv[, i, t]);
   
-  return(log_marg_prob);
-}
-
-tuple(array[] matrix, matrix) calc_cif(int n_patients, matrix log_crcr_cond_prob_surv, int max_confresp_week) {
-  int n_causes = cols(log_crcr_cond_prob_surv);
-  
-  array[n_patients] matrix[max_confresp_week, n_causes] log_marg_prob = exit_log_marginal_prob(n_patients, log_crcr_cond_prob_surv, max_confresp_week); 
-  
-  array[n_patients] matrix[max_confresp_week, n_causes] cif; // cumulative incidence function
-  matrix[n_patients, n_causes] prob_cause; 
-  
-  for (i in 1:n_patients) { 
-    for (k in 1:n_causes) {
-      cif[i, , k] = cumulative_sum(exp(log_marg_prob[i, , k]));
+      if (t > 1) {  
+        log_surv[t] += log_surv[t-1];
+      }
     }
-    
-    prob_cause[i] = cif[i, max_confresp_week];
-    
-    prob_cause[i] /= sum(prob_cause[i]); 
+  
+    // Calculate marginal probability for each cause
+    for (k in 1:n_causes) {
+      for (t in 1:max_confresp_week) {
+        log_marg_prob[k, i, t] = log1m_exp(log_crcr_cond_prob_surv[k, i, t]);
+  
+        if (t > 1) {  
+          log_marg_prob[k, i, t] += log_surv[t-1];
+        }
+      }
+    }
   }
   
-  return(cif, prob_cause);
+  return log_marg_prob;
 }
 
-tuple(int, int, int) competing_risks_survival_time_rng(matrix log_cond_prob_surv) {
-  int n_intervals = rows(log_cond_prob_surv);
-  int n_causes = cols(log_cond_prob_surv);
+/**
+ * Calculate the Cumulative Incidence Function (CIF) for Competing Risks
+ *
+ * This function computes the log of the Cumulative Incidence Function (CIF) for each patient
+ * and competing risk, based on the conditional survival probabilities.
+ *
+ * @param log_crcr_cond_prob_surv Array of matrices containing log conditional 
+ *        survival probabilities for each cause, patient, and time point.
+ *        Dimensions: [n_causes, n_patients, max_confresp_week]
+ *
+ * @return Array of matrices containing the log of the Cumulative Incidence Function
+ *         for each cause, patient, and time point.
+ *         Dimensions: [n_causes, n_patients, max_confresp_week]
+ *
+ * The function performs the following steps:
+ * 1. Calculates the log marginal probabilities of exit using the exit_log_marginal_prob function.
+ * 2. Computes the log CIF for each cause, patient, and time point.
+ *
+ * The CIF for cause k at time t is calculated as:
+ * CIF_k(t) = sum_{s=1}^t P(Exit due to cause k at time s)
+ *
+ * In log scale, this becomes:
+ * log(CIF_k(t)) = log_sum_exp(log(P(Exit due to cause k at time s))) for s = 1 to t
+ *
+ * Note: All probabilities are computed and returned in log scale for numerical stability.
+ */
+array[] matrix calc_log_cif(array[] matrix log_crcr_cond_prob_surv) {
+  int n_causes = size(log_crcr_cond_prob_surv);
+  int n_patients = rows(log_crcr_cond_prob_surv[1]);
+  int max_confresp_week = cols(log_crcr_cond_prob_surv[1]);
   
-  matrix[n_intervals, n_causes] cond_prob_exit = 1 - exp(log_cond_prob_surv); 
+  array[n_causes] matrix[n_patients, max_confresp_week] log_marg_prob = exit_log_marginal_prob(log_crcr_cond_prob_surv);  
+  
+  array[n_causes] matrix[n_patients, max_confresp_week] log_cif;
+  
+  for (i in 1:n_patients) {
+    for (k in 1:n_causes) {
+      for (t in 1:max_confresp_week) {
+        log_cif[k, i, t] = log_sum_exp(log_marg_prob[k, i, :t]);
+      }
+    }
+  }
+  
+  return log_cif;
+}
+
+/**
+ * Generate a survival profile for a single patient with competing risks
+ *
+ * This function simulates a survival time and exit cause for a patient in a 
+ * competing risks scenario, based on the provided conditional survival probabilities.
+ *
+ * @param log_cond_prob_surv Array of row vectors containing log conditional 
+ *        probabilities of survival for each cause and time interval.
+ *        Dimensions: [n_causes, n_intervals]
+ *
+ * @return A tuple containing:
+ *         1. int: The last interval before exit (survival time)
+ *         2. int: Indicator if the patient is right censored (1 if censored, 0 otherwise)
+ *         3. int: The cause of exit (1 to n_causes)
+ *
+ * The function simulates the survival process by:
+ * 1. Converting conditional survival probabilities to exit probabilities
+ * 2. For each time interval, simulating potential exits for all causes
+ * 3. If multiple exits occur in the same interval, randomly selecting one
+ * 4. Continuing until an exit occurs or all intervals are exhausted
+ */
+tuple(int, int, int) competing_risks_survival_time_rng(array[] row_vector log_cond_prob_surv) {
+  int n_intervals = cols(log_cond_prob_surv[1]);
+  int n_causes = size(log_cond_prob_surv);
+  
+  matrix[n_causes, n_intervals] mat_log_cond_prov_surv = to_matrix(log_cond_prob_surv);
+  matrix[n_causes, n_intervals] log_odds_cond_prob_exit = log1m_exp(mat_log_cond_prov_surv) - mat_log_cond_prov_surv;
  
   int survival_time = 0;
   int exit_cause = n_causes;
   
   for (t in 1:n_intervals) {
-    array[n_causes] int exit_causes = bernoulli_rng(cond_prob_exit[t]);
+    array[n_causes] int exit_causes = bernoulli_logit_rng(log_odds_cond_prob_exit[, t]);
     int num_exits = sum(exit_causes);
-    
-    // exit_cause = categorical_rng(cond_prob_exit[t]');
   
-    if (num_exits == 0) {
-    // if (exit_cause > n_causes) {
+    if (num_exits == 0) { // Didn't exit to any of the competing risks
       survival_time += 1;
     } else {
       if (num_exits == 1) {
         exit_cause = sort_indices_desc(exit_causes)[1];
-      } else {
+      } else { // Multiple candidate risks: randomly pick one.
         exit_cause = sort_indices_desc(exit_causes)[discrete_range_rng(1, num_exits)];
       }
       
@@ -75,61 +152,48 @@ tuple(int, int, int) competing_risks_survival_time_rng(matrix log_cond_prob_surv
   return(survival_time, survival_time >= n_intervals, exit_cause);
 }
 
-vector calc_comp_risk_pch_loglik(
-  array[] int last_unclass_week,
-  array[] int event_cause,
-  array[] int right_censored,
-  array[] int interval_censored,
-  matrix log_cond_prob_surv,
-  data int max_confresp_week
-) 
-{
-  int n_patients = size(last_unclass_week);
-  int n_causes = cols(log_cond_prob_surv);
-  vector[n_patients] lp;
+/**
+ * Generate a forecast survival profile for a single patient with competing risks
+ *
+ * This function forecasts the future survival time and exit cause for a patient,
+ * given their observed data and conditional survival probabilities. It handles
+ * right-censored and interval-censored cases.
+ *
+ * @param log_cond_prob_surv Array of row vectors containing log conditional 
+ *        probabilities of survival for each cause and time interval.
+ *        Dimensions: [n_causes, n_intervals]
+ * @param exit_cause Observed exit cause (1 to n_causes)
+ * @param event_time Observed event time or time of censoring
+ * @param right_censored Indicator if the patient is right-censored (1 if censored, 0 otherwise)
+ * @param interval_censored Number of intervals over which the observation is interval censored (0 if not interval censored)
+ *
+ * @return A tuple containing:
+ *         1. int: The forecasted last interval before exit (survival time)
+ *         2. int: Indicator if the forecast is right censored (1 if censored, 0 otherwise)
+ *         3. int: The forecasted cause of exit (1 to n_causes)
+ *
+ * The function handles three scenarios:
+ * 1. For right-censored patients, it forecasts the future survival profile
+ * 2. For interval-censored patients, it draws a survival time within the censored interval
+ * 3. For patients with observed exits, it returns the observed data
+ */
+tuple(int, int, int) competing_risks_survival_time_rng(array[] row_vector log_cond_prob_surv, int exit_cause, int event_time, int right_censored, int interval_censored) {
+  int survival_time = event_time, forecast_right_censored = right_censored, forecast_exit_cause = exit_cause;
   
-  int interval_pos = 1;
-    
-  for (i in 1:n_patients) {
-    if (right_censored[i] && interval_censored[i] > 0) {
-      fatal_error("Interval censoring not allowed with right censored observations.");
-    }
-    
-    int interval_end = interval_pos + last_unclass_week[i] - 1;
-    
-    real reuse_lp = sum(log_cond_prob_surv[interval_pos:interval_end]);
-    vector[interval_censored[i] + 1] ic_mix_lp = rep_vector(reuse_lp, interval_censored[i] + 1);
-    
-    for (c in 0:interval_censored[i]) {
-      ic_mix_lp[c + 1] += 
-        sum(log_cond_prob_surv[(interval_end + 1):(interval_end + c)]) + 
-        (1 - right_censored[i]) * log1m_exp(log_cond_prob_surv[interval_end + c + 1, event_cause[i]]);
-    }
-    
-    lp[i] = log_sum_exp(ic_mix_lp) - log(interval_censored[i] + 1); 
-    
-    interval_pos += max_confresp_week; 
+  if (right_censored) { // If right censored, forecast survival profile.
+    (survival_time, forecast_right_censored, forecast_exit_cause) = competing_risks_survival_time_rng(log_cond_prob_surv[, (event_time + 1):]);
+    survival_time += event_time;
+  } else if (interval_censored > 0) { // If interval censored, draw a survival time within the range of intervals.
+    survival_time += interval_censored_survival_time_rng(log_cond_prob_surv[exit_cause, (event_time + 1):(event_time + interval_censored + 1)]); 
   }
   
-  return lp;
-}
- 
-real comp_risk_pch_lpmf(
-  array[] int last_unclass_week, array[] int event_cause, array[] int right_censored, array[] int interval_censored, matrix log_cond_prob_surv, int max_confresp_week
-) {
-  return sum(calc_comp_risk_pch_loglik(last_unclass_week, event_cause, right_censored, interval_censored, log_cond_prob_surv, max_confresp_week));
+  return(survival_time, forecast_right_censored, forecast_exit_cause);
 }
 
 real partial_sum_crcr_lpmf(
   array[] int last_unclass_week, int start, int end, 
-  array[] int event_cause, array[] int right_censored, array[] int interval_censored, matrix log_cond_prob_surv, int max_confresp_week
+  array[] int event_cause, array[] int right_censored, array[] int interval_censored, array[] matrix log_cond_prob_surv
 ) {
-  int patient_interval_pos = 1 + (start - 1) * max_confresp_week; 
-  int patient_interval_end = end * max_confresp_week; 
-  
-  return(comp_risk_pch_lpmf(
-    last_unclass_week | event_cause[start:end], 
-                        right_censored[start:end], interval_censored[start:end], 
-                        log_cond_prob_surv[patient_interval_pos:patient_interval_end], max_confresp_week
-  ));
+  return pch_lpmf(last_unclass_week | event_cause[start:end], right_censored[start:end], interval_censored[start:end], 0, log_cond_prob_surv[, start:end]);
 }
+
