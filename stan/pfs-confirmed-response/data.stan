@@ -18,8 +18,6 @@ int<lower = 0, upper = 1> separate_prop_hazard;
 // This is the data that is shared with the tumor model 
 #include "../base_data.stan"
 
-#include "../bootstrap/leave_out_trial_bootstrap_data.stan"
-
 // Calculating log likelihood for a single trial. Useful if you want to compare the preformance of a model using a single trial with one that is multilevel. 
 int<lower = 0, upper = n_trials> log_lik_trial;
 
