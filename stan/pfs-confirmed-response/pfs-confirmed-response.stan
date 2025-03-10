@@ -7,6 +7,8 @@ data {
 }
 
 transformed data {
+  int n_causes = 2; // We only have confirmed response and non-response
+  
   #include "transformed_data.stan"
  
   // The calendar_week used to be an offset within trials and now it is global. Be careful with old bootstrap code that might have relied on the 
@@ -19,9 +21,9 @@ transformed data {
     
     sorted_calendar_week[patient_pos:patient_end] = sort_asc(calendar_week[patient_pos:patient_end]);
   }
-  
-  #include "../bootstrap/leave_out_trial_bootstrap_transformed_data.stan"
-  // #include "../fixed_bootstrap_transformed_data.stan"
+ 
+  int leave_out_trial = 0; 
+  int n_training_patients = n_patients;
 }
 
 parameters {
@@ -50,13 +52,14 @@ model {
     
     profile("crcr loglik") {
       if (leave_out_trial > 0) {
-        target += reduce_sum(
-          partial_sum_crcr_lupmf, last_unclassified_response_week[training_patients], crcr_grain_size,
-          confirmed_response_cause[training_patients],
-          confirmed_response_censored[training_patients],
-          crcr_ignore_interval_censoring ? zeros_int_array(n_training_patients) : confirmed_response_interval_censored[training_patients],
-          log_crcr_cond_prob_surv[training_crcr_intervals]
-        );
+        fatal_error("Unsupported right now.");
+        // target += reduce_sum(
+        //   partial_sum_crcr_lupmf, last_unclassified_response_week[training_patients], crcr_grain_size,
+        //   confirmed_response_cause[training_patients],
+        //   confirmed_response_censored[training_patients],
+        //   crcr_ignore_interval_censoring ? zeros_int_array(n_training_patients) : confirmed_response_interval_censored[training_patients],
+        //   log_crcr_cond_prob_surv[training_crcr_intervals]
+        // );
       } else {
         target += reduce_sum(
           partial_sum_crcr_lupmf, last_unclassified_response_week, crcr_grain_size,
@@ -93,7 +96,6 @@ model {
 
 generated quantities {
   #include "../crcr/crcr_gen_quants.stan"
-  // #include "../bootstrap/leave_out_trial_bootstrap_gen_quants.stan"
  
   // Posterior predicted PFS and censoring status 
   array[n_patients] int<lower = 0> sim_pfs; 

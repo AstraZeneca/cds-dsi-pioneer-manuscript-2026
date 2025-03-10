@@ -17,7 +17,6 @@ We predict outcomes using a Bayesian multilevel piece-wise constant proportional
 │   ├── endometrial-to-lung.qmd                                         # Endometrial to LUNG notebook
 │   └── early-predict-bc-survival.qmd                                 # Old Breast notebook
 ├── r
-│   ├── crcr.R                                                        # Common CRCR utility/posterior functions
 │   ├── breast                                                # Breast project specific functions
 │   │   ├── bg.R                             
 │   │   ├── crcr.R
@@ -49,13 +48,6 @@ We predict outcomes using a Bayesian multilevel piece-wise constant proportional
     │   ├── baseline_hazard_priors.stan                               
     │   └── baseline_hazard_transformed_parameters.stan               
     ├── base_transformed_data.stan                                    # Transformed data shared between all model
-    ├── bootstrap                                                     # Bootstrap files
-    │   ├── insample_bootstrap_data.stan                              
-    │   ├── insample_bootstrap_gen_quants.stan                        
-    │   ├── leave_out_trial_bootstrap_data.stan                       
-    │   ├── leave_out_trial_bootstrap_functions.stan                  
-    │   ├── leave_out_trial_bootstrap_gen_quants.stan                 
-    │   └── leave_out_trial_bootstrap_transformed_data.stan           
     ├── crcr                                                          # Confirmed response competing risks (CRCR) model files
     │   ├── confresp-comprisk.stan                                    # Standalone CRCR model
     │   ├── crcr_baseline_hazard_hyperparam.stan                      
@@ -78,11 +70,24 @@ We predict outcomes using a Bayesian multilevel piece-wise constant proportional
     │   ├── tumor_stim_parameters.stan
     │   ├── tumor_stim_priors.stan
     │   ├── tumor_stim_transformed_data.stan
-    │   └── tumor_stim_transformed_parameters.stan
-    ├── extern_pfs_functions.stan                                    # External PFS model functions (should be merged with pfs_functions.stan)
-    ├── extern_util.stan                                             # External general utility function (should be merged with util.stan)
-    ├── fixed_bootstrap_transformed_data.stan                       
-    ├── pfs-confirmed-response.stan                                  # Main CRR + PFS model
+    │   ├── tumor_stim_transformed_parameters.stan
+    │   ├── fixed_bootstrap_transformed_data.stan                       
+    │   └── bootstrap                                                     # Bootstrap files
+    │       ├── insample_bootstrap_data.stan                              
+    │       ├── insample_bootstrap_gen_quants.stan                        
+    │       ├── leave_out_trial_bootstrap_data.stan                       
+    │       ├── leave_out_trial_bootstrap_functions.stan                  
+    │       ├── leave_out_trial_bootstrap_gen_quants.stan                 
+    │       └── leave_out_trial_bootstrap_transformed_data.stan           
+    ├── pfs-confirmed-response 
+    │   ├── functions.stan 
+    │   ├── data.stan 
+    │   ├── transformed_data.stan
+    │   ├── parameters.stan 
+    │   ├── transformed_parameters.stan 
+    │   ├── priors.stan 
+    │   ├── pfs-confirmed-response.stan                 
+    │   └── lfo-cv.stan           
     ├── pfs_functions.stan                                           # PFS specific functions
     ├── pfs_transformed_data.stan                            
     ├── recruit                                                      # Files for modelling trial recruitment rates and timing

@@ -105,10 +105,6 @@ vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, 
   return multi_normal_rng(K_x_obs_x_pred' * K_div_y_obs, gp_exp_quad_cov(x_pred, alpha, rho) - v_pred' * v_pred + diag_matrix(rep_vector(delta, n_pred)));
 }
 
-// vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, vector eta) {
-//   return calc_gp_pred(x, intercept, alpha, 1e-9, eta);
-// }  
-
 /** Missing measure is defined as one that lies between a _tumor's_ first assessment to the _patient's_ last assessment. Basically,
  * we're counting how many intervals (weeks) we don't have observed assessments of tumor size, for each tumor.
  *
@@ -285,4 +281,54 @@ array[] int study_date_to_calendar_date(array[] int first_calendar_date, array[]
   }
   
   return calendar_date;
+}
+
+/** How many assessments for each tumor were pre-screening assessments (t <= 0).
+ *
+ * @param n_patient_tumors Array with the number of tumors per patient.
+ * @param n_measures The number of assessments per tumor.
+ * @param t_measure The week each assessment was done.
+ * @return Number of pre-screening observed assessments per tumor
+ */
+array[] int calc_n_screening_t(array[] int n_patient_tumors, array[] int n_measures, array[] int t_measure) {
+  int n_patients = size(n_patient_tumors);
+  array[sum(n_patient_tumors)] int n_screening_t = rep_array(0, sum(n_patient_tumors));
+  
+  int tumor_pos = 1;
+  int t_measure_pos = 1;
+  
+  for (i in 1:n_patients) {
+    int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
+    
+    for (j in 1:n_patient_tumors[i]) {
+      int t_measure_end = t_measure_pos + n_measures[tumor_pos + j - 1] - 1;
+      
+      for (tp in t_measure_pos:t_measure_end) {
+        if (t_measure[tp] <= 0) {
+          n_screening_t[tumor_pos + j - 1] += 1;
+        }
+      }
+      
+      t_measure_pos = t_measure_end + 1;
+    }
+    
+    tumor_pos = tumor_end + 1;
+  }
+  
+  return n_screening_t;
+}
+
+/** Scale tumor sizes by the standard deviation of all tumors and demean.
+ * 
+ * @param tumor_size Observed tumor sizes
+ * @return (Mean tumor size, Std deviation of tumor sizes, Standardized tumor sizes)
+ */
+tuple(real, real, vector) standardize_tumor_sizes(vector tumor_size) {
+  real tumor_mean;
+  real tumor_sd;
+  
+  tumor_mean = mean(tumor_size); 
+  tumor_sd = sd(tumor_size); 
+  
+  return (tumor_mean, tumor_sd, (tumor_size - tumor_mean) / tumor_sd); 
 }

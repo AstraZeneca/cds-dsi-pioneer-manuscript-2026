@@ -5,6 +5,12 @@
  * across multiple trials. The data is organized in ragged arrays to efficiently handle
  * varying numbers of tumors per patient and measurements per tumor.
  *
+ * Study and Calendar Dates: There are two types of ways to handle time in the trial. First, most
+ * commonly used, is the study time: the offset from the day/week of treatment, with all <=0 are 
+ * baseline periods and >0 are post-treatment intervals. Second, calendar date are with respect to 
+ * a single point of time, typically the earliest treatment date in the data. This is usually used
+ * for managing data cuts.
+ *
  * Key Dimensions:
  * - n_trials: Number of clinical trials
  * - n_patients: Total number of patients across all trials
@@ -61,11 +67,11 @@ array[sum(n_measures)] int t_day_measure; // Days
 /*
  * Diagram for t_measure and t_day_measure:
  * 
- * [-1, 0, 6, 1.8, -1, 0, 6, 10, -2, 1, ...]
- *  ^         ^    ^             ^   ^
- *  |         |    |             |   |
- *  Tumor 1   |    Tumor 2       |   Tumor 4 (Patient 2)
- *  (Patient 1)    (Patient 1)   Tumor 3 (Patient 1)
+ * [-1, 0, 6, 8, -1, 0, 6, 10, -2, 1, ...]
+ *  ^         ^   ^             ^  ^
+ *  |         |   |             |  |
+ *  Tumor 1   |   Tumor 2       |  Tumor 4 (Patient 2)
+ *  (Patient 1)   (Patient 1)   Tumor 3 (Patient 1)
  */
 
 // Tumor Sizes
@@ -81,11 +87,13 @@ vector<lower = 0>[sum(n_measures)] tumor_size; // cm
  *  (Patient 1)    (Patient 1)    Tumor 3 (Patient 1)
  */
 
-// Calendar Information
+// Calendar Information. These are the days/weeks each patient started treatment relative
+// to all the patients in the trials modeled. 
 array[n_patients] int<lower = 1> calendar_week;
 array[n_patients] int<lower = 1> calendar_day;
 
-// Time Horizon Extension
+// Time Horizon Extension. Sometimes we want to extrapolate beyond the latest visit observed
+// in the data, we extend it by this number of weeks.
 int<lower = 1> extend_max_all_t;
 
 /*
