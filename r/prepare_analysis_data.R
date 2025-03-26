@@ -61,9 +61,13 @@ prepare_tumor_stan_data <- function(analysis_data) {
     patient_trial = factor(analysis_data$trial),
     n_patient_tumors = analysis_data$n_tumors,
     n_measures = analysis_data$n_measures |> unlist(),
+    n_patient_visits = map_int(analysis_data$n_measures, max), 
     t_measure = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$week) |> unlist(),
     t_day_measure = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$day) |> unlist(),
+    t_patient_visits = map(analysis_data$t_measure, \(t) sort(unique(unlist(t)))) |> unlist(),
     tumor_size = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$mmdiam / 10) |> unlist(),
+    sum_tumor_size = map(analysis_data$tumor_sum_size, \(ts) ts$mmsumdiam / 10) |> unlist(),
+    patient_t_width = analysis_data$patient_t_width,
   )
 }
 
