@@ -1,7 +1,13 @@
 get_tumor_priors <- function() {
   lst(
+    pop_tumor_gp_alpha_sd = 10,
     pop_tumor_gp_rho_alpha = 7.3,
     pop_tumor_gp_rho_beta = 7.5, 
+    
+    patient_tumor_gp_alpha_sd = 10,
+    patient_tumor_gp_rho_alpha = 7.3,
+    patient_tumor_gp_rho_beta = 7.5, 
+    patient_tumor_gp_sd_sd = 1,
   )
 }
 
