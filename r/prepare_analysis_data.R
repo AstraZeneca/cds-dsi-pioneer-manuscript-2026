@@ -36,7 +36,7 @@ calc_confirmed_response <- function(response) {
   
   first_conf_week <- conf_resp_data |> 
     drop_na(confirmed_response) |> 
-    filter(min_rank(week) == 1) 
+    filter(rank(week, ties.method = "first") == 1) 
   
   lst( 
     confirmed_response = if (nrow(first_conf_week) > 0) pull(first_conf_week, confirmed_response) else NA,
