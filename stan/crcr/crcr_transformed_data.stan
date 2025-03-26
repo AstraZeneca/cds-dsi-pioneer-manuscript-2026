@@ -61,3 +61,11 @@ array[sum(orr_pop)] int<lower = 1> trial_orr_pop;
   }
 }
   
+matrix[n_patients, n_tumor_covar] tumor_sum_covar; 
+matrix[n_patients, n_tumor_covar] uncentered_tumor_sum_covar; // Just scaled
+vector[2] tumor_sum_covar_mean;
+vector[2] tumor_sum_covar_sd;
+
+(tumor_sum_covar, uncentered_tumor_sum_covar, tumor_sum_covar_mean, tumor_sum_covar_sd) = 
+  prepare_early_tumor_sums_covar(tumor_size, n_patient_tumors, n_measures, t_measure, n_screening_t, n_tumor_covar); 
+  
