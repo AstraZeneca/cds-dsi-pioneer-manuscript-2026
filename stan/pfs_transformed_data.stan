@@ -1,3 +1,9 @@
+// Variables for handling separate baseline and proportional hazards
+int n_base_separate_trials = separate_baseline_hazard ? n_trials : 1;
+int n_prop_separate_trials = (1 - no_prop_hazard) * (separate_prop_hazard ? n_trials : 1);
+
+print("n_base_separate_trials = ", n_base_separate_trials, ", n_prop_separate_trials = ", n_prop_separate_trials);
+
 int<lower = 0, upper = max(pfs) * n_patients> n_total_pfs = sum(pfs);
 
 // These are used for the time interval distance between baseline hazards
