@@ -16,12 +16,7 @@ print("n_trial_patients = ", n_trial_patients);
 //  |  |  Start of patients in trial 3
 //  |  Start of patients in trial 2
 //  Start of patients in trial 1
-array[n_trials + 1] int<lower = 1, upper = n_patients + 1> trial_patient_pos;
-trial_patient_pos[1] = 1;
-
-for (s in 1:n_trials) {
-  trial_patient_pos[s + 1] = sum(n_trial_patients[:s]) + 1;  
-}  
+array[n_trials + 1] int<lower = 1, upper = n_patients + 1> trial_patient_pos = create_pos(n_trial_patients);
 
 // Starting position of tumors for each patient in a flattened tumor array
 // Diagram for patient_tumor_pos:
@@ -32,27 +27,24 @@ for (s in 1:n_trials) {
 //  |  |  Start of tumors for patient 3
 //  |  Start of tumors for patient 2
 //  Start of tumors for patient 1
-array[n_patients + 1] int<lower = 1, upper = sum(n_patient_tumors) + 1> patient_tumor_pos;
-patient_tumor_pos[1] = 1;
+array[n_patients + 1] int<lower = 1, upper = sum(n_patient_tumors) + 1> patient_tumor_pos = create_pos(n_patient_tumors);
 
-for (i in 1:n_patients) {
-  patient_tumor_pos[i + 1] = sum(n_patient_tumors[:i]) + 1;  
-}  
+// Starting position of measurements for each trial in a flattened measurement array
+array[n_trials + 1] int<lower = 1, upper = sum(n_patient_visits) + 1> trial_visit_pos = create_pos(n_patient_visits, trial_patient_pos);
 
 // Starting position of measurements for each patient in a flattened measurement array
-array[n_patients + 1] int<lower = 1, upper = sum(n_measures) + 1> patient_tumor_measure_pos;
-patient_tumor_measure_pos[1] = 1;
-
-for (i in 2:(n_patients + 1)) {
-  patient_tumor_measure_pos[i] = sum(n_measures[:(patient_tumor_pos[i] - 1)]) + 1;  
-}  
+array[n_patients + 1] int<lower = 1, upper = sum(n_measures) + 1> patient_tumor_measure_pos = create_pos(n_measures, patient_tumor_pos);
+array[n_patients + 1] int<lower = 1, upper = sum(n_patient_visits) + 1> patient_visit_pos = create_pos(n_patient_visits);
 
 real delta = 1e-9; // Small value used for GP modeling to avoid numerical issues
 
 int min_all_t = min(t_measure); // Earliest measurement time across all patients
 int<lower = min_all_t> max_all_t = max(max(t_measure) + 1, extend_max_all_t); // Latest measurement time or extended time, whichever is greater
-array[sum(n_measures)] int<lower = 1> patient_t_measure_idx; // Index of each measurement time relative to the first measurement for each patient
+int<lower = 0> max_t_width = max(t_measure) - min_all_t + 1;
 array[n_patients] int<lower = 0> patient_max_t_width; // Number of time intervals between first and last measurement for each patient
+array[sum(n_measures)] int<lower = 1> t_patient_measure_idx; // Index of each measurement time relative to the first measurement for each patient
+array[sum(n_patient_visits)] int<lower = 1> t_patient_visit_idx; // Index of each patient visit relative to the first visit for each patient
+array[sum(n_patient_visits)] int<lower = 1, upper = max_t_width> t_visit_trial_idx = id2idx(t_patient_visits, trial_visit_pos); 
 
 print("max_all_t = ", max_all_t);
 
@@ -60,12 +52,13 @@ int<lower = 0> n_tumors = sum(n_patient_tumors); // Total number of tumors acros
 
 // Information about missing measurements
 array[n_tumors] int<lower = 0> n_missing_measures = calculate_n_missing_measures(n_measures, t_measure, n_patient_tumors);  
-array[sum(n_missing_measures)] int<lower = 1> patient_t_missing_measure_idx;  
+array[sum(n_missing_measures)] int<lower = 1> t_patient_missing_measure_idx;  
 array[n_tumors] int<lower = 0> n_full_measures; // Total number of measures (observed + missing) per tumor
 
 // Information about screening measurements
 array[n_tumors] int<lower = 0> n_screening_t = calc_n_screening_t(n_patient_tumors, n_measures, t_measure); // Number of pre-screening measures per tumor
-array[n_patients] int<lower = 0> n_patient_screening_t = rep_array(0, n_patients); // Number of pre-screening measures per patient
+array[n_patients] int<lower = 0> n_patient_screening_t = zeros_int_array(n_patients); // Number of pre-screening measures per patient
+array[n_patients] int<lower = 0> n_patient_screening_visits = zeros_int_array(n_patients);
 
 array[sum(n_measures)] int<lower = 1> t_measure_idx; // Measurement times indexed starting from 1
 
@@ -88,6 +81,19 @@ array[sum(n_measures)] int<lower = 1> t_measure_idx; // Measurement times indexe
     
     array[n_patient_tumors[i]] int min_t_idx;
     array[n_patient_tumors[i]] int max_t_idx;
+   
+    int first_visit = t_patient_visits[patient_visit_pos[i]];
+    
+    int curr_patient_visit_pos, curr_patient_visit_end;
+    (curr_patient_visit_pos, curr_patient_visit_end) = get_pos(patient_visit_pos, i);
+    
+    for (v in curr_patient_visit_pos:curr_patient_visit_end) {
+      t_patient_visit_idx[v] = t_patient_visits[v] - first_visit + 1;
+      
+      if (t_patient_visits[v] <= 0) {
+        n_patient_screening_visits[i] += 1;
+      }
+    }
     
     for (j in 1:n_patient_tumors[i]) {
       int t_measure_end = t_measure_pos + n_measures[tumor_pos + j - 1] - 1;
@@ -122,11 +128,11 @@ array[sum(n_measures)] int<lower = 1> t_measure_idx; // Measurement times indexe
       int t_missing_measure_end = t_missing_measure_pos + n_missing_measures[tumor_pos + j - 1] - 1; 
       
       for (tp in t_measure_pos:t_measure_end) {
-        patient_t_measure_idx[tp] = t_measure_idx[tp] - min_t_idx[j] + 1;
+        t_patient_measure_idx[tp] = t_measure_idx[tp] - min_t_idx[j] + 1;
       }
       
       for (tp in t_missing_measure_pos:t_missing_measure_end) {
-        patient_t_missing_measure_idx[tp] = t_missing_measure_idx[tp] - min_t_idx[j] + 1;
+        t_patient_missing_measure_idx[tp] = t_missing_measure_idx[tp] - min_t_idx[j] + 1;
       }
       
       t_measure_pos = t_measure_end + 1;
@@ -138,23 +144,9 @@ array[sum(n_measures)] int<lower = 1> t_measure_idx; // Measurement times indexe
 }
 
 // Array of measurement times used for GP modeling
-array[max(patient_max_t_width)] real all_measure_t;
+array[max_t_width] real all_measure_t;
 
-for (t in 1:max(patient_max_t_width)) {
+for (t in 1:max_t_width) {
   all_measure_t[t] = t / 12.0; // Scaling factor for time intervals. The 12 here is arbitrary (if it actually had any meaning at one point).
 }
 
-// Variables for handling separate baseline and proportional hazards
-int n_base_separate_trials = separate_baseline_hazard ? n_trials : 1;
-int n_prop_separate_trials = (1 - no_prop_hazard) * (separate_prop_hazard ? n_trials : 1);
-
-print("n_base_separate_trials = ", n_base_separate_trials, ", n_prop_separate_trials = ", n_prop_separate_trials);
-
-matrix[n_patients, n_tumor_covar] tumor_sum_covar; 
-matrix[n_patients, n_tumor_covar] uncentered_tumor_sum_covar; // Just scaled
-vector[2] tumor_sum_covar_mean;
-vector[2] tumor_sum_covar_sd;
-
-(tumor_sum_covar, uncentered_tumor_sum_covar, tumor_sum_covar_mean, tumor_sum_covar_sd) = 
-  prepare_early_tumor_sums_covar(tumor_size, n_patient_tumors, n_measures, t_measure, n_screening_t, n_tumor_covar); 
-  
