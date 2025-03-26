@@ -39,6 +39,7 @@ array[n_patients] int<lower = 1> n_patient_tumors;
 
 // Number of Measurements per Tumor
 array[sum(n_patient_tumors)] int<lower = 1> n_measures;
+array[n_patients] int<lower = 1> n_patient_visits;
 
 /*
  * Diagram for n_measures:
@@ -57,6 +58,7 @@ array[sum(n_patient_tumors)] int<lower = 1, upper = n_tumor_locations> tumor_loc
 // Measurement Times
 array[sum(n_measures)] int t_measure; // Periods
 array[sum(n_measures)] int t_day_measure; // Days
+array[sum(n_patient_visits)] int t_patient_visits;
 
 /*
  * Diagram for t_measure and t_day_measure:
@@ -70,6 +72,7 @@ array[sum(n_measures)] int t_day_measure; // Days
 
 // Tumor Sizes
 vector<lower = 0>[sum(n_measures)] tumor_size; // cm
+vector<lower = 0>[sum(n_patient_visits)] sum_tumor_size; // cm
 
 /*
  * Diagram for tumor_size:
