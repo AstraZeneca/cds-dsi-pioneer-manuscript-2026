@@ -73,7 +73,54 @@ row_vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, re
   matrix[n_x, n_x] L_K = calc_gp_cholesky_vcov(x, alpha, rho, delta); 
   
   return intercept + eta * L_K';
-}  
+}
+
+tuple(vector, matrix) gp_conditional(
+    vector mu_obs,             // Mean for the observed 
+    vector mu_pred,            // Mean for the predicted 
+    vector y_obs,              // Observations
+    matrix K_obs_obs,          // Cov between observed points
+    matrix K_pred_obs,         // Cross cov
+    matrix K_pred_pred,        // Cov between prediction points
+    real delta
+  ) {
+    
+    int n_obs = rows(y_obs);
+    int n_pred = rows(mu_pred);
+    
+    vector[n_pred] mu_cond;    // Conditional mean
+    matrix[n_pred, n_pred] Sigma_cond;  // Conditional covariance
+    
+    // Center the observations by subtracting the mean
+    vector[n_obs] centered_obs = y_obs - mu_obs;
+    
+    // Use Cholesky decomposition for numerical stability
+    matrix[n_obs, n_obs] L_obs = cholesky_decompose(K_obs_obs);
+    
+    // Step 1: Compute K_obs_obs^(-1)(y_obs - mu) efficiently
+    vector[n_obs] alpha;
+    
+    // Solving L*temp = (y_obs - mu_obs)
+    alpha = mdivide_left_tri_low(L_obs, centered_obs);
+    
+    // Solving L'*alpha = temp, giving us K_obs_obs^(-1) * (y_obs - mu_obs)
+    alpha = mdivide_left_tri_low(L_obs', alpha);
+    
+    // Step 2: Compute conditional mean
+    // mu_pred + K_pred_obs * K_obs_obs^(-1) * (y_obs - mu_obs)
+    mu_cond = mu_pred + K_pred_obs * alpha;
+    
+    // Step 3: Compute intermediate matrix for conditional covariance
+    // v_pred = L_obs^(-1) * K_pred_obs'
+    matrix[n_obs, n_pred] v_pred = mdivide_left_tri_low(L_obs, K_pred_obs');
+    
+    // Step 4: Compute conditional covariance
+    // K_pred_pred - v_pred' * v_pred
+    Sigma_cond = K_pred_pred - v_pred' * v_pred + diag_matrix(rep_vector(delta, n_pred));
+    
+    // Return both conditional mean and covariance
+    return (mu_cond, Sigma_cond);
+  }
 
 /** This is the calculation needed to extrapolate a GP that is fit using observed y and x. We are predicting for x*.
  * For details, see Rasmussen' and Williams' "Gaussian Processes for Machine Learning".
@@ -87,39 +134,48 @@ row_vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, re
  * @param delta Variance or small epsilon to add to ensure proper matrix
  * @return Predicted GP values conditional on observed data (interpolated from) 
  */
-vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, matrix K_missing, real alpha, real rho, real delta) {
-  int n_obs = rows(y);
+vector gp_pred_rng(vector y_obs, array[] real x_obs, array[] real x_pred, matrix K_obs, matrix K_pred, real alpha, real rho, real delta) {
+  return gp_pred_rng(zeros_vector(size(x_obs)), zeros_vector(size(x_pred)), y_obs, x_obs, x_pred, K_obs, K_pred, alpha, rho, delta);
+}
+ 
+vector gp_pred_rng(vector mu_obs, vector mu_pred, vector y_obs, array[] real x_obs, array[] real x_pred, matrix K_obs, matrix K_pred, real alpha, real rho, real delta) {
+  int n_obs = rows(y_obs);
   int n_pred = size(x_pred);
   
-  matrix[n_obs, n_obs] L_K = cholesky_decompose(K_obs);
-  vector[n_obs] K_div_y_obs = mdivide_left_tri_low(L_K, y); // inverse(tri(L_K)) * y
+  // matrix[n_obs, n_obs] L_K = cholesky_decompose(K_obs);
+  // vector[n_obs] K_div_y_obs = mdivide_left_tri_low(L_K, y); // inverse(tri(L_K)) * y
+  // 
+  // K_div_y_obs = mdivide_right_tri_low(K_div_y_obs', L_K)'; // (inverse(tri(L_K)) * y)' * inverse(L_K))'
+  // 
+  matrix[n_pred, n_obs] K_pred_obs = gp_exp_quad_cov(x_pred, x_obs, alpha, rho); // K(X,X*)
+  // matrix[n_obs, n_pred] v_pred = mdivide_left_tri_low(L_K, K_x_obs_x_pred); // inverse(L_K) * K(X,X*)
+  // 
+  // // Just walking through these calculations to ensure it's doing the right thing. 
+  // // N(K(X,X*)' * (inverse(tri(L_K)) * y)' * inverse(L_K))', K(X*,X*) - (inverse(L_K) * K(X,X*))' * inverse(L_K) * K(X,X*))
+  // // N(K(X*,X) * inverse(L_K)' * inverse(L_K) * y, K(X*,X*) - K(X,X*)' * inverse(L_K)' * inverse(L_K) * K(X,X*))
+  // // N(K(X*,X) * inverse(L_K'L_K) * y, K(X*,X*) - K(X*,X) * inverse(L_K'L_K) * K(X,X*))
+  // // N(K(X*,X) * inverse(K(X,X)) * y, K(X*,X*) - K(X*,X) * inverse(K(X,X)) * K(X,X*)) <-- Correct!
+  // matrix[n_pred, n_pred] K_pred_missing = K_missing - v_pred' * v_pred + diag_matrix(rep_vector(delta, n_pred));
+  // return multi_normal_cholesky_rng(K_x_obs_x_pred' * K_div_y_obs, cholesky_decompose(K_pred_missing));
   
-  K_div_y_obs = mdivide_right_tri_low(K_div_y_obs', L_K)'; // (inverse(tri(L_K)) * y)' * inverse(L_K))'
-  
-  matrix[n_obs, n_pred] K_x_obs_x_pred = gp_exp_quad_cov(x, x_pred, alpha, rho); // K(X,X*)
-  matrix[n_obs, n_pred] v_pred = mdivide_left_tri_low(L_K, K_x_obs_x_pred); // inverse(L_K) * K(X,X*)
-  
-  // Just walking through these calculations to ensure it's doing the right thing. 
-  // N(K(X,X*)' * (inverse(tri(L_K)) * y)' * inverse(L_K))', K(X*,X*) - (inverse(L_K) * K(X,X*))' * inverse(L_K) * K(X,X*))
-  // N(K(X*,X) * inverse(L_K)' * inverse(L_K) * y, K(X*,X*) - K(X,X*)' * inverse(L_K)' * inverse(L_K) * K(X,X*))
-  // N(K(X*,X) * inverse(L_K'L_K) * y, K(X*,X*) - K(X*,X) * inverse(L_K'L_K) * K(X,X*))
-  // N(K(X*,X) * inverse(K(X,X)) * y, K(X*,X*) - K(X*,X) * inverse(K(X,X)) * K(X,X*)) <-- Correct!
-  matrix[n_pred, n_pred] K_pred_missing = K_missing - v_pred' * v_pred + diag_matrix(rep_vector(delta, n_pred));
+  vector[n_pred] mu_cond;
+  matrix[n_pred, n_pred] Sigma_cond;
+  (mu_cond, Sigma_cond) = gp_conditional(mu_obs, mu_pred, y_obs, K_obs, K_pred_obs, K_pred, delta);
  
-  return multi_normal_cholesky_rng(K_x_obs_x_pred' * K_div_y_obs, cholesky_decompose(K_pred_missing));
+  return multi_normal_cholesky_rng(mu_cond, cholesky_decompose(Sigma_cond));
 }
 
-vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, matrix K_missing, real alpha, real rho) {
-  return gp_pred_rng(x_pred, y, x, K_obs, K_missing, alpha, rho, 0);
-}
-
-vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, real alpha, real rho, real delta) {
-  return gp_pred_rng(x_pred, y, x, gp_exp_quad_cov(x_pred, alpha, rho), alpha, rho, delta);
-}
-
-vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, real alpha, real rho) {
-  return gp_pred_rng(x_pred, y, x, K_obs, alpha, rho, 0);
-}
+// vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, matrix K_missing, real alpha, real rho) {
+//   return gp_pred_rng(x_pred, y, x, K_obs, K_missing, alpha, rho, 0);
+// }
+// 
+// vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, real alpha, real rho, real delta) {
+//   return gp_pred_rng(x_pred, y, x, gp_exp_quad_cov(x_pred, alpha, rho), alpha, rho, delta);
+// }
+// 
+// vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, real alpha, real rho) {
+//   return gp_pred_rng(x_pred, y, x, K_obs, alpha, rho, 0);
+// }
 
 // vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, vector eta) {
 //   return calc_gp_pred(x, intercept, alpha, 1e-9, eta);
@@ -143,6 +199,19 @@ real multi_normal_cholesky_lcdf(vector y, vector mu, matrix L_Sigma) {
 
 real multi_normal_cholesky_lcdf(vector y, real mu, matrix L_Sigma) {
   return multi_normal_cholesky_lcdf(y | rep_vector(mu, size(y)), L_Sigma);
+}
+
+real multi_normal_lcdf(vector y, vector mu_obs, vector mu_pred, vector y_cond, matrix K_obs, matrix K_pred_obs, matrix K_pred, real delta) {
+  int n_obs = rows(y);
+  int n_pred = rows(mu_pred);
+  
+  vector[n_pred] mu_cond;
+  matrix[n_pred, n_pred] Sigma_cond;
+  (mu_cond, Sigma_cond) = gp_conditional(mu_obs, mu_pred, y_cond, K_obs, K_pred_obs, K_pred, delta);
+  
+  matrix[n_pred, n_pred] L_Sigma_cond = cholesky_decompose(Sigma_cond);
+  
+  return multi_normal_cholesky_lcdf(y | mu_cond, L_Sigma_cond);
 }
 
 /** Missing measure is defined as one that lies between a _tumor's_ first assessment to the _patient's_ last assessment. Basically,
