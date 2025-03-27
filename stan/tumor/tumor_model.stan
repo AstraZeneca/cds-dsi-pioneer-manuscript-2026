@@ -30,40 +30,55 @@ if (fit_tumor_data) {
       
       vector[n_patient_unique_visits[i]] curr_patient_sld = get_sub_vector(post_treat_sld, post_treat_visits_pos, i);
       vector[n_patient_unique_visits[i]] curr_patient_trial_tumor_gp = trial_tumor_gp[get_int_sub_array(patient2trial_unique_visit_idx, patient_unique_visits_pos, i)];
-      
+      array[n_patient_unique_visits[i]] int curr_patient_idx = get_int_sub_array(patient_unique_visits_idx, patient_unique_visits_pos, i);
       matrix[n_patient_unique_visits[i], n_patient_unique_visits[i]] patient_K = calc_gp_vcov(
-        all_measure_t[get_int_sub_array(patient_unique_visits_idx, patient_unique_visits_pos, i)],
+        all_measure_t[curr_patient_idx],
         patient_tumor_gp_alpha[actual_s], patient_tumor_gp_rho[actual_s], tumor_sd[actual_s]
       );
       
-      if (n_non_measured_visits > 0)  {
-        array[n_non_measured_visits] int non_measured_idx = get_int_sub_array(non_measured2patient_visits_idx, patient_non_measured_tumor_visits_pos, i);  
+      array[n_measured_visits] int measured2patient_idx = get_int_sub_array(measured2patient_visits_idx, patient_measured_tumor_visits_pos, i); 
+      matrix[n_measured_visits, n_measured_visits] measured_K = patient_K[measured2patient_idx, measured2patient_idx];
+      vector[n_measured_visits] measured_sld = curr_patient_sld[measured2patient_idx]; 
+      vector[n_measured_visits] mu_measured;
+      
+      if (n_measured_visits > 0) {
+        mu_measured = curr_patient_trial_tumor_gp[measured2patient_idx] + patient_tumor_gp_intercept_effect[i];
+        matrix[n_measured_visits, n_measured_visits] L_measured_K = cholesky_decompose(measured_K);
 
-        matrix[n_non_measured_visits, n_non_measured_visits] non_measured_K = patient_K[non_measured_idx, non_measured_idx];
-        matrix[n_non_measured_visits, n_non_measured_visits] L_non_measured_K = cholesky_decompose(non_measured_K);
-        vector[n_non_measured_visits] non_measured_sld = curr_patient_sld[non_measured_idx]; 
-        
+        if (prod(measured_sld) <= 0) {
+          fatal_error("Cannot have non-positive measured SLD values.");
+        }
+      
+        target += multi_normal_cholesky_lpdf(measured_sld | mu_measured, L_measured_K);
+      }
+      
+      if (n_non_measured_visits > 0)  {
+        array[n_non_measured_visits] int non_measured2patient_idx = get_int_sub_array(non_measured2patient_visits_idx, patient_non_measured_tumor_visits_pos, i);
+
+        matrix[n_non_measured_visits, n_non_measured_visits] non_measured_K = patient_K[non_measured2patient_idx, non_measured2patient_idx];
+        vector[n_non_measured_visits] non_measured_sld = curr_patient_sld[non_measured2patient_idx];
+
         if (sum(non_measured_sld) > 0) {
           fatal_error("All SLD values should be zero for non-measured visits.");
         }
 
-        target += multi_normal_cholesky_lcdf(
-          zeros_vector(n_non_measured_visits) | curr_patient_trial_tumor_gp[non_measured_idx] + patient_tumor_gp_intercept_effect[i], L_non_measured_K
-        );
-      }
-      
-      if (n_measured_visits > 0) {
-        array[n_measured_visits] int measured_idx = get_int_sub_array(measured2patient_visits_idx, patient_measured_tumor_visits_pos, i); 
-        
-        matrix[n_measured_visits, n_measured_visits] measured_K = patient_K[measured_idx, measured_idx];
-        matrix[n_measured_visits, n_measured_visits] L_measured_K = cholesky_decompose(measured_K); 
-        vector[n_measured_visits] measured_sld = curr_patient_sld[measured_idx]; 
-       
-        if (prod(measured_sld) <= 0) {
-          fatal_error("Cannot have non-positive SLD values.");
+        vector[n_non_measured_visits] mu_non_measured = curr_patient_trial_tumor_gp[non_measured2patient_idx] + patient_tumor_gp_intercept_effect[i];
+
+        if (n_measured_visits > 0) {
+          matrix[n_non_measured_visits, n_measured_visits] cross_K = gp_exp_quad_cov(
+            all_measure_t[curr_patient_idx[non_measured2patient_idx]], all_measure_t[curr_patient_idx[measured2patient_idx]], 
+            patient_tumor_gp_alpha[actual_s], patient_tumor_gp_rho[actual_s]
+          ); 
+          
+          vector[n_non_measured_visits] mu_cond;
+          matrix[n_non_measured_visits, n_non_measured_visits] Sigma_cond;
+
+          target += multi_normal_lcdf(zeros_vector(n_non_measured_visits) | mu_measured, mu_non_measured, measured_sld, measured_K, cross_K, non_measured_K, delta);
+        } else {
+          matrix[n_non_measured_visits, n_non_measured_visits] L_non_measured_K = cholesky_decompose(non_measured_K);
+
+          target += multi_normal_cholesky_lcdf(zeros_vector(n_non_measured_visits) | mu_non_measured, L_non_measured_K);
         }
-         
-        target += multi_normal_cholesky_lpdf(measured_sld | curr_patient_trial_tumor_gp[measured_idx] + patient_tumor_gp_intercept_effect[i], L_measured_K);
       }
     }
   }
