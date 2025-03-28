@@ -24,194 +24,19 @@ array[] int get_max_t(array[] int t_measure, array[] int n_measures, array[] int
   return max_t;
 }
 
-/** Calculate Gaussian process variance-covariance matrix. 
- *
- * @param x Proximity measures
- * @param alpha GP variance parameter
- * @param rho GP Smoothness/scale parameter
- * @return Variance-covariance matrix
- */
-matrix calc_gp_vcov(array[] real x, real alpha, real rho) {
-  return gp_exp_quad_cov(x, alpha, rho);
+tuple(real, real, real) summarize_matrix_eigenvalues(matrix m) {
+  int n = rows(m);
+  
+  vector[n] eigenvalues = eigenvalues_sym(m);
+  real min_eigenvalue = min(eigenvalues);
+  real max_eigenvalue = max(eigenvalues);
+  real condition_number = max_eigenvalue / min_eigenvalue;
+  
+  return (min_eigenvalue, max_eigenvalue, condition_number);
 }
 
-matrix calc_gp_vcov(array[] real x, real alpha, real rho, real sigma) {
-  return calc_gp_vcov(x, alpha, rho) + diag_matrix(rep_vector(sigma, size(x)));
-}
-
-/** Calculate Gaussian process Cholesky variance-covariance matrix. 
- *
- * @param x Proximity measures
- * @param alpha GP variance parameter
- * @param rho GP Smoothness/scale parameter
- * @param delta Variance or small epsilon to add to ensure proper matrix
- * @return Variance-covariance matrix
- */
-matrix calc_gp_cholesky_vcov(array[] real x, real alpha, real rho, real delta) {
-  return cholesky_decompose(calc_gp_vcov(x, alpha, rho, delta));
-}
-
-/** Calculate one dimensional GP predictor.
- *
- * @param x Proximity measures
- * @param intercept GP mean
- * @param alpha GP variance parameter
- * @param rho GP Smoothness/scale parameter
- * @param delta Variance or small epsilon to add to ensure proper matrix
- * @param eta Standard normal (raw) parameters
- * @return GP values for the given `x` 
- */
-vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, real delta, vector eta) {
-  int n_x = size(x);
-  matrix[n_x, n_x] L_K = calc_gp_cholesky_vcov(x, alpha, rho, delta); 
-  
-  return intercept + L_K * eta;
-}  
-
-row_vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, real delta, row_vector eta) {
-  int n_x = size(x);
-  matrix[n_x, n_x] L_K = calc_gp_cholesky_vcov(x, alpha, rho, delta); 
-  
-  return intercept + eta * L_K';
-}
-
-tuple(vector, matrix) gp_conditional(
-    vector mu_obs,             // Mean for the observed 
-    vector mu_pred,            // Mean for the predicted 
-    vector y_obs,              // Observations
-    matrix K_obs_obs,          // Cov between observed points
-    matrix K_pred_obs,         // Cross cov
-    matrix K_pred_pred,        // Cov between prediction points
-    real delta
-  ) {
-    
-    int n_obs = rows(y_obs);
-    int n_pred = rows(mu_pred);
-    
-    vector[n_pred] mu_cond;    // Conditional mean
-    matrix[n_pred, n_pred] Sigma_cond;  // Conditional covariance
-    
-    // Center the observations by subtracting the mean
-    vector[n_obs] centered_obs = y_obs - mu_obs;
-    
-    // Use Cholesky decomposition for numerical stability
-    matrix[n_obs, n_obs] L_obs = cholesky_decompose(K_obs_obs);
-    
-    // Step 1: Compute K_obs_obs^(-1)(y_obs - mu) efficiently
-    vector[n_obs] alpha;
-    
-    // Solving L*temp = (y_obs - mu_obs)
-    alpha = mdivide_left_tri_low(L_obs, centered_obs);
-    
-    // Solving L'*alpha = temp, giving us K_obs_obs^(-1) * (y_obs - mu_obs)
-    alpha = mdivide_left_tri_low(L_obs', alpha);
-    
-    // Step 2: Compute conditional mean
-    // mu_pred + K_pred_obs * K_obs_obs^(-1) * (y_obs - mu_obs)
-    mu_cond = mu_pred + K_pred_obs * alpha;
-    
-    // Step 3: Compute intermediate matrix for conditional covariance
-    // v_pred = L_obs^(-1) * K_pred_obs'
-    matrix[n_obs, n_pred] v_pred = mdivide_left_tri_low(L_obs, K_pred_obs');
-    
-    // Step 4: Compute conditional covariance
-    // K_pred_pred - v_pred' * v_pred
-    Sigma_cond = K_pred_pred - v_pred' * v_pred + diag_matrix(rep_vector(delta, n_pred));
-    
-    // Return both conditional mean and covariance
-    return (mu_cond, Sigma_cond);
-  }
-
-/** This is the calculation needed to extrapolate a GP that is fit using observed y and x. We are predicting for x*.
- * For details, see Rasmussen' and Williams' "Gaussian Processes for Machine Learning".
- *
- * @param x_pred Proxmity measures to predict for
- * @param y Observed outcomes
- * @param x Observed proxmity measures
- * @param K_obs GP variance-covariance matrix for observed `(x, y)`
- * @param alpha GP variance parameter
- * @param rho GP Smoothness/scale parameter
- * @param delta Variance or small epsilon to add to ensure proper matrix
- * @return Predicted GP values conditional on observed data (interpolated from) 
- */
-vector gp_pred_rng(vector y_obs, array[] real x_obs, array[] real x_pred, matrix K_obs, matrix K_pred, real alpha, real rho, real delta) {
-  return gp_pred_rng(zeros_vector(size(x_obs)), zeros_vector(size(x_pred)), y_obs, x_obs, x_pred, K_obs, K_pred, alpha, rho, delta);
-}
- 
-vector gp_pred_rng(vector mu_obs, vector mu_pred, vector y_obs, array[] real x_obs, array[] real x_pred, matrix K_obs, matrix K_pred, real alpha, real rho, real delta) {
-  int n_obs = rows(y_obs);
-  int n_pred = size(x_pred);
-  
-  // matrix[n_obs, n_obs] L_K = cholesky_decompose(K_obs);
-  // vector[n_obs] K_div_y_obs = mdivide_left_tri_low(L_K, y); // inverse(tri(L_K)) * y
-  // 
-  // K_div_y_obs = mdivide_right_tri_low(K_div_y_obs', L_K)'; // (inverse(tri(L_K)) * y)' * inverse(L_K))'
-  // 
-  matrix[n_pred, n_obs] K_pred_obs = gp_exp_quad_cov(x_pred, x_obs, alpha, rho); // K(X,X*)
-  // matrix[n_obs, n_pred] v_pred = mdivide_left_tri_low(L_K, K_x_obs_x_pred); // inverse(L_K) * K(X,X*)
-  // 
-  // // Just walking through these calculations to ensure it's doing the right thing. 
-  // // N(K(X,X*)' * (inverse(tri(L_K)) * y)' * inverse(L_K))', K(X*,X*) - (inverse(L_K) * K(X,X*))' * inverse(L_K) * K(X,X*))
-  // // N(K(X*,X) * inverse(L_K)' * inverse(L_K) * y, K(X*,X*) - K(X,X*)' * inverse(L_K)' * inverse(L_K) * K(X,X*))
-  // // N(K(X*,X) * inverse(L_K'L_K) * y, K(X*,X*) - K(X*,X) * inverse(L_K'L_K) * K(X,X*))
-  // // N(K(X*,X) * inverse(K(X,X)) * y, K(X*,X*) - K(X*,X) * inverse(K(X,X)) * K(X,X*)) <-- Correct!
-  // matrix[n_pred, n_pred] K_pred_missing = K_missing - v_pred' * v_pred + diag_matrix(rep_vector(delta, n_pred));
-  // return multi_normal_cholesky_rng(K_x_obs_x_pred' * K_div_y_obs, cholesky_decompose(K_pred_missing));
-  
-  vector[n_pred] mu_cond;
-  matrix[n_pred, n_pred] Sigma_cond;
-  (mu_cond, Sigma_cond) = gp_conditional(mu_obs, mu_pred, y_obs, K_obs, K_pred_obs, K_pred, delta);
- 
-  return multi_normal_cholesky_rng(mu_cond, cholesky_decompose(Sigma_cond));
-}
-
-// vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, matrix K_missing, real alpha, real rho) {
-//   return gp_pred_rng(x_pred, y, x, K_obs, K_missing, alpha, rho, 0);
-// }
-// 
-// vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, real alpha, real rho, real delta) {
-//   return gp_pred_rng(x_pred, y, x, gp_exp_quad_cov(x_pred, alpha, rho), alpha, rho, delta);
-// }
-// 
-// vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, real alpha, real rho) {
-//   return gp_pred_rng(x_pred, y, x, K_obs, alpha, rho, 0);
-// }
-
-// vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, vector eta) {
-//   return calc_gp_pred(x, intercept, alpha, 1e-9, eta);
-// }  
-
-/**
- * Calculate log of multivariate cholesky normal CDF 
- * 
- * @param y Vector at which to evaluate the CDF
- * @param mu Mean vector
- * @param Sigma Covariance matrix
- * @return Log of multivariate normal CDF evaluated at y
- */
-real multi_normal_cholesky_lcdf(vector y, vector mu, matrix L_Sigma) {
-  int K = rows(y);
-  // These are now independent standard normal random variables
-  vector[K] z = mdivide_left_tri_low(L_Sigma, y - mu);
-  
-  return std_normal_lcdf(z);
-}
-
-real multi_normal_cholesky_lcdf(vector y, real mu, matrix L_Sigma) {
-  return multi_normal_cholesky_lcdf(y | rep_vector(mu, size(y)), L_Sigma);
-}
-
-real multi_normal_lcdf(vector y, vector mu_obs, vector mu_pred, vector y_cond, matrix K_obs, matrix K_pred_obs, matrix K_pred, real delta) {
-  int n_obs = rows(y);
-  int n_pred = rows(mu_pred);
-  
-  vector[n_pred] mu_cond;
-  matrix[n_pred, n_pred] Sigma_cond;
-  (mu_cond, Sigma_cond) = gp_conditional(mu_obs, mu_pred, y_cond, K_obs, K_pred_obs, K_pred, delta);
-  
-  matrix[n_pred, n_pred] L_Sigma_cond = cholesky_decompose(Sigma_cond);
-  
-  return multi_normal_cholesky_lcdf(y | mu_cond, L_Sigma_cond);
+matrix diag_matrix(real x, int n) {
+  return diag_matrix(rep_vector(x, n));
 }
 
 /** Missing measure is defined as one that lies between a _tumor's_ first assessment to the _patient's_ last assessment. Basically,
@@ -280,6 +105,40 @@ tuple(array[] int, array[] int) calculate_n_missing_visits(array[] int visit_pos
   return (n_missing, create_pos(n_missing));
 }
 
+
+int calculate_n_missing_visits(array[] int unique_visits, int n_full) {
+  return calculate_n_missing_visits(unique_visits, {1, num_elements(unique_visits) + 1}, n_full)[1];
+}
+
+array[] int calculate_n_missing_visits(array[] int unique_visits, array[] int unique_visits_pos, int n_full) {
+  int n = size(unique_visits_pos) - 1;
+  array[n] int n_unique_missing_visits = zeros_int_array(n);
+  
+  for (p in 1:n) {
+    n_unique_missing_visits[p] = n_full - get_pos_size(unique_visits_pos, p);
+  }
+  
+  // array[sum(n_unique_missing_visits)] int unique_missing_visits;
+  // int curr_missing_idx = 1;
+ 
+  // for (p in 1:n) { 
+  //   array[n_unique_visits[p]] int curr_unique_visits = sort_asc(get_int_sub_array(unique_visits, unique_visits_pos, p));
+  //   int curr_unique_visit_idx = 1;
+  //   
+  //   for (q in 1:n_full) {
+  //     if (q < curr_unique_visits[curr_unique_visit_idx]) {
+  //       n_unique_missing_visits[p] += 1;
+  //       // unique_missing_visits[curr_missing_idx] = q;
+  //       // curr_missing_idx += 1;
+  //     } else {
+  //       curr_unique_visit_idx += 1;
+  //     }
+  //   }
+  // }
+  
+  return n_unique_missing_visits;
+}
+
 tuple(array[] int, array[] int) get_missing_visits(array[] int visit_pos, array[] int visits, array[] int missing_visit_pos) {
   return get_missing_visits(visit_pos, visits, missing_visit_pos, 0);
 }
@@ -289,7 +148,6 @@ tuple(array[] int, array[] int) get_missing_visits(array[] int visit_pos, array[
   array[n] int missing_size = get_pos_size(missing_visit_pos);
   int n_total_missing = sum(missing_size);
   array[n_total_missing] int missing_visits, missing_visits_idx;
-  
   
   for (i in 1:n) {
     int missing_pos, missing_end;
@@ -322,6 +180,39 @@ tuple(array[] int, array[] int) get_missing_visits(array[] int visit_pos, array[
   }
   
   return (missing_visits, missing_visits_idx);
+}
+
+array[] int get_missing_visits(array[] int unique_visits, int n_full) {
+  return get_missing_visits(unique_visits, {1, num_elements(unique_visits) + 1}, n_full);
+}
+
+array[] int get_missing_visits(array[] int unique_visits, array[] int unique_visits_pos, int n_full) {
+  int n = size(unique_visits_pos) - 1;
+  array[n] int n_unique_visits = get_pos_size(unique_visits_pos);
+  array[n] int n_unique_missing_visits = zeros_int_array(n);
+  
+  for (p in 1:n) {
+    n_unique_missing_visits[p] = n_full - get_pos_size(unique_visits_pos, p);
+  }
+  
+  array[sum(n_unique_missing_visits)] int unique_missing_visits;
+  int curr_missing_idx = 1;
+ 
+  for (p in 1:n) { 
+    array[n_unique_visits[p]] int curr_unique_visits = sort_asc(get_int_sub_array(unique_visits, unique_visits_pos, p));
+    int curr_unique_visit_idx = 1;
+    
+    for (q in 1:n_full) {
+      if (curr_unique_visit_idx > n_unique_visits[p] || q < curr_unique_visits[curr_unique_visit_idx]) {
+        unique_missing_visits[curr_missing_idx] = q;
+        curr_missing_idx += 1;
+      } else {
+        curr_unique_visit_idx += 1;
+      } 
+    }
+  }
+  
+  return unique_missing_visits;
 }
 
 /** Return the actual t for which we don't have observed tumor size assessments.
@@ -741,136 +632,7 @@ tuple(array[] int, array[] int) get_idx_dict(array[] int idx, array[] int pos) {
 }
 
 
-array[] int get_max(array[] int id, array[] int pos) {
-  return get_max(id, pos, 0);
-}
 
-array[] int get_max_idx(array[] int id, array[] int pos) {
-  return get_max(id, pos, 1);
-}
-
-array[] int get_max(array[] int id, array[] int pos, int of_idx) {
-  int n = size(pos) - 1;
-  array[n] int p_max = zeros_int_array(n);
-  
-  for (i in 1:n) {
-    int n_i = get_pos_size(pos, i);
-    
-    if (n_i > 0) {
-      array[n_i] int id_i = get_int_sub_array(id, pos, i);
-      p_max[i] = max(id_i) + (of_idx ? 1 - min(id_i) : 0);
-    }
-  }
-  
-  return p_max;
-}
-
-array[] int create_pos(array[] int n_x) {
-  int n = size(n_x);
-  array[n + 1] int pos;
-  pos[1] = 1;
-  
-  for (i in 1:n) {
-    pos[i + 1] = pos[i] + n_x[i];  
-  } 
-  
-  assert_equal(pos[n + 1] - 1, sum(n_x));
-  
-  return pos;
-}
-
-array[] int create_pos(array[] int n_x, array[] int sub_pos) {
-  int n = size(sub_pos) - 1;
-  array[n + 1] int pos;
-  pos[1] = 1;
-  
-  for (i in 1:n) {
-    pos[i + 1] = pos[i] + sum(get_int_sub_array(n_x, sub_pos, i));  
-  } 
-  
-  assert_equal(pos[n + 1] - 1, sum(n_x));
-  
-  return pos;
-}
-
-array[] int create_pos(array[] int pos, int from, int to) {
-  return create_pos(get_pos_size(pos)[from:to]);
-}
-
-tuple(int, int) get_pos(array[] int pos, int from, int to) {
-  return (pos[from], pos[to + 1] - 1);
-}
-
-tuple(int, int) get_pos(array[] int pos, int n) {
-  return get_pos(pos, n, n);
-}
-
-int get_pos_size(array[] int pos, int i) {
-  return pos[i + 1] - pos[i];
-}
-
-array[] int get_pos_size(array[] int pos) {
-  int n = size(pos) - 1;
-  array[n] int sizes;
-  
-  for (i in 1:n) {
-    sizes[i] = get_pos_size(pos, i);
-  }
-  
-  return sizes;
-} 
-
-array[] int get_int_sub_array(array[] int full, array[] int pos, int n) {
-  int start, end;
-  (start, end) = get_pos(pos, n);
-
-  return full[start:end];
-}
-
-array[] int get_int_sub_array(array[] int full, array[] int pos, int from, int to) {
-  int from_start, from_end, to_start, to_end;
-  (from_start, from_end) = get_pos(pos, from);
-  (to_start, to_end) = get_pos(pos, to);
-
-  return full[from_start:to_end];
-}
-
-vector get_sub_vector(vector full, array[] int pos, int n) {
-  int start, end;
-  (start, end) = get_pos(pos, n);
-
-  return full[start:end];
-}
-
-array[] int get_min_pos(array[] int x, array[] int pos) {
-  int n = size(pos) - 1;
-  array[n] int min_pos;
-  
-  for (i in 1:n) {
-    min_pos[i] = get_min_pos(x, pos, i);
-  }
-  
-  return min_pos;
-}
-
-array[] int get_max_pos(array[] int x, array[] int pos) {
-  int n = size(pos) - 1;
-  array[n] int max_pos;
-  
-  for (i in 1:n) {
-    max_pos[i] = get_max_pos(x, pos, i);
-  }
-  
-  return max_pos;
-}
-
-int get_min_pos(array[] int x, array[] int pos, int n) {
-  return min(get_int_sub_array(x, pos, n));
-}
-
-int get_max_pos(array[] int x, array[] int pos, int n) {
-  return max(get_int_sub_array(x, pos, n));
-}
 
 void assert_equal(int x, int y) {
   if (x != y) {
