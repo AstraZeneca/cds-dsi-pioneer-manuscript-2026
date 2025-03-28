@@ -1,6 +1,9 @@
 functions {
   #include "../extern_util.stan"
   #include "../util.stan"
+  #include "../pos.stan"
+  #include "../gp.stan"
+  #include "../state_space.stan"
 }
 
 data {
