@@ -36,7 +36,7 @@ array[n_trials + 1] int<lower = 1, upper = sum(n_patient_visits) + 1> trial_visi
 array[n_patients + 1] int<lower = 1, upper = sum(n_measures) + 1> patient_tumor_measure_pos = create_pos(n_measures, patient_tumor_pos);
 array[n_patients + 1] int<lower = 1, upper = sum(n_patient_visits) + 1> patient_visit_pos = create_pos(n_patient_visits);
 
-real delta = 1e-9; // Small value used for GP modeling to avoid numerical issues
+real delta = 1e-5; // Small value used for GP modeling to avoid numerical issues
 
 int min_all_t = min(t_measure); // Earliest measurement time across all patients
 int<lower = min_all_t> max_all_t = max(max(t_measure) + 1, extend_max_all_t); // Latest measurement time or extended time, whichever is greater
