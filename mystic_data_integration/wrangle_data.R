@@ -338,8 +338,10 @@ generate_patient_data_dataset <- function(clinical_dataset = clinical_db_no_SF,
     mutate(usubjid = str_split_fixed(unique_subject_identifier, "/", 2)[,2]) %>% 
     group_by(usubjid) %>%
     filter(!is.na(date_of_visit)) %>% 
+    arrange(usubjid, date_of_visit) %>%
     summarise(first_date_of_visit=first(date_of_visit),
               last_date_of_visit = last(date_of_visit))
+
   
   colnames(visit_dates) <- c("subjid", "first_date_of_visit", "last_date_of_visit")      
   
@@ -366,15 +368,15 @@ generate_patient_data_dataset <- function(clinical_dataset = clinical_db_no_SF,
                    trtsdt=fjd$treatment_start_date,
                    trtedt=fjd$treatment_end_date,
                    treatment_end_week=floor(as.numeric(fjd$treatment_end_date - fjd$treatment_start_date)/7),
-                   treatment_end_day=as.numeric(fjd$treatment_end_date - fjd$treatment_start_date)/30.41,
+                   treatment_end_day=as.numeric(fjd$treatment_end_date - fjd$treatment_start_date),
                    calendar_week=floor(as.numeric(fjd$treatment_start_date-first_patient_sd)/7),
-                   calendar_day=as.numeric(fjd$treatment_start_date-first_patient_sd)/30.41,
+                   calendar_day=as.numeric(fjd$treatment_start_date-first_patient_sd),
                    patient_min_t=floor(fjd$week),
                    patient_max_t=floor(fjd$lweek),
                    patient_first_visit=fjd$first_date_of_visit,
                    patient_last_visit=fjd$last_date_of_visit,
                    patient_t_width=floor(as.numeric(fjd$last_date_of_visit-fjd$first_date_of_visit)/7),
-                   death = fjd$overall_survival_censor,
+                   death = ifelse(fjd$overall_survival_censor==1, FALSE, TRUE),
                    death_week = floor(as.numeric(fjd$death_date-fjd$treatment_start_date)/7),
                    progression_before_death = ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1),
                    right_censored= ifelse(fjd$overall_survival_censor==1,FALSE,TRUE),
