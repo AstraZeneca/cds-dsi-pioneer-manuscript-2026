@@ -99,7 +99,9 @@ clinical_db_no_SF <- subset(clinical_db, !clinical_db$USUBJID %in% sfs_ids_list)
 ntable(clinical_db_no_SF$actual_arm) # Still some "not treated and SOC"
 
 sfs_ids_list <- clinical_db$USUBJID[which(clinical_db$actual_arm %in%
-                                            c("SCREEN FAILURE", "NOT ASSIGNED", "NOT TREATED", "SOC TREATMENT ARM"))]
+                                            c("SCREEN FAILURE", "NOT ASSIGNED",
+                                              "NOT TREATED", "SOC TREATMENT ARM"
+                                              ))]
 
 
 clinical_longitudinal_no_SF <- subset(
