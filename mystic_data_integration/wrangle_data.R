@@ -274,7 +274,7 @@ claude_opt_generate_assessment_visit_date_dplyr <- function(measurements_longitu
     group_by(usubjid, ady) %>%
     summarise(
       sumdiam = first(mmsumdiam),
-      visitnum = first(visitnum),
+      visitnum = as.character(first(visitnum)),
       week = first(week),
       .groups = "drop"
     )
@@ -305,7 +305,7 @@ claude_opt_generate_assessment_visit_date_dplyr <- function(measurements_longitu
       day = NA
     ) %>%
     select(studyid, usubjid, visitnum, ady, day, week, mmsumdiam = sumdiam, response)
-  
+  assessment_visit_date$usubjid <- as.factor(assessment_visit_date$usubjid)
   return(assessment_visit_date)
 }
 
@@ -314,8 +314,7 @@ generate_patient_data_dataset <- function(clinical_dataset = clinical_db_no_SF,
                                           measurements_longitudinal_data = measurements_longitudinal_no_SF,
                                           clinical_longitudinal_data=clinical_longitudinal_no_SF){
   first_patient_sd <- sort(clinical_dataset$treatment_start_date)[1] # we get the first visit of the first patient
-  assessment_visit_data$week[assessment_visit_data$usubjid=="E0302003"][2]
-  week_filtered <- assessment_visit_data %>% 
+  week_filtered <- assessment_visit_data %>% ## NOT USED BUT MERGED LATER FIX.
     group_by(usubjid) %>%
     filter(week>1) %>% # week 1 in this dataset is alway baseline measurement for the ctscan
     summarise(
@@ -363,6 +362,21 @@ generate_patient_data_dataset <- function(clinical_dataset = clinical_db_no_SF,
     USUBJID = str_split_fixed(USUBJID, "/", 2)[,1]) %>%
     select(USUBJID)
   
+  fjdc <- fjd
+  colnames(fjdc) <- c("usubjid", colnames(fjdc)[2:100])
+  avd2 <- full_join(assessment_visit_data, fjdc[,c("usubjid","progression_free_survival_time")], by="usubjid")
+  avd2$progression_free_survival_time <- avd2$progression_free_survival_time %/%7+1
+  
+  week_filtered3 <- avd2 %>%
+    group_by(usubjid) %>%
+    filter(week>1 & week<progression_free_survival_time) %>% 
+    summarise(
+      week = last(week),
+      .groups = "drop"
+    )
+  colnames(week_filtered3) <- c("subjid", "lbpfs")
+  fjd <- full_join(fjd,week_filtered3,  by="subjid")
+  
   df <- data.frame(studyid= studyids$USUBJID,
                    usubjid=fjd$subjid,
                    trtsdt=fjd$treatment_start_date,
@@ -371,7 +385,7 @@ generate_patient_data_dataset <- function(clinical_dataset = clinical_db_no_SF,
                    treatment_end_day=as.numeric(fjd$treatment_end_date - fjd$treatment_start_date),
                    calendar_week=floor(as.numeric(fjd$treatment_start_date-first_patient_sd)/7),
                    calendar_day=as.numeric(fjd$treatment_start_date-first_patient_sd),
-                   patient_min_t=floor(fjd$week),
+                   patient_min_t=(as.numeric(fjd$first_date_of_visit-fjd$treatment_start_date)%/%7)+1,
                    patient_max_t=floor(fjd$lweek),
                    patient_first_visit=fjd$first_date_of_visit,
                    patient_last_visit=fjd$last_date_of_visit,
@@ -379,10 +393,10 @@ generate_patient_data_dataset <- function(clinical_dataset = clinical_db_no_SF,
                    death = ifelse(fjd$overall_survival_censor==1, FALSE, TRUE),
                    death_week = floor(as.numeric(fjd$death_date-fjd$treatment_start_date)/7),
                    progression_before_death = ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1),
-                   right_censored= ifelse(fjd$overall_survival_censor==1,FALSE,TRUE),
-                   progress_week=ifelse(ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, floor(fjd$progression_free_survival_time/7), NA),
-                   pfs=floor(fjd$progression_free_survival_time/7),
-                   interval_censored=rep(NA,nrow(fjd)),
+                   right_censored= ifelse(((floor(as.numeric(fjd$death_date-fjd$treatment_start_date)/7) > floor(fjd$lweek)) | is.na(floor(as.numeric(fjd$death_date-fjd$treatment_start_date)/7))) & ((ifelse(ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, floor(fjd$progression_free_survival_time/7), NA)> floor(fjd$lweek))| is.na(ifelse(ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, floor(fjd$progression_free_survival_time/7), NA))),TRUE,FALSE), # Yeah, sorry about this. Basically if the death is after the last treatment week (or there's no death), and if the PD is after the last week of treatment (or no PD) we deem it Right cens.
+                   progress_week=ifelse(ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, fjd$progression_free_survival_time%/%7+1, NA),
+                   pfs=fjd$lbpfs,
+                   interval_censored=ifelse(ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, fjd$progression_free_survival_time%/%7+1, NA)-fjd$lbpfs,
                    age=fjd$age,
                    age_group=ifelse(fjd$age<18,"<18",ifelse(fjd$age<40, "18-40", ifelse(fjd$age<65,"40-65",ifelse(fjd$age<75,"65-75",">75")))),
                    sex=fjd$sex,
@@ -395,6 +409,43 @@ generate_patient_data_dataset <- function(clinical_dataset = clinical_db_no_SF,
                    baseline_ldh=fjd$ldh)
   df
 }
+
+remove_patient_data_dups <- function(patient_data=patient_data){
+  dups <- which(duplicated(patient_data$usubjid))
+  leave <- NULL
+  j <- 1
+  for(i in dups){
+    fst <- sum(colSums(is.na(patient_data[(i-1),])))
+    dp <- sum(colSums(is.na(patient_data[i,])))
+    if(fst>dp){
+      leave[j] <- i-1
+    }else if(dp>fst){
+      leave[j] <- i
+    }else{
+      leave[j] <- i
+    }
+   j <- j+1
+  }
+  patient_data <- patient_data[-leave,]
+  #patient_data <- patient_data %>% arrange(usubjid)
+  rownames(patient_data) <- 1:nrow(patient_data)
+  patient_data
+}
+
+
+
+calc_visit_date <- function(data) {
+  data |> 
+    mutate(
+      day = if_else(ady > 0, # Is post-treatment day? 
+                    ady - 1, 
+                    ady),
+      week = (day %/% 7) + 1, # Last pre-screening week is 0. 
+      #treated_week = week > 0, # Was this a post-treatment week?
+    ) 
+}
+
+
 
 # ======================
 #        SPARE

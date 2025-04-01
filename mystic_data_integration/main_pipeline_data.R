@@ -27,10 +27,10 @@ if(!require(stringr))install.packages("stringr")
 library(stringr)
 
 if(!require(data.table))install.packages("data.table")
-library(data.table) # Only for speed functions
+library(data.table) # Only for _speed functions. NOT used
 
 if(!require(lubridate))install.packages("lubridate")
-library(lubridate) # Only for speed functions
+library(lubridate) # Only for _speed functions. NOT used
 
 login() # Needs: Access to solvebio, PAT created in QuartzBio, PAT from QB added
 # into domino as Env variable. Not needed if the data is already in Domino.
@@ -125,6 +125,10 @@ response_longitudinal_no_SF <- subset(
 len(unique(response_longitudinal_no_SF$unique_subject_identifier))
 
 
+#=================================
+#     ASSESSMENT VISIT DATA      #
+#=================================
+
 # loop_assessment_visit_date_no_SF <- generate_assessment_visit_date_dataset(measurements_longitudinal_dataset = measurements_longitudinal_no_SF , response_longitudinal_dataset = response_longitudinal_no_SF)
 response_longitudinal_no_SF$analysis_value_c <- 
   response_longitudinal_no_SF$`analysis_value_(c)`
@@ -149,16 +153,23 @@ weirdos <- claude_assessment_visit_date_no_SF %>%
   filter(visitnum != "1.00" & visitnum != "1")
 
 
-assessment_visit_data <- claude_assessment_visit_date_no_SF # Ready!
+assessment_visit_data <- claude_assessment_visit_date_no_SF 
+
+assessment_visit_data <- calc_visit_date(assessment_visit_data) # READY!
+
+#=================================
+#           PATIENT DATA         #
+#=================================
 
 patient_data <- generate_patient_data_dataset(
   clinical_dataset=clinical_db_no_SF,
   assessment_visit_data = assessment_visit_data,
   measurements_longitudinal_data = measurements_longitudinal_no_SF,
   clinical_longitudinal_data = clinical_longitudinal_no_SF
-  ) # Ready!
+) # Ready!
 
-
+pacient_data <- remove_patient_data_dups(patient_data) # One patient is repeated 2 times!
+patient_data <- remove_patient_data_dups(pacient_data) # READY!
 # ============================
 #            SPARE           #
 # ============================
