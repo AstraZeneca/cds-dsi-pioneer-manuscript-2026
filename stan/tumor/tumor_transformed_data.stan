@@ -164,3 +164,6 @@ for (i in 1:n_patients) {
 }
 
 int<lower = 1> last_predict_visit = max(pop_unique_visits);
+
+// Array of measurement times used for GP modeling
+array[max_t_width] real all_tumor_measure_t = linspaced_array(max_t_width, 1, max_t_width);
