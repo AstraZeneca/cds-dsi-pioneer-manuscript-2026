@@ -135,3 +135,17 @@ int get_min_pos(array[] int x, array[] int pos, int n) {
 int get_max_pos(array[] int x, array[] int pos, int n) {
   return max(get_int_sub_array(x, pos, n));
 }
+
+int get_int(array[] int x, array[] int pos, int p, int n) { 
+  int idx = pos[p] + n - 1;
+  
+  if (idx >= pos[p + 1] || n < 1) {
+    fatal_error("Unexpected index: ", n);
+  }
+  
+  return x[pos[p] + n - 1]; 
+}
+
+int get_last_int(array[] int x, array[] int pos, int p) {
+  return get_int(x, pos, p, pos[p + 1] - 1);
+}
