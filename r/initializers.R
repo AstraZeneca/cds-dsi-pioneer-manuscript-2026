@@ -121,6 +121,7 @@ create_crcr_pfs_initializer <- function(stan_data, n_causes = 2) {
 create_tumor_initializer <- function(stan_data) {
   n_tumor_separate_trials <- if (stan_data$separate_trial_tumor_gp) stan_data$n_trials else 1 
   max_all_t <- max(max(stan_data$t_measure) + 1, stan_data$extend_max_all_t)
+  patient_gp_only <- stan_data$patient_gp_only
   # n_pop_unique_visits <- if (stan_data$separate_trial_tumor_gp) {
   #   sum(with(stan_data, tibble(trial = rep(patient_trial, n_patient_visits), visit = t_patient_visits) |> 
   #              group_by(trial) |> 
@@ -132,12 +133,12 @@ create_tumor_initializer <- function(stan_data) {
   function(chain_id) {
     init_vals <- lst(
       # vector<lower = 0>[n_tumor_separate_trials] pop_tumor_gp_alpha;
-      pop_tumor_gp_alpha = abs(rnorm(n_tumor_separate_trials, stan_data$pop_tumor_gp_alpha_sd)),
+      pop_tumor_gp_alpha = if (!patient_gp_only) abs(rnorm(n_tumor_separate_trials, stan_data$pop_tumor_gp_alpha_sd)),
       
       # vector<lower = 0>[n_tumor_separate_trials] pop_tumor_gp_rho;
-      pop_tumor_gp_rho = with(stan_data, invgamma::rinvgamma(n_tumor_separate_trials, pop_tumor_gp_rho_alpha, pop_tumor_gp_rho_beta)),
+      pop_tumor_gp_rho = if (!patient_gp_only) with(stan_data, invgamma::rinvgamma(n_tumor_separate_trials, pop_tumor_gp_rho_alpha, pop_tumor_gp_rho_beta)),
       
-      patient_tumor_gp_intercept_sd = abs(rnorm(n_tumor_separate_trials, sd = stan_data$patient_tumor_gp_sd_sd)), 
+      patient_tumor_gp_intercept_sd = abs(rnorm(n_tumor_separate_trials, sd = stan_data$patient_tumor_gp_intercept_sd_sd)), 
       raw_patient_tumor_gp_intercept_effect = rnorm(stan_data$n_patients), 
       patient_tumor_gp_intercept_effect = with(stan_data, rnorm(n_patients, sd = patient_tumor_gp_intercept_sd[pmin(n_tumor_separate_trials, patient_trial)])), 
 
