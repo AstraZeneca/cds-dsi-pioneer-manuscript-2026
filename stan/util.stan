@@ -521,12 +521,7 @@ array[] int get_level2level_idx(array[] int hi_level, array[] int low_level) {
   array[size_low] int sorted_low_level = sort_asc(low_level);
   int curr_low_idx = 1;
   
-  // print("hi_level = ", hi_level);
-  // print("low_level = ", low_level);
-  
   for (h in 1:size_hi) {
-    // print("hi_level[h] = ", hi_level[h], ", sorted_low_level[curr_low_idx] = ", sorted_low_level[curr_low_idx]);
-    
     if (hi_level[h] == sorted_low_level[curr_low_idx]) {
       idx[curr_low_idx] = h;
       
@@ -546,22 +541,13 @@ array[] int get_level2level_idx(array[] int hi_level, array[] int low_level, arr
   int size_low = size(low_level);
   array[size_low] int idx = zeros_int_array(size_low);
   
-  // print("hi_level = ", hi_level);
-  // print("low_level = ", low_level);
-  
   for (l in 1:n_low) {
     if (get_pos_size(low_pos, l) > 0) {
       int pos, end;
       (pos, end) = get_pos(low_pos, l);
       
       idx[pos:end] = get_level2level_idx(hi_level, low_level[pos:end]);
-      
-      // print(l, ": pos = ", get_pos(low_pos, l), ", idx[pos:end] = ", idx[pos:end]);
-      // print(l, ": id[pos:end] = ", low_level[pos:end]);
-      // print(l, ": hi_level = ", hi_level[idx[pos:end]]);
-    } else {
-      // print(l, ": pos = ", get_pos(low_pos, l));
-    }
+    } 
   }
   
   return idx;
@@ -575,24 +561,12 @@ array[] int get_level2level_idx(array[] int hi_level, array[] int hi_pos, array[
   for (h in 1:n_hi) {
     int low_id_from, low_id_to;
     (low_id_from, low_id_to) = get_pos(low_hi_pos, h);
-    // print(h, ": low_id_from = ", low_id_from, ", low_id_to = ", low_id_to);
     int low_idx_start, low_idx_end;
     (low_idx_start, low_idx_end) = get_pos(low_pos, low_id_from, low_id_to);
-    // print(h, ": low_idx_start = ", low_idx_start , ", low_idx_end = ", low_idx_end);
-    
-    // print(h, ": get_int_sub_array(hi_level, hi_pos, h) = ", get_int_sub_array(hi_level, hi_pos, h));
-    // print(h, ": get_int_sub_array(low_level, low_pos, low_id_from, low_id_to) = ", get_int_sub_array(low_level, low_pos, low_id_from, low_id_to));
-    // print(h, ": create_pos(low_pos, low_id_from, low_id_to) = ", create_pos(low_pos, low_id_from, low_id_to));
     
     idx[low_idx_start:low_idx_end] = get_level2level_idx(
       get_int_sub_array(hi_level, hi_pos, h), get_int_sub_array(low_level, low_pos, low_id_from, low_id_to), create_pos(low_pos, low_id_from, low_id_to)
     );
-    
-    // for (i in 1:(low_id_to - low_id_from + 1)) {
-    //   print(h, ", ", i, ": ", get_int_sub_array(get_int_sub_array(low_level, low_pos, low_id_from, low_id_to), create_pos(low_pos, low_id_from, low_id_to), i)); 
-    // }
-    
-    // print(h, ": idx[low_idx_start:low_idx_end] = ", idx[low_idx_start:low_idx_end]);
   }
   
   return idx;
