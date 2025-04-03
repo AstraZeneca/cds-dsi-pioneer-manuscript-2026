@@ -6,12 +6,21 @@ int<lower = 0, upper = 1> separate_trial_tumor_gp;
 int<lower = 0, upper = 1> model_all_measures;
 
 // Hyperparam
+real tumor_mean_mean;
+real<lower = 0> tumor_mean_sd;
+real<lower = 0> tumor_measure_error_sd_sd;
+
 real<lower = 0> pop_tumor_gp_alpha_sd;
 real<lower = 0> pop_tumor_gp_rho_alpha;
 real<lower = 0> pop_tumor_gp_rho_beta;
+
+real<lower = 0> trial_tumor_gp_alpha_sd;
+real<lower = 0> trial_tumor_gp_rho_alpha;
+real<lower = 0> trial_tumor_gp_rho_beta;
 
 real<lower = 0> patient_tumor_gp_alpha_sd;
 real<lower = 0> patient_tumor_gp_rho_alpha;
 real<lower = 0> patient_tumor_gp_rho_beta;
 
-real<lower = 0> patient_tumor_gp_sd_sd;
+real<lower = 0> patient_tumor_gp_intercept_sd_sd;
+real<lower = 0> trial_tumor_gp_intercept_sd_sd;
