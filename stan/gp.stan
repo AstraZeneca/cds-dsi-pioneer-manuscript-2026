@@ -51,16 +51,59 @@ matrix gp_matern52_cholesky_cov(array[] real x, real alpha, real rho, real delta
 * @param eta Standard normal (raw) parameters
 * @return GP values for the given `x` 
 */
-  vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, real delta, vector eta) {
-    int n_x = size(x);
-    matrix[n_x, n_x] L_K = gp_exp_quad_cholesky_cov(x, alpha, rho, delta); 
-    
-    return intercept + L_K * eta;
-  }  
-
-row_vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, real delta, row_vector eta) {
+vector calc_gp_pred(array[] real x, vector intercept, real alpha, real rho, real delta, vector eta) {
   int n_x = size(x);
   matrix[n_x, n_x] L_K = gp_exp_quad_cholesky_cov(x, alpha, rho, delta); 
+  
+  return intercept + L_K * eta;
+}  
+
+row_vector calc_gp_pred(array[] real x, row_vector intercept, real alpha, real rho, real delta, row_vector eta) {
+  int n_x = size(x);
+  matrix[n_x, n_x] L_K = gp_exp_quad_cholesky_cov(x, alpha, rho, delta); 
+  
+  return intercept + eta * L_K';
+}
+
+vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, real delta, vector eta) {
+  return calc_gp_pred(x, rep_vector(intercept, size(x)), alpha, rho, delta, eta);
+}  
+
+row_vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, real delta, row_vector eta) {
+  return calc_gp_pred(x, rep_row_vector(intercept, size(x)), alpha, rho, delta, eta);
+}
+
+vector ncp_gp_matern32(array[] real x, vector intercept, real alpha, real rho, real delta, vector eta) {
+  int n_x = size(x);
+  matrix[n_x, n_x] L_K = gp_matern32_cholesky_cov(x, alpha, rho, delta); 
+  
+  return intercept + L_K * eta;
+}  
+
+vector ncp_gp_matern32(array[] real x, real intercept, real alpha, real rho, real delta, vector eta) {
+  int n_x = size(x);
+  matrix[n_x, n_x] L_K = gp_matern32_cholesky_cov(x, alpha, rho, delta); 
+  
+  return intercept + L_K * eta;
+}  
+
+row_vector ncp_gp_matern32(array[] real x, real intercept, real alpha, real rho, real delta, row_vector eta) {
+  int n_x = size(x);
+  matrix[n_x, n_x] L_K = gp_matern32_cholesky_cov(x, alpha, rho, delta); 
+  
+  return intercept + eta * L_K';
+}
+
+vector ncp_gp_matern52(array[] real x, real intercept, real alpha, real rho, real delta, vector eta) {
+  int n_x = size(x);
+  matrix[n_x, n_x] L_K = gp_matern52_cholesky_cov(x, alpha, rho, delta); 
+  
+  return intercept + L_K * eta;
+}  
+
+row_vector ncp_gp_matern52(array[] real x, real intercept, real alpha, real rho, real delta, row_vector eta) {
+  int n_x = size(x);
+  matrix[n_x, n_x] L_K = gp_matern52_cholesky_cov(x, alpha, rho, delta); 
   
   return intercept + eta * L_K';
 }
@@ -107,16 +150,10 @@ tuple(vector, matrix) gp_conditional(
  * @param delta Variance or small epsilon to add to ensure proper matrix
  * @return Predicted GP values conditional on observed data (interpolated from) 
  */
-// vector multi_normal_rng(vector y_obs, array[] real x_obs, array[] real x_pred, matrix K_obs, matrix K_pred, real alpha, real rho, real delta) {
-//   return gp_pred_rng(zeros_vector(size(x_obs)), zeros_vector(size(x_pred)), y_obs, x_obs, x_pred, K_obs, K_pred, alpha, rho, delta);
-// }
-
-// vector multi_normal_rng(real mu_obs, real mu_pred, vector y_obs, array[] real x_obs, array[] real x_pred, matrix K_obs, matrix K_pred, real alpha, real rho, real delta) {
 vector multi_normal_rng(real mu_obs, real mu_pred, vector y_obs, matrix K_obs, matrix K_pred_obs, matrix K_pred) { //, real alpha, real rho, real delta) {
   return multi_normal_rng(rep_vector(mu_obs, rows(y_obs)), rep_vector(mu_pred, rows(K_pred)), y_obs, K_obs, K_pred_obs, K_pred);
 }
 
-// vector multi_normal_rng(real mu, vector y_obs, array[] real x_obs, array[] real x_pred, matrix K_obs, matrix K_pred, real alpha, real rho, real delta) {
 vector multi_normal_rng(real mu, vector y_obs, matrix K_obs, matrix K_pred_obs, matrix K_pred) { //, real alpha, real rho, real delta) {
   return multi_normal_rng(mu, mu, y_obs, K_obs, K_pred_obs, K_pred);
 }
@@ -132,22 +169,6 @@ vector multi_normal_rng(vector mu_obs, vector mu_pred, vector y_obs, matrix K_ob
   // return multi_normal_cholesky_rng(mu_cond, cholesky_decompose(Sigma_cond));
   return multi_normal_rng(mu_cond, Sigma_cond);
 }
-
-// vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, matrix K_missing, real alpha, real rho) {
-//   return gp_pred_rng(x_pred, y, x, K_obs, K_missing, alpha, rho, 0);
-// }
-// 
-// vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, real alpha, real rho, real delta) {
-//   return gp_pred_rng(x_pred, y, x, gp_exp_quad_cov(x_pred, alpha, rho), alpha, rho, delta);
-// }
-// 
-// vector gp_pred_rng(array[] real x_pred, vector y, array[] real x, matrix K_obs, real alpha, real rho) {
-//   return gp_pred_rng(x_pred, y, x, K_obs, alpha, rho, 0);
-// }
-
-// vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, vector eta) {
-//   return calc_gp_pred(x, intercept, alpha, 1e-9, eta);
-// }  
 
 /**
  * Calculate log of multivariate cholesky normal CDF 
