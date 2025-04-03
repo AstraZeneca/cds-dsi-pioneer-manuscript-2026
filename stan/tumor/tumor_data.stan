@@ -1,8 +1,9 @@
 int<lower = 0, upper = 1> fit_tumor_data; // Sample of prior prediction only
 int<lower = 0, upper = 1> predict_missing_sizes; 
 int<lower = 0, upper = 1> gen_tumor_sizes; // Generate data given prior/posterior of model parameters
-int<lower = 0, upper = 1> add_trial_level_tumor_gp;
-int<lower = 0, upper = 1> separate_trial_tumor_gp;
+int<lower = 0, upper = 1> add_trial_level_tumor;
+int<lower = 0, upper = 1 - add_trial_level_tumor> separate_trial_tumor_gp;
+int<lower = 0, upper = 1 - separate_trial_tumor_gp> patient_gp_only; 
 int<lower = 0, upper = 1> model_all_measures;
 
 // Hyperparam
