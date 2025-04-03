@@ -39,6 +39,8 @@ array[sum(n_patient_unique_visits)] int patient_unique_visits;
 array[n_patients + 1] int<lower = 1> patient_unique_visits_pos;
 (patient_unique_visits, patient_unique_visits_pos) = unique_by_pos(t_patient_visits, patient_visit_pos);
 array[sum(n_patient_unique_visits)] int<lower = 1> patient_unique_visits_idx = id2idx(patient_unique_visits, patient_unique_visits_pos);
+array[sum(n_patient_unique_visits)] int<lower = 1, upper = n_pop_unique_visits> patient2pop_unique_visit_idx = 
+  get_level2level_idx(pop_unique_visits, patient_unique_visits, patient_unique_visits_pos); 
 array[sum(n_patient_unique_visits)] int<lower = 1, upper = max(n_trial_unique_visits)> patient2trial_unique_visit_idx = 
   get_level2level_idx(trial_unique_visits, trial_unique_visits_pos, patient_unique_visits, patient_unique_visits_pos, trial_patient_pos); 
   
