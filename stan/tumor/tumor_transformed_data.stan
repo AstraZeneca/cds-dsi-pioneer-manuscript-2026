@@ -1,6 +1,6 @@
 
 // Variables for handling separate baseline and proportional hazards
-int n_tumor_separate_trials = separate_trial_tumor_gp ? n_trials : 1;
+int<lower = 1> n_tumor_separate_trials = separate_trial_tumor_gp ? n_trials : 1;
 
 print("n_tumor_separate_trials = ", n_tumor_separate_trials);
 
@@ -145,6 +145,7 @@ for (i in 1:n_patients) {
 }
 
 array[sum(n_patient_unique_mn_visits)] int patient_unique_mn_visits;
+array[n_patients] int<lower = 0> patient_last_inner_mn_visits = zeros_int_array(n_patients); // 0 means all missing and non-measured are after the last measured visit.
 
 for (i in 1:n_patients) {
   int mn_start, mn_end;
@@ -154,15 +155,18 @@ for (i in 1:n_patients) {
     append_array(get_int_sub_array(patient_unique_missing_visits, patient_unique_missing_visits_pos, i), 
                  get_int_sub_array(non_measured_tumor_visits, patient_non_measured_tumor_visits_pos, i))
   );
-  
-  // int n_curr_measured_visits = max(pop_unique_visits_idx) - n_patient_unique_mn_visits[i];
-  // int n_curr_mn_visits = n_patient_unique_mn_visits[i];
-  // 
-  // array[n_curr_measured_visits] int curr_patient_measured_visits = get_int_sub_array(measured_tumor_visits, patient_measured_tumor_visits_pos, i);
-  // array[n_curr_mn_visits] int curr_patient_mn_visits = get_int_sub_array(patient_unique_mn_visits, patient_unique_mn_visits_pos, i); 
-  // 
-  // print(i, ": curr_patient_measured_visits = ", curr_patient_measured_visits);
-  // print(i, ": curr_patient_mn_visits = ", curr_patient_mn_visits);
+ 
+  if (n_patient_post_treat_visits[i] - n_patient_non_measured_tumor_visits[i] > 0) { 
+    int last_measured = get_max_pos(measured_tumor_visits, patient_measured_tumor_visits_pos, i); 
+    
+    for (v in 1:n_patient_unique_mn_visits[i]) {
+      if (patient_unique_mn_visits[mn_start + v - 1] < last_measured) {
+        patient_last_inner_mn_visits[i] = v;
+      } else {
+        break;
+      }
+    }
+  }
 }
 
 int<lower = 1> last_predict_visit = max(pop_unique_visits);
