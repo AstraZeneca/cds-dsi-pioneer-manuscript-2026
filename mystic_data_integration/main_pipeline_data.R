@@ -103,6 +103,7 @@ sfs_ids_list <- clinical_db$USUBJID[which(clinical_db$actual_arm %in%
                                               "NOT TREATED", "SOC TREATMENT ARM"
                                               ))]
 
+clinical_db_no_SF <- subset(clinical_db, !clinical_db$USUBJID %in% sfs_ids_list)
 
 clinical_longitudinal_no_SF <- subset(
   clinical_longitudinal,
@@ -170,6 +171,8 @@ patient_data <- generate_patient_data_dataset(
 
 pacient_data <- remove_patient_data_dups(patient_data) # One patient is repeated 2 times!
 patient_data <- remove_patient_data_dups(pacient_data) # READY!
+
+
 # ============================
 #            SPARE           #
 # ============================

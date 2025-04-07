@@ -250,18 +250,32 @@ generate_assessment_visit_date_dataset <- function(measurements_longitudinal_dat
 
 claude_opt_generate_assessment_visit_date_dplyr <- function(measurements_longitudinal_dataset = measurements_longitudinal,
                                                             response_longitudinal_dataset = response_longitudinal) {
-  
+  baseline_ids <- measurements_longitudinal_dataset %>%
+    group_by(subject_identifier_for_the_study) %>%
+    filter(baseline_record_flag=="Y") %>%
+    select(date_time_of_tumor_measurement)
+  baseline_visits_by_id <- baseline_ids %>%
+    group_by(subject_identifier_for_the_study) %>%
+    summarise(
+      baseline_visit = first(sort(date_time_of_tumor_measurement))
+    )
+
+  mldj <- full_join(baseline_visits_by_id, measurements_longitudinal_dataset,
+                    by="subject_identifier_for_the_study")
   # 1. Pre-processing measurements_longitudinal
-  pre_avd <- measurements_longitudinal_dataset %>%
+  pre_avd <- mldj %>%
     mutate(
       usubjid = str_split_fixed(unique_subject_identifier, "/", 2)[,2],
-      week = study_day_of_tumor_measurement / 7
+      ady2 = as.numeric(date_time_of_tumor_measurement - baseline_visit), 
+      week = as.numeric(date_time_of_tumor_measurement - baseline_visit-1) %/% 7 +1
     ) %>%
     select(
       studyid = study_identifier,
       usubjid,
       visitnum = visit_number,
       ady = study_day_of_tumor_measurement,
+      ady2 = ady2,
+        #study_day_of_tumor_measurement,
       week,
       mmsumdiam = numeric_result_finding_in_standard_units,
       tatn = tumor_assessment_test_name,
@@ -276,6 +290,7 @@ claude_opt_generate_assessment_visit_date_dplyr <- function(measurements_longitu
       sumdiam = first(mmsumdiam),
       visitnum = as.character(first(visitnum)),
       week = first(week),
+      ady2 = ady2,
       .groups = "drop"
     )
   
@@ -302,7 +317,9 @@ claude_opt_generate_assessment_visit_date_dplyr <- function(measurements_longitu
     full_join(df2, by = c("usubjid", "ady")) %>%
     mutate(
       studyid = "D419AC00001",
-      day = NA
+      day = NA,
+      ady = ady2,
+      week = (ady2-1)%/%7+1
     ) %>%
     select(studyid, usubjid, visitnum, ady, day, week, mmsumdiam = sumdiam, response)
   assessment_visit_date$usubjid <- as.factor(assessment_visit_date$usubjid)
@@ -381,22 +398,22 @@ generate_patient_data_dataset <- function(clinical_dataset = clinical_db_no_SF,
                    usubjid=fjd$subjid,
                    trtsdt=fjd$treatment_start_date,
                    trtedt=fjd$treatment_end_date,
-                   treatment_end_week=floor(as.numeric(fjd$treatment_end_date - fjd$treatment_start_date)/7),
+                   treatment_end_week=(as.numeric(fjd$treatment_end_date - fjd$treatment_start_date)-1)%/%7+1,
                    treatment_end_day=as.numeric(fjd$treatment_end_date - fjd$treatment_start_date),
-                   calendar_week=floor(as.numeric(fjd$treatment_start_date-first_patient_sd)/7),
+                   calendar_week=(as.numeric(fjd$treatment_start_date-first_patient_sd)-1)%/%7+1,
                    calendar_day=as.numeric(fjd$treatment_start_date-first_patient_sd),
-                   patient_min_t=(as.numeric(fjd$first_date_of_visit-fjd$treatment_start_date)%/%7)+1,
+                   patient_min_t=(as.numeric(fjd$first_date_of_visit-fjd$treatment_start_date)-1)%/%7+1,
                    patient_max_t=floor(fjd$lweek),
                    patient_first_visit=fjd$first_date_of_visit,
                    patient_last_visit=fjd$last_date_of_visit,
-                   patient_t_width=floor(as.numeric(fjd$last_date_of_visit-fjd$first_date_of_visit)/7),
+                   patient_t_width=(as.numeric(fjd$last_date_of_visit-fjd$first_date_of_visit)-1)%/%7+1,
                    death = ifelse(fjd$overall_survival_censor==1, FALSE, TRUE),
-                   death_week = floor(as.numeric(fjd$death_date-fjd$treatment_start_date)/7),
+                   death_week = (as.numeric(fjd$death_date-fjd$treatment_start_date)-1)%/%7+1,
                    progression_before_death = ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1),
-                   right_censored= ifelse(((floor(as.numeric(fjd$death_date-fjd$treatment_start_date)/7) > floor(fjd$lweek)) | is.na(floor(as.numeric(fjd$death_date-fjd$treatment_start_date)/7))) & ((ifelse(ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, floor(fjd$progression_free_survival_time/7), NA)> floor(fjd$lweek))| is.na(ifelse(ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, floor(fjd$progression_free_survival_time/7), NA))),TRUE,FALSE), # Yeah, sorry about this. Basically if the death is after the last treatment week (or there's no death), and if the PD is after the last week of treatment (or no PD) we deem it Right cens.
-                   progress_week=ifelse(ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, fjd$progression_free_survival_time%/%7+1, NA),
+                   right_censored= ifelse((((as.numeric(fjd$death_date-fjd$treatment_start_date)-1)%/%7+1 > floor(fjd$lweek)) | is.na((as.numeric(fjd$death_date-fjd$treatment_start_date)-1)%/%7+1)) & ((ifelse(ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, (fjd$progression_free_survival_time-1)%/%7, NA)> floor(fjd$lweek))| is.na(ifelse(ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, (fjd$progression_free_survival_time-1)%/%7+1, NA))),TRUE,FALSE), # Yeah, sorry about this. Basically if the death is after the last treatment week (or there's no death), and if the PD is after the last week of treatment (or no PD) we deem it Right cens.
+                   progress_week=ifelse(ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, (fjd$progression_free_survival_time-1)%/%7+1, NA),
                    pfs=fjd$lbpfs,
-                   interval_censored=ifelse(ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, fjd$progression_free_survival_time%/%7+1, NA)-fjd$lbpfs,
+                   interval_censored=ifelse(ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, (fjd$progression_free_survival_time-1)%/%7+1, NA)-fjd$lbpfs-1,
                    age=fjd$age,
                    age_group=ifelse(fjd$age<18,"<18",ifelse(fjd$age<40, "18-40", ifelse(fjd$age<65,"40-65",ifelse(fjd$age<75,"65-75",">75")))),
                    sex=fjd$sex,
@@ -437,10 +454,10 @@ remove_patient_data_dups <- function(patient_data=patient_data){
 calc_visit_date <- function(data) {
   data |> 
     mutate(
-      day = if_else(ady > 0, # Is post-treatment day? 
-                    ady - 1, 
-                    ady),
-      week = (day %/% 7) + 1, # Last pre-screening week is 0. 
+      # day = if_else(day > 0, # Is post-treatment day? 
+      #               day - 1, 
+      #               day),
+      week = ((ady-1) %/% 7) + 1, # Last pre-screening week is 0. 
       #treated_week = week > 0, # Was this a post-treatment week?
     ) 
 }
