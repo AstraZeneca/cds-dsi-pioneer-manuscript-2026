@@ -1,7 +1,7 @@
 get_tumor_priors <- function() {
   lst(
     tumor_mean_mean = 3,
-    tumor_mean_sd = 3,
+    tumor_mean_sd = 5,
     tumor_measure_error_sd_sd = 0.5,
     
     pop_tumor_gp_alpha_sd = 2.5,
@@ -13,10 +13,15 @@ get_tumor_priors <- function() {
     trial_tumor_gp_rho_beta = pop_tumor_gp_rho_beta,
     trial_tumor_gp_intercept_sd_sd = 2,
     
-    patient_tumor_gp_alpha_sd = 5,
+    patient_tumor_gp_alpha_sd = 3,
     patient_tumor_gp_rho_alpha = 1.5,
     patient_tumor_gp_rho_beta = trial_tumor_gp_rho_beta,
-    patient_tumor_gp_intercept_sd_sd = 2,
+    patient_tumor_gp_rho_meanlog = 3, 
+    patient_tumor_gp_rho_sdlog = 0.6,
+    patient_tumor_gp_intercept_sd_sd = 3,
+    
+    log_trial_rho_sd_sd = 1,
+    log_patient_rho_sd_sd = 1.75,
   )
 }
 

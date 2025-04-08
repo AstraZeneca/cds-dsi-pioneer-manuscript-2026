@@ -16,9 +16,22 @@ trial_tumor_gp_alpha ~ normal(0, trial_tumor_gp_alpha_sd);
 trial_tumor_gp_rho ~ inv_gamma(trial_tumor_gp_rho_alpha, trial_tumor_gp_rho_beta);
 
 patient_tumor_gp_alpha ~ normal(0, patient_tumor_gp_alpha_sd);
-patient_tumor_gp_rho ~ inv_gamma(patient_tumor_gp_rho_alpha, patient_tumor_gp_rho_beta);
+
+if (multilevel_gp_param) {
+  // This is actually log(rho)
+  patient_tumor_gp_rho ~ normal(patient_tumor_gp_rho_meanlog, patient_tumor_gp_rho_sdlog);
+} else {
+  // patient_tumor_gp_rho ~ inv_gamma(patient_tumor_gp_rho_alpha, patient_tumor_gp_rho_beta);
+  patient_tumor_gp_rho ~ lognormal(patient_tumor_gp_rho_meanlog, patient_tumor_gp_rho_sdlog);
+}
 
 pop_tumor_gp_eta ~ std_normal();
 trial_tumor_gp_eta ~ std_normal();
 patient_tumor_gp_eta ~ std_normal();
+
+log_trial_rho_sd ~ normal(0, log_trial_rho_sd_sd);
+raw_log_trial_rho ~ std_normal(); 
+
+log_patient_rho_sd ~ normal(0, log_patient_rho_sd_sd);
+raw_log_patient_rho ~ std_normal(); 
 

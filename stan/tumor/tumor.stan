@@ -120,16 +120,16 @@ generated quantities {
         // (trial_K_obs_min_eigenvalue[s], trial_K_obs_max_eigenvalue[s], trial_K_obs_condition_number[s]) = summarize_matrix_eigenvalues(trial_K[curr_trial_visits, curr_trial_visits]);
      }
       
-      // matrix [last_predict_visit, last_predict_visit] patient_K = gp_matern52_cov(
-      matrix [last_predict_visit, last_predict_visit] patient_K = gp_exp_quad_cov(
-        // all_tumor_measure_t[:last_predict_visit], patient_tumor_gp_alpha[actual_s], patient_tumor_gp_rho[actual_s], tumor_sd[actual_s]^2 + delta
-        all_tumor_measure_t[:last_predict_visit], patient_tumor_gp_alpha[actual_s], patient_tumor_gp_rho[actual_s], delta
-      );
-
       int curr_trial_patient_pos, curr_trial_patient_end;
       (curr_trial_patient_pos, curr_trial_patient_end) = get_pos(trial_patient_pos, s);
 
       for (i in curr_trial_patient_pos:curr_trial_patient_end) {
+        // matrix [last_predict_visit, last_predict_visit] patient_K = gp_matern52_cov(
+        matrix [last_predict_visit, last_predict_visit] patient_K = gp_exp_quad_cov(
+          // all_tumor_measure_t[:last_predict_visit], patient_tumor_gp_alpha[actual_s], patient_rho[i], tumor_sd[actual_s]^2 + delta
+          all_tumor_measure_t[:last_predict_visit], patient_tumor_gp_alpha[actual_s], exp(log_patient_rho[i]), delta
+        );
+        
         int n_curr_measured_visits = last_predict_visit - n_patient_unique_mn_visits[i];
         int n_curr_mn_visits = n_patient_unique_mn_visits[i];
         
@@ -145,7 +145,7 @@ generated quantities {
           
           // matrix[n_curr_mn_visits, n_curr_measured_visits] patient_K_pred_obs = gp_matern52_cov(
           matrix[n_curr_mn_visits, n_curr_measured_visits] patient_K_pred_obs = gp_exp_quad_cov(
-            all_tumor_measure_t[curr_patient_mn_visits], all_tumor_measure_t[curr_patient_measured_visits], patient_tumor_gp_alpha[actual_s], patient_tumor_gp_rho[actual_s]
+            all_tumor_measure_t[curr_patient_mn_visits], all_tumor_measure_t[curr_patient_measured_visits], patient_tumor_gp_alpha[actual_s], exp(log_patient_rho[i])
           );
           
           // (patient_K_obs_min_eigenvalue[i], patient_K_obs_max_eigenvalue[i], patient_K_obs_condition_number[i]) = summarize_matrix_eigenvalues(
@@ -186,7 +186,7 @@ generated quantities {
   
   vector<lower = 0, upper = 1>[separate_trial_tumor_gp || patient_gp_only ? 0 : max_t_width] pop_rho_corr; 
   array[patient_gp_only ? 0 : n_tumor_separate_trials] vector<lower = 0, upper = 1>[max_t_width] trial_rho_corr; 
-  array[n_tumor_separate_trials] vector<lower = 0, upper = 1>[max_t_width] patient_rho_corr; 
+  array[n_patients] vector<lower = 0, upper = 1>[max_t_width] patient_rho_corr; 
   
   if (!separate_trial_tumor_gp) {
     if (!patient_gp_only) {
@@ -196,12 +196,13 @@ generated quantities {
         trial_rho_corr[1] = exp(-0.5 * square(to_vector(all_tumor_measure_t) / trial_tumor_gp_rho));
       }
     }
-    
-    patient_rho_corr[1] = exp(-0.5 * square(to_vector(all_tumor_measure_t) / patient_tumor_gp_rho[1]));
   } else {
     for (s in 1:n_trials) {
       trial_rho_corr[s] = exp(-0.5 * square(to_vector(all_tumor_measure_t) / pop_tumor_gp_rho[s]));
-      patient_rho_corr[s] = exp(-0.5 * square(to_vector(all_tumor_measure_t) / patient_tumor_gp_rho[s]));
     }
+  }
+ 
+  for (i in 1:n_patients) { 
+    patient_rho_corr[i] = exp(-0.5 * square(to_vector(all_tumor_measure_t) / exp(log_patient_rho[i])));
   }
 }
