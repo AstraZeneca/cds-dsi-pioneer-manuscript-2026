@@ -198,3 +198,17 @@ determine_recist_response <- function(baseline_sld, current_sld, nadir_sld = NUL
 weeks_to_months <- function(weeks) weeks * 7 * 12 / 365.25
 label_weeks_to_months <- scales::label_number(scale = weeks_to_months(1))
 months_to_weeks <- function(months) months / weeks_to_months(1) 
+
+lognormal_sd <- function(mu = 0, sigma) {
+  # Calculate standard deviation of lognormal variable X
+  # where log(X) ~ N(mu, sigma)
+  #
+  # Args:
+  #   mu: mean parameter of the normal distribution in log space
+  #   sigma: standard deviation parameter of the normal distribution in log space
+  #
+  # Returns:
+  #   standard deviation of the lognormal random variable X
+  
+  sqrt((exp(sigma^2) - 1) * exp(2*mu + sigma^2))
+} 
