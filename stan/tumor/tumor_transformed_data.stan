@@ -1,8 +1,8 @@
 
 // Variables for handling separate baseline and proportional hazards
-int<lower = 1> n_tumor_separate_trials = separate_trial_tumor_gp ? n_trials : 1;
-
-print("n_tumor_separate_trials = ", n_tumor_separate_trials);
+// int<lower = 1> n_tumor_separate_trials = separate_trial_tumor_gp ? n_trials : 1;
+// 
+// print("n_tumor_separate_trials = ", n_tumor_separate_trials);
 
 vector[sum(n_patient_visits)] log_sum_tumor_size = log(sum_tumor_size); // cm
 vector[sum(n_patient_visits) - sum(n_patient_screening_visits)] post_treat_sld;
