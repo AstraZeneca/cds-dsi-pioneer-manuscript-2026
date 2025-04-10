@@ -119,49 +119,16 @@ create_crcr_pfs_initializer <- function(stan_data, n_causes = 2) {
 
 
 create_tumor_initializer <- function(stan_data) {
-  n_tumor_separate_trials <- if (stan_data$separate_trial_tumor_gp) stan_data$n_trials else 1 
   max_all_t <- max(max(stan_data$t_measure) + 1, stan_data$extend_max_all_t)
-  patient_gp_only <- stan_data$patient_gp_only
-  # n_pop_unique_visits <- if (stan_data$separate_trial_tumor_gp) {
-  #   sum(with(stan_data, tibble(trial = rep(patient_trial, n_patient_visits), visit = t_patient_visits) |> 
-  #              group_by(trial) |> 
-  #              group_map(\(d, ...) n_distinct(d$visit)) |> unlist()))
-  # } else {
-  #   n_distinct(stan_data$t_patient_visits)
-  # }
-  
   function(chain_id) {
     init_vals <- lst(
-      # vector<lower = 0>[n_tumor_separate_trials] pop_tumor_gp_alpha;
-      pop_tumor_gp_alpha = if (!patient_gp_only) abs(rnorm(n_tumor_separate_trials, stan_data$pop_tumor_gp_alpha_sd)),
+      pop_tumor_gp_alpha = abs(rnorm(1, sd = stan_data$pop_tumor_gp_alpha_sd)),
       
-      # vector<lower = 0>[n_tumor_separate_trials] pop_tumor_gp_rho;
-      pop_tumor_gp_rho = if (!patient_gp_only) with(stan_data, invgamma::rinvgamma(n_tumor_separate_trials, pop_tumor_gp_rho_alpha, pop_tumor_gp_rho_beta)),
+      log_pop_tumor_gp_rho = with(stan_data, rlnorm(1, pop_tumor_gp_rho_meanlog, pop_tumor_gp_rho_sdlog)),
       
-      patient_tumor_gp_intercept_sd = abs(rnorm(n_tumor_separate_trials, sd = stan_data$patient_tumor_gp_intercept_sd_sd)), 
-      raw_patient_tumor_gp_intercept_effect = rnorm(stan_data$n_patients), 
-      patient_tumor_gp_intercept_effect = with(stan_data, rnorm(n_patients, sd = patient_tumor_gp_intercept_sd[pmin(n_tumor_separate_trials, patient_trial)])), 
-
-      # # matrix[n_tumor_separate_trials, max_all_t] pop_tumor_gp_eta;
-      # pop_tumor_gp_eta = matrix(rnorm(n_tumor_separate_trials * max_all_t), nrow = n_tumor_separate_trials),
-      
-      # # vector<lower = 0>[n_tumor_separate_trials] tumor_mean;
-      # tumor_mean = rep(0.5, n_tumor_separate_trials), #pmax(0, rnorm(n_tumor_separate_trials, 2.8, 0.1)),
-
-      # # vector<lower = 0>[n_tumor_separate_trials] tumor_sd;
-      # tumor_sd = abs(rnorm(n_tumor_separate_trials, 0, 2)),
-     
-      # # vector<lower = 0>[n_tumor_separate_trials] pop_tumor_sigma = sqrt(log((tumor_sd ./ tumor_mean)^2 + 1));
-      # pop_tumor_sigma = sqrt(log((tumor_sd / tumor_mean)^2 + 1)),
-        
-      # # array[n_trials] cov_matrix[max(patient_max_t_width)] trial_tumor_gp_cov;
-      # trial_tumor_gp_cov = with(stan_data, map(seq(n_trials), \(s) diag(max(patient_t_width)))),
-      
-      # # real<lower = 0> trial_tumor_gp_intercept_sd;
-      # trial_tumor_gp_intercept_sd = abs(rnorm(1, 0, 0.25)), 
-      # 
-      # # real<lower = 0> patient_tumor_gp_intercept_sd;
-      # patient_tumor_gp_intercept_sd = abs(rnorm(1, 0, 0.25)), 
+      patient_tumor_intercept_sd = abs(rnorm(1, sd = stan_data$patient_tumor_intercept_sd_sd)), 
+      raw_patient_tumor_intercept_effect = rnorm(stan_data$n_patients), 
+      patient_tumor_intercept_effect = with(stan_data, rnorm(n_patients, sd = patient_tumor_intercept_sd)), 
     ) |> 
       compact()
     

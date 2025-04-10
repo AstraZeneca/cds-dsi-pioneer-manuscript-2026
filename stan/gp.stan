@@ -53,7 +53,7 @@ matrix gp_matern52_cholesky_cov(array[] real x, real alpha, real rho, real delta
 */
 vector calc_gp_pred(array[] real x, vector intercept, real alpha, real rho, real delta, vector eta) {
   int n_x = size(x);
-  matrix[n_x, n_x] L_K = gp_exp_quad_cholesky_cov(x, alpha, rho, delta); 
+  matrix[n_x, n_x] L_K = gp_exp_quad_cholesky_cov(x, alpha, rho, delta); // K = L_K * L_K'
   
   return intercept + L_K * eta;
 }  
@@ -71,6 +71,14 @@ vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, real d
 
 row_vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, real delta, row_vector eta) {
   return calc_gp_pred(x, rep_row_vector(intercept, size(x)), alpha, rho, delta, eta);
+}
+
+vector calc_gp_pred(array[] real x, real alpha, real rho, real delta, vector eta) {
+  return calc_gp_pred(x, 0, alpha, rho, delta, eta);
+}  
+
+row_vector calc_gp_pred(array[] real x, real alpha, real rho, real delta, row_vector eta) {
+  return calc_gp_pred(x, 0, alpha, rho, delta, eta);
 }
 
 vector ncp_gp_matern32(array[] real x, vector intercept, real alpha, real rho, real delta, vector eta) {
