@@ -19,7 +19,21 @@ calc_pfs <- function(progress_week, right_censored, patient_tumors) {
   if (length(pre_progress_weeks) > 0) max(pre_progress_weeks) else NA_integer_
 }
 
-
+#' Calculate Confirmed Response from a series of response assessments
+#'
+#' This function processes a data frame of response assessments over time and determines
+#' the confirmed response status, timing, and associated censoring information.
+#'
+#' @param response A data frame containing response assessment data. 
+#'   Expected columns: week, day, objective_response
+#'
+#' @return A list containing:
+#'   \item{confirmed_response}{Logical. TRUE if a confirmed response occurred, FALSE if not, NA if censored}
+#'   \item{confirmed_response_censored}{Logical. TRUE if the confirmed response status is censored}
+#'   \item{confirmed_response_interval_censored}{Integer. Number of weeks of interval censoring for the confirmed response}
+#'   \item{confirmed_response_day}{Integer. Day of confirmed response or last assessment if censored}
+#'   \item{confirmed_response_week}{Integer. Week of confirmed response or last assessment if censored}
+#'
 calc_confirmed_response <- function(response) {
   conf_resp_data <- response |> 
     mutate(
@@ -50,6 +64,8 @@ calc_confirmed_response <- function(response) {
 #' Convert analysis data into Stan list format data 
 #'
 #' @param analysis_data Analysis data frame. 
+#' 
+#' This is used to pass to a model the tumor specific data.
 #'
 #' @return Stan list data.
 prepare_tumor_stan_data <- function(analysis_data) {
@@ -71,6 +87,21 @@ prepare_tumor_stan_data <- function(analysis_data) {
   )
 }
 
+#' Prepare Stan data for Progression-Free Survival (PFS) analysis
+#'
+#' This function prepares a list of data suitable for Stan modeling of PFS,
+#' combining tumor data and PFS-specific data.
+#'
+#' @param analysis_data A data frame containing the analysis data
+#' @param ... Additional arguments to be added to or overwrite default Stan data
+#' @param pfs_var The variable in analysis_data that represents PFS. Default is 'pfs'
+#'
+#' @return A list containing data and control parameters for Stan PFS modeling.
+#'
+#' @details
+#' This function combines tumor data (obtained via prepare_tumor_stan_data) with
+#' PFS-specific data. It sets various control parameters for the Stan model and
+#' allows for these to be overwritten or supplemented via the ... argument.
 base_prepare_pfs_stan_data <- function(analysis_data, ..., pfs_var = pfs) {
   tumor_stan_data <- prepare_tumor_stan_data(analysis_data)
   pfs_data <- select(
@@ -112,6 +143,33 @@ base_prepare_pfs_stan_data <- function(analysis_data, ..., pfs_var = pfs) {
     list_assign(...)
 }
 
+#' Identify incomplete cases in analysis data based on a covariate formula
+#'
+#' This function identifies rows in the analysis data that have missing values
+#' for any of the variables specified in the covariate formula.
+#'
+#' @param analysis_data A data frame containing the analysis data
+#' @param covar_formula A formula object specifying the covariates to be checked for completeness
+#'
+#' @return A vector of indices corresponding to rows with incomplete data
+#'
+#' @details
+#' The function performs the following steps:
+#' 1. Selects columns from the analysis data that are specified in the covariate formula
+#' 2. Converts any ordered factors to unordered factors
+#' 3. Identifies cases (rows) where any of the selected variables have missing values
+#' 4. Returns the indices of these incomplete cases
+#'
+#' @examples
+#' analysis_data <- data.frame(
+#'   x1 = c(1, 2, NA, 4),
+#'   x2 = c("A", "B", "C", NA),
+#'   x3 = ordered(c("Low", "Medium", "High", "Low"))
+#' )
+#' covar_formula <- ~ x1 + x2 + x3
+#' incomplete_cases <- identify_incomplete_cases(analysis_data, covar_formula)
+#' print(incomplete_cases)  # Should return c(3, 4)
+#'
 identify_incomplete_cases <- function(analysis_data, covar_formula) {
   select(analysis_data, all_of(all.vars(covar_formula))) |> 
     map_if(is.ordered, \(f) factor(f, ordered = FALSE)) |> 
@@ -120,6 +178,24 @@ identify_incomplete_cases <- function(analysis_data, covar_formula) {
     which()
 }
 
+#' Prepare Stan data for confirmed response analysis
+#'
+#' This function prepares data for Stan modeling of confirmed responses in clinical trials.
+#'
+#' @param covar_formula Formula specifying covariates
+#' @param analysis_data Data frame containing analysis data
+#' @param ... Additional arguments to be passed to or to override default Stan data
+#' @param include_covar Logical, whether to include covariates (default: TRUE)
+#' @param scale_numeric Logical, whether to scale numeric covariates (default: TRUE)
+#' @param handle_missing_covar How to handle missing covariates: "drop" or "mean_impute"
+#'
+#' @return A list containing prepared data for Stan modeling
+#'
+#' @details
+#' This function processes the input data, handles covariates, and combines it with
+#' PFS data to create a comprehensive dataset for Stan modeling of confirmed responses.
+#' It includes options for handling missing data and scaling numeric covariates.
+#'
 prepare_confirmed_resp_stan_data <- function(
     covar_formula, analysis_data, ..., include_covar = TRUE, scale_numeric = TRUE, handle_missing_covar = c("drop", "mean_impute")
 ) {
@@ -209,6 +285,33 @@ prepare_confirmed_resp_stan_data <- function(
     list_assign(...)
 }
 
+#' Prepare Kaplan-Meier estimates for confirmed response
+#'
+#' This function calculates Kaplan-Meier estimates for confirmed response times,
+#' both in study time and calendar time.
+#'
+#' @param stan_data A list or data frame containing the necessary data for
+#'   Kaplan-Meier estimation, including 'confirmed_response_week',
+#'   'confirmed_response_censored', and 'calendar_week'.
+#'
+#' @return A tibble with the original data and two additional list columns:
+#'   \item{conf_resp_km}{A list column containing Kaplan-Meier estimates for
+#'     confirmed response in study time}
+#'   \item{conf_resp_km_calendar}{A list column containing Kaplan-Meier estimates for
+#'     confirmed response in calendar time}
+#'
+#' Each Kaplan-Meier estimate list contains:
+#'   \item{t}{Time points}
+#'   \item{s}{Survival probability estimates}
+#'   \item{n}{Number at risk}
+#'   \item{c}{Number of censored observations}
+#'   \item{e}{Number of events}
+#'
+#' @details
+#' This function uses the survfit2 function to calculate Kaplan-Meier estimates.
+#' It provides estimates both in study time (weeks from start of treatment) and
+#' calendar time (weeks from study start).
+#'
 prepare_confirmed_resp_km <- function(stan_data) {
   stan_data |> 
     rowwise() |>

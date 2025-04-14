@@ -223,3 +223,379 @@ plot_patient_timelines <- function(analysis_data) {
   
   add_dco_to_plot(plot) 
 }
+
+get_pfs_conf_resp_marginal_exit_prob <- function(res) {
+  res |>
+    ungroup() |> 
+    transmute(trial, prob_rvars = map(fit, \(f) spread_rvars(f, marginal_exit_prob[i, k, t]))) |> 
+    unnest(prob_rvars)
+}
+
+get_trial_sim_crcr_pfs <- function(res, stan_data) {
+  spread_rvars(res, sim_pfs[i], sim_censored[i], forecast_pfs[i], forecast_censored[i]) |>
+    mutate(usubjid = stan_data$patient)
+}
+
+get_sim_pfs_conf_resp <- function(res) {
+  res |>
+    ungroup() |> 
+    transmute(
+      trial,
+      sim_pfs = map2(
+        fit, analysis_data, 
+        \(f, d) spread_rvars(f, sim_pfs[i], sim_censored[i]) |>
+          left_join(transmute(d, i = seq(n()), pfs, right_censored), by = "i", relationship = "one-to-one")
+      )
+    ) |> 
+    unnest(sim_pfs)
+}
+
+get_pfs_conf_resp_km_est <- function(res) {
+  res |> 
+    select(trial, fit) |> 
+    deframe() |> 
+    map_dfr(\(r) spread_rvars(r, km_est[t]), .id = "trial") 
+}
+
+get_all_pfs_conf_resp_km_est <- function(res, analysis_data = NULL) {
+  if (!is_null(analysis_data)) { 
+    res <- recover_types(res, select(analysis_data, trial))
+  }
+  
+  spread_rvars(res, trial_km_est[trial, t], forecast_trial_km_est[trial, t])
+}
+
+get_median_pfs_conf_resp <- function(res) {
+   res |> 
+     rowwise() |> 
+     transmute(trial, rv = list(spread_rvars(fit, sim_median_pfs))) |> 
+     ungroup() |> 
+     unnest(rv)
+}
+
+get_all_median_pfs_conf_resp <- function(res, analysis_data = NULL) {
+  if (!is_null(analysis_data)) { 
+    res <- recover_types(res, select(analysis_data, trial))
+  }
+  
+   spread_rvars(res, sim_trial_median_pfs[trial], forecast_trial_median_pfs[trial]) 
+}
+
+get_pfs_n <- function(res, analysis_data = NULL) {
+  if (!is_null(analysis_data)) { 
+    res <- recover_types(res, select(analysis_data, trial))
+  }
+  
+   spread_rvars(res, sim_trial_pfs6[trial], sim_trial_pfs9[trial], forecast_trial_pfs6[trial], forecast_trial_pfs9[trial]) 
+}
+
+get_pfs_conf_resp_log_hazard_ratio <- function(res) {
+   res |> 
+     rowwise() |> 
+     transmute(trial, rv = list(spread_rvars(fit, time_invariant_log_hazard_ratio[i, k]) |> 
+                                  mutate(time_invariant_hazard_ratio = exp(time_invariant_log_hazard_ratio)))) |> 
+     ungroup() |> 
+     unnest(rv)
+}
+
+get_all_pfs_conf_resp_hazard_ratio <- function(res, stan_data) {
+  spread_rvars(res, time_invariant_log_hazard_ratio[i, k]) |>
+    mutate(
+      time_invariant_hazard_ratio = exp(time_invariant_log_hazard_ratio),
+      k = factor(k, levels = 1:2, labels = c("Non-response", "Response")) 
+    ) |> 
+    left_join(as_tibble(stan_data["patient_trial"]) |> mutate(i = seq(n())), by = "i", relationship = "many-to-one") |> 
+    rename(trial = patient_trial)  
+}
+
+get_all_pfs_conf_resp_hazard_ratio_bindist <- function(res, stan_data, hb) {
+  get_all_pfs_conf_resp_hazard_ratio(res, stan_data) |> 
+    group_by(trial, k) |> 
+    reframe(t = hb[-length(hb)], bindist = rvar_sample_hist(time_invariant_hazard_ratio, hb))  
+}
+
+get_pfs_conf_resp_bootstrap_variables <- function(res, bs_sample1, bs_sample2, rates_name, ..., summarize = TRUE) {
+  res |> 
+    rowwise() |> 
+    transmute(
+      trial, 
+      rv = list(
+        spread_rvars(fit, ...) |>  
+          mutate(
+            n_bs_sample = {{ bs_sample1 }} + {{ bs_sample2 }},
+            across(ends_with("predicted"), \(n)  n / n_bs_sample, .names = "{.col}_prop")
+          ) %>% { 
+            if (summarize) {
+              unnest_rvars(.) |> # na.rm = TRUE doesn't work in point_interval() if using rvars.  
+                point_interval(
+                  na.rm = TRUE, # if n_bs_sample is 0, we'll get some NaNs. These are few so we'll bite the bullet and drop them.
+                  .width = c(0.5, 0.8)
+                ) 
+            } else .
+          } |> 
+          left_join(as_tibble(stan_data[rates_name]) |> mutate(r = seq(n())), by = "r", relationship = "many-to-one")
+      )
+    ) |> 
+    ungroup() |> 
+    unnest(rv)  
+}
+
+get_pfs_conf_resp_bootstrap_cr_median_pfs <- function(res) {
+  get_pfs_conf_resp_bootstrap_variables(
+    res, n_bs_sample_cr_classified, n_bs_sample_cr_unclassified, "bootstrap_cr_maturity_rates",
+    bs_cr_prediction_calendar_week[r], n_bs_sample_cr_classified[r], n_bs_sample_cr_unclassified[r],
+    bs_cr_median_pfs[r], bs_cr_orr[r],
+    n_bs_cr_conf_resp_predicted[r], n_bs_cr_pfs_predicted[r],
+    summarize = FALSE
+  ) |> 
+    mutate(log_bs_cr_median_pfs = log(bs_cr_median_pfs)) |> 
+    unnest_rvars() |> # na.rm = TRUE doesn't work in point_interval() if using rvars.  
+    point_interval(na.rm = TRUE, .width = c(0.5, 0.8))
+}
+
+get_pfs_conf_resp_bootstrap_pfs_median_pfs <- function(res) {
+  get_pfs_conf_resp_bootstrap_variables(
+    res, n_bs_sample_pfs_progressed, n_bs_sample_pfs_surviving, "bootstrap_pfs_maturity_rates",
+    bs_cr_conf_resp_censored_prop[r], bs_pfs_prediction_calendar_week[r], n_bs_sample_pfs_progressed[r], n_bs_sample_pfs_surviving[r],
+    bs_pfs_median_pfs[r], bs_pfs_orr[r],
+    n_bs_pfs_conf_resp_predicted[r], n_bs_pfs_pfs_predicted[r]
+  )
+}    
+
+get_fixed_bootstrap_cr_median_pfs <- function(res) {
+  get_pfs_conf_resp_bootstrap_variables(
+    res, n_bs_sample_cr_classified, n_bs_sample_cr_unclassified, "bootstrap_cr_maturity_rates",
+    fixed_bs_cr_median_pfs[r, f], fixed_bs_cr_orr[r, f], n_bs_sample_cr_classified[r], n_bs_sample_cr_unclassified[r],
+    n_fixed_bs_cr_conf_resp_predicted[r, f], n_fixed_bs_cr_pfs_predicted[r, f],
+    summarize = FALSE
+  ) |> 
+    select(!c(n_bs_sample, n_bs_sample_cr_classified, n_bs_sample_cr_unclassified))
+}
+
+get_fixed_bootstrap_pfs_median_pfs <- function(res) {
+  get_pfs_conf_resp_bootstrap_variables(
+    res, n_bs_sample_pfs_progressed, n_bs_sample_pfs_surviving, "bootstrap_pfs_maturity_rates",
+    fixed_bs_pfs_median_pfs[r, f], fixed_bs_pfs_orr[r, f], n_bs_sample_pfs_progressed[r], n_bs_sample_pfs_surviving[r],
+    n_fixed_bs_pfs_conf_resp_predicted[r, f], n_fixed_bs_pfs_pfs_predicted[r, f],
+    summarize = FALSE
+  ) |> 
+    select(!c(n_bs_sample, n_bs_sample_pfs_progressed, n_bs_sample_pfs_surviving))
+}
+  
+get_sample_maturity_rvar <- function(res) {
+  res |>
+    ungroup() |> 
+    transmute(
+      trial,
+      rv = map2(
+        fit, stan_data, 
+        \(f, d) spread_rvars(f, n_sample[l, p], maturity_rate[l, p]) |>
+          bind_cols(expand.grid(d[c("lambda", "pred_week")]))
+      )
+    ) |> 
+    unnest(rv)
+}
+
+get_all_pfs_crcr_trial_lambda_residual <- function(res) {
+  spread_rvars(res, log_trial_lambda_residual[trial, t]) |> 
+    mutate(trial_lambda_residual = exp(log_trial_lambda_residual)) |> 
+    point_interval(log_trial_lambda_residual, trial_lambda_residual, .width = c(0.5, 0.8))  
+}
+
+
+get_all_pfs_crcr_trial_lambda_residual_draws <- function(res, ndraws = NULL) {
+  spread_rvars(res, log_trial_lambda_residual[trial, t]) |> 
+    mutate(
+      log_trial_lambda_residual = thin_draws(log_trial_lambda_residual),
+      trial_lambda_residual = exp(log_trial_lambda_residual)
+    ) |> 
+    unnest_rvars() |> 
+    filter(is_null(ndraws) | (.draw <= ndraws))
+}
+
+get_pfs_pred_param <- function(res) {
+  res |> 
+    rowwise() |> 
+    transmute(trial, rv = list(get_all_pfs_pred_param(fit))) |> 
+    unnest(rv)  
+}
+
+get_cr_median_pfs_draws <- function(res, ndraws = Inf) {
+  res |> 
+    rowwise() |> 
+    transmute(
+      trial, 
+      rv = list(spread_draws(fit, bs_cr_median_pfs[r]) |>
+                  filter(.draw <= ndraws) |> # I use this to make sure all r have the same .draw 
+                  left_join(as_tibble(stan_data["bootstrap_cr_maturity_rates"]) |> 
+                              mutate(r = seq(n())), 
+                            by = "r", relationship = "many-to-one"))
+    ) |> 
+    unnest(rv)
+}
+
+get_all_pfs_crcr_lambda <- function(res, stan_data = NULL) {
+  spread_rvars(res, log_trial_lambda[trial, t]) |> 
+    mutate(
+      trial_lambda = exp(log_trial_lambda), 
+      trial = if (!is_null(stan_data)) factor(trial, labels = levels(stan_data$patient_trial))
+    )
+}
+
+get_all_pfs_crcr_lambda_trial_intercept <- function(res) {
+  spread_rvars(res, log_lambda_gp_trial_intercept[trial]) |> 
+    mutate(lambda_gp_trial_intercept = exp(log_lambda_gp_trial_intercept))
+}
+
+get_crcr_pfs_pred_param <- function(res, stan_data) {
+  gather_rvars(res, covar_trial_coef[trial, m], covar_effect[trial, m], tumor_stim_pop_coef[trial, m]) |> 
+    mutate(.exp_value = exp(.value)) |> 
+    name_coef_indices(m, trial, stan_data)
+}
+
+get_powerscaled_variables <- function(res, metadata, stan_data) {
+  metadata |> 
+    rowwise() |> 
+    mutate(
+      ps = list(
+        if (alpha == 1) res else powerscale(res, alpha = alpha, component = component, variable = c("log_crcr_trial_lambda", "log_trial_lambda"))
+      )
+    ) |> 
+    transmute(
+      alpha, component,
+      baseline_hazard_rvar = list(
+        gather_rvars(ps, log_crcr_trial_lambda[k, trial, t], log_trial_lambda[trial, t]) |> 
+          mutate(
+            .exp_value = exp(.value),
+            trial = factor(trial, labels = levels(stan_data$patient_trial)),
+            k = factor(k, levels = 1:2, labels = c("Non-response", "Response")) 
+          ) |>  
+          point_interval(.value, .exp_value, .width = c(0.5, 0.8))
+      ) 
+    )
+}
+
+plot_coef <- function(d, xvar) {
+  ggplot(d) + 
+    stat_slab(aes(xdist = {{ xvar }}, color = fit_type), fill = NA, linewidth = 2, show.legend = TRUE) +
+    geom_vline(xintercept = 1, linetype = "dashed", linewidth = 2) +
+    scale_color_discrete("", label = str_to_title, type = AZ_palette, aesthetic = c("color", "fill")) +
+    labs(x = "", y = "") +
+    theme(axis.text.y = element_blank(), axis.text.x = element_text(size = 25), legend.text = element_text(size = 20)) +
+    coord_cartesian(xlim = c(0, 4)) +
+    theme(legend.position = "bottom") +
+    NULL
+}
+
+get_coef_powerscale_table_data <- function(coef_ps_sense, prior_crcr_coef, crcr_coef, prior_crcr_pfs_coef, crcr_pfs_coef, stan_data, trial_col = NULL) {
+  coef_plots <- bind_rows(
+    bind_rows(prior = prior_crcr_coef, posterior = crcr_coef, .id = "fit_type"),
+    bind_rows(prior = prior_crcr_pfs_coef, posterior = crcr_pfs_coef, .id = "fit_type")
+  ) |>
+    filter(fct_match(.variable, c("crcr_covar_effect", "covar_effect", "crcr_tumor_stim_pop_coef", "tumor_stim_pop_coef"))) |> 
+    nest(coef_data = !c(.variable, m, k)) |> 
+    mutate(plot_obj = map(coef_data, \(d) plot_coef(d, .exp_value))) 
+  
+  coef_ps_sense |> 
+    filter(!str_detect(variable, "trial_sd")) |> 
+    tidyr::separate_wider_regex(variable, c(var = ".+", r"{\[}", trial = r"{\d+}", ",", m = r"{\d+}", r"{,?}", k = r"{(?:\d+)?}", ".*")) |> 
+    mutate(
+      across(c(m, k, trial), as.integer),
+      k = factor(k, levels = 1:2, labels = c("Non-response", "Response"))
+    ) |> 
+    left_join(coef_plots, by = c("var" = ".variable", "k", "m")) |> 
+    name_coef_indices(m, trial_col, stan_data) |> 
+    select(var, covar, k, prior, likelihood, diagnosis, plot_obj) 
+}
+
+get_coef_sd_powerscale_table_data <- function(coef_ps_sense, prior_crcr_coef_sd, crcr_coef_sd, prior_crcr_pfs_coef_sd, crcr_pfs_coef_sd, stan_data) {
+  coef_plots <- bind_rows(
+    crcr_covar_trial_sd = bind_rows(prior = prior_crcr_coef_sd, posterior = crcr_coef_sd, .id = "fit_type") |> rename(.exp_value = crcr_covar_trial_sd),
+    covar_trial_sd = bind_rows(prior = prior_crcr_pfs_coef_sd, posterior = crcr_pfs_coef_sd, .id = "fit_type") |> rename(.exp_value = covar_trial_sd),
+    .id = ".variable"
+  ) |>
+    nest(coef_sd_data = !c(.variable, m)) |> 
+    mutate(plot_obj = map(coef_sd_data, \(d) plot_coef(d, .exp_value))) 
+  
+  coef_ps_sense |> 
+    filter(str_detect(variable, "trial_sd")) |> 
+    tidyr::separate_wider_regex(variable, c(var = ".+", r"{\[}", m = r"{\d+}", "]")) |> 
+    mutate(m = as.integer(m)) |> 
+    left_join(coef_plots, by = c("m", "var" = ".variable")) |> 
+    name_coef_indices(m, NULL, stan_data) |> 
+    select(var, covar, prior, likelihood, diagnosis, plot_obj) 
+}
+
+get_covar_trial_sd <- function(res, stan_data) {
+  spread_rvars(res, covar_trial_sd[m]) |> 
+    name_coef_indices(m, NULL, stan_data)
+}
+
+get_joint_gng_prob <- function(mpfs_res_data, pfs6_res_data, orr_res_data, mpfs_cutoffs, pfs6_cutoffs, orr_cutoffs) {
+  cutoffs <- bind_rows(mpfs = mpfs_cutoffs, pfs6 = pfs6_cutoffs, orr = orr_cutoffs, .id = "endpoint")
+
+  bind_rows(
+    mpfs = select(mpfs_res_data, model_type, fit_type, trial, endpoint_forecast_val = forecast_trial_median_pfs) |> 
+      mutate(endpoint_forecast_val = weeks_to_months(endpoint_forecast_val)),
+    pfs6 = select(pfs6_res_data, model_type, fit_type, trial, endpoint_forecast_val = forecast_trial_pfs6),
+    orr = select(orr_res_data, model_type, fit_type, trial, endpoint_forecast_val = forecast_trial_subpop_orr),
+    .id = "endpoint"
+  ) |> 
+    left_join(cutoffs, by = "endpoint") |> 
+    pivot_wider(id_cols = c(model_type, fit_type, trial), names_from = endpoint, values_from = c(lrv, tv, endpoint_forecast_val)) |> 
+    mutate(
+      p_tv = Pr(endpoint_forecast_val_mpfs > tv_mpfs & endpoint_forecast_val_pfs6 > tv_pfs6 & endpoint_forecast_val_orr > tv_orr), 
+      p_lrv = Pr(endpoint_forecast_val_mpfs > lrv_mpfs & endpoint_forecast_val_pfs6 > lrv_pfs6 & endpoint_forecast_val_orr > lrv_orr)
+    ) 
+}
+
+plot_coef <- function(d, xvar) {
+  ggplot(d) + 
+    stat_slab(aes(xdist = {{ xvar }}, color = fit_type), fill = NA, linewidth = 2, show.legend = TRUE) +
+    geom_vline(xintercept = 1, linetype = "dashed", linewidth = 2) +
+    scale_color_discrete("", label = str_to_title, type = AZ_palette, aesthetic = c("color", "fill")) +
+    labs(x = "", y = "") +
+    theme(axis.text.y = element_blank(), axis.text.x = element_text(size = 25), legend.text = element_text(size = 20)) +
+    coord_cartesian(xlim = c(0, 4)) +
+    theme(legend.position = "bottom") +
+    NULL
+}
+
+get_coef_powerscale_table_data <- function(coef_ps_sense, prior_crcr_coef, crcr_coef, prior_crcr_pfs_coef, crcr_pfs_coef, stan_data, trial_col = NULL) {
+  coef_plots <- bind_rows(
+    bind_rows(prior = prior_crcr_coef, posterior = crcr_coef, .id = "fit_type"),
+    bind_rows(prior = prior_crcr_pfs_coef, posterior = crcr_pfs_coef, .id = "fit_type")
+  ) |>
+    filter(fct_match(.variable, c("crcr_covar_effect", "covar_effect", "crcr_tumor_stim_pop_coef", "tumor_stim_pop_coef"))) |> 
+    nest(coef_data = !c(.variable, m, k)) |> 
+    mutate(plot_obj = map(coef_data, \(d) plot_coef(d, .exp_value))) 
+  
+  coef_ps_sense |> 
+    filter(!str_detect(variable, "trial_sd")) |> 
+    tidyr::separate_wider_regex(variable, c(var = ".+", r"{\[}", trial = r"{\d+}", ",", m = r"{\d+}", r"{,?}", k = r"{(?:\d+)?}", ".*")) |> 
+    mutate(
+      across(c(m, k, trial), as.integer),
+      k = factor(k, levels = 1:2, labels = c("Non-response", "Response"))
+    ) |> 
+    left_join(coef_plots, by = c("var" = ".variable", "k", "m")) |> 
+    name_coef_indices(m, trial_col, stan_data) |> 
+    select(var, covar, k, prior, likelihood, diagnosis, plot_obj) 
+}
+
+get_coef_sd_powerscale_table_data <- function(coef_ps_sense, prior_crcr_coef_sd, crcr_coef_sd, prior_crcr_pfs_coef_sd, crcr_pfs_coef_sd, stan_data) {
+  coef_plots <- bind_rows(
+    crcr_covar_trial_sd = bind_rows(prior = prior_crcr_coef_sd, posterior = crcr_coef_sd, .id = "fit_type") |> rename(.exp_value = crcr_covar_trial_sd),
+    covar_trial_sd = bind_rows(prior = prior_crcr_pfs_coef_sd, posterior = crcr_pfs_coef_sd, .id = "fit_type") |> rename(.exp_value = covar_trial_sd),
+    .id = ".variable"
+  ) |>
+    nest(coef_sd_data = !c(.variable, m)) |> 
+    mutate(plot_obj = map(coef_sd_data, \(d) plot_coef(d, .exp_value))) 
+  
+  coef_ps_sense |> 
+    filter(str_detect(variable, "trial_sd")) |> 
+    tidyr::separate_wider_regex(variable, c(var = ".+", r"{\[}", m = r"{\d+}", "]")) |> 
+    mutate(m = as.integer(m)) |> 
+    left_join(coef_plots, by = c("m", "var" = ".variable")) |> 
+    name_coef_indices(m, NULL, stan_data) |> 
+    select(var, covar, prior, likelihood, diagnosis, plot_obj) 
+}

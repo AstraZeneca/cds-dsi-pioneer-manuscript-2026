@@ -1,13 +1,14 @@
 if (gen_log_lik || prior_sense) {
   if (leave_out_trial > 0) {
-    log_lik += calc_pch_loglik(
-      last_unclassified_response_week[training_patients],
-      confirmed_response_cause[training_patients], 
-      confirmed_response_censored[training_patients], 
-      confirmed_response_interval_censored[training_patients], 
-      crcr_ignore_interval_censoring,
-      log_crcr_cond_prob_surv[training_patients]
-    );
+    fatal_error("Unsupported right now.");
+    // log_lik += calc_pch_loglik(
+    //   last_unclassified_response_week[training_patients],
+    //   confirmed_response_cause[training_patients], 
+    //   confirmed_response_censored[training_patients], 
+    //   confirmed_response_interval_censored[training_patients], 
+    //   crcr_ignore_interval_censoring,
+    //   log_crcr_cond_prob_surv[training_patients]
+    // );
   } else {
     log_lik += calc_pch_loglik(
       last_unclassified_response_week,

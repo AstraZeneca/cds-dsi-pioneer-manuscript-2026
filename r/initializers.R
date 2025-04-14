@@ -1,3 +1,29 @@
+# Stan Initializer Function Factories for CRCR and PFS Models
+#
+# This file contains functions that create initializer functions for Stan models,
+# specifically for Competing Risks Confirmed Response (CRCR) and Progression-Free
+# Survival (PFS) models. These initializers are designed to provide starting values
+# for Stan MCMC sampling drawn from the prior distributions of the parameters,
+# which can improve convergence and sampling efficiency.
+#
+# The main functions in this file are:
+#
+# 1. create_crcr_initializer:
+#    Creates an initializer function for CRCR models. It generates initial values
+#    from the prior distributions for parameters related to the baseline hazard,
+#    including GP components.
+#
+# 2. create_crcr_pfs_initializer:
+#    Creates an initializer function for combined CRCR and PFS models. It extends
+#    the CRCR initializer with additional PFS-specific parameters, drawing initial
+#    values from their respective prior distributions. This includes priors for
+#    tumor stimulation effects and covariate effects.
+#
+# These functions take Stan data (which includes prior specifications) as input
+# and return a function that generates initial values for a given chain. They
+# account for various model configurations, such as separate baseline hazards,
+# proportional hazards, and trial-level effects.
+
 create_crcr_initializer <- function(stan_data, n_causes = 2) {
   base_sep_trial <- if (stan_data$separate_baseline_hazard) stan_data$n_trials else 1 
   prop_sep_trial <- if (stan_data$separate_prop_hazard) stan_data$n_trials else 1 

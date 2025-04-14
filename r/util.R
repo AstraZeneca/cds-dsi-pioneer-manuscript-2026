@@ -1,3 +1,13 @@
+#' Sample from a Stan model and optionally save the output
+#'
+#' @param model A Stan model object
+#' @param ... Additional arguments passed to the sample method
+#' @param output_dir Directory to save output files
+#' @param output_basename Base name for output files
+#' @param timestamp Boolean, whether to include a timestamp in file names
+#' @param no_save Boolean, if TRUE, don't save any output files
+#'
+#' @return A fitted Stan model object
 sample_and_save <- function(model, ..., output_dir, output_basename, timestamp = TRUE, no_save = FALSE) {
   if (!no_save && !timestamp) {
     fit <- model$sample(..., output_dir = output_dir, output_basename = output_basename)
@@ -40,47 +50,28 @@ get_km_res <- function(analysis_data, pfs_var, ...) {
     bind_rows() 
 } 
 
-cmdstan_expose_pfs_functions <- function(util_file, pfs_functions_file) {
-  pseudo_model_code <- paste(c("functions {", read_file(util_file), read_file(pfs_functions_file), "}"), collapse="\n")
-  functions_hash <- rlang::hash(pseudo_model_code)
-  model_name <- paste0("pfs-functions-", functions_hash)
-  ## note: cmdstanr somehow only compiles standalone functions
-  ## whenever one is compiling the model (and not allowing to export
-  ## the functions if one is not compiling it). This is why
-  ## force_compile=TRUE is a save option
-  ##pseudo_model <- cmdstanr::cmdstan_model(cmdstanr::write_stan_file(pseudo_model_code), compile_standalone=TRUE, force_compile=TRUE, stanc_options=list(name=paste0("model-functions-", functions_hash)))
-  ##pseudo_model$functions
-  ## but things seem to work ok if we abuse a bit the internals... tested with cmdstanr 0.6.1
-  ## note that we have to set the model name manually to a
-  ## determinstic string (depending only on the stan functions being
-  ## compiled)
-  stan_file <- cmdstanr::write_stan_file(pseudo_model_code)
-  pseudo_model <- cmdstanr::cmdstan_model(stan_file, stanc_options=list(name=model_name))
-  pseudo_model$functions$existing_exe <- FALSE
-  pseudo_model$functions$external <- FALSE
-  stancflags_standalone <- c("--standalone-functions", paste0("--name=", model_name))
-  pseudo_model$functions$hpp_code <- cmdstanr:::get_standalone_hpp(stan_file, stancflags_standalone)
-  pseudo_model$expose_functions(FALSE, FALSE) ## will return the functions in an environment
-  pseudo_model$functions
-}
-
 add_confirmed_resp_priors <- function(stan_data, priors) {
   stan_data |> 
     list_assign(!!!priors) 
-    # list_assign(
-    #   crcr_tumor_stim_pop_coef_sd = .$crcr_tumor_stim_pop_coef_sd,
-    # )
 }
 
 add_pfs_crcr_priors <- function(stan_data, crcr_priors, tumor_priors, pfs_priors) {
   add_confirmed_resp_priors(stan_data, crcr_priors) |> 
     list_assign(!!!tumor_priors, !!!pfs_priors)  
-    # list_assign(
-    #   tumor_stim_pop_coef_sd = .$tumor_stim_pop_coef_sd[1:2],
-    # )
 }
 
-# This function is used to generate a histogram of time-to-events for a single draw
+#' Generate a histogram of time-to-events for a single draw
+#'
+#' This function creates a histogram of time-to-event data for a single draw from a
+#' posterior distribution. It uses R's base hist() function but returns only the counts,
+#' not the full histogram object.
+#'
+#' @param pred A numeric vector of predicted time-to-event values
+#' @param breaks A numeric vector specifying the breakpoints between histogram cells
+#' @param ... Additional arguments passed to hist()
+#'
+#' @return A numeric vector of counts for each histogram bin
+#'
 sample_hist <- function(pred, breaks, ...) {
   # hist() is a base R function to generate histograms from data and provided breaks.
   hist(pmax(pmin(pred, max(breaks)), min(breaks)), breaks = breaks, plot = FALSE, ...)$count
@@ -89,6 +80,20 @@ sample_hist <- function(pred, breaks, ...) {
 # This function is used to treated_pfs_analysis_dataallow us to generate a distribution of histograms
 rvar_sample_hist <- posterior::rfun(sample_hist, rvar_dots = FALSE)
 
+#' Name coefficient indices with meaningful labels
+#'
+#' This function takes a data frame with coefficient indices and adds meaningful labels
+#' to these coefficients based on their index and the provided Stan data. It also
+#' optionally adds trial labels.
+#'
+#' @param data A data frame containing the coefficient indices to be named
+#' @param coef_idx_col The name of the column in 'data' that contains the coefficient indices
+#' @param trial_col The name of the column in 'data' that contains trial identifiers (optional)
+#' @param stan_data A list containing Stan data, including 'covar_design_matrix' and 'patient_trial'
+#'
+#' @return A modified data frame with additional columns:
+#'   - 'covar': A factor column with meaningful names for each coefficient
+#'   - 'trial': A factor column with trial labels (if trial_col is provided)
 name_coef_indices <- function(data, coef_idx_col, trial_col, stan_data) {
   data |> 
     mutate(
