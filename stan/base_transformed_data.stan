@@ -9,16 +9,17 @@ print("n_trial_patients = ", n_trial_patients);
 
 // Starting position of patients for each trial in a flattened patient array
 // Diagram for trial_patient_pos:
-// [1, 4, 7, 12, ...]
-//  ^  ^  ^  ^
-//  |  |  |  |
-//  |  |  |  Start of patients in trial 4
-//  |  |  Start of patients in trial 3
+// [1, 40, 70, 120, ...]
+//  ^  ^   ^   ^
+//  |  |   |   |
+//  |  |   |   Start of patients in trial 4
+//  |  |   Start of patients in trial 3
 //  |  Start of patients in trial 2
 //  Start of patients in trial 1
 array[n_trials + 1] int<lower = 1, upper = n_patients + 1> trial_patient_pos = create_pos(n_trial_patients);
 
-// Starting position of tumors for each patient in a flattened tumor array
+// Starting position of tumors for each patient in a flattened tumor array. This is used to traverse such data structures
+// as n_measures.
 // Diagram for patient_tumor_pos:
 // [1, 3, 5, 6, ...]
 //  ^  ^  ^  ^
@@ -63,17 +64,19 @@ array[n_patients] int<lower = 0> n_patient_screening_visits = zeros_int_array(n_
 array[sum(n_measures)] int<lower = 1> t_measure_idx; // Measurement times indexed starting from 1
 
 {
-  int tumor_pos = 1;
-  int t_measure_pos = 1;
-  int t_missing_measure_pos = 1;
+  int tumor_pos = 1;  // Current position in the tumor array
+  int t_measure_pos = 1;  // Current position in the measurement array
+  int t_missing_measure_pos = 1;  // Current position in the missing measurement array
   
-  array[sum(n_missing_measures)] int t_missing_measure;
-  array[sum(n_missing_measures)] int t_missing_measure_idx;
+  array[sum(n_missing_measures)] int t_missing_measure;  // Array to store missing measurement times
+  array[sum(n_missing_measures)] int t_missing_measure_idx;  // Array to store indices of missing measurements
   
-  if (sum(n_missing_measures) > 0) { 
+  // Calculate missing measurement times if there are any
+  if (sum(n_missing_measures) > 0) {  
     t_missing_measure = calculate_t_missing_measure(n_measures, n_missing_measures, t_measure, n_patient_tumors);
   }
   
+  // Iterate through all patients
   for (i in 1:n_patients) {
     int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
     int save_t_measure_pos = t_measure_pos;
@@ -96,49 +99,62 @@ array[sum(n_measures)] int<lower = 1> t_measure_idx; // Measurement times indexe
     }
     
     for (j in 1:n_patient_tumors[i]) {
-      int t_measure_end = t_measure_pos + n_measures[tumor_pos + j - 1] - 1;
-      int t_missing_measure_end = t_missing_measure_pos + n_missing_measures[tumor_pos + j - 1] - 1;
-      
-      n_full_measures[tumor_pos + j - 1] = n_measures[tumor_pos + j - 1] + n_missing_measures[tumor_pos + j - 1]; 
-      
+      int t_measure_end = t_measure_pos + n_measures[tumor_pos + j - 1] - 1;  // End position of measurements for current tumor
+      int t_missing_measure_end = t_missing_measure_pos + n_missing_measures[tumor_pos + j - 1] - 1;  // End position of missing measurements for current tumor
+  
+      // Calculate total number of measures (observed + missing) for current tumor
+      n_full_measures[tumor_pos + j - 1] = n_measures[tumor_pos + j - 1] + n_missing_measures[tumor_pos + j - 1];  
+  
+      // Index measurement times relative to the earliest measurement time
       for (tp in t_measure_pos:t_measure_end) {
         t_measure_idx[tp] = t_measure[tp] - min_all_t + 1;
       }
-      
+  
+      // Index missing measurement times relative to the earliest measurement time
       for (tp in t_missing_measure_pos:t_missing_measure_end) {
         t_missing_measure_idx[tp] = t_missing_measure[tp] - min_all_t + 1;
       }
-      
+  
+      // Find minimum and maximum time indices for current tumor
       min_t_idx[j] = min(t_measure_idx[t_measure_pos:t_measure_end]);
       max_t_idx[j] = max(t_measure_idx[t_measure_pos:t_measure_end]);
-      
+  
+      // Update positions for next tumor
       t_measure_pos = t_measure_end + 1;
       t_missing_measure_pos = t_missing_measure_end + 1;
     }
-    
+  
+    // Calculate number of screening measurements for current patient
     n_patient_screening_t[i] = sum(n_screening_t[tumor_pos:tumor_end]);
-    
+  
+    // Calculate maximum time width for current patient
     patient_max_t_width[i] = max(max_t_idx) - min(min_t_idx) + 1;
-    
+  
+    // Reset measurement positions
     t_measure_pos = save_t_measure_pos;
     t_missing_measure_pos = save_t_missing_measure_pos;
-    
+  
+    // Iterate through all tumors for the current patient again
     for (j in 1:n_patient_tumors[i]) {
-      int t_measure_end = t_measure_pos + n_measures[tumor_pos + j - 1] - 1; 
-      int t_missing_measure_end = t_missing_measure_pos + n_missing_measures[tumor_pos + j - 1] - 1; 
-      
+      int t_measure_end = t_measure_pos + n_measures[tumor_pos + j - 1] - 1;  
+      int t_missing_measure_end = t_missing_measure_pos + n_missing_measures[tumor_pos + j - 1] - 1;  
+  
+      // Index measurement times relative to the first measurement for each tumor
       for (tp in t_measure_pos:t_measure_end) {
         t_patient_measure_idx[tp] = t_measure_idx[tp] - min_t_idx[j] + 1;
       }
-      
+  
+      // Index missing measurement times relative to the first measurement for each tumor
       for (tp in t_missing_measure_pos:t_missing_measure_end) {
         t_patient_missing_measure_idx[tp] = t_missing_measure_idx[tp] - min_t_idx[j] + 1;
       }
-      
+  
+      // Update positions for next tumor
       t_measure_pos = t_measure_end + 1;
       t_missing_measure_pos = t_missing_measure_end + 1;
     }
-    
+  
+    // Update tumor position for next patient
     tumor_pos = tumor_end + 1;
   }
 }

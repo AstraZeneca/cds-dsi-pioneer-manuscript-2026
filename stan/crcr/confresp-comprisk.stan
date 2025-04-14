@@ -4,9 +4,7 @@
  */
 
 functions {
-  #include "../extern_util.stan"
   #include "../util.stan"
-  #include "../extern_pfs_functions.stan"
   #include "../pfs_functions.stan"
   #include "crcr_functions.stan"
 }
@@ -28,7 +26,6 @@ data {
   // This is the data that is shared with the tumor model 
   #include "../base_data.stan"
   #include "crcr_data.stan"
-  #include "../bootstrap/leave_out_trial_bootstrap_data.stan"
  
   // Calculating log likelihood for a single trial. Useful if you want to compare the preformance of a model using a single trial with one that is multilevel. 
   int<lower = 0, upper = n_trials> log_lik_trial; 
@@ -38,12 +35,14 @@ data {
 }
 
 transformed data {
+  int n_causes = 2; // We only have confirmed response and non-response
   
   #include "../base_transformed_data.stan" 
   #include "crcr_transformed_data.stan"
-  #include "../bootstrap/leave_out_trial_bootstrap_transformed_data.stan"
   
   int grain_size = 83; // For reduce_sum()
+  int leave_out_trial = 0;
+  int n_training_patients = n_patients;
 }
 
 parameters {
