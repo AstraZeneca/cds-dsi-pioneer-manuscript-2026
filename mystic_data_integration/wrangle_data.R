@@ -359,7 +359,8 @@ generate_patient_data_dataset <- function(clinical_dataset = clinical_db_no_SF,
               last_date_of_visit = last(date_of_visit))
 
   
-  colnames(visit_dates) <- c("subjid", "first_date_of_visit", "last_date_of_visit")      
+  colnames(visit_dates) <- c("subjid", "first_date_of_visit",
+                             "last_date_of_visit")      
   
   ldh <- clinical_longitudinal_data %>% 
     group_by(subject_identifier_for_the_study) %>%
@@ -381,8 +382,11 @@ generate_patient_data_dataset <- function(clinical_dataset = clinical_db_no_SF,
   
   fjdc <- fjd
   colnames(fjdc) <- c("usubjid", colnames(fjdc)[2:100])
-  avd2 <- full_join(assessment_visit_data, fjdc[,c("usubjid","progression_free_survival_time")], by="usubjid")
-  avd2$progression_free_survival_time <- avd2$progression_free_survival_time %/%7+1
+  avd2 <- full_join(assessment_visit_data,
+                    fjdc[,c("usubjid","progression_free_survival_time")],
+                    by="usubjid")
+  
+  avd2$progression_free_survival_time <- (avd2$progression_free_survival_time-1)%/%7+1
   
   week_filtered3 <- avd2 %>%
     group_by(usubjid) %>%
@@ -403,17 +407,28 @@ generate_patient_data_dataset <- function(clinical_dataset = clinical_db_no_SF,
                    calendar_week=(as.numeric(fjd$treatment_start_date-first_patient_sd)-1)%/%7+1,
                    calendar_day=as.numeric(fjd$treatment_start_date-first_patient_sd),
                    patient_min_t=(as.numeric(fjd$first_date_of_visit-fjd$treatment_start_date)-1)%/%7+1,
-                   patient_max_t=floor(fjd$lweek),
+                   patient_max_t=fjd$lweek, # I don't think we need the floor
                    patient_first_visit=fjd$first_date_of_visit,
                    patient_last_visit=fjd$last_date_of_visit,
                    patient_t_width=(as.numeric(fjd$last_date_of_visit-fjd$first_date_of_visit)-1)%/%7+1,
                    death = ifelse(fjd$overall_survival_censor==1, FALSE, TRUE),
                    death_week = (as.numeric(fjd$death_date-fjd$treatment_start_date)-1)%/%7+1,
                    progression_before_death = ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1),
-                   right_censored= ifelse((((as.numeric(fjd$death_date-fjd$treatment_start_date)-1)%/%7+1 > floor(fjd$lweek)) | is.na((as.numeric(fjd$death_date-fjd$treatment_start_date)-1)%/%7+1)) & ((ifelse(ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, (fjd$progression_free_survival_time-1)%/%7, NA)> floor(fjd$lweek))| is.na(ifelse(ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, (fjd$progression_free_survival_time-1)%/%7+1, NA))),TRUE,FALSE), # Yeah, sorry about this. Basically if the death is after the last treatment week (or there's no death), and if the PD is after the last week of treatment (or no PD) we deem it Right cens.
-                   progress_week=ifelse(ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, (fjd$progression_free_survival_time-1)%/%7+1, NA),
+                   right_censored= ifelse( # Two things to check (regarding death)
+                     (((as.numeric(fjd$death_date-fjd$treatment_start_date)-1)%/%7+1 > fjd$lweek) # If death happened AFTER the last treatment week
+                      | is.na((as.numeric(fjd$death_date-fjd$treatment_start_date)-1)%/%7+1)) # Or death does not exist (NA)
+                     & ((ifelse( # And if two other things to check (regarding PD)
+                       ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, # If PD happens 
+                       (fjd$progression_free_survival_time-1)%/%7, NA)> floor(fjd$lweek))| # AFTER the last treatment week
+                         is.na(ifelse(ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, # Or if PD never happens (NA)
+                                      (fjd$progression_free_survival_time-1)%/%7+1, NA))),TRUE,FALSE), # Yeah, sorry about this. Basically if the death is after the last treatment week (or there's no death), and if the PD is after the last week of treatment (or no PD) we deem it Right cens.
+                   progress_week=ifelse(
+                     ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, # PD happens
+                     (fjd$progression_free_survival_time-1)%/%7+1, NA), # We turn the PFS to weeks (PFS as Upper bound)
                    pfs=fjd$lbpfs,
-                   interval_censored=ifelse(ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, (fjd$progression_free_survival_time-1)%/%7+1, NA)-fjd$lbpfs-1,
+                   interval_censored=ifelse(
+                     ifelse(fjd$progression_free_survival_time==fjd$overall_survival_time, 0, 1)==1, # If Patient had a PD
+                     (fjd$progression_free_survival_time-1)%/%7+1, NA)-fjd$lbpfs, # PFS (UB) - PFS (LB), otherwise NA (as NA-number is NA)
                    age=fjd$age,
                    age_group=ifelse(fjd$age<18,"<18",ifelse(fjd$age<40, "18-40", ifelse(fjd$age<65,"40-65",ifelse(fjd$age<75,"65-75",">75")))),
                    sex=fjd$sex,

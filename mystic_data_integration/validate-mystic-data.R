@@ -1,4 +1,9 @@
-library(tidyverse)
+# if(!require(tidyverse))install.packages("tidyverse")
+# library(tidyverse)
+
+renv::install("tidyselect@1.2-1", type="source")
+
+if(!require(pointblank))install.packages("pointblank")
 library(pointblank)
 
 historical_patient_schema <- col_schema(
@@ -14,13 +19,14 @@ historical_patient_schema <- col_schema(
   patient_max_t = "integer",
   death = "logical",
   death_week = "integer",
-  progression_before_death = "logical",
+  progression_before_death = "logical", #
   right_censored = "logical",
   progress_week = "integer",
-  pfs = "integer",
-  interval_censored = "integer",
+  pfs = "integer", # 
+  interval_censored = "integer", #
   age = "integer",
-  ecogbl = "integer",
+  ecogbl = "integer", #
+  bmibl = "double", ##
   baseline_albumin = "double",
   baseline_creatinine = "double",
   baseline_hemoglobin = "double",
