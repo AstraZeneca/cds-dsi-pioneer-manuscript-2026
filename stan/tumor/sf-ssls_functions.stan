@@ -1,9 +1,6 @@
-
-tuple(row_vector, vector) sf_log_space_transition(row_vector current_x, 
-                                          real time_next, real time_current,
-                                          real decrease_rate, real growth_rate,
-                                          // real process_sd_reg, real process_sd_growth) {
-                                          vector process_sd) {
+row_vector sf_log_space_transition(row_vector current_x, 
+                                   real time_next, real time_current,
+                                   real decrease_rate, real growth_rate) {
   // Calculate time interval
   real delta_t = time_next - time_current;
   
@@ -13,6 +10,23 @@ tuple(row_vector, vector) sf_log_space_transition(row_vector current_x,
   
   // Expected means after time interval
   row_vector[2] expected_x = current_x + [-decrease_rate, growth_rate] * delta_t;
+  
+  return expected_x;
+}
+
+tuple(row_vector, vector) sf_log_space_transition(row_vector current_x, 
+                                          real time_next, real time_current,
+                                          real decrease_rate, real growth_rate,
+                                          vector process_sd) {
+  // Calculate time interval
+  real delta_t = time_next - time_current;
+  
+  if (delta_t <= 0) {
+      reject("Time must move forward; delta_t = ", delta_t);
+  }
+  
+  // Expected means after time interval
+  row_vector[2] expected_x = sf_log_space_transition(current_x, time_next, time_current, decrease_rate, growth_rate); 
   
   // Scale process noise standard deviations with sqrt(delta_t)
   vector[2] log_scaled_sd = log(process_sd) + 0.5 * log(delta_t);
@@ -73,6 +87,15 @@ tuple(row_vector, row_vector) sf_log_space_transition_ncp(row_vector raw_next_x,
     matrix[2, 2] scaled_L_process_cov = diag_pre_multiply(exp(log_scaled_sd), L_process_corr);
     
     return (expected_x, expected_x + raw_next_x * scaled_L_process_cov'); 
+}
+
+tuple(row_vector, row_vector) sf_log_space_transition_ncp(row_vector raw_next_x, row_vector current_x, 
+                                                          real time_next, real time_current,
+                                                          real decrease_rate, real growth_rate,
+                                                          row_vector process_noise) {
+    row_vector[2] expected_x = sf_log_space_transition(current_x, time_next, time_current, decrease_rate, growth_rate);
+    
+    return (expected_x, expected_x + process_noise); 
 }
 
 /**
@@ -139,12 +162,20 @@ real sf_log_space_trajectory_lpdf(matrix x, row_vector x0, array[] int times, re
   return log_prob;
 }
 
-tuple(matrix, matrix) sf_log_space_trajectory_ncp(matrix raw_x, row_vector x0, array[] int times, real decrease_rate, real growth_rate, vector process_sd, matrix L_process_corr) {
+vector get_growth_lag_factor(vector time_points, real growth_lag, real transition_rate) {
+  return inv_logit((time_points - growth_lag) / transition_rate);
+}
+
+vector get_growth_lag_factor(array[] real time_points, real growth_lag, real transition_rate) {
+  return inv_logit((to_vector(time_points) - growth_lag) / transition_rate);
+}
+
+tuple(matrix, matrix) sf_log_space_trajectory_ncp(matrix raw_x, row_vector x0, array[] real times, real decrease_rate, real growth_rate, vector process_sd, matrix L_process_corr) {
   return sf_log_space_trajectory_ncp(raw_x, x0, times, decrease_rate, growth_rate, negative_infinity(), 1, process_sd, L_process_corr); 
 }
 
 tuple(matrix, matrix) sf_log_space_trajectory_ncp(
-  matrix raw_x, row_vector x0, array[] int times,
+  matrix raw_x, row_vector x0, array[] real times,
   real decrease_rate, real growth_rate, real growth_lag, real transition_rate,
   vector process_sd, matrix L_process_corr
 ) {
@@ -154,14 +185,36 @@ tuple(matrix, matrix) sf_log_space_trajectory_ncp(
   x[1] = x0;
   expected_x[1] = x0;
   
+  vector[T] time_varying_factor = get_growth_lag_factor(times, growth_lag, transition_rate); //  inv_logit((times[t] - growth_lag) / transition_rate);
+  
   // State transitions
   for (t in 2:T) {
-    real time_varying_factor = inv_logit((times[t] - growth_lag) / transition_rate);
-    
     (expected_x[t], x[t]) = sf_log_space_transition_ncp(raw_x[t - 1], x[t - 1], times[t], times[t - 1],
-                                                        decrease_rate, time_varying_factor * growth_rate,  // times[t] > growth_lag ? growth_rate : 0.0,
-                                                        // process_sd_reg, process_sd_growth);
+                                                        decrease_rate, time_varying_factor[t] * growth_rate,
                                                         process_sd, L_process_corr);
+  }
+  
+  return (expected_x, x);
+}
+
+tuple(matrix, matrix) sf_log_space_trajectory_ncp(
+  matrix raw_x, row_vector x0, array[] real times,
+  real decrease_rate, real growth_rate, real growth_lag, real transition_rate,
+  matrix process_noise
+) {
+  int T = rows(raw_x) + 1;
+  matrix[T, 2] x;
+  matrix[T, 2] expected_x;
+  x[1] = x0;
+  expected_x[1] = x0;
+  
+  vector[T] time_varying_factor = get_growth_lag_factor(times, growth_lag, transition_rate); //  inv_logit((times[t] - growth_lag) / transition_rate);
+  
+  // State transitions
+  for (t in 2:T) {
+    (expected_x[t], x[t]) = sf_log_space_transition_ncp(raw_x[t - 1], x[t - 1], times[t], times[t - 1],
+                                                        decrease_rate, time_varying_factor[t] * growth_rate,
+                                                        process_noise[t - 1]);
   }
   
   return (expected_x, x);

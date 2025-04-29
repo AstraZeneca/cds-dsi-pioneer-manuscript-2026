@@ -1,18 +1,43 @@
 get_tumor_priors <- function() {
   lst(
-    tumor_mean_mean = 3,
-    tumor_mean_sd = 3,
-    tumor_measure_error_sd_sd = 0.5,
-    
-    trial_tumor_intercept_sd_sd = 3,
-    patient_tumor_intercept_sd_sd = 3,
-    
-    pop_tumor_gp_alpha_sd = 3,
+    # GP hyperparameters
     pop_tumor_gp_rho_meanlog = 3, 
     pop_tumor_gp_rho_sdlog = 0.6,
-    
-    log_trial_tumor_gp_rho_sd_sd = 1,
     log_patient_tumor_gp_rho_sd_sd = 1.75,
+    
+    # Process noise parameters
+    pop_decrease_process_sd_sd = 0.1,
+    pop_growth_process_sd_sd = 0.1,
+    process_corr_param = 2.0,
+    measure_sd_sd = 0.2,
+    
+    # Process parameters
+    decrease_process_alpha = 9.7,
+    decrease_process_beta = 38.4,
+    growth_process_alpha = 9.7,  # Same as decrease_process_alpha
+    growth_process_beta = 38.4,  # Same as decrease_process_beta
+    
+    # Rate parameters
+    pop_log_net_rate_mean = -0.55, 
+    pop_log_net_rate_sd = 0.8,  # Reduced from 1.0 to narrow the prior
+    pop_log_rate_ratio_mean = 1.8,
+    pop_log_rate_ratio_sd = 0.3,  # Reduced from 0.5 to narrow the prior
+    patient_log_net_rate_sd_sd = 0.5,
+    
+    # Growth lag parameters
+    growth_lag_mean = 1.7,
+    growth_lag_sd = 0.3,
+    patient_log_growth_lag_sd_sd = 0.1,
+    log_growth_transition_rate_sd = 1,
+    
+    # Correlation parameters
+    rate_corr_param = 2.0,
+    
+    # Proportion parameters
+    pop_decrease_prop_logis_mean = 0.7,
+    pop_decrease_prop_logis_sd = 0.4, 
+    patient_decrease_prop_logis_sd_sd = 0.1,
+    log_lod_sd = 0.2
   )
 }
 
