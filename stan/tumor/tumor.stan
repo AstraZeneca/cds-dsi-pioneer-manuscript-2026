@@ -9,6 +9,7 @@ functions {
 data {
   #include "../base_data.stan"
   #include "tumor_data.stan"
+  #include "tumor_gp_hyperparam.stan"
 }
 
 transformed data {
@@ -18,6 +19,7 @@ transformed data {
 
 parameters {
   #include "tumor_parameters.stan"
+  #include "tumor_gp_parameters.stan"
 }
 
 transformed parameters {
