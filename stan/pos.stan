@@ -23,15 +23,19 @@ array[] int get_max(array[] int id, array[] int pos, int of_idx) {
 }
 
 array[] int create_pos(array[] int n_x) {
+  return create_pos(n_x, 0);
+}
+
+array[] int create_pos(array[] int n_x, int inc) {
   int n = size(n_x);
   array[n + 1] int pos;
   pos[1] = 1;
   
   for (i in 1:n) {
-    pos[i + 1] = pos[i] + n_x[i];  
+    pos[i + 1] = pos[i] + n_x[i] + inc;  
   } 
   
-  assert_equal(pos[n + 1] - 1, sum(n_x));
+  assert_equal(pos[n + 1] - 1, sum(n_x) + n * inc);
   
   return pos;
 }
@@ -75,7 +79,25 @@ array[] int get_pos_size(array[] int pos) {
   }
   
   return sizes;
-} 
+}
+
+array[] int resize_int_array(array[] int full, array[] int pos, int inc) {
+  int n = size(pos) - 1;
+  array[n + 1] int new_pos = create_pos(pos, inc);
+  int new_size = new_pos[n + 1] - 1;
+  array[new_size] int new_array = zeros_int_array(new_size);
+  
+  for (i in 1:n) {
+    int old_start, old_end;
+    (old_start, old_end) = get_pos(pos, i);
+    int new_start, new_end;
+    (new_start, new_end) = get_pos(new_pos, i);
+    
+    new_array[new_start:new_end] = full[old_start:max(min(old_end - old_start + 1, old_end + inc), old_end)];
+  } 
+  
+  return new_array;
+}
 
 array[] int get_int_sub_array(array[] int full, array[] int pos, int n) {
   int start, end;
@@ -85,6 +107,21 @@ array[] int get_int_sub_array(array[] int full, array[] int pos, int n) {
 }
 
 array[] int get_int_sub_array(array[] int full, array[] int pos, int from, int to) {
+  int from_start, from_end, to_start, to_end;
+  (from_start, from_end) = get_pos(pos, from);
+  (to_start, to_end) = get_pos(pos, to);
+  
+  return full[from_start:to_end];
+}
+
+array[] real get_real_sub_array(array[] real full, array[] int pos, int n) {
+  int start, end;
+  (start, end) = get_pos(pos, n);
+  
+  return full[start:end];
+}
+
+array[] real get_real_sub_array(array[] real full, array[] int pos, int from, int to) {
   int from_start, from_end, to_start, to_end;
   (from_start, from_end) = get_pos(pos, from);
   (to_start, to_end) = get_pos(pos, to);
@@ -104,6 +141,13 @@ row_vector get_sub_row_vector(vector full, array[] int pos, int n) {
   (start, end) = get_pos(pos, n);
   
   return full[start:end]';
+}
+
+matrix get_sub_vert_matrix(matrix full, array[] int pos, int n) {
+  int start, end;
+  (start, end) = get_pos(pos, n);
+  
+  return full[start:end];
 }
 
 array[] int get_min_pos(array[] int x, array[] int pos) {
