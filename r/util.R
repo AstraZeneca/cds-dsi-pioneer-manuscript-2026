@@ -8,11 +8,15 @@
 #' @param no_save Boolean, if TRUE, don't save any output files
 #'
 #' @return A fitted Stan model object
-sample_and_save <- function(model, ..., output_dir, output_basename, timestamp = TRUE, no_save = FALSE) {
+sample_and_save <- function(model, ..., output_dir, output_basename, timestamp = TRUE, no_save = FALSE, sampler_fun = c("sample", "pathfinder", "variational")) {
+  sampler_fun <- arg_match(sampler_fun)
+  
   if (!no_save && !timestamp) {
-    fit <- model$sample(..., output_dir = output_dir, output_basename = output_basename)
+    # fit <- model$sample(..., output_dir = output_dir, output_basename = output_basename)
+    fit <- exec(model[[sampler_fun]], output_dir = output_dir, output_basename = output_basename, !!!list(...))
   } else { 
-    fit <- model$sample(...)
+    # fit <- model$sample(...)
+    fit <- exec(model[[sampler_fun]], !!!list(...))
     
     if (!no_save) {
       fit$save_output_files(dir = output_dir, basename = output_basename, random = FALSE, timestamp = timestamp)
