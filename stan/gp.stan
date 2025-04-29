@@ -81,6 +81,65 @@ row_vector calc_gp_pred(array[] real x, real alpha, real rho, real delta, row_ve
   return calc_gp_pred(x, 0, alpha, rho, delta, eta);
 }
 
+
+matrix scale_process_sd(array[] real time_points, vector process_sd) {
+  int n_time = size(time_points);
+  matrix[n_time, 2] log_scaled_process_sd;
+    
+  // Apply the sqrt(delta_t) scaling to each time point
+  for (t in 1:n_time) {
+    real delta_t = t > 1 ? time_points[t] - time_points[t-1] : 1.0;
+    log_scaled_process_sd[t] = log(process_sd') + 0.5 * log(delta_t);
+  }
+  
+  return exp(log_scaled_process_sd);
+}
+
+/**
+ * Calculate GP prediction with separable Kronecker covariance structure in NCP style
+ */
+matrix calc_gp_pred(
+    array[] real time_points,
+    real time_rho, 
+    real time_delta,
+    vector process_sd,
+    matrix L_process_corr,
+    matrix eta,
+    int scale
+) {
+  int n_time = size(time_points);
+  int n_process = rows(L_process_corr);
+  
+  if (rows(eta) != n_time) {
+    fatal_error("In correct dimensions: rows(eta) = ", rows(eta), ", n_time = ", n_time, ", time_points = ", time_points);
+  }
+  
+  // Get Cholesky factor of temporal CORRELATION matrix (alpha=1.0)
+  matrix[n_time, n_time] L_time = gp_exp_quad_cholesky_cov(time_points, 1.0, time_rho, time_delta);
+  matrix[n_time, 2] gp = L_time * eta * L_process_corr'; // Interesting computational trick to avoid creating a 2T x 2T matrix
+ 
+  if (scale) {
+    matrix[n_time, 2] scaled_process_sd = scale_process_sd(time_points, process_sd);
+    
+    gp = gp .* scaled_process_sd; 
+  } else {
+    gp = gp .* rep_matrix(process_sd', n_time);
+  }
+  
+  return gp;
+}
+
+matrix calc_gp_pred(
+    array[] real time_points,
+    real time_rho, 
+    real time_delta,
+    vector process_sd,
+    matrix L_process_corr,
+    matrix eta
+) {
+  return calc_gp_pred(time_points, time_rho, time_delta, process_sd, L_process_corr, eta, 0);
+}
+
 vector ncp_gp_matern32(array[] real x, vector intercept, real alpha, real rho, real delta, vector eta) {
   int n_x = size(x);
   matrix[n_x, n_x] L_K = gp_matern32_cholesky_cov(x, alpha, rho, delta); 
