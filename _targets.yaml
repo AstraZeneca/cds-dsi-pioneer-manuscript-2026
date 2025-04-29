@@ -33,6 +33,7 @@ endometrial_to_lung_june_impute:
 # SCLC
 
 sclc:
-  script: sclc_targets.R
+  #script: !expr here::here("targets/sclc_targets.R")
+  script: targets/sclc_targets.R
   store: !expr file.path(output_path, "sclc")
   as_job: yes
