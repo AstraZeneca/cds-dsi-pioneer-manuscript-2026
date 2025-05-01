@@ -599,3 +599,36 @@ get_coef_sd_powerscale_table_data <- function(coef_ps_sense, prior_crcr_coef_sd,
     name_coef_indices(m, NULL, stan_data) |> 
     select(var, covar, prior, likelihood, diagnosis, plot_obj) 
 }
+
+# Tumor analysis plots #####
+
+plot_prior_post_dens <- function(res_data, param = .value, normalize = "all") {
+  res_data |> 
+    ggplot(aes(xdist = {{ param }}, color = fit_type)) +
+    stat_slab(aes(fill = fit_type), alpha = 0.25, normalize = normalize) +
+    stat_pointinterval(position = position_dodge(width = 0.4, preserve = "single"), .width = c(0.5, 0.8, 0.99)) +
+    # stat_spike(at = "median") +
+    scale_fill_discrete("", type = AZ_palette, label = str_to_title, aesthetics = c("fill", "color")) +
+    scale_y_continuous("", breaks = NULL) +
+    NULL
+}
+
+plot_prior_post_hist <- function(res_data, param = .value, normalize = "all") {
+  res_data |> 
+    ggplot(aes(xdist = {{ param }}, color = fit_type)) +
+    stat_histinterval(aes(fill = fit_type), alpha = 0.25, normalize = normalize) +
+    # stat_pointinterval(position = position_dodge(width = 0.4, preserve = "single"), .width = c(0.5, 0.8, 0.99)) +
+    # stat_spike(at = "median") +
+    scale_fill_discrete("", type = AZ_palette, label = str_to_title, aesthetics = c("fill", "color")) +
+    scale_y_continuous("", breaks = NULL) +
+    NULL
+}
+
+plot_corr_decay <- function(res_data, param = .value) {
+  res_data |> 
+    ggplot(aes(t)) +
+    stat_lineribbon(aes(ydist = {{ param }}, fill = fit_type, color = fit_type), alpha = 0.25, .width = c(0.5, 0.8), linewidth = 0.5) +
+    scale_fill_discrete("", type = AZ_palette, label = str_to_title, aesthetics = c("fill", "color")) +
+    labs(x = "Week", y = "Correlation") +
+    NULL
+}
