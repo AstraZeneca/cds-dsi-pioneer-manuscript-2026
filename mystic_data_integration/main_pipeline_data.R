@@ -173,6 +173,53 @@ pacient_data <- remove_patient_data_dups(patient_data) # One patient is repeated
 patient_data <- remove_patient_data_dups(pacient_data) # READY!
 
 
+#==========================#
+#     RESOLVING ISSUES     #
+#==========================#
+
+
+historical_patient_data <- patient_data
+historical_visit_data <- assessment_visit_data
+historical_patient_data |> filter(is.na(patient_max_t)) %>% semi_join(historical_visit_data, ., by = "usubjid")
+# we check which patients have patient_max_t as NA
+# and we look at their assessment_data
+
+ids_with_max_t_NA <-historical_patient_data$usubjid[is.na(historical_patient_data$patient_max_t)] # guilty people
+len(unique(ids_with_max_t_NA)) # 93 people
+
+visits_not_BL <-historical_visit_data[historical_visit_data$visitnum!="1",] # we get the visits that are not the BL
+visits_not_BL[visits_not_BL$usubjid %in% ids_with_max_t_NA,] 
+# we get the people that are both NA in patient_max_t, and that are in the "visits_not_BL"
+# So, we are digging people out with NA as patient_max_t and that have more than just a baseline visit.
+# 1 comes out. With 3 visits not BL. Still, we dont have adyor week for this so...
+
+# Since ady2 = date_time_of_tumor_measurement - baseline_visit 
+
+weird_issue2_pt_id <- as.character(unique(visits_not_BL$usubjid[visits_not_BL$usubjid %in% ids_with_max_t_NA]))
+# we get the weird pt ID
+
+historical_patient_data <- historical_patient_data[!historical_patient_data$usubjid %in% ids_with_max_t_NA,]
+historical_visit_data <- historical_visit_data[!historical_visit_data$usubjid %in% ids_with_max_t_NA,]
+
+historical_patient_data$pfs <- ifelse((!is.na(historical_patient_data$progress_week) & is.na(historical_patient_data$pfs)), 1, historical_patient_data$pfs)
+historical_patient_data$progress_week <- ifelse((is.na(historical_patient_data$progress_week) & !is.na(historical_patient_data$pfs)), historical_patient_data$patient_max_t, historical_patient_data$progress_week)
+
+historical_patient_data$pfs <- ifelse(is.na(historical_patient_data$pfs) & is.na(historical_patient_data$progress_week), 1, historical_patient_data$pfs)
+historical_patient_data$progress_week <- ifelse(is.na(historical_patient_data$pfs) & is.na(historical_patient_data$progress_week), 1, historical_patient_data$progress_week)
+
+historical_patient_data$interval_censored <- ifelse(is.na(historical_patient_data$interval_censored), (historical_patient_data$progress_week-historical_patient_data$pfs), historical_patient_data$interval_censored)
+
+historical_visit_data <- historical_visit_data |>
+  filter(!is.na(historical_visit_data$visitnum))
+
+#=======================#
+#   DATA EXPORT         #
+#=======================#
+
+# write.csv(historical_visit_data, "../../mnt/data/PIONEER_2025_Historical_data/assessment_visit_data_290425.csv")
+# write.csv(historical_patient_data, "../../mnt/data/PIONEER_2025_Historical_data/cooked_patient_data_290425.csv")
+
+
 # ============================
 #            SPARE           #
 # ============================
