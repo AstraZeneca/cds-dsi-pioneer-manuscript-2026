@@ -219,3 +219,248 @@ tuple(matrix, matrix) sf_log_space_trajectory_ncp(
   
   return (expected_x, x);
 }
+
+/* Parallel computation of states for multiple patients using map_rect
+ * 
+ * @param visit_pos Position array for patient visits
+ * @param t_visits Array of time points for all patients
+ * @param rho Vector of GP length scale parameters for each patient
+ * @param delta Small value for numerical stability
+ * @param process_sd Process noise standard deviations [2]
+ * @param L_process_corr Cholesky factor of process correlation matrix
+ * @param raw_process_noise Raw process noise values
+ * @param independ_long_process_noise Flag for independent longitudinal process noise
+ * @param independ_cross_process_noise Flag for independent cross-component process noise
+ * @param initial_states Matrix of initial states for all patients
+ * @param raw_states Matrix of raw states
+ * @param decrease_rate Vector of tumor decrease rates
+ * @param growth_rate Vector of tumor growth rates
+ * @param growth_lag Vector of growth lag parameters
+ * @param growth_transition_rate Growth transition rate parameter
+ * @return Vector of computed states for all patients
+ */
+matrix calc_states(
+  data array[] int visit_pos, data array[] int t_visits, vector rho, data real delta, vector process_sd, matrix L_process_corr, 
+  matrix raw_process_noise, data int independ_long_process_noise, data int independ_cross_process_noise, 
+  matrix initial_states, matrix raw_states, vector decrease_rate, vector growth_rate, 
+  vector growth_lag, real growth_transition_rate, int parallel
+) {
+  int n_patients = size(visit_pos) - 1;
+  // Create position array for time points with one fewer elements per patient
+  array[n_patients + 1] int visit_m1_pos = create_pos(get_pos_size(visit_pos), -1);  
+  
+  assert_equal(visit_pos[n_patients + 1], size(t_visits) + 1);
+  
+  // Arrays to track indices for various components
+  array[n_patients] int visit_end_idx;
+  array[n_patients] int noise_end_idx;
+  array[n_patients] int initial_states_idx;
+  array[n_patients] int raw_state_start_idx;
+  array[n_patients] int raw_state_end_idx;
+  array[n_patients] int rates_idx;
+  
+  int theta_pos_size = 7;
+  array[n_patients, theta_pos_size + 1] int theta_pos;
+  
+  // Calculate indices for each patient based on their number of visits
+  for (i in 1:n_patients) {
+    int n_visits = get_pos_size(visit_pos, i);
+    
+    visit_end_idx[i] = 4 + n_visits - 1;
+    
+    noise_end_idx[i] = 5 + (n_visits - 1) * 2 - 1; // Each noise point has 2 components
+    initial_states_idx[i] = noise_end_idx[i] + 1;
+    raw_state_start_idx[i] = initial_states_idx[i] + 2;
+    raw_state_end_idx[i] = raw_state_start_idx[i] + (n_visits - 1) * 2 - 1; // Each state has 2 components
+    rates_idx[i] = raw_state_end_idx[i] + 1;
+    
+    theta_pos[i] = create_pos({ 1, 2, 1, (n_visits - 1) * 2, 2, (n_visits - 1) * 2, 4 });
+  }
+  
+  vector[2] phi = process_sd; // Shared parameters vector
+  
+  // Determine maximum array size needed - vectorized approach
+  int max_theta_size = max(rates_idx) + 3;
+  
+  // Initialize parameter arrays for map_rect
+  array[n_patients] vector[max_theta_size] thetas;
+  array[n_patients, max(visit_end_idx) + theta_pos_size + 1] int x_is = rep_array(0, n_patients, max(visit_end_idx) + theta_pos_size + 1);
+  
+  // Fill the arrays for each patient
+  for (i in 1:n_patients) {
+    int visit_start, visit_end;
+    (visit_start, visit_end) = get_pos(visit_pos, i);
+    
+    int visit_m1_start, visit_m1_end;
+    (visit_m1_start, visit_m1_end) = get_pos(visit_m1_pos, i);
+    
+    int n_visits = get_pos_size(visit_pos, i);
+    int n_visits_m1 = n_visits - 1;
+    
+    // Fill x_is with integer data
+    x_is[i, 1] = n_visits; // Number of visits
+    x_is[i, 2] = independ_long_process_noise;
+    x_is[i, 3] = independ_cross_process_noise;
+    x_is[i, 4:visit_end_idx[i]] = get_int_sub_array(t_visits, visit_pos, i); // Visit times
+    x_is[i, (visit_end_idx[i] + 1):(visit_end_idx[i] + theta_pos_size + 1)] = theta_pos[i];
+    
+    // Fill thetas with patient-specific parameters
+    thetas[i, 1] = rho[i]; // GP length scale parameter
+    thetas[i, 2:3] = process_sd; // Process noise std
+    thetas[i, 4] = L_process_corr[2, 1]; // Correlation cholesky factor
+    
+    // Extract raw process noise for this patient (reshape from matrix)
+    // Vectorized approach using pre-calculated position indices
+    thetas[i, 5:noise_end_idx[i]] = to_vector(get_sub_vert_matrix(raw_process_noise, visit_m1_pos, i));
+    
+    // Initial state - use position utility functions for consistent access
+    thetas[i, initial_states_idx[i]:(initial_states_idx[i] + 1)] = initial_states[i]';
+    
+    // Raw states - vectorized copy of matrix data using pre-calculated position indices
+    thetas[i, raw_state_start_idx[i]:(raw_state_start_idx[i] + 2*n_visits_m1 - 1)] = to_vector(get_sub_vert_matrix(raw_states, visit_m1_pos, i));
+    
+    // Rates and other parameters
+    thetas[i, rates_idx[i]] = decrease_rate[i];
+    thetas[i, rates_idx[i] + 1] = growth_rate[i];
+    thetas[i, rates_idx[i] + 2] = growth_lag[i];
+    thetas[i, rates_idx[i] + 3] = growth_transition_rate;
+    
+    if (theta_pos[i, theta_pos_size + 1] - 1 > max_theta_size) {
+      fatal_error(i, ": pos exceeds expected max size for theta: theta_pos[i, <end>] - 1 = ", theta_pos[i, theta_pos_size + 1] - 1, ", max_theta_size = ", max_theta_size);
+    }
+  }
+  
+  matrix[size(t_visits), 2] states;
+  
+  if (parallel) {
+    // Call map_rect to process patients in parallel
+    states = to_matrix(map_rect(calc_patient_states, phi, thetas, rep_array({ delta }, n_patients), x_is), size(t_visits), 2);
+  } else {
+    for (i in 1:n_patients) {
+      int visit_start, visit_end, n_visits;
+      (visit_start, visit_end) = get_pos(visit_pos, i);
+      n_visits = get_pos_size(visit_pos, i);
+      
+      states[visit_start:visit_end] = to_matrix(calc_patient_states(phi, thetas[i], { delta }, x_is[i]), n_visits, 2);
+    }
+  }
+
+  return states;  
+}
+
+matrix calc_states(
+  data array[] int visit_pos, data array[] int t_visits, vector rho, data real delta, vector process_sd, matrix L_process_corr, 
+  matrix raw_process_noise, data int independ_long_process_noise, data int independ_cross_process_noise, 
+  matrix initial_states, matrix raw_states, vector decrease_rate, vector growth_rate, 
+  vector growth_lag, real growth_transition_rate
+) {
+  return calc_states(
+    visit_pos, t_visits, rho, delta, process_sd, L_process_corr, raw_process_noise, independ_long_process_noise, independ_cross_process_noise, initial_states, raw_states,
+    decrease_rate, growth_rate, growth_lag, growth_transition_rate, 1
+  );
+}
+
+/**
+ * Stan function to compute states for a single patient (used with map_rect)
+ * 
+ * @param phi Shared parameters (process_sd)
+ * @param theta Patient-specific parameters
+ * @param x_r Real data (delta)
+ * @param x_i Integer data (visit times, flags)
+ * @return Vector of computed states for this patient
+ */
+vector calc_patient_states(vector phi, vector theta, data array[] real x_r, data array[] int x_i) {
+  // Parse integer data
+  int n_visits = x_i[1]; // Number of visits
+  int n_visits_m1 = n_visits - 1;
+  
+  int independ_long_process_noise = x_i[2];
+  int independ_cross_process_noise = x_i[3];
+  
+  int visit_end_idx = 4 + n_visits - 1;
+  
+  // int noise_end_idx = 5 + n_visits_m1 * 2 - 1; // Each noise point has 2 components
+  // int initial_states_idx = noise_end_idx + 1;
+  // int raw_state_start_idx = initial_states_idx + 2;
+  // int raw_state_end_idx = raw_state_start_idx + n_visits_m1 * 2 - 1; // Each state has 2 components
+  // int rates_idx = raw_state_end_idx + 1;
+  
+  array[n_visits] int time_points = x_i[4:visit_end_idx]; 
+ 
+  int theta_pos_size = 7; 
+  array[theta_pos_size + 1] int theta_pos = x_i[(visit_end_idx + 1):(visit_end_idx + theta_pos_size + 1)];
+ 
+  // Parse real data
+  real delta = x_r[1]; // Numerical stability factor
+ 
+  // Extract parameters from theta
+  real rho = theta[1]; // GP length scale
+  vector[2] process_sd = phi; // Process noise std (from shared parameters)
+  
+  // Reconstruct Cholesky factor of correlation matrix
+  matrix[2, 2] L_process_corr = rep_matrix(0, 2, 2);
+  L_process_corr[1, 1] = 1.0;
+  L_process_corr[2, 1] = theta[4];
+  L_process_corr[2, 2] = sqrt(1 - square(L_process_corr[2, 1])); 
+  
+  // Extract raw process noise and construct matrix
+  // matrix[n_visits_m1, 2] raw_process_noise = to_matrix(theta[5:noise_end_idx], n_visits_m1, 2);
+  matrix[n_visits_m1, 2] raw_process_noise = to_matrix(get_sub_vector(theta, theta_pos, 4), n_visits_m1, 2);
+  matrix[n_visits_m1, 2] process_noise;
+  
+  if (!independ_long_process_noise) {
+    // Use Gaussian process to generate correlated noise with absolute time points
+    process_noise = calc_gp_pred(
+      time_points[2:n_visits],  // Direct slice of time points
+      rho, delta, 
+      process_sd, L_process_corr,
+      raw_process_noise,
+      1 // Scale with sqrt(delta_t)
+    );
+  } else {
+    if (independ_cross_process_noise) {
+      process_noise = raw_process_noise;
+    } else {
+      // Apply correlation between components
+      process_noise = raw_process_noise * L_process_corr'; 
+    }
+    
+    // Scale process noise with sqrt(delta_t)
+    // Vectorized calculation of time differences
+    vector[n_visits_m1] delta_t = to_vector(time_points[2:]) - to_vector(time_points[:n_visits_m1]);
+    
+    // Create scaling matrix with vectorized operations - single line using outer product
+    matrix[n_visits_m1, 2] scaling_matrix = sqrt(delta_t) * process_sd';
+    
+    // Apply scaling with element-wise multiplication
+    process_noise = process_noise .* scaling_matrix;
+  }
+  
+  // Extract initial state
+  row_vector[2] initial_state = get_sub_row_vector(theta, theta_pos, 5); // [theta[initial_states_idx], theta[initial_states_idx + 1]];
+  
+  // Extract raw states
+  // matrix[n_visits_m1, 2] raw_states = to_matrix(theta[raw_state_start_idx:raw_state_end_idx], n_visits_m1, 2);
+  matrix[n_visits_m1, 2] raw_states = to_matrix(get_sub_vector(theta, theta_pos, 6), n_visits_m1, 2);
+ 
+  vector[4] rates = get_sub_vector(theta, theta_pos, 7); 
+  // Extract rates and other parameters
+  real decrease_rate = rates[1];
+  real growth_rate = rates[2];
+  real growth_lag = rates[3];
+  real growth_transition_rate = rates[4];
+    
+  // Calculate states using Stein-Fojo log-space state space model
+  matrix[n_visits, 2] expected_states;
+  matrix[n_visits, 2] states;
+  
+  (expected_states, states) = sf_log_space_trajectory_ncp(
+    raw_states, initial_state, time_points,
+    decrease_rate, growth_rate, growth_lag, growth_transition_rate,
+    process_noise
+  );
+  
+  // Convert to vector for map_rect output - vectorized approach
+  // to_vector converts matrix to column-major vector
+  return to_vector(states);
+}
