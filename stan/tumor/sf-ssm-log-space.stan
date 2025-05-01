@@ -11,7 +11,9 @@ data {
   int<lower = 0, upper = 1> fit_tumor_data;
   int<lower = 0> sf_rep_T;
   int<lower = 0, upper = 1> debug;
-  int<lower = 0, upper = 1> pop_param_only;
+  int<lower = 0, upper = 1> pop_growth_lag_param_only;
+  int<lower = 0, upper = 1> pop_initial_states_param_only;
+  int<lower = 0, upper = 1> pop_rates_param_only;
   int<lower = 0, upper = 1> independ_long_process_noise;
   int<lower = 0, upper = 1> independ_cross_process_noise;
   int<lower = 0, upper = 1> run_parallel;
@@ -73,14 +75,14 @@ parameters {
   // Patient-level variation for net rate only
   real<lower=0> patient_log_net_rate_sd;
   // vector<offset = pop_log_net_rate, multiplier = patient_log_net_rate_sd>[n_patients] patient_log_net_rate;
-  vector[pop_param_only ? 0 : n_train_patients] raw_patient_log_net_rate;
+  vector[pop_rates_param_only ? 0 : n_train_patients] raw_patient_log_net_rate;
 
   real pop_log_growth_lag;
   real pop_log_growth_transition_rate;
 
   real<lower = 0> patient_log_growth_lag_sd;
   // vector<offset = pop_log_growth_lag, multiplier = patient_log_growth_lag_sd>[n_patients] patient_log_growth_lag;
-  vector[pop_param_only ? 0 : n_train_patients] raw_patient_log_growth_lag;
+  vector[pop_growth_lag_param_only ? 0 : n_train_patients] raw_patient_log_growth_lag;
   
   // Patient-level GP
   // row_vector<lower = 0>[2] pop_tumor_gp_alpha;
@@ -109,7 +111,7 @@ parameters {
 
   real<lower = 0> patient_decrease_prop_logis_sd;
   // vector<offset = pop_decrease_prop_logis, multiplier = patient_decrease_prop_logis_sd>[n_patients] patient_decrease_prop_logis;
-  vector[pop_param_only ? 0 : n_train_patients] raw_patient_decrease_prop_logis;
+  vector[pop_initial_states_param_only ? 0 : n_train_patients] raw_patient_decrease_prop_logis;
   
   // real log_lod;
   
@@ -120,8 +122,11 @@ transformed parameters {
   vector[n_train_patients] patient_log_net_rate = rep_vector(pop_log_net_rate, n_train_patients);
   vector[n_train_patients] patient_log_growth_lag = rep_vector(pop_log_growth_lag, n_train_patients);
   
-  if (!pop_param_only) {
+  if (!pop_rates_param_only) {
     patient_log_net_rate += patient_log_net_rate_sd * raw_patient_log_net_rate;
+  }
+  
+  if (!pop_growth_lag_param_only) {
     patient_log_growth_lag += patient_log_growth_lag_sd * raw_patient_log_growth_lag;
   }
   
@@ -132,7 +137,7 @@ transformed parameters {
   
   vector[n_train_patients] patient_decrease_prop_logis = rep_vector(pop_decrease_prop_logis, n_train_patients);
   
-  if (!pop_param_only) {
+  if (!pop_initial_states_param_only) {
     patient_decrease_prop_logis += patient_decrease_prop_logis_sd * raw_patient_decrease_prop_logis;
   }
   
