@@ -14,6 +14,7 @@ data {
   int<lower = 0, upper = 1> pop_param_only;
   int<lower = 0, upper = 1> independ_long_process_noise;
   int<lower = 0, upper = 1> independ_cross_process_noise;
+  int<lower = 0, upper = 1> run_parallel;
   int<lower = 1, upper = n_patients> train_patients_pos, train_patients_end;
   
   // GP parameters
@@ -152,45 +153,21 @@ transformed parameters {
       patient_tumor_gp_rho = exp(log_pop_tumor_gp_rho + log_trial_tumor_gp_rho_effect[patient_trial[train_patients_pos:train_patients_end]] + log_patient_tumor_gp_rho_effect);
     }
     
-    for (i in train_patients_pos:train_patients_end) {
-      int visit_pos, visit_end;
-      (visit_pos, visit_end) = get_pos(patient_visit_pos, i);
-      int visit_m1_pos, visit_m1_end;
-      (visit_m1_pos, visit_m1_end) = get_pos(patient_visit_m1_pos, i);
-      
-      // array[n_patient_unique_visits[i]] real time_points = all_tumor_measure_t[get_int_sub_array(patient_unique_visits_idx, patient_unique_visits_pos, i)];
-      array[n_patient_visits[i]] real time_points = t_patient_visits[visit_pos:visit_end];
-      
-      if (!independ_long_process_noise) {
-        patient_process_noise[visit_m1_pos:visit_m1_end] = calc_gp_pred(
-        // patient_obs_tumor_gp[patient_gp_pos:patient_gp_end] = ncp_gp_matern52(
-          // all_tumor_measure_t[get_int_sub_array(patient_unique_visits_idx, patient_unique_visits_pos, i)], 
-          time_points,
-          patient_tumor_gp_rho[i], delta, 
-          pop_process_sd, 
-          independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr,
-          raw_patient_process_noise[visit_m1_pos:visit_m1_end],
-          1
-        );
-      } else {
-        if (independ_cross_process_noise) {
-          patient_process_noise[visit_m1_pos:visit_m1_end] = raw_patient_process_noise[visit_m1_pos:visit_m1_end];
-        } else {
-          patient_process_noise[visit_m1_pos:visit_m1_end] = raw_patient_process_noise[visit_m1_pos:visit_m1_end] * L_process_corr'; 
-        }
-        
-        matrix[n_patient_visits[i], 2] scaled_process_sd = scale_process_sd(time_points, pop_process_sd);
-        patient_process_noise[visit_m1_pos:visit_m1_end] = patient_process_noise[visit_m1_pos:visit_m1_end] .* scaled_process_sd[2:];
-      }
-  
-      row_vector[2] initial_state = [patient_log_decrease_prop[i], patient_log_growth_prop[i]];
-  
-      (expected_states[visit_pos:visit_end], states[visit_pos:visit_end]) = sf_log_space_trajectory_ncp(
-        raw_states[visit_m1_pos:visit_m1_end], initial_state, time_points,
-        exp(patient_log_decrease_rate[i]), exp(patient_log_growth_rate[i]), exp(patient_log_growth_lag[i]), exp(pop_log_growth_transition_rate),
-        patient_process_noise[visit_m1_pos:visit_m1_end]
-      );
-    }
+    states = calc_states(
+      create_pos(patient_visit_pos, train_patients_pos, train_patients_end),
+      get_int_sub_array(t_patient_visits, patient_visit_pos, train_patients_pos, train_patients_end),
+      independ_long_process_noise ? zeros_vector(n_train_patients) : patient_tumor_gp_rho,
+      delta,
+      pop_process_sd, 
+      independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr, 
+      raw_patient_process_noise,
+      independ_long_process_noise, independ_cross_process_noise,
+      append_col(patient_log_decrease_prop, patient_log_growth_prop),
+      raw_states,
+      exp(patient_log_decrease_rate), exp(patient_log_growth_rate),
+      exp(patient_log_growth_lag), exp(pop_log_growth_transition_rate),
+      run_parallel
+    ); 
   }
 }
 
