@@ -632,3 +632,74 @@ plot_corr_decay <- function(res_data, param = .value) {
     labs(x = "Week", y = "Correlation") +
     NULL
 }
+
+# Distogram #######
+
+# Extend the existing StatLineribbon class
+StatDistogram <- ggproto(
+  "StatDistogram", ggdist:::StatLineribbon,
+  
+  compute_panel = function(self, data, scales, orientation = "horizontal", ...) {
+    # Call parent method to handle panel processing
+    result <- ggproto_parent(ggdist:::StatLineribbon, self)$compute_panel(
+      data, scales, orientation = orientation, ...
+    )
+    
+    return(result)
+  },
+  
+  # Similarly with setup_params, we just forward to the parent
+  setup_params = function(self, data, params) {
+    if (is_empty(params$breaks)) {
+      params$breaks <- breaks_fixed(data$x, width = 30)
+    }
+    
+    params <- ggproto_parent(ggdist:::StatLineribbon, self)$setup_params(data, params)
+    
+    return(params)
+  },
+ 
+  setup_data = function(self, data, params) {
+    data <- data |> 
+      group_by(group, PANEL) |> 
+      reframe(x = params$breaks[-length(params$breaks)], ydist = rvar_sample_hist(dist, params$breaks))  
+    
+    # Call the parent's setup_data first
+    data <- ggproto_parent(ggdist:::StatLineribbon, self)$setup_data(data, params)
+    
+    return(data)
+  } 
+)
+
+stat_distogram  <- function(mapping = NULL, data = NULL,
+                             geom = "lineribbon", position = "identity",
+                             ...,
+                             step = "hv",
+                             breaks = waiver(),
+                             .width = c(0.5, 0.8, 0.95),
+                             point_interval = "median_qi",
+                             orientation = NA,
+                             na.rm = FALSE,
+                             show.legend = NA,
+                             inherit.aes = TRUE) {
+  # Create a layer using our modified StatLineribbon2 class
+  layer(
+    stat = StatDistogram,
+    data = data,
+    mapping = mapping,
+    geom = geom,
+    position = position,
+    show.legend = show.legend,
+    inherit.aes = inherit.aes,
+    params = list(
+      step = step,
+      breaks = breaks,
+      .width = .width,
+      point_interval = point_interval,
+      orientation = orientation,
+      na.rm = na.rm,
+      ...
+    )
+  )
+}
+
