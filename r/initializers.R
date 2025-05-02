@@ -235,16 +235,21 @@ create_tumor_ss_initializer <- function(stan_data) {
     init_vals$pop_decrease_prop_logis <- pop_decrease_prop_logis
     init_vals$patient_decrease_prop_logis_sd <- patient_decrease_prop_logis_sd
     
-    # Raw parameters for non-centered parameterizations - only if not pop_param_only
-    if (!stan_data$pop_param_only) {
+    if (!stan_data$pop_rates_param_only) {
       init_vals$raw_patient_log_net_rate <- rep(0, n_train_patients)
-      init_vals$raw_patient_log_growth_lag <- rep(0, n_train_patients) 
+    } 
+    
+    if (!stan_data$pop_initial_states_param_only) {
       init_vals$raw_patient_decrease_prop_logis <- rep(0, n_train_patients)
+    }
+    
+    if (!stan_data$pop_growth_lag_param_only) {
+      init_vals$raw_patient_log_growth_lag <- rep(0, n_train_patients) 
+    }
       
-      # GP effect parameters only if not independent
-      if (!stan_data$independ_long_process_noise) {
-        init_vals$raw_log_patient_tumor_gp_rho_effect <- rep(0, n_train_patients)
-      }
+    # GP effect parameters only if not independent
+    if (!stan_data$independ_long_process_noise && !stan_data$pop_rho_param_only) {
+      init_vals$raw_log_patient_tumor_gp_rho_effect <- rep(0, n_train_patients)
     }
     
     # Initialize raw process noise and states
@@ -255,6 +260,7 @@ create_tumor_ss_initializer <- function(stan_data) {
   }
 }
 
+# AI written function hence the ugliness.
 create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
   # Extract draws from the pathfinder fit
   draws_df <- posterior::as_draws_df(pathfinder_fit$draws())
@@ -347,13 +353,13 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
   
   # Patient-level parameters
   patient_params <- list(
-    raw_patient_log_net_rate = n_train_patients,
-    raw_patient_log_growth_lag = n_train_patients,
-    raw_patient_decrease_prop_logis = n_train_patients,
-    raw_log_patient_tumor_gp_rho_effect = if(use_long_process_corr) n_train_patients else 0
-  ) %>%
-    purrr::keep(~ . > 0) %>%
-    purrr::keep(~ !is.null(extract_vector_param(names(.), .)))
+    raw_patient_log_net_rate = if (!stan_data$pop_rates_param_only) n_train_patients,
+    raw_patient_log_growth_lag = if (!stan_data$pop_growth_lag_param_only) n_train_patients,
+    raw_patient_decrease_prop_logis = if (!stan_data$pop_initial_states_param_only) n_train_patients,
+    raw_log_patient_tumor_gp_rho_effect = if (use_long_process_corr && stan_data$pop_rho_param_only) n_train_patients 
+  ) |>  
+    purrr::discard(is_null) |>  
+    purrr::keep(\(p) !is.null(extract_vector_param(names(p), p)))
   
   # Matrix parameters
   matrix_params <- list(
@@ -400,27 +406,25 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
       init_vals[[param_name]] <- values
     }
     
-    # Add patient-level parameters (only if not pop_param_only)
-    if (!stan_data$pop_param_only) {
-      for (param_name in names(patient_params)) {
-        length <- patient_params[[param_name]]
-        
-        # Skip if length is 0 (based on independence flags)
-        if (length == 0) next
-        
-        # Extract values from the draw
-        values <- numeric(length)
-        for (i in 1:length) {
-          param <- paste0(param_name, "[", i, "]")
-          if (param %in% param_names) {
-            values[i] <- as.numeric(draw[[param]])
-          } else {
-            values[i] <- 0  # Default to 0 if parameter not found
-          }
+    # Add patient-level parameters 
+    for (param_name in names(patient_params)) {
+      length <- patient_params[[param_name]]
+      
+      # Skip if length is 0 (based on independence flags)
+      if (length == 0) next
+      
+      # Extract values from the draw
+      values <- numeric(length)
+      for (i in 1:length) {
+        param <- paste0(param_name, "[", i, "]")
+        if (param %in% param_names) {
+          values[i] <- as.numeric(draw[[param]])
+        } else {
+          values[i] <- 0  # Default to 0 if parameter not found
         }
-        
-        init_vals[[param_name]] <- values
       }
+      
+      init_vals[[param_name]] <- values
     }
     
     # Add matrix parameters
