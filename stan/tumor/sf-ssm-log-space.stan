@@ -14,6 +14,7 @@ data {
   int<lower = 0, upper = 1> pop_growth_lag_param_only;
   int<lower = 0, upper = 1> pop_initial_states_param_only;
   int<lower = 0, upper = 1> pop_rates_param_only;
+  int<lower = 0, upper = 1> pop_rho_param_only; 
   int<lower = 0, upper = 1> independ_long_process_noise;
   int<lower = 0, upper = 1> independ_cross_process_noise;
   int<lower = 0, upper = 1> run_parallel;
@@ -93,7 +94,7 @@ parameters {
   // vector[add_trial_level_tumor_gp_param ? n_trials : 0] raw_log_trial_tumor_gp_rho_effect; 
   
   real<lower = 0> log_patient_tumor_gp_rho_sd;
-  vector[independ_long_process_noise ? 0 : n_train_patients] raw_log_patient_tumor_gp_rho_effect; 
+  vector[independ_long_process_noise || pop_rho_param_only ? 0 : n_train_patients] raw_log_patient_tumor_gp_rho_effect; 
   
   matrix[n_total_train_visits_m1, 2] raw_patient_process_noise;
 
@@ -148,14 +149,18 @@ transformed parameters {
   matrix[sum(n_patient_visits[train_patients_pos:train_patients_end]), 2] states; 
   
   profile("states") {
-    vector[independ_long_process_noise ? 0 : n_train_patients] log_patient_tumor_gp_rho_effect; 
-    vector[independ_long_process_noise ? 0 : n_trials] log_trial_tumor_gp_rho_effect;
+    vector[independ_long_process_noise || pop_rho_param_only ? 0 : n_train_patients] log_patient_tumor_gp_rho_effect; 
+    vector[independ_long_process_noise || pop_rho_param_only ? 0 : n_trials] log_trial_tumor_gp_rho_effect;
     vector[independ_long_process_noise ? 0 : n_train_patients] patient_tumor_gp_rho;
     
     if (!independ_long_process_noise) {
-      log_patient_tumor_gp_rho_effect = log_patient_tumor_gp_rho_sd * raw_log_patient_tumor_gp_rho_effect;
-      log_trial_tumor_gp_rho_effect = zeros_vector(n_trials);
-      patient_tumor_gp_rho = exp(log_pop_tumor_gp_rho + log_trial_tumor_gp_rho_effect[patient_trial[train_patients_pos:train_patients_end]] + log_patient_tumor_gp_rho_effect);
+      if (pop_rho_param_only) {
+        patient_tumor_gp_rho = rep_vector(exp(log_pop_tumor_gp_rho), n_train_patients);
+      } else {
+        log_patient_tumor_gp_rho_effect = log_patient_tumor_gp_rho_sd * raw_log_patient_tumor_gp_rho_effect;
+        log_trial_tumor_gp_rho_effect = zeros_vector(n_trials);
+        patient_tumor_gp_rho = exp(log_pop_tumor_gp_rho + log_trial_tumor_gp_rho_effect[patient_trial[train_patients_pos:train_patients_end]] + log_patient_tumor_gp_rho_effect);
+      }
     }
     
     states = calc_states(
