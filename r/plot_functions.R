@@ -662,7 +662,7 @@ StatDistogram <- ggproto(
   setup_data = function(self, data, params) {
     data <- data |> 
       group_by(group, PANEL) |> 
-      reframe(x = params$breaks[-length(params$breaks)], ydist = rvar_sample_hist(dist, params$breaks))  
+      reframe(x = params$breaks[-length(params$breaks)], ydist = rvar_sample_hist(ydist, params$breaks))  
     
     # Call the parent's setup_data first
     data <- ggproto_parent(ggdist:::StatLineribbon, self)$setup_data(data, params)
