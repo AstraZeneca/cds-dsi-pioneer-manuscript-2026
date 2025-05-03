@@ -2423,19 +2423,6 @@
       ],
       "Hash": "f01ca0ffdc98b3afdc0d0e6789640ca7"
     },
-    "spatial": {
-      "Package": "spatial",
-      "Version": "7.3-11",
-      "Source": "Repository",
-      "Repository": "CRAN",
-      "Requirements": [
-        "R",
-        "graphics",
-        "stats",
-        "utils"
-      ],
-      "Hash": "f27a078d834614513608da2c08031130"
-    },
     "stantargets": {
       "Package": "stantargets",
       "Version": "0.1.2.9000",
