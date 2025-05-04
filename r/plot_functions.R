@@ -638,6 +638,7 @@ plot_corr_decay <- function(res_data, param = .value) {
 # Extend the existing StatLineribbon class
 StatDistogram <- ggproto(
   "StatDistogram", ggdist:::StatLineribbon,
+  default_params = c(ggdist:::StatLineribbon$default_params, freq = TRUE),
   
   compute_panel = function(self, data, scales, orientation = "horizontal", ...) {
     # Call parent method to handle panel processing
@@ -650,19 +651,27 @@ StatDistogram <- ggproto(
   
   # Similarly with setup_params, we just forward to the parent
   setup_params = function(self, data, params) {
+    params <- ggproto_parent(ggdist:::StatLineribbon, self)$setup_params(data, params)
+    
     if (is_empty(params$breaks)) {
       params$breaks <- breaks_fixed(data$x, width = 30)
     }
     
-    params <- ggproto_parent(ggdist:::StatLineribbon, self)$setup_params(data, params)
+    
+    if (is_null(params$freq) || inherits(params$freq, "waiver")) {
+      params$freq <- TRUE
+    }
     
     return(params)
   },
  
   setup_data = function(self, data, params) {
     data <- data |> 
-      group_by(group, PANEL) |> 
-      reframe(x = params$breaks[-length(params$breaks)], ydist = rvar_sample_hist(ydist, params$breaks))  
+      # group_by(group, PANEL, across(any_of(c("color", "fill", "alpha")))) |> 
+      group_by(across(!ydist)) |> 
+      reframe(
+        x = params$breaks[-length(params$breaks)], ydist = rvar_sample_hist(ydist, params$breaks, freq = params$freq)
+      )  
     
     # Call the parent's setup_data first
     data <- ggproto_parent(ggdist:::StatLineribbon, self)$setup_data(data, params)
@@ -681,7 +690,8 @@ stat_distogram  <- function(mapping = NULL, data = NULL,
                              orientation = NA,
                              na.rm = FALSE,
                              show.legend = NA,
-                             inherit.aes = TRUE) {
+                             inherit.aes = TRUE,
+                             freq = waiver()) {
   # Create a layer using our modified StatLineribbon2 class
   layer(
     stat = StatDistogram,
@@ -698,6 +708,7 @@ stat_distogram  <- function(mapping = NULL, data = NULL,
       point_interval = point_interval,
       orientation = orientation,
       na.rm = na.rm,
+      freq = freq,
       ...
     )
   )
