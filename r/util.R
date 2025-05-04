@@ -79,9 +79,9 @@ add_pfs_crcr_priors <- function(stan_data, crcr_priors, tumor_priors, pfs_priors
 #'
 #' @return A numeric vector of counts for each histogram bin
 #'
-sample_hist <- function(pred, breaks, ...) {
+sample_hist <- function(pred, breaks, freq = TRUE,...) {
   # hist() is a base R function to generate histograms from data and provided breaks.
-  hist(pmax(pmin(pred, max(breaks)), min(breaks)), breaks = breaks, plot = FALSE, ...)$count
+  hist(pmax(pmin(pred, max(breaks)), min(breaks)), breaks = breaks, plot = FALSE, ...)[[if (freq) "count" else "density"]]
 }
 
 # This function is used to treated_pfs_analysis_dataallow us to generate a distribution of histograms
