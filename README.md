@@ -10,7 +10,6 @@ We predict outcomes using a Bayesian multilevel piece-wise constant proportional
 ``` bash
 .
 ├── endometrial_to_lung_targets.R                                        # Endometrial to LUNG project targets file
-├── _targets.R                                                        # Obsolete
 ├── quarto                                                            # Notebooks
 │   ├── confirmed-response-pfs.qmd                                    # Breast notebook
 │   ├── deck.qmd                                                      # Old deck
