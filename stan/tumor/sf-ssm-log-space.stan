@@ -252,6 +252,77 @@ generated quantities {
   
   vector<lower = 0, upper = 1>[max_t_width] all_growth_factor = get_growth_lag_factor(all_tumor_measure_t, exp(pop_log_growth_lag), exp(pop_log_growth_transition_rate));
   matrix[max_t_width, 2] all_scaled_process_sd = scale_process_sd(all_tumor_measure_t, pop_process_sd);
+  matrix[n_total_train_visits_m1, 2] obs_patient_process_noise;
+  matrix[get_pos_total_size(forecast_visits_pos), 2] forecast_patient_process_noise;
+  
+  for (i in train_patients_pos:train_patients_end) {
+    int visit_m1_start, visit_m1_end;
+    (visit_m1_start, visit_m1_end) = get_pos(patient_visit_m1_pos, i);
+    
+    int forecast_visit_start, forecast_visit_end;
+    (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
+    
+    obs_patient_process_noise[visit_m1_start:visit_m1_end] = calc_patient_process_noise(
+      raw_patient_process_noise[visit_m1_start:visit_m1_end], get_int_sub_array(t_patient_visits, patient_visit_pos, i), patient_tumor_gp_rho[i], delta, pop_process_sd, L_process_corr,
+      independ_long_process_noise, independ_cross_process_noise
+    );
+    
+    forecast_patient_process_noise[forecast_visit_start:forecast_visit_end] = multi_normal_rng(
+      obs_patient_process_noise[visit_m1_start:visit_m1_end], 
+      get_int_sub_array(t_patient_visits, patient_visit_pos, i), 
+      linspaced_int_array(n_patient_forecast_visits[i], patient_last_obs_visit[i] + 1, last_predict_visit),
+      independ_long_process_noise ? 0 : patient_tumor_gp_rho[i],
+      pop_process_sd,
+      independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr,
+      delta
+    );
+    
+     
+// matrix multi_normal_rng(
+//   matrix y_obs,                 // Observed values [n_obs, 2]
+//   array[] int time_obs,        // Observed time points
+//   array[] int time_pred,       // Prediction time points
+//   real time_rho,                // Temporal length scale
+//   vector process_sd,            // Process SDs [2]
+//   matrix L_process_corr,        // Cholesky of process correlation [2, 2]
+//   real delta                    // Small value for numerical stability
+// ) {
+    
+    // // matrix [last_predict_visit, last_predict_visit] patient_K = gp_matern52_cov(
+    // matrix [last_predict_visit, last_predict_visit] patient_K = gp_exp_quad_cov(
+    //   all_tumor_measure_t[:last_predict_visit], pop_tumor_gp_alpha, patient_tumor_gp_rho[i], delta
+    // );
+    // 
+    // int n_curr_measured_visits = last_predict_visit - n_patient_unique_mn_visits[i];
+    // int n_curr_mn_visits = n_patient_unique_mn_visits[i];
+    // 
+    // array[n_curr_measured_visits] int curr_patient_measured_visits = get_int_sub_array(measured_tumor_visits, patient_measured_tumor_visits_pos, i);
+    // array[n_curr_mn_visits] int curr_patient_mn_visits = get_int_sub_array(patient_unique_mn_visits, patient_unique_mn_visits_pos, i); 
+    // 
+    // vector[n_patient_unique_visits[i]] curr_patient_sld = get_sub_vector(post_treat_sld, post_treat_visits_pos, i);
+    // vector[n_patient_unique_visits[i]] curr_patient_gp = get_sub_vector(patient_obs_tumor_gp, patient_unique_visits_pos, i);
+    // array[n_curr_measured_visits] int measured2patient_idx = get_int_sub_array(measured2patient_visits_idx, patient_measured_tumor_visits_pos, i); 
+    // 
+    // if (n_curr_measured_visits > 0) { 
+    //   patient_pred_latent_sld[i, curr_patient_measured_visits] = curr_patient_gp[measured2patient_idx];
+    //   
+    //   // matrix[n_curr_mn_visits, n_curr_measured_visits] patient_K_pred_obs = gp_matern52_cov(
+    //   matrix[n_curr_mn_visits, n_curr_measured_visits] patient_K_pred_obs = gp_exp_quad_cov(
+    //     all_tumor_measure_t[curr_patient_mn_visits], all_tumor_measure_t[curr_patient_measured_visits], pop_tumor_gp_alpha, patient_tumor_gp_rho[i]
+    //   );
+    //   
+    //   patient_pred_latent_sld[i, curr_patient_mn_visits] = multi_normal_rng(
+    //     0, 0,
+    //     patient_pred_latent_sld[i, curr_patient_measured_visits],
+    //     patient_K[curr_patient_measured_visits, curr_patient_measured_visits], patient_K_pred_obs, patient_K[curr_patient_mn_visits, curr_patient_mn_visits]
+    //   );
+    // } else {
+    //   patient_pred_latent_sld[i, curr_patient_mn_visits] = multi_normal_rng(
+    //     zeros_vector(n_curr_mn_visits),
+    //     patient_K[curr_patient_mn_visits, curr_patient_mn_visits]
+    //   );
+    // }
+  }
   
   // array[n_patients] matrix[2, sf_rep_T + 1] rep_state = rep_array(rep_matrix(0, 2, sf_rep_T + 1), n_patients);
   // array[n_patients] vector<lower = 0>[sf_rep_T + 1] rep_sld = rep_array(zeros_vector(sf_rep_T + 1), n_patients);
