@@ -249,3 +249,4 @@ array[] vector matern52_ss_rng(array[] real ts, int n, real alpha, real length_s
   
   return x;
 }
+
