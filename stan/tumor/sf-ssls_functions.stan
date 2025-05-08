@@ -379,12 +379,6 @@ vector calc_patient_states(vector phi, vector theta, data array[] real x_r, data
   
   int visit_end_idx = 4 + n_visits - 1;
   
-  // int noise_end_idx = 5 + n_visits_m1 * 2 - 1; // Each noise point has 2 components
-  // int initial_states_idx = noise_end_idx + 1;
-  // int raw_state_start_idx = initial_states_idx + 2;
-  // int raw_state_end_idx = raw_state_start_idx + n_visits_m1 * 2 - 1; // Each state has 2 components
-  // int rates_idx = raw_state_end_idx + 1;
-  
   array[n_visits] int time_points = x_i[4:visit_end_idx]; 
  
   int theta_pos_size = 7; 
@@ -404,43 +398,15 @@ vector calc_patient_states(vector phi, vector theta, data array[] real x_r, data
   L_process_corr[2, 2] = sqrt(1 - square(L_process_corr[2, 1])); 
   
   // Extract raw process noise and construct matrix
-  // matrix[n_visits_m1, 2] raw_process_noise = to_matrix(theta[5:noise_end_idx], n_visits_m1, 2);
   matrix[n_visits_m1, 2] raw_process_noise = to_matrix(get_sub_vector(theta, theta_pos, 4), n_visits_m1, 2);
-  matrix[n_visits_m1, 2] process_noise;
-  
-  if (!independ_long_process_noise) {
-    // Use Gaussian process to generate correlated noise with absolute time points
-    process_noise = calc_gp_pred(
-      time_points[2:n_visits],  // Direct slice of time points
-      rho, delta, 
-      process_sd, L_process_corr,
-      raw_process_noise,
-      1 // Scale with sqrt(delta_t)
-    );
-  } else {
-    if (independ_cross_process_noise) {
-      process_noise = raw_process_noise;
-    } else {
-      // Apply correlation between components
-      process_noise = raw_process_noise * L_process_corr'; 
-    }
-    
-    // Scale process noise with sqrt(delta_t)
-    // Vectorized calculation of time differences
-    vector[n_visits_m1] delta_t = to_vector(time_points[2:]) - to_vector(time_points[:n_visits_m1]);
-    
-    // Create scaling matrix with vectorized operations - single line using outer product
-    matrix[n_visits_m1, 2] scaling_matrix = sqrt(delta_t) * process_sd';
-    
-    // Apply scaling with element-wise multiplication
-    process_noise = process_noise .* scaling_matrix;
-  }
+  matrix[n_visits_m1, 2] process_noise = calc_patient_process_noise(
+    raw_process_noise, time_points, rho, delta, process_sd, L_process_corr, independ_long_process_noise, independ_cross_process_noise
+  );
   
   // Extract initial state
-  row_vector[2] initial_state = get_sub_row_vector(theta, theta_pos, 5); // [theta[initial_states_idx], theta[initial_states_idx + 1]];
+  row_vector[2] initial_state = get_sub_row_vector(theta, theta_pos, 5);
   
   // Extract raw states
-  // matrix[n_visits_m1, 2] raw_states = to_matrix(theta[raw_state_start_idx:raw_state_end_idx], n_visits_m1, 2);
   matrix[n_visits_m1, 2] raw_states = to_matrix(get_sub_vector(theta, theta_pos, 6), n_visits_m1, 2);
  
   vector[4] rates = get_sub_vector(theta, theta_pos, 7); 
@@ -463,4 +429,72 @@ vector calc_patient_states(vector phi, vector theta, data array[] real x_r, data
   // Convert to vector for map_rect output - vectorized approach
   // to_vector converts matrix to column-major vector
   return to_vector(states);
+}
+
+matrix calc_patient_process_noise(
+  matrix raw_process_noise, array[] int time_points, real rho, real delta, vector process_sd, matrix L_process_corr, int independ_long_process_noise, int independ_cross_process_noise
+) {
+  if (!independ_long_process_noise) {
+    // Use Gaussian process to generate correlated noise with absolute time points
+    return calc_gp_pred(time_points[2:], rho, delta, process_sd, L_process_corr, raw_process_noise, 1);
+  } else {
+    int n_visits_m1 = size(time_points) - 1;
+    matrix[n_visits_m1, 2] process_noise;
+    
+    if (independ_cross_process_noise) {
+      process_noise = raw_process_noise;
+    } else {
+      // Apply correlation between components
+      process_noise = raw_process_noise * L_process_corr'; 
+    }
+    
+    // Scale process noise with sqrt(delta_t)
+    // Vectorized calculation of time differences
+    vector[n_visits_m1] delta_t = to_vector(time_points[2:]) - to_vector(time_points[:n_visits_m1]);
+    
+    // Create scaling matrix with vectorized operations - single line using outer product
+    matrix[n_visits_m1, 2] scaling_matrix = sqrt(delta_t) * process_sd';
+    
+    // Apply scaling with element-wise multiplication
+    return process_noise .* scaling_matrix;
+  }
+}
+
+matrix multi_normal_rng(
+  matrix y_obs,                 // Observed values [n_obs, 2]
+  array[] int time_obs,        // Observed time points
+  array[] int time_pred,       // Prediction time points
+  real time_rho,                // Temporal length scale
+  vector process_sd,            // Process SDs [2]
+  matrix L_process_corr,        // Cholesky of process correlation [2, 2]
+  real delta                    // Small value for numerical stability
+) {
+  int n_obs = size(time_obs);
+  int n_pred = size(time_pred);
+  
+  // Calculate temporal covariance matrices
+  matrix[n_obs, n_obs] K_obs_obs = gp_exp_quad_cov(time_obs, 1.0, time_rho, delta);
+  matrix[n_pred, n_obs] K_pred_obs = gp_exp_quad_cov(time_pred, time_obs, 1.0, time_rho);
+  matrix[n_pred, n_pred] K_pred_pred = gp_exp_quad_cov(time_pred, 1.0, time_rho, delta);
+  
+  // Create conditional mean matrix
+  matrix[n_pred, 2] mu_cond;
+  matrix[n_pred, n_pred] K_cond;
+  
+  // Process the first dimension
+  (mu_cond[,1], K_cond) = gp_conditional(y_obs[,1], K_obs_obs, K_pred_obs, K_pred_pred, delta);
+  
+  // Process the second dimension (reusing the same K matrices)
+  mu_cond[,2] = gp_conditional(y_obs[,2], K_obs_obs, K_pred_obs, K_pred_pred, delta).1;
+  
+  // Get Cholesky of temporal covariance
+  matrix[n_pred, n_pred] L_K_cond = cholesky_decompose(K_cond);
+  
+  // Generate standard normal random values
+  matrix[n_pred, 2] eta_raw = to_matrix(to_vector(normal_rng(zeros_vector(n_pred * 2), rep_vector(1, n_pred * 2))), n_pred, 2);
+  
+  // Create the sample using the separable structure
+  matrix[n_pred, 2] sample = mu_cond + L_K_cond * eta_raw * diag_pre_multiply(process_sd, L_process_corr)';
+  
+  return sample;
 }
