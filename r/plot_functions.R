@@ -613,10 +613,10 @@ plot_prior_post_dens <- function(res_data, param = .value, normalize = "all") {
     NULL
 }
 
-plot_prior_post_hist <- function(res_data, param = .value, normalize = "all") {
+plot_prior_post_hist <- function(res_data, param = .value, normalize = "all", ...) {
   res_data |> 
     ggplot(aes(xdist = {{ param }}, color = fit_type)) +
-    stat_histinterval(aes(fill = fit_type), alpha = 0.25, normalize = normalize) +
+    stat_histinterval(aes(fill = fit_type), alpha = 0.25, normalize = normalize, ...) +
     # stat_pointinterval(position = position_dodge(width = 0.4, preserve = "single"), .width = c(0.5, 0.8, 0.99)) +
     # stat_spike(at = "median") +
     scale_fill_discrete("", type = AZ_palette, label = str_to_title, aesthetics = c("fill", "color")) +
