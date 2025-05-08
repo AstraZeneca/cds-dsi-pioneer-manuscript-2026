@@ -81,6 +81,10 @@ array[] int get_pos_size(array[] int pos) {
   return sizes;
 }
 
+int get_pos_total_size(array[] int pos) {
+  return pos[size(pos)] - 1;
+}
+
 array[] int resize_int_array(array[] int full, array[] int pos, int inc) {
   int n = size(pos) - 1;
   array[n + 1] int new_pos = create_pos(pos, inc);
