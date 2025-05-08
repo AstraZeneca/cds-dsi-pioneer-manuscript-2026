@@ -120,21 +120,23 @@ parameters {
 }
 
 transformed parameters {
+  vector[n_train_patients] patient_log_net_rate_effect = zeros_vector(n_train_patients);
   vector[n_train_patients] patient_log_net_rate = rep_vector(pop_log_net_rate, n_train_patients);
+  vector[n_train_patients] patient_log_growth_lag_effect = zeros_vector(n_train_patients);
   vector[n_train_patients] patient_log_growth_lag = rep_vector(pop_log_growth_lag, n_train_patients);
   
   if (!pop_rates_param_only) {
-    patient_log_net_rate += patient_log_net_rate_sd * raw_patient_log_net_rate;
+    patient_log_net_rate_effect = patient_log_net_rate_sd * raw_patient_log_net_rate;
+    patient_log_net_rate += patient_log_net_rate_effect;
   }
   
   if (!pop_growth_lag_param_only) {
-    patient_log_growth_lag += patient_log_growth_lag_sd * raw_patient_log_growth_lag;
+    patient_log_growth_lag_effect = patient_log_growth_lag_sd * raw_patient_log_growth_lag;
+    patient_log_growth_lag += patient_log_growth_lag_effect;
   }
   
   vector[n_train_patients] patient_log_growth_rate = patient_log_net_rate - log_diff_exp(pop_log_rate_ratio, 0);
   vector[n_train_patients] patient_log_decrease_rate = patient_log_growth_rate + pop_log_rate_ratio;
-  
-  matrix[n_total_train_visits_m1, 2] patient_process_noise;
   
   vector[n_train_patients] patient_decrease_prop_logis = rep_vector(pop_decrease_prop_logis, n_train_patients);
   
@@ -145,13 +147,13 @@ transformed parameters {
   vector[n_train_patients] patient_log_decrease_prop = -log1p_exp(-patient_decrease_prop_logis);
   vector[n_train_patients] patient_log_growth_prop = patient_log_decrease_prop - patient_decrease_prop_logis;
   
-  matrix[sum(n_patient_visits[train_patients_pos:train_patients_end]), 2] expected_states; 
   matrix[sum(n_patient_visits[train_patients_pos:train_patients_end]), 2] states; 
+  
+  vector[independ_long_process_noise ? 0 : n_train_patients] patient_tumor_gp_rho;
   
   profile("states") {
     vector[independ_long_process_noise || pop_rho_param_only ? 0 : n_train_patients] log_patient_tumor_gp_rho_effect; 
     vector[independ_long_process_noise || pop_rho_param_only ? 0 : n_trials] log_trial_tumor_gp_rho_effect;
-    vector[independ_long_process_noise ? 0 : n_train_patients] patient_tumor_gp_rho;
     
     if (!independ_long_process_noise) {
       if (pop_rho_param_only) {
@@ -237,6 +239,11 @@ model {
 }
 
 generated quantities {
+  vector[n_train_patients] patient_log_growth_rate_residual = patient_log_growth_rate - (pop_log_net_rate - log_diff_exp(pop_log_rate_ratio, 0));
+  real pop_log_growth_rate = pop_log_net_rate - log_diff_exp(pop_log_rate_ratio, 0);
+  vector[n_train_patients] patient_log_decrease_rate_residual = patient_log_decrease_rate - (pop_log_growth_rate + pop_log_rate_ratio);
+  vector[n_train_patients] patient_decrease_prop_residual = inv_logit(patient_decrease_prop_logis) - inv_logit(pop_decrease_prop_logis);
+  
   corr_matrix[independ_cross_process_noise ? 0 : 2] process_corr;
   
   if (!independ_cross_process_noise) {
