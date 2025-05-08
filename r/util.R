@@ -13,7 +13,7 @@ sample_and_save <- function(model, ..., output_dir, output_basename, timestamp =
   
   if (!no_save && !timestamp) {
     # fit <- model$sample(..., output_dir = output_dir, output_basename = output_basename)
-    fit <- exec(model[[sampler_fun]], output_dir = output_dir, output_basename = output_basename, !!!list(...))
+    fit <- exec(model[[sampler_fun]], output_dir = output_dir, output_basename = output_basename, ...)
   } else { 
     # fit <- model$sample(...)
     fit <- exec(model[[sampler_fun]], !!!list(...))
