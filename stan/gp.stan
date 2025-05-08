@@ -205,6 +205,16 @@ tuple(vector, matrix) gp_conditional(
   return(mu_cond, K_pred_missing); 
 }
 
+tuple(vector, matrix) gp_conditional(
+  vector y_obs,              // Observations
+  matrix K_obs_obs,          // Cov between observed points
+  matrix K_pred_obs,         // Cross cov
+  matrix K_pred_pred,        // Cov between prediction points
+  real delta
+) {
+  return gp_conditional(zeros_vector(rows(K_obs_obs)), zeros_vector(rows(K_pred_pred)), y_obs, K_obs_obs, K_pred_obs, K_pred_pred, delta);
+}
+
 /** This is the calculation needed to extrapolate a GP that is fit using observed y and x. We are predicting for x*.
  * For details, see Rasmussen' and Williams' "Gaussian Processes for Machine Learning".
  *
