@@ -19,6 +19,8 @@ array[n_pop_unique_missing_visits] int<lower = 1> pop_unique_missing_visits = ge
 
 int<lower = 1> last_predict_visit = max(pop_unique_visits);
 
+print("last_predict_visit = ", last_predict_visit);
+
 // Trial indices ////
 
 array[n_trials] int<lower = 0> n_trial_unique_visits = num_unique(t_patient_visits, trial_visit_pos);
