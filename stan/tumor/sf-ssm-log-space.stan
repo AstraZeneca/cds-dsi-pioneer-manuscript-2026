@@ -283,7 +283,7 @@ generated quantities {
         exp(patient_log_decrease_rate[i]), exp(patient_log_growth_rate[i]),
         exp(patient_log_growth_lag[i]), exp(pop_log_growth_transition_rate),
         forecast_patient_process_noise[forecast_visit_start:forecast_visit_end]
-      ).2;
+      ).2[2:];
       
 // tuple(matrix, matrix) sf_log_space_trajectory_ncp(
 //   row_vector x0, array[] real times,
