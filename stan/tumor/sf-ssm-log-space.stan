@@ -115,8 +115,6 @@ parameters {
   vector[pop_initial_states_param_only ? 0 : n_train_patients] raw_patient_decrease_prop_logis;
   
   // real log_lod;
-  
-  matrix[n_total_train_visits_m1, 2] raw_states; 
 }
 
 transformed parameters {
@@ -175,7 +173,6 @@ transformed parameters {
       raw_patient_process_noise,
       independ_long_process_noise, independ_cross_process_noise,
       append_col(patient_log_decrease_prop, patient_log_growth_prop),
-      raw_states,
       exp(patient_log_decrease_rate), exp(patient_log_growth_rate),
       exp(patient_log_growth_lag), exp(pop_log_growth_transition_rate),
       run_parallel
@@ -219,8 +216,6 @@ model {
   
   // log_lod ~ normal(log(lod), log_lod_sd);
   
-  to_vector(raw_states) ~ std_normal();
-
   profile("loglik") { 
     if (fit_tumor_data) { 
       // for (i in 1:n_patients) {
