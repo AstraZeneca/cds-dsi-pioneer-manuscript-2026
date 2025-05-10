@@ -17,6 +17,7 @@ data {
   int<lower = 0, upper = 1> pop_rho_param_only; 
   int<lower = 0, upper = 1> independ_long_process_noise;
   int<lower = 0, upper = 1> independ_cross_process_noise;
+  int<lower = 0, upper = 1> forecast;
   int<lower = 0, upper = 1> run_parallel;
   int<lower = 1, upper = n_patients> train_patients_pos, train_patients_end;
   
@@ -64,7 +65,6 @@ transformed data {
   
   int<lower = 1> n_train_patients = train_patients_end - train_patients_pos + 1;
   int<lower = 1> n_total_train_visits_m1 = sum(n_patient_visits[train_patients_pos:train_patients_end]) - n_train_patients;
-  
   
   real log_lod = log(0.1);
 }
@@ -253,7 +253,9 @@ generated quantities {
   vector<lower = 0, upper = 1>[max_t_width] all_growth_factor = get_growth_lag_factor(all_tumor_measure_t, exp(pop_log_growth_lag), exp(pop_log_growth_transition_rate));
   matrix[max_t_width, 2] all_scaled_process_sd = scale_process_sd(all_tumor_measure_t, pop_process_sd);
   matrix[n_total_train_visits_m1, 2] obs_patient_process_noise;
-  matrix[get_pos_total_size(forecast_visits_pos), 2] forecast_patient_process_noise;
+  matrix[forecast ? get_pos_total_size(forecast_visits_pos) : 0, 2] forecast_patient_process_noise;
+  matrix[forecast ? get_pos_total_size(forecast_visits_pos) : 0, 2] forecast_patient_states;
+  vector[forecast ? get_pos_total_size(forecast_visits_pos) : 0] forecast_patient_sld;
   
   for (i in train_patients_pos:train_patients_end) {
     int visit_m1_start, visit_m1_end;
@@ -267,27 +269,34 @@ generated quantities {
       independ_long_process_noise, independ_cross_process_noise
     );
     
-    forecast_patient_process_noise[forecast_visit_start:forecast_visit_end] = multi_normal_rng(
-      obs_patient_process_noise[visit_m1_start:visit_m1_end], 
-      get_int_sub_array(t_patient_visits, patient_visit_pos, i), 
-      linspaced_int_array(n_patient_forecast_visits[i], patient_last_obs_visit[i] + 1, last_predict_visit),
-      independ_long_process_noise ? 0 : patient_tumor_gp_rho[i],
-      pop_process_sd,
-      independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr,
-      delta
-    );
+    array[n_patient_forecast_visits[i] + 1] int forecast_time = linspaced_int_array(n_patient_forecast_visits[i] + 1, patient_last_obs_visit[i], last_predict_visit);
     
-     
-// matrix multi_normal_rng(
-//   matrix y_obs,                 // Observed values [n_obs, 2]
-//   array[] int time_obs,        // Observed time points
-//   array[] int time_pred,       // Prediction time points
-//   real time_rho,                // Temporal length scale
-//   vector process_sd,            // Process SDs [2]
-//   matrix L_process_corr,        // Cholesky of process correlation [2, 2]
-//   real delta                    // Small value for numerical stability
+    if (forecast && n_patient_forecast_visits[i] > 0) {
+      forecast_patient_process_noise[forecast_visit_start:forecast_visit_end] = multi_normal_rng(
+        obs_patient_process_noise[visit_m1_start:visit_m1_end],
+        get_int_sub_array(t_patient_visits, patient_visit_pos, i)[2:],
+        forecast_time[2:],
+        independ_long_process_noise ? 0 : patient_tumor_gp_rho[i],
+        pop_process_sd,
+        independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr,
+        delta
+      );
+      
+      forecast_patient_states[forecast_visit_start:forecast_visit_end] = sf_log_space_trajectory_ncp(
+        states[patient_visit_pos[i + 1] - 1],
+        forecast_time,
+        exp(patient_log_decrease_rate[i]), exp(patient_log_growth_rate[i]),
+        exp(patient_log_growth_lag[i]), exp(pop_log_growth_transition_rate),
+        forecast_patient_process_noise[forecast_visit_start:forecast_visit_end]
+      ).2;
+      
+// tuple(matrix, matrix) sf_log_space_trajectory_ncp(
+//   row_vector x0, array[] real times,
+//   real decrease_rate, real growth_rate, real growth_lag, real transition_rate,
+//   matrix process_noise
 // ) {
-    
+    }
+     
     // // matrix [last_predict_visit, last_predict_visit] patient_K = gp_matern52_cov(
     // matrix [last_predict_visit, last_predict_visit] patient_K = gp_exp_quad_cov(
     //   all_tumor_measure_t[:last_predict_visit], pop_tumor_gp_alpha, patient_tumor_gp_rho[i], delta
