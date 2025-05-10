@@ -89,7 +89,7 @@ tuple(row_vector, row_vector) sf_log_space_transition_ncp(row_vector raw_next_x,
     return (expected_x, expected_x + raw_next_x * scaled_L_process_cov'); 
 }
 
-tuple(row_vector, row_vector) sf_log_space_transition_ncp(row_vector raw_next_x, row_vector current_x, 
+tuple(row_vector, row_vector) sf_log_space_transition_ncp(row_vector current_x, 
                                                           real time_next, real time_current,
                                                           real decrease_rate, real growth_rate,
                                                           row_vector process_noise) {
@@ -198,11 +198,11 @@ tuple(matrix, matrix) sf_log_space_trajectory_ncp(
 }
 
 tuple(matrix, matrix) sf_log_space_trajectory_ncp(
-  matrix raw_x, row_vector x0, array[] real times,
+  row_vector x0, array[] real times,
   real decrease_rate, real growth_rate, real growth_lag, real transition_rate,
   matrix process_noise
 ) {
-  int T = rows(raw_x) + 1;
+  int T = size(times);
   matrix[T, 2] x;
   matrix[T, 2] expected_x;
   x[1] = x0;
@@ -212,7 +212,7 @@ tuple(matrix, matrix) sf_log_space_trajectory_ncp(
   
   // State transitions
   for (t in 2:T) {
-    (expected_x[t], x[t]) = sf_log_space_transition_ncp(raw_x[t - 1], x[t - 1], times[t], times[t - 1],
+    (expected_x[t], x[t]) = sf_log_space_transition_ncp(x[t - 1], times[t], times[t - 1],
                                                         decrease_rate, time_varying_factor[t] * growth_rate,
                                                         process_noise[t - 1]);
   }
@@ -232,7 +232,6 @@ tuple(matrix, matrix) sf_log_space_trajectory_ncp(
  * @param independ_long_process_noise Flag for independent longitudinal process noise
  * @param independ_cross_process_noise Flag for independent cross-component process noise
  * @param initial_states Matrix of initial states for all patients
- * @param raw_states Matrix of raw states
  * @param decrease_rate Vector of tumor decrease rates
  * @param growth_rate Vector of tumor growth rates
  * @param growth_lag Vector of growth lag parameters
@@ -242,7 +241,7 @@ tuple(matrix, matrix) sf_log_space_trajectory_ncp(
 matrix calc_states(
   data array[] int visit_pos, data array[] int t_visits, vector rho, data real delta, vector process_sd, matrix L_process_corr, 
   matrix raw_process_noise, data int independ_long_process_noise, data int independ_cross_process_noise, 
-  matrix initial_states, matrix raw_states, vector decrease_rate, vector growth_rate, 
+  matrix initial_states, vector decrease_rate, vector growth_rate, 
   vector growth_lag, real growth_transition_rate, int parallel
 ) {
   int n_patients = size(visit_pos) - 1;
@@ -259,7 +258,7 @@ matrix calc_states(
   array[n_patients] int raw_state_end_idx;
   array[n_patients] int rates_idx;
   
-  int theta_pos_size = 7;
+  int theta_pos_size = 6;
   array[n_patients, theta_pos_size + 1] int theta_pos;
   
   // Calculate indices for each patient based on their number of visits
@@ -270,11 +269,12 @@ matrix calc_states(
     
     noise_end_idx[i] = 5 + (n_visits - 1) * 2 - 1; // Each noise point has 2 components
     initial_states_idx[i] = noise_end_idx[i] + 1;
-    raw_state_start_idx[i] = initial_states_idx[i] + 2;
-    raw_state_end_idx[i] = raw_state_start_idx[i] + (n_visits - 1) * 2 - 1; // Each state has 2 components
-    rates_idx[i] = raw_state_end_idx[i] + 1;
+    rates_idx[i] = initial_states_idx[i] + 2;
+    // raw_state_start_idx[i] = initial_states_idx[i] + 2;
+    // raw_state_end_idx[i] = raw_state_start_idx[i] + (n_visits - 1) * 2 - 1; // Each state has 2 components
+    // rates_idx[i] = raw_state_end_idx[i] + 1;
     
-    theta_pos[i] = create_pos({ 1, 2, 1, (n_visits - 1) * 2, 2, (n_visits - 1) * 2, 4 });
+    theta_pos[i] = create_pos({ 1, 2, 1, (n_visits - 1) * 2, 2, 4 });
   }
   
   vector[2] phi = process_sd; // Shared parameters vector
@@ -317,7 +317,7 @@ matrix calc_states(
     thetas[i, initial_states_idx[i]:(initial_states_idx[i] + 1)] = initial_states[i]';
     
     // Raw states - vectorized copy of matrix data using pre-calculated position indices
-    thetas[i, raw_state_start_idx[i]:(raw_state_start_idx[i] + 2*n_visits_m1 - 1)] = to_vector(get_sub_vert_matrix(raw_states, visit_m1_pos, i));
+    // thetas[i, raw_state_start_idx[i]:(raw_state_start_idx[i] + 2*n_visits_m1 - 1)] = to_vector(get_sub_vert_matrix(raw_states, visit_m1_pos, i));
     
     // Rates and other parameters
     thetas[i, rates_idx[i]] = decrease_rate[i];
@@ -351,11 +351,11 @@ matrix calc_states(
 matrix calc_states(
   data array[] int visit_pos, data array[] int t_visits, vector rho, data real delta, vector process_sd, matrix L_process_corr, 
   matrix raw_process_noise, data int independ_long_process_noise, data int independ_cross_process_noise, 
-  matrix initial_states, matrix raw_states, vector decrease_rate, vector growth_rate, 
+  matrix initial_states, vector decrease_rate, vector growth_rate, 
   vector growth_lag, real growth_transition_rate
 ) {
   return calc_states(
-    visit_pos, t_visits, rho, delta, process_sd, L_process_corr, raw_process_noise, independ_long_process_noise, independ_cross_process_noise, initial_states, raw_states,
+    visit_pos, t_visits, rho, delta, process_sd, L_process_corr, raw_process_noise, independ_long_process_noise, independ_cross_process_noise, initial_states,
     decrease_rate, growth_rate, growth_lag, growth_transition_rate, 1
   );
 }
@@ -381,7 +381,7 @@ vector calc_patient_states(vector phi, vector theta, data array[] real x_r, data
   
   array[n_visits] int time_points = x_i[4:visit_end_idx]; 
  
-  int theta_pos_size = 7; 
+  int theta_pos_size = 6; 
   array[theta_pos_size + 1] int theta_pos = x_i[(visit_end_idx + 1):(visit_end_idx + theta_pos_size + 1)];
  
   // Parse real data
@@ -407,9 +407,9 @@ vector calc_patient_states(vector phi, vector theta, data array[] real x_r, data
   row_vector[2] initial_state = get_sub_row_vector(theta, theta_pos, 5);
   
   // Extract raw states
-  matrix[n_visits_m1, 2] raw_states = to_matrix(get_sub_vector(theta, theta_pos, 6), n_visits_m1, 2);
+  // matrix[n_visits_m1, 2] raw_states = to_matrix(get_sub_vector(theta, theta_pos, 6), n_visits_m1, 2);
  
-  vector[4] rates = get_sub_vector(theta, theta_pos, 7); 
+  vector[4] rates = get_sub_vector(theta, theta_pos, 6); 
   // Extract rates and other parameters
   real decrease_rate = rates[1];
   real growth_rate = rates[2];
@@ -421,7 +421,7 @@ vector calc_patient_states(vector phi, vector theta, data array[] real x_r, data
   matrix[n_visits, 2] states;
   
   (expected_states, states) = sf_log_space_trajectory_ncp(
-    raw_states, initial_state, time_points,
+    initial_state, time_points,
     decrease_rate, growth_rate, growth_lag, growth_transition_rate,
     process_noise
   );
