@@ -473,20 +473,23 @@ matrix multi_normal_rng(
   int n_pred = size(time_pred);
   
   // Calculate temporal covariance matrices
-  matrix[n_obs, n_obs] K_obs_obs = gp_exp_quad_cov(time_obs, 1.0, time_rho, delta);
+  matrix[n_obs, n_obs] L_K_obs_obs = gp_exp_quad_cholesky_cov(time_obs, 1.0, time_rho, delta);
   matrix[n_pred, n_obs] K_pred_obs = gp_exp_quad_cov(time_pred, time_obs, 1.0, time_rho);
   matrix[n_pred, n_pred] K_pred_pred = gp_exp_quad_cov(time_pred, 1.0, time_rho, delta);
   
   // Create conditional mean matrix
   matrix[n_pred, 2] mu_cond;
-  matrix[n_pred, n_pred] K_cond;
+  mu_cond[, 1] = gp_conditional_mean(y_obs[, 1], L_K_obs_obs, K_pred_obs); 
+  mu_cond[, 2] = gp_conditional_mean(y_obs[, 2], L_K_obs_obs, K_pred_obs); 
   
-  // Process the first dimension
-  (mu_cond[,1], K_cond) = gp_conditional(y_obs[,1], K_obs_obs, K_pred_obs, K_pred_pred, delta);
+  matrix[n_pred, n_pred] K_cond = gp_conditional_cov(L_K_obs_obs, K_pred_obs, K_pred_pred, delta);
   
-  // Process the second dimension (reusing the same K matrices)
-  mu_cond[,2] = gp_conditional(y_obs[,2], K_obs_obs, K_pred_obs, K_pred_pred, delta).1;
-  
+  // // Process the first dimension
+  // (mu_cond[,1], K_cond) = gp_conditional(y_obs[,1], K_obs_obs, K_pred_obs, K_pred_pred, delta);
+  // 
+  // // Process the second dimension (reusing the same K matrices)
+  // mu_cond[,2] = gp_conditional(y_obs[,2], K_obs_obs, K_pred_obs, K_pred_pred, delta).1;
+  // 
   // Get Cholesky of temporal covariance
   matrix[n_pred, n_pred] L_K_cond = cholesky_decompose(K_cond);
   
