@@ -250,7 +250,7 @@ generated quantities {
   matrix[n_total_train_visits_m1, 2] obs_patient_process_noise;
   matrix[forecast ? get_pos_total_size(forecast_visits_pos) : 0, 2] forecast_patient_process_noise;
   matrix[forecast ? get_pos_total_size(forecast_visits_pos) : 0, 2] forecast_patient_states;
-  vector[forecast ? get_pos_total_size(forecast_visits_pos) : 0] forecast_patient_sld;
+  array[forecast ? get_pos_total_size(forecast_visits_pos) : 0] real forecast_patient_log_sld;
   
   for (i in train_patients_pos:train_patients_end) {
     int visit_m1_start, visit_m1_end;
@@ -284,12 +284,14 @@ generated quantities {
         exp(patient_log_growth_lag[i]), exp(pop_log_growth_transition_rate),
         forecast_patient_process_noise[forecast_visit_start:forecast_visit_end]
       ).2[2:];
-      
-// tuple(matrix, matrix) sf_log_space_trajectory_ncp(
-//   row_vector x0, array[] real times,
-//   real decrease_rate, real growth_rate, real growth_lag, real transition_rate,
-//   matrix process_noise
-// ) {
+    
+      forecast_patient_log_sld[forecast_visit_start:forecast_visit_end] = 
+      normal_rng(
+        log_sum_exp(
+          forecast_patient_states[forecast_visit_start:forecast_visit_end, 1], forecast_patient_states[forecast_visit_start:forecast_visit_end, 2]
+        ),
+        measure_sd
+      );
     }
      
     // // matrix [last_predict_visit, last_predict_visit] patient_K = gp_matern52_cov(
