@@ -83,8 +83,7 @@ ntable(clinical_db$actual_arm)
 len(unique(clinical_db$USUBJID)) # 1840
 len(unique(clinical_longitudinal$unique_subject_identifier)) # 1537 all are included in clinical
 len(unique(response_longitudinal$unique_subject_identifier)) # 1099 all are included in clinical all in clinical_longitudinal and in measurements
-len(unique(measurements_longitudinal$unique_subject_identifier)) # 1115 all are included in clinical; E6210008 not in clinical_longitudinal
-
+len(unique(measurements_longitudinal$unique_subject_identifier)) # 1115 all are included in clinical; 1 not in clinical_longitudinal
 
 # Merge data into schema #1
 
