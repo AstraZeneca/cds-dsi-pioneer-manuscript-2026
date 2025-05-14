@@ -18,7 +18,7 @@ add_states_sum <- function(states_data, states_col) {
     bind_rows(states_data) 
 }
 
-get_obs_state_var <- function(res, patient_states_data, var) {
+get_obs_state_var <- function(res, patient_states_data, var, transform = identity) {
   var_expr <- expr({{ var }}[n,p])
   
   noise_data <- spread_rvars(res, !!var_expr) |> 
@@ -31,7 +31,7 @@ get_obs_state_var <- function(res, patient_states_data, var) {
       by = "n"
     ) |>
     mutate(
-      {{ var }} := {{ var }}[1:n()],
+      {{ var }} := transform({{ var }})[1:n()],
       p = factor(p, levels = 1:3, labels = c("regress", "grow", "sum"))
     )
   
@@ -39,11 +39,10 @@ get_obs_state_var <- function(res, patient_states_data, var) {
 }
 
 get_states <- function(res, patient_states_data) {
-  get_obs_state_var(res, patient_states_data, states) |> 
-    mutate(states = exp(states)) |> 
-    group_by(usubjid) |> 
-    mutate(states = states * first(mmsumdiam)) |> 
-    ungroup() |> 
+  get_obs_state_var(res, patient_states_data, states, transform = exp) |> 
+    # group_by(usubjid) |> 
+    # mutate(states = states * first(mmsumdiam)) |> 
+    # ungroup() |> 
     add_states_sum(states)
 }
 
@@ -64,28 +63,27 @@ get_subsample_forecast_data <- function(patient_states_data, analysis_data) {
     semi_join(patient_states_data, by = "usubjid") 
 }
 
-get_forecast_state_var <- function(res, patient_states_data, analysis_data, var) {
+get_forecast_state_var <- function(res, patient_states_data, analysis_data, var, transform = identity, ndraws = NULL) {
   var_expr <- expr({{ var }}[n,p])
   
   subsample_forecast_data <- get_subsample_forecast_data(patient_states_data, analysis_data) 
   
-  spread_rvars(res, !!var_expr) |> 
-    inner_join(subsample_forecast_data, by = "n") |> 
+  spread_rvars(res, !!var_expr, ndraws = ndraws) |> 
+    inner_join(subsample_forecast_data, by = "n") |>
     mutate(
-      {{ var }} := {{ var }}[1:n()],
+      {{ var }} := transform({{ var }}),
       p = factor(p, levels = 1:3, labels = c("regress", "grow", "sum"))
     )
 }
 
 get_forecast_states <- function(res, patient_states_data, analysis_data) {
-  get_forecast_state_var(res, patient_states_data, analysis_data, forecast_patient_states) |> 
-    mutate(forecast_patient_states = exp(forecast_patient_states)) |> 
+  get_forecast_state_var(res, patient_states_data, analysis_data, forecast_patient_states, transform = exp) |> 
     add_states_sum(forecast_patient_states)
 }
 
 
-get_forecast_process_noise <- function(res, patient_states_data, analysis_data) {
-  get_forecast_state_var(res, patient_states_data, analysis_data, forecast_patient_process_noise) 
+get_forecast_process_noise <- function(res, patient_states_data, analysis_data, ndraws = NULL) {
+  get_forecast_state_var(res, patient_states_data, analysis_data, forecast_patient_process_noise, ndraws = ndraws) 
 }
 
 bin_point_intervals <- function(data, dist, breaks, ...) {
