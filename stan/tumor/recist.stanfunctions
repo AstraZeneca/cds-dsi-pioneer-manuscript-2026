@@ -1,0 +1,122 @@
+/**
+ * Calculate RECIST status based on target lesions only
+ * 
+ * @param sld_trajectory Vector of sum of longest diameters over time
+ * @return Array of target-only RECIST status (1=CR, 2=PR, 3=SD, 4=PD)
+ */
+array[] int calculate_target_recist(vector sld_trajectory) {
+  int n = rows(sld_trajectory);
+  array[n] int target_status;
+  real baseline = sld_trajectory[1];
+  
+  // Define RECIST categories as integers
+  int CR = 1;  // Complete Response
+  int PR = 2;  // Partial Response  
+  int SD = 3;  // Stable Disease
+  int PD = 4;  // Progressive Disease
+  
+  // First time point is baseline, so it's SD by definition
+  target_status[1] = SD;
+  
+  // Calculate RECIST status for each subsequent time point based on targets only
+  for (t in 2:n) {
+    if (sld_trajectory[t] == 0) {
+      target_status[t] = CR;
+    } else {
+      real ratio = sld_trajectory[t] / baseline;
+      
+      if (ratio >= 1.2) {
+        target_status[t] = PD;
+      } else if (ratio <= 0.7) {
+        target_status[t] = PR;
+      } else {
+        target_status[t] = SD;
+      }
+    }
+  }
+  
+  return target_status;
+}
+
+/**
+ * Calculate overall RECIST status from tumor measurements including non-target and new lesions
+ * 
+ * @param sld_trajectory Vector of sum of longest diameters over time
+ * @param new_lesions Array indicating presence of new lesions (0=no, 1=yes)
+ * @param non_target_status Array of non-target lesion status (1=CR, 2=Non-CR/Non-PD, 3=PD)
+ * @return Array of overall RECIST status (1=CR, 2=PR, 3=SD, 4=PD)
+ */
+array[] int calculate_recist(vector sld_trajectory, array[] int new_lesions, array[] int non_target_status) {
+  int n = rows(sld_trajectory);
+  array[n] int recist_status;
+  
+  // Define RECIST categories as integers
+  int CR = 1;  // Complete Response
+  int PR = 2;  // Partial Response  
+  int SD = 3;  // Stable Disease
+  int PD = 4;  // Progressive Disease
+  
+  // Define non-target status categories
+  int NT_CR = 1;
+  int NT_STABLE = 2;  // Non-CR/Non-PD
+  int NT_PD = 3;
+  
+  // First get target-only RECIST status
+  array[n] int target_status = calculate_target_recist(sld_trajectory);
+  
+  // Then combine with non-target and new lesion information
+  for (t in 1:n) {
+    // Check for progression criteria first
+    if (new_lesions[t] == 1 || non_target_status[t] == NT_PD || target_status[t] == PD) {
+      recist_status[t] = PD;
+    } else if (target_status[t] == CR && non_target_status[t] == NT_CR) {
+      // Complete response requires all components to be CR
+      recist_status[t] = CR;
+    } else if (target_status[t] == PR && non_target_status[t] != NT_PD) {
+      // Partial response if targets show PR and non-targets aren't progressing
+      recist_status[t] = PR;
+    } else {
+      // Everything else is stable disease
+      recist_status[t] = SD;
+    }
+  }
+  
+  return recist_status;
+}
+
+/**
+ * Calculate best overall RECIST response up to each time point
+ * This tracks the best response achieved so far at each time
+ * 
+ * @param recist_status Array of RECIST status at each time point
+ * @return Array of best overall response up to each time point
+ */
+array[] int calculate_best_overall_response(array[] int recist_status) {
+  int n = size(recist_status);
+  array[n] int best_response;
+  
+  // RECIST hierarchy: CR=1 < PR=2 < SD=3 < PD=4
+  best_response[1] = recist_status[1];
+  
+  for (t in 2:n) {
+    // Best response is the minimum (best) status achieved so far
+    best_response[t] = min(best_response[t-1], recist_status[t]);
+  }
+  
+  return best_response;
+}
+
+/**
+ * Convert RECIST integer codes to string representation (for debugging)
+ * Note: This is for illustration - Stan doesn't support string return types
+ * 
+ * @param recist_code Integer RECIST code
+ * @return String representation (commented out as Stan doesn't support strings)
+ */
+// string recist_to_string(int recist_code) {
+//   if (recist_code == 1) return "CR";
+//   else if (recist_code == 2) return "PR";
+//   else if (recist_code == 3) return "SD";
+//   else if (recist_code == 4) return "PD";
+//   else return "Unknown";
+// }
