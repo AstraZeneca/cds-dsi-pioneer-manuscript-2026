@@ -3,6 +3,7 @@ functions {
   #include "../pos.stan"
   #include "../gp.stan"
   #include "sf-ssls_functions.stan"
+  #include "recist.stanfunctions"
 }  
 
 data {
@@ -67,6 +68,12 @@ transformed data {
   int<lower = 1> n_total_train_visits_m1 = sum(n_patient_visits[train_patients_pos:train_patients_end]) - n_train_patients;
   
   real log_lod = log(0.1);
+  
+  // Define RECIST categories as integers
+  int CR = 1;  // Complete Response
+  int PR = 2;  // Partial Response  
+  int SD = 3;  // Stable Disease
+  int PD = 4;  // Progressive Disease
 }
 
 parameters {
@@ -251,6 +258,7 @@ generated quantities {
   matrix[forecast ? get_pos_total_size(forecast_visits_pos) : 0, 2] forecast_patient_process_noise;
   matrix[forecast ? get_pos_total_size(forecast_visits_pos) : 0, 2] forecast_patient_states;
   array[forecast ? get_pos_total_size(forecast_visits_pos) : 0] real forecast_patient_log_sld;
+  array[forecast ? get_pos_total_size(forecast_visits_pos) : 0] int<lower = CR, upper = PD> forecast_recist;
   
   for (i in train_patients_pos:train_patients_end) {
     int visit_m1_start, visit_m1_end;
@@ -267,6 +275,9 @@ generated quantities {
     array[n_patient_forecast_visits[i] + 1] int forecast_time = linspaced_int_array(n_patient_forecast_visits[i] + 1, patient_last_obs_visit[i], last_predict_visit);
     
     if (forecast && n_patient_forecast_visits[i] > 0) {
+      int visit_pos, visit_end;
+      (visit_pos, visit_end) = get_pos(patient_visit_pos, i);
+      
       forecast_patient_process_noise[forecast_visit_start:forecast_visit_end] = multi_normal_rng(
         obs_patient_process_noise[visit_m1_start:visit_m1_end],
         get_int_sub_array(t_patient_visits, patient_visit_pos, i)[2:],
@@ -291,73 +302,10 @@ generated quantities {
           forecast_patient_states[forecast_visit_start:forecast_visit_end, 1], forecast_patient_states[forecast_visit_start:forecast_visit_end, 2]
         ),
         measure_sd
+      ) + log(sum_tumor_size[visit_pos]);
+      
+      forecast_recist[forecast_visit_start:forecast_visit_end] = calculate_target_recist(
+        append_row(sum_tumor_size[visit_pos], exp(forecast_patient_log_sld[forecast_visit_start:forecast_visit_end]))
       );
     }
-     
-    // // matrix [last_predict_visit, last_predict_visit] patient_K = gp_matern52_cov(
-    // matrix [last_predict_visit, last_predict_visit] patient_K = gp_exp_quad_cov(
-    //   all_tumor_measure_t[:last_predict_visit], pop_tumor_gp_alpha, patient_tumor_gp_rho[i], delta
-    // );
-    // 
-    // int n_curr_measured_visits = last_predict_visit - n_patient_unique_mn_visits[i];
-    // int n_curr_mn_visits = n_patient_unique_mn_visits[i];
-    // 
-    // array[n_curr_measured_visits] int curr_patient_measured_visits = get_int_sub_array(measured_tumor_visits, patient_measured_tumor_visits_pos, i);
-    // array[n_curr_mn_visits] int curr_patient_mn_visits = get_int_sub_array(patient_unique_mn_visits, patient_unique_mn_visits_pos, i); 
-    // 
-    // vector[n_patient_unique_visits[i]] curr_patient_sld = get_sub_vector(post_treat_sld, post_treat_visits_pos, i);
-    // vector[n_patient_unique_visits[i]] curr_patient_gp = get_sub_vector(patient_obs_tumor_gp, patient_unique_visits_pos, i);
-    // array[n_curr_measured_visits] int measured2patient_idx = get_int_sub_array(measured2patient_visits_idx, patient_measured_tumor_visits_pos, i); 
-    // 
-    // if (n_curr_measured_visits > 0) { 
-    //   patient_pred_latent_sld[i, curr_patient_measured_visits] = curr_patient_gp[measured2patient_idx];
-    //   
-    //   // matrix[n_curr_mn_visits, n_curr_measured_visits] patient_K_pred_obs = gp_matern52_cov(
-    //   matrix[n_curr_mn_visits, n_curr_measured_visits] patient_K_pred_obs = gp_exp_quad_cov(
-    //     all_tumor_measure_t[curr_patient_mn_visits], all_tumor_measure_t[curr_patient_measured_visits], pop_tumor_gp_alpha, patient_tumor_gp_rho[i]
-    //   );
-    //   
-    //   patient_pred_latent_sld[i, curr_patient_mn_visits] = multi_normal_rng(
-    //     0, 0,
-    //     patient_pred_latent_sld[i, curr_patient_measured_visits],
-    //     patient_K[curr_patient_measured_visits, curr_patient_measured_visits], patient_K_pred_obs, patient_K[curr_patient_mn_visits, curr_patient_mn_visits]
-    //   );
-    // } else {
-    //   patient_pred_latent_sld[i, curr_patient_mn_visits] = multi_normal_rng(
-    //     zeros_vector(n_curr_mn_visits),
-    //     patient_K[curr_patient_mn_visits, curr_patient_mn_visits]
-    //   );
-    // }
-  }
-  
-  // array[n_patients] matrix[2, sf_rep_T + 1] rep_state = rep_array(rep_matrix(0, 2, sf_rep_T + 1), n_patients);
-  // array[n_patients] vector<lower = 0>[sf_rep_T + 1] rep_sld = rep_array(zeros_vector(sf_rep_T + 1), n_patients);
-  // 
-  // if (sf_rep_T > 0) {
-  //   // for (i in 1:n_patients) {
-  //   // for (i in linspaced_int_array(10, 1, n_patients)) {
-  //   for (i in train_patients_pos:train_patients_end) {
-  //     int visit_pos, visit_end;
-  //     (visit_pos, visit_end) = get_pos(patient_visit_pos, i);
-  //     
-  //     // print(i, ": -");
-  // 
-  //     if (t_patient_visits[visit_pos] <= 0) {
-  //       // (rep_state[i], rep_sld[i]) = sf_forecast_sqrt_rng(
-  //       (rep_state[i], rep_sld[i]) = sf_forecast_rng(
-  //         normalized_sld[visit_pos:visit_pos], t_patient_visits[visit_pos:visit_pos], rep_time_points, 
-  //         patient_decrease_rate[i], patient_growth_rate[i], 
-  //         pop_decrease_process_sd, growth_process_sd, measure_sd
-  //       );
-  // 
-  //       rep_sld[i] *= sum_tumor_size[visit_pos];
-  // 
-  //       for (t in 1:sf_rep_T) {
-  //         if (rep_sld[i, t + 1] < lod) {
-  //           rep_sld[i, t + 1] = 0.0;
-  //         }
-  //       }
-  //     }
-  //   }
-  // }
 }
