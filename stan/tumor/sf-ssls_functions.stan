@@ -185,7 +185,7 @@ tuple(matrix, matrix) sf_log_space_trajectory_ncp(
   x[1] = x0;
   expected_x[1] = x0;
   
-  vector[T] time_varying_factor = get_growth_lag_factor(times, growth_lag, transition_rate); //  inv_logit((times[t] - growth_lag) / transition_rate);
+  vector[T] time_varying_factor = get_growth_lag_factor(times, growth_lag, transition_rate); 
   
   // State transitions
   for (t in 2:T) {
@@ -208,13 +208,11 @@ tuple(matrix, matrix) sf_log_space_trajectory_ncp(
   x[1] = x0;
   expected_x[1] = x0;
   
-  vector[T] time_varying_factor = get_growth_lag_factor(times, growth_lag, transition_rate); //  inv_logit((times[t] - growth_lag) / transition_rate);
+  vector[T] time_varying_factor = get_growth_lag_factor(times, growth_lag, transition_rate); 
   
   // State transitions
   for (t in 2:T) {
-    (expected_x[t], x[t]) = sf_log_space_transition_ncp(x[t - 1], times[t], times[t - 1],
-                                                        decrease_rate, time_varying_factor[t] * growth_rate,
-                                                        process_noise[t - 1]);
+    (expected_x[t], x[t]) = sf_log_space_transition_ncp(x[t - 1], times[t], times[t - 1], decrease_rate, time_varying_factor[t] * growth_rate, process_noise[t - 1]);
   }
   
   return (expected_x, x);
@@ -270,9 +268,6 @@ matrix calc_states(
     noise_end_idx[i] = 5 + (n_visits - 1) * 2 - 1; // Each noise point has 2 components
     initial_states_idx[i] = noise_end_idx[i] + 1;
     rates_idx[i] = initial_states_idx[i] + 2;
-    // raw_state_start_idx[i] = initial_states_idx[i] + 2;
-    // raw_state_end_idx[i] = raw_state_start_idx[i] + (n_visits - 1) * 2 - 1; // Each state has 2 components
-    // rates_idx[i] = raw_state_end_idx[i] + 1;
     
     theta_pos[i] = create_pos({ 1, 2, 1, (n_visits - 1) * 2, 2, 4 });
   }
@@ -319,9 +314,6 @@ matrix calc_states(
     
     // Initial state - use position utility functions for consistent access
     thetas[i, initial_states_idx[i]:(initial_states_idx[i] + 1)] = initial_states[i]';
-    
-    // Raw states - vectorized copy of matrix data using pre-calculated position indices
-    // thetas[i, raw_state_start_idx[i]:(raw_state_start_idx[i] + 2*n_visits_m1 - 1)] = to_vector(get_sub_vert_matrix(raw_states, visit_m1_pos, i));
     
     // Rates and other parameters
     thetas[i, rates_idx[i]] = decrease_rate[i];
