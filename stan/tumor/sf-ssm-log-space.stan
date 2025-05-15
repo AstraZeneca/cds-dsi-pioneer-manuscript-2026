@@ -262,11 +262,15 @@ generated quantities {
   array[forecast ? get_pos_total_size(forecast_visits_pos) : 0] int<lower = CR, upper = PD> forecast_recist;
   
   for (i in train_patients_pos:train_patients_end) {
+    int visit_pos, visit_end;
+    (visit_pos, visit_end) = get_pos(patient_visit_pos, i);
+    
     int visit_m1_start, visit_m1_end;
     (visit_m1_start, visit_m1_end) = get_pos(patient_visit_m1_pos, i);
     
     int forecast_visit_start, forecast_visit_end;
     (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
+    int forecast_size = forecast_visit_end - forecast_visit_start + 1; 
     
     obs_patient_process_noise[visit_m1_start:visit_m1_end] = calc_patient_process_noise(
       raw_patient_process_noise[visit_m1_start:visit_m1_end], get_int_sub_array(t_patient_visits, patient_visit_pos, i), patient_tumor_gp_rho[i], delta, pop_process_sd, L_process_corr,
@@ -276,8 +280,26 @@ generated quantities {
     array[n_patient_forecast_visits[i] + 1] int forecast_time = linspaced_int_array(n_patient_forecast_visits[i] + 1, patient_last_obs_visit[i], last_predict_visit);
     
     if (forecast && n_patient_forecast_visits[i] > 0) {
-      int visit_pos, visit_end;
-      (visit_pos, visit_end) = get_pos(patient_visit_pos, i);
+      // matrix[n_patient_visits[i], 2] curr_obs_states = sf_log_space_trajectory_ncp(
+      //     [ patient_log_decrease_prop[i], patient_log_growth_prop[i] ],
+      //     get_int_sub_array(t_patient_visits, patient_visit_pos, i),
+      //     exp(patient_log_decrease_rate[i]), exp(patient_log_growth_rate[i]),
+      //     exp(patient_log_growth_lag[i]), exp(pop_log_growth_transition_rate),
+      //     obs_patient_process_noise[visit_m1_start:visit_m1_end]
+      //   ).2;
+      //   
+      // for (t in 1:n_patient_visits[i]) {
+      //   int dec = abs(states[visit_pos:visit_end][t, 1] - curr_obs_states[t, 1]) > 1e-6;
+      //   int gro = abs(states[visit_pos:visit_end][t, 2] - curr_obs_states[t, 2]) > 1e-6;
+      //   
+      //   if (dec || gro) {
+      //     print("initial_state = ", [ patient_log_decrease_prop[i], patient_log_growth_prop[i] ], ", time_points = ", get_int_sub_array(t_patient_visits, patient_visit_pos, i),
+      //           ", dec rate = ", exp(patient_log_decrease_rate[i]), ", gro rate = ", exp(patient_log_growth_rate[i]), ", lag = ", exp(patient_log_growth_lag[i]), ", transit = ", exp(pop_log_growth_transition_rate));
+      //     
+      //     fatal_error(i, ": t = ", t, ", dec = ", dec, ", gro = ", gro, ", states[visit_pos:visit_end][t, 1] = ", states[visit_pos:visit_end][t, 1], ", curr_obs_states[t, 1] = ", curr_obs_states[t, 1],
+      //     ", states[visit_pos:visit_end][t, 2] = ", states[visit_pos:visit_end][t, 2], ", curr_obs_states[t, 2] = ", curr_obs_states[t, 2]);
+      //   }
+      // }
       
       forecast_patient_process_noise[forecast_visit_start:forecast_visit_end] = multi_normal_rng(
         obs_patient_process_noise[visit_m1_start:visit_m1_end],
