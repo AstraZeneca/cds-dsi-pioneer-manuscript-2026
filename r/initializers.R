@@ -260,14 +260,13 @@ create_tumor_ss_initializer <- function(stan_data) {
   }
 }
 
-# AI written function hence the ugliness.
 create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
   # Extract draws from the pathfinder fit
   draws_df <- posterior::as_draws_df(pathfinder_fit$draws())
   
   # Get parameter names
-  param_names <- colnames(draws_df) %>% 
-    stringr::str_subset("^\\.") %>% 
+  param_names <- colnames(draws_df) |>  
+    stringr::str_subset("^\\.", negate = TRUE) |>  
     stringr::str_subset("lp__|divergent__", negate = TRUE)
   
   # Get training patient range
@@ -282,58 +281,6 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
   use_cross_process_corr <- !stan_data$independ_cross_process_noise
   use_long_process_corr <- !stan_data$independ_long_process_noise
   
-  # Function to get parameter matrix from draws
-  extract_matrix_param <- function(param_base, rows, cols) {
-    pattern <- paste0("^", param_base, "\\[")
-    matching_cols <- param_names %>% 
-      stringr::str_subset(pattern)
-    
-    # If no matches found, return NULL
-    if (length(matching_cols) == 0) return(NULL)
-    
-    # Try to build the matrix
-    result <- matrix(0, nrow = rows, ncol = cols)
-    
-    for (i in 1:rows) {
-      for (j in 1:cols) {
-        param <- paste0(param_base, "[", i, ",", j, "]")
-        if (param %in% param_names) {
-          result[i, j] <- NA  # Just placeholder to check which elements exist
-        }
-      }
-    }
-    
-    # Return NULL if empty matrix
-    if (all(is.na(result))) return(NULL)
-    
-    return(result)
-  }
-  
-  # Function to get parameter vector from draws
-  extract_vector_param <- function(param_base, length) {
-    pattern <- paste0("^", param_base, "\\[")
-    matching_cols <- param_names %>% 
-      stringr::str_subset(pattern)
-    
-    # If no matches found, return NULL
-    if (length(matching_cols) == 0) return(NULL)
-    
-    # Try to build the vector
-    result <- rep(NA, length)
-    
-    for (i in 1:length) {
-      param <- paste0(param_base, "[", i, "]")
-      if (param %in% param_names) {
-        result[i] <- NA  # Just placeholder to check which elements exist
-      }
-    }
-    
-    # Return NULL if empty vector
-    if (all(is.na(result))) return(NULL)
-    
-    return(result)
-  }
-  
   # Collect parameter information
   scalar_params <- c(
     "pop_log_net_rate", "pop_log_rate_ratio", 
@@ -342,113 +289,56 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
     "pop_decrease_prop_logis",
     "log_patient_tumor_gp_rho_sd", "patient_log_net_rate_sd", 
     "patient_log_growth_lag_sd", "patient_decrease_prop_logis_sd"
-  ) %>%
-    purrr::keep(~ . %in% param_names)
+  ) |>  
+    purrr::keep(\(p) p %in% param_names)
   
   # Vector parameters
   vector_params <- list(
     pop_process_sd = 2
-  ) %>%
-    purrr::keep(~ !is.null(extract_vector_param(names(.), .)))
+  ) 
   
   # Patient-level parameters
   patient_params <- list(
     raw_patient_log_net_rate = if (!stan_data$pop_rates_param_only) n_train_patients,
     raw_patient_log_growth_lag = if (!stan_data$pop_growth_lag_param_only) n_train_patients,
     raw_patient_decrease_prop_logis = if (!stan_data$pop_initial_states_param_only) n_train_patients,
-    raw_log_patient_tumor_gp_rho_effect = if (use_long_process_corr && stan_data$pop_rho_param_only) n_train_patients 
+    raw_log_patient_tumor_gp_rho_effect = if (use_long_process_corr && !stan_data$pop_rho_param_only) n_train_patients 
   ) |>  
-    purrr::discard(is_null) |>  
-    purrr::keep(\(p) !is.null(extract_vector_param(names(p), p)))
+    compact() 
   
   # Matrix parameters
   matrix_params <- list(
-    L_process_corr = if(use_cross_process_corr) c(2, 2) else c(0, 0),
-    raw_patient_process_noise = c(n_total_train_visits_m1, 2),
-    raw_states = c(n_total_train_visits_m1, 2)
-  ) %>%
-    purrr::keep(~ all(. > 0)) %>%
-    purrr::keep(~ !is.null(extract_matrix_param(names(.), .[1], .[2])))
+    L_process_corr = if (use_cross_process_corr) c(2, 2),
+    raw_patient_process_noise = c(n_total_train_visits_m1, 2)
+  ) |> 
+    compact()
   
   # Return the initializer function
   function(chain_id) {
-    # Randomly select a draw
-    draw_idx <- sample(1:nrow(draws_df), 1)
-    draw <- draws_df[draw_idx, ]
-    
-    # Initialize empty list
-    init_vals <- list()
+    draw <- draws_df |> sample_n(1)
     
     # Add scalar parameters
-    init_vals <- scalar_params %>%
-      purrr::map_dbl(~ as.numeric(draw[[.]])) %>%
-      as.list() %>%
-      c(init_vals, .)
+    init_vals <- scalar_params |>  
+      map(\(p) as.numeric(pull(draw, p))) |> 
+      set_names(scalar_params) 
     
     # Make sure pop_log_rate_ratio meets constraint if it exists
     if (!is.null(init_vals$pop_log_rate_ratio)) {
       init_vals$pop_log_rate_ratio <- max(init_vals$pop_log_rate_ratio, 0.125)
     }
     
-    # Add vector parameters
-    for (param_name in names(vector_params)) {
-      length <- vector_params[[param_name]]
-      
-      # Extract values from the draw
-      values <- numeric(length)
-      for (i in 1:length) {
-        param <- paste0(param_name, "[", i, "]")
-        if (param %in% param_names) {
-          values[i] <- as.numeric(draw[[param]])
-        }
-      }
-      
-      init_vals[[param_name]] <- values
-    }
+    init_vals <- imap(c(vector_params, patient_params), \(s, p) unlist(draw[1, str_glue("{p}[{seq(s)}]")], use.names = FALSE)) |> 
+      c(init_vals)
     
-    # Add patient-level parameters 
-    for (param_name in names(patient_params)) {
-      length <- patient_params[[param_name]]
+    init_vals <- imap(matrix_params, function(s, p) {
+      param <- crossing(!!!map(s, seq)) |> 
+        set_names(c("i", "j")) %$% 
+        str_glue("{p}[{i},{j}]")
       
-      # Skip if length is 0 (based on independence flags)
-      if (length == 0) next
-      
-      # Extract values from the draw
-      values <- numeric(length)
-      for (i in 1:length) {
-        param <- paste0(param_name, "[", i, "]")
-        if (param %in% param_names) {
-          values[i] <- as.numeric(draw[[param]])
-        } else {
-          values[i] <- 0  # Default to 0 if parameter not found
-        }
-      }
-      
-      init_vals[[param_name]] <- values
-    }
-    
-    # Add matrix parameters
-    for (param_name in names(matrix_params)) {
-      dims <- matrix_params[[param_name]]
-      rows <- dims[1]
-      cols <- dims[2]
-      
-      # Skip if dimensions are 0 (based on independence flags)
-      if (rows == 0 || cols == 0) next
-      
-      # Extract values from the draw
-      values <- matrix(0, nrow = rows, ncol = cols)
-      for (i in 1:rows) {
-        for (j in 1:cols) {
-          param <- paste0(param_name, "[", i, ",", j, "]")
-          if (param %in% param_names) {
-            values[i, j] <- as.numeric(draw[[param]])
-          }
-        }
-      }
-      
-      init_vals[[param_name]] <- values
-    }
+      unlist(draw[1, param]) |> 
+        matrix(s[1], s[2], byrow = TRUE)
+    }) |> 
+      c(init_vals)
     
     # Default to simple initializers if not found in pathfinder results
     
@@ -463,11 +353,6 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
     # Process correlation matrix if needed
     if (use_cross_process_corr && is.null(init_vals$L_process_corr)) {
       init_vals$L_process_corr <- diag(2)
-    }
-    
-    # Make sure raw states and process noise are initialized
-    if (is.null(init_vals$raw_states)) {
-      init_vals$raw_states <- matrix(0, nrow = n_total_train_visits_m1, ncol = 2)
     }
     
     if (is.null(init_vals$raw_patient_process_noise)) {
