@@ -258,33 +258,41 @@ matrix calc_states(
   int theta_pos_size = 6;
   array[n_patients, theta_pos_size + 1] int theta_pos;
   
+  int x_pos_size = 4;
+  array[n_patients, x_pos_size + 1] int x_is_pos;
+  
+  int max_x_is_size = 0, max_theta_size = 0;
+  
   // Calculate indices for each patient based on their number of visits
   for (i in 1:n_patients) {
     int n_visits = get_pos_size(visit_pos, i);
-    
-    visit_end_idx[i] = 4 + n_visits - 1;
-    
-    noise_end_idx[i] = 5 + (n_visits - 1) * 2 - 1; // Each noise point has 2 components
-    initial_states_idx[i] = noise_end_idx[i] + 1;
-    rates_idx[i] = initial_states_idx[i] + 2;
+   
+    x_is_pos[i] = create_pos({
+      x_pos_size + 1, // the x_is_pos 
+      2,              // independ flags  
+      get_pos_size(visit_pos, i), // time points
+      theta_pos_size + 1,   // theta positions
+      1                     // debug flag
+    });
     
     theta_pos[i] = create_pos({ 
-      1, // Num visits 
+      1, // rho (length scale)
       2, // process_sd
       1, // L_process_corr[2, 1] 
       (n_visits - 1) * 2, // raw_process_noise for this patient
       2, // initial states 
-      4 }); // rates (2), lag, transition
+      4 
+    }); // rates (2), lag, transition
+    
+    max_x_is_size = max(max_x_is_size, get_pos_total_size(x_is_pos[i]));
+    max_theta_size = max(max_theta_size, get_pos_total_size(theta_pos[i]));
   }
   
   vector[2] phi = process_sd; // Shared parameters vector
   
-  // Determine maximum array size needed - vectorized approach
-  int max_theta_size = max(rates_idx) + 3;
-  
   // Initialize parameter arrays for map_rect
-  array[n_patients] vector[max_theta_size] thetas;
-  array[n_patients, max(visit_end_idx) + theta_pos_size + 2] int x_is = rep_array(-1111, n_patients, max(visit_end_idx) + theta_pos_size + 2);
+  array[n_patients] vector[max_theta_size] thetas = rep_array(rep_vector(negative_infinity(), max_theta_size), n_patients);
+  array[n_patients, max_x_is_size] int x_is = rep_array(-1111, n_patients, max_x_is_size);
   
   // Fill the arrays for each patient
   for (i in 1:n_patients) {
@@ -297,16 +305,27 @@ matrix calc_states(
     int n_visits = get_pos_size(visit_pos, i);
     int n_visits_m1 = n_visits - 1;
     
-    // Fill x_is with integer data
-    x_is[i, 1] = n_visits; // Number of visits
-    x_is[i, 2] = independ_long_process_noise;
-    x_is[i, 3] = independ_cross_process_noise;
-    x_is[i, 4:visit_end_idx[i]] = get_int_sub_array(t_visits, visit_pos, i); // Visit times
-    x_is[i, (visit_end_idx[i] + 1):(visit_end_idx[i] + theta_pos_size + 1)] = theta_pos[i];
+    int x_pos_start, x_pos_end;
+    (x_pos_start, x_pos_end) = get_pos(x_is_pos[i], 1);
     
-    if (i == 1) { // Only the first patient gets debugged if requested
-      x_is[i, visit_end_idx[i] + theta_pos_size + 2] = debug; 
-    }
+    // Fill x_is with integer data
+    x_is[i, x_pos_start:x_pos_end] = x_is_pos[i];
+   
+    int flags_start, flags_end;
+    (flags_start, flags_end) = get_pos(x_is_pos[i], 2);
+    
+    x_is[i, flags_start:flags_end] = { independ_long_process_noise, independ_cross_process_noise };
+    
+    int packed_visit_start, packed_visit_end;
+    (packed_visit_start, packed_visit_end) = get_pos(x_is_pos[i], 3);
+    
+    x_is[i, packed_visit_start:packed_visit_end] = get_int_sub_array(t_visits, visit_pos, i); // Visit times
+    
+    int packed_theta_pos_start, packed_theta_pos_end;
+    (packed_theta_pos_start, packed_theta_pos_end) = get_pos(x_is_pos[i], 4);
+    
+    x_is[i, packed_theta_pos_start:packed_theta_pos_end] = theta_pos[i];
+    x_is[i, packed_theta_pos_end + 1] = i == 1 ? debug : 0; 
     
     // Fill thetas with patient-specific parameters
     thetas[i, 1] = rho[i]; // GP length scale parameter
@@ -376,21 +395,26 @@ matrix calc_states(
  * @return Vector of computed states for this patient
  */
 vector calc_patient_states(vector phi, vector theta, data array[] real x_r, data array[] int x_i) {
+  int x_pos_size = 4;
+  array[x_pos_size + 1] int x_i_pos = x_i[:(x_pos_size + 1)];
+  
+  int flags_start, flags_end;
+  (flags_start, flags_end) = get_pos(x_i_pos, 2);
+  
+  int independ_long_process_noise = x_i[flags_start];
+  int independ_cross_process_noise = x_i[flags_end];
+  
   // Parse integer data
-  int n_visits = x_i[1]; // Number of visits
+  int n_visits = get_pos_size(x_i_pos, 3); // Number of visits
   int n_visits_m1 = n_visits - 1;
   
-  int independ_long_process_noise = x_i[2];
-  int independ_cross_process_noise = x_i[3];
-  
-  int visit_end_idx = 4 + n_visits - 1;
-  
-  array[n_visits] int time_points = x_i[4:visit_end_idx]; 
+  array[n_visits] int time_points = get_int_sub_array(x_i, x_i_pos, 3); 
  
-  int theta_pos_size = 6; 
-  array[theta_pos_size + 1] int theta_pos = x_i[(visit_end_idx + 1):(visit_end_idx + theta_pos_size + 1)];
-  
-  int debug = x_i[visit_end_idx + theta_pos_size + 2];
+  int theta_pos_size = get_pos_size(x_i_pos, 4) - 1;
+  array[theta_pos_size + 1] int theta_pos = get_int_sub_array(x_i, x_i_pos, 4);
+ 
+  int debug_start = get_pos(x_i_pos, 5).1; 
+  int debug = x_i[debug_start];
  
   // Parse real data
   real delta = x_r[1]; // Numerical stability factor
@@ -413,9 +437,6 @@ vector calc_patient_states(vector phi, vector theta, data array[] real x_r, data
   
   // Extract initial state
   row_vector[2] initial_state = get_sub_row_vector(theta, theta_pos, 5);
-  
-  // Extract raw states
-  // matrix[n_visits_m1, 2] raw_states = to_matrix(get_sub_vector(theta, theta_pos, 6), n_visits_m1, 2);
  
   vector[4] rates = get_sub_vector(theta, theta_pos, 6); 
   // Extract rates and other parameters
