@@ -258,7 +258,7 @@ matrix calc_states(
   int theta_pos_size = 6;
   array[n_patients, theta_pos_size + 1] int theta_pos;
   
-  int x_pos_size = 4;
+  int x_pos_size = 5;
   array[n_patients, x_pos_size + 1] int x_is_pos;
   
   int max_x_is_size = 0, max_theta_size = 0;
@@ -395,7 +395,7 @@ matrix calc_states(
  * @return Vector of computed states for this patient
  */
 vector calc_patient_states(vector phi, vector theta, data array[] real x_r, data array[] int x_i) {
-  int x_pos_size = 4;
+  int x_pos_size = 5;
   array[x_pos_size + 1] int x_i_pos = x_i[:(x_pos_size + 1)];
   
   int flags_start, flags_end;
