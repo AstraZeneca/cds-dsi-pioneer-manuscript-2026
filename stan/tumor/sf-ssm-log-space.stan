@@ -182,7 +182,8 @@ transformed parameters {
       append_col(patient_log_decrease_prop, patient_log_growth_prop),
       exp(patient_log_decrease_rate), exp(patient_log_growth_rate),
       exp(patient_log_growth_lag), exp(pop_log_growth_transition_rate),
-      run_parallel
+      run_parallel && !debug,
+      debug
     ); 
   }
 }

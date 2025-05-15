@@ -242,7 +242,7 @@ matrix calc_states(
   data array[] int visit_pos, data array[] int t_visits, vector rho, data real delta, vector process_sd, matrix L_process_corr, 
   matrix raw_process_noise, data int independ_long_process_noise, data int independ_cross_process_noise, 
   matrix initial_states, vector decrease_rate, vector growth_rate, 
-  vector growth_lag, real growth_transition_rate, int parallel
+  vector growth_lag, real growth_transition_rate, int parallel, int debug
 ) {
   int n_patients = size(visit_pos) - 1;
   // Create position array for time points with one fewer elements per patient
@@ -284,7 +284,7 @@ matrix calc_states(
   
   // Initialize parameter arrays for map_rect
   array[n_patients] vector[max_theta_size] thetas;
-  array[n_patients, max(visit_end_idx) + theta_pos_size + 1] int x_is = rep_array(0, n_patients, max(visit_end_idx) + theta_pos_size + 1);
+  array[n_patients, max(visit_end_idx) + theta_pos_size + 2] int x_is = rep_array(0, n_patients, max(visit_end_idx) + theta_pos_size + 2);
   
   // Fill the arrays for each patient
   for (i in 1:n_patients) {
@@ -303,6 +303,10 @@ matrix calc_states(
     x_is[i, 3] = independ_cross_process_noise;
     x_is[i, 4:visit_end_idx[i]] = get_int_sub_array(t_visits, visit_pos, i); // Visit times
     x_is[i, (visit_end_idx[i] + 1):(visit_end_idx[i] + theta_pos_size + 1)] = theta_pos[i];
+    
+    if (i == 1) { // Only the first patient gets debugged if requested
+      x_is[i, visit_end_idx[i] + theta_pos_size + 2] = debug; 
+    }
     
     // Fill thetas with patient-specific parameters
     thetas[i, 1] = rho[i]; // GP length scale parameter
@@ -383,6 +387,8 @@ vector calc_patient_states(vector phi, vector theta, data array[] real x_r, data
  
   int theta_pos_size = 6; 
   array[theta_pos_size + 1] int theta_pos = x_i[(visit_end_idx + 1):(visit_end_idx + theta_pos_size + 1)];
+  
+  int debug = x_i[visit_end_idx + theta_pos_size + 2];
  
   // Parse real data
   real delta = x_r[1]; // Numerical stability factor
@@ -425,6 +431,13 @@ vector calc_patient_states(vector phi, vector theta, data array[] real x_r, data
     decrease_rate, growth_rate, growth_lag, growth_transition_rate,
     process_noise
   );
+  
+  
+  if (debug) {
+    print("initial_state = ", initial_state, ", time_points = ", time_points, ", decrease_rate = ", decrease_rate, ", growth_rate = ", growth_rate, 
+          ", growth_lag = ", growth_lag, ", growth_transition_rate = ", growth_transition_rate);
+    print("expected_states = ", expected_states, ", states = ", states);
+  }
   
   // Convert to vector for map_rect output - vectorized approach
   // to_vector converts matrix to column-major vector
