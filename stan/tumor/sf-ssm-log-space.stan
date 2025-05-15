@@ -258,7 +258,7 @@ generated quantities {
   matrix[n_total_train_visits_m1, 2] obs_patient_process_noise;
   matrix[forecast ? get_pos_total_size(forecast_visits_pos) : 0, 2] forecast_patient_process_noise;
   matrix[forecast ? get_pos_total_size(forecast_visits_pos) : 0, 2] forecast_patient_states;
-  array[forecast ? get_pos_total_size(forecast_visits_pos) : 0] real forecast_patient_log_sld;
+  vector[forecast ? get_pos_total_size(forecast_visits_pos) : 0] forecast_patient_log_sld;
   array[forecast ? get_pos_total_size(forecast_visits_pos) : 0] int<lower = CR, upper = PD> forecast_recist;
   
   for (i in train_patients_pos:train_patients_end) {
@@ -298,15 +298,17 @@ generated quantities {
       ).2[2:];
     
       forecast_patient_log_sld[forecast_visit_start:forecast_visit_end] = 
-      normal_rng(
-        log_sum_exp(
+      to_vector(normal_rng(
+        to_vector(log_sum_exp(
           forecast_patient_states[forecast_visit_start:forecast_visit_end, 1], forecast_patient_states[forecast_visit_start:forecast_visit_end, 2]
-        ),
-        measure_sd
-      ) + log(sum_tumor_size[visit_pos]);
+        )) + log(sum_tumor_size[visit_pos]),
+        rep_vector(measure_sd, forecast_size)
+      ));
       
       forecast_recist[forecast_visit_start:forecast_visit_end] = calculate_target_recist(
         append_row(sum_tumor_size[visit_pos], exp(forecast_patient_log_sld[forecast_visit_start:forecast_visit_end]))
       );
     }
+  }
 }
+
