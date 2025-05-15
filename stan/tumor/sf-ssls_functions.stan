@@ -234,6 +234,7 @@ tuple(matrix, matrix) sf_log_space_trajectory_ncp(
  * @param growth_rate Vector of tumor growth rates
  * @param growth_lag Vector of growth lag parameters
  * @param growth_transition_rate Growth transition rate parameter
+ * @param debug Print debug information
  * @return Vector of computed states for all patients
  */
 matrix calc_states(
@@ -252,8 +253,6 @@ matrix calc_states(
   array[n_patients] int visit_end_idx;
   array[n_patients] int noise_end_idx;
   array[n_patients] int initial_states_idx;
-  array[n_patients] int raw_state_start_idx;
-  array[n_patients] int raw_state_end_idx;
   array[n_patients] int rates_idx;
   
   int theta_pos_size = 6;
@@ -269,7 +268,13 @@ matrix calc_states(
     initial_states_idx[i] = noise_end_idx[i] + 1;
     rates_idx[i] = initial_states_idx[i] + 2;
     
-    theta_pos[i] = create_pos({ 1, 2, 1, (n_visits - 1) * 2, 2, 4 });
+    theta_pos[i] = create_pos({ 
+      1, // Num visits 
+      2, // process_sd
+      1, // L_process_corr[2, 1] 
+      (n_visits - 1) * 2, // raw_process_noise for this patient
+      2, // initial states 
+      4 }); // rates (2), lag, transition
   }
   
   vector[2] phi = process_sd; // Shared parameters vector
@@ -279,7 +284,7 @@ matrix calc_states(
   
   // Initialize parameter arrays for map_rect
   array[n_patients] vector[max_theta_size] thetas;
-  array[n_patients, max(visit_end_idx) + theta_pos_size + 2] int x_is = rep_array(0, n_patients, max(visit_end_idx) + theta_pos_size + 2);
+  array[n_patients, max(visit_end_idx) + theta_pos_size + 2] int x_is = rep_array(-1111, n_patients, max(visit_end_idx) + theta_pos_size + 2);
   
   // Fill the arrays for each patient
   for (i in 1:n_patients) {
@@ -308,18 +313,23 @@ matrix calc_states(
     thetas[i, 2:3] = process_sd; // Process noise std
     thetas[i, 4] = L_process_corr[2, 1]; // Correlation cholesky factor
     
+    int proc_noise_start, proc_noise_end;
+    (proc_noise_start, proc_noise_end) = get_pos(theta_pos[i], 4);
+    
     // Extract raw process noise for this patient (reshape from matrix)
     // Vectorized approach using pre-calculated position indices
-    thetas[i, 5:noise_end_idx[i]] = to_vector(get_sub_vert_matrix(raw_process_noise, visit_m1_pos, i));
+    thetas[i, proc_noise_start:proc_noise_end] = to_vector(get_sub_vert_matrix(raw_process_noise, visit_m1_pos, i));
+    
+    int init_start, init_end;
+    (init_start, init_end) = get_pos(theta_pos[i], 5);
     
     // Initial state - use position utility functions for consistent access
-    thetas[i, initial_states_idx[i]:(initial_states_idx[i] + 1)] = initial_states[i]';
+    thetas[i, init_start:init_end] = initial_states[i]';
     
-    // Rates and other parameters
-    thetas[i, rates_idx[i]] = decrease_rate[i];
-    thetas[i, rates_idx[i] + 1] = growth_rate[i];
-    thetas[i, rates_idx[i] + 2] = growth_lag[i];
-    thetas[i, rates_idx[i] + 3] = growth_transition_rate;
+    int rates_start, rates_end;
+    (rates_start, rates_end) = get_pos(theta_pos[i], 6);
+    
+    thetas[i, rates_start:rates_end] = [ decrease_rate[i], growth_rate[i], growth_lag[i], growth_transition_rate ]';
     
     if (theta_pos[i, theta_pos_size + 1] - 1 > max_theta_size) {
       fatal_error(i, ": pos exceeds expected max size for theta: theta_pos[i, <end>] - 1 = ", theta_pos[i, theta_pos_size + 1] - 1, ", max_theta_size = ", max_theta_size);
