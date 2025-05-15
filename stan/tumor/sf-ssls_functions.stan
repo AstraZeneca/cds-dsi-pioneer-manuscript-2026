@@ -330,14 +330,14 @@ matrix calc_states(
   
   if (parallel) {
     // Call map_rect to process patients in parallel
-    states = to_matrix(map_rect(calc_patient_states, phi, thetas, rep_array({ delta }, n_patients), x_is), size(t_visits), 2);
+    states = to_matrix(map_rect(calc_patient_states, phi, thetas, rep_array({ delta }, n_patients), x_is), size(t_visits), 2, 0);
   } else {
     for (i in 1:n_patients) {
       int visit_start, visit_end, n_visits;
       (visit_start, visit_end) = get_pos(visit_pos, i);
       n_visits = get_pos_size(visit_pos, i);
       
-      states[visit_start:visit_end] = to_matrix(calc_patient_states(phi, thetas[i], { delta }, x_is[i]), n_visits, 2);
+      states[visit_start:visit_end] = to_matrix(calc_patient_states(phi, thetas[i], { delta }, x_is[i]), n_visits, 2, 0);
     }
   }
 
@@ -352,7 +352,7 @@ matrix calc_states(
 ) {
   return calc_states(
     visit_pos, t_visits, rho, delta, process_sd, L_process_corr, raw_process_noise, independ_long_process_noise, independ_cross_process_noise, initial_states,
-    decrease_rate, growth_rate, growth_lag, growth_transition_rate, 1
+    decrease_rate, growth_rate, growth_lag, growth_transition_rate, 1, 0
   );
 }
 
@@ -433,7 +433,7 @@ vector calc_patient_states(vector phi, vector theta, data array[] real x_r, data
   
   // Convert to vector for map_rect output - vectorized approach
   // to_vector converts matrix to column-major vector
-  return to_vector(states);
+  return to_vector(states');
 }
 
 matrix calc_patient_process_noise(
