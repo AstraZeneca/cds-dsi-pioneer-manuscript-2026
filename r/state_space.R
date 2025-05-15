@@ -30,7 +30,10 @@ get_obs_state_var <- function(res, patient_states_data, var, transform = identit
         ungroup(), 
       by = "n"
     ) |>
-    mutate(p = factor(p, levels = 1:3, labels = c("regress", "grow", "sum")))
+    mutate(
+      {{ var }} := transform({{ var }}),
+      p = factor(p, levels = 1:3, labels = c("regress", "grow", "sum"))
+    )
   
   return(noise_data)
 }
