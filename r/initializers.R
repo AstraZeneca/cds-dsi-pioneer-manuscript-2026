@@ -260,6 +260,7 @@ create_tumor_ss_initializer <- function(stan_data) {
   }
 }
 
+# AI written function hence the ugliness.
 create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
   # Extract draws from the pathfinder fit
   draws_df <- posterior::as_draws_df(pathfinder_fit$draws())
@@ -280,6 +281,58 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
   # Flag for model configuration
   use_cross_process_corr <- !stan_data$independ_cross_process_noise
   use_long_process_corr <- !stan_data$independ_long_process_noise
+  
+  # Function to get parameter matrix from draws
+  extract_matrix_param <- function(param_base, rows, cols) {
+    pattern <- paste0("^", param_base, "\\[")
+    matching_cols <- param_names %>% 
+      stringr::str_subset(pattern)
+    
+    # If no matches found, return NULL
+    if (length(matching_cols) == 0) return(NULL)
+    
+    # Try to build the matrix
+    result <- matrix(0, nrow = rows, ncol = cols)
+    
+    for (i in 1:rows) {
+      for (j in 1:cols) {
+        param <- paste0(param_base, "[", i, ",", j, "]")
+        if (param %in% param_names) {
+          result[i, j] <- NA  # Just placeholder to check which elements exist
+        }
+      }
+    }
+    
+    # Return NULL if empty matrix
+    if (all(is.na(result))) return(NULL)
+    
+    return(result)
+  }
+  
+  # Function to get parameter vector from draws
+  extract_vector_param <- function(param_base, length) {
+    pattern <- paste0("^", param_base, "\\[")
+    matching_cols <- param_names %>% 
+      stringr::str_subset(pattern)
+    
+    # If no matches found, return NULL
+    if (length(matching_cols) == 0) return(NULL)
+    
+    # Try to build the vector
+    result <- rep(NA, length)
+    
+    for (i in 1:length) {
+      param <- paste0(param_base, "[", i, "]")
+      if (param %in% param_names) {
+        result[i] <- NA  # Just placeholder to check which elements exist
+      }
+    }
+    
+    # Return NULL if empty vector
+    if (all(is.na(result))) return(NULL)
+    
+    return(result)
+  }
   
   # Collect parameter information
   scalar_params <- c(
@@ -315,6 +368,8 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
   
   # Return the initializer function
   function(chain_id) {
+    # Randomly select a draw
+    # draw_idx <- sample(1:nrow(draws_df), 1)
     draw <- draws_df |> sample_n(1)
     
     # Add scalar parameters
@@ -353,6 +408,11 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
     # Process correlation matrix if needed
     if (use_cross_process_corr && is.null(init_vals$L_process_corr)) {
       init_vals$L_process_corr <- diag(2)
+    }
+    
+    # Make sure raw states and process noise are initialized
+    if (is.null(init_vals$raw_states)) {
+      init_vals$raw_states <- matrix(0, nrow = n_total_train_visits_m1, ncol = 2)
     }
     
     if (is.null(init_vals$raw_patient_process_noise)) {
