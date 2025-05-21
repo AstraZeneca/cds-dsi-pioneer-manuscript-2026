@@ -594,23 +594,27 @@ matrix multi_normal_rng(
   mu_cond[, 2] = gp_conditional_mean(y_obs[, 2], L_K_obs_obs, K_pred_obs); 
   
   matrix[n_pred, n_pred] K_cond = gp_conditional_cov(L_K_obs_obs, K_pred_obs, K_pred_pred, delta);
-  
-  // // Process the first dimension
-  // (mu_cond[,1], K_cond) = gp_conditional(y_obs[,1], K_obs_obs, K_pred_obs, K_pred_pred, delta);
-  // 
-  // // Process the second dimension (reusing the same K matrices)
-  // mu_cond[,2] = gp_conditional(y_obs[,2], K_obs_obs, K_pred_obs, K_pred_pred, delta).1;
-  // 
-  // Get Cholesky of temporal covariance
   matrix[n_pred, n_pred] L_K_cond = cholesky_decompose(K_cond);
   
   // Generate standard normal random values
   matrix[n_pred, 2] eta_raw = to_matrix(to_vector(normal_rng(zeros_vector(n_pred * 2), rep_vector(1, n_pred * 2))), n_pred, 2);
   
   // Create the sample using the separable structure
-  matrix[n_pred, 2] sample = mu_cond + L_K_cond * eta_raw * diag_pre_multiply(process_sd, L_process_corr)';
+  return mu_cond + L_K_cond * eta_raw * diag_pre_multiply(process_sd, L_process_corr)';
+}
+
+matrix multi_normal_rng(
+  int n_pred,
+  vector process_sd,           // Process SDs [2]
+  matrix L_process_corr        // Cholesky of process correlation [2, 2]
+) {
+  // Generate standard normal random values
+  matrix[n_pred, 2] eta_raw = to_matrix(to_vector(normal_rng(zeros_vector(n_pred * 2), rep_vector(1, n_pred * 2))), n_pred, 2);
   
-  return sample;
+  // Create the sample using the separable structure
+  return eta_raw * diag_pre_multiply(process_sd, L_process_corr)';
+}
+
 void assert_matching_states(
   matrix states, row_vector initial_states, array[] int time_points, real decrease_rate, real growth_rate, real growth_lag, real growth_transit_rate,
   matrix process_noise, int debug 
