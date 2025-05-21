@@ -254,6 +254,8 @@ generated quantities {
   real pop_log_decrease_rate = (pop_log_growth_rate + pop_log_rate_ratio);
   vector[n_train_patients] patient_log_decrease_rate_residual = patient_log_decrease_rate - pop_log_growth_rate;
   vector[n_train_patients] patient_decrease_prop_residual = inv_logit(patient_decrease_prop_logis) - inv_logit(pop_decrease_prop_logis);
+  real pop_log_decrease_prop = -log1p_exp(-pop_decrease_prop_logis);  
+  real pop_log_growth_prop = pop_log_decrease_prop - pop_decrease_prop_logis;
   
   corr_matrix[independ_cross_process_noise ? 0 : 2] process_corr;
   
