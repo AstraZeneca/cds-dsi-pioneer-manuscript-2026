@@ -4,7 +4,10 @@ get_state_patients <- function(analysis_data, sample_size = 12, random = TRUE) {
     unnest(visit_data) |> 
     mutate(n = seq(n())) |> 
     nest(visit_data = !c(usubjid, patient_max_t)) |> 
-    mutate(i = seq(n())) %>% {  
+    mutate(
+      i = seq(n()),
+      base_sld = map_dbl(visit_data, \(v) first(v$mmsumdiam))
+    ) %>% {  
       if (random) sample_n(., sample_size) else slice(., seq(sample_size))
     } |> 
     unnest(visit_data)  
@@ -18,18 +21,19 @@ add_states_sum <- function(states_data, states_col) {
     bind_rows(states_data) 
 }
 
-get_obs_state_var <- function(res, patient_states_data, var, transform = identity) {
+get_obs_state_var <- function(res, patient_states_data, var, drop_initial = FALSE, transform = identity) {
   var_expr <- expr({{ var }}[n,p])
   
+  if (drop_initial) {
+      patient_states_data <- patient_states_data |> 
+        group_by(i) |>
+        filter(min_rank(ady) > 1) |>
+        mutate(n = n - first(i)) |>
+        ungroup()
+  }
+  
   noise_data <- spread_rvars(res, !!var_expr) |> 
-    inner_join(
-      patient_states_data |> 
-        group_by(i) |> 
-        filter(min_rank(ady) > 1) |> 
-        mutate(n = n - first(i)) |> 
-        ungroup(), 
-      by = "n"
-    ) |>
+    inner_join(patient_states_data, by = "n") |>
     mutate(
       {{ var }} := transform({{ var }}),
       p = factor(p, levels = 1:3, labels = c("regress", "grow", "sum"))
@@ -40,14 +44,11 @@ get_obs_state_var <- function(res, patient_states_data, var, transform = identit
 
 get_states <- function(res, patient_states_data) {
   get_obs_state_var(res, patient_states_data, states, transform = exp) |> 
-    # group_by(usubjid) |> 
-    # mutate(states = states * first(mmsumdiam)) |> 
-    # ungroup() |> 
     add_states_sum(states)
 }
 
 get_process_noise <- function(res, patient_states_data) {
-  get_obs_state_var(res, patient_states_data, obs_patient_process_noise)
+  get_obs_state_var(res, patient_states_data, obs_patient_process_noise, drop_initial = TRUE)
 }
 
 get_subsample_forecast_data <- function(patient_states_data, analysis_data) {
