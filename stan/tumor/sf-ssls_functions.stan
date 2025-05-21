@@ -467,12 +467,12 @@ vector calc_patient_states_rect(vector phi, vector theta, data array[] real x_r,
   
   // Extract raw process noise and construct matrix
   matrix[n_visits_m1, 2] raw_process_noise = to_matrix(get_sub_vector(theta, theta_pos, 4), n_visits_m1, 2);
-  matrix[n_visits_m1, 2] process_noise = calc_patient_process_noise(
-    raw_process_noise, time_points, rho, delta, process_sd, L_process_corr, independ_long_process_noise, independ_cross_process_noise
-  );
+  // matrix[n_visits_m1, 2] process_noise = calc_patient_process_noise(
+  //   raw_process_noise, time_points, rho, delta, process_sd, L_process_corr, independ_long_process_noise, independ_cross_process_noise
+  // );
   
   // Extract initial state
-  row_vector[2] initial_state = get_sub_row_vector(theta, theta_pos, 5);
+  row_vector[2] initial_states = get_sub_row_vector(theta, theta_pos, 5);
  
   vector[4] rates = get_sub_vector(theta, theta_pos, 6); 
   // Extract rates and other parameters
@@ -482,18 +482,15 @@ vector calc_patient_states_rect(vector phi, vector theta, data array[] real x_r,
   real growth_transition_rate = rates[4];
     
   // Calculate states using Stein-Fojo log-space state space model
-  matrix[n_visits, 2] expected_states;
-  matrix[n_visits, 2] states;
+  matrix[n_visits, 2] expected_states, states;
   
-  (expected_states, states) = sf_log_space_trajectory_ncp(
-    initial_state, time_points,
-    decrease_rate, growth_rate, growth_lag, growth_transition_rate,
-    process_noise
-  );
-  
+  (expected_states, states) = calc_patient_states(
+    initial_states, time_points, decrease_rate, growth_rate, growth_lag, growth_transition_rate,
+    raw_process_noise, lognormal_noise, rho, delta, process_sd, L_process_corr, independ_long_process_noise, independ_cross_process_noise
+  ); 
   
   if (debug) {
-    print("initial_state = ", initial_state, ", time_points = ", time_points, ", decrease_rate = ", decrease_rate, ", growth_rate = ", growth_rate, 
+    print("initial_states = ", initial_states, ", time_points = ", time_points, ", decrease_rate = ", decrease_rate, ", growth_rate = ", growth_rate, 
           ", growth_lag = ", growth_lag, ", growth_transition_rate = ", growth_transition_rate);
     print("expected_states = ", expected_states, ", states = ", states);
   }
