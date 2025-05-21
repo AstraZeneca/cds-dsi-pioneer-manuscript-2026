@@ -175,11 +175,11 @@ transformed parameters {
       log_trial_tumor_gp_rho_effect = zeros_vector(n_trials);
       patient_tumor_gp_rho = exp(log_pop_tumor_gp_rho + log_trial_tumor_gp_rho_effect[patient_trial[train_patients_pos:train_patients_end]] + log_patient_tumor_gp_rho_effect);
     }
-    
+
     states = calc_states(
-      create_pos(patient_visit_pos, train_patients_pos, train_patients_end),
-      get_int_sub_array(t_patient_visits, patient_visit_pos, train_patients_pos, train_patients_end),
-      independ_long_process_noise ? zeros_vector(n_train_patients) : patient_tumor_gp_rho,
+      train_patient_visit_pos,
+      train_patient_visits,
+      patient_tumor_gp_rho,
       delta,
       pop_process_sd,
       independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr,
