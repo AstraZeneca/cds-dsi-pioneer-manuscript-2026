@@ -185,16 +185,17 @@ transformed parameters {
       get_int_sub_array(t_patient_visits, patient_visit_pos, train_patients_pos, train_patients_end),
       independ_long_process_noise ? zeros_vector(n_train_patients) : patient_tumor_gp_rho,
       delta,
-      pop_process_sd, 
-      independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr, 
-      raw_patient_process_noise,
+      pop_process_sd,
+      independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr,
+      // raw_patient_process_noise,
       independ_long_process_noise, independ_cross_process_noise,
       append_col(patient_log_decrease_prop, patient_log_growth_prop),
       exp(patient_log_decrease_rate), exp(patient_log_growth_rate),
-      exp(patient_log_growth_lag), exp(pop_log_growth_transition_rate),
+      rep_vector(0.0001, n_train_patients), // exp(patient_log_growth_lag), 
+      0.0001, // exp(pop_log_growth_transition_rate),
       run_parallel && !debug,
       debug
-    ); 
+    );
   }
 }
 
@@ -295,10 +296,14 @@ generated quantities {
     (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
     int forecast_size = forecast_visit_end - forecast_visit_start + 1; 
     
-    obs_patient_process_noise[visit_m1_start:visit_m1_end] = calc_patient_process_noise(
-      raw_patient_process_noise[visit_m1_start:visit_m1_end], get_int_sub_array(t_patient_visits, patient_visit_pos, i), patient_tumor_gp_rho[i], delta, pop_process_sd, L_process_corr,
-      independ_long_process_noise, independ_cross_process_noise
-    );
+    obs_patient_process_noise[train_visit_m1_start:train_visit_m1_end] = rep_matrix(0, train_visit_m1_size, 2); 
+    // obs_patient_process_noise[train_visit_m1_start:train_visit_m1_end] = calc_patient_process_noise(
+    //   raw_patient_process_noise[train_visit_m1_start:train_visit_m1_end],
+    //   get_int_sub_array(train_patient_visits, train_patient_visit_pos, train_idx),
+    //   exp(log_pop_tumor_gp_rho), delta,
+    //   pop_process_sd, L_process_corr,
+    //   independ_long_process_noise, independ_cross_process_noise
+    // );
     
     array[n_patient_forecast_visits[i] + 1] int forecast_time = linspaced_int_array(n_patient_forecast_visits[i] + 1, patient_last_obs_visit[i], last_predict_visit);
     
@@ -324,12 +329,14 @@ generated quantities {
         delta
       );
       
-      forecast_patient_states[forecast_visit_start:forecast_visit_end] = sf_log_space_trajectory_ncp(
-        states[patient_visit_pos[i + 1] - 1],
+      forecast_patient_states[train_forecast_visit_start:train_forecast_visit_end] = sf_log_space_trajectory_ncp(
+        states[train_patient_visit_pos[train_idx + 1] - 1],
         forecast_time,
-        exp(patient_log_decrease_rate[i]), exp(patient_log_growth_rate[i]),
-        exp(patient_log_growth_lag[i]), exp(pop_log_growth_transition_rate),
-        forecast_patient_process_noise[forecast_visit_start:forecast_visit_end]
+        exp(patient_log_decrease_rate[train_idx]), exp(patient_log_growth_rate[train_idx]),
+        0.0001, // exp(patient_log_growth_lag[train_idx]), 
+        0.0001, // exp(pop_log_growth_transition_rate),
+        rep_matrix(0, forecast_size, 2)
+        // forecast_patient_process_noise[train_forecast_visit_start:train_forecast_visit_end]
       ).2[2:];
     
       forecast_patient_log_sld[forecast_visit_start:forecast_visit_end] = 
