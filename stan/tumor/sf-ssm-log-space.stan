@@ -88,7 +88,7 @@ transformed data {
 
 parameters {
   real pop_log_net_rate;            // Population-level net rate (log(d-g))
-  real<lower = 0.125> pop_log_rate_ratio; // Population-level ratio (log(d/g))
+  real<lower = 0> pop_log_rate_ratio; // Population-level ratio (log(d/g))
 
   // Patient-level variation for net rate only
   real<lower=0> patient_log_net_rate_sd;
