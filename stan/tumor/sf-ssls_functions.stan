@@ -379,14 +379,14 @@ matrix calc_states(
   
   if (parallel) {
     // Call map_rect to process patients in parallel
-    states = to_matrix(map_rect(calc_patient_states, phi, thetas, rep_array({ delta }, n_patients), x_is), size(t_visits), 2, 0);
+    states = to_matrix(map_rect(calc_patient_states_rect, phi, thetas, rep_array({ delta }, n_patients), x_is), size(t_visits), 2, 0);
   } else {
     for (i in 1:n_patients) {
       int visit_start, visit_end, n_visits;
       (visit_start, visit_end) = get_pos(visit_pos, i);
       n_visits = get_pos_size(visit_pos, i);
       
-      states[visit_start:visit_end] = to_matrix(calc_patient_states(phi, thetas[i], { delta }, x_is[i]), n_visits, 2, 0);
+      states[visit_start:visit_end] = to_matrix(calc_patient_states_rect(phi, thetas[i], { delta }, x_is[i]), n_visits, 2, 0);
     }
   }
 
