@@ -65,7 +65,17 @@ transformed data {
   array[n_patients + 1] int<lower = 1> patient_visit_m1_pos = create_pos(n_patient_visits, -1);
   
   int<lower = 1> n_train_patients = train_patients_end - train_patients_pos + 1;
-  int<lower = 1> n_total_train_visits_m1 = sum(n_patient_visits[train_patients_pos:train_patients_end]) - n_train_patients;
+  array[n_train_patients] int<lower = 0> n_train_patient_visits = n_patient_visits[train_patients_pos:train_patients_end];
+  int<lower = 1> n_total_train_visits = sum(n_train_patient_visits);
+  int<lower = 1> n_total_train_visits_m1 = n_total_train_visits - n_train_patients;
+  
+  array[n_total_train_visits] int train_patient_visits = get_int_sub_array(t_patient_visits, patient_visit_pos, train_patients_pos, train_patients_end);
+  
+  array[n_train_patients + 1] int<lower = 1> train_patient_visit_pos = create_pos(n_train_patient_visits);
+  array[n_train_patients + 1] int<lower = 1> train_patient_visit_m1_pos = create_pos(n_train_patient_visits, -1);
+  array[n_train_patients + 1] int<lower = 1> train_forecast_visits_pos = create_pos(n_patient_forecast_visits[train_patients_pos:train_patients_end]);
+  
+  int<lower = 1> n_total_train_forecast_visits = get_pos_total_size(train_forecast_visits_pos);
   
   real log_lod = log(0.1);
   
@@ -226,16 +236,16 @@ model {
   
   profile("loglik") { 
     if (fit_tumor_data) { 
-      // for (i in 1:n_patients) {
       for (i in train_patients_pos:train_patients_end) {
+        int train_idx = i - train_patients_pos + 1;
+        
+        int train_visit_start, train_visit_end;
+        (train_visit_start, train_visit_end) = get_pos(train_patient_visit_pos, train_idx);
+        
         int visit_pos, visit_end;
         (visit_pos, visit_end) = get_pos(patient_visit_pos, i);
         
-        normalized_sld[visit_pos:visit_end] ~ sf_log_space_obs(states[visit_pos:visit_end], measure_sd, log_lod - log(sum_tumor_size[visit_pos]));
-    
-        if (debug) {    
-          print(i, ": normalized_sld = ", normalized_sld[visit_pos:visit_end], ", exp(states) = ", exp(states));
-        }
+        normalized_sld[visit_pos:visit_end] ~ sf_log_space_obs(states[train_visit_start:train_visit_end], measure_sd, log_lod - log(sum_tumor_size[visit_pos]));
       }
     }
   }
@@ -257,12 +267,24 @@ generated quantities {
   vector<lower = 0, upper = 1>[max_t_width] all_growth_factor = get_growth_lag_factor(all_tumor_measure_t, exp(pop_log_growth_lag), exp(pop_log_growth_transition_rate));
   matrix[max_t_width, 2] all_scaled_process_sd = scale_process_sd(all_tumor_measure_t, pop_process_sd);
   matrix[n_total_train_visits_m1, 2] obs_patient_process_noise;
-  matrix[forecast ? get_pos_total_size(forecast_visits_pos) : 0, 2] forecast_patient_process_noise;
-  matrix[forecast ? get_pos_total_size(forecast_visits_pos) : 0, 2] forecast_patient_states;
-  vector[forecast ? get_pos_total_size(forecast_visits_pos) : 0] forecast_patient_log_sld;
-  array[forecast ? get_pos_total_size(forecast_visits_pos) : 0] int<lower = CR, upper = PD> forecast_recist;
+  matrix[forecast ? n_total_train_forecast_visits : 0, 2] forecast_patient_process_noise;
+  matrix[forecast ? n_total_train_forecast_visits : 0, 2] forecast_patient_states;
+  vector[forecast ? n_total_train_forecast_visits : 0] forecast_patient_log_sld;
+  array[forecast ? n_total_train_forecast_visits : 0] int<lower = CR, upper = PD> forecast_recist;
   
   for (i in train_patients_pos:train_patients_end) {
+    int train_idx = i - train_patients_pos + 1;
+
+    int train_visit_start, train_visit_end;
+    (train_visit_start, train_visit_end) = get_pos(train_patient_visit_pos, train_idx);
+
+    int train_visit_m1_start, train_visit_m1_end;
+    (train_visit_m1_start, train_visit_m1_end) = get_pos(train_patient_visit_m1_pos, train_idx);
+    int train_visit_m1_size = train_visit_m1_end - train_visit_m1_start + 1;
+
+    int train_forecast_visit_start, train_forecast_visit_end;
+    (train_forecast_visit_start, train_forecast_visit_end) = get_pos(train_forecast_visits_pos, train_idx);
+
     int visit_pos, visit_end;
     (visit_pos, visit_end) = get_pos(patient_visit_pos, i);
     
