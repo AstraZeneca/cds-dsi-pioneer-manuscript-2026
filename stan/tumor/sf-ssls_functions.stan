@@ -554,4 +554,33 @@ matrix multi_normal_rng(
   matrix[n_pred, 2] sample = mu_cond + L_K_cond * eta_raw * diag_pre_multiply(process_sd, L_process_corr)';
   
   return sample;
+void assert_matching_states(
+  matrix states, row_vector initial_states, array[] int time_points, real decrease_rate, real growth_rate, real growth_lag, real growth_transit_rate,
+  matrix process_noise, int debug 
+) {
+  int n_visits = size(time_points);
+  
+  matrix[n_visits, 2] curr_obs_states = sf_log_space_trajectory_ncp(
+      initial_states,
+      time_points,
+      decrease_rate, growth_rate,
+      growth_lag, growth_transit_rate, 
+      process_noise,
+      debug
+    ).2;
+    
+  matrix[n_visits, 2] rate_diff = states - curr_obs_states;
+
+  for (t in 1:n_visits) {
+    int dec = abs(rate_diff[t, 1]) > 1e-6;
+    int gro = abs(rate_diff[t, 2]) > 1e-6;
+
+    if (dec || gro) {
+      // print("initial_state = ", [ patient_log_decrease_prop[i], patient_log_growth_prop[i] ], ", time_points = ", get_int_sub_array(t_patient_visits, patient_visit_pos, i),
+      //       ", dec rate = ", exp(patient_log_decrease_rate[i]), ", gro rate = ", exp(patient_log_growth_rate[i]), ", lag = ", exp(patient_log_growth_lag[i]), ", transit = ", exp(pop_log_growth_transition_rate));
+
+      fatal_error("t = ", t, ", dec = ", dec, ", gro = ", gro, ", states[t, 1] = ", states[t, 1], ", curr_obs_states[t, 1] = ", curr_obs_states[t, 1],
+      ", states[t, 2] = ", states[t, 2], ", curr_obs_states[t, 2] = ", curr_obs_states[t, 2]);
+    }
+  }
 }
