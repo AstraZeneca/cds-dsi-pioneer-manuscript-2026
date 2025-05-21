@@ -162,22 +162,18 @@ transformed parameters {
   vector[n_train_patients] patient_log_decrease_prop = -log1p_exp(-patient_decrease_prop_logis);
   vector[n_train_patients] patient_log_growth_prop = patient_log_decrease_prop - patient_decrease_prop_logis;
   
-  matrix[sum(n_patient_visits[train_patients_pos:train_patients_end]), 2] states; 
+  vector[n_train_patients] patient_tumor_gp_rho = independ_long_process_noise ? zeros_vector(n_train_patients) : rep_vector(exp(log_pop_tumor_gp_rho), n_train_patients);  
   
-  vector[independ_long_process_noise ? 0 : n_train_patients] patient_tumor_gp_rho;
+  matrix[n_total_train_visits, 2] states; 
   
   profile("states") {
     vector[independ_long_process_noise || pop_rho_param_only ? 0 : n_train_patients] log_patient_tumor_gp_rho_effect; 
     vector[independ_long_process_noise || pop_rho_param_only ? 0 : n_trials] log_trial_tumor_gp_rho_effect;
     
-    if (!independ_long_process_noise) {
-      if (pop_rho_param_only) {
-        patient_tumor_gp_rho = rep_vector(exp(log_pop_tumor_gp_rho), n_train_patients);
-      } else {
-        log_patient_tumor_gp_rho_effect = log_patient_tumor_gp_rho_sd * raw_log_patient_tumor_gp_rho_effect;
-        log_trial_tumor_gp_rho_effect = zeros_vector(n_trials);
-        patient_tumor_gp_rho = exp(log_pop_tumor_gp_rho + log_trial_tumor_gp_rho_effect[patient_trial[train_patients_pos:train_patients_end]] + log_patient_tumor_gp_rho_effect);
-      }
+    if (!independ_long_process_noise && !pop_rho_param_only) {
+      log_patient_tumor_gp_rho_effect = log_patient_tumor_gp_rho_sd * raw_log_patient_tumor_gp_rho_effect;
+      log_trial_tumor_gp_rho_effect = zeros_vector(n_trials);
+      patient_tumor_gp_rho = exp(log_pop_tumor_gp_rho + log_trial_tumor_gp_rho_effect[patient_trial[train_patients_pos:train_patients_end]] + log_patient_tumor_gp_rho_effect);
     }
     
     states = calc_states(
@@ -319,15 +315,21 @@ generated quantities {
       //   debug
       // );
       
-      forecast_patient_process_noise[forecast_visit_start:forecast_visit_end] = multi_normal_rng(
-        obs_patient_process_noise[visit_m1_start:visit_m1_end],
-        get_int_sub_array(t_patient_visits, patient_visit_pos, i)[2:],
-        forecast_time[2:],
-        independ_long_process_noise ? 0 : patient_tumor_gp_rho[i],
-        pop_process_sd,
-        independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr,
-        delta
-      );
+      if (independ_long_process_noise) {
+        forecast_patient_process_noise[train_forecast_visit_start:train_forecast_visit_end] = multi_normal_rng(
+          forecast_size, pop_process_sd, independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr
+        );
+      } else {
+        forecast_patient_process_noise[train_forecast_visit_start:train_forecast_visit_end] = multi_normal_rng(
+          obs_patient_process_noise[train_visit_m1_start:train_visit_m1_end],
+          get_int_sub_array(t_patient_visits, patient_visit_pos, i)[2:],
+          forecast_time[2:],
+          exp(log_pop_tumor_gp_rho),
+          pop_process_sd,
+          independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr,
+          delta
+        );
+      }
       
       forecast_patient_states[train_forecast_visit_start:train_forecast_visit_end] = sf_log_space_trajectory_ncp(
         states[train_patient_visit_pos[train_idx + 1] - 1],
