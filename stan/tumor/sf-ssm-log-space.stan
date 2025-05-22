@@ -252,7 +252,7 @@ generated quantities {
   real pop_log_growth_rate = pop_log_net_rate - log_diff_exp(pop_log_rate_ratio, 0);
   vector[n_train_patients] patient_log_growth_rate_residual = patient_log_growth_rate - pop_log_growth_rate;
   real pop_log_decrease_rate = (pop_log_growth_rate + pop_log_rate_ratio);
-  vector[n_train_patients] patient_log_decrease_rate_residual = patient_log_decrease_rate - pop_log_growth_rate;
+  vector[n_train_patients] patient_log_decrease_rate_residual = patient_log_decrease_rate - pop_log_decrease_rate;
   vector[n_train_patients] patient_decrease_prop_residual = inv_logit(patient_decrease_prop_logis) - inv_logit(pop_decrease_prop_logis);
   real pop_log_decrease_prop = -log1p_exp(-pop_decrease_prop_logis);  
   real pop_log_growth_prop = pop_log_decrease_prop - pop_decrease_prop_logis;
