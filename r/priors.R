@@ -20,8 +20,8 @@ get_tumor_priors <- function() {
     # Rate parameters
     pop_log_net_rate_mean = -4, 
     pop_log_net_rate_sd = 2,
-    pop_log_rate_ratio_mean = 6,
-    pop_log_rate_ratio_sd = 3,
+    pop_log_rate_ratio_mean = 2,
+    pop_log_rate_ratio_sd = 1,
     patient_log_net_rate_sd_sd = 0.5,
     
     # Growth lag parameters
@@ -34,9 +34,9 @@ get_tumor_priors <- function() {
     rate_corr_param = 2.0,
     
     # Proportion parameters
-    pop_decrease_prop_logis_mean = 0,
-    pop_decrease_prop_logis_sd = 2, 
-    patient_decrease_prop_logis_sd_sd = 2.5,
+    pop_decrease_prop_logis_mean = -1.5,    # logit^{-1}(-1.5) ≈ 0.18
+    pop_decrease_prop_logis_sd = 0.5,       # Much tighter
+    patient_decrease_prop_logis_sd_sd = 0.75,  # Also tighten patient-level
     
     log_lod_sd = 0.2
   )
