@@ -23,6 +23,7 @@ get_tumor_priors <- function() {
     pop_log_rate_ratio_mean = 2,
     pop_log_rate_ratio_sd = 1,
     patient_log_net_rate_sd_sd = 0.5,
+    patient_log_rate_ratio_sd_sd = 0.5,
     
     # Growth lag parameters
     growth_lag_mean = 2.7,

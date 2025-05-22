@@ -39,6 +39,7 @@ data {
   real pop_log_rate_ratio_mean;
   real<lower = 0> pop_log_rate_ratio_sd;
   real<lower = 0> patient_log_net_rate_sd_sd;
+  real<lower = 0> patient_log_rate_ratio_sd_sd;
   
   // Growth lag parameters
   real growth_lag_mean;
@@ -94,6 +95,9 @@ parameters {
   real<lower=0> patient_log_net_rate_sd;
   // vector<offset = pop_log_net_rate, multiplier = patient_log_net_rate_sd>[n_patients] patient_log_net_rate;
   vector[pop_rates_param_only ? 0 : n_train_patients] raw_patient_log_net_rate;
+ 
+  real<lower=0> patient_log_rate_ratio_sd;
+  vector[pop_rates_param_only ? 0 : n_train_patients] raw_patient_log_rate_ratio; 
 
   real pop_log_growth_lag;
   real pop_log_growth_transition_rate;
@@ -137,12 +141,17 @@ parameters {
 transformed parameters {
   vector[n_train_patients] patient_log_net_rate_effect = zeros_vector(n_train_patients);
   vector[n_train_patients] patient_log_net_rate = rep_vector(pop_log_net_rate, n_train_patients);
+  vector[n_train_patients] patient_log_rate_ratio_effect = zeros_vector(n_train_patients);
+  vector[n_train_patients] patient_log_rate_ratio = rep_vector(pop_log_rate_ratio, n_train_patients);
   vector[n_train_patients] patient_log_growth_lag_effect = zeros_vector(n_train_patients);
   vector[n_train_patients] patient_log_growth_lag = rep_vector(pop_log_growth_lag, n_train_patients);
   
   if (!pop_rates_param_only) {
     patient_log_net_rate_effect = patient_log_net_rate_sd * raw_patient_log_net_rate;
     patient_log_net_rate += patient_log_net_rate_effect;
+    
+    patient_log_rate_ratio_effect = patient_log_rate_ratio_sd * raw_patient_log_rate_ratio;
+    patient_log_rate_ratio += patient_log_rate_ratio_effect;
   }
   
   if (!pop_growth_lag_param_only) {
@@ -150,8 +159,8 @@ transformed parameters {
     patient_log_growth_lag += patient_log_growth_lag_effect;
   }
   
-  vector[n_train_patients] patient_log_growth_rate = patient_log_net_rate - log_diff_exp(pop_log_rate_ratio, 0);
-  vector[n_train_patients] patient_log_decrease_rate = patient_log_growth_rate + pop_log_rate_ratio;
+  vector[n_train_patients] patient_log_growth_rate = patient_log_net_rate - log_diff_exp(patient_log_rate_ratio, zeros_vector(n_train_patients));
+  vector[n_train_patients] patient_log_decrease_rate = patient_log_growth_rate + patient_log_rate_ratio;
   
   vector[n_train_patients] patient_decrease_prop_logis = rep_vector(pop_decrease_prop_logis, n_train_patients);
   
@@ -201,6 +210,8 @@ model {
   patient_log_net_rate_sd ~ normal(0, patient_log_net_rate_sd_sd);
   // patient_log_net_rate ~ normal(pop_log_net_rate, patient_log_net_rate_sd);
   raw_patient_log_net_rate ~ std_normal(); 
+  patient_log_rate_ratio_sd ~ normal(0, patient_log_rate_ratio_sd_sd);
+  raw_patient_log_rate_ratio ~ std_normal();
 
   pop_log_growth_lag ~ normal(growth_lag_mean, growth_lag_sd);
   pop_log_growth_transition_rate ~ normal(0, log_growth_transition_rate_sd);
