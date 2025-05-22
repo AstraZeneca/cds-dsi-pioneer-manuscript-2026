@@ -96,8 +96,8 @@ parameters {
   // vector<offset = pop_log_net_rate, multiplier = patient_log_net_rate_sd>[n_patients] patient_log_net_rate;
   vector[pop_rates_param_only ? 0 : n_train_patients] raw_patient_log_net_rate;
  
-  real<lower=0> patient_log_rate_ratio_sd;
-  vector[pop_rates_param_only ? 0 : n_train_patients] raw_patient_log_rate_ratio; 
+  // real<lower=0> patient_log_rate_ratio_sd;
+  // vector[pop_rates_param_only ? 0 : n_train_patients] raw_patient_log_rate_ratio; 
 
   real pop_log_growth_lag;
   real pop_log_growth_transition_rate;
@@ -150,8 +150,8 @@ transformed parameters {
     patient_log_net_rate_effect = patient_log_net_rate_sd * raw_patient_log_net_rate;
     patient_log_net_rate += patient_log_net_rate_effect;
     
-    patient_log_rate_ratio_effect = patient_log_rate_ratio_sd * raw_patient_log_rate_ratio;
-    patient_log_rate_ratio += patient_log_rate_ratio_effect;
+    // patient_log_rate_ratio_effect = patient_log_rate_ratio_sd * raw_patient_log_rate_ratio;
+    // patient_log_rate_ratio += patient_log_rate_ratio_effect;
   }
   
   if (!pop_growth_lag_param_only) {
@@ -210,8 +210,8 @@ model {
   patient_log_net_rate_sd ~ normal(0, patient_log_net_rate_sd_sd);
   // patient_log_net_rate ~ normal(pop_log_net_rate, patient_log_net_rate_sd);
   raw_patient_log_net_rate ~ std_normal(); 
-  patient_log_rate_ratio_sd ~ normal(0, patient_log_rate_ratio_sd_sd);
-  raw_patient_log_rate_ratio ~ std_normal();
+  // patient_log_rate_ratio_sd ~ normal(0, patient_log_rate_ratio_sd_sd);
+  // raw_patient_log_rate_ratio ~ std_normal();
 
   pop_log_growth_lag ~ normal(growth_lag_mean, growth_lag_sd);
   pop_log_growth_transition_rate ~ normal(0, log_growth_transition_rate_sd);
