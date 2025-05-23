@@ -599,3 +599,107 @@ get_coef_sd_powerscale_table_data <- function(coef_ps_sense, prior_crcr_coef_sd,
     name_coef_indices(m, NULL, stan_data) |> 
     select(var, covar, prior, likelihood, diagnosis, plot_obj) 
 }
+
+# Tumor analysis plots #####
+
+plot_prior_post_dens <- function(res_data, param = .value, normalize = "all") {
+  res_data |> 
+    ggplot(aes(xdist = {{ param }}, color = fit_type)) +
+    stat_slab(aes(fill = fit_type), alpha = 0.25, normalize = normalize) +
+    stat_pointinterval(position = position_dodge(width = 0.4, preserve = "single"), .width = c(0.5, 0.8, 0.99)) +
+    # stat_spike(at = "median") +
+    scale_fill_discrete("", type = AZ_palette, label = str_to_title, aesthetics = c("fill", "color")) +
+    scale_y_continuous("", breaks = NULL) +
+    NULL
+}
+
+plot_prior_post_hist <- function(res_data, param = .value, normalize = "all") {
+  res_data |> 
+    ggplot(aes(xdist = {{ param }}, color = fit_type)) +
+    stat_histinterval(aes(fill = fit_type), alpha = 0.25, normalize = normalize) +
+    # stat_pointinterval(position = position_dodge(width = 0.4, preserve = "single"), .width = c(0.5, 0.8, 0.99)) +
+    # stat_spike(at = "median") +
+    scale_fill_discrete("", type = AZ_palette, label = str_to_title, aesthetics = c("fill", "color")) +
+    scale_y_continuous("", breaks = NULL) +
+    NULL
+}
+
+plot_corr_decay <- function(res_data, param = .value) {
+  res_data |> 
+    ggplot(aes(t)) +
+    stat_lineribbon(aes(ydist = {{ param }}, fill = fit_type, color = fit_type), alpha = 0.25, .width = c(0.5, 0.8), linewidth = 0.5) +
+    scale_fill_discrete("", type = AZ_palette, label = str_to_title, aesthetics = c("fill", "color")) +
+    labs(x = "Week", y = "Correlation") +
+    NULL
+}
+
+# Distogram #######
+
+# Extend the existing StatLineribbon class
+StatDistogram <- ggproto(
+  "StatDistogram", ggdist:::StatLineribbon,
+  
+  compute_panel = function(self, data, scales, orientation = "horizontal", ...) {
+    # Call parent method to handle panel processing
+    result <- ggproto_parent(ggdist:::StatLineribbon, self)$compute_panel(
+      data, scales, orientation = orientation, ...
+    )
+    
+    return(result)
+  },
+  
+  # Similarly with setup_params, we just forward to the parent
+  setup_params = function(self, data, params) {
+    if (is_empty(params$breaks)) {
+      params$breaks <- breaks_fixed(data$x, width = 30)
+    }
+    
+    params <- ggproto_parent(ggdist:::StatLineribbon, self)$setup_params(data, params)
+    
+    return(params)
+  },
+ 
+  setup_data = function(self, data, params) {
+    data <- data |> 
+      group_by(group, PANEL) |> 
+      reframe(x = params$breaks[-length(params$breaks)], ydist = rvar_sample_hist(dist, params$breaks))  
+    
+    # Call the parent's setup_data first
+    data <- ggproto_parent(ggdist:::StatLineribbon, self)$setup_data(data, params)
+    
+    return(data)
+  } 
+)
+
+stat_distogram  <- function(mapping = NULL, data = NULL,
+                             geom = "lineribbon", position = "identity",
+                             ...,
+                             step = "hv",
+                             breaks = waiver(),
+                             .width = c(0.5, 0.8, 0.95),
+                             point_interval = "median_qi",
+                             orientation = NA,
+                             na.rm = FALSE,
+                             show.legend = NA,
+                             inherit.aes = TRUE) {
+  # Create a layer using our modified StatLineribbon2 class
+  layer(
+    stat = StatDistogram,
+    data = data,
+    mapping = mapping,
+    geom = geom,
+    position = position,
+    show.legend = show.legend,
+    inherit.aes = inherit.aes,
+    params = list(
+      step = step,
+      breaks = breaks,
+      .width = .width,
+      point_interval = point_interval,
+      orientation = orientation,
+      na.rm = na.rm,
+      ...
+    )
+  )
+}
+

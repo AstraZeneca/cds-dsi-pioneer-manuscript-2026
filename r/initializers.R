@@ -141,3 +141,339 @@ create_crcr_pfs_initializer <- function(stan_data, n_causes = 2) {
     return(init_vals)
   }
 }
+
+create_tumor_initializer <- function(stan_data) {
+  max_all_t <- max(max(stan_data$t_measure) + 1, stan_data$extend_max_all_t)
+  function(chain_id) {
+    init_vals <- lst(
+      pop_tumor_gp_alpha = abs(rnorm(1, sd = stan_data$pop_tumor_gp_alpha_sd)),
+      
+      log_pop_tumor_gp_rho = with(stan_data, rlnorm(1, pop_tumor_gp_rho_meanlog, pop_tumor_gp_rho_sdlog)),
+      
+      patient_tumor_intercept_sd = abs(rnorm(1, sd = stan_data$patient_tumor_intercept_sd_sd)), 
+      raw_patient_tumor_intercept_effect = rnorm(stan_data$n_patients), 
+      patient_tumor_intercept_effect = with(stan_data, rnorm(n_patients, sd = patient_tumor_intercept_sd)), 
+    ) |> 
+      compact()
+    
+    return(init_vals)
+  } 
+}
+
+create_tumor_ss_initializer <- function(stan_data) {
+  function(chain_id) {
+    # Get training patient range
+    train_patients_pos <- stan_data$train_patients_pos
+    train_patients_end <- stan_data$train_patients_end
+    n_train_patients <- train_patients_end - train_patients_pos + 1
+    
+    # Calculate number of visits minus 1 for training patients only
+    n_total_train_visits_m1 <- sum(stan_data$n_patient_visits[train_patients_pos:train_patients_end]) - n_train_patients
+    
+    # Population-level parameters
+    pop_log_net_rate <- rnorm(1, stan_data$pop_log_net_rate_mean, stan_data$pop_log_net_rate_sd)
+    pop_log_rate_ratio <- rnorm(1, stan_data$pop_log_rate_ratio_mean, stan_data$pop_log_rate_ratio_sd)
+    pop_log_rate_ratio <- max(pop_log_rate_ratio, 0.125)  # Enforce model constraint
+    
+    # GP parameters
+    log_pop_tumor_gp_rho <- rnorm(1, stan_data$pop_tumor_gp_rho_meanlog, stan_data$pop_tumor_gp_rho_sdlog)
+    
+    # Handle GP parameters based on independence flags
+    log_patient_tumor_gp_rho_sd <- abs(rnorm(1, 0, stan_data$log_patient_tumor_gp_rho_sd_sd))
+    
+    # Growth lag parameters
+    pop_log_growth_lag <- rnorm(1, stan_data$growth_lag_mean, stan_data$growth_lag_sd)
+    pop_log_growth_transition_rate <- abs(rnorm(1, 0, stan_data$log_growth_transition_rate_sd))
+    patient_log_growth_lag_sd <- abs(rnorm(1, 0, stan_data$patient_log_growth_lag_sd_sd))
+    
+    # Process noise parameters
+    pop_process_sd <- c(
+      abs(rnorm(1, 0, stan_data$pop_decrease_process_sd_sd)),
+      abs(rnorm(1, 0, stan_data$pop_growth_process_sd_sd))
+    )
+    measure_sd <- abs(rnorm(1, 0, stan_data$measure_sd_sd))
+    
+    # Hierarchical standard deviations
+    patient_log_net_rate_sd <- abs(rnorm(1, 0, stan_data$patient_log_net_rate_sd_sd))
+    
+    # Proportion parameters 
+    pop_decrease_prop_logis <- rnorm(1, 
+                                     stan_data$pop_decrease_prop_logis_mean,
+                                     stan_data$pop_decrease_prop_logis_sd)
+    patient_decrease_prop_logis_sd <- abs(rnorm(1, 0, stan_data$patient_decrease_prop_logis_sd_sd))
+    
+    # Process correlation - initialize to identity or nothing based on flags
+    use_cross_process_corr <- !stan_data$independ_cross_process_noise
+    L_process_corr <- if (use_cross_process_corr) diag(2) else matrix(numeric(0), 0, 0)
+    
+    # Create the return list with appropriate dimensions
+    init_vals <- list(
+      # Population parameters
+      pop_log_net_rate = pop_log_net_rate,
+      pop_log_rate_ratio = pop_log_rate_ratio,
+      
+      # GP parameters
+      log_pop_tumor_gp_rho = log_pop_tumor_gp_rho,
+      log_patient_tumor_gp_rho_sd = log_patient_tumor_gp_rho_sd,
+      
+      # Growth lag parameters
+      pop_log_growth_lag = pop_log_growth_lag,
+      pop_log_growth_transition_rate = pop_log_growth_transition_rate,
+      patient_log_growth_lag_sd = patient_log_growth_lag_sd,
+      
+      # Noise parameters
+      pop_process_sd = pop_process_sd,
+      measure_sd = measure_sd
+    )
+    
+    # Add L_process_corr only if needed
+    if (use_cross_process_corr) {
+      init_vals$L_process_corr <- L_process_corr
+    }
+    
+    # Proportion parameters
+    init_vals$pop_decrease_prop_logis <- pop_decrease_prop_logis
+    init_vals$patient_decrease_prop_logis_sd <- patient_decrease_prop_logis_sd
+    
+    if (!stan_data$pop_rates_param_only) {
+      init_vals$raw_patient_log_net_rate <- rep(0, n_train_patients)
+    } 
+    
+    if (!stan_data$pop_initial_states_param_only) {
+      init_vals$raw_patient_decrease_prop_logis <- rep(0, n_train_patients)
+    }
+    
+    if (!stan_data$pop_growth_lag_param_only) {
+      init_vals$raw_patient_log_growth_lag <- rep(0, n_train_patients) 
+    }
+      
+    # GP effect parameters only if not independent
+    if (!stan_data$independ_long_process_noise && !stan_data$pop_rho_param_only) {
+      init_vals$raw_log_patient_tumor_gp_rho_effect <- rep(0, n_train_patients)
+    }
+    
+    # Initialize raw process noise and states
+    init_vals$raw_patient_process_noise <- matrix(0, nrow = n_total_train_visits_m1, ncol = 2)
+    init_vals$raw_states <- matrix(0, nrow = n_total_train_visits_m1, ncol = 2)
+    
+    return(init_vals)
+  }
+}
+
+# AI written function hence the ugliness.
+create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
+  # Extract draws from the pathfinder fit
+  draws_df <- posterior::as_draws_df(pathfinder_fit$draws())
+  
+  # Get parameter names
+  param_names <- colnames(draws_df) %>% 
+    stringr::str_subset("^\\.") %>% 
+    stringr::str_subset("lp__|divergent__", negate = TRUE)
+  
+  # Get training patient range
+  train_patients_pos <- stan_data$train_patients_pos
+  train_patients_end <- stan_data$train_patients_end
+  n_train_patients <- train_patients_end - train_patients_pos + 1
+  
+  # Calculate number of visits minus 1 for training patients only
+  n_total_train_visits_m1 <- sum(stan_data$n_patient_visits[train_patients_pos:train_patients_end]) - n_train_patients
+  
+  # Flag for model configuration
+  use_cross_process_corr <- !stan_data$independ_cross_process_noise
+  use_long_process_corr <- !stan_data$independ_long_process_noise
+  
+  # Function to get parameter matrix from draws
+  extract_matrix_param <- function(param_base, rows, cols) {
+    pattern <- paste0("^", param_base, "\\[")
+    matching_cols <- param_names %>% 
+      stringr::str_subset(pattern)
+    
+    # If no matches found, return NULL
+    if (length(matching_cols) == 0) return(NULL)
+    
+    # Try to build the matrix
+    result <- matrix(0, nrow = rows, ncol = cols)
+    
+    for (i in 1:rows) {
+      for (j in 1:cols) {
+        param <- paste0(param_base, "[", i, ",", j, "]")
+        if (param %in% param_names) {
+          result[i, j] <- NA  # Just placeholder to check which elements exist
+        }
+      }
+    }
+    
+    # Return NULL if empty matrix
+    if (all(is.na(result))) return(NULL)
+    
+    return(result)
+  }
+  
+  # Function to get parameter vector from draws
+  extract_vector_param <- function(param_base, length) {
+    pattern <- paste0("^", param_base, "\\[")
+    matching_cols <- param_names %>% 
+      stringr::str_subset(pattern)
+    
+    # If no matches found, return NULL
+    if (length(matching_cols) == 0) return(NULL)
+    
+    # Try to build the vector
+    result <- rep(NA, length)
+    
+    for (i in 1:length) {
+      param <- paste0(param_base, "[", i, "]")
+      if (param %in% param_names) {
+        result[i] <- NA  # Just placeholder to check which elements exist
+      }
+    }
+    
+    # Return NULL if empty vector
+    if (all(is.na(result))) return(NULL)
+    
+    return(result)
+  }
+  
+  # Collect parameter information
+  scalar_params <- c(
+    "pop_log_net_rate", "pop_log_rate_ratio", 
+    "log_pop_tumor_gp_rho", "pop_log_growth_lag", 
+    "pop_log_growth_transition_rate", "measure_sd",
+    "pop_decrease_prop_logis",
+    "log_patient_tumor_gp_rho_sd", "patient_log_net_rate_sd", 
+    "patient_log_growth_lag_sd", "patient_decrease_prop_logis_sd"
+  ) %>%
+    purrr::keep(~ . %in% param_names)
+  
+  # Vector parameters
+  vector_params <- list(
+    pop_process_sd = 2
+  ) %>%
+    purrr::keep(~ !is.null(extract_vector_param(names(.), .)))
+  
+  # Patient-level parameters
+  patient_params <- list(
+    raw_patient_log_net_rate = if (!stan_data$pop_rates_param_only) n_train_patients,
+    raw_patient_log_growth_lag = if (!stan_data$pop_growth_lag_param_only) n_train_patients,
+    raw_patient_decrease_prop_logis = if (!stan_data$pop_initial_states_param_only) n_train_patients,
+    raw_log_patient_tumor_gp_rho_effect = if (use_long_process_corr && stan_data$pop_rho_param_only) n_train_patients 
+  ) |>  
+    purrr::discard(is_null) |>  
+    purrr::keep(\(p) !is.null(extract_vector_param(names(p), p)))
+  
+  # Matrix parameters
+  matrix_params <- list(
+    L_process_corr = if(use_cross_process_corr) c(2, 2) else c(0, 0),
+    raw_patient_process_noise = c(n_total_train_visits_m1, 2),
+    raw_states = c(n_total_train_visits_m1, 2)
+  ) %>%
+    purrr::keep(~ all(. > 0)) %>%
+    purrr::keep(~ !is.null(extract_matrix_param(names(.), .[1], .[2])))
+  
+  # Return the initializer function
+  function(chain_id) {
+    # Randomly select a draw
+    draw_idx <- sample(1:nrow(draws_df), 1)
+    draw <- draws_df[draw_idx, ]
+    
+    # Initialize empty list
+    init_vals <- list()
+    
+    # Add scalar parameters
+    init_vals <- scalar_params %>%
+      purrr::map_dbl(~ as.numeric(draw[[.]])) %>%
+      as.list() %>%
+      c(init_vals, .)
+    
+    # Make sure pop_log_rate_ratio meets constraint if it exists
+    if (!is.null(init_vals$pop_log_rate_ratio)) {
+      init_vals$pop_log_rate_ratio <- max(init_vals$pop_log_rate_ratio, 0.125)
+    }
+    
+    # Add vector parameters
+    for (param_name in names(vector_params)) {
+      length <- vector_params[[param_name]]
+      
+      # Extract values from the draw
+      values <- numeric(length)
+      for (i in 1:length) {
+        param <- paste0(param_name, "[", i, "]")
+        if (param %in% param_names) {
+          values[i] <- as.numeric(draw[[param]])
+        }
+      }
+      
+      init_vals[[param_name]] <- values
+    }
+    
+    # Add patient-level parameters 
+    for (param_name in names(patient_params)) {
+      length <- patient_params[[param_name]]
+      
+      # Skip if length is 0 (based on independence flags)
+      if (length == 0) next
+      
+      # Extract values from the draw
+      values <- numeric(length)
+      for (i in 1:length) {
+        param <- paste0(param_name, "[", i, "]")
+        if (param %in% param_names) {
+          values[i] <- as.numeric(draw[[param]])
+        } else {
+          values[i] <- 0  # Default to 0 if parameter not found
+        }
+      }
+      
+      init_vals[[param_name]] <- values
+    }
+    
+    # Add matrix parameters
+    for (param_name in names(matrix_params)) {
+      dims <- matrix_params[[param_name]]
+      rows <- dims[1]
+      cols <- dims[2]
+      
+      # Skip if dimensions are 0 (based on independence flags)
+      if (rows == 0 || cols == 0) next
+      
+      # Extract values from the draw
+      values <- matrix(0, nrow = rows, ncol = cols)
+      for (i in 1:rows) {
+        for (j in 1:cols) {
+          param <- paste0(param_name, "[", i, ",", j, "]")
+          if (param %in% param_names) {
+            values[i, j] <- as.numeric(draw[[param]])
+          }
+        }
+      }
+      
+      init_vals[[param_name]] <- values
+    }
+    
+    # Default to simple initializers if not found in pathfinder results
+    
+    # Make sure process_sd is initialized if not already
+    if (is.null(init_vals$pop_process_sd)) {
+      init_vals$pop_process_sd <- c(
+        abs(rnorm(1, 0, stan_data$pop_decrease_process_sd_sd)),
+        abs(rnorm(1, 0, stan_data$pop_growth_process_sd_sd))
+      )
+    }
+    
+    # Process correlation matrix if needed
+    if (use_cross_process_corr && is.null(init_vals$L_process_corr)) {
+      init_vals$L_process_corr <- diag(2)
+    }
+    
+    # Make sure raw states and process noise are initialized
+    if (is.null(init_vals$raw_states)) {
+      init_vals$raw_states <- matrix(0, nrow = n_total_train_visits_m1, ncol = 2)
+    }
+    
+    if (is.null(init_vals$raw_patient_process_noise)) {
+      init_vals$raw_patient_process_noise <- matrix(0, nrow = n_total_train_visits_m1, ncol = 2)
+    }
+    
+    return(init_vals)
+  }
+}
