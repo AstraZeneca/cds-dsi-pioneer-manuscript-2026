@@ -22,6 +22,8 @@ data {
   int<lower = 0, upper = 1> run_parallel;
   int<lower = 1, upper = n_patients> train_patients_pos, train_patients_end;
   
+  array[sum(n_patient_visits)] int<lower = 1, upper = 4> recist;
+  
   // GP parameters
   real<lower = 0> pop_tumor_gp_rho_meanlog;
   real<lower = 0> pop_tumor_gp_rho_sdlog;
@@ -77,6 +79,8 @@ transformed data {
   array[n_train_patients + 1] int<lower = 1> train_forecast_visits_pos = create_pos(n_patient_forecast_visits[train_patients_pos:train_patients_end]);
   
   int<lower = 1> n_total_train_forecast_visits = get_pos_total_size(train_forecast_visits_pos);
+  
+  array[n_total_train_visits] int train_obs_recist = get_int_sub_array(recist, patient_visit_pos, train_patients_pos, train_patients_end);
   
   real log_lod = log(0.1);
   
@@ -289,6 +293,19 @@ generated quantities {
   array[n_total_train_visits] int<lower = CR, upper = PD> rep_recist;
   array[forecast ? n_total_train_forecast_visits : 0] int<lower = CR, upper = PD> forecast_recist;
   
+  // RECIST prediction accuracy metrics
+  int<lower=0> correct_recist_predictions = 0;
+  int<lower=0> total_recist_predictions = 0;
+  matrix[4, 4] recist_confusion_matrix = rep_matrix(0, 4, 4); // rows = observed, cols = predicted
+  real weighted_recist_accuracy_linear = 0;
+  real weighted_recist_accuracy_quadratic = 0;
+  int<lower=0> correct_recist_response_class = 0;
+  int<lower=0> correct_recist_disease_control = 0;
+  
+  // Per-category metrics
+  vector[4] recist_category_sensitivity = zeros_vector(4); // true positive rate per category
+  vector[4] recist_category_precision = zeros_vector(4);   // positive predictive value per category
+  vector[4] recist_category_counts = zeros_vector(4);      // number of observations per category
   
   for (i in train_patients_pos:train_patients_end) {
     int train_idx = i - train_patients_pos + 1;
@@ -383,6 +400,40 @@ generated quantities {
         append_row(sum_tumor_size[visit_pos], exp(forecast_patient_log_sld[train_forecast_visit_start:train_forecast_visit_end]))
       );
     }
+    
+    for (t in train_visit_start:train_visit_end) {
+      // Update all metrics using the function
+      (correct_recist_predictions, recist_confusion_matrix, recist_category_counts,
+       weighted_recist_accuracy_linear, weighted_recist_accuracy_quadratic,
+       correct_recist_response_class, correct_recist_disease_control) = update_recist_metrics(
+        train_obs_recist[t], rep_recist[t],
+        correct_recist_predictions, recist_confusion_matrix, recist_category_counts,
+        weighted_recist_accuracy_linear, weighted_recist_accuracy_quadratic,
+        correct_recist_response_class, correct_recist_disease_control
+      );
+      
+      total_recist_predictions += 1;
+    }
   }
+  
+  // Calculate final metrics
+  real recist_accuracy;
+  real recist_response_accuracy;
+  real recist_disease_control_accuracy;
+  real recist_response_sensitivity;
+  real recist_response_specificity;
+  real recist_progression_sensitivity;
+  real recist_progression_specificity;
+  
+  (recist_accuracy, recist_response_accuracy, recist_disease_control_accuracy,
+   weighted_recist_accuracy_linear, weighted_recist_accuracy_quadratic,
+   recist_category_sensitivity, recist_category_precision,
+   recist_response_sensitivity, recist_response_specificity,
+   recist_progression_sensitivity, recist_progression_specificity) = calculate_recist_summary_metrics(
+    correct_recist_predictions, total_recist_predictions,
+    recist_confusion_matrix, recist_category_counts,
+    weighted_recist_accuracy_linear, weighted_recist_accuracy_quadratic,
+    correct_recist_response_class, correct_recist_disease_control
+  );
 }
 
