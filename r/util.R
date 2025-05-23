@@ -236,7 +236,8 @@ rvar_safe_qs2_format <- tar_format(
   
   write = function(object, path) {
     if (tibble::is_tibble(object)) {
-      object <- dplyr::mutate(object, across(where(posterior::is_rvar), posterior:::invalidate_rvar_cache))
+      object <- as.data.frame(object) |> 
+        dplyr::mutate(across(where(posterior::is_rvar), \(r) { attr(r, "cache") <- NULL; r }))
     }
     
     qs2::qs_save(object, path)
