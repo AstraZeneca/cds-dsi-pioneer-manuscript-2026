@@ -275,14 +275,20 @@ generated quantities {
   }
   
   vector<lower = 0, upper = 1>[max_t_width] all_growth_factor = get_growth_lag_factor(all_tumor_measure_t, exp(pop_log_growth_lag), exp(pop_log_growth_transition_rate));
+  
   matrix[max_t_width, 2] all_scaled_process_sd = scale_process_sd(all_tumor_measure_t, pop_process_sd);
+  
   matrix[n_total_train_visits_m1, 2] obs_patient_process_noise;
   matrix[forecast ? n_total_train_forecast_visits : 0, 2] forecast_patient_process_noise;
+  
   matrix[forecast ? n_total_train_forecast_visits : 0, 2] forecast_patient_states;
+  
+  vector[n_total_train_visits] rep_patient_log_sld;
   vector[forecast ? n_total_train_forecast_visits : 0] forecast_patient_log_sld;
+  
+  array[n_total_train_visits] int<lower = CR, upper = PD> rep_recist;
   array[forecast ? n_total_train_forecast_visits : 0] int<lower = CR, upper = PD> forecast_recist;
   
-  vector[get_pos_total_size(train_patient_visit_pos)] rep_patient_log_sld;
   
   for (i in train_patients_pos:train_patients_end) {
     int train_idx = i - train_patients_pos + 1;
@@ -322,6 +328,8 @@ generated quantities {
         to_vector(log_sum_exp(states[(train_visit_start + 1):train_visit_end, 1], states[(train_visit_start + 1):train_visit_end, 2])) + log(sum_tumor_size[visit_pos]),
         rep_vector(measure_sd, n_patient_visits[i] - 1)
       ));
+      
+    rep_recist[train_visit_start:train_visit_end] = calculate_target_recist(exp(rep_patient_log_sld[train_visit_start:train_visit_end]));
     
     array[n_patient_forecast_visits[i] + 1] int forecast_time = linspaced_int_array(n_patient_forecast_visits[i] + 1, patient_last_obs_visit[i], last_predict_visit);
     
