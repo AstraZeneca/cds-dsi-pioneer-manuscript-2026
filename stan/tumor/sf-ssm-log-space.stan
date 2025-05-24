@@ -22,7 +22,7 @@ data {
   int<lower = 0, upper = 1> run_parallel;
   int<lower = 1, upper = n_patients> train_patients_pos, train_patients_end;
   
-  array[sum(n_patient_visits)] int<lower = 0, upper = 4> recist;
+  array[sum(n_patient_visits)] int<lower = 1, upper = 5> recist;
   
   // GP parameters
   real<lower = 0> pop_tumor_gp_rho_meanlog;
@@ -404,7 +404,7 @@ generated quantities {
     }
     
     for (t in train_visit_start:train_visit_end) {
-      if (train_obs_recist[t] > 0) {
+      if (train_obs_recist[t] <= PD) {
         // Update all metrics using the function
         (correct_recist_predictions, recist_confusion_matrix, recist_category_counts,
          weighted_recist_accuracy_linear, weighted_recist_accuracy_quadratic,
@@ -417,7 +417,7 @@ generated quantities {
         
         total_recist_predictions += 1;
       } else {
-        assert_equal(rep_recist[t], 0);
+        assert_equal(rep_recist[t], PD + 1);
       }
     }
   }
