@@ -58,12 +58,12 @@ get_sld <- function(res, patient_states_data) {
     mutate(rep_patient_sld = exp(rep_patient_log_sld))
 }
 
-prepare_recist_data <- function(recist_rvar_data) {
+prepare_recist_data <- function(recist_rvar_data, var) {
   get_recist_simplex <- function(r, v) tibble(!!r := Pr(v == r))
- 
+
   recist_rvar_data |>  
     mutate(
-      forecast_recist = rvar_factor(forecast_recist, levels = 1:4, labels = c("CR", "PR", "SD", "PD")),
+      {{ var }} := rvar_factor({{ var }}, levels = 1:4, labels = c("CR", "PR", "SD", "PD")),
       map_dfr(forecast_recist, \(v) map_dfc(levels(v), \(r) get_recist_simplex(r, v))) 
     )
 }
@@ -71,7 +71,7 @@ prepare_recist_data <- function(recist_rvar_data) {
 
 get_recist <- function(res, patient_states_data) {
   get_obs_var(res, patient_states_data, rep_recist[n]) |> 
-    prepare_recist_data()
+    prepare_recist_data(rep_recist)
 }
 
 get_subsample_forecast_data <- function(patient_states_data, analysis_data) {
@@ -125,7 +125,7 @@ get_forecast_recist <- function(res, patient_states_data, analysis_data) {
   get_recist_simplex <- function(r, v) tibble(!!r := Pr(v == r))
   
   get_forecast_var(res, patient_states_data, analysis_data, forecast_recist[n]) |> 
-    prepare_recist_data()
+    prepare_recist_data(forecast_recist)
 }
 
 bin_point_intervals <- function(data, dist, breaks, ...) {
