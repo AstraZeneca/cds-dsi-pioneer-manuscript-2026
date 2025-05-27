@@ -40,6 +40,7 @@ data {
   real<lower = 0> pop_log_net_rate_sd;
   real pop_log_rate_ratio_mean;
   real<lower = 0> pop_log_rate_ratio_sd;
+  real<lower = 0> trial_log_net_rate_sd_sd;
   real<lower = 0> patient_log_net_rate_sd_sd;
   real<lower = 0> patient_log_rate_ratio_sd_sd;
   
@@ -55,7 +56,9 @@ data {
   // Proportion parameters
   real pop_decrease_prop_logis_mean;
   real<lower = 0> pop_decrease_prop_logis_sd;
+  real<lower = 0> trial_decrease_prop_logis_sd_sd;
   real<lower = 0> patient_decrease_prop_logis_sd_sd;
+  
   real<lower = 0> log_lod_sd;
 } 
 
@@ -66,7 +69,8 @@ transformed data {
   
   int<lower = 1> n_total_visits_m1 = sum(n_patient_visits) - n_patients;
   array[n_patients + 1] int<lower = 1> patient_visit_m1_pos = create_pos(n_patient_visits, -1);
-  
+ 
+  int<lower = 1, upper = n_trials> n_train_trials = max(patient_trial) - min(patient_trial) + 1; 
   int<lower = 1> n_train_patients = train_patients_end - train_patients_pos + 1;
   array[n_train_patients] int<lower = 0> n_train_patient_visits = n_patient_visits[train_patients_pos:train_patients_end];
   int<lower = 1> n_total_train_visits = sum(n_train_patient_visits);
@@ -94,6 +98,10 @@ transformed data {
 parameters {
   real pop_log_net_rate;            // Population-level net rate (log(d-g))
   real<lower = 0> pop_log_rate_ratio; // Population-level ratio (log(d/g))
+  
+  // Trial-level variation for net rate only
+  real<lower=0> trial_log_net_rate_sd;
+  vector[pop_rates_param_only ? 0 : n_train_trials] raw_trial_log_net_rate;
 
   // Patient-level variation for net rate only
   real<lower=0> patient_log_net_rate_sd;
@@ -134,6 +142,9 @@ parameters {
   // real<lower = 0> patient_log_growth_rate_sd;
   
   real pop_decrease_prop_logis;
+  
+  real<lower = 0> trial_decrease_prop_logis_sd;
+  vector[pop_initial_states_param_only ? 0 : n_train_trials] raw_trial_decrease_prop_logis;
 
   real<lower = 0> patient_decrease_prop_logis_sd;
   // vector<offset = pop_decrease_prop_logis, multiplier = patient_decrease_prop_logis_sd>[n_patients] patient_decrease_prop_logis;
@@ -143,6 +154,7 @@ parameters {
 }
 
 transformed parameters {
+  vector[n_train_trials] trial_log_net_rate_effect = zeros_vector(n_train_trials);
   vector[n_train_patients] patient_log_net_rate_effect = zeros_vector(n_train_patients);
   vector[n_train_patients] patient_log_net_rate = rep_vector(pop_log_net_rate, n_train_patients);
   vector[n_train_patients] patient_log_rate_ratio_effect = zeros_vector(n_train_patients);
@@ -151,8 +163,9 @@ transformed parameters {
   vector[n_train_patients] patient_log_growth_lag = rep_vector(pop_log_growth_lag, n_train_patients);
   
   if (!pop_rates_param_only) {
+    trial_log_net_rate_effect = trial_log_net_rate_sd * raw_trial_log_net_rate;
     patient_log_net_rate_effect = patient_log_net_rate_sd * raw_patient_log_net_rate;
-    patient_log_net_rate += patient_log_net_rate_effect;
+    patient_log_net_rate += trial_log_net_rate_effect[patient_trial[train_patients_pos:train_patients_end]] + patient_log_net_rate_effect;
     
     // patient_log_rate_ratio_effect = patient_log_rate_ratio_sd * raw_patient_log_rate_ratio;
     // patient_log_rate_ratio += patient_log_rate_ratio_effect;
@@ -169,7 +182,9 @@ transformed parameters {
   vector[n_train_patients] patient_decrease_prop_logis = rep_vector(pop_decrease_prop_logis, n_train_patients);
   
   if (!pop_initial_states_param_only) {
-    patient_decrease_prop_logis += patient_decrease_prop_logis_sd * raw_patient_decrease_prop_logis;
+    patient_decrease_prop_logis += 
+      (trial_decrease_prop_logis_sd * raw_trial_decrease_prop_logis)[patient_trial[train_patients_pos:train_patients_end]] + 
+      patient_decrease_prop_logis_sd * raw_patient_decrease_prop_logis;
   }
   
   vector[n_train_patients] patient_log_decrease_prop = -log1p_exp(-patient_decrease_prop_logis);
@@ -216,6 +231,8 @@ model {
   raw_patient_log_net_rate ~ std_normal(); 
   // patient_log_rate_ratio_sd ~ normal(0, patient_log_rate_ratio_sd_sd);
   // raw_patient_log_rate_ratio ~ std_normal();
+  trial_log_net_rate_sd ~ normal(0, trial_log_net_rate_sd_sd);
+  raw_trial_log_net_rate ~ std_normal(); 
 
   pop_log_growth_lag ~ normal(growth_lag_mean, growth_lag_sd);
   pop_log_growth_transition_rate ~ normal(0, log_growth_transition_rate_sd);
@@ -240,6 +257,8 @@ model {
   }
   
   pop_decrease_prop_logis ~ normal(pop_decrease_prop_logis_mean, pop_decrease_prop_logis_sd);
+  trial_decrease_prop_logis_sd ~ normal(0, trial_decrease_prop_logis_sd_sd);
+  raw_trial_decrease_prop_logis ~ std_normal();
   patient_decrease_prop_logis_sd ~ normal(0, patient_decrease_prop_logis_sd_sd);
   // patient_decrease_prop_logis ~ normal(pop_decrease_prop_logis, patient_decrease_prop_logis_sd);
   raw_patient_decrease_prop_logis ~ std_normal();
