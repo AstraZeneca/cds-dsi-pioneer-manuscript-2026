@@ -40,7 +40,7 @@ array[] int calculate_target_recist(vector sld_trajectory) {
   // Calculate RECIST status for each subsequent time point
   for (t in 2:n) {
     // Update nadir if current measurement is smaller
-    nadir = min(nadir, sld_trajectory[t]);
+    nadir = min([nadir, sld_trajectory[t]]);
     
     if (sld_trajectory[t] == 0) {
       target_status[t - 1] = CR;
