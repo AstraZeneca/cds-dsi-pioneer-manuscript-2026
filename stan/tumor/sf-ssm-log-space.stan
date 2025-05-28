@@ -23,6 +23,7 @@ data {
   int<lower = 1, upper = n_patients> train_patients_pos, train_patients_end;
   
   array[sum(n_patient_visits)] int<lower = 1, upper = 5> recist;
+  array[n_patients] int<lower = 0, upper = 1> right_censored;
   
   // GP parameters
   real<lower = 0> pop_tumor_gp_rho_meanlog;
@@ -85,6 +86,21 @@ transformed data {
   int<lower = 1> n_total_train_forecast_visits = get_pos_total_size(train_forecast_visits_pos);
   
   array[n_total_train_visits] int train_obs_recist = get_int_sub_array(recist, patient_visit_pos, train_patients_pos, train_patients_end);
+  
+  // int<lower = 0, upper = n_patients> n_right_censored_patients = sum(right_censored);
+  int<lower = 0, upper = n_patients> n_train_right_censored_patients = sum(right_censored[train_patients_pos:train_patients_end]);
+  array[n_right_censored_patients] int<lower = 1, upper = n_patients> train_right_censored_patients;
+ 
+  {
+    int right_censored_idx = 1;
+    
+    for (i in train_patients_pos:train_patients_end) {
+      if (right_censored[i]) {
+        train_right_censored_patients[right_censored_idx] = i - train_patients_pos + 1;
+        right_censored_idx += 1;
+      }
+    }
+  }
   
   real log_lod = log(0.1);
   
@@ -183,7 +199,7 @@ transformed parameters {
   
   if (!pop_initial_states_param_only) {
     patient_decrease_prop_logis += 
-      (trial_decrease_prop_logis_sd * raw_trial_decrease_prop_logis)[patient_trial[train_patients_pos:train_patients_end]] + 
+      (trial_decrease_prop_logis_sd * raw_trial_decrease_prop_logis)[patient_trial[train_patients_pos:train_patients_end]] +
       patient_decrease_prop_logis_sd * raw_patient_decrease_prop_logis;
   }
   
@@ -311,6 +327,9 @@ generated quantities {
   
   array[n_total_train_visits] int<lower = CR, upper = PD + 1> rep_recist;
   array[forecast ? n_total_train_forecast_visits : 0] int<lower = CR, upper = PD> forecast_recist;
+ 
+  // We're only forecasting for right censored patients 
+  array[forecast ? n_train_right_censored_patients] int<lower = 1> forecast_pfs;
   
   // RECIST prediction accuracy metrics
   int<lower=0> correct_recist_predictions = 0;
@@ -325,116 +344,127 @@ generated quantities {
   vector[4] recist_category_sensitivity = zeros_vector(4); // true positive rate per category
   vector[4] recist_category_precision = zeros_vector(4);   // positive predictive value per category
   vector[4] recist_category_counts = zeros_vector(4);      // number of observations per category
+
+  {
+    int right_censored_idx = 1;
+    
+    for (i in train_patients_pos:train_patients_end) {
+      int train_idx = i - train_patients_pos + 1;
   
-  for (i in train_patients_pos:train_patients_end) {
-    int train_idx = i - train_patients_pos + 1;
-
-    int train_visit_start, train_visit_end;
-    (train_visit_start, train_visit_end) = get_pos(train_patient_visit_pos, train_idx);
-
-    int train_visit_m1_start, train_visit_m1_end;
-    (train_visit_m1_start, train_visit_m1_end) = get_pos(train_patient_visit_m1_pos, train_idx);
-    int train_visit_m1_size = train_visit_m1_end - train_visit_m1_start + 1;
-
-    int train_forecast_visit_start, train_forecast_visit_end;
-    (train_forecast_visit_start, train_forecast_visit_end) = get_pos(train_forecast_visits_pos, train_idx);
-
-    int visit_pos, visit_end;
-    (visit_pos, visit_end) = get_pos(patient_visit_pos, i);
-
-    int visit_m1_start, visit_m1_end;
-    (visit_m1_start, visit_m1_end) = get_pos(patient_visit_m1_pos, i);
-
-    int forecast_visit_start, forecast_visit_end;
-    (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
-    int forecast_size = forecast_visit_end - forecast_visit_start + 1;
-    
-    obs_patient_process_noise[train_visit_m1_start:train_visit_m1_end] = rep_matrix(0, train_visit_m1_size, 2); 
-    // obs_patient_process_noise[train_visit_m1_start:train_visit_m1_end] = calc_patient_process_noise(
-    //   raw_patient_process_noise[train_visit_m1_start:train_visit_m1_end],
-    //   get_int_sub_array(train_patient_visits, train_patient_visit_pos, train_idx),
-    //   exp(log_pop_tumor_gp_rho), delta,
-    //   pop_process_sd, L_process_corr,
-    //   independ_long_process_noise, independ_cross_process_noise
-    // );
-    
-    rep_patient_log_sld[train_visit_start] = log(sum_tumor_size[visit_pos]);
-    rep_patient_log_sld[(train_visit_start + 1):train_visit_end] =
-      to_vector(normal_rng(
-        to_vector(log_sum_exp(states[(train_visit_start + 1):train_visit_end, 1], states[(train_visit_start + 1):train_visit_end, 2])) + log(sum_tumor_size[visit_pos]),
-        rep_vector(measure_sd, n_patient_visits[i] - 1)
-      ));
+      int train_visit_start, train_visit_end;
+      (train_visit_start, train_visit_end) = get_pos(train_patient_visit_pos, train_idx);
+  
+      int train_visit_m1_start, train_visit_m1_end;
+      (train_visit_m1_start, train_visit_m1_end) = get_pos(train_patient_visit_m1_pos, train_idx);
+      int train_visit_m1_size = train_visit_m1_end - train_visit_m1_start + 1;
+  
+      int train_forecast_visit_start, train_forecast_visit_end;
+      (train_forecast_visit_start, train_forecast_visit_end) = get_pos(train_forecast_visits_pos, train_idx);
+  
+      int visit_pos, visit_end;
+      (visit_pos, visit_end) = get_pos(patient_visit_pos, i);
+  
+      int visit_m1_start, visit_m1_end;
+      (visit_m1_start, visit_m1_end) = get_pos(patient_visit_m1_pos, i);
+  
+      int forecast_visit_start, forecast_visit_end;
+      (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
+      int forecast_size = forecast_visit_end - forecast_visit_start + 1;
       
-    rep_recist[train_visit_start] = PD + 1; 
-    rep_recist[(train_visit_start + 1):train_visit_end] = calculate_target_recist(exp(rep_patient_log_sld[train_visit_start:train_visit_end]));
-    
-    array[n_patient_forecast_visits[i] + 1] int forecast_time = linspaced_int_array(n_patient_forecast_visits[i] + 1, patient_last_obs_visit[i], last_predict_visit);
-    
-    if (forecast && n_patient_forecast_visits[i] > 0) {
-      // assert_matching_states(
-      //   states[visit_pos:visit_end], 
-      //   [ patient_log_decrease_prop[train_idx], patient_log_growth_prop[train_idx] ],
-      //   get_int_sub_array(t_patient_visits, patient_visit_pos, i),
-      //   exp(patient_log_decrease_rate[train_idx]), exp(patient_log_growth_rate[train_idx]),
-      //   0.0001, // exp(patient_log_growth_lag[i]), 
-      //   0.0001, // exp(pop_log_growth_transition_rate),
-      //   rep_matrix(0, get_pos_size(train_patient_visit_m1_pos, train_idx), 2),
-      //   debug
+      obs_patient_process_noise[train_visit_m1_start:train_visit_m1_end] = rep_matrix(0, train_visit_m1_size, 2); 
+      // obs_patient_process_noise[train_visit_m1_start:train_visit_m1_end] = calc_patient_process_noise(
+      //   raw_patient_process_noise[train_visit_m1_start:train_visit_m1_end],
+      //   get_int_sub_array(train_patient_visits, train_patient_visit_pos, train_idx),
+      //   exp(log_pop_tumor_gp_rho), delta,
+      //   pop_process_sd, L_process_corr,
+      //   independ_long_process_noise, independ_cross_process_noise
       // );
       
-      if (independ_long_process_noise) {
-        forecast_patient_process_noise[train_forecast_visit_start:train_forecast_visit_end] = multi_normal_rng(
-          forecast_size, pop_process_sd, independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr
-        );
-      } else {
-        forecast_patient_process_noise[train_forecast_visit_start:train_forecast_visit_end] = multi_normal_rng(
-          obs_patient_process_noise[train_visit_m1_start:train_visit_m1_end],
-          get_int_sub_array(t_patient_visits, patient_visit_pos, i)[2:],
-          forecast_time[2:],
-          exp(log_pop_tumor_gp_rho),
-          pop_process_sd,
-          independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr,
-          delta
-        );
-      }
-      
-      forecast_patient_states[train_forecast_visit_start:train_forecast_visit_end] = sf_log_space_trajectory_ncp(
-        states[train_patient_visit_pos[train_idx + 1] - 1],
-        forecast_time,
-        exp(patient_log_decrease_rate[train_idx]), exp(patient_log_growth_rate[train_idx]),
-        0.0001, // exp(patient_log_growth_lag[train_idx]), 
-        0.0001, // exp(pop_log_growth_transition_rate),
-        rep_matrix(0, forecast_size, 2)
-        // forecast_patient_process_noise[train_forecast_visit_start:train_forecast_visit_end]
-      ).2[2:];
-
-      forecast_patient_log_sld[train_forecast_visit_start:train_forecast_visit_end] =
+      rep_patient_log_sld[train_visit_start] = log(sum_tumor_size[visit_pos]);
+      rep_patient_log_sld[(train_visit_start + 1):train_visit_end] =
         to_vector(normal_rng(
-          to_vector(log_sum_exp(
-            forecast_patient_states[train_forecast_visit_start:train_forecast_visit_end, 1], forecast_patient_states[train_forecast_visit_start:train_forecast_visit_end, 2]
-          )) + log(sum_tumor_size[visit_pos]),
-          rep_vector(measure_sd, forecast_size)
+          to_vector(log_sum_exp(states[(train_visit_start + 1):train_visit_end, 1], states[(train_visit_start + 1):train_visit_end, 2])) + log(sum_tumor_size[visit_pos]),
+          rep_vector(measure_sd, n_patient_visits[i] - 1)
         ));
-
-      forecast_recist[train_forecast_visit_start:train_forecast_visit_end] = calculate_target_recist(
-        append_row(sum_tumor_size[visit_pos], exp(forecast_patient_log_sld[train_forecast_visit_start:train_forecast_visit_end]))
+        
+      rep_recist[train_visit_start] = PD + 1; 
+      rep_recist[(train_visit_start + 1):train_visit_end] = calculate_target_recist(
+        exp(rep_patient_log_sld[train_visit_start:train_visit_end]) * 10
       );
-    }
-    
-    for (t in train_visit_start:train_visit_end) {
-      if (train_obs_recist[t] <= PD) {
-        // Update all metrics using the function
-        (correct_recist_predictions, recist_confusion_matrix, recist_category_counts,
-         weighted_recist_accuracy_linear, weighted_recist_accuracy_quadratic,
-         correct_recist_response_class, correct_recist_disease_control) = update_recist_metrics(
-          train_obs_recist[t], rep_recist[t],
-          correct_recist_predictions, recist_confusion_matrix, recist_category_counts,
-          weighted_recist_accuracy_linear, weighted_recist_accuracy_quadratic,
-          correct_recist_response_class, correct_recist_disease_control
+      
+      array[n_patient_forecast_visits[i] + 1] int forecast_time = linspaced_int_array(n_patient_forecast_visits[i] + 1, patient_last_obs_visit[i], last_predict_visit);
+      
+      if (forecast && n_patient_forecast_visits[i] > 0) {
+        // assert_matching_states(
+        //   states[visit_pos:visit_end], 
+        //   [ patient_log_decrease_prop[train_idx], patient_log_growth_prop[train_idx] ],
+        //   get_int_sub_array(t_patient_visits, patient_visit_pos, i),
+        //   exp(patient_log_decrease_rate[train_idx]), exp(patient_log_growth_rate[train_idx]),
+        //   0.0001, // exp(patient_log_growth_lag[i]), 
+        //   0.0001, // exp(pop_log_growth_transition_rate),
+        //   rep_matrix(0, get_pos_size(train_patient_visit_m1_pos, train_idx), 2),
+        //   debug
+        // );
+        
+        if (independ_long_process_noise) {
+          forecast_patient_process_noise[train_forecast_visit_start:train_forecast_visit_end] = multi_normal_rng(
+            forecast_size, pop_process_sd, independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr
+          );
+        } else {
+          forecast_patient_process_noise[train_forecast_visit_start:train_forecast_visit_end] = multi_normal_rng(
+            obs_patient_process_noise[train_visit_m1_start:train_visit_m1_end],
+            get_int_sub_array(t_patient_visits, patient_visit_pos, i)[2:],
+            forecast_time[2:],
+            exp(log_pop_tumor_gp_rho),
+            pop_process_sd,
+            independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr,
+            delta
+          );
+        }
+        
+        forecast_patient_states[train_forecast_visit_start:train_forecast_visit_end] = sf_log_space_trajectory_ncp(
+          states[train_patient_visit_pos[train_idx + 1] - 1],
+          forecast_time,
+          exp(patient_log_decrease_rate[train_idx]), exp(patient_log_growth_rate[train_idx]),
+          0.0001, // exp(patient_log_growth_lag[train_idx]), 
+          0.0001, // exp(pop_log_growth_transition_rate),
+          rep_matrix(0, forecast_size, 2)
+          // forecast_patient_process_noise[train_forecast_visit_start:train_forecast_visit_end]
+        ).2[2:];
+  
+        forecast_patient_log_sld[train_forecast_visit_start:train_forecast_visit_end] =
+          to_vector(normal_rng(
+            to_vector(log_sum_exp(
+              forecast_patient_states[train_forecast_visit_start:train_forecast_visit_end, 1], forecast_patient_states[train_forecast_visit_start:train_forecast_visit_end, 2]
+            )) + log(sum_tumor_size[visit_pos]),
+            rep_vector(measure_sd, forecast_size)
+          ));
+  
+        forecast_recist[train_forecast_visit_start:train_forecast_visit_end] = calculate_target_recist(
+          append_row(sum_tumor_size[visit_pos], exp(forecast_patient_log_sld[train_forecast_visit_start:train_forecast_visit_end]) * 10)
         );
         
-        total_recist_predictions += 1;
-      } 
+        if (right_censored[i]) {
+          forecast_pfs[right_censored_idx] = find_first(forecast_recist[train_forecast_visit_start:train_forecast_visit_end], PD);
+          right_censored_idx += 1;
+        }
+      }
+      
+      for (t in train_visit_start:train_visit_end) {
+        if (train_obs_recist[t] <= PD) {
+          // Update all metrics using the function
+          (correct_recist_predictions, recist_confusion_matrix, recist_category_counts,
+           weighted_recist_accuracy_linear, weighted_recist_accuracy_quadratic,
+           correct_recist_response_class, correct_recist_disease_control) = update_recist_metrics(
+            train_obs_recist[t], rep_recist[t],
+            correct_recist_predictions, recist_confusion_matrix, recist_category_counts,
+            weighted_recist_accuracy_linear, weighted_recist_accuracy_quadratic,
+            correct_recist_response_class, correct_recist_disease_control
+          );
+          
+          total_recist_predictions += 1;
+        } 
+      }
     }
   }
   
