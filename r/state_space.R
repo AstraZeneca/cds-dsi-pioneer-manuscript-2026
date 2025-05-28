@@ -1,16 +1,19 @@
-get_state_patients <- function(analysis_data, sample_size = 12, random = TRUE) {
+get_state_patients <- function(analysis_data, sample_size = 12, random = TRUE, by = NULL) {
+  slicer <- if (random) slice_sample else slice
+  
   analysis_data |> 
-    select(usubjid, visit_data, patient_max_t) |> 
+    select(trial, usubjid, visit_data, patient_max_t) |> 
     unnest(visit_data) |> 
     mutate(n = seq(n())) |> 
-    nest(visit_data = !c(usubjid, patient_max_t)) |> 
+    nest(visit_data = !c(trial, usubjid, patient_max_t)) |> 
     mutate(
       i = seq(n()),
       base_sld = map_dbl(visit_data, \(v) first(v$mmsumdiam))
-    ) %>% {  
-      if (random) sample_n(., sample_size) else slice(., seq(sample_size))
-    } |> 
-    unnest(visit_data)  
+    ) |> 
+    group_by({{ by }}) |> 
+    slicer(n = sample_size) |>
+    ungroup() |>
+    unnest(visit_data)
 }
 
 add_states_sum <- function(states_data, states_col) {
