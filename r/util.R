@@ -235,7 +235,7 @@ rvar_safe_qs2_format <- tar_format(
   unmarshal = \(object) object, 
   
   write = function(object, path) {
-    if (tibble::is_tibble(object)) {
+    if (tibble::is_tibble(object) && any(purrr::map_lgl(object, posterior::is_rvar))) {
       object <- as.data.frame(object) |> 
         dplyr::mutate(across(where(posterior::is_rvar), \(r) { attr(r, "cache") <- NULL; r }))
     }
