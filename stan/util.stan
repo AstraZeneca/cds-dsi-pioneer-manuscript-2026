@@ -674,3 +674,12 @@ tuple(real, real, vector) standardize_tumor_sizes(vector tumor_size) {
   
   return (tumor_mean, tumor_sd, (tumor_size - tumor_mean) / tumor_sd); 
 }
+
+int find_first(array[] int all, int what) {
+  int n = size(all);
+  int i = 1;
+  
+  while (i <= n && all[i] != what) i += 1;
+  
+  return i <= n ? i : 0;
+}
