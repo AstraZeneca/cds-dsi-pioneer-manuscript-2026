@@ -226,7 +226,10 @@ lognormal_sd <- function(mu = 0, sigma) {
 } 
 
 tar_bind_rows <- function(target_name, mapped, start, ...) {
-  tar_combine_raw(deparse(substitute(target_name)), tar_select_targets(mapped, starts_with(start)), command = expression(bind_rows(!!!.x)), ...)
+  tar_combine_raw(
+    deparse(substitute(target_name)), 
+    tar_select_targets(mapped, starts_with(start)), 
+    command = expression(bind_rows(!!!.x)), ...)
 }
 
 rvar_safe_qs2_format <- tar_format(
