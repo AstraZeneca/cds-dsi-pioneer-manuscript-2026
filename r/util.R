@@ -207,6 +207,12 @@ determine_recist_response <- function(baseline_sld, current_sld, nadir_sld = NUL
   }
 }
 
+determine_trajectory_recist_target_response <- function(sld) {
+  nadir <- accumulate(sld, min)
+  
+  map2_chr(sld[-1], nadir[-1], \(curr_sld, curr_nadir) determine_recist_response(first(sld), curr_sld, curr_nadir))
+}
+
 weeks_to_months <- function(weeks) weeks * 7 * 12 / 365.25
 label_weeks_to_months <- scales::label_number(scale = weeks_to_months(1))
 months_to_weeks <- function(months) months / weeks_to_months(1) 
@@ -247,3 +253,10 @@ rvar_safe_qs2_format <- tar_format(
   },
 )
 
+determine_visit_data_response <- function(visit_data) {
+  visit_data |> 
+    group_by(usubjid) |> 
+    mutate(det_response = c(NA, determine_trajectory_recist_target_response(mmsumdiam))) |> 
+    ungroup() |> 
+    mutate(across(c(response, det_response), \(r) ordered(r, levels = c("CR", "PR", "SD", "PD"))))
+}
