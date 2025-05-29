@@ -107,6 +107,12 @@ transformed data {
     }
   }
   
+  array[n_patients] int<lower = 1> ub_pfs_p1;
+  
+  for (i in 1:n_patients) {
+    ub_pfs_p1[i] = pfs[i] + interval_censored[i] + 1; 
+  }
+  
   real log_lod = log(0.1);
   
   // Define RECIST categories as integers
@@ -484,7 +490,7 @@ generated quantities {
    
     if (forecast) { 
       sample_km_est = estimate_kaplan_meier(
-        append_array(pfs[train_right_uncensored_patients], forecast_pfs), 
+        append_array(ub_pfs_p1[train_right_uncensored_patients], forecast_pfs), 
         append_array(right_censored[train_right_uncensored_patients], forecast_right_censored), 
         max_all_t).1; 
     }
