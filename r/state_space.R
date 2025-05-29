@@ -90,7 +90,7 @@ get_subsample_forecast_data <- function(patient_states_data, analysis_data) {
     rowwise() |> 
     reframe(trial, i, usubjid, patient_max_t, n_forecast_visits, base_sld, week = seq(patient_max_t + 1, overall_max_t)) |> 
     mutate(n = seq(n())) |> 
-    semi_join(patient_states_data, by = "usubjid") 
+    semi_join(patient_states_data, by = c("trial", "usubjid"))
 }
 
 get_forecast_var <- function(res, patient_states_data, analysis_data, var, ndraws = NULL) {
