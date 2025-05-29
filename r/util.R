@@ -1,3 +1,29 @@
+#' Utility Functions for Stan Model Sampling and Analysis
+#' 
+#' This file contains utility functions for conducting Bayesian analysis of 
+#' oncology clinical trials, with particular focus on tumor growth modeling
+#' and survival analysis using Stan.
+#'
+#' Key functionality includes:
+#' - Stan model sampling with automatic file saving
+#' - Kaplan-Meier survival analysis helpers
+#' - RECIST response evaluation and trajectory analysis
+#' - Prior specification utilities for tumor growth and PFS models
+#' - Data preprocessing and visualization helpers
+#' - File format handling for rvar objects
+#'
+#' Dependencies:
+#' @importFrom posterior rfun is_rvar
+#' @importFrom survival survfit2 Surv
+#' @importFrom broom tidy
+#' @importFrom purrr map_dfr map2_chr accumulate
+#' @importFrom dplyr mutate select bind_cols group_by case_when
+#' @importFrom tibble is_tibble as_tibble
+#' @importFrom qs2 qs_save qs_read
+#' @importFrom scales label_number
+#' @importFrom targets tar_combine_raw tar_select_targets tar_format
+#'
+
 #' Sample from a Stan model and optionally save the output
 #'
 #' @param model A Stan model object
@@ -127,23 +153,6 @@ get_fake_stan_data_list <- function(prior_res, origin_stan_data, n = 5) {
     group_map(\(d, k, ...) list_assign(origin_stan_data, !!!d, draw = first(k$.draw), confirmed_response_interval_censored = rep(0, nrow(d)))) 
 }
 
-# recist_response <- function(baseline_sum, current_sum) {
-#   if (!is.numeric(baseline_sum) || !is.numeric(current_sum) || 
-#       baseline_sum <= 0 || current_sum < 0) {
-#     stop("Inputs must be positive numbers, with baseline > 0")
-#   }
-#   
-#   absolute_change <- current_sum - baseline_sum
-#   percent_change <- absolute_change / baseline_sum 
-#   
-#   case_when(
-#     current_sum == 0 ~ "CR",
-#     percent_change <= -0.3 ~ "PR",
-#     percent_change >= 0.2 & absolute_change >= 5 ~ "PD",
-#     TRUE ~ "SD"
-#   )
-# }
-
 #' Determine RECIST 1.1 Response
 #'
 #' This function calculates the RECIST 1.1 response category based on measurements
@@ -238,8 +247,62 @@ tar_bind_rows <- function(target_name, mapped, start, ...) {
     command = expression(bind_rows(!!!.x)), ...)
 }
 
+#' Safe QS2 Format for RVar Objects in Targets Pipeline
+#'
+#' A custom targets format that safely handles tibbles containing posterior::rvar
+#' objects by removing problematic cache attributes before serialization and
+#' ensuring proper tibble conversion on read.
+#'
+#' @details
+#' This format addresses issues with serializing rvar objects that contain
+#' cached attributes which can cause problems during the save/load process.
+#' The format:
+#' 1. Detects tibbles containing rvar columns
+#' 2. Removes the "cache" attribute from rvar objects before saving
+#' 3. Uses qs2 for efficient serialization
+#' 4. Ensures objects are returned as tibbles on read
+#'
+#' The marshal/unmarshal functions are pass-through (identity functions)
+#' since the main processing happens in write/read.
+#'
+#' @section Usage:
+#' Use this format in targets pipelines when working with posterior samples
+#' stored as rvar objects:
+#' ```
+#' tar_target(
+#'   name = my_posterior_data,
+#'   command = analyze_posterior(),
+#'   format = rvar_safe_qs2_format
+#' )
+#' ```
+#'
+#' @section Performance:
+#' - Uses qs2 for fast serialization of large objects
+#' - Minimal overhead for non-rvar objects
+#' - Only processes rvar columns when detected
+#'
+#' @return A targets format object with custom read/write methods
+#'
+#' @seealso 
+#' - [targets::tar_format()] for creating custom formats
+#' - [posterior::rvar()] for random variable objects
+#' - [qs2::qs_save()] and [qs2::qs_read()] for serialization
+#'
+#' @examples
+#' \dontrun{
+#' # In a _targets.R file
+#' library(targets)
+#' library(posterior)
+#' 
+#' tar_pipeline(
+#'   tar_target(
+#'     posterior_results,
+#'     my_stan_analysis(),
+#'     format = rvar_safe_qs2_format
+#'   )
+#' )
+#' }
 rvar_safe_qs2_format <- tar_format(
-  read = \(path) qs2::qs_read(path),
   marshal = \(object) object, 
   unmarshal = \(object) object, 
   
@@ -251,6 +314,16 @@ rvar_safe_qs2_format <- tar_format(
     
     qs2::qs_save(object, path)
   },
+  
+  read = function(path) { 
+    object <- qs2::qs_read(path)
+    
+    if (is.data.frame(object) && !tibble::is_tibble(object)) {
+      object <- tibble::as_tibble(object)
+    }
+    
+    return(object);
+  }
 )
 
 determine_visit_data_response <- function(visit_data) {
