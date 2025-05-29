@@ -454,7 +454,7 @@ generated quantities {
           ));
   
         forecast_recist[train_forecast_visit_start:train_forecast_visit_end] = calculate_target_recist(
-          append_row(sum_tumor_size[visit_pos], exp(forecast_patient_log_sld[train_forecast_visit_start:train_forecast_visit_end]) * 10)
+          append_row(sum_tumor_size[visit_pos], exp(forecast_patient_log_sld[train_forecast_visit_start:train_forecast_visit_end])) * 10
         );
         
         if (right_censored[i]) {
