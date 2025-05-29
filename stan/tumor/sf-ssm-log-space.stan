@@ -329,7 +329,7 @@ generated quantities {
   array[forecast ? n_total_train_forecast_visits : 0] int<lower = CR, upper = PD> forecast_recist;
  
   // We're only forecasting for right censored patients 
-  array[forecast ? n_train_right_censored_patients : 0] int<lower = 1> forecast_pfs;
+  array[forecast ? n_train_right_censored_patients : 0] int<lower = 0> forecast_pfs; // Zero means right censored
   
   // RECIST prediction accuracy metrics
   int<lower=0> correct_recist_predictions = 0;
