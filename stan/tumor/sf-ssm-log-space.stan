@@ -2,6 +2,7 @@ functions {
   #include "../util.stan"
   #include "../pos.stan"
   #include "../gp.stan"
+  #include "../pfs_functions.stan"
   #include "sf-ssls_functions.stan"
   #include "recist.stanfunctions"
 }  
@@ -23,7 +24,10 @@ data {
   int<lower = 1, upper = n_patients> train_patients_pos, train_patients_end;
   
   array[sum(n_patient_visits)] int<lower = 1, upper = 5> recist;
+  
+  array[n_patients] int<lower = 0> pfs; // How many periods after baseline did patient survive. The last week observed with no progression.
   array[n_patients] int<lower = 0, upper = 1> right_censored;
+  array[n_patients] int<lower = 0> interval_censored; // The number of weeks after `pfs` that actual progression could have happened. E.g., zero means progression happened the next week.
   
   // GP parameters
   real<lower = 0> pop_tumor_gp_rho_meanlog;
@@ -87,17 +91,18 @@ transformed data {
   
   array[n_total_train_visits] int train_obs_recist = get_int_sub_array(recist, patient_visit_pos, train_patients_pos, train_patients_end);
   
-  // int<lower = 0, upper = n_patients> n_right_censored_patients = sum(right_censored);
   int<lower = 0, upper = n_patients> n_train_right_censored_patients = sum(right_censored[train_patients_pos:train_patients_end]);
-  array[n_train_right_censored_patients] int<lower = 1, upper = n_patients> train_right_censored_patients;
+  int<lower = 0, upper = n_patients> n_train_right_uncensored_patients = n_patients - n_train_right_censored_patients; 
+  array[n_train_right_uncensored_patients] int<lower = 1, upper = n_patients> train_right_uncensored_patients;
  
   {
-    int right_censored_idx = 1;
+    int right_uncensored_idx = 1;
     
     for (i in train_patients_pos:train_patients_end) {
       if (right_censored[i]) {
-        train_right_censored_patients[right_censored_idx] = i - train_patients_pos + 1;
-        right_censored_idx += 1;
+      } else {
+        train_right_uncensored_patients[right_uncensored_idx] = i;
+        right_uncensored_idx += 1;
       }
     }
   }
@@ -328,8 +333,12 @@ generated quantities {
   array[n_total_train_visits] int<lower = CR, upper = PD + 1> rep_recist;
   array[forecast ? n_total_train_forecast_visits : 0] int<lower = CR, upper = PD> forecast_recist;
  
-  // We're only forecasting for right censored patients 
+  array[n_train_patients] int<lower = 0> spop_pfs; // Zero means right censored
+  array[n_train_patients] int<lower = 0, upper = 1> spop_right_censored; 
+  // Forecasting for right censored patients 
   array[forecast ? n_train_right_censored_patients : 0] int<lower = 0> forecast_pfs; // Zero means right censored
+  array[forecast ? n_train_right_censored_patients : 0] int<lower = 0, upper = 1> forecast_right_censored; 
+  vector<lower = 0, upper = 1>[max_all_t + 1] sample_km_est = zeros_vector(max_all_t + 1), spop_km_est = zeros_vector(max_all_t + 1);  
   
   // RECIST prediction accuracy metrics
   int<lower=0> correct_recist_predictions = 0;
@@ -388,9 +397,7 @@ generated quantities {
         ));
         
       rep_recist[train_visit_start] = PD + 1; 
-      rep_recist[(train_visit_start + 1):train_visit_end] = calculate_target_recist(
-        exp(rep_patient_log_sld[train_visit_start:train_visit_end]) * 10
-      );
+      rep_recist[(train_visit_start + 1):train_visit_end] = calculate_target_recist(exp(rep_patient_log_sld[train_visit_start:train_visit_end]) * 10);
       
       array[n_patient_forecast_visits[i] + 1] int forecast_time = linspaced_int_array(n_patient_forecast_visits[i] + 1, patient_last_obs_visit[i], last_predict_visit);
       
@@ -446,9 +453,17 @@ generated quantities {
         
         if (right_censored[i]) {
           forecast_pfs[right_censored_idx] = find_first(forecast_recist[train_forecast_visit_start:train_forecast_visit_end], PD);
+          forecast_right_censored[right_censored_idx] = forecast_pfs[right_censored_idx] == 0;
+          
           right_censored_idx += 1;
         }
+        
+        spop_pfs[train_idx] = find_first(append_array(rep_recist[(train_visit_start + 1):train_visit_end], forecast_recist[train_forecast_visit_start:train_forecast_visit_end]), PD);
+      } else {
+        spop_pfs[train_idx] = find_first(rep_recist[(train_visit_start + 1):train_visit_end], PD);
       }
+      
+      spop_right_censored[train_idx] = spop_pfs[train_idx] == 0;
       
       for (t in train_visit_start:train_visit_end) {
         if (train_obs_recist[t] <= PD) {
@@ -466,6 +481,15 @@ generated quantities {
         } 
       }
     }
+   
+    if (forecast) { 
+      sample_km_est = estimate_kaplan_meier(
+        append_array(pfs[train_right_uncensored_patients], forecast_pfs), 
+        append_array(right_censored[train_right_uncensored_patients], forecast_right_censored), 
+        max_all_t).1; 
+    }
+    
+    spop_km_est = estimate_kaplan_meier(spop_pfs, spop_right_censored, max_all_t).1; 
   }
   
   // Calculate final metrics
