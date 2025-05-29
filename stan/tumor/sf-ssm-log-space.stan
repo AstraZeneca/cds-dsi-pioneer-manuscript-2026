@@ -89,7 +89,7 @@ transformed data {
   
   // int<lower = 0, upper = n_patients> n_right_censored_patients = sum(right_censored);
   int<lower = 0, upper = n_patients> n_train_right_censored_patients = sum(right_censored[train_patients_pos:train_patients_end]);
-  array[n_right_censored_patients] int<lower = 1, upper = n_patients> train_right_censored_patients;
+  array[n_train_right_censored_patients] int<lower = 1, upper = n_patients> train_right_censored_patients;
  
   {
     int right_censored_idx = 1;
@@ -329,7 +329,7 @@ generated quantities {
   array[forecast ? n_total_train_forecast_visits : 0] int<lower = CR, upper = PD> forecast_recist;
  
   // We're only forecasting for right censored patients 
-  array[forecast ? n_train_right_censored_patients] int<lower = 1> forecast_pfs;
+  array[forecast ? n_train_right_censored_patients : 0] int<lower = 1> forecast_pfs;
   
   // RECIST prediction accuracy metrics
   int<lower=0> correct_recist_predictions = 0;
