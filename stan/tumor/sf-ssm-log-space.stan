@@ -349,16 +349,16 @@ generated quantities {
   // RECIST prediction accuracy metrics
   int<lower=0> correct_recist_predictions = 0;
   int<lower=0> total_recist_predictions = 0;
-  matrix[4, 4] recist_confusion_matrix = rep_matrix(0, 4, 4); // rows = observed, cols = predicted
+  matrix[4, 4] recist_confusion_matrix = rep_matrix(0, PD, PD); // rows = observed, cols = predicted
   real weighted_recist_accuracy_linear = 0;
   real weighted_recist_accuracy_quadratic = 0;
   int<lower=0> correct_recist_response_class = 0;
   int<lower=0> correct_recist_disease_control = 0;
   
   // Per-category metrics
-  vector[4] recist_category_sensitivity = zeros_vector(4); // true positive rate per category
-  vector[4] recist_category_precision = zeros_vector(4);   // positive predictive value per category
-  vector[4] recist_category_counts = zeros_vector(4);      // number of observations per category
+  vector[PD] recist_category_sensitivity = zeros_vector(PD); // true positive rate per category
+  vector[PD] recist_category_precision = zeros_vector(PD);   // positive predictive value per category
+  vector[PD] recist_category_counts = zeros_vector(PD);      // number of observations per category
 
   {
     int right_censored_idx = 1;
