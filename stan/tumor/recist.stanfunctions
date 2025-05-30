@@ -25,11 +25,11 @@
  * @param sld_trajectory Vector of sum of longest diameters over time
  * @return Array of target-only RECIST status (1=CR, 2=PR, 3=SD, 4=PD)
  */
-array[] int calculate_target_recist(vector sld_trajectory) {
+array[] int calculate_target_recist(vector sld_trajectory, real pre_nadir) {
   int n = rows(sld_trajectory);
   array[n - 1] int target_status;
   real baseline = sld_trajectory[1];
-  real nadir = baseline;  // Track the smallest sum achieved
+  real nadir = pre_nadir;  // Track the smallest sum achieved
   
   // Define RECIST categories as integers
   int CR = 1;  // Complete Response
@@ -64,6 +64,10 @@ array[] int calculate_target_recist(vector sld_trajectory) {
   }
   
   return target_status;
+}
+
+array[] int calculate_target_recist(vector sld_trajectory) {
+  return calculate_target_recist(sld_trajectory, sld_trajectory[1]);
 }
 
 /**
