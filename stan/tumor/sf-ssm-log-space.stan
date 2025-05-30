@@ -206,11 +206,13 @@ transformed parameters {
   vector[n_train_patients] patient_log_growth_rate = patient_log_net_rate - log_diff_exp(patient_log_rate_ratio, zeros_vector(n_train_patients));
   vector[n_train_patients] patient_log_decrease_rate = patient_log_growth_rate + patient_log_rate_ratio;
   
+  vector[n_trials] trial_decrease_prop_logis = rep_vector(pop_decrease_prop_logis, n_train_patients);
   vector[n_train_patients] patient_decrease_prop_logis = rep_vector(pop_decrease_prop_logis, n_train_patients);
   
   if (!pop_initial_states_param_only) {
+    trial_decrease_prop_logis += trial_decrease_prop_logis_sd * raw_trial_decrease_prop_logis;
     patient_decrease_prop_logis += 
-      (trial_decrease_prop_logis_sd * raw_trial_decrease_prop_logis)[patient_trial[train_patients_pos:train_patients_end]] +
+      raw_trial_decrease_prop_logis[patient_trial[train_patients_pos:train_patients_end]] +
       patient_decrease_prop_logis_sd * raw_patient_decrease_prop_logis;
   }
   
@@ -311,12 +313,21 @@ model {
 
 generated quantities {
   real pop_log_growth_rate = pop_log_net_rate - log_diff_exp(pop_log_rate_ratio, 0);
-  vector[n_train_patients] patient_log_growth_rate_residual = patient_log_growth_rate - pop_log_growth_rate;
-  real pop_log_decrease_rate = (pop_log_growth_rate + pop_log_rate_ratio);
-  vector[n_train_patients] patient_log_decrease_rate_residual = patient_log_decrease_rate - pop_log_decrease_rate;
-  vector[n_train_patients] patient_decrease_prop_residual = inv_logit(patient_decrease_prop_logis) - inv_logit(pop_decrease_prop_logis);
+  vector[n_trials] trial_log_growth_rate = pop_log_growth_rate + trial_log_net_rate_effect;
+  vector[n_trials] trial_log_growth_rate_residual = trial_log_growth_rate - pop_log_growth_rate;
+  vector[n_train_patients] patient_log_growth_rate_residual = patient_log_growth_rate - trial_log_growth_rate[patient_trial[train_patients_pos:train_patients_end]];
+  
+  real pop_log_decrease_rate = pop_log_growth_rate + pop_log_rate_ratio;
+  vector[n_trials] trial_log_decrease_rate = trial_log_growth_rate + pop_log_rate_ratio; 
+  vector[n_trials] trial_log_decrease_rate_residual = trial_log_decrease_rate - pop_log_decrease_rate;
+  vector[n_train_patients] patient_log_decrease_rate_residual = patient_log_decrease_rate - trial_log_decrease_rate[patient_trial[train_patients_pos:train_patients_end]];
+  
+  vector[n_train_patients] patient_decrease_prop_residual = inv_logit(patient_decrease_prop_logis) - inv_logit(trial_decrease_prop_logis);
+  vector[n_trials] trial_decrease_prop_residual = inv_logit(trial_decrease_prop_logis) - inv_logit(pop_decrease_prop_logis);
   real pop_log_decrease_prop = -log1p_exp(-pop_decrease_prop_logis);  
   real pop_log_growth_prop = pop_log_decrease_prop - pop_decrease_prop_logis;
+  vector[n_trials] trial_log_decrease_prop = -log1p_exp(-trial_decrease_prop_logis);
+  vector[n_trials] trial_log_growth_prop = trial_log_decrease_prop - trial_decrease_prop_logis;
   
   corr_matrix[independ_cross_process_noise ? 0 : 2] process_corr;
   
