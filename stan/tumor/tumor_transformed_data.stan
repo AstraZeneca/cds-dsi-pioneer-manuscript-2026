@@ -53,7 +53,7 @@ array[n_patients + 1] int<lower = 1> patient_full_visits_pos = create_pos(patien
 
 array[n_patients] int<lower = 0> n_patient_unique_missing_visits = calculate_n_missing_visits(patient_unique_visits, patient_unique_visits_pos, last_predict_visit);
 array[n_patients + 1] int<lower = 1> patient_unique_missing_visits_pos = create_pos(n_patient_unique_missing_visits); 
-array[sum(n_patient_unique_missing_visits)] int<lower = 1> patient_unique_missing_visits = get_missing_visits(patient_unique_visits, patient_unique_visits_pos, max(pop_unique_visits));
+array[sum(n_patient_unique_missing_visits)] int<lower = 1> patient_unique_missing_visits = get_missing_visits(patient_unique_visits, patient_unique_visits_pos, last_predict_visit);
 
 array[n_patients] int<lower = 1> patient_last_obs_visit = get_max_pos(t_patient_visits, patient_visit_pos);
 array[n_patients] int<lower = 0, upper = last_predict_visit> n_patient_forecast_visits; 
