@@ -462,7 +462,7 @@ generated quantities {
             rep_vector(measure_sd, forecast_size)
           ));
           
-        array[max_all_t] int full_predict_recist = calculate_target_recist(
+        array[train_visit_size - 1 + forecast_size] int full_predict_recist = calculate_target_recist(
           exp(append_row(rep_patient_log_sld[train_visit_start:train_visit_end], forecast_patient_log_sld[train_forecast_visit_start:train_forecast_visit_end])) * 10
         );
         
