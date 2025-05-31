@@ -494,3 +494,21 @@ get_orr <- function(res, analysis_data) {
     spread_rvars(rep_trial_orr[trial], forecast_trial_orr[trial], forecast_trial_subpop_orr[trial]) 
 }
 
+# SSM ########
+
+get_tumor_ssls_level_param <- function(res, level = c("patient", "trial"), param, type, breaks, exp_breaks) {
+  level <- rlang::arg_match(level)
+  
+  # Create dynamic parameter names using the level prefix
+  params <- rlang::syms(str_glue("{level}_{param}[n]"))
+  
+  res |> 
+    gather_rvars(!!!params) |> 
+    mutate(.value_exp = exp(.value), fit_type = type) |>   
+    group_by(.variable, fit_type) |>
+    group_modify(\(d, g) bind_rows(
+      bin_point_intervals(d, .value_exp, breaks = exp_breaks, .width = c(0.5, 0.8)),
+      bin_point_intervals(d, .value, breaks = breaks, .width = c(0.5, 0.8))
+    )) |> 
+    ungroup()
+}
