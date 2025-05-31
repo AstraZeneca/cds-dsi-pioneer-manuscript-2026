@@ -1,15 +1,14 @@
-get_state_patients <- function(analysis_data, sample_size = 12, random = TRUE, by = NULL) {
+get_state_patients <- function(analysis_data, sample_size = 12, random = TRUE, by = NULL, cond = TRUE) {
   slicer <- if (random) slice_sample else slice
   
   analysis_data |> 
-    select(trial, usubjid, visit_data, patient_max_t) |> 
+    mutate(i = seq(n()), selected = {{ cond }}) |> 
+    select(trial, usubjid, visit_data, patient_max_t, selected) |> 
     unnest(visit_data) |> 
     mutate(n = seq(n())) |> 
-    nest(visit_data = !c(trial, usubjid, patient_max_t)) |> 
-    mutate(
-      i = seq(n()),
-      base_sld = map_dbl(visit_data, \(v) first(v$mmsumdiam))
-    ) |> 
+    nest(visit_data = !c(trial, usubjid, patient_max_t, selected)) |> 
+    filter(selected) |> 
+    mutate(base_sld = map_dbl(visit_data, \(v) first(v$mmsumdiam))) |> 
     group_by({{ by }}) |> 
     slicer(n = sample_size) |>
     ungroup() |>
