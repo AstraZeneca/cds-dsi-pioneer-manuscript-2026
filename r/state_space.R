@@ -76,8 +76,8 @@ get_recist <- function(res, patient_states_data) {
     prepare_recist_data(rep_recist)
 }
 
-get_subsample_forecast_data <- function(patient_states_data, analysis_data) {
-  overall_max_t <- max(analysis_data$patient_max_t)
+get_subsample_forecast_data <- function(patient_states_data, analysis_data, forecast_extent = 0) {
+  overall_max_t <- max(max(analysis_data$patient_max_t), forecast_extent)
   
   analysis_data |> 
     mutate(
@@ -92,41 +92,45 @@ get_subsample_forecast_data <- function(patient_states_data, analysis_data) {
     semi_join(patient_states_data, by = c("trial", "usubjid"))
 }
 
-get_forecast_var <- function(res, patient_states_data, analysis_data, var, ndraws = NULL) {
-  subsample_forecast_data <- get_subsample_forecast_data(patient_states_data, analysis_data) 
+get_forecast_var <- function(res, patient_states_data, analysis_data, var, forecast_extent = 0, ndraws = NULL) {
+  subsample_forecast_data <- get_subsample_forecast_data(patient_states_data, analysis_data, forecast_extent) 
   
   spread_rvars(res, {{ var }}, ndraws = ndraws) |> 
     inner_join(subsample_forecast_data, by = "n") 
 }
 
-get_forecast_state_var <- function(res, patient_states_data, analysis_data, var, transform = identity, ndraws = NULL) {
+get_forecast_state_var <- function(res, patient_states_data, analysis_data, var, transform = identity, forecast_extent = 0, ndraws = NULL) {
   var_expr <- expr({{ var }}[n,p])
  
-  get_forecast_var(res, patient_states_data, analysis_data, !!var_expr, ndraws = ndraws) |>  
+  get_forecast_var(res, patient_states_data, analysis_data, !!var_expr, forecast_extent = forecast_extent, ndraws = ndraws) |>  
     mutate(
       {{ var }} := transform({{ var }}),
       p = factor(p, levels = 1:3, labels = c("regress", "grow", "sum"))
     )
 }
 
-get_forecast_states <- function(res, patient_states_data, analysis_data) {
-  get_forecast_state_var(res, patient_states_data, analysis_data, forecast_patient_states, transform = exp) |> 
+get_forecast_states <- function(res, patient_states_data, analysis_data, forecast_extent = 0) {
+  get_forecast_state_var(res, patient_states_data, analysis_data, forecast_patient_states, transform = exp, forecast_extent = forecast_extent) |> 
     add_states_sum(forecast_patient_states)
 }
 
-get_forecast_process_noise <- function(res, patient_states_data, analysis_data, ndraws = NULL) {
-  get_forecast_state_var(res, patient_states_data, analysis_data, forecast_patient_process_noise, ndraws = ndraws) 
+get_forecast_process_noise <- function(res, patient_states_data, analysis_data, forecast_extent = 0, ndraws = NULL) {
+  get_forecast_state_var(res, patient_states_data, analysis_data, forecast_patient_process_noise, forecast_extent = forecast_extent, ndraws = ndraws) 
 }
 
-get_forecast_sld <- function(res, patient_states_data, analysis_data) {
-  get_forecast_var(res, patient_states_data, analysis_data, forecast_patient_log_sld[n]) |> 
+get_forecast_sld <- function(res, patient_states_data, analysis_data, forecast_extent = 0) {
+  get_forecast_var(res, patient_states_data, analysis_data, forecast_patient_log_sld[n], forecast_extent = forecast_extent) |> 
     mutate(forecast_patient_sld = exp(forecast_patient_log_sld))
 }
 
-get_forecast_recist <- function(res, patient_states_data, analysis_data) {
+get_forecast_recist <- function(res, patient_states_data, analysis_data, forecast_extent = 0) {
   get_recist_simplex <- function(r, v) tibble(!!r := Pr(v == r))
   
-  get_forecast_var(res, patient_states_data, analysis_data, forecast_recist[n]) |> 
+  subsample_forecast_data <- get_subsample_forecast_data(patient_states_data, analysis_data, forecast_extent = forecast_extent) 
+  
+  spread_rvars(res, forecast_recist[n], ndraws = ndraws) |> 
+    inner_join(subsample_forecast_data, by = "n") |> 
+    # get_forecast_var(res, patient_states_data, analysis_data, forecast_recist[n]) |> 
     prepare_recist_data(forecast_recist)
 }
 

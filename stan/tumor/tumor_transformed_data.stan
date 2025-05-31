@@ -17,7 +17,7 @@ array[n_pop_unique_visits] int<lower = 1> pop_unique_visits_idx = id2idx(pop_uni
 int<lower = 0> n_pop_unique_missing_visits = calculate_n_missing_visits(pop_unique_visits, max(pop_unique_visits));
 array[n_pop_unique_missing_visits] int<lower = 1> pop_unique_missing_visits = get_missing_visits(pop_unique_visits, max(pop_unique_visits));
 
-int<lower = 1> last_predict_visit = max(pop_unique_visits);
+int<lower = 1> last_predict_visit = max_all_t; // max(pop_unique_visits);
 
 print("last_predict_visit = ", last_predict_visit);
 
