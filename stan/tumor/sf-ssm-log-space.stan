@@ -353,7 +353,7 @@ generated quantities {
   array[n_train_patients] int<lower = 0> spop_pfs; // Zero means right censored
   array[n_train_patients] int<lower = 0, upper = 1> spop_right_censored; 
   // Forecasting for right censored patients 
-  array[forecast ? n_train_right_censored_patients : 0] int<lower = 0> forecast_pfs; // Zero means right censored
+  array[forecast ? n_train_right_censored_patients : 0] int<lower = 0> forecast_pfs, forecast_pfs_p1; // Zero means right censored
   array[forecast ? n_train_right_censored_patients : 0] int<lower = 0, upper = 1> forecast_right_censored; 
   vector<lower = 0, upper = 1>[max_all_t + 1] sample_km_est = zeros_vector(max_all_t + 1), spop_km_est = zeros_vector(max_all_t + 1);  
   
@@ -473,6 +473,7 @@ generated quantities {
         if (right_censored[i]) {
           forecast_pfs[right_censored_idx] = find_first(forecast_recist[train_forecast_visit_start:train_forecast_visit_end], PD);
           forecast_right_censored[right_censored_idx] = forecast_pfs[right_censored_idx] == 0;
+          forecast_pfs_p1[right_censored_idx] = forecast_pfs[right_censored_idx] + 1; 
           
           right_censored_idx += 1;
         }
@@ -504,7 +505,7 @@ generated quantities {
    
     if (forecast) { 
       sample_km_est = estimate_kaplan_meier(
-        append_array(ub_pfs_p1[train_right_uncensored_patients], forecast_pfs), 
+        append_array(ub_pfs_p1[train_right_uncensored_patients], forecast_pfs_p1), 
         append_array(right_censored[train_right_uncensored_patients], forecast_right_censored), 
         max_all_t).1; 
     }
