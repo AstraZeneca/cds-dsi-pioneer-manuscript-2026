@@ -500,7 +500,7 @@ get_tumor_ssls_level_param <- function(res, level = c("patient", "trial"), param
   level <- rlang::arg_match(level)
   
   # Create dynamic parameter names using the level prefix
-  params <- rlang::syms(str_glue("{level}_{param}[n]"))
+  params <- rlang::parse_exprs(str_glue("{level}_{param}[n]"))
   
   res |> 
     gather_rvars(!!!params) |> 
