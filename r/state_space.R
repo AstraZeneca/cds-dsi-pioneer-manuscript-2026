@@ -3,10 +3,10 @@ get_state_patients <- function(analysis_data, sample_size = 12, random = TRUE, b
   
   analysis_data |> 
     mutate(i = seq(n()), selected = {{ cond }}) |> 
-    select(trial, usubjid, visit_data, patient_max_t, selected) |> 
+    select(trial, i, usubjid, visit_data, patient_max_t, selected) |> 
     unnest(visit_data) |> 
     mutate(n = seq(n())) |> 
-    nest(visit_data = !c(trial, usubjid, patient_max_t, selected)) |> 
+    nest(visit_data = !c(trial, i, usubjid, patient_max_t, selected)) |> 
     filter(selected) |> 
     mutate(base_sld = map_dbl(visit_data, \(v) first(v$mmsumdiam))) |> 
     group_by({{ by }}) |> 
