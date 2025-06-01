@@ -33,7 +33,7 @@ get_obs_var <- function(res, patient_states_data, var, drop_initial = FALSE) {
   }
   
   rvar_data <- spread_rvars(res, {{ var }}) |> 
-    inner_join(patient_states_data, by = "n")
+    inner_join(patient_states_data, by = "n", relationship = "one-to-one")
 }
 
 get_obs_state_var <- function(res, patient_states_data, var, drop_initial = FALSE, transform = identity) {
@@ -96,7 +96,7 @@ get_forecast_var <- function(res, patient_states_data, analysis_data, var, forec
   subsample_forecast_data <- get_subsample_forecast_data(patient_states_data, analysis_data, forecast_extent) 
   
   spread_rvars(res, {{ var }}, ndraws = ndraws) |> 
-    inner_join(subsample_forecast_data, by = "n") 
+    inner_join(subsample_forecast_data, by = "n", relationship = "one-to-one") 
 }
 
 get_forecast_state_var <- function(res, patient_states_data, analysis_data, var, transform = identity, forecast_extent = 0, ndraws = NULL) {
@@ -124,12 +124,10 @@ get_forecast_sld <- function(res, patient_states_data, analysis_data, forecast_e
 }
 
 get_forecast_recist <- function(res, patient_states_data, analysis_data, forecast_extent = 0) {
-  get_recist_simplex <- function(r, v) tibble(!!r := Pr(v == r))
-  
   subsample_forecast_data <- get_subsample_forecast_data(patient_states_data, analysis_data, forecast_extent = forecast_extent) 
   
   spread_rvars(res, forecast_recist[n], ndraws = ndraws) |> 
-    inner_join(subsample_forecast_data, by = "n") |> 
+    inner_join(subsample_forecast_data, by = "n", relationship = "one-to-one") |> 
     # get_forecast_var(res, patient_states_data, analysis_data, forecast_recist[n]) |> 
     prepare_recist_data(forecast_recist)
 }
