@@ -123,7 +123,7 @@ get_forecast_sld <- function(res, patient_states_data, analysis_data, forecast_e
     mutate(forecast_patient_sld = exp(forecast_patient_log_sld))
 }
 
-get_forecast_recist <- function(res, patient_states_data, analysis_data, forecast_extent = 0) {
+get_forecast_recist <- function(res, patient_states_data, analysis_data, forecast_extent = 0, ndraws = NULL) {
   subsample_forecast_data <- get_subsample_forecast_data(patient_states_data, analysis_data, forecast_extent = forecast_extent) 
   
   spread_rvars(res, forecast_recist[n], ndraws = ndraws) |> 
