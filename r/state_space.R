@@ -31,9 +31,9 @@ get_obs_var <- function(res, patient_states_data, var, drop_initial = FALSE) {
         mutate(n = n - first(i)) |>
         ungroup()
   }
-  
+ 
   rvar_data <- spread_rvars(res, {{ var }}) |> 
-    inner_join(patient_states_data, by = "n", relationship = "one-to-one")
+    right_join(patient_states_data, by = "n")
 }
 
 get_obs_state_var <- function(res, patient_states_data, var, drop_initial = FALSE, transform = identity) {
