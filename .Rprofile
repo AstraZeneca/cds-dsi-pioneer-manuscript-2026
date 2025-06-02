@@ -2,11 +2,9 @@ if (file.exists("~/.Rprofile")) source("~/.Rprofile")
 
 source("renv/activate.R")
 
-is_domino <- !is.na(Sys.getenv("IS_DOMINO")) && Sys.getenv("IS_DOMINO") == "true"
-
 # if (is_domino) {
-  output_path <- "/mnt/data/analysis-results"
-  artifacts_path <- "/mnt/artifacts"
+  output_path <- file.path("/mnt/data/analysis-results", Sys.getenv("DOMINO_STARTING_USERNAME"))
+  artifacts_path <- file.path("/mnt/artifacts", Sys.getenv("DOMINO_STARTING_USERNAME"))
   data_path <- "/mnt/data"
   fit_output_timestamp <- FALSE
 
