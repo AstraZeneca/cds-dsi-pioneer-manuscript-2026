@@ -96,7 +96,7 @@ get_forecast_var <- function(res, patient_states_data, analysis_data, var, forec
   subsample_forecast_data <- get_subsample_forecast_data(patient_states_data, analysis_data, forecast_extent) 
   
   spread_rvars(res, {{ var }}, ndraws = ndraws) |> 
-    inner_join(subsample_forecast_data, by = "n", relationship = "one-to-one") 
+    right_join(subsample_forecast_data, by = "n") 
 }
 
 get_forecast_state_var <- function(res, patient_states_data, analysis_data, var, transform = identity, forecast_extent = 0, ndraws = NULL) {
