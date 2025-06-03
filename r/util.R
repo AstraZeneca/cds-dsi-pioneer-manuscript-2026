@@ -303,9 +303,6 @@ tar_bind_rows <- function(target_name, mapped, start, ...) {
 #' )
 #' }
 rvar_safe_qs2_format <- tar_format(
-  marshal = \(object) object, 
-  unmarshal = \(object) object, 
-  
   write = function(object, path) {
     if (tibble::is_tibble(object) && any(purrr::map_lgl(object, posterior::is_rvar))) {
       object <- as.data.frame(object) |> 
@@ -323,6 +320,35 @@ rvar_safe_qs2_format <- tar_format(
     }
     
     return(object);
+  }
+)
+
+# cmdstanr_format <- tar_format(
+#   read = function(path) {
+#     readr::read_rds(path)
+#   },
+#   write = function(object, path) {
+#     object$save_object(file = path)
+#   }
+# )
+
+cmdstanr_format <- tar_format(
+  read = function(path) {
+    readr::read_rds(path)$fit
+  },
+  write = function(object, path) {
+    # Calculate hash of all CSV files combined
+    csv_files <- object$output_files()
+    csv_hash <- digest::digest(purrr::map(csv_files, \(f) digest::digest(file = f)), algo = "xxhash64")  # Fast hash algorithm
+    
+    # Save both fit object and hash
+    readr::write_rds(
+      list(
+        fit = object,
+        csv_hash = csv_hash  # This changes when CSV content changes
+      ),
+      path
+    )
   }
 )
 
