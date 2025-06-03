@@ -372,7 +372,7 @@ generated quantities {
   // RECIST prediction accuracy metrics
   int<lower=0> correct_recist_predictions = 0;
   int<lower=0> total_recist_predictions = 0;
-  matrix[4, 4] recist_confusion_matrix = rep_matrix(0, PD, PD); // rows = observed, cols = predicted
+  matrix[PD, PD] recist_confusion_matrix = rep_matrix(0, PD, PD); // rows = observed, cols = predicted
   real weighted_recist_accuracy_linear = 0;
   real weighted_recist_accuracy_quadratic = 0;
   int<lower=0> correct_recist_response_class = 0;
