@@ -503,7 +503,7 @@ get_tumor_ssls_level_param <- function(res, level = c("patient", "trial"), param
   params <- rlang::parse_exprs(str_glue("{level}_{param}[n]"))
   
   res |> 
-    gather_rvars(!!!params) |> 
+    lite_gather_rvars(!!!params) |> 
     mutate(.value_exp = exp(.value), fit_type = type) |>   
     group_by(.variable, fit_type) |>
     group_modify(\(d, g) bind_rows(
