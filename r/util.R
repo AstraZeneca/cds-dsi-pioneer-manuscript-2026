@@ -323,20 +323,16 @@ rvar_safe_qs2_format <- tar_format(
   }
 )
 
-# cmdstanr_format <- tar_format(
-#   read = function(path) {
-#     readr::read_rds(path)
-#   },
-#   write = function(object, path) {
-#     object$save_object(file = path)
-#   }
-# )
-
 cmdstanr_format <- tar_format(
   read = function(path) {
-    readr::read_rds(path)$fit
+    # readr::read_rds(path)$fit
+    readr::read_rds(path)$file |> 
+      readr::read_rds()
   },
   write = function(object, path) {
+    obj_file <- str_c(path, "_cmdstanr_object.rds")
+    object$save_object(obj_file)
+    
     # Calculate hash of all CSV files combined
     csv_files <- object$output_files()
     csv_hash <- digest::digest(purrr::map(csv_files, \(f) digest::digest(file = f)), algo = "xxhash64")  # Fast hash algorithm
@@ -344,13 +340,29 @@ cmdstanr_format <- tar_format(
     # Save both fit object and hash
     readr::write_rds(
       list(
-        fit = object,
+        # fit = object,
+        file = obj_file,
         csv_hash = csv_hash  # This changes when CSV content changes
       ),
       path
     )
   }
 )
+
+tar_cmdstan_sample <- function(name, model, stan_data, init_factory = \(...) \(...) NULL, ...) {
+  tar_target(
+    name,
+    sample_and_save(
+      model,
+      stan_data,
+      init = init_factory(stan_data),
+      timestamp = FALSE,
+      format = cmdstanr_format,
+      ...
+    ),
+  )
+}
+
 
 determine_visit_data_response <- function(visit_data) {
   visit_data |> 
