@@ -366,8 +366,10 @@ generated quantities {
   // Forecasting for right censored patients 
   array[forecast ? n_train_right_censored_patients : 0] int<lower = 0> forecast_pfs, forecast_pfs_p1; // Zero means right censored
   array[forecast ? n_train_right_censored_patients : 0] int<lower = 0, upper = 1> forecast_right_censored; 
-  array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_km_est = rep_array(zeros_vector(max_all_t + 1), n_trials); 
-  array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] spop_km_est = rep_array(zeros_vector(max_all_t + 1), n_trials);  
+  // array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_km_est = rep_array(zeros_vector(max_all_t + 1), n_trials); 
+  // array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] spop_km_est = rep_array(zeros_vector(max_all_t + 1), n_trials);  
+  array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_km_est;
+  array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] spop_km_est;
   
   // RECIST prediction accuracy metrics
   int<lower=0> correct_recist_predictions = 0;
@@ -529,6 +531,8 @@ generated quantities {
         spop_km_est[s] = estimate_kaplan_meier(get_int_sub_array(spop_pfs, train_trial_patient_pos, s), 
                                                get_int_sub_array(spop_right_censored, train_trial_patient_pos, s), 
                                                max_all_t).1; 
+      } else {
+        sample_km_est[s] = zeros_vector(max_all_t + 1);
       }
     }
   }
