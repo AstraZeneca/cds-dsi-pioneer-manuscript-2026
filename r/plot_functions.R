@@ -633,6 +633,42 @@ plot_corr_decay <- function(res_data, param = .value) {
     NULL
 }
 
+plot_dynamics <- function(data, var) {
+  ggplot(data, aes(week)) +
+    stat_lineribbon(aes(ydist = {{ var }}, fill = stage), alpha = 0.25, .width = c(0.5, 0.8)) +
+    geom_point(aes(y = mmsumdiam), color = AZ_gold, size = 2) +
+    # geom_rect(
+    #   data = \(d) filter(d, fct_match(trial, "sclc")) |>  
+    #     group_by(trial, i) |>  
+    #     summarise(xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf),
+    #   aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+    #   fill = NA, color = "#E91E63", linewidth = 2, inherit.aes = FALSE
+    # ) +
+    scale_fill_discrete("Stage", type = AZ_palette, label = c("obs" = "Observed", "forecast" = "Forecast")) +
+    facet_wrap(vars(i), scales = "free") +
+    NULL
+}
+
+plot_level_rates <- function(res_data) {
+  ggplot(res_data) +
+    geom_lineribbon(aes(x, .value, ymin = .lower, ymax = .upper, color = fit_type, fill = fit_type, group = .width), alpha = 0.25, step = "hv") +
+    scale_color_discrete("", type = AZ_palette, aesthetics = c("color", "fill"), label = str_to_title) +
+    scale_x_continuous("") + 
+    labs(y = "") +
+    facet_wrap(vars(.variable), scales = "free") + #, labeller = labeller(.variable = \(l) str_remove(l, "log_"))) +
+    # coord_cartesian(xlim = c(0, 10)) +
+    NULL
+}
+
+plot_level_decrease_prop <- function(res_data) {
+  ggplot(res_data) +
+    geom_lineribbon(aes(x, .value_exp, ymin = .lower, ymax = .upper, color = fit_type, fill = fit_type, group = .width), alpha = 0.25, step = "hv") +
+    scale_color_discrete("", type = AZ_palette, aesthetics = c("color", "fill"), label = str_to_title) +
+    scale_x_continuous("", breaks = seq(-1, 1, 0.2)) +
+    scale_y_continuous("", breaks = NULL) +
+    NULL
+}
+
 # Distogram #######
 
 # First, create a helper function for the row-adding adjustment
