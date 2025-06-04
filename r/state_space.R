@@ -127,8 +127,7 @@ get_forecast_recist <- function(res, patient_states_data, analysis_data, forecas
   subsample_forecast_data <- get_subsample_forecast_data(patient_states_data, analysis_data, forecast_extent = forecast_extent) 
   
   lite_spread_rvars(res, forecast_recist[n], ndraws = ndraws) |> 
-    inner_join(subsample_forecast_data, by = "n", relationship = "one-to-one") |> 
-    # get_forecast_var(res, patient_states_data, analysis_data, forecast_recist[n]) |> 
+    right_join(subsample_forecast_data, by = "n") |> 
     prepare_recist_data(forecast_recist)
 }
 
