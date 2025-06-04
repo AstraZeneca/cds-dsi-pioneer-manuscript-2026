@@ -374,11 +374,15 @@ generated quantities {
   // RECIST prediction accuracy metrics
   int<lower=0> correct_recist_predictions = 0;
   int<lower=0> total_recist_predictions = 0;
-  matrix[PD, PD] recist_confusion_matrix = rep_matrix(0, PD, PD); // rows = observed, cols = predicted
+  array[n_trials] matrix[PD, PD] recist_confusion_matrix; // rows = observed, cols = predicted
   real weighted_recist_accuracy_linear = 0;
   real weighted_recist_accuracy_quadratic = 0;
   int<lower=0> correct_recist_response_class = 0;
   int<lower=0> correct_recist_disease_control = 0;
+  
+  for (s in 1:n_trials) {
+    recist_confusion_matrix[s] = rep_matrix(0, PD, PD);
+  }
   
   // Per-category metrics
   vector[PD] recist_category_sensitivity = zeros_vector(PD); // true positive rate per category
@@ -502,11 +506,11 @@ generated quantities {
       for (t in train_visit_start:train_visit_end) {
         if (train_obs_recist[t] <= PD) {
           // Update all metrics using the function
-          (correct_recist_predictions, recist_confusion_matrix, recist_category_counts,
+          (correct_recist_predictions, recist_confusion_matrix[patient_trial[i]], recist_category_counts,
            weighted_recist_accuracy_linear, weighted_recist_accuracy_quadratic,
            correct_recist_response_class, correct_recist_disease_control) = update_recist_metrics(
             train_obs_recist[t], rep_recist[t],
-            correct_recist_predictions, recist_confusion_matrix, recist_category_counts,
+            correct_recist_predictions, recist_confusion_matrix[patient_trial[i]], recist_category_counts,
             weighted_recist_accuracy_linear, weighted_recist_accuracy_quadratic,
             correct_recist_response_class, correct_recist_disease_control
           );
@@ -552,7 +556,7 @@ generated quantities {
    recist_response_sensitivity, recist_response_specificity,
    recist_progression_sensitivity, recist_progression_specificity) = calculate_recist_summary_metrics(
     correct_recist_predictions, total_recist_predictions,
-    recist_confusion_matrix, recist_category_counts,
+    recist_confusion_matrix[1], recist_category_counts, // BUG For now just using s = 1 for all metrics, need to break this down by trial 
     weighted_recist_accuracy_linear, weighted_recist_accuracy_quadratic,
     correct_recist_response_class, correct_recist_disease_control
   );
