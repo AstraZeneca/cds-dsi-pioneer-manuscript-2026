@@ -381,19 +381,35 @@ get_param_names_from_dots <- function(dots, all_cols) {
   return(unique(param_names))
 }
 
-get_draws <- function(fit, ...) {
-  enquos(...) |> 
+get_draws <- function(fit, ..., recover_data = NULL) {
+  d <- enquos(...) |> 
     map_chr(as_label) |> 
     str_extract(r"{^[^\[]+}") |> 
     fit$draws() 
+  
+  if (!is_null(recover_data)) {
+    d |> recover_types(recover_data) 
+  } else {
+    d
+  }
 } 
 
-lite_spread_rvars <- function(fit, ..., ndraws = NULL) {
-  get_draws(fit, ...) |> 
+lite_spread_rvars <- function(fit, ..., ndraws = NULL, recover_data = NULL) {
+  get_draws(fit, ..., recover_data = recover_data) |> 
     tidybayes::spread_rvars(..., ndraws = ndraws)
 }
 
-lite_gather_rvars <- function(fit, ..., ndraws = NULL) {
-  get_draws(fit, ...) |> 
+lite_gather_rvars <- function(fit, ..., ndraws = NULL, recover_data = NULL, calc_rhat = FALSE, calc_ess = FALSE) {
+  d <- get_draws(fit, ..., recover_data = recover_data) |> 
     tidybayes::gather_rvars(..., ndraws = ndraws)
+  
+  if (calc_rhat) {
+    d <- d |> mutate(rh = posterior::rhat(.value))
+  } 
+  
+  if (calc_ess) {
+    d <- d |> mutate(ess_b = posterior::ess_bulk(.value), ess_t = posterior::ess_tail(.value))
+  }
+  
+  return(d)
 }

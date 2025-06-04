@@ -33,7 +33,8 @@ get_obs_var <- function(res, patient_states_data, var, drop_initial = FALSE) {
   }
  
   rvar_data <- lite_spread_rvars(res, {{ var }}) |> 
-    right_join(patient_states_data, by = "n")
+    right_join(patient_states_data, by = "n") |> 
+    mutate(rh = posterior::rhat({{ var }}), ess_b = posterior::ess_bulk({{ var }}), ess_t = posterior::ess_tail({{ var }})) 
 }
 
 get_obs_state_var <- function(res, patient_states_data, var, drop_initial = FALSE, transform = identity) {
@@ -96,7 +97,8 @@ get_forecast_var <- function(res, patient_states_data, analysis_data, var, forec
   subsample_forecast_data <- get_subsample_forecast_data(patient_states_data, analysis_data, forecast_extent) 
   
   lite_spread_rvars(res, {{ var }}, ndraws = ndraws) |> 
-    right_join(subsample_forecast_data, by = "n") 
+    right_join(subsample_forecast_data, by = "n") |> 
+    mutate(rh = posterior::rhat({{ var }}), ess_b = posterior::ess_bulk({{ var }}), ess_t = posterior::ess_tail({{ var }}))
 }
 
 get_forecast_state_var <- function(res, patient_states_data, analysis_data, var, transform = identity, forecast_extent = 0, ndraws = NULL) {
@@ -128,6 +130,7 @@ get_forecast_recist <- function(res, patient_states_data, analysis_data, forecas
   
   lite_spread_rvars(res, forecast_recist[n], ndraws = ndraws) |> 
     right_join(subsample_forecast_data, by = "n") |> 
+    mutate(rh = posterior::rhat(forecast_recist), ess_b = posterior::ess_bulk(forecast_recist), ess_t = posterior::ess_tail(forecast_recist)) |> 
     prepare_recist_data(forecast_recist)
 }
 
