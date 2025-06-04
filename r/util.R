@@ -330,7 +330,7 @@ cmdstanr_format <- tar_format(
       readr::read_rds()
   },
   write = function(object, path) {
-    obj_file <- str_c(path, "_cmdstanr_object.rds")
+    obj_file <- stringr::str_c(path, "_cmdstanr_object.rds")
     object$save_object(obj_file)
     
     # Calculate hash of all CSV files combined
