@@ -359,3 +359,41 @@ determine_visit_data_response <- function(visit_data) {
     ungroup() |> 
     mutate(across(c(response, det_response), \(r) ordered(r, levels = c("CR", "PR", "SD", "PD"))))
 }
+
+# Helper function to parse parameter specifications and find matching columns
+get_param_names_from_dots <- function(dots, all_cols) {
+  if (length(dots) == 0) {
+    # If no parameters specified, return all non-metadata columns
+    return(setdiff(all_cols, c(".chain", ".iteration", ".draw")))
+  }
+  
+  # Extract the base parameter names from the expressions
+  param_names <- character()
+ 
+  param_names <- map_chr(dots, function(dot) {
+    expr_str <- rlang::as_label(dot)
+    # Extract base name (e.g., "beta" from "beta[i]")
+    base_name <- stringr::str_extract(expr_str, "^[^\\[]+")
+    # Find all columns that match this base name
+    str_subset(all_cols, str_glue(r"{^{base_name}(\[|$)}"))
+  })
+  
+  return(unique(param_names))
+}
+
+get_draws <- function(fit, ...) {
+  enquos(...) |> 
+    map_chr(as_label) |> 
+    str_extract(r"{^[^\[]+}") |> 
+    fit$draws() 
+} 
+
+lite_spread_rvars <- function(fit, ..., ndraws = NULL) {
+  get_draws(fit, ...) |> 
+    tidybayes::spread_rvars(..., ndraws = ndraws)
+}
+
+lite_gather_rvars <- function(fit, ..., ndraws = NULL) {
+  get_draws(fit, ...) |> 
+    tidybayes::gather_rvars(..., ndraws = ndraws)
+}

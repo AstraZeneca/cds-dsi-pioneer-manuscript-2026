@@ -32,7 +32,7 @@ get_obs_var <- function(res, patient_states_data, var, drop_initial = FALSE) {
         ungroup()
   }
  
-  rvar_data <- spread_rvars(res, {{ var }}) |> 
+  rvar_data <- lite_spread_rvars(res, {{ var }}) |> 
     right_join(patient_states_data, by = "n")
 }
 
@@ -95,7 +95,7 @@ get_subsample_forecast_data <- function(patient_states_data, analysis_data, fore
 get_forecast_var <- function(res, patient_states_data, analysis_data, var, forecast_extent = 0, ndraws = NULL) {
   subsample_forecast_data <- get_subsample_forecast_data(patient_states_data, analysis_data, forecast_extent) 
   
-  spread_rvars(res, {{ var }}, ndraws = ndraws) |> 
+  lite_spread_rvars(res, {{ var }}, ndraws = ndraws) |> 
     right_join(subsample_forecast_data, by = "n") 
 }
 
@@ -126,7 +126,7 @@ get_forecast_sld <- function(res, patient_states_data, analysis_data, forecast_e
 get_forecast_recist <- function(res, patient_states_data, analysis_data, forecast_extent = 0, ndraws = NULL) {
   subsample_forecast_data <- get_subsample_forecast_data(patient_states_data, analysis_data, forecast_extent = forecast_extent) 
   
-  spread_rvars(res, forecast_recist[n], ndraws = ndraws) |> 
+  lite_spread_rvars(res, forecast_recist[n], ndraws = ndraws) |> 
     inner_join(subsample_forecast_data, by = "n", relationship = "one-to-one") |> 
     # get_forecast_var(res, patient_states_data, analysis_data, forecast_recist[n]) |> 
     prepare_recist_data(forecast_recist)
