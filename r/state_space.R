@@ -97,8 +97,7 @@ get_forecast_var <- function(res, patient_states_data, analysis_data, var, forec
   subsample_forecast_data <- get_subsample_forecast_data(patient_states_data, analysis_data, forecast_extent) 
   
   lite_spread_rvars(res, {{ var }}, ndraws = ndraws) |> 
-    right_join(subsample_forecast_data, by = "n") |> 
-    mutate(rh = posterior::rhat({{ var }}), ess_b = posterior::ess_bulk({{ var }}), ess_t = posterior::ess_tail({{ var }}))
+    right_join(subsample_forecast_data, by = "n") 
 }
 
 get_forecast_state_var <- function(res, patient_states_data, analysis_data, var, transform = identity, forecast_extent = 0, ndraws = NULL) {
@@ -107,7 +106,10 @@ get_forecast_state_var <- function(res, patient_states_data, analysis_data, var,
   get_forecast_var(res, patient_states_data, analysis_data, !!var_expr, forecast_extent = forecast_extent, ndraws = ndraws) |>  
     mutate(
       {{ var }} := transform({{ var }}),
-      p = factor(p, levels = 1:3, labels = c("regress", "grow", "sum"))
+      p = factor(p, levels = 1:3, labels = c("regress", "grow", "sum")),
+      rh = posterior::rhat({{ var }}), 
+      ess_b = posterior::ess_bulk({{ var }}), 
+      ess_t = posterior::ess_tail({{ var }})
     )
 }
 
@@ -122,7 +124,12 @@ get_forecast_process_noise <- function(res, patient_states_data, analysis_data, 
 
 get_forecast_sld <- function(res, patient_states_data, analysis_data, forecast_extent = 0) {
   get_forecast_var(res, patient_states_data, analysis_data, forecast_patient_log_sld[n], forecast_extent = forecast_extent) |> 
-    mutate(forecast_patient_sld = exp(forecast_patient_log_sld))
+    mutate(
+      forecast_patient_sld = exp(forecast_patient_log_sld),
+      rh = posterior::rhat(forecast_patient_log_sld), 
+      ess_b = posterior::ess_bulk(forecast_patient_log_sld), 
+      ess_t = posterior::ess_tail(forecast_patient_log_sld)
+    )
 }
 
 get_forecast_recist <- function(res, patient_states_data, analysis_data, forecast_extent = 0, ndraws = NULL) {
