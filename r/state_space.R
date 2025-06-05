@@ -33,8 +33,7 @@ get_obs_var <- function(res, patient_states_data, var, drop_initial = FALSE) {
   }
  
   rvar_data <- lite_spread_rvars(res, {{ var }}) |> 
-    right_join(patient_states_data, by = "n") |> 
-    mutate(rh = posterior::rhat({{ var }}), ess_b = posterior::ess_bulk({{ var }}), ess_t = posterior::ess_tail({{ var }})) 
+    right_join(patient_states_data, by = "n") 
 }
 
 get_obs_state_var <- function(res, patient_states_data, var, drop_initial = FALSE, transform = identity) {
@@ -43,7 +42,10 @@ get_obs_state_var <- function(res, patient_states_data, var, drop_initial = FALS
   get_obs_var(res, patient_states_data, !!var_expr, drop_initial) |> 
     mutate(
       {{ var }} := transform({{ var }}),
-      p = factor(p, levels = 1:3, labels = c("regress", "grow", "sum"))
+      p = factor(p, levels = 1:3, labels = c("regress", "grow", "sum")),
+      rh = posterior::rhat({{ var }}), 
+      ess_b = posterior::ess_bulk({{ var }}), 
+      ess_t = posterior::ess_tail({{ var }})
     )
 }
 
@@ -58,7 +60,12 @@ get_process_noise <- function(res, patient_states_data) {
 
 get_sld <- function(res, patient_states_data) {
   get_obs_var(res, patient_states_data, rep_patient_log_sld[n]) |> 
-    mutate(rep_patient_sld = exp(rep_patient_log_sld))
+    mutate(
+      rep_patient_sld = exp(rep_patient_log_sld),
+      rh = posterior::rhat(rep_patient_log_sld), 
+      ess_b = posterior::ess_bulk(rep_patient_log_sld), 
+      ess_t = posterior::ess_tail(rep_patient_log_sld)
+    )
 }
 
 prepare_recist_data <- function(recist_rvar_data, var) {
@@ -74,7 +81,12 @@ prepare_recist_data <- function(recist_rvar_data, var) {
 
 get_recist <- function(res, patient_states_data) {
   get_obs_var(res, patient_states_data, rep_recist[n]) |> 
-    prepare_recist_data(rep_recist)
+    prepare_recist_data(rep_recist) |> 
+    mutate(
+      rh = posterior::rhat(rep_recist), 
+      ess_b = posterior::ess_bulk(rep_recist), 
+      ess_t = posterior::ess_tail(rep_recist)
+    )
 }
 
 get_subsample_forecast_data <- function(patient_states_data, analysis_data, forecast_extent = 0) {
