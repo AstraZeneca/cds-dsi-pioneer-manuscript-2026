@@ -325,24 +325,26 @@ rvar_safe_qs2_format <- tar_format(
 
 cmdstanr_format <- tar_format(
   read = function(path) {
-    # readr::read_rds(path)$fit
-    readr::read_rds(path)$file |> 
-      readr::read_rds()
+    cmdstanr::as_cmdstan_fit(readr::read_rds(path)$csv_files, check_diagnostics = FALSE, format = "draws_list")
+    # readr::read_rds(path)$file |> 
+    #   readr::read_rds()
   },
   write = function(object, path) {
-    obj_file <- stringr::str_c(path, "_cmdstanr_object.rds")
-    object$save_object(obj_file)
+    # obj_file <- stringr::str_c(path, "_cmdstanr_object.rds")
+    # object$save_object(path)
     
     # Calculate hash of all CSV files combined
     csv_files <- object$output_files()
-    csv_hash <- digest::digest(purrr::map(csv_files, \(f) digest::digest(file = f)), algo = "xxhash64")  # Fast hash algorithm
-    
+    # csv_hash <- digest::digest(purrr::map(csv_files, \(f) digest::digest(file = f)), algo = "xxhash64")  # Fast hash algorithm
+    csv_hash <- purrr::map(csv_files, \(f) digest::digest(file = f, algo = "xxhash64"))  # Fast hash algorithm
+
     # Save both fit object and hash
     readr::write_rds(
-      list(
+      tibble::lst(
         # fit = object,
-        file = obj_file,
-        csv_hash = csv_hash  # This changes when CSV content changes
+        # file = obj_file,
+        csv_files,
+        csv_hash  # This changes when CSV content changes
       ),
       path
     )
