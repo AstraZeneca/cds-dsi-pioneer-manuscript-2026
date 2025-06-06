@@ -64,12 +64,12 @@ sample_and_save <- function(model, ..., output_dir, output_basename, timestamp =
 #'
 #' @return tibble object with Kaplan-Meier results.
 km_to_tibble <- function(trt_data, key, pfs_var) { 
-  stan_data <- base_prepare_pfs_stan_data(trt_data, pfs_var = pfs_var) |> 
-    magrittr::extract(c("pfs", "interval_censored", "right_censored"))
+  # stan_data <- base_prepare_pfs_stan_data(trt_data, pfs_var = pfs_var) |> 
+  #   magrittr::extract(c("pfs", "interval_censored", "right_censored"))
   
   lst(
-    lb = survfit2(Surv(pfs + 1, 1 - right_censored) ~ 1, stan_data),
-    ub = survfit2(Surv(pfs + interval_censored + 1, 1 - right_censored) ~ 1, stan_data),
+    lb = ggsurvfit::survfit2(Surv(pfs + 1, 1 - right_censored) ~ 1, trt_data),
+    ub = ggsurvfit::survfit2(Surv(pfs + interval_censored + 1, 1 - right_censored) ~ 1, trt_data),
   ) |> 
     map_dfr(broom::tidy, .id = "btype") |>  
     select(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event, btype) |> 
