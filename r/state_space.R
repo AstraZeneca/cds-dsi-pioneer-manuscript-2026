@@ -23,7 +23,7 @@ add_states_sum <- function(states_data, states_col) {
     bind_rows(states_data) 
 }
 
-get_obs_var <- function(res, patient_states_data, var, drop_initial = FALSE) {
+get_obs_var <- function(res, patient_states_data, var, relationship = "one-to-one", drop_initial = FALSE) {
   if (drop_initial) {
       patient_states_data <- patient_states_data |> 
         group_by(i) |>
@@ -33,19 +33,19 @@ get_obs_var <- function(res, patient_states_data, var, drop_initial = FALSE) {
   }
  
   rvar_data <- lite_spread_rvars(res, {{ var }}) |> 
-    right_join(patient_states_data, by = "n") 
+    right_join(patient_states_data, by = "n", relationship = relationship) 
 }
 
 get_obs_state_var <- function(res, patient_states_data, var, drop_initial = FALSE, transform = identity) {
   var_expr <- expr({{ var }}[n,p])
   
-  get_obs_var(res, patient_states_data, !!var_expr, drop_initial) |> 
+  get_obs_var(res, patient_states_data, !!var_expr, relationship = "many-to-one", drop_initial = drop_initial) |> 
     mutate(
       {{ var }} := transform({{ var }}),
       p = factor(p, levels = 1:3, labels = c("regress", "grow", "sum")),
-      rh = posterior::rhat({{ var }}), 
-      ess_b = posterior::ess_bulk({{ var }}), 
-      ess_t = posterior::ess_tail({{ var }})
+      # rh = posterior::rhat({{ var }}), 
+      # ess_b = posterior::ess_bulk({{ var }}), 
+      # ess_t = posterior::ess_tail({{ var }})
     )
 }
 
@@ -62,9 +62,9 @@ get_sld <- function(res, patient_states_data) {
   get_obs_var(res, patient_states_data, rep_patient_log_sld[n]) |> 
     mutate(
       rep_patient_sld = exp(rep_patient_log_sld),
-      rh = posterior::rhat(rep_patient_log_sld), 
-      ess_b = posterior::ess_bulk(rep_patient_log_sld), 
-      ess_t = posterior::ess_tail(rep_patient_log_sld)
+      # rh = posterior::rhat(rep_patient_log_sld), 
+      # ess_b = posterior::ess_bulk(rep_patient_log_sld), 
+      # ess_t = posterior::ess_tail(rep_patient_log_sld)
     )
 }
 
@@ -83,9 +83,9 @@ get_recist <- function(res, patient_states_data) {
   get_obs_var(res, patient_states_data, rep_recist[n]) |> 
     prepare_recist_data(rep_recist) |> 
     mutate(
-      rh = posterior::rhat(rep_recist), 
-      ess_b = posterior::ess_bulk(rep_recist), 
-      ess_t = posterior::ess_tail(rep_recist)
+      # rh = posterior::rhat(rep_recist), 
+      # ess_b = posterior::ess_bulk(rep_recist), 
+      # ess_t = posterior::ess_tail(rep_recist)
     )
 }
 
@@ -105,23 +105,23 @@ get_subsample_forecast_data <- function(patient_states_data, analysis_data, fore
     semi_join(patient_states_data, by = c("trial", "usubjid"))
 }
 
-get_forecast_var <- function(res, patient_states_data, analysis_data, var, forecast_extent = 0, ndraws = NULL) {
+get_forecast_var <- function(res, patient_states_data, analysis_data, var, relationship = "one-to-one", forecast_extent = 0, ndraws = NULL) {
   subsample_forecast_data <- get_subsample_forecast_data(patient_states_data, analysis_data, forecast_extent) 
   
   lite_spread_rvars(res, {{ var }}, ndraws = ndraws) |> 
-    right_join(subsample_forecast_data, by = "n") 
+    right_join(subsample_forecast_data, by = "n", relationship = relationship) 
 }
 
 get_forecast_state_var <- function(res, patient_states_data, analysis_data, var, transform = identity, forecast_extent = 0, ndraws = NULL) {
   var_expr <- expr({{ var }}[n,p])
  
-  get_forecast_var(res, patient_states_data, analysis_data, !!var_expr, forecast_extent = forecast_extent, ndraws = ndraws) |>  
+  get_forecast_var(res, patient_states_data, analysis_data, !!var_expr, relationship = "many-to-one", forecast_extent = forecast_extent, ndraws = ndraws) |>  
     mutate(
       {{ var }} := transform({{ var }}),
       p = factor(p, levels = 1:3, labels = c("regress", "grow", "sum")),
-      rh = posterior::rhat({{ var }}), 
-      ess_b = posterior::ess_bulk({{ var }}), 
-      ess_t = posterior::ess_tail({{ var }})
+      # rh = posterior::rhat({{ var }}), 
+      # ess_b = posterior::ess_bulk({{ var }}), 
+      # ess_t = posterior::ess_tail({{ var }})
     )
 }
 
@@ -138,9 +138,9 @@ get_forecast_sld <- function(res, patient_states_data, analysis_data, forecast_e
   get_forecast_var(res, patient_states_data, analysis_data, forecast_patient_log_sld[n], forecast_extent = forecast_extent) |> 
     mutate(
       forecast_patient_sld = exp(forecast_patient_log_sld),
-      rh = posterior::rhat(forecast_patient_log_sld), 
-      ess_b = posterior::ess_bulk(forecast_patient_log_sld), 
-      ess_t = posterior::ess_tail(forecast_patient_log_sld)
+      # rh = posterior::rhat(forecast_patient_log_sld), 
+      # ess_b = posterior::ess_bulk(forecast_patient_log_sld), 
+      # ess_t = posterior::ess_tail(forecast_patient_log_sld)
     )
 }
 
@@ -148,8 +148,8 @@ get_forecast_recist <- function(res, patient_states_data, analysis_data, forecas
   subsample_forecast_data <- get_subsample_forecast_data(patient_states_data, analysis_data, forecast_extent = forecast_extent) 
   
   lite_spread_rvars(res, forecast_recist[n], ndraws = ndraws) |> 
-    right_join(subsample_forecast_data, by = "n") |> 
-    mutate(rh = posterior::rhat(forecast_recist), ess_b = posterior::ess_bulk(forecast_recist), ess_t = posterior::ess_tail(forecast_recist)) |> 
+    right_join(subsample_forecast_data, by = "n", relationship = "one-to-one") |> 
+    # mutate(rh = posterior::rhat(forecast_recist), ess_b = posterior::ess_bulk(forecast_recist), ess_t = posterior::ess_tail(forecast_recist)) |> 
     prepare_recist_data(forecast_recist)
 }
 
