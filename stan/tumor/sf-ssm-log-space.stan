@@ -490,18 +490,38 @@ generated quantities {
         if (right_censored[i]) {
           forecast_pfs[right_censored_idx] = find_first(forecast_recist[train_forecast_visit_start:train_forecast_visit_end], PD);
           forecast_right_censored[right_censored_idx] = forecast_pfs[right_censored_idx] == 0;
-          forecast_pfs_p1[right_censored_idx] = forecast_pfs[right_censored_idx] + 1; 
+          
+          if (!forecast_right_censored[right_censored_idx]) {
+            forecast_pfs[right_censored_idx] = forecast_time[forecast_pfs[right_censored_idx]];
+            forecast_pfs_p1[right_censored_idx] = forecast_pfs[right_censored_idx] + 1; 
+          } else {
+            forecast_pfs_p1[right_censored_idx] = 0; 
+          }
           
           right_censored_idx += 1;
         }
         
-        spop_pfs[train_idx] = find_first(append_array(rep_recist[(train_visit_start + 1):train_visit_end], forecast_recist[train_forecast_visit_start:train_forecast_visit_end]), PD);
+        spop_pfs[train_idx] = find_first(append_array(rep_recist[(train_visit_start + 1):train_visit_end], 
+                                                      forecast_recist[train_forecast_visit_start:train_forecast_visit_end]), 
+                                        PD); 
       } else {
         rep_recist[(train_visit_start + 1):train_visit_end] = calculate_target_recist(exp(rep_patient_log_sld[train_visit_start:train_visit_end]) * 10);
-        spop_pfs[train_idx] = find_first(rep_recist[(train_visit_start + 1):train_visit_end], PD);
+        spop_pfs[train_idx] = find_first(rep_recist[(train_visit_start + 1):train_visit_end], PD); 
       }
       
+      // Why add one? We're passing the recist array excluding the first one.
       spop_right_censored[train_idx] = spop_pfs[train_idx] == 0;
+      
+      if (!spop_right_censored[train_idx]) { 
+        // Why add one? We're passing the recist array excluding the first one.
+        spop_pfs[train_idx] += 1;
+        
+        spop_pfs[train_idx] = spop_pfs[train_idx] <= n_train_patient_visits[train_idx] ? 
+                              get_int_sub_array(train_patient_visits, train_patient_visit_pos, train_idx)[spop_pfs[train_idx]] :
+                              forecast_time[spop_pfs[train_idx] - n_train_patient_visits[train_idx]]; 
+                              
+        spop_pfs[train_idx] = max(0, spop_pfs[train_idx]); // BUG a couple of patients end up with negative weeks. We need to figure out why.
+      }
       
       for (t in train_visit_start:train_visit_end) {
         if (train_obs_recist[t] <= PD) {
