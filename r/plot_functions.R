@@ -151,12 +151,18 @@ plot_surv_ppc <- function(ppc_data, surv_interval_col, ic_col, rc_col, rep_surv_
 }
 
 plot_km <- function(res_data, obs_km_data, km_est, group = fit_type) {
-  ggplot(res_data) +
-    geom_step(aes(x = t, y = s, group = btype, color = btype), linewidth = 0.5, alpha = 0.5, data = \(d) semi_join(obs_km_data, d, by = "trial")) +
+  pobj <- ggplot(res_data) +
     stat_lineribbon(aes(x = t - 1, ydist = {{ km_est }}, fill = {{ group }}, alpha = {{ group }}), linewidth = 0, .width = 0.8) +
     labs(y = "Survival Probability") +
     guides(alpha = "none") + 
     theme(legend.position = "bottom")
+  
+  if (!is_null(obs_km_data)) {
+    pobj <- pobj + 
+      geom_step(aes(x = t, y = s, group = btype, color = btype), linewidth = 0.5, alpha = 0.5, data = \(d) semi_join(obs_km_data, d, by = "trial")) 
+  }
+  
+  return(pobj)
 }
 
 plot_gng <- function(res_data, outcome, lrv_tv, model_type_names) {
@@ -666,6 +672,27 @@ plot_level_decrease_prop <- function(res_data) {
     scale_color_discrete("", type = AZ_palette, aesthetics = c("color", "fill"), label = str_to_title) +
     scale_x_continuous("", breaks = seq(-1, 1, 0.2)) +
     scale_y_continuous("", breaks = NULL) +
+    NULL
+}
+
+plot_confusion_matrix <- function(data, recorded, calculated, p, n) {
+  data |> 
+    mutate(
+      nvar = {{ n }},
+      pvar = {{ p }},
+      n_label = if (!is_null(nvar)) str_glue("(n={ nvar })") else "",
+      size_label = str_glue("{round(pvar, 3)}
+                             {n_label}")
+    ) |>  
+    ggplot(aes(x = {{ recorded }}, y = {{ calculated }})) +
+    geom_tile(aes(fill = {{ p }}), alpha = 0.5, color = "white", linewidth = 0.5) +
+    geom_text(aes(label = size_label), color = AZ_darkpurple, size = 3) +
+    scale_fill_gradient(low = AZ_turquoise, high = AZ_pink, name = "Proportion") +
+    scale_x_discrete(limits = fct_rev) +
+    facet_wrap(vars(trial), labeller = labeller(.default = str_to_upper)) +
+    coord_fixed() +
+    theme_minimal() +
+    theme(panel.grid.major = element_blank()) +
     NULL
 }
 

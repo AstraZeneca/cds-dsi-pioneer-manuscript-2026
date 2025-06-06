@@ -106,7 +106,7 @@ base_prepare_pfs_stan_data <- function(analysis_data, ..., pfs_var = pfs) {
   tumor_stan_data <- prepare_tumor_stan_data(analysis_data)
   pfs_data <- select(
       analysis_data, 
-      pfs = {{ pfs_var }}, death_week, calendar_week, calendar_day, right_censored, admin_right_censored_week, interval_censored, patient = usubjid
+      pfs = {{ pfs_var }}, death_week, calendar_week, calendar_day, right_censored, any_of("admin_right_censored_week"), interval_censored, patient = usubjid
     ) |> 
     mutate(
       death_week = if_else(right_censored, 0, death_week), # Death week is irrelevant if the data is censored
