@@ -367,13 +367,22 @@ tar_cmdstan_sample <- function(name, model, stan_data, init_factory = \(...) \(.
   )
 }
 
-
 determine_visit_data_response <- function(visit_data) {
   visit_data |> 
     group_by(usubjid) |> 
     mutate(det_response = c(NA, determine_trajectory_recist_target_response(mmsumdiam))) |> 
     ungroup() |> 
-    mutate(across(c(response, det_response), \(r) ordered(r, levels = c("CR", "PR", "SD", "PD"))))
+    mutate(
+      across(c(response, det_response), \(r) ordered(r, levels = c("CR", "PR", "SD", "PD"))),
+    )
+}
+
+determine_pfs <- function(visit_data, pfs_confirm_visits = 1) {
+  visit_data |> 
+    summarize(
+      det_pfs = find_consecutive(det_response, "PD", pfs_confirm_visits) |> coalesce(max(week)),
+      det_right_censored = det_pfs == max(week)
+    )
 }
 
 # Helper function to parse parameter specifications and find matching columns
@@ -428,4 +437,16 @@ lite_gather_rvars <- function(fit, ..., ndraws = NULL, recover_data = NULL, calc
   }
   
   return(d)
+}
+
+find_consecutive <- function(vec, x, n = 1) {
+  enframe(vec) |> 
+    count(value, name = "length") |> 
+    mutate(
+      end_index = cumsum(length),
+      start_index = end_index - length + 1
+    ) |> 
+    filter(value == x, length >= n) |> 
+    pull(start_index) |>  
+    first() %||% NA
 }
