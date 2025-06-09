@@ -63,25 +63,27 @@ sample_and_save <- function(model, ..., output_dir, output_basename, timestamp =
 #' @param pfs_var Name of variable were PFS is stored in the data 
 #'
 #' @return tibble object with Kaplan-Meier results.
-km_to_tibble <- function(trt_data, key, pfs_var) { 
-  # stan_data <- base_prepare_pfs_stan_data(trt_data, pfs_var = pfs_var) |> 
-  #   magrittr::extract(c("pfs", "interval_censored", "right_censored"))
-  
-  lst(
-    lb = ggsurvfit::survfit2(Surv(pfs + 1, 1 - right_censored) ~ 1, trt_data),
-    ub = ggsurvfit::survfit2(Surv(pfs + interval_censored + 1, 1 - right_censored) ~ 1, trt_data),
+km_to_tibble <- function(trt_data, key, pfs_sym, censored_sym) { 
+  rlang::inject(
+    lst(
+      lb = ggsurvfit::survfit2(Surv(!!pfs_sym + 1, 1 - !!censored_sym) ~ 1, trt_data),
+      ub = ggsurvfit::survfit2(Surv(!!pfs_sym + interval_censored + 1, 1 - !!censored_sym) ~ 1, trt_data),
+    )
   ) |> 
     map_dfr(broom::tidy, .id = "btype") |>  
     select(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event, btype) |> 
     bind_cols(key)
 }
 
-get_km_res <- function(analysis_data, pfs_var, ...) {
+get_km_res <- function(analysis_data, pfs_var, censored_var, ...) {
+  pfs_sym <- rlang::ensym(pfs_var)
+  censored_sym <- rlang::ensym(censored_var)
+  
   analysis_data |>
     group_by(trial, ...) |>  
-    group_map(\(trt_data, key) km_to_tibble(trt_data, key, pfs_var), .keep = TRUE) |>  
+    group_map(\(trt_data, key) km_to_tibble(trt_data, key, pfs_sym, censored_sym), .keep = TRUE) |>  
     bind_rows() 
-} 
+}
 
 add_confirmed_resp_priors <- function(stan_data, priors) {
   stan_data |> 
