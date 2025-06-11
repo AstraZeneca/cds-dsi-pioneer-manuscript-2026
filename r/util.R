@@ -380,8 +380,10 @@ determine_visit_data_response <- function(visit_data) {
 determine_pfs <- function(visit_data, pfs_confirm_visits = 1) {
   visit_data |> 
     summarize(
-      det_pfs = find_consecutive(det_response, "PD", pfs_confirm_visits) |> coalesce(max(week)),
-      det_right_censored = det_pfs == max(week)
+      det_pfs_idx = find_consecutive(det_response, "PD", pfs_confirm_visits), # |> coalesce(max(week)),
+      det_pfs = if_else(is.na(det_pfs_idx), max(week), pmax(1, week[det_pfs_idx])),
+      det_right_censored = is.na(det_pfs_idx), 
+      det_interval_censored = coalesce(week[det_pfs_idx + 1] - det_pfs - 1, 0)
     )
 }
 
