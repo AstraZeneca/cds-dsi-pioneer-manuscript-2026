@@ -22,12 +22,16 @@ data {
   int<lower = 0, upper = 1> forecast;
   int<lower = 0, upper = 1> run_parallel;
   int<lower = 1, upper = n_patients> train_patients_pos, train_patients_end;
+ 
+  int<lower = 0, upper = 1> add_trial_level_baseline_hazard;
   
   array[sum(n_patient_visits)] int<lower = 1, upper = 5> recist;
   
   array[n_patients] int<lower = 0> pfs; // How many periods after baseline did patient survive. The last week observed with no progression.
   array[n_patients] int<lower = 0, upper = 1> right_censored;
   array[n_patients] int<lower = 0> interval_censored; // The number of weeks after `pfs` that actual progression could have happened. E.g., zero means progression happened the next week.
+  
+  array[n_patients] int<lower = 0> death_week;
   
   // GP parameters
   real<lower = 0> pop_tumor_gp_rho_meanlog;
@@ -65,12 +69,23 @@ data {
   real<lower = 0> patient_decrease_prop_logis_sd_sd;
   
   real<lower = 0> log_lod_sd;
+  
+  vector<lower = 0>[2] log_lambda_gp_pop_alpha_sd;
+  vector<lower = 0>[2] log_lambda_gp_pop_rho_alpha, log_lambda_gp_pop_rho_beta;
+  vector[2] log_lambda_gp_pop_intercept_mean;
+  vector<lower = 0>[2] log_lambda_gp_pop_intercept_sd;
+  
+  vector<lower = 0>[2] log_lambda_gp_trial_alpha_sd;
+  vector<lower = 0>[2] log_lambda_gp_trial_rho_alpha, log_lambda_gp_trial_rho_beta;
+  vector<lower = 0>[2] log_lambda_gp_trial_intercept_sd_sd;
 } 
 
 transformed data {
   #include "../base_transformed_data.stan"
   #include "tumor_transformed_data.stan"
   #include "sf-transformed_data.stan"
+  
+  int<lower = 1> n_causes = 1; // Death and non-target PD
   
   int<lower = 1> n_total_visits_m1 = sum(n_patient_visits) - n_patients;
   array[n_patients + 1] int<lower = 1> patient_visit_m1_pos = create_pos(n_patient_visits, -1);
@@ -134,6 +149,8 @@ transformed data {
 }
 
 parameters {
+  #include "other_events_parameters.stan"
+  
   real pop_log_net_rate;            // Population-level net rate (log(d-g))
   real<lower = 0> pop_log_rate_ratio; // Population-level ratio (log(d/g))
   
@@ -192,6 +209,8 @@ parameters {
 }
 
 transformed parameters {
+  #include "other_events_transformed_parameters.stan"
+  
   vector[n_train_trials] trial_log_net_rate_effect = zeros_vector(n_train_trials);
   vector[n_train_patients] patient_log_net_rate_effect = zeros_vector(n_train_patients);
   vector[n_train_patients] patient_log_net_rate = rep_vector(pop_log_net_rate, n_train_patients);
@@ -264,6 +283,8 @@ transformed parameters {
 }
 
 model {
+  #include "other_events_priors.stan"
+  
   pop_log_net_rate ~ normal(pop_log_net_rate_mean, pop_log_net_rate_sd);
   pop_log_rate_ratio ~ normal(pop_log_rate_ratio_mean, pop_log_rate_ratio_sd);
   patient_log_net_rate_sd ~ normal(0, patient_log_net_rate_sd_sd);
@@ -317,6 +338,12 @@ model {
         (visit_pos, visit_end) = get_pos(patient_visit_pos, i);
         
         normalized_sld[visit_pos:visit_end] ~ sf_log_space_obs(states[train_visit_start:train_visit_end], measure_sd, log_lod - log(sum_tumor_size[visit_pos]));
+      }
+      
+      for (s in 1:n_trials) {
+        for (k in 1:n_causes) {
+          target += sum(get_sub_vector(patient_response_lp[, k], train_trial_patient_pos, s));
+        }
       }
     }
   }
