@@ -41,6 +41,23 @@ get_tumor_priors <- function() {
     patient_decrease_prop_logis_sd_sd = 0.75,  # Also tighten patient-level
     trial_decrease_prop_logis_sd_sd = 1.5,    # Between patient (2.5) and population (2) 
     
+    # Baseline hazard GP parameters - Population level (wrapped in array() for n_causes)
+    log_lambda_gp_pop_intercept_mean = array(-4.5),    # Baseline log-hazard
+    log_lambda_gp_pop_intercept_sd = array(0.5),       # Moderate uncertainty
+    
+    # GP variance (alpha) - controls overall variability of hazard over time
+    log_lambda_gp_pop_alpha_sd = array(0.4),           # Moderate temporal variation
+    
+    # GP length-scale (rho) - controls smoothness of hazard over time
+    log_lambda_gp_pop_rho_alpha = array(8.0),          # Shape parameter
+    log_lambda_gp_pop_rho_beta = array(12.0),          # Rate parameter (mean rho ≈ 1.5 weeks)
+    
+    # Trial-level hierarchical effects (when add_trial_level_baseline_hazard = 1)
+    log_lambda_gp_trial_alpha_sd = array(0.25),        # Smaller trial-level variation
+    log_lambda_gp_trial_rho_alpha = array(5.0),        # Trial-level smoothness
+    log_lambda_gp_trial_rho_beta = array(7.0),         # Structure
+    log_lambda_gp_trial_intercept_sd_sd = array(0.3),   # Trial baseline variation
+    
     log_lod_sd = 0.2
   )
 }

@@ -73,22 +73,22 @@ data {
   
   real<lower = 0> log_lod_sd;
   
-  vector<lower = 0>[2] log_lambda_gp_pop_alpha_sd;
-  vector<lower = 0>[2] log_lambda_gp_pop_rho_alpha, log_lambda_gp_pop_rho_beta;
-  vector[2] log_lambda_gp_pop_intercept_mean;
-  vector<lower = 0>[2] log_lambda_gp_pop_intercept_sd;
+  int<lower = 1> n_causes; // Death and non-target PD
   
-  vector<lower = 0>[2] log_lambda_gp_trial_alpha_sd;
-  vector<lower = 0>[2] log_lambda_gp_trial_rho_alpha, log_lambda_gp_trial_rho_beta;
-  vector<lower = 0>[2] log_lambda_gp_trial_intercept_sd_sd;
+  vector<lower = 0>[n_causes] log_lambda_gp_pop_alpha_sd;
+  vector<lower = 0>[n_causes] log_lambda_gp_pop_rho_alpha, log_lambda_gp_pop_rho_beta;
+  vector[n_causes] log_lambda_gp_pop_intercept_mean;
+  vector<lower = 0>[n_causes] log_lambda_gp_pop_intercept_sd;
+  
+  vector<lower = 0>[n_causes] log_lambda_gp_trial_alpha_sd;
+  vector<lower = 0>[n_causes] log_lambda_gp_trial_rho_alpha, log_lambda_gp_trial_rho_beta;
+  vector<lower = 0>[n_causes] log_lambda_gp_trial_intercept_sd_sd;
 } 
 
 transformed data {
   #include "../base_transformed_data.stan"
   #include "tumor_transformed_data.stan"
   #include "sf-transformed_data.stan"
-  
-  int<lower = 1> n_causes = 1; // Death and non-target PD
   #include "other_events_transformed_data.stan"
   
   int<lower = 1> n_total_visits_m1 = sum(n_patient_visits) - n_patients;
