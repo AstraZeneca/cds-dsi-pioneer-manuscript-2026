@@ -31,6 +31,9 @@ data {
   array[n_patients] int<lower = 0, upper = 1> right_censored;
   array[n_patients] int<lower = 0> interval_censored; // The number of weeks after `pfs` that actual progression could have happened. E.g., zero means progression happened the next week.
   
+  array[n_patients] int<lower = 0> target_pfs; // PFS based on target tumor SLD only 
+  array[n_patients] int<lower = 0, upper = 1> target_right_censored;
+  
   array[n_patients] int<lower = 0> death_week;
   
   // GP parameters
@@ -86,6 +89,7 @@ transformed data {
   #include "sf-transformed_data.stan"
   
   int<lower = 1> n_causes = 1; // Death and non-target PD
+  #include "other_events_transformed_data.stan"
   
   int<lower = 1> n_total_visits_m1 = sum(n_patient_visits) - n_patients;
   array[n_patients + 1] int<lower = 1> patient_visit_m1_pos = create_pos(n_patient_visits, -1);
