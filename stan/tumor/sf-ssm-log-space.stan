@@ -392,13 +392,11 @@ generated quantities {
   array[n_total_train_visits] int<lower = CR, upper = PD + 1> rep_recist = rep_array(PD + 1, n_total_train_visits);
   array[forecast ? n_total_train_forecast_visits : 0] int<lower = CR, upper = PD> forecast_recist;
  
-  array[n_train_patients] int<lower = 0> spop_pfs; // Zero means right censored
+  array[n_train_patients] int<lower = 0> spop_non_target_pfs, spop_pfs; 
   array[n_train_patients] int<lower = 0, upper = 1> spop_right_censored; 
   // Forecasting for right censored patients 
-  array[forecast ? n_train_right_censored_patients : 0] int<lower = 0> forecast_pfs, forecast_pfs_p1; // Zero means right censored
+  array[forecast ? n_train_right_censored_patients : 0] int<lower = 0> forecast_non_target_pfs, forecast_pfs; // Zero means right censored
   array[forecast ? n_train_right_censored_patients : 0] int<lower = 0, upper = 1> forecast_right_censored; 
-  // array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_km_est = rep_array(zeros_vector(max_all_t + 1), n_trials); 
-  // array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] spop_km_est = rep_array(zeros_vector(max_all_t + 1), n_trials);  
   array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_km_est;
   array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] spop_km_est;
 
@@ -446,6 +444,9 @@ generated quantities {
         ));
         
       array[n_patient_forecast_visits[i] + 1] int forecast_time = linspaced_int_array(n_patient_forecast_visits[i] + 1, patient_last_obs_visit[i], last_predict_visit);
+     
+      int spop_non_target_right_censored; 
+      (spop_non_target_pfs[train_idx], spop_non_target_right_censored) = survival_time_rng(log_cond_prob_surv[1, train_idx]); 
       
       if (forecast && n_patient_forecast_visits[i] > 0) {
         // assert_matching_states(
@@ -501,15 +502,23 @@ generated quantities {
         forecast_recist[train_forecast_visit_start:train_forecast_visit_end] = full_predict_recist[train_visit_size:];
         
         if (right_censored[i]) {
+          int forecast_non_target_right_censored;
+          
+          (forecast_non_target_pfs[right_censored_idx], forecast_non_target_right_censored) = survival_time_rng(
+            log_cond_prob_surv[1, train_idx], pfs[i] + interval_censored[i], right_censored[i], 0
+          );
+          
           forecast_pfs[right_censored_idx] = find_first(forecast_recist[train_forecast_visit_start:train_forecast_visit_end], PD);
           forecast_right_censored[right_censored_idx] = forecast_pfs[right_censored_idx] == 0;
           
           if (!forecast_right_censored[right_censored_idx]) {
             forecast_pfs[right_censored_idx] = forecast_time[forecast_pfs[right_censored_idx]];
-            forecast_pfs_p1[right_censored_idx] = forecast_pfs[right_censored_idx] + 1; 
           } else {
-            forecast_pfs_p1[right_censored_idx] = 0; 
+            forecast_pfs[right_censored_idx] = max_all_t; 
           }
+          
+          forecast_pfs[right_censored_idx] = min(forecast_pfs[right_censored_idx], forecast_non_target_pfs[right_censored_idx]);
+          forecast_right_censored[right_censored_idx] = forecast_right_censored[right_censored_idx] && forecast_non_target_right_censored;
           
           right_censored_idx += 1;
         }
@@ -522,6 +531,7 @@ generated quantities {
         spop_pfs[train_idx] = find_first(rep_recist[(train_visit_start + 1):train_visit_end], PD); 
       }
       
+      
       // Why add one? We're passing the recist array excluding the first one.
       spop_right_censored[train_idx] = spop_pfs[train_idx] == 0;
       
@@ -532,10 +542,13 @@ generated quantities {
         spop_pfs[train_idx] = spop_pfs[train_idx] <= n_train_patient_visits[train_idx] ? 
                               get_int_sub_array(train_patient_visits, train_patient_visit_pos, train_idx)[spop_pfs[train_idx]] :
                               forecast_time[spop_pfs[train_idx] - n_train_patient_visits[train_idx]]; 
-                              
-        spop_pfs[train_idx] = max(0, spop_pfs[train_idx]); // BUG a couple of patients end up with negative weeks. We need to figure out why.
+      } else {
+        spop_pfs[train_idx] = max_all_t;
       }
       
+      spop_pfs[train_idx] = min(spop_non_target_pfs[train_idx], 
+                                max(0, spop_pfs[train_idx])); // BUG a couple of patients end up with negative weeks. We need to figure out why.
+      spop_right_censored[train_idx] = spop_right_censored[train_idx] && spop_non_target_right_censored; 
     }
     
     for (s in 1:n_trials) {
@@ -545,7 +558,7 @@ generated quantities {
           array[n_curr_uncensored_obs] int curr_uncensored_obs = get_int_sub_array(train_right_uncensored_patients, train_trial_right_uncensored_pos, s);
           
           sample_km_est[s] = estimate_kaplan_meier(
-            append_array(ub_pfs_p1[curr_uncensored_obs], get_int_sub_array(forecast_pfs_p1, train_trial_right_censored_pos, s)), 
+            append_array(ub_pfs_p1[curr_uncensored_obs], get_int_sub_array(forecast_pfs, train_trial_right_censored_pos, s)), 
             append_array(right_censored[curr_uncensored_obs], get_int_sub_array(forecast_right_censored, train_trial_right_censored_pos, s)), 
             max_all_t).1; 
         }
@@ -561,4 +574,3 @@ generated quantities {
   
   #include "sf-ssls-accuracy_gen_quant.stan"
 }
-
