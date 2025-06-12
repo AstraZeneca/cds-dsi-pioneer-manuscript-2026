@@ -1,146 +1,13 @@
 functions {
   #include "functions.stan"
- 
-  tuple(array[] int, array[] int, array[] int) cutoff_visits(
-    int cutoff_calendar_day, array[] int patient_calendar_day, array[] int t_measure, array[] int t_day_measure, array[] int patient_tumor_measure_pos
-  ) {
-    int n_patients = size(patient_calendar_day);
-    
-    // 0 is the default sentinel value if last visit is negative 
-    array[n_patients] int last_visit_day = zeros_int_array(n_patients), last_visit_week = zeros_int_array(n_patients); 
-
-    array[n_patients] int last_visit_calendar_day;
-    
-    for (i in 1:n_patients) {
-      int t_measure_pos = patient_tumor_measure_pos[i]; 
-      int t_measure_end = patient_tumor_measure_pos[i + 1] - 1; 
-      int n_patient_measures = t_measure_end - t_measure_pos + 1;
-      
-      // This is the study date for this patient that such a cutoff would have occured on
-      int patient_cutoff_study_day = calendar_date_to_study_date(patient_calendar_day[i], cutoff_calendar_day); 
-      
-      array[n_patient_measures] int patient_t_measure = t_measure[t_measure_pos:t_measure_end];
-      array[n_patient_measures] int patient_t_day_measure = t_day_measure[t_measure_pos:t_measure_end];
-      array[n_patient_measures] int patient_measure_t_sort_idx = sort_indices_asc(patient_t_day_measure);
-      int t_idx = 0;
-      
-      while (t_idx < n_patient_measures && patient_t_day_measure[patient_measure_t_sort_idx[t_idx + 1]] <= patient_cutoff_study_day) {
-        t_idx += 1;
-      }
-      
-      if (t_idx > 0) {  
-        last_visit_day[i] = patient_t_day_measure[patient_measure_t_sort_idx[t_idx]]; 
-        last_visit_week[i] = patient_t_measure[patient_measure_t_sort_idx[t_idx]]; 
-      }
-      
-      last_visit_calendar_day[i] = patient_calendar_day[i] + patient_t_day_measure[patient_measure_t_sort_idx[n_patient_measures]] - 1;
-    }
-    
-    return (last_visit_day, last_visit_week, last_visit_calendar_day);
-  } 
- 
-  /** Get the indices within the array of sorted last visit that will be used in all the LFO cuts.
-   *
-   * Each such index will indicate the first patient (in the sorted array) to be in each cut. In each future cut, the patients are a subset of the previous cut's
-   * patients.
-   */
-  array[] int get_oos_patients_idx(array[] int sorted_last_visit_calendar_day, array[] int cutoff_calendar_day) {
-    int n_cutoffs = size(cutoff_calendar_day);
-    int n_patients = size(sorted_last_visit_calendar_day);
-
-    array[n_cutoffs] int patient_idx = rep_array(0, n_cutoffs);
-    
-    int n_remaining_testing_patients = n_patients;
-    int curr_patient_idx = 1;
-    int patient_idx_pos = 1;
-
-    while (curr_patient_idx <= n_patients && patient_idx_pos <= n_cutoffs) {
-      while (curr_patient_idx <= n_patients && sorted_last_visit_calendar_day[curr_patient_idx] <= cutoff_calendar_day[patient_idx_pos]) {
-        curr_patient_idx += 1;
-      }
-
-      if (curr_patient_idx <= n_patients) {
-        patient_idx[patient_idx_pos] = curr_patient_idx;
-        patient_idx_pos += 1;
-      } else {
-        print("Warning: no patients have any visits after cutoff ", patient_idx_pos);
-      }
-    }
-
-    return patient_idx;
-  }
-  
-  tuple(array[,] int, array[,,] int) get_testing_visit_week_bounds(
-    array[] int oos_patient_idx, array[] int last_visit_calendar_day_sort_idx,
-    array[] int cutoff_calendar_day, array[] int patient_calendar_day,
-    array[] int t_measure, array[] int t_day_measure, array[] int patient_tumor_measure_pos
-  ) {
-    int n_patients = size(patient_calendar_day);
-    int n_futures = size(oos_patient_idx);
-    int min_all_t = min(t_measure);
-    
-    array[n_futures, n_patients] int first_testing_visit_week = rep_array(0, n_futures, n_patients);
-    array[n_futures, n_futures, n_patients] int last_testing_visit_week = rep_array(min_all_t, n_futures, n_futures, n_patients);
-    
-    for (n in 1:n_futures) {
-      int n_curr_patients = n_patients - oos_patient_idx[n] + 1;
-      array[n_curr_patients] int curr_patients = last_visit_calendar_day_sort_idx[oos_patient_idx[n]:];
-      array[n_curr_patients] int lower_cutoff_visit_days = calendar_date_to_study_date(patient_calendar_day[curr_patients], cutoff_calendar_day[n]);
-      
-      for (i_idx in 1:n_curr_patients) {
-        int i = curr_patients[i_idx];
-        int t_measure_pos = patient_tumor_measure_pos[i]; 
-        int t_measure_end = patient_tumor_measure_pos[i + 1] - 1; 
-        int n_patient_measures = t_measure_end - t_measure_pos + 1;
-        
-        array[n_patient_measures] int patient_t_measure = t_measure[t_measure_pos:t_measure_end];
-        array[n_patient_measures] int patient_t_day_measure = t_day_measure[t_measure_pos:t_measure_end];
-        array[n_patient_measures] int patient_measure_t_sort_idx = sort_indices_asc(patient_t_day_measure);
-        int t_idx = 1;
-        
-        while (t_idx <= n_patient_measures && (patient_t_day_measure[patient_measure_t_sort_idx[t_idx]]<= max(0, lower_cutoff_visit_days[i_idx]))) {
-          t_idx += 1;
-        }
-        
-        if (t_idx <= n_patient_measures) {
-          first_testing_visit_week[n, i] = patient_t_measure[patient_measure_t_sort_idx[t_idx]]; 
-        } else {
-          // This would only happen if we have a patient with only baseline visits.
-          fatal_error("Unexpectedly could not find the first testing visit.");
-        }
-      }
-      
-      for (m in (n + 1):n_futures) {
-        array[n_curr_patients] int upper_cutoff_visit_days = calendar_date_to_study_date(patient_calendar_day[curr_patients], cutoff_calendar_day[m]);
-      
-        for (i_idx in 1:n_curr_patients) {
-          int i = curr_patients[i_idx];
-          int t_measure_pos = patient_tumor_measure_pos[i]; 
-          int t_measure_end = patient_tumor_measure_pos[i + 1] - 1; 
-          int n_patient_measures = t_measure_end - t_measure_pos + 1;
-          
-          array[n_patient_measures] int patient_t_measure = t_measure[t_measure_pos:t_measure_end];
-          array[n_patient_measures] int patient_t_day_measure = t_day_measure[t_measure_pos:t_measure_end];
-          array[n_patient_measures] int patient_measure_t_sort_idx = sort_indices_desc(patient_t_day_measure);
-          int t_idx = 1;
-          
-          while (t_idx <= n_patient_measures && (patient_t_day_measure[patient_measure_t_sort_idx[t_idx]] > max(0, upper_cutoff_visit_days[i_idx]))) {
-            t_idx += 1;
-          }
-          
-          if (t_idx <= n_patient_measures) {
-            last_testing_visit_week[n, m, i] = patient_t_measure[patient_measure_t_sort_idx[t_idx]]; 
-          } 
-        } 
-      }
-    }
-    
-    return (first_testing_visit_week, last_testing_visit_week);
-  }
+  #include "../pos.stan"
+  #include "../lfo.stan"
+  #include "../gp.stan"
 }
 
 data {
   #include "data.stan"
+  #include "../tumor/fine_tumor_data.stan"
   
   int<lower = 0, upper = 1> train_beyond_cutoff;
   
@@ -155,7 +22,9 @@ transformed data {
   array[n_patients] int<lower = min(t_measure), upper = max(t_measure)> cutoff_last_visit_week;
   array[n_patients] int<lower = 1> last_visit_calendar_day; // Overall last calendar date of the last visit
   
-  (cutoff_last_visit_day, cutoff_last_visit_week, last_visit_calendar_day) = cutoff_visits(cutoff_calendar_day[1], calendar_day, t_measure, t_day_measure, patient_tumor_measure_pos);
+  (cutoff_last_visit_day, cutoff_last_visit_week, last_visit_calendar_day) = fine_cutoff_visits(
+    cutoff_calendar_day[1], calendar_day, t_measure, t_day_measure, patient_tumor_measure_pos
+  );
     
   // Testing metadata: details needed to calculate the log likelihood for each cutoff date. Our out-of-sample observations are the weeks observed beyond the cutoff
   // dates. 

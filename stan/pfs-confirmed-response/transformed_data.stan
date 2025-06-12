@@ -1,6 +1,9 @@
 int gen_pfs = 1;
+  
+int<lower = 1> n_causes = 2;
 
 #include "../base_transformed_data.stan" 
+#include "../tumor/fine_tumor_transformed_data.stan"
 #include "../pfs_transformed_data.stan"
 #include "../crcr/crcr_transformed_data.stan"
 
