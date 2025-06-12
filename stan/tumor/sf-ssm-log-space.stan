@@ -36,53 +36,7 @@ data {
   
   array[n_patients] int<lower = 0> death_week;
   
-  // GP parameters
-  real<lower = 0> pop_tumor_gp_rho_meanlog;
-  real<lower = 0> pop_tumor_gp_rho_sdlog;
-  real<lower = 0> log_patient_tumor_gp_rho_sd_sd;
-  
-  // Process noise parameters
-  real<lower = 0> pop_decrease_process_sd_sd;
-  real<lower = 0> pop_growth_process_sd_sd;
-  real<lower = 0> process_corr_param;
-  real<lower = 0> measure_sd_sd;
-  
-  // Population rate parameters
-  real pop_log_net_rate_mean;
-  real<lower = 0> pop_log_net_rate_sd;
-  real pop_log_rate_ratio_mean;
-  real<lower = 0> pop_log_rate_ratio_sd;
-  real<lower = 0> trial_log_net_rate_sd_sd;
-  real<lower = 0> patient_log_net_rate_sd_sd;
-  real<lower = 0> patient_log_rate_ratio_sd_sd;
-  
-  // Growth lag parameters
-  real growth_lag_mean;
-  real<lower = 0> growth_lag_sd;
-  real<lower = 0> patient_log_growth_lag_sd_sd;
-  real<lower = 0> log_growth_transition_rate_sd;
-  
-  // Correlation parameters
-  real<lower = 0> rate_corr_param;
-  
-  // Proportion parameters
-  real pop_decrease_prop_logis_mean;
-  real<lower = 0> pop_decrease_prop_logis_sd;
-  real<lower = 0> trial_decrease_prop_logis_sd_sd;
-  real<lower = 0> patient_decrease_prop_logis_sd_sd;
-  
-  real<lower = 0> log_lod_sd;
-  
-  int<lower = 1> n_causes; // Death and non-target PD
-  
-  vector<lower = 0>[n_causes] log_lambda_gp_pop_alpha_sd;
-  vector<lower = 0>[n_causes] log_lambda_gp_pop_rho_alpha, log_lambda_gp_pop_rho_beta;
-  vector[n_causes] log_lambda_gp_pop_intercept_mean;
-  vector<lower = 0>[n_causes] log_lambda_gp_pop_intercept_sd;
-  
-  vector<lower = 0>[n_causes] log_lambda_gp_trial_alpha_sd;
-  vector<lower = 0>[n_causes] log_lambda_gp_trial_rho_alpha, log_lambda_gp_trial_rho_beta;
-  vector<lower = 0>[n_causes] log_lambda_gp_trial_intercept_sd_sd;
+  #include "sf-ssls-hyperparam.stan" 
 } 
 
 transformed data {
@@ -288,48 +242,8 @@ transformed parameters {
 
 model {
   #include "other_events_priors.stan"
-  
-  pop_log_net_rate ~ normal(pop_log_net_rate_mean, pop_log_net_rate_sd);
-  pop_log_rate_ratio ~ normal(pop_log_rate_ratio_mean, pop_log_rate_ratio_sd);
-  patient_log_net_rate_sd ~ normal(0, patient_log_net_rate_sd_sd);
-  // patient_log_net_rate ~ normal(pop_log_net_rate, patient_log_net_rate_sd);
-  raw_patient_log_net_rate ~ std_normal(); 
-  // patient_log_rate_ratio_sd ~ normal(0, patient_log_rate_ratio_sd_sd);
-  // raw_patient_log_rate_ratio ~ std_normal();
-  trial_log_net_rate_sd ~ normal(0, trial_log_net_rate_sd_sd);
-  raw_trial_log_net_rate ~ std_normal(); 
+  #include "sf-ssls-priors.stan"
 
-  pop_log_growth_lag ~ normal(growth_lag_mean, growth_lag_sd);
-  pop_log_growth_transition_rate ~ normal(0, log_growth_transition_rate_sd);
-  patient_log_growth_lag_sd ~ normal(0, patient_log_growth_lag_sd_sd);
-  // patient_log_growth_lag ~ normal(pop_log_growth_lag, patient_log_growth_lag_sd);
-  raw_patient_log_growth_lag ~ std_normal(); 
-  
-  // pop_tumor_gp_alpha ~ normal(0, pop_tumor_gp_alpha_sd);
-  log_pop_tumor_gp_rho ~ normal(pop_tumor_gp_rho_meanlog, pop_tumor_gp_rho_sdlog);
-  log_patient_tumor_gp_rho_sd ~ normal(0, log_patient_tumor_gp_rho_sd_sd);
-  to_vector(raw_log_patient_tumor_gp_rho_effect) ~ std_normal(); 
-  
-  to_vector(raw_patient_process_noise) ~ std_normal();
-  
-  pop_process_sd[1] ~ normal(0, pop_decrease_process_sd_sd);
-  pop_process_sd[2] ~ normal(0, pop_growth_process_sd_sd);
-  
-  measure_sd ~ normal(0, measure_sd_sd);
-
-  if (!independ_cross_process_noise) {
-    L_process_corr ~ lkj_corr_cholesky(process_corr_param);
-  }
-  
-  pop_decrease_prop_logis ~ normal(pop_decrease_prop_logis_mean, pop_decrease_prop_logis_sd);
-  trial_decrease_prop_logis_sd ~ normal(0, trial_decrease_prop_logis_sd_sd);
-  raw_trial_decrease_prop_logis ~ std_normal();
-  patient_decrease_prop_logis_sd ~ normal(0, patient_decrease_prop_logis_sd_sd);
-  // patient_decrease_prop_logis ~ normal(pop_decrease_prop_logis, patient_decrease_prop_logis_sd);
-  raw_patient_decrease_prop_logis ~ std_normal();
-  
-  // log_lod ~ normal(log(lod), log_lod_sd);
-  
   profile("loglik") { 
     if (fit_tumor_data) { 
       for (i in train_patients_pos:train_patients_end) {
