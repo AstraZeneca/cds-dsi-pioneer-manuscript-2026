@@ -377,9 +377,9 @@ generated quantities {
     process_corr = L_process_corr * L_process_corr';
   }
   
-  vector<lower = 0, upper = 1>[max_t_width] all_growth_factor = get_growth_lag_factor(all_tumor_measure_t, exp(pop_log_growth_lag), exp(pop_log_growth_transition_rate));
+  vector<lower = 0, upper = 1>[max_all_t] all_growth_factor = get_growth_lag_factor(all_tumor_measure_t, exp(pop_log_growth_lag), exp(pop_log_growth_transition_rate));
   
-  matrix[max_t_width, 2] all_scaled_process_sd = scale_process_sd(all_tumor_measure_t, pop_process_sd);
+  matrix[max_all_t, 2] all_scaled_process_sd = scale_process_sd(all_tumor_measure_t, pop_process_sd);
   
   matrix[n_total_train_visits_m1, 2] obs_patient_process_noise;
   matrix[forecast ? n_total_train_forecast_visits : 0, 2] forecast_patient_process_noise;
