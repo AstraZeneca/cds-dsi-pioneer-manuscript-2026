@@ -490,6 +490,7 @@ matrix multi_normal_rng(
   // // Process the second dimension (reusing the same K matrices)
   // mu_cond[,2] = gp_conditional(y_obs[,2], K_obs_obs, K_pred_obs, K_pred_pred, delta).1;
   // 
+  
   // Get Cholesky of temporal covariance
   matrix[n_pred, n_pred] L_K_cond = cholesky_decompose(K_cond);
   
