@@ -86,8 +86,21 @@ get_forecast_process_noise <- function(res, patient_states_data, analysis_data, 
   get_forecast_state_var(res, patient_states_data, analysis_data, forecast_patient_process_noise, ndraws = ndraws) 
 }
 
+
 bin_point_intervals <- function(data, dist, breaks, ...) {
   data |> 
     bin_dist({{ dist }}, breaks = breaks) |> 
     point_interval({{ dist }}, ...)
+}
+
+get_process_noise <- function(res, patient_states_data) {
+  noise_data <- spread_rvars(res, obs_patient_process_noise[n, p]) |> 
+    inner_join(mutate(patient_states_data, n = n - 1), by = "n") 
+  
+  noise_data |> 
+    group_by(across(!c(p, obs_patient_process_noise))) |> 
+    summarize(across(ends_with("noise"), rvar_sum), .groups = "drop") |> 
+    mutate(p = 3) |> 
+    bind_rows(noise_data) |> 
+    mutate(p = factor(p, levels = 1:3, labels = c("regress", "grow", "sum")))
 }
