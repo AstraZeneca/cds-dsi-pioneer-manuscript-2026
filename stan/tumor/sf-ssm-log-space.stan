@@ -450,7 +450,7 @@ generated quantities {
       // Why add one? We're passing the recist array excluding the first one.
       spop_target_right_censored[train_idx] = spop_target_pfs[train_idx] == 0;
       
-      if (i == 700 & debug) {
+      if (i == 700 && debug) {
         print("cond prob = ", exp(log_cond_prob_surv[1, train_idx]));
         print("RECIST = ", append_array(rep_recist[(train_visit_start + 1):train_visit_end], forecast_recist[train_forecast_visit_start:train_forecast_visit_end]));
         print("spop_target_pfs[train_idx] = ", spop_target_pfs[train_idx], ", spop_non_target_pfs[train_idx] = ", spop_non_target_pfs[train_idx]);
