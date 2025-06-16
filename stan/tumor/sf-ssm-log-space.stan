@@ -109,6 +109,8 @@ transformed data {
   int NT_CR = 1;
   int NT_STABLE = 2;  // Non-CR/Non-PD
   int NT_PD = 3;
+  
+  
 }
 
 parameters {
@@ -364,7 +366,7 @@ generated quantities {
         
       array[n_patient_forecast_visits[i] + 1] int forecast_time = linspaced_int_array(n_patient_forecast_visits[i] + 1, patient_last_obs_visit[i], last_predict_visit);
      
-      (spop_non_target_pfs[train_idx], spop_non_target_right_censored[train_idx]) = survival_time_rng(log_cond_prob_surv[1, train_idx]); 
+      (spop_non_target_pfs[train_idx], spop_non_target_right_censored[train_idx]) = survival_time_rng(log_cond_prob_surv[1, train_idx]);
       
       if (forecast && n_patient_forecast_visits[i] > 0) {
         // assert_matching_states(
