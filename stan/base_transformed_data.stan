@@ -49,6 +49,10 @@ for (i in 1:n_patients) {
     }
   }
   
+  if (n_patient_screening_visits[i] == 0) {
+    fatal_error("Patient ", i, " has no pre-screening visits.");
+  }
+  
   // Calculate maximum time width for current patient
   patient_max_t_width[i] = max(t_patient_visits[curr_patient_visit_pos:curr_patient_visit_end]) - min(t_patient_visits[curr_patient_visit_pos:curr_patient_visit_end]) + 1;
 }
