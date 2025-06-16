@@ -241,8 +241,8 @@ transformed parameters {
       exp(patient_log_decrease_rate), exp(patient_log_growth_rate),
       rep_vector(0.0001, n_train_patients), // exp(patient_log_growth_lag), 
       0.0001, // exp(pop_log_growth_transition_rate),
-      run_parallel && !debug,
-      debug
+      run_parallel, // && !debug,
+      0 // debug 
     );
   }
 }
