@@ -458,6 +458,11 @@ tuple(int, int) survival_time_rng(row_vector log_cond_prob_surv, int obs_surv_ti
   return(survival_time, forecast_right_censored);
 }
 
+
+tuple(int, int) survival_time_rng(row_vector log_cond_prob_surv, int obs_surv_time) {
+  return survival_time_rng(log_cond_prob_surv, obs_surv_time, 1, 0);
+}
+
 /**
  * Generate a survival time within the range of interval censored intervals
  *
