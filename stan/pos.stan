@@ -229,7 +229,7 @@ array[] int resize_int_array(array[] int full, array[] int pos, int inc) {
  */
 array[] int resize_pos(array[] int pos, int from, int to) {
   int n = size(pos) - 1;
-  assert_greater_than_or_equal(from, to);  // Ensure valid range
+  assert_greater_than_or_equal(to, from);  // Ensure valid range
   int first_group = 0, last_group = 0;
   int first_group_size, last_group_size;
   array[n] int new_pos_size = zeros_int_array(n);
