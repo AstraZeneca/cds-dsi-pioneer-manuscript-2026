@@ -621,7 +621,7 @@ void assert_equal(real x, real y) {
 }
 
 void assert_greater_than_or_equal(int x, int y) {
-  if (x > y) {
+  if (x < y) {
     fatal_error("Greater than or equal assertion failed.");
   }
 }
