@@ -348,6 +348,8 @@ generated quantities {
       (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
       int forecast_size = get_pos_size(forecast_visits_pos, i);
       
+      array[n_patient_visits[i]] int curr_visits = get_int_sub_array(train_patient_visits, train_patient_visit_pos, train_idx);
+      
       obs_patient_process_noise[train_visit_m1_start:train_visit_m1_end] = rep_matrix(0, train_visit_m1_size, 2); 
       // obs_patient_process_noise[train_visit_m1_start:train_visit_m1_end] = calc_patient_process_noise(
       //   raw_patient_process_noise[train_visit_m1_start:train_visit_m1_end],
