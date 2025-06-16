@@ -22,8 +22,12 @@ for (i in train_patients_pos:train_patients_end) {
   int train_visit_start, train_visit_end;
   (train_visit_start, train_visit_end) = get_pos(train_patient_visit_pos, train_idx);
   
-  for (t in train_visit_start:train_visit_end) {
+  for (t in (train_visit_start + n_patient_screening_visits[i]):train_visit_end) {
     if (train_obs_recist[t] <= PD) {
+      if (rep_recist[t] > PD) {
+        reject(i, ": rep_recist = ", rep_recist[train_visit_start:train_visit_end], ", train_obs_recist = ", train_obs_recist[train_visit_start:train_visit_end]);
+      }
+      
       // Update all metrics using the function
       (correct_recist_predictions, recist_confusion_matrix[patient_trial[i]], recist_category_counts,
        weighted_recist_accuracy_linear, weighted_recist_accuracy_quadratic,

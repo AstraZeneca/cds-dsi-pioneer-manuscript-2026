@@ -416,12 +416,21 @@ generated quantities {
             rep_vector(measure_sd, forecast_size)
           ));
           
-        array[train_visit_size - 1 + forecast_size] int full_predict_recist = calculate_target_recist(
-          exp(append_row(rep_patient_log_sld[train_visit_start:train_visit_end], forecast_patient_log_sld[train_forecast_visit_start:train_forecast_visit_end])) * 10
+        // if (debug) {
+        //   print(i, ": n_patient_screening_visits[i] = ", n_patient_screening_visits[i]);
+        //   print(i, ": append_row(rep_patient_log_sld[train_visit_start:train_visit_end], forecast_patient_log_sld[train_forecast_visit_start:train_forecast_visit_end] = ", 
+        //     append_row(rep_patient_log_sld[train_visit_start:train_visit_end], forecast_patient_log_sld[train_forecast_visit_start:train_forecast_visit_end]));
+        // }
+        
+        int n_obs_treat_visits = train_visit_size - n_patient_screening_visits[i];
+          
+        array[n_obs_treat_visits + forecast_size] int full_predict_recist = calculate_target_recist(
+          exp(append_row(rep_patient_log_sld[train_visit_start:train_visit_end], forecast_patient_log_sld[train_forecast_visit_start:train_forecast_visit_end])) * 10,
+          n_patient_screening_visits[i]
         );
         
-        rep_recist[(train_visit_start + 1):train_visit_end] = full_predict_recist[:(train_visit_size - 1)]; 
-        forecast_recist[train_forecast_visit_start:train_forecast_visit_end] = full_predict_recist[train_visit_size:];
+        rep_recist[(train_visit_start + n_patient_screening_visits[i]):train_visit_end] = full_predict_recist[:(train_visit_size - n_patient_screening_visits[i])]; 
+        forecast_recist[train_forecast_visit_start:train_forecast_visit_end] = full_predict_recist[(n_obs_treat_visits + 1):];
         
         if (right_censored[i]) {
           (forecast_non_target_pfs[right_censored_idx], forecast_non_target_right_censored[right_censored_idx]) = survival_time_rng(
@@ -447,19 +456,19 @@ generated quantities {
                                                              forecast_recist[train_forecast_visit_start:train_forecast_visit_end]), 
                                         PD); 
       } else {
-        rep_recist[(train_visit_start + 1):train_visit_end] = calculate_target_recist(exp(rep_patient_log_sld[train_visit_start:train_visit_end]) * 10);
+        rep_recist[(train_visit_start + 1):train_visit_end] = calculate_target_recist(exp(rep_patient_log_sld[train_visit_start:train_visit_end]) * 10, n_patient_screening_visits[i]);
         spop_target_pfs[train_idx] = find_first(rep_recist[(train_visit_start + 1):train_visit_end], PD); 
       }
       
       // Why add one? We're passing the recist array excluding the first one.
       spop_target_right_censored[train_idx] = spop_target_pfs[train_idx] == 0;
       
-      if (i == 700 && debug) {
-        print("cond prob = ", exp(log_cond_prob_surv[1, train_idx]));
-        print("RECIST = ", append_array(rep_recist[(train_visit_start + 1):train_visit_end], forecast_recist[train_forecast_visit_start:train_forecast_visit_end]));
-        print("spop_target_pfs[train_idx] = ", spop_target_pfs[train_idx], ", spop_non_target_pfs[train_idx] = ", spop_non_target_pfs[train_idx]);
-        print("spop_target_right_censored[train_idx] = ", spop_target_right_censored[train_idx], ", spop_non_target_right_censored[train_idx] = ", spop_non_target_right_censored[train_idx]);
-        print("get_int_sub_array(train_patient_visits, train_patient_visit_pos, train_idx) = ", get_int_sub_array(train_patient_visits, train_patient_visit_pos, train_idx));
+      if ((i == 700 || i == 635) && debug) {
+        print(i, ": cond prob = ", exp(log_cond_prob_surv[1, train_idx]));
+        print(i, ": RECIST = ", append_array(rep_recist[(train_visit_start + 1):train_visit_end], forecast_recist[train_forecast_visit_start:train_forecast_visit_end]));
+        print(i, ": spop_target_pfs[train_idx] = ", spop_target_pfs[train_idx], ", spop_non_target_pfs[train_idx] = ", spop_non_target_pfs[train_idx]);
+        print(i, ": spop_target_right_censored[train_idx] = ", spop_target_right_censored[train_idx], ", spop_non_target_right_censored[train_idx] = ", spop_non_target_right_censored[train_idx]);
+        print(i, ": get_int_sub_array(train_patient_visits, train_patient_visit_pos, train_idx) = ", get_int_sub_array(train_patient_visits, train_patient_visit_pos, train_idx));
       }
       
       
@@ -468,7 +477,7 @@ generated quantities {
         spop_target_pfs[train_idx] += 1;
         
         spop_target_pfs[train_idx] = spop_target_pfs[train_idx] <= n_train_patient_visits[train_idx] ? 
-                              get_int_sub_array(train_patient_visits, train_patient_visit_pos, train_idx)[spop_target_pfs[train_idx]] :
+                              curr_visits[spop_target_pfs[train_idx]] :
                               forecast_time[spop_target_pfs[train_idx] - n_train_patient_visits[train_idx]]; 
       } else {
         spop_pfs[train_idx] = max_all_t;
@@ -479,9 +488,9 @@ generated quantities {
                                 max(0, spop_pfs[train_idx])); // BUG a couple of patients end up with negative weeks. We need to figure out why.
       spop_right_censored[train_idx] = spop_target_right_censored[train_idx] && spop_non_target_right_censored[train_idx]; 
       
-      if (i == 700 && debug) {
-        print("spop_target_pfs[train_idx] = ", spop_target_pfs[train_idx], ", spop_non_target_pfs[train_idx] = ", spop_non_target_pfs[train_idx], ", spop_pfs[train_idx] = ", spop_pfs[train_idx]);
-        print("spop_target_right_censored[train_idx] = ", spop_target_right_censored[train_idx], ", spop_non_target_right_censored[train_idx] = ", spop_non_target_right_censored[train_idx],
+      if ((i == 700 || i == 635) && debug) {
+        print(i, ":spop_target_pfs[train_idx] = ", spop_target_pfs[train_idx], ", spop_non_target_pfs[train_idx] = ", spop_non_target_pfs[train_idx], ", spop_pfs[train_idx] = ", spop_pfs[train_idx]);
+        print(i, ":spop_target_right_censored[train_idx] = ", spop_target_right_censored[train_idx], ", spop_non_target_right_censored[train_idx] = ", spop_non_target_right_censored[train_idx],
               ", spop_right_censored[train_idx] = ", spop_right_censored[train_idx]);
         print("-----------------------------------------------------------------");
       }
