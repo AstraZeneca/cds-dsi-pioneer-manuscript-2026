@@ -485,7 +485,7 @@ generated quantities {
       
       
       spop_pfs[train_idx] = min(spop_non_target_pfs[train_idx], 
-                                max(0, spop_pfs[train_idx])); // BUG a couple of patients end up with negative weeks. We need to figure out why.
+                                max(0, spop_target_pfs[train_idx])); // BUG a couple of patients end up with negative weeks. We need to figure out why.
       spop_right_censored[train_idx] = spop_target_right_censored[train_idx] && spop_non_target_right_censored[train_idx]; 
       
       if ((i == 700 || i == 635) && debug) {
