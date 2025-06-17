@@ -480,9 +480,8 @@ generated quantities {
                               curr_visits[spop_target_pfs[train_idx]] :
                               forecast_time[spop_target_pfs[train_idx] - n_train_patient_visits[train_idx]]; 
       } else {
-        spop_pfs[train_idx] = max_all_t;
+        spop_target_pfs[train_idx] = max_all_t;
       }
-      
       
       spop_pfs[train_idx] = min(spop_non_target_pfs[train_idx], 
                                 max(0, spop_target_pfs[train_idx])); // BUG a couple of patients end up with negative weeks. We need to figure out why.
