@@ -437,7 +437,7 @@ generated quantities {
         
         forecast_recist[train_forecast_visit_start:train_forecast_visit_end] = full_predict_recist[(n_obs_treat_visits + 1):];
         forecast_confirmed_response[train_idx] = find_first(
-          append_array(recist[visit_pos:visit_end], forecast_recist[train_forecast_visit_start:train_forecast_visit_end]), { PR, CR }, 2);
+          append_array(recist[visit_pos:visit_end], forecast_recist[train_forecast_visit_start:train_forecast_visit_end]), { PR, CR }, 2) > 0;
          
         if (right_censored[i]) {
           (forecast_non_target_pfs[right_censored_idx], forecast_non_target_right_censored[right_censored_idx]) = survival_time_rng(
