@@ -320,7 +320,10 @@ generated quantities {
   array[forecast ? n_train_right_censored_patients : 0] int<lower = 0, upper = 1> forecast_target_right_censored, forecast_non_target_right_censored, forecast_right_censored; 
   array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_km_est; // sample_target_km_est, sample_non_target_km_est,
   array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] spop_target_km_est, spop_non_target_km_est, spop_km_est;
-
+ 
+  array[forecast ? n_train_patients : 0] int<lower = 0, upper = 1> forecast_confirmed_response;
+  vector<lower = 0, upper = 1>[forecast ? n_trials : 0] forecast_target_orr;
+  
   {
     int right_censored_idx = 1;
     
@@ -369,6 +372,9 @@ generated quantities {
       array[n_patient_forecast_visits[i] + 1] int forecast_time = linspaced_int_array(n_patient_forecast_visits[i] + 1, patient_last_obs_visit[i], last_predict_visit);
      
       (spop_non_target_pfs[train_idx], spop_non_target_right_censored[train_idx]) = survival_time_rng(log_cond_prob_surv[1, train_idx]);
+      
+      rep_recist[(train_visit_start + n_patient_screening_visits[i]):train_visit_end] = 
+        calculate_target_recist(exp(rep_patient_log_sld[train_visit_start:train_visit_end]) * 10, n_patient_screening_visits[i]);
       
       if (forecast && n_patient_forecast_visits[i] > 0) {
         // assert_matching_states(
@@ -425,13 +431,14 @@ generated quantities {
         int n_obs_treat_visits = train_visit_size - n_patient_screening_visits[i];
           
         array[n_obs_treat_visits + forecast_size] int full_predict_recist = calculate_target_recist(
-          exp(append_row(rep_patient_log_sld[train_visit_start:train_visit_end], forecast_patient_log_sld[train_forecast_visit_start:train_forecast_visit_end])) * 10,
+          append_row(normalized_sld[train_visit_start:train_visit_end], exp(forecast_patient_log_sld[train_forecast_visit_start:train_forecast_visit_end])) * 10,
           n_patient_screening_visits[i]
         );
         
-        rep_recist[(train_visit_start + n_patient_screening_visits[i]):train_visit_end] = full_predict_recist[:n_obs_treat_visits]; 
         forecast_recist[train_forecast_visit_start:train_forecast_visit_end] = full_predict_recist[(n_obs_treat_visits + 1):];
-        
+        forecast_confirmed_response[train_idx] = find_first(
+          append_array(recist[visit_pos:visit_end], forecast_recist[train_forecast_visit_start:train_forecast_visit_end]), { PR, CR }, 2);
+         
         if (right_censored[i]) {
           (forecast_non_target_pfs[right_censored_idx], forecast_non_target_right_censored[right_censored_idx]) = survival_time_rng(
             log_cond_prob_surv[1, train_idx], pfs[i] + interval_censored[i], right_censored[i], 0
@@ -456,8 +463,7 @@ generated quantities {
                                                              forecast_recist[train_forecast_visit_start:train_forecast_visit_end]), 
                                         PD); 
       } else {
-        rep_recist[(train_visit_start + 1):train_visit_end] = calculate_target_recist(exp(rep_patient_log_sld[train_visit_start:train_visit_end]) * 10, n_patient_screening_visits[i]);
-        spop_target_pfs[train_idx] = find_first(rep_recist[(train_visit_start + 1):train_visit_end], PD); 
+        spop_target_pfs[train_idx] = find_first(rep_recist[(train_visit_start + n_patient_screening_visits[i]):train_visit_end], PD); 
       }
       
       // Why add one? We're passing the recist array excluding the first one.
@@ -518,6 +524,8 @@ generated quantities {
         spop_km_est[s] = estimate_kaplan_meier(get_int_sub_array(spop_pfs, train_trial_patient_pos, s), 
                                                get_int_sub_array(spop_right_censored, train_trial_patient_pos, s), 
                                                max_all_t).1; 
+                                               
+        forecast_target_orr[s] = mean(get_int_sub_array(forecast_confirmed_response, train_trial_patient_pos, s));
       } else {
         spop_target_km_est[s] = zeros_vector(max_all_t + 1);
         spop_non_target_km_est[s] = zeros_vector(max_all_t + 1);
