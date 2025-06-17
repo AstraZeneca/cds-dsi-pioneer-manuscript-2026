@@ -452,3 +452,95 @@ find_consecutive <- function(vec, x, n = 1) {
     pull(start_index) |>  
     first() %||% NA
 }
+
+find_stan_includes <- function(stan_file, base_dir = NULL) {
+  # Set base directory - use the directory of the main .stan file if not specified
+  if (is.null(base_dir)) {
+    base_dir <- dirname(normalizePath(stan_file, mustWork = TRUE))
+  }
+  
+  # Initialize list to store all found files
+  all_files <- character(0)
+  processed_files <- character(0)
+  
+  # Recursive function to process a single file
+  process_file <- function(file_path) {
+    # Convert to absolute path
+    abs_path <- normalizePath(file_path, mustWork = TRUE)
+    
+    # Skip if already processed (prevents infinite loops)
+    if (abs_path %in% processed_files) {
+      return()
+    }
+    
+    # Mark as processed
+    processed_files <<- c(processed_files, abs_path)
+    
+    # Read the file
+    if (!file.exists(abs_path)) {
+      warning(paste("File not found:", abs_path))
+      return()
+    }
+    
+    lines <- readLines(abs_path, warn = FALSE)
+    
+    # Find #include statements
+    include_pattern <- "^\\s*#include\\s+[\"<]([^\"<>]+)[\">]"
+    include_matches <- grep(include_pattern, lines, value = TRUE)
+    
+    if (length(include_matches) > 0) {
+      # Extract file paths from include statements
+      included_files <- gsub(include_pattern, "\\1", include_matches)
+      
+      for (inc_file in included_files) {
+        # Handle relative paths
+        if (!file.path(inc_file) == inc_file || !startsWith(inc_file, "/")) {
+          # Relative path - resolve relative to current file's directory
+          inc_path <- file.path(dirname(abs_path), inc_file)
+        } else {
+          # Absolute path
+          inc_path <- inc_file
+        }
+        
+        # Try to normalize the path
+        tryCatch({
+          inc_path <- normalizePath(inc_path, mustWork = TRUE)
+          
+          # Add to results if not already there
+          if (!inc_path %in% all_files) {
+            all_files <<- c(all_files, inc_path)
+          }
+          
+          # Recursively process the included file
+          process_file(inc_path)
+          
+        }, error = function(e) {
+          # If file doesn't exist, try relative to base_dir
+          alt_path <- file.path(base_dir, inc_file)
+          tryCatch({
+            alt_path <- normalizePath(alt_path, mustWork = TRUE)
+            
+            if (!alt_path %in% all_files) {
+              all_files <<- c(all_files, alt_path)
+            }
+            
+            process_file(alt_path)
+            
+          }, error = function(e2) {
+            warning(paste("Could not find included file:", inc_file, "from", abs_path))
+          })
+        })
+      }
+    }
+  }
+  
+  # Start processing from the main file
+  process_file(stan_file)
+  
+  # Return sorted list of unique file paths
+  return(sort(unique(all_files)))
+}
+
+# Example usage:
+# included_files <- find_stan_includes("model.stan")
+# print(included_files)
