@@ -429,7 +429,7 @@ generated quantities {
           n_patient_screening_visits[i]
         );
         
-        rep_recist[(train_visit_start + n_patient_screening_visits[i]):train_visit_end] = full_predict_recist[:(train_visit_size - n_patient_screening_visits[i])]; 
+        rep_recist[(train_visit_start + n_patient_screening_visits[i]):train_visit_end] = full_predict_recist[:n_obs_treat_visits]; 
         forecast_recist[train_forecast_visit_start:train_forecast_visit_end] = full_predict_recist[(n_obs_treat_visits + 1):];
         
         if (right_censored[i]) {
