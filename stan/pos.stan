@@ -153,6 +153,19 @@ tuple(int, int) get_pos(array[] int pos, int n) {
   return get_pos(pos, n, n);
 }
 
+tuple(int, int, int, int) get_visit_pos(array[] int pos, int i, int n_screening) {
+  int visit_start, screening_visit_end, treat_visit_start, visit_end;
+  (visit_start, visit_end) = get_pos(pos, i);
+  treat_visit_start = visit_start + n_screening; 
+  screening_visit_end = treat_visit_start - 1;
+
+  if (visit_end >= treat_visit_start && treat_visit_start >= screening_visit_end && screening_visit_end >= visit_start) {
+    return(visit_start, screening_visit_end, treat_visit_start, visit_end);
+  } else {
+    fatal_error("Unexpected order of positions");
+  }
+} 
+ 
 /**
  * Get size of a specific group
  * 
@@ -180,6 +193,7 @@ array[] int get_pos_size(array[] int pos) {
   
   return sizes;
 }
+
 
 /**
  * Get total number of elements across all groups
