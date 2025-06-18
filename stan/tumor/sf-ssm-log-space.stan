@@ -324,7 +324,7 @@ generated quantities {
   array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_km_est; // sample_target_km_est, sample_non_target_km_est,
   array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] spop_target_km_est, spop_non_target_km_est, spop_km_est;
   
-  array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] forecast_target_pfs_n, forecast_target_pfs_n;
+  array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] forecast_target_pfs_n; //, forecast_pfs_n;
     
   array[forecast ? n_train_patients : 0] int<lower = 0, upper = 1> forecast_confirmed_response;
   vector<lower = 0, upper = 1>[forecast ? n_trials : 0] forecast_target_orr;
