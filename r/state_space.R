@@ -92,7 +92,7 @@ get_recist <- function(res, patient_states_data) {
     )
 }
 
-get_subsample_forecast_data <- function(patient_states_data, analysis_data, forecast_extent = 0) {
+get_subsample_forecast_data <- function(analysis_data, patient_states_data, forecast_extent = 0) {
   overall_max_t <- max(max(analysis_data$patient_max_t), forecast_extent)
   
   analysis_data |> 
