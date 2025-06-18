@@ -36,6 +36,9 @@ data {
   
   array[n_patients] int<lower = 0> death_week;
   
+  int<lower = 0> n_pfs_timepoints;
+  array[n_pfs_timepoints] int<lower = 0> pfs_timepoints; // In months
+  
   #include "sf-ssls-hyperparam.stan" 
 } 
 
@@ -110,7 +113,7 @@ transformed data {
   int NT_STABLE = 2;  // Non-CR/Non-PD
   int NT_PD = 3;
   
-  
+  array[n_pfs_timepoints] int<lower = 0> sorted_pfs_timepoints = sort_asc(pfs_timepoints); 
 }
 
 parameters {
@@ -320,7 +323,9 @@ generated quantities {
   array[forecast ? n_train_right_censored_patients : 0] int<lower = 0, upper = 1> forecast_target_right_censored, forecast_non_target_right_censored, forecast_right_censored; 
   array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_km_est; // sample_target_km_est, sample_non_target_km_est,
   array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] spop_target_km_est, spop_non_target_km_est, spop_km_est;
- 
+  
+  array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] forecast_target_pfs_n, forecast_target_pfs_n;
+    
   array[forecast ? n_train_patients : 0] int<lower = 0, upper = 1> forecast_confirmed_response;
   vector<lower = 0, upper = 1>[forecast ? n_trials : 0] forecast_target_orr;
   
@@ -511,6 +516,12 @@ generated quantities {
             append_array(ub_pfs_p1[curr_uncensored_obs], get_int_sub_array(forecast_pfs, train_trial_right_censored_pos, s)), 
             append_array(right_censored[curr_uncensored_obs], get_int_sub_array(forecast_right_censored, train_trial_right_censored_pos, s)), 
             max_all_t).1; 
+             
+          for (n in 1:n_pfs_timepoints) {
+            forecast_target_pfs_n[s, n] = sample_km_est[s, pfs_timepoints[n] * 4]; 
+          }
+                                               
+          forecast_target_orr[s] = mean(get_int_sub_array(forecast_confirmed_response, train_trial_patient_pos, s));
         }
         
         spop_target_km_est[s] = estimate_kaplan_meier(get_int_sub_array(spop_target_pfs, train_trial_patient_pos, s), 
@@ -524,8 +535,6 @@ generated quantities {
         spop_km_est[s] = estimate_kaplan_meier(get_int_sub_array(spop_pfs, train_trial_patient_pos, s), 
                                                get_int_sub_array(spop_right_censored, train_trial_patient_pos, s), 
                                                max_all_t).1; 
-                                               
-        forecast_target_orr[s] = mean(get_int_sub_array(forecast_confirmed_response, train_trial_patient_pos, s));
       } else {
         spop_target_km_est[s] = zeros_vector(max_all_t + 1);
         spop_non_target_km_est[s] = zeros_vector(max_all_t + 1);
