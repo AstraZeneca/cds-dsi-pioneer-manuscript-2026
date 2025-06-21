@@ -53,7 +53,7 @@ get_obs_state_var <- function(res, var, patient_states_data = NULL, drop_initial
 }
 
 get_states <- function(res, patient_states_data) {
-  get_obs_state_var(res, patient_states_data, states, transform = exp) |> 
+  get_obs_state_var(res, states, patient_states_data, transform = exp) |> 
     add_states_sum(states)
 }
 
@@ -129,7 +129,7 @@ get_forecast_state_var <- function(res, var, analysis_data, patient_states_data,
 }
 
 get_forecast_states <- function(res, analysis_data, patient_states_data, forecast_extent = 0) {
-  get_forecast_state_var(res, patient_states_data, analysis_data, forecast_patient_states, transform = exp, forecast_extent = forecast_extent) |> 
+  get_forecast_state_var(res, forecast_patient_states, analysis_data, patient_states_data, transform = exp, forecast_extent = forecast_extent) |> 
     add_states_sum(forecast_patient_states)
 }
 
@@ -148,7 +148,7 @@ get_forecast_sld <- function(res, analysis_data, patient_states_data = analysis_
 }
 
 get_forecast_recist <- function(res, analysis_data, patient_states_data = analysis_data, forecast_extent = 0, ndraws = NULL) {
-  subsample_forecast_data <- get_subsample_forecast_data(patient_states_data, analysis_data, forecast_extent = forecast_extent) 
+  subsample_forecast_data <- get_subsample_forecast_data(analysis_data, patient_states_data, forecast_extent = forecast_extent) 
   
   lite_spread_rvars(res, forecast_recist[n], ndraws = ndraws) |> 
     right_join(subsample_forecast_data, by = "n", relationship = "one-to-one") |> 
