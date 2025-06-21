@@ -150,9 +150,9 @@ plot_surv_ppc <- function(ppc_data, surv_interval_col, ic_col, rc_col, rep_surv_
     NULL
 }
 
-plot_km <- function(res_data, obs_km_data, km_est, group = fit_type) {
+plot_km <- function(res_data, obs_km_data, km_est, group = fit_type, linewidth = 0) {
   pobj <- ggplot(res_data) +
-    stat_lineribbon(aes(x = t - 1, ydist = {{ km_est }}, fill = {{ group }}, alpha = {{ group }}), linewidth = 0, .width = 0.8) +
+    stat_lineribbon(aes(x = t - 1, ydist = {{ km_est }}, fill = {{ group }}, alpha = {{ group }}), linewidth = linewidth, .width = 0.8) +
     labs(y = "Survival Probability") +
     guides(alpha = "none") + 
     theme(legend.position = "bottom")
