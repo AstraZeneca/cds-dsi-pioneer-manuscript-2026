@@ -66,8 +66,8 @@ sample_and_save <- function(model, ..., output_dir, output_basename, timestamp =
 km_to_tibble <- function(trt_data, key, pfs_sym, censored_sym) { 
   rlang::inject(
     lst(
-      lb = ggsurvfit::survfit2(Surv(!!pfs_sym + 1, 1 - !!censored_sym) ~ 1, trt_data),
-      ub = ggsurvfit::survfit2(Surv(!!pfs_sym + interval_censored + 1, 1 - !!censored_sym) ~ 1, trt_data),
+      lb = ggsurvfit::survfit2(Surv(!!pfs_sym + 1 - !!censored_sym, 1 - !!censored_sym) ~ 1, trt_data),
+      ub = ggsurvfit::survfit2(Surv(!!pfs_sym + interval_censored + 1 - !!censored_sym, 1 - !!censored_sym) ~ 1, trt_data),
     )
   ) |> 
     map_dfr(broom::tidy, .id = "btype") |>  

@@ -479,7 +479,7 @@ generated quantities {
         spop_target_pfs[train_idx] = max_all_t;
       }
       
-      spop_pfs[train_idx] = min(spop_non_target_pfs[train_idx], 
+      spop_pfs[train_idx] = min(spop_non_target_pfs[train_idx] + 1, 
                                 max(0, spop_target_pfs[train_idx])); // BUG a couple of patients end up with negative weeks. We need to figure out why.
       spop_right_censored[train_idx] = spop_target_right_censored[train_idx] && spop_non_target_right_censored[train_idx]; 
     }
@@ -502,15 +502,15 @@ generated quantities {
         
         spop_target_km_est[s] = estimate_kaplan_meier(get_int_sub_array(spop_target_pfs, train_trial_patient_pos, s), 
                                                get_int_sub_array(spop_target_right_censored, train_trial_patient_pos, s), 
-                                               max_all_t).1; 
+                                               max_all_t, 0).1; 
                                                
         spop_non_target_km_est[s] = estimate_kaplan_meier(get_int_sub_array(spop_non_target_pfs, train_trial_patient_pos, s), 
                                                get_int_sub_array(spop_non_target_right_censored, train_trial_patient_pos, s), 
-                                               max_all_t).1; 
+                                               max_all_t, 1).1; 
         
         spop_km_est[s] = estimate_kaplan_meier(get_int_sub_array(spop_pfs, train_trial_patient_pos, s), 
                                                get_int_sub_array(spop_right_censored, train_trial_patient_pos, s), 
-                                               max_all_t).1; 
+                                               max_all_t, 0).1; 
       } else {
         spop_target_km_est[s] = zeros_vector(max_all_t + 1);
         spop_non_target_km_est[s] = zeros_vector(max_all_t + 1);
