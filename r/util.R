@@ -56,6 +56,102 @@ sample_and_save <- function(model, ..., output_dir, output_basename, timestamp =
   return(fit)
 }
 
+#' Extract and compile decorated Stan functions 
+#' 
+#' @param stan_file Path to .stan file with decorated functions
+#' @param includes Optional vector of #include statements
+#' @return cmdstanr model object with exported functions
+export_stan_functions <- function(stan_file, includes = NULL) {
+  
+  # Read the Stan file
+  content <- readLines(stan_file) %>% paste(collapse = "\n")
+  
+  # Extract functions marked with @stan_export anywhere in their documentation
+  # Find @stan_export markers and extract the following function
+  
+  # Split content into lines for easier processing
+  lines <- strsplit(content, "\n")[[1]]
+  export_lines <- which(str_detect(lines, "@stan_export"))
+  
+  if (length(export_lines) == 0) {
+    stop("No functions marked with @stan_export found in ", stan_file)
+  }
+  
+  exported_functions <- c()
+  
+  for (export_line in export_lines) {
+    # Find the start of the function signature after @stan_export
+    func_start <- NULL
+    
+    # Look for the start of a function signature (could be multi-line)
+    for (i in (export_line + 1):length(lines)) {
+      line <- trimws(lines[i])
+      
+      # Skip empty lines and comment lines
+      if (line == "" || str_detect(line, "^\\s*//") || str_detect(line, "^\\s*/\\*")) {
+        next
+      }
+      
+      # Check if this line starts a function (return type or tuple)
+      if (str_detect(line, "^\\s*(?:real|int|vector|matrix|row_vector|array|void|tuple)")) {
+        func_start <- i
+        break
+      }
+    }
+    
+    if (is.null(func_start)) next
+    
+    # Find the complete function by tracking braces
+    brace_count <- 0
+    func_end <- NULL
+    found_opening_brace <- FALSE
+    
+    for (i in func_start:length(lines)) {
+      line <- lines[i]
+      
+      # Count opening and closing braces
+      open_braces <- str_count(line, "\\{")
+      close_braces <- str_count(line, "\\}")
+      
+      if (open_braces > 0) found_opening_brace <- TRUE
+      
+      brace_count <- brace_count + open_braces - close_braces
+      
+      if (found_opening_brace && brace_count == 0) {
+        func_end <- i
+        break
+      }
+    }
+    
+    if (!is.null(func_end)) {
+      func_text <- paste(lines[func_start:func_end], collapse = "\n")
+      exported_functions <- c(exported_functions, func_text)
+    }
+  }
+  
+  if (length(exported_functions) == 0) {
+    stop("No valid functions found after @stan_export markers in ", stan_file)
+  }
+  
+  functions_code <- exported_functions
+  
+  # Create Stan program with functions block
+  stan_program <- paste0(
+    "functions {\n",
+    if (!is.null(includes)) paste0("  ", includes, collapse = "\n"), "\n",
+    paste(functions_code, collapse = "\n\n"), "\n",
+    "}\n\n",
+    "data {}\n",
+    "parameters {}\n", 
+    "model {}\n"
+  )
+  
+  # Compile directly from string and expose functions
+  model <- cmdstan_model(stan_file = write_stan_file(stan_program), force_recompile = TRUE)
+  model$expose_functions()
+  return(model)
+}
+
 #' Convert Kaplan-Meier estimates to a tibble (data frame) format 
 #'
 #' @param trt_data Analysis data 

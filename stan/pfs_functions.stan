@@ -549,6 +549,7 @@ tuple(vector, array[] int, array[] int, array[,] int) estimate_kaplan_meier(arra
  * @param right_censored Right censoring per patient
  * @param max_t The last interval to report Kaplan-Meier results
  * @return (Proportion surviving, Number at risk, Number right censored, Number for whom disease progressed) for each week
+ * @stan_export
  */
 tuple(vector, array[] int, array[] int, array[] int) estimate_kaplan_meier(array[] int pfs, array[] int right_censored, int max_t, int pfs_offset) {
   int n_pfs = size(pfs); // How many patients
