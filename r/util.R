@@ -152,6 +152,22 @@ export_stan_functions <- function(stan_file, includes = NULL) {
   return(model)
 }
 
+build_model <- function(model_file, include_files, dir) {
+  # Force dependency on include files
+  include_files
+  
+  model <- cmdstan_model(model_file, cpp_options = lst(stan_threads = TRUE), dir = dir)
+  
+  # Track the executable by including its hash in the return value
+  exe_path <- model$exe_file()
+  exe_hash <- digest::digest(file = exe_path, algo = "md5")
+  
+  # Store the hash as an attribute so targets tracks it
+  attr(model, "exe_hash") <- exe_hash
+  
+  return(model)
+}
+
 #' Convert Kaplan-Meier estimates to a tibble (data frame) format 
 #'
 #' @param trt_data Analysis data 
