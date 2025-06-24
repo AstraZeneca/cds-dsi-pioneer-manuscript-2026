@@ -479,8 +479,8 @@ generated quantities {
         spop_target_pfs[train_idx] = max_all_t;
       }
      
-      spop_target_obs_cens_right_censored[train_idx] = spop_target_pfs[train_idx] > pfs[i] || spop_target_right_censored[train_idx]; 
-      spop_target_obs_cens_pfs[train_idx] = min(spop_target_pfs[train_idx], pfs[i]);
+      spop_target_obs_cens_right_censored[train_idx] = (spop_target_pfs[train_idx] > pfs[i] && right_censored[i]) || spop_target_right_censored[train_idx]; 
+      spop_target_obs_cens_pfs[train_idx] = right_censored[i] ? min(spop_target_pfs[train_idx], pfs[i]) : spop_target_pfs[train_idx];
       
       spop_pfs[train_idx] = min(spop_non_target_pfs[train_idx] + 1, 
                                 max(0, spop_target_pfs[train_idx])); // BUG a couple of patients end up with negative weeks. We need to figure out why.
