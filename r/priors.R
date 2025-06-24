@@ -18,13 +18,13 @@ get_tumor_priors <- function() {
     growth_process_beta = 38.4,  # Same as decrease_process_beta
     
     # Rate parameters
-    pop_log_net_rate_mean = -4, 
-    pop_log_net_rate_sd = 2,
-    pop_log_rate_ratio_mean = 2,
-    pop_log_rate_ratio_sd = 1,
-    patient_log_net_rate_sd_sd = 0.5,
-    patient_log_rate_ratio_sd_sd = 0.5,
-    trial_log_net_rate_sd_sd = 1.0,           # Between patient (0.5) and population (2)
+    pop_log_net_rate_mean = -2.5,        # Changed from -4 to -2.5 (more reasonable net rate)
+    pop_log_net_rate_sd = 0.8,           # Changed from 2 to 0.8 (much tighter)
+    pop_log_rate_ratio_mean = 1.2,       # Changed from 2 to 1.2 (smaller ratio)
+    pop_log_rate_ratio_sd = 0.4,         # Changed from 1 to 0.4 (much tighter)
+    patient_log_net_rate_sd_sd = 0.3,    # Changed from 0.5 to 0.3 (less patient variation)
+    patient_log_rate_ratio_sd_sd = 0.2,  # Changed from 0.5 to 0.2 (less patient variation)
+    trial_log_net_rate_sd_sd = 0.4,      # Changed from 1.0 to 0.4 (less trial variation)
     
     # Growth lag parameters
     growth_lag_mean = 2.7,
