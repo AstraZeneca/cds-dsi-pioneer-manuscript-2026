@@ -14,17 +14,17 @@ get_tumor_priors <- function() {
     # Process parameters
     decrease_process_alpha = 9.7,
     decrease_process_beta = 38.4,
-    growth_process_alpha = 9.7,
+    growth_process_alpha = 9.7,  
     growth_process_beta = 38.4,
     
     # Rate parameters - ALIGNED WITH POSTERIOR EVIDENCE
-    pop_log_net_rate_mean = -4.5,        # Net rate: exp(-4.5) ≈ 0.011 per day
-    pop_log_net_rate_sd = 0.3,           # Very tight: 95% within [0.007, 0.018] per day
-    pop_log_rate_ratio_mean = 1.1,       # Ratio: exp(1.1) ≈ 3.0 (d = 3g) - matches your posterior
-    pop_log_rate_ratio_sd = 0.4,         # 95% within [1.4, 6.6] - reasonable range
-    patient_log_net_rate_sd_sd = 0.15,   # Very minimal patient variation
-    patient_log_rate_ratio_sd_sd = 0.1,  # Very minimal patient variation  
-    trial_log_net_rate_sd_sd = 0.2,      # Very minimal trial variation
+    pop_log_net_rate_mean = -2.0,        # Keep moderate net rate
+    pop_log_net_rate_sd = 1.8,           # Even wider range
+    pop_log_rate_ratio_mean = 2.2,       # Much higher ratio: exp(2.2) ≈ 9 (d = 9g)
+    pop_log_rate_ratio_sd = 1.2,         # Very wide to allow flexibility
+    patient_log_net_rate_sd_sd = 0.5,    # Allow patient variation
+    patient_log_rate_ratio_sd_sd = 0.3,  # Allow patient variation  
+    trial_log_net_rate_sd_sd = 0.6,      # Allow trial variation
     
     # Growth lag parameters
     growth_lag_mean = 2.7,
@@ -54,7 +54,7 @@ get_tumor_priors <- function() {
     
     log_lod_sd = 0.2
   )
-}
+}    
 
 get_pfs_priors <- function() {
   lst(
