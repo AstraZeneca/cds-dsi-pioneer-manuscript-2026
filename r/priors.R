@@ -36,10 +36,10 @@ get_tumor_priors <- function() {
     rate_corr_param = 2.0,
     
     # Proportion parameters
-    pop_decrease_prop_logis_mean = -1.5,    # logit^{-1}(-1.5) ≈ 0.18
-    pop_decrease_prop_logis_sd = 0.5,       # Much tighter
-    patient_decrease_prop_logis_sd_sd = 0.75,  # Also tighten patient-level
-    trial_decrease_prop_logis_sd_sd = 1.5,    # Between patient (2.5) and population (2) 
+    pop_decrease_prop_logis_mean = -1.0,    # logit^{-1}(-1.0) ≈ 0.27
+    pop_decrease_prop_logis_sd = 1.5,       # Wider but not extreme
+    patient_decrease_prop_logis_sd_sd = 1.0,
+    trial_decrease_prop_logis_sd_sd = 1.5,
     
     # Baseline hazard GP parameters - Population level (wrapped in array() for n_causes)
     log_lambda_gp_pop_intercept_mean = array(-4.5),    # Baseline log-hazard
