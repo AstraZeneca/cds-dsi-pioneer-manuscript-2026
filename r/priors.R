@@ -14,17 +14,17 @@ get_tumor_priors <- function() {
     # Process parameters
     decrease_process_alpha = 9.7,
     decrease_process_beta = 38.4,
-    growth_process_alpha = 9.7,  # Same as decrease_process_alpha
-    growth_process_beta = 38.4,  # Same as decrease_process_beta
+    growth_process_alpha = 9.7,
+    growth_process_beta = 38.4,
     
-    # Rate parameters
-    pop_log_net_rate_mean = -2.5,        # Changed from -4 to -2.5 (more reasonable net rate)
-    pop_log_net_rate_sd = 0.8,           # Changed from 2 to 0.8 (much tighter)
-    pop_log_rate_ratio_mean = 1.2,       # Changed from 2 to 1.2 (smaller ratio)
-    pop_log_rate_ratio_sd = 0.4,         # Changed from 1 to 0.4 (much tighter)
-    patient_log_net_rate_sd_sd = 0.3,    # Changed from 0.5 to 0.3 (less patient variation)
-    patient_log_rate_ratio_sd_sd = 0.2,  # Changed from 0.5 to 0.2 (less patient variation)
-    trial_log_net_rate_sd_sd = 0.4,      # Changed from 1.0 to 0.4 (less trial variation)
+    # Rate parameters - ALIGNED WITH POSTERIOR EVIDENCE
+    pop_log_net_rate_mean = -4.5,        # Net rate: exp(-4.5) ≈ 0.011 per day
+    pop_log_net_rate_sd = 0.3,           # Very tight: 95% within [0.007, 0.018] per day
+    pop_log_rate_ratio_mean = 1.1,       # Ratio: exp(1.1) ≈ 3.0 (d = 3g) - matches your posterior
+    pop_log_rate_ratio_sd = 0.4,         # 95% within [1.4, 6.6] - reasonable range
+    patient_log_net_rate_sd_sd = 0.15,   # Very minimal patient variation
+    patient_log_rate_ratio_sd_sd = 0.1,  # Very minimal patient variation  
+    trial_log_net_rate_sd_sd = 0.2,      # Very minimal trial variation
     
     # Growth lag parameters
     growth_lag_mean = 2.7,
@@ -41,22 +41,16 @@ get_tumor_priors <- function() {
     patient_decrease_prop_logis_sd_sd = 1.0,
     trial_decrease_prop_logis_sd_sd = 1.5,
     
-    # Baseline hazard GP parameters - Population level (wrapped in array() for n_causes)
-    log_lambda_gp_pop_intercept_mean = array(-4.5),    # Baseline log-hazard
-    log_lambda_gp_pop_intercept_sd = array(0.5),       # Moderate uncertainty
-    
-    # GP variance (alpha) - controls overall variability of hazard over time
-    log_lambda_gp_pop_alpha_sd = array(0.4),           # Moderate temporal variation
-    
-    # GP length-scale (rho) - controls smoothness of hazard over time
-    log_lambda_gp_pop_rho_alpha = array(8.0),          # Shape parameter
-    log_lambda_gp_pop_rho_beta = array(12.0),          # Rate parameter (mean rho ≈ 1.5 weeks)
-    
-    # Trial-level hierarchical effects (when add_trial_level_baseline_hazard = 1)
-    log_lambda_gp_trial_alpha_sd = array(0.25),        # Smaller trial-level variation
-    log_lambda_gp_trial_rho_alpha = array(5.0),        # Trial-level smoothness
-    log_lambda_gp_trial_rho_beta = array(7.0),         # Structure
-    log_lambda_gp_trial_intercept_sd_sd = array(0.3),   # Trial baseline variation
+    # Baseline hazard GP parameters
+    log_lambda_gp_pop_intercept_mean = array(-4.5),
+    log_lambda_gp_pop_intercept_sd = array(0.5),
+    log_lambda_gp_pop_alpha_sd = array(0.4),
+    log_lambda_gp_pop_rho_alpha = array(8.0),
+    log_lambda_gp_pop_rho_beta = array(12.0),
+    log_lambda_gp_trial_alpha_sd = array(0.25),
+    log_lambda_gp_trial_rho_alpha = array(5.0),
+    log_lambda_gp_trial_rho_beta = array(7.0),
+    log_lambda_gp_trial_intercept_sd_sd = array(0.3),
     
     log_lod_sd = 0.2
   )
