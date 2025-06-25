@@ -150,7 +150,7 @@ plot_surv_ppc <- function(ppc_data, surv_interval_col, ic_col, rc_col, rep_surv_
     NULL
 }
 
-plot_km <- function(res_data, obs_km_data, km_est, group = fit_type, linewidth = 0) {
+plot_km <- function(res_data, obs_km_data, km_est, analysis_data = NULL, group = fit_type, linewidth = 0) {
   pobj <- ggplot(res_data) +
     stat_lineribbon(aes(x = t - 1, ydist = {{ km_est }}, fill = {{ group }}, alpha = {{ group }}), linewidth = linewidth, .width = 0.8) +
     labs(y = "Survival Probability") +
@@ -159,7 +159,18 @@ plot_km <- function(res_data, obs_km_data, km_est, group = fit_type, linewidth =
   
   if (!is_null(obs_km_data)) {
     pobj <- pobj + 
-      geom_step(aes(x = t, y = s, group = btype, color = btype), linewidth = 0.5, alpha = 0.5, data = \(d) semi_join(obs_km_data, d, by = "trial")) 
+      geom_step(aes(x = t, y = s, group = btype, color = btype), linewidth = 0.5, alpha = 0.5, data = \(d) semi_join(obs_km_data, d, by = "trial"))
+    
+    if (!is_null(analysis_data)) {
+      pobj <- pobj +
+        geom_point(aes(x = t, y = s, color = btype, shape = "censored"), size = 2, alpha = 0.7, 
+                   data = \(d) semi_join(obs_km_data, d, by = "trial") |> 
+                     inner_join(analysis_data |> filter(right_censored) |> select(pfs), by = c("t" = "pfs"), relationship = "many-to-many")) +
+        geom_point(aes(x = t, y = s, color = btype, shape = "death"), size = 2, alpha = 0.7, 
+                   data = \(d) semi_join(obs_km_data, d, by = "trial") |> 
+                     inner_join(analysis_data |> filter(!right_censored, !progression_before_death) |> select(pfs), by = c("t" = "pfs"), relationship = "many-to-many")) +
+        scale_shape_manual("", values = c(censored = "|", death = "o"), labels = c(censored = "Right Censored", death = "Death before PD"))
+    }
   }
   
   return(pobj)
