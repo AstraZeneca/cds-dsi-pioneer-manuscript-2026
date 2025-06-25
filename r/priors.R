@@ -18,9 +18,9 @@ get_tumor_priors <- function() {
     growth_process_beta = 38.4,
     
     # Rate parameters - ALIGNED WITH POSTERIOR EVIDENCE
-    pop_log_net_rate_mean = -2.0,        # Keep moderate net rate
-    pop_log_net_rate_sd = 1.8,           # Even wider range
-    pop_log_rate_ratio_mean = 2.2,       # Much higher ratio: exp(2.2) ≈ 9 (d = 9g)
+    pop_log_net_rate_mean = -3.5,        # Much lower net rate to shift growth left
+    pop_log_net_rate_sd = 1.8,           # Keep wide range
+    pop_log_rate_ratio_mean = 2.2,       # Keep high ratio: exp(2.2) ≈ 9 (d = 9g)
     pop_log_rate_ratio_sd = 1.2,         # Very wide to allow flexibility
     patient_log_net_rate_sd_sd = 0.5,    # Allow patient variation
     patient_log_rate_ratio_sd_sd = 0.3,  # Allow patient variation  
