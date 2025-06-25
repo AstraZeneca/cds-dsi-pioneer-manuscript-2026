@@ -650,17 +650,17 @@ plot_corr_decay <- function(res_data, param = .value) {
     NULL
 }
 
-plot_dynamics <- function(data, var) {
-  ggplot(data, aes(week)) +
-    stat_lineribbon(aes(ydist = {{ var }}, fill = stage), alpha = 0.25, .width = c(0.5, 0.8)) +
+plot_dynamics <- function(data, var, expect_rvar = TRUE, na.rm = FALSE) {
+  pobj <- ggplot(data, aes(week))
+  
+  if (expect_rvar) {
+    pobj <- pobj + stat_lineribbon(aes(ydist = {{ var }}, fill = stage), na.rm = na.rm, alpha = 0.25, .width = c(0.5, 0.8))
+  } else {
+    pobj <- pobj + stat_lineribbon(aes(y = {{ var }}, fill = stage), na.rm = na.rm, alpha = 0.25, .width = c(0.5, 0.8))
+  }
+  
+  pobj +
     geom_point(aes(y = mmsumdiam), color = AZ_gold, size = 2) +
-    # geom_rect(
-    #   data = \(d) filter(d, fct_match(trial, "sclc")) |>  
-    #     group_by(trial, i) |>  
-    #     summarise(xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf),
-    #   aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
-    #   fill = NA, color = "#E91E63", linewidth = 2, inherit.aes = FALSE
-    # ) +
     scale_fill_discrete("Stage", type = AZ_palette, label = c("obs" = "Observed", "forecast" = "Forecast")) +
     facet_wrap(vars(i), scales = "free") +
     NULL
