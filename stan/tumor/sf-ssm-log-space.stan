@@ -34,6 +34,9 @@ data {
   array[n_patients] int<lower = 0, upper = 1> target_right_censored;
   
   array[n_patients] int<lower = 0> death_week;
+ 
+  int<lower = 0> n_covar; 
+  matrix[n_patients, n_covar] covar_design_matrix;
   
   int<lower = 0> n_pfs_timepoints;
   array[n_pfs_timepoints] int<lower = 0> pfs_timepoints; // In months
@@ -74,6 +77,8 @@ transformed data {
  
   array[n_trials + 1] int train_trial_patient_pos = resize_pos(trial_patient_pos, train_patients_pos, train_patients_end);
   print("train_trial_patient_pos = ", train_trial_patient_pos);
+  
+  array[n_train_patients] int<lower = 1> train_patient_trial = patient_trial[train_patients_pos:train_patients_end];
  
   {
     int right_uncensored_idx = 1;
@@ -173,6 +178,17 @@ parameters {
   vector[pop_initial_states_param_only ? 0 : n_train_patients] raw_patient_decrease_prop_logis;
   
   // real log_lod;
+  
+  // Covariate effects on rates
+  vector[n_covar] pop_log_net_rate_coef;      // Population-level covariate effects on net rate
+  // vector[n_covar] pop_log_rate_ratio_coef;    // Population-level covariate effects on rate ratio
+  
+  // Optional: hierarchical covariate effects
+  real<lower=0> trial_log_net_rate_coef_sd;
+  matrix[pop_rates_param_only ? 0 : n_train_trials, n_covar] raw_trial_log_net_rate_coef;
+  
+  // real<lower=0> patient_log_net_rate_coef_sd;
+  // matrix[pop_rates_param_only ? 0 : n_train_patients, n_covar] raw_patient_log_net_rate_coef;
 }
 
 transformed parameters {
@@ -181,19 +197,36 @@ transformed parameters {
   vector[n_train_trials] trial_log_net_rate_effect = zeros_vector(n_train_trials);
   vector[n_train_patients] patient_log_net_rate_effect = zeros_vector(n_train_patients);
   vector[n_train_patients] patient_log_net_rate = rep_vector(pop_log_net_rate, n_train_patients);
-  vector[n_train_patients] patient_log_rate_ratio_effect = zeros_vector(n_train_patients);
+  // vector[n_train_patients] patient_log_rate_ratio_effect = zeros_vector(n_train_patients);
   vector[n_train_patients] patient_log_rate_ratio = rep_vector(pop_log_rate_ratio, n_train_patients);
   vector[n_train_patients] patient_log_growth_lag_effect = zeros_vector(n_train_patients);
   vector[n_train_patients] patient_log_growth_lag = rep_vector(pop_log_growth_lag, n_train_patients);
   
+  // Calculate linear predictors for rates
+  vector[n_train_patients] patient_log_net_rate_linpred = covar_design_matrix[train_patients_pos:train_patients_end] * pop_log_net_rate_coef;
+  // vector[n_train_patients] patient_log_rate_ratio_linpred = covar_design_matrix[train_patients_pos:train_patients_end] * pop_log_rate_ratio_coef;
+
+  // Add hierarchical covariate effects if needed
   if (!pop_rates_param_only) {
+    // Trial-level covariate effects
+    matrix[n_train_trials, n_covar] trial_log_net_rate_coef = trial_log_net_rate_coef_sd * raw_trial_log_net_rate_coef;
+    
+    patient_log_net_rate_linpred += rows_dot_product(covar_design_matrix[train_patients_pos:train_patients_end], 
+                                                     trial_log_net_rate_coef[train_patient_trial]');
+    
+    
+    // Patient-level covariate effects (if you want this level of complexity)
+    // matrix[n_train_patients, n_covar] patient_log_net_rate_coef = patient_log_net_rate_coef_sd * raw_patient_log_net_rate_coef;
+    // patient_log_net_rate_lp += rows_dot_product(covar_design_matrix[train_patients_pos:train_patients_end], patient_log_net_rate_coef);
+    
     trial_log_net_rate_effect = trial_log_net_rate_sd * raw_trial_log_net_rate;
     patient_log_net_rate_effect = patient_log_net_rate_sd * raw_patient_log_net_rate;
-    patient_log_net_rate += trial_log_net_rate_effect[patient_trial[train_patients_pos:train_patients_end]] + patient_log_net_rate_effect;
-    
-    // patient_log_rate_ratio_effect = patient_log_rate_ratio_sd * raw_patient_log_rate_ratio;
-    // patient_log_rate_ratio += patient_log_rate_ratio_effect;
+    patient_log_net_rate += trial_log_net_rate_effect[train_patient_trial] + patient_log_net_rate_effect;
   }
+
+  // Update the rate calculations to include covariate effects
+  patient_log_net_rate += patient_log_net_rate_linpred + trial_log_net_rate_effect[train_patient_trial] + patient_log_net_rate_effect;
+  // patient_log_rate_ratio = pop_log_rate_ratio + patient_log_rate_ratio_lp + patient_log_rate_ratio_effect;
   
   if (!pop_growth_lag_param_only) {
     patient_log_growth_lag_effect = patient_log_growth_lag_sd * raw_patient_log_growth_lag;
