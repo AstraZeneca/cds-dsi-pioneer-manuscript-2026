@@ -212,7 +212,7 @@ transformed parameters {
     matrix[n_train_trials, n_covar] trial_log_net_rate_coef = trial_log_net_rate_coef_sd * raw_trial_log_net_rate_coef;
     
     patient_log_net_rate_linpred += rows_dot_product(covar_design_matrix[train_patients_pos:train_patients_end], 
-                                                     trial_log_net_rate_coef[train_patient_trial]');
+                                                     trial_log_net_rate_coef[train_patient_trial]);
     
     
     // Patient-level covariate effects (if you want this level of complexity)
