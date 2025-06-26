@@ -38,3 +38,11 @@ patient_decrease_prop_logis_sd ~ normal(0, patient_decrease_prop_logis_sd_sd);
 raw_patient_decrease_prop_logis ~ std_normal();
 
 // log_lod ~ normal(log(lod), log_lod_sd);
+
+// Priors for covariate effects using hyperparameters from data block
+pop_log_net_rate_coef ~ normal(pop_log_net_rate_coef_mean, pop_log_net_rate_coef_sd);
+
+if (!pop_rates_param_only) {
+  trial_log_net_rate_coef_sd ~ normal(0, trial_log_net_rate_coef_sd_sd);
+  to_vector(raw_trial_log_net_rate_coef) ~ std_normal();
+}
