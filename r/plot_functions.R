@@ -654,13 +654,13 @@ plot_dynamics <- function(data, var, expect_rvar = TRUE, na.rm = FALSE) {
   pobj <- ggplot(data, aes(week))
   
   if (expect_rvar) {
-    pobj <- pobj + stat_lineribbon(aes(ydist = {{ var }}, fill = stage), na.rm = na.rm, alpha = 0.25, .width = c(0.5, 0.8))
+    pobj <- pobj + stat_lineribbon(aes(ydist = {{ var }}, fill = stage), na.rm = na.rm, alpha = 0.25, linewidth = 0.5, .width = c(0.5, 0.8))
   } else {
     pobj <- pobj + stat_lineribbon(aes(y = {{ var }}, fill = stage), na.rm = na.rm, alpha = 0.25, .width = c(0.5, 0.8))
   }
   
   pobj +
-    geom_point(aes(y = mmsumdiam), color = AZ_gold, size = 2) +
+    geom_point(aes(y = mmsumdiam), color = AZ_navy, size = 1.5, alpha = 0.75) +
     scale_fill_discrete("Stage", type = AZ_palette, label = c("obs" = "Observed", "forecast" = "Forecast")) +
     facet_wrap(vars(i), scales = "free") +
     NULL
