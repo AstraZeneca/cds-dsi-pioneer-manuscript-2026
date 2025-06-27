@@ -184,7 +184,7 @@ parameters {
   // vector[n_covar] pop_log_rate_ratio_coef;    // Population-level covariate effects on rate ratio
   
   // Optional: hierarchical covariate effects
-  real<lower=0> trial_log_net_rate_coef_sd;
+  row_vector<lower=0>[pop_rates_param_only ? 0 : n_covar] trial_log_net_rate_coef_sd;
   matrix[pop_rates_param_only ? 0 : n_train_trials, n_covar] raw_trial_log_net_rate_coef;
   
   // real<lower=0> patient_log_net_rate_coef_sd;
@@ -205,15 +205,16 @@ transformed parameters {
   // Calculate linear predictors for rates
   vector[n_train_patients] patient_log_net_rate_linpred = covar_design_matrix[train_patients_pos:train_patients_end] * pop_log_net_rate_coef;
   // vector[n_train_patients] patient_log_rate_ratio_linpred = covar_design_matrix[train_patients_pos:train_patients_end] * pop_log_rate_ratio_coef;
+  
+  matrix[n_train_trials, n_covar] trial_log_net_rate_coef = rep_matrix(0, n_train_trials, n_covar);
 
   // Add hierarchical covariate effects if needed
   if (!pop_rates_param_only) {
     // Trial-level covariate effects
-    matrix[n_train_trials, n_covar] trial_log_net_rate_coef = trial_log_net_rate_coef_sd * raw_trial_log_net_rate_coef;
+    trial_log_net_rate_coef = rep_matrix(trial_log_net_rate_coef_sd, n_train_trials) .* raw_trial_log_net_rate_coef;
     
-    patient_log_net_rate_linpred += rows_dot_product(covar_design_matrix[train_patients_pos:train_patients_end], 
+    patient_log_net_rate_linpred += rows_dot_product(covar_design_matrix[train_patients_pos:train_patients_end],
                                                      trial_log_net_rate_coef[train_patient_trial]);
-    
     
     // Patient-level covariate effects (if you want this level of complexity)
     // matrix[n_train_patients, n_covar] patient_log_net_rate_coef = patient_log_net_rate_coef_sd * raw_patient_log_net_rate_coef;
