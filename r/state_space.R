@@ -1,3 +1,4 @@
+
 get_state_patients <- function(analysis_data, sample_size = 12, random = TRUE, by = NULL, cond = TRUE, slicer = if (random) slice_sample else slice_head) {
   analysis_data |> 
     mutate(i = seq(n()), selected = {{ cond }}) |> 

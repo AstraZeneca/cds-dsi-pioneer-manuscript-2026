@@ -199,7 +199,7 @@ transformed parameters {
     patient_log_growth_lag_effect = patient_log_growth_lag_sd * raw_patient_log_growth_lag;
     patient_log_growth_lag += patient_log_growth_lag_effect;
   }
-  
+
   vector[n_train_patients] patient_log_growth_rate = patient_log_net_rate - log_diff_exp(patient_log_rate_ratio, zeros_vector(n_train_patients));
   vector[n_train_patients] patient_log_decrease_rate = patient_log_growth_rate + patient_log_rate_ratio;
   
@@ -215,10 +215,12 @@ transformed parameters {
   
   vector[n_train_patients] patient_log_decrease_prop = -log1p_exp(-patient_decrease_prop_logis);
   vector[n_train_patients] patient_log_growth_prop = patient_log_decrease_prop - patient_decrease_prop_logis;
-  
+
   vector[n_train_patients] patient_tumor_gp_rho = independ_long_process_noise ? zeros_vector(n_train_patients) : rep_vector(exp(log_pop_tumor_gp_rho), n_train_patients);  
   
   matrix[n_total_train_visits, 2] states; 
+  
+  vector[independ_long_process_noise ? 0 : n_train_patients] patient_tumor_gp_rho;
   
   profile("states") {
     vector[independ_long_process_noise || pop_rho_param_only ? 0 : n_train_patients] log_patient_tumor_gp_rho_effect; 
