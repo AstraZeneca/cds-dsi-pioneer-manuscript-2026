@@ -152,7 +152,7 @@ export_stan_functions <- function(stan_file, includes = NULL) {
   return(model)
 }
 
-build_model <- function(model_file, include_files, dir) {
+build_model <- function(model_file, include_files = NULL, dir = NULL) {
   # Force dependency on include files
   include_files
   
@@ -166,6 +166,18 @@ build_model <- function(model_file, include_files, dir) {
   attr(model, "exe_hash") <- exe_hash
   
   return(model)
+}
+
+remove_incomplete_cases <- function(data, incomplete) {
+  if (is_empty(incomplete)) {
+    return(data)
+  } else {
+   return(slice(data, -incomplete))
+  }
+}
+
+get_conditioning_subgroups <- function(data, cond, other_cond) {
+  map(cond, \(x) transmute(data, cond = !!x & !!other_cond) |> pull(cond) |> which())
 }
 
 #' Convert Kaplan-Meier estimates to a tibble (data frame) format 
