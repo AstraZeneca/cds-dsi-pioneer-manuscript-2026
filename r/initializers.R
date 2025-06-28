@@ -430,14 +430,14 @@ create_tumor_ssls_initializer <- function(stan_data) {
       
       lst(
         trial_log_net_rate_sd = abs(rnorm(1, sd = trial_log_net_rate_sd_sd)),
-        raw_trial_log_net_rate = rnorm(n_trials),
+        raw_trial_log_net_rate = if (!pop_rates_param_only && add_trial_level_net_rate) rnorm(n_trials),
         trial_decrease_prop_logis_sd = abs(rnorm(1, sd = trial_decrease_prop_logis_sd_sd)),
-        raw_trial_decrease_prop_logis = rnorm(n_trials),
+        raw_trial_decrease_prop_logis = if (add_trial_level_prop) rnorm(n_trials),
         
         pop_log_net_rate_coef = rnorm(n_covar, pop_log_net_rate_coef_mean, pop_log_net_rate_coef_sd),
         
-        trial_log_net_rate_coef_sd = if (n_covar > 0) abs(rnorm(n_covar, sd = trial_log_net_rate_coef_sd_sd)),
-        raw_trial_log_net_rate_coef = if (n_covar > 0) matrix(rnorm(n_covar * n_trials), n_trials, n_covar),
+        trial_log_net_rate_coef_sd = if (n_covar > 0 && !pop_covar_coef_only) abs(rnorm(n_covar, sd = trial_log_net_rate_coef_sd_sd)),
+        raw_trial_log_net_rate_coef = if (n_covar > 0 && !pop_covar_coef_only) matrix(rnorm(n_covar * n_trials), n_trials, n_covar),
       )
     }) |> compact() # Get rid of NULLs
   }
