@@ -522,7 +522,8 @@ tuple(matrix, matrix) calc_patient_states(
   
 tuple(matrix, matrix) calc_patient_states(
   row_vector initial_state, array[] int time_points, real decrease_rate, real growth_rate, real growth_lag, real growth_transition_rate,
-  matrix raw_process_noise, int lognormal_noise, real rho, real delta, vector process_sd, matrix L_process_corr, int independ_long_process_noise, int independ_cross_process_noise, int debug
+  matrix raw_process_noise, int lognormal_noise, real rho, real delta, vector process_sd, matrix L_process_corr, 
+  int independ_long_process_noise, int independ_cross_process_noise, int debug
 ) {
   int n_visits = size(time_points);
   int n_visits_m1 = n_visits - 1;
