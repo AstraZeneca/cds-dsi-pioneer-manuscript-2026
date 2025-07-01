@@ -224,8 +224,11 @@ transformed parameters {
   }
 
   // Add hierarchical covariate effects if needed
-  if (!pop_rates_param_only && add_trial_level_net_rate) {
-    trial_log_net_rate_effect = trial_log_net_rate_sd * raw_trial_log_net_rate;
+  if (!pop_rates_param_only) {
+    if (add_trial_level_net_rate) {
+      trial_log_net_rate_effect = trial_log_net_rate_sd * raw_trial_log_net_rate;
+    }
+    
     patient_log_net_rate_effect = patient_log_net_rate_sd * raw_patient_log_net_rate;
     patient_log_net_rate += trial_log_net_rate_effect[train_patient_trial] + patient_log_net_rate_effect;
   }
@@ -245,11 +248,12 @@ transformed parameters {
   vector[n_trials] trial_decrease_prop_logis = rep_vector(pop_decrease_prop_logis, n_trials);
   vector[n_train_patients] patient_decrease_prop_logis = rep_vector(pop_decrease_prop_logis, n_train_patients);
   
-  if (!pop_initial_states_param_only && add_trial_level_prop) {
-    trial_decrease_prop_logis += trial_decrease_prop_logis_sd * raw_trial_decrease_prop_logis;
-    patient_decrease_prop_logis += 
-      raw_trial_decrease_prop_logis[patient_trial[train_patients_pos:train_patients_end]] +
-      patient_decrease_prop_logis_sd * raw_patient_decrease_prop_logis;
+  if (!pop_initial_states_param_only ) {
+    if (add_trial_level_prop) {
+      trial_decrease_prop_logis += trial_decrease_prop_logis_sd * raw_trial_decrease_prop_logis;
+    }
+    
+    patient_decrease_prop_logis += trial_decrease_prop_logis[patient_trial[train_patients_pos:train_patients_end]] + patient_decrease_prop_logis_sd * raw_patient_decrease_prop_logis;
   }
   
   vector[n_train_patients] patient_log_decrease_prop = -log1p_exp(-patient_decrease_prop_logis);
