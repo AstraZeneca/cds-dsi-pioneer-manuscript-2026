@@ -20,8 +20,8 @@ data {
   int<lower = 0, upper = 1> pop_covar_coef_only;
   int<lower = 0, upper = 1> independ_long_process_noise;
   int<lower = 0, upper = 1> independ_cross_process_noise;
-  int<lower = 0, upper = 1> run_parallel;
   int<lower = 1, upper = n_patients> train_patients_pos, train_patients_end;
+  int<lower = 1, upper = n_patients> n_shards;
 
   int<lower = 0, upper = 1> add_trial_level_net_rate; 
   int<lower = 0, upper = 1> add_trial_level_baseline_hazard;
@@ -282,7 +282,7 @@ transformed parameters {
       exp(patient_log_decrease_rate), exp(patient_log_growth_rate),
       rep_vector(0.0001, n_train_patients), // exp(patient_log_growth_lag), 
       0.0001, // exp(pop_log_growth_transition_rate),
-      run_parallel, // && !debug,
+      n_shards, // && !debug,
       0 // debug 
     );
   }
@@ -570,3 +570,4 @@ generated quantities {
   
   #include "sf-ssls-accuracy_gen_quant.stan"
 }
+
