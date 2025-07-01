@@ -130,6 +130,10 @@ array[] int create_pos(array[] int pos, int from, int to) {
   return create_pos(get_pos_size(pos)[from:to]);
 }
 
+tuple(int, array[] int) create_double_pos(int n_outer, array[] int inner) {
+  return (n_outer, create_pos(inner));
+}
+
 /**
  * Get start and end indices for a range of groups
  * 
@@ -152,6 +156,24 @@ tuple(int, int) get_pos(array[] int pos, int from, int to) {
 tuple(int, int) get_pos(array[] int pos, int n) {
   return get_pos(pos, n, n);
 }
+
+tuple(int, int) get_offset_pos(array[] int pos, int n, int inner_offset) {
+  tuple(int, int) start_end_pos = get_pos(pos, n);
+  start_end_pos.1 += inner_offset;
+  start_end_pos.2 += inner_offset;
+  
+  return start_end_pos;
+}
+
+tuple(int, int) get_pos(tuple(int, array[] int) double_pos, int m, int n) {
+  int output_start_m1 = double_pos.1 * (m - 1); 
+  tuple(int, int) pos = get_pos(double_pos.2, n);
+  
+  pos.1 += output_start_m1;
+  pos.2 += output_start_m1;
+  
+  return pos;
+} 
 
 tuple(int, int, int, int) get_visit_pos(array[] int pos, int i, int n_screening) {
   int visit_start, screening_visit_end, treat_visit_start, visit_end;
@@ -472,4 +494,17 @@ int get_int(array[] int x, array[] int pos, int p, int n) {
  */
 int get_last_int(array[] int x, array[] int pos, int p) {
   return get_int(x, pos, p, pos[p + 1] - 1);
+}
+
+array[] int validate_pos(array[] int pos) {
+  int n = size(pos) - 1;
+  array[n + 1] int sort_idx = sort_indices_asc(pos);
+  
+  for (i in 1:(n + 1)) {
+    if (sort_idx[i] != i) {
+      fatal_error("Invalid pos: ", pos);
+    }
+  }
+  
+  return pos;
 }
