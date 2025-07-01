@@ -535,14 +535,18 @@ generated quantities {
       if (get_pos_size(train_trial_patient_pos, s) > 0) {
         int n_curr_uncensored_obs = get_pos_size(train_trial_right_uncensored_pos, s);
         array[n_curr_uncensored_obs] int curr_uncensored_obs = get_int_sub_array(train_right_uncensored_patients, train_trial_right_uncensored_pos, s);
+        int n_curr_right_censored = get_pos_size(train_trial_right_censored_pos, s);
+        array[n_curr_uncensored_obs + n_curr_right_censored] int curr_sample_pfs = 
+          append_array(ub_pfs_p1[curr_uncensored_obs], get_int_sub_array(forecast_pfs, train_trial_right_censored_pos, s)); 
         
         sample_km_est[s] = estimate_kaplan_meier(
-          append_array(ub_pfs_p1[curr_uncensored_obs], get_int_sub_array(forecast_pfs, train_trial_right_censored_pos, s)), 
+          curr_sample_pfs,
           append_array(right_censored[curr_uncensored_obs], get_int_sub_array(forecast_right_censored, train_trial_right_censored_pos, s)), 
           max_all_t).1; 
            
         for (n in 1:n_pfs_timepoints) {
-          forecast_target_pfs_n[s, n] = sample_km_est[s, pfs_timepoints[n] * 4]; 
+          // forecast_target_pfs_n[s, n] = sample_km_est[s, months_to_weeks(pfs_timepoints[n])]; 
+          forecast_target_pfs_n[s, n] = calc_pfs_n(curr_sample_pfs, months_to_weeks(pfs_timepoints[n])); 
         }
                                              
         forecast_target_orr[s] = mean(get_int_sub_array(forecast_confirmed_response, train_trial_patient_pos, s));
