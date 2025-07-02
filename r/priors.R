@@ -54,7 +54,7 @@ get_tumor_priors <- function(stan_data) {
     
     # Covariate effect priors for net rates (for scaled but not centered covariates)
     pop_log_net_rate_coef_mean = rep(0, stan_data$n_covar),
-    pop_log_net_rate_coef_sd = rep(0.1, stan_data$n_covar),
+    pop_log_net_rate_coef_sd = rep(0.5, stan_data$n_covar),
     trial_log_net_rate_coef_sd_sd = rep(0.05, stan_data$n_covar),
     
     log_lod_sd = 0.2
