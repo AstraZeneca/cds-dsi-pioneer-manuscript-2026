@@ -195,6 +195,7 @@ parameters {
   
   // Covariate effects on rates
   vector[n_covar] QR_pop_log_net_rate_coef;      // Population-level covariate effects on net rate
+  vector[n_covar] QR_pop_decrease_prop_logis_coef;
   
   // Optional: hierarchical covariate effects
   row_vector<lower=0>[pop_covar_coef_only ? 0 : n_covar] trial_log_net_rate_coef_sd;
@@ -240,7 +241,6 @@ transformed parameters {
     }
     
     patient_log_net_rate_effect = patient_log_net_rate_sd * raw_patient_log_net_rate;
-    patient_log_net_rate += trial_log_net_rate_effect[train_patient_trial] + patient_log_net_rate_effect;
   }
 
   // Update the rate calculations to include covariate effects
@@ -254,19 +254,26 @@ transformed parameters {
   
   vector[n_train_patients] patient_log_growth_rate = patient_log_net_rate - log_diff_exp(patient_log_rate_ratio, zeros_vector(n_train_patients));
   vector[n_train_patients] patient_log_decrease_rate = patient_log_growth_rate + patient_log_rate_ratio;
-  
+ 
+  vector[n_train_patients] patient_decrease_prop_logis_linpred = Q_covar_design_matrix * QR_pop_decrease_prop_logis_coef;
   vector[n_trials] trial_decrease_prop_logis = rep_vector(pop_decrease_prop_logis, n_trials);
+  vector[n_trials] trial_decrease_prop_logis_effect = zeros_vector(n_trials);
   vector[n_train_patients] patient_decrease_prop_logis = rep_vector(pop_decrease_prop_logis, n_train_patients);
+  vector[n_train_patients] patient_decrease_prop_logis_effect = zeros_vector(n_train_patients);
   
   if (!pop_initial_states_param_only ) {
     if (add_trial_level_prop) {
-      trial_decrease_prop_logis += trial_decrease_prop_logis_sd * raw_trial_decrease_prop_logis;
+      trial_decrease_prop_logis_effect = trial_decrease_prop_logis_sd * raw_trial_decrease_prop_logis;
+      trial_decrease_prop_logis += trial_decrease_prop_logis_effect;
     }
-    
-    patient_decrease_prop_logis += trial_decrease_prop_logis[patient_trial[train_patients_pos:train_patients_end]] + patient_decrease_prop_logis_sd * raw_patient_decrease_prop_logis;
-  }
+   
+    patient_decrease_prop_logis_effect = patient_decrease_prop_logis_sd * raw_patient_decrease_prop_logis; 
+    patient_decrease_prop_logis += trial_decrease_prop_logis_effect[patient_trial[train_patients_pos:train_patients_end]] + patient_decrease_prop_logis_effect;
+  } 
   
-  vector[n_train_patients] patient_log_decrease_prop = -log1p_exp(-patient_decrease_prop_logis);
+  patient_decrease_prop_logis += patient_decrease_prop_logis_linpred;
+  
+  vector[n_train_patients] patient_log_decrease_prop = -log1p_exp(- patient_decrease_prop_logis);
   vector[n_train_patients] patient_log_growth_prop = patient_log_decrease_prop - patient_decrease_prop_logis;
   
   vector[n_train_patients] patient_tumor_gp_rho = independ_long_process_noise ? zeros_vector(n_train_patients) : rep_vector(exp(log_pop_tumor_gp_rho), n_train_patients);  
@@ -331,6 +338,7 @@ model {
 
 generated quantities {
   vector[n_covar] pop_log_net_rate_coef = R_inv_covar_design_matrix * QR_pop_log_net_rate_coef;      // Population-level covariate effects on net rate
+  vector[n_covar] pop_decrease_prop_coef = R_inv_covar_design_matrix * QR_pop_decrease_prop_logis_coef;      // Population-level covariate effects on net rate
   
   real pop_log_growth_rate = pop_log_net_rate - log_diff_exp(pop_log_rate_ratio, 0);
   vector[n_trials] trial_log_growth_rate = pop_log_growth_rate + trial_log_net_rate_effect;
