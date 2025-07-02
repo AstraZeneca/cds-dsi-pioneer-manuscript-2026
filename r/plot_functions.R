@@ -707,9 +707,9 @@ plot_confusion_matrix <- function(data, recorded, calculated, p, n) {
     NULL
 }
 
-plot_ssls_coef <- function(res_data) {
+plot_ssls_coef <- function(res_data, name_var = n) {
   res_data |> 
-    ggplot(aes(y = n)) +
+    ggplot(aes(y = {{ name_var }})) +
     stat_pointinterval(aes(xdist = .value, color = fit_type), point_size = 1, position = "dodge", .width = c(0.5, 0.8)) +
     geom_vline(xintercept = 0)
 }
