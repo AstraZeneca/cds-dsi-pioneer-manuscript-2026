@@ -213,12 +213,9 @@ transformed parameters {
   vector[n_train_patients] patient_log_net_rate = rep_vector(pop_log_net_rate, n_train_patients);
   // vector[n_train_patients] patient_log_rate_ratio_effect = zeros_vector(n_train_patients);
   vector[n_train_patients] patient_log_rate_ratio = rep_vector(pop_log_rate_ratio, n_train_patients);
-  vector[n_train_patients] patient_log_growth_lag_effect = zeros_vector(n_train_patients);
-  vector[n_train_patients] patient_log_growth_lag = rep_vector(pop_log_growth_lag, n_train_patients);
   
   // Calculate linear predictors for rates
   vector[n_train_patients] patient_log_net_rate_linpred = Q_covar_design_matrix * QR_pop_log_net_rate_coef;
-  // vector[n_train_patients] patient_log_rate_ratio_linpred = covar_design_matrix[train_patients_pos:train_patients_end] * pop_log_rate_ratio_coef;
   
   matrix[n_train_trials, n_covar] trial_log_net_rate_coef = rep_matrix(0, n_train_trials, n_covar);
   
@@ -245,20 +242,22 @@ transformed parameters {
 
   // Update the rate calculations to include covariate effects
   patient_log_net_rate += patient_log_net_rate_linpred + trial_log_net_rate_effect[train_patient_trial] + patient_log_net_rate_effect;
-  // patient_log_rate_ratio = pop_log_rate_ratio + patient_log_rate_ratio_lp + patient_log_rate_ratio_effect;
+  
+  vector[n_train_patients] patient_log_growth_rate = patient_log_net_rate - log_diff_exp(patient_log_rate_ratio, zeros_vector(n_train_patients));
+  vector[n_train_patients] patient_log_decrease_rate = patient_log_growth_rate + patient_log_rate_ratio;
+  
+  vector[n_train_patients] patient_log_growth_lag_effect = zeros_vector(n_train_patients);
+  vector[n_train_patients] patient_log_growth_lag = rep_vector(pop_log_growth_lag, n_train_patients);
   
   if (!pop_growth_lag_param_only) {
     patient_log_growth_lag_effect = patient_log_growth_lag_sd * raw_patient_log_growth_lag;
     patient_log_growth_lag += patient_log_growth_lag_effect;
   }
   
-  vector[n_train_patients] patient_log_growth_rate = patient_log_net_rate - log_diff_exp(patient_log_rate_ratio, zeros_vector(n_train_patients));
-  vector[n_train_patients] patient_log_decrease_rate = patient_log_growth_rate + patient_log_rate_ratio;
- 
   vector[n_train_patients] patient_decrease_prop_logis_linpred = Q_covar_design_matrix * QR_pop_decrease_prop_logis_coef;
   vector[n_trials] trial_decrease_prop_logis = rep_vector(pop_decrease_prop_logis, n_trials);
   vector[n_trials] trial_decrease_prop_logis_effect = zeros_vector(n_trials);
-  vector[n_train_patients] patient_decrease_prop_logis = rep_vector(pop_decrease_prop_logis, n_train_patients);
+  vector[n_train_patients] patient_decrease_prop_logis = rep_vector(pop_decrease_prop_logis, n_train_patients) + patient_decrease_prop_logis_linpred; 
   vector[n_train_patients] patient_decrease_prop_logis_effect = zeros_vector(n_train_patients);
   
   if (!pop_initial_states_param_only ) {
@@ -270,8 +269,6 @@ transformed parameters {
     patient_decrease_prop_logis_effect = patient_decrease_prop_logis_sd * raw_patient_decrease_prop_logis; 
     patient_decrease_prop_logis += trial_decrease_prop_logis_effect[patient_trial[train_patients_pos:train_patients_end]] + patient_decrease_prop_logis_effect;
   } 
-  
-  patient_decrease_prop_logis += patient_decrease_prop_logis_linpred;
   
   vector[n_train_patients] patient_log_decrease_prop = -log1p_exp(- patient_decrease_prop_logis);
   vector[n_train_patients] patient_log_growth_prop = patient_log_decrease_prop - patient_decrease_prop_logis;
@@ -391,7 +388,7 @@ generated quantities {
                                                                   cond_spop_target_km_est, cond_spop_non_target_km_est, cond_spop_km_est, cond_spop_target_obs_cens_km_est;
    
   array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] forecast_target_pfs_n; //, forecast_pfs_n;
-  array[n_cond_group] vector<lower = 0, upper = 1>[n_pfs_timepoints] cond_forecast_target_pfs_n; //, forecast_pfs_n;
+  // array[n_cond_group] vector<lower = 0, upper = 1>[n_pfs_timepoints] cond_forecast_target_pfs_n; //, forecast_pfs_n;
     
   array[n_train_patients] int<lower = 0, upper = 1> forecast_confirmed_response;
   vector<lower = 0, upper = 1>[n_trials] forecast_target_orr;

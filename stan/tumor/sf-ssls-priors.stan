@@ -41,6 +41,7 @@ raw_patient_decrease_prop_logis ~ std_normal();
 
 // Priors for covariate effects using hyperparameters from data block
 QR_pop_log_net_rate_coef ~ normal(pop_log_net_rate_coef_mean, pop_log_net_rate_coef_sd);
+QR_pop_decrease_prop_logis_coef ~ normal(pop_log_net_rate_coef_mean, pop_log_net_rate_coef_sd);
 
 if (!pop_rates_param_only && add_trial_level_net_rate) {
   trial_log_net_rate_coef_sd ~ normal(0, trial_log_net_rate_coef_sd_sd);
