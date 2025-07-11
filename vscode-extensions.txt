@@ -13,8 +13,10 @@ ms-toolsai.jupyter-renderers
 ms-toolsai.vscode-jupyter-cell-tags
 ms-toolsai.vscode-jupyter-slideshow
 quarto.quarto
+rdebugger.r-debugger
 redhat.vscode-yaml
 reditorsupport.r
 reditorsupport.r-syntax
 spywhere.guides
+wardbrian.vscode-stan-extension
 yzhang.markdown-all-in-one
