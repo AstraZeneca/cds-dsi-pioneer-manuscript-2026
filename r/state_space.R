@@ -1,3 +1,5 @@
+# nolint start: object_usage_linte1r
+
 get_state_patients <- function(analysis_data, sample_size = 12, random = TRUE, by = NULL, cond = TRUE, slicer = if (random) slice_sample else slice_head) {
   analysis_data |> 
     mutate(i = seq(n()), selected = {{ cond }}) |> 
@@ -161,3 +163,5 @@ bin_point_intervals <- function(data, dist, breaks, ...) {
     bin_dist({{ dist }}, breaks = breaks) |> 
     point_interval({{ dist }}, ...)
 }
+
+# nolint end: object_usage_linter
