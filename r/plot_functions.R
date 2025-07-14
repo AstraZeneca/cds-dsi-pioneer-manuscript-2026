@@ -613,10 +613,10 @@ plot_prior_post_dens <- function(res_data, param = .value, normalize = "all") {
     NULL
 }
 
-plot_prior_post_hist <- function(res_data, param = .value, normalize = "all") {
+plot_prior_post_hist <- function(res_data, param = .value, normalize = "all", ...) {
   res_data |> 
     ggplot(aes(xdist = {{ param }}, color = fit_type)) +
-    stat_histinterval(aes(fill = fit_type), alpha = 0.25, normalize = normalize) +
+    stat_histinterval(aes(fill = fit_type), alpha = 0.25, normalize = normalize, ...) +
     # stat_pointinterval(position = position_dodge(width = 0.4, preserve = "single"), .width = c(0.5, 0.8, 0.99)) +
     # stat_spike(at = "median") +
     scale_fill_discrete("", type = AZ_palette, label = str_to_title, aesthetics = c("fill", "color")) +
@@ -635,12 +635,28 @@ plot_corr_decay <- function(res_data, param = .value) {
 
 # Distogram #######
 
-# Extend the existing StatLineribbon class
+# First, create a helper function for the row-adding adjustment
+# This ensures consistency between Stat and Geom implementations
+add_extra_visualization_row <- function(data) {
+  
+}
+
+bin_dist <- function(data, ..., breaks, add_right_boundary = TRUE) {
+  data |> 
+    reframe(
+      x = breaks[-length(breaks)], 
+      across(c(...), \(d) rvar_sample_hist(d, breaks))
+    ) %>%
+    bind_rows(if (add_right_boundary) filter(., x == nth(breaks, -2)) |> mutate(x = last(breaks)))
+}
+
+# StatDistogram implementation
 StatDistogram <- ggproto(
   "StatDistogram", ggdist:::StatLineribbon,
+  default_params = c(ggdist:::StatLineribbon$default_params, freq = TRUE),
   
   compute_panel = function(self, data, scales, orientation = "horizontal", ...) {
-    # Call parent method to handle panel processing
+    # Call parent method
     result <- ggproto_parent(ggdist:::StatLineribbon, self)$compute_panel(
       data, scales, orientation = orientation, ...
     )
@@ -648,41 +664,54 @@ StatDistogram <- ggproto(
     return(result)
   },
   
-  # Similarly with setup_params, we just forward to the parent
   setup_params = function(self, data, params) {
+    params <- ggproto_parent(ggdist:::StatLineribbon, self)$setup_params(data, params)
+    
     if (is_empty(params$breaks)) {
       params$breaks <- breaks_fixed(data$x, width = 30)
     }
     
-    params <- ggproto_parent(ggdist:::StatLineribbon, self)$setup_params(data, params)
+    if (is_null(params$freq) || inherits(params$freq, "waiver")) {
+      params$freq <- TRUE
+    }
     
     return(params)
   },
- 
+  
   setup_data = function(self, data, params) {
     data <- data |> 
-      group_by(group, PANEL) |> 
-      reframe(x = params$breaks[-length(params$breaks)], ydist = rvar_sample_hist(dist, params$breaks))  
+      group_by(across(!ydist)) |> 
+      reframe(
+        x = params$breaks[-length(params$breaks)], 
+        ydist = rvar_sample_hist(ydist, params$breaks, freq = params$freq)
+      ) %>%
+      bind_rows(filter(., x == nth(params$breaks, -2)) |> mutate(x = last(params$breaks)))
+      
     
-    # Call the parent's setup_data first
+    # Add the extra row before calling parent's setup_data
+    # data <- add_extra_visualization_row(data)
+    
+    # Call the parent's setup_data
     data <- ggproto_parent(ggdist:::StatLineribbon, self)$setup_data(data, params)
     
     return(data)
   } 
 )
 
-stat_distogram  <- function(mapping = NULL, data = NULL,
-                             geom = "lineribbon", position = "identity",
-                             ...,
-                             step = "hv",
-                             breaks = waiver(),
-                             .width = c(0.5, 0.8, 0.95),
-                             point_interval = "median_qi",
-                             orientation = NA,
-                             na.rm = FALSE,
-                             show.legend = NA,
-                             inherit.aes = TRUE) {
-  # Create a layer using our modified StatLineribbon2 class
+# stat_distogram function
+stat_distogram <- function(mapping = NULL, data = NULL,
+                           geom = "lineribbon",
+                           position = "identity",
+                           ...,
+                           step = "hv",
+                           breaks = waiver(),
+                           .width = c(0.5, 0.8, 0.95),
+                           point_interval = "median_qi",
+                           orientation = NA,
+                           na.rm = FALSE,
+                           show.legend = NA,
+                           inherit.aes = TRUE,
+                           freq = waiver()) {
   layer(
     stat = StatDistogram,
     data = data,
@@ -698,6 +727,7 @@ stat_distogram  <- function(mapping = NULL, data = NULL,
       point_interval = point_interval,
       orientation = orientation,
       na.rm = na.rm,
+      freq = freq,
       ...
     )
   )
