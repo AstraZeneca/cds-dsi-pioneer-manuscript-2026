@@ -266,7 +266,7 @@ generated quantities {
   
   vector<lower = 0, upper = 1>[max_t_width] all_growth_factor = get_growth_lag_factor(all_tumor_measure_t, exp(pop_log_growth_lag), exp(pop_log_growth_transition_rate));
   matrix[max_t_width, 2] all_scaled_process_sd = scale_process_sd(all_tumor_measure_t, pop_process_sd);
-  matrix[n_total_train_visits_m1, 2] obs_patient_process_noise;
+  matrix[n_total_train_visits_m1, 2] obs_patient_process_noise;arim/fix-states
   matrix[forecast ? n_total_train_forecast_visits : 0, 2] forecast_patient_process_noise;
   matrix[forecast ? n_total_train_forecast_visits : 0, 2] forecast_patient_states;
   vector[forecast ? n_total_train_forecast_visits : 0] forecast_patient_log_sld;
@@ -302,18 +302,7 @@ generated quantities {
     
     array[n_patient_forecast_visits[i] + 1] int forecast_time = linspaced_int_array(n_patient_forecast_visits[i] + 1, patient_last_obs_visit[i], last_predict_visit);
     
-    if (forecast && n_patient_forecast_visits[i] > 0) {
-      // assert_matching_states(
-      //   states[visit_pos:visit_end], 
-      //   [ patient_log_decrease_prop[train_idx], patient_log_growth_prop[train_idx] ],
-      //   get_int_sub_array(t_patient_visits, patient_visit_pos, i),
-      //   exp(patient_log_decrease_rate[train_idx]), exp(patient_log_growth_rate[train_idx]),
-      //   0.0001, // exp(patient_log_growth_lag[i]), 
-      //   0.0001, // exp(pop_log_growth_transition_rate),
-      //   rep_matrix(0, get_pos_size(train_patient_visit_m1_pos, train_idx), 2),
-      //   debug
-      // );
-      
+    if (forecast && n_patient_forecast_visits[i] > 0)
       forecast_patient_process_noise[forecast_visit_start:forecast_visit_end] = multi_normal_rng(
         obs_patient_process_noise[visit_m1_start:visit_m1_end],
         get_int_sub_array(t_patient_visits, patient_visit_pos, i)[2:],

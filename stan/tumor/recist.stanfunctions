@@ -15,9 +15,6 @@ array[] int calculate_target_recist(vector sld_trajectory) {
   int SD = 3;  // Stable Disease
   int PD = 4;  // Progressive Disease
   
-  // First time point is baseline, so it's SD by definition
-  // target_status[1] = SD;
-  
   // Calculate RECIST status for each subsequent time point based on targets only
   for (t in 2:n) {
     if (sld_trajectory[t] == 0) {
