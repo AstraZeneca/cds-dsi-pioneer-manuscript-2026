@@ -388,11 +388,14 @@ generated quantities {
                                                                   cond_spop_target_km_est, cond_spop_non_target_km_est, cond_spop_km_est, cond_spop_target_obs_cens_km_est;
    
   array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] forecast_target_pfs_n; //, forecast_pfs_n;
-  // array[n_cond_group] vector<lower = 0, upper = 1>[n_pfs_timepoints] cond_forecast_target_pfs_n; //, forecast_pfs_n;
+  array[n_cond_group] vector<lower = 0, upper = 1>[n_pfs_timepoints] cond_forecast_target_pfs_n; //, forecast_pfs_n;
     
   array[n_train_patients] int<lower = 0, upper = 1> forecast_confirmed_response;
   vector<lower = 0, upper = 1>[n_trials] forecast_target_orr;
   vector<lower = 0, upper = 1>[n_cond_group] cond_forecast_target_orr;
+
+  vector<lower = 0>[n_trials] trial_median_pfs = zeros_vector(n_trials);
+  vector<lower = 0>[n_cond_group] cond_median_pfs = zeros_vector(n_cond_group);
   
   {
     int right_censored_idx = 1;
@@ -549,11 +552,6 @@ generated quantities {
           append_array(right_censored[curr_uncensored_obs], get_int_sub_array(forecast_right_censored, train_trial_right_censored_pos, s)), 
           max_all_t).1; 
            
-        for (n in 1:n_pfs_timepoints) {
-          // forecast_target_pfs_n[s, n] = sample_km_est[s, months_to_weeks(pfs_timepoints[n])]; 
-          forecast_target_pfs_n[s, n] = calc_pfs_n(curr_sample_pfs, months_to_weeks(pfs_timepoints[n])); 
-        }
-                                             
         forecast_target_orr[s] = mean(get_int_sub_array(forecast_confirmed_response, train_trial_patient_pos, s));
         
         spop_target_km_est[s] = estimate_kaplan_meier(get_int_sub_array(spop_target_pfs, train_trial_patient_pos, s), 
@@ -566,11 +564,17 @@ generated quantities {
                                                
         spop_non_target_km_est[s] = estimate_kaplan_meier(get_int_sub_array(spop_non_target_pfs, train_trial_patient_pos, s), 
                                                get_int_sub_array(spop_non_target_right_censored, train_trial_patient_pos, s), 
-                                               max_all_t, 1).1; 
+                                               max_all_t, 0).1; 
         
         spop_km_est[s] = estimate_kaplan_meier(get_int_sub_array(spop_pfs, train_trial_patient_pos, s), 
                                                get_int_sub_array(spop_right_censored, train_trial_patient_pos, s), 
-                                               max_all_t, 0).1; 
+                                               max_all_t, 0).1;
+                                               
+        trial_median_pfs[s] = km_median(spop_target_km_est[s]).1;
+
+        for (n in 1:n_pfs_timepoints) {
+          forecast_target_pfs_n[s, n] = calc_km_pfs_n(spop_target_km_est[s], months_to_weeks(pfs_timepoints[n])); 
+        }
       } else {
         spop_target_km_est[s] = zeros_vector(max_all_t + 1);
         spop_target_obs_cens_km_est[s] = zeros_vector(max_all_t + 1);
@@ -595,11 +599,17 @@ generated quantities {
                                              
       cond_spop_non_target_km_est[c] = estimate_kaplan_meier(spop_non_target_pfs[curr_group_patients],
                                              spop_non_target_right_censored[curr_group_patients],
-                                             max_all_t, 1).1; 
+                                             max_all_t, 0).1; 
       
       cond_spop_km_est[c] = estimate_kaplan_meier(spop_pfs[curr_group_patients],
                                              spop_right_censored[curr_group_patients],
                                              max_all_t, 0).1; 
+
+      cond_median_pfs[c] = km_median(cond_spop_target_km_est[c]).1;
+
+      for (n in 1:n_pfs_timepoints) {
+        cond_forecast_target_pfs_n[c, n] = calc_km_pfs_n(cond_spop_target_km_est[c], months_to_weeks(pfs_timepoints[n])); 
+      }
     }
   }
   
