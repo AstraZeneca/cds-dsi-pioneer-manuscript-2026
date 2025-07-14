@@ -17,6 +17,10 @@ array[n_pop_unique_visits] int<lower = 1> pop_unique_visits_idx = id2idx(pop_uni
 int<lower = 0> n_pop_unique_missing_visits = calculate_n_missing_visits(pop_unique_visits, max(pop_unique_visits));
 array[n_pop_unique_missing_visits] int<lower = 1> pop_unique_missing_visits = get_missing_visits(pop_unique_visits, max(pop_unique_visits));
 
+int<lower = 1> last_predict_visit = max(pop_unique_visits);
+
+print("last_predict_visit = ", last_predict_visit);
+
 // Trial indices ////
 
 array[n_trials] int<lower = 0> n_trial_unique_visits = num_unique(t_patient_visits, trial_visit_pos);
@@ -47,9 +51,12 @@ array[sum(n_patient_unique_visits)] int<lower = 1, upper = max(n_trial_unique_vi
 array[n_patients] int<lower = 1> patient_max_unique_visits_idx = get_max_pos(patient_unique_visits_idx, patient_unique_visits_pos);
 array[n_patients + 1] int<lower = 1> patient_full_visits_pos = create_pos(patient_max_unique_visits_idx);
 
-array[n_patients] int<lower = 0> n_patient_unique_missing_visits = calculate_n_missing_visits(patient_unique_visits, patient_unique_visits_pos, max(pop_unique_visits));
+array[n_patients] int<lower = 0> n_patient_unique_missing_visits = calculate_n_missing_visits(patient_unique_visits, patient_unique_visits_pos, last_predict_visit);
 array[n_patients + 1] int<lower = 1> patient_unique_missing_visits_pos = create_pos(n_patient_unique_missing_visits); 
 array[sum(n_patient_unique_missing_visits)] int<lower = 1> patient_unique_missing_visits = get_missing_visits(patient_unique_visits, patient_unique_visits_pos, max(pop_unique_visits));
+
+array[n_patients] int<lower = 1> patient_last_obs_visit = get_max_pos(t_patient_visits, patient_visit_pos);
+array[n_patients] int<lower = 0, upper = last_predict_visit> n_patient_forecast_visits; 
   
 // Measured and non-measured SLD ////
 
@@ -68,6 +75,8 @@ patient_measured_tumor_visits_pos[1] = 1;
     (curr_patient_pos, curr_patient_end) = get_pos(trial_patient_pos, s);
     
     for (i in curr_patient_pos:curr_patient_end) {
+      n_patient_forecast_visits[i] = last_predict_visit - patient_last_obs_visit[i];
+      
       int curr_patient_visits_pos, curr_patient_visits_end;
       (curr_patient_visits_pos, curr_patient_visits_end) = get_pos(patient_visit_pos, i);
       
@@ -88,6 +97,8 @@ patient_measured_tumor_visits_pos[1] = 1;
     }
   }
 }
+
+array[n_patients + 1] int<lower = 1> forecast_visits_pos = create_pos(n_patient_forecast_visits);
 
 array[n_patients + 1] int<lower = 1> post_treat_visits_pos = create_pos(n_patient_post_treat_visits);
 
@@ -168,8 +179,6 @@ for (i in 1:n_patients) {
     }
   }
 }
-
-int<lower = 1> last_predict_visit = max(pop_unique_visits);
 
 // Array of measurement times used for GP modeling
 array[max_t_width] real all_tumor_measure_t = linspaced_array(max_t_width, 1, max_t_width);

@@ -13,7 +13,7 @@ sample_and_save <- function(model, ..., output_dir, output_basename, timestamp =
   
   if (!no_save && !timestamp) {
     # fit <- model$sample(..., output_dir = output_dir, output_basename = output_basename)
-    fit <- exec(model[[sampler_fun]], output_dir = output_dir, output_basename = output_basename, !!!list(...))
+    fit <- exec(model[[sampler_fun]], output_dir = output_dir, output_basename = output_basename, ...)
   } else { 
     # fit <- model$sample(...)
     fit <- exec(model[[sampler_fun]], !!!list(...))
@@ -79,9 +79,9 @@ add_pfs_crcr_priors <- function(stan_data, crcr_priors, tumor_priors, pfs_priors
 #'
 #' @return A numeric vector of counts for each histogram bin
 #'
-sample_hist <- function(pred, breaks, ...) {
+sample_hist <- function(pred, breaks, freq = TRUE,...) {
   # hist() is a base R function to generate histograms from data and provided breaks.
-  hist(pmax(pmin(pred, max(breaks)), min(breaks)), breaks = breaks, plot = FALSE, ...)$count
+  hist(pmax(pmin(pred, max(breaks)), min(breaks)), breaks = breaks, plot = FALSE, ...)[[if (freq) "counts" else "density"]]
 }
 
 # This function is used to treated_pfs_analysis_dataallow us to generate a distribution of histograms
@@ -224,3 +224,7 @@ lognormal_sd <- function(mu = 0, sigma) {
   
   sqrt((exp(sigma^2) - 1) * exp(2*mu + sigma^2))
 } 
+
+tar_bind_rows <- function(target_name, mapped, start, ...) {
+  tar_combine_raw(deparse(substitute(target_name)), tar_select_targets(mapped, starts_with(start)), command = expression(bind_rows(!!!.x)), ...)
+}

@@ -175,6 +175,44 @@ row_vector ncp_gp_matern52(array[] real x, real intercept, real alpha, real rho,
   return intercept + eta * L_K';
 }
 
+vector gp_conditional_mean(
+  vector mu_obs,             // Mean for the observed 
+  vector mu_pred,            // Mean for the predicted 
+  vector y_obs,              // Observations
+  matrix L_K_obs_obs,
+  matrix K_pred_obs         // Cross cov
+) {
+  int n_obs = size(mu_obs);
+  int n_pred = size(mu_pred);
+  
+  vector[n_obs] K_div_y_obs = mdivide_left_tri_low(L_K_obs_obs, y_obs - mu_obs); // inverse(tri(L_K)) * y
+  K_div_y_obs = mdivide_right_tri_low(K_div_y_obs', L_K_obs_obs)'; // (inverse(tri(L_K)) * y)' * inverse(L_K))'
+  
+  return mu_pred + K_pred_obs * K_div_y_obs;
+}
+
+vector gp_conditional_mean(
+  vector y_obs,              // Observations
+  matrix L_K_obs_obs,
+  matrix K_pred_obs         // Cross cov
+) {
+  return gp_conditional_mean(zeros_vector(rows(L_K_obs_obs)), zeros_vector(rows(K_pred_obs)), y_obs, L_K_obs_obs, K_pred_obs);
+}
+
+matrix gp_conditional_cov(
+  matrix L_K_obs_obs,
+  matrix K_pred_obs,         // Cross cov
+  matrix K_pred_pred,        // Cov between prediction points
+  real delta
+) {
+  int n_obs = rows(L_K_obs_obs);
+  int n_pred = rows(K_pred_pred);
+  
+  matrix[n_obs, n_pred] v_pred = mdivide_left_tri_low(L_K_obs_obs, K_pred_obs'); // inverse(L_K) * K(X,X*)
+  
+  return K_pred_pred - v_pred' * v_pred + diag_matrix(rep_vector(delta, n_pred));
+}
+
 tuple(vector, matrix) gp_conditional(
   vector mu_obs,             // Mean for the observed 
   vector mu_pred,            // Mean for the predicted 
@@ -188,21 +226,34 @@ tuple(vector, matrix) gp_conditional(
   int n_pred = size(mu_pred);
   
   matrix[n_obs, n_obs] L_K = cholesky_decompose(K_obs_obs);
-  vector[n_obs] K_div_y_obs = mdivide_left_tri_low(L_K, y_obs - mu_obs); // inverse(tri(L_K)) * y
+  
+  vector[n_pred] mu_cond = gp_conditional_mean(mu_obs, mu_pred, y_obs, L_K, K_pred_obs); 
+  matrix[n_pred, n_pred] K_pred_missing = gp_conditional_cov(L_K, K_pred_obs, K_pred_pred, delta); 
+  
+  // vector[n_obs] K_div_y_obs = mdivide_left_tri_low(L_K, y_obs - mu_obs); // inverse(tri(L_K)) * y
+  // K_div_y_obs = mdivide_right_tri_low(K_div_y_obs', L_K)'; // (inverse(tri(L_K)) * y)' * inverse(L_K))'
+  // matrix[n_obs, n_pred] v_pred = mdivide_left_tri_low(L_K, K_pred_obs'); // inverse(L_K) * K(X,X*)
 
-  K_div_y_obs = mdivide_right_tri_low(K_div_y_obs', L_K)'; // (inverse(tri(L_K)) * y)' * inverse(L_K))'
-
-  matrix[n_obs, n_pred] v_pred = mdivide_left_tri_low(L_K, K_pred_obs'); // inverse(L_K) * K(X,X*)
-
-// Just walking through these calculations to ensure it's doing the right thing.
+  // Just walking through these calculations to ensure it's doing the right thing.
   // N(mu_pred + K(X,X*)' * (inverse(tri(L_K)) * (y - mu_obs))' * inverse(L_K))', K(X*,X*) - (inverse(L_K) * K(X,X*))' * inverse(L_K) * K(X,X*))
   // N(mu_pred + K(X*,X) * inverse(L_K)' * inverse(L_K) * y, K(X*,X*) - K(X,X*)' * inverse(L_K)' * inverse(L_K) * K(X,X*))
-// N(mu_pred + K(X*,X) * inverse(L_K'L_K) * y, K(X*,X*) - K(X*,X) * inverse(L_K'L_K) * K(X,X*))
-// N(mu_pred + K(X*,X) * inverse(K(X,X)) * y, K(X*,X*) - K(X*,X) * inverse(K(X,X)) * K(X,X*)) <-- Correct!
-  vector[n_pred] mu_cond = mu_pred + K_pred_obs * K_div_y_obs;
-  matrix[n_pred, n_pred] K_pred_missing = K_pred_pred - v_pred' * v_pred + diag_matrix(rep_vector(delta, n_pred));
+  // N(mu_pred + K(X*,X) * inverse(L_K'L_K) * y, K(X*,X*) - K(X*,X) * inverse(L_K'L_K) * K(X,X*))
+  // N(mu_pred + K(X*,X) * inverse(K(X,X)) * y, K(X*,X*) - K(X*,X) * inverse(K(X,X)) * K(X,X*)) <-- Correct!
+
+  // vector[n_pred] mu_cond = mu_pred + K_pred_obs * K_div_y_obs;
+  // matrix[n_pred, n_pred] K_pred_missing = K_pred_pred - v_pred' * v_pred + diag_matrix(rep_vector(delta, n_pred));
  
   return(mu_cond, K_pred_missing); 
+}
+
+tuple(vector, matrix) gp_conditional(
+  vector y_obs,              // Observations
+  matrix K_obs_obs,          // Cov between observed points
+  matrix K_pred_obs,         // Cross cov
+  matrix K_pred_pred,        // Cov between prediction points
+  real delta
+) {
+  return gp_conditional(zeros_vector(rows(K_obs_obs)), zeros_vector(rows(K_pred_pred)), y_obs, K_obs_obs, K_pred_obs, K_pred_pred, delta);
 }
 
 /** This is the calculation needed to extrapolate a GP that is fit using observed y and x. We are predicting for x*.
