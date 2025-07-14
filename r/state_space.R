@@ -11,7 +11,6 @@ get_state_patients <- function(analysis_data, sample_size = 12, random = TRUE) {
       if (random) sample_n(., sample_size) else slice(., seq(sample_size))
     } |> 
     unnest(visit_data)  
-}
 
 add_states_sum <- function(states_data, states_col) {
   states_data |> 
@@ -19,6 +18,7 @@ add_states_sum <- function(states_data, states_col) {
     summarize(across(ends_with("states"), rvar_sum), .groups = "drop") |> 
     mutate(p = factor(3, levels = 1:3, labels = c("regress", "grow", "sum"))) |> 
     bind_rows(states_data) 
+
 }
 
 get_obs_state_var <- function(res, patient_states_data, var, drop_initial = FALSE, transform = identity) {

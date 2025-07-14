@@ -455,7 +455,7 @@ vector calc_patient_states(vector phi, vector theta, data array[] real x_r, data
   
   // Extract initial state
   row_vector[2] initial_state = get_sub_row_vector(theta, theta_pos, 5);
- 
+
   vector[4] rates = get_sub_vector(theta, theta_pos, 6); 
   // Extract rates and other parameters
   real decrease_rate = rates[1];
