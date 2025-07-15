@@ -19,25 +19,25 @@ library(testthat)
 test_stan_function <- function(stan_file, data, ...) {
   # Convert to absolute path if needed
   if (!file.exists(stan_file)) {
-    # Try with here::here() to get absolute path
     stan_file <- here::here(stan_file)
   }
-  
-  # Compile the Stan model
-  mod <- cmdstan_model(stan_file, quiet = TRUE)
-  
-  # Run the model (just for generated quantities)
+  # Always force recompilation to ensure includes are up to date
+  mod <- cmdstan_model(
+    stan_file,
+    include_paths = here::here("stan"),
+    quiet = FALSE,
+    force_recompile = TRUE
+  )
   fit <- mod$sample(
     data = data,
     chains = 1,
     iter_sampling = 1,
     iter_warmup = 0,
-    fixed_param = TRUE,  # Since we're only testing functions
+    fixed_param = TRUE,
     show_messages = FALSE,
     refresh = 0,
     ...
   )
-  
   return(fit)
 }
 
