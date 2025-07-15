@@ -27,46 +27,27 @@
  */
 array[] int calculate_target_recist(vector sld_trajectory, real pre_nadir, int n_screening) {
   int n = rows(sld_trajectory);
-  
   assert_greater_than_or_equal(n, n_screening);
-  
   int n_treat = n - n_screening;
   array[n_treat] int target_status;
   real baseline = sld_trajectory[n_screening];
-  real nadir = pre_nadir;  // Track the smallest sum achieved
-  
-  // Define RECIST categories as integers
-  int CR = 1;  // Complete Response
-  int PR = 2;  // Partial Response  
-  int SD = 3;  // Stable Disease
-  int PD = 4;  // Progressive Disease
-  
-  // Calculate RECIST status for each subsequent time point
+  real nadir = pre_nadir <= 0 ? baseline : pre_nadir;
+  int CR = 1;
+  int PR = 2;
+  int SD = 3;
+  int PD = 4;
   for (t in (n_screening + 1):n) {
-    // Update nadir if current measurement is smaller
-    nadir = min([nadir, sld_trajectory[t]]);
-    
+    nadir = fmin(nadir, sld_trajectory[t]);
     if (sld_trajectory[t] == 0) {
       target_status[t - n_screening] = CR;
+    } else if (nadir > 0 && sld_trajectory[t] > nadir && (sld_trajectory[t] - nadir) / nadir >= 0.2 && (sld_trajectory[t] - nadir) >= 5) {
+      target_status[t - n_screening] = PD;
+    } else if ((sld_trajectory[t] - baseline) / baseline <= -0.3) {
+      target_status[t - n_screening] = PR;
     } else {
-      real baseline_ratio = sld_trajectory[t] / baseline;
-      real nadir_ratio = sld_trajectory[t] / nadir;
-      
-      // PD: ≥20% increase from nadir AND ≥5mm absolute increase
-      if (nadir_ratio >= 1.2 && (sld_trajectory[t] - nadir) >= 5) {
-        target_status[t - n_screening] = PD;
-      } 
-      // PR: ≥30% decrease from baseline
-      else if (baseline_ratio <= 0.7) {
-        target_status[t - n_screening] = PR;
-      } 
-      // SD: Neither PR nor PD criteria met
-      else {
-        target_status[t - n_screening] = SD;
-      }
+      target_status[t - n_screening] = SD;
     }
   }
-  
   return target_status;
 }
 
