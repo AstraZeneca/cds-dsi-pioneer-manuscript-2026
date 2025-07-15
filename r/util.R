@@ -309,34 +309,31 @@ determine_recist_response <- function(baseline_sld, current_sld, nadir_sld = NUL
   if (!is.na(non_target_response) && !non_target_response %in% c("CR", "NON-CR/NON-PD", "PD", "NE")) {
     stop("non_target_response must be 'CR', 'NON-CR/NON-PD', 'PD', or NA, got: ", non_target_response)
   }
-  
+
   # If nadir sum not provided, use baseline as nadir
   if (is_null(nadir_sld)) {
     nadir_sld <- min(baseline_sld, current_sld)
   } else {
     nadir_sld <- min(nadir_sld, current_sld)  # Update nadir if current sum is smaller
   }
-  
-  # Calculate changes
+
   change_from_baseline <- (current_sld - baseline_sld) / baseline_sld
   absolute_diff_from_nadir <- current_sld - nadir_sld
-  change_from_nadir <- absolute_diff_from_nadir / nadir_sld
-  
-  # Define progression for target lesions (≥20% increase from nadir AND ≥5mm absolute increase)
-  target_progression <- current_sld > nadir_sld && change_from_nadir >= 0.2 && absolute_diff_from_nadir >= 5 
-  
-  # If considering only target lesions
+  change_from_nadir <- ifelse(nadir_sld > 0, absolute_diff_from_nadir / nadir_sld, NA)
+
+  # RECIST 1.1: Order of checks: CR, PD, PR, SD
   if (!include_non_target && !new_lesions) {
     case_when(
       current_sld == 0 ~ "CR",
+      # PD: ≥20% increase from nadir AND ≥5mm absolute increase
+      nadir_sld > 0 & current_sld > nadir_sld & change_from_nadir >= 0.2 & absolute_diff_from_nadir >= 5 ~ "PD",
       change_from_baseline <= -0.3 ~ "PR",
-      target_progression ~ "PD",
       .default = "SD"
     )
   } else {
     case_when(
       # If including non-target lesions or new lesions
-      target_progression || (!is.na(non_target_response) && non_target_response == "PD") || new_lesions ~ "PD",
+      (nadir_sld > 0 & current_sld > nadir_sld & change_from_nadir >= 0.2 & absolute_diff_from_nadir >= 5) || (!is.na(non_target_response) && non_target_response == "PD") || new_lesions ~ "PD",
       current_sld == 0 && (non_target_response == "CR" || is.na(non_target_response)) ~ "CR",
       change_from_baseline <= -0.3 ~ "PR",
       .default = "SD"
