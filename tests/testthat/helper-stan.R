@@ -34,7 +34,7 @@ test_stan_function <- function(stan_file, data, ...) {
     iter_sampling = 1,
     iter_warmup = 0,
     fixed_param = TRUE,
-    show_messages = FALSE,
+   show_messages = TRUE,
     refresh = 0,
     ...
   )
