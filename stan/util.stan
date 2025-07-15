@@ -118,24 +118,6 @@ array[] int calculate_n_missing_visits(array[] int unique_visits, array[] int un
     n_unique_missing_visits[p] = n_full - get_pos_size(unique_visits_pos, p);
   }
   
-  // array[sum(n_unique_missing_visits)] int unique_missing_visits;
-  // int curr_missing_idx = 1;
- 
-  // for (p in 1:n) { 
-  //   array[n_unique_visits[p]] int curr_unique_visits = sort_asc(get_int_sub_array(unique_visits, unique_visits_pos, p));
-  //   int curr_unique_visit_idx = 1;
-  //   
-  //   for (q in 1:n_full) {
-  //     if (q < curr_unique_visits[curr_unique_visit_idx]) {
-  //       n_unique_missing_visits[p] += 1;
-  //       // unique_missing_visits[curr_missing_idx] = q;
-  //       // curr_missing_idx += 1;
-  //     } else {
-  //       curr_unique_visit_idx += 1;
-  //     }
-  //   }
-  // }
-  
   return n_unique_missing_visits;
 }
 
