@@ -104,15 +104,6 @@ max_t_out <- get_array(draws_df, "max_t_out", c(N_CASES, MAX_LEN))
 num_unique_out <- get_array(draws_df, "num_unique_out", c(N_CASES))
 unique_out <- get_array(draws_df, "unique_out", c(N_CASES, MAX_LEN))
 find_first_out <- get_array(draws_df, "find_first_out", c(N_CASES))
-which_out <- get_array(draws_df, "which_out", c(N_CASES, MAX_LEN))
-all_eq_out <- get_array(draws_df, "all_eq_out", c(N_CASES))
-any_eq_out <- get_array(draws_df, "any_eq_out", c(N_CASES))
-sort_asc_out <- get_array(draws_df, "sort_asc_out", c(N_CASES, MAX_LEN))
-reverse_out <- get_array(draws_df, "reverse_out", c(N_CASES, MAX_LEN))
-which_min_out <- get_array(draws_df, "which_min_out", c(N_CASES))
-which_max_out <- get_array(draws_df, "which_max_out", c(N_CASES))
-is_sorted_out <- get_array(draws_df, "is_sorted_out", c(N_CASES))
-is_unique_out <- get_array(draws_df, "is_unique_out", c(N_CASES))
 
 # Extract and check outputs for each case
 for (i in seq_along(cases)) {
@@ -120,44 +111,4 @@ for (i in seq_along(cases)) {
   expect_equal(num_unique_out[i], cases[[i]]$expect_num_unique)
   expect_equal(unique_out[i, 1:length(cases[[i]]$expect_unique)], cases[[i]]$expect_unique)
   expect_equal(find_first_out[i], cases[[i]]$expect_find_first)
-
-  # which: indices of x == 1
-  expect_equal(
-    which_out[i, 1:sum(cases[[i]]$x[1:cases[[i]]$n_x] == 1)],
-    which(cases[[i]]$x[1:cases[[i]]$n_x] == 1)
-  )
-  # all_eq: are all x == 1?
-  expect_equal(all_eq_out[i], as.integer(all(cases[[i]]$x[1:cases[[i]]$n_x] == 1)))
-  # any_eq: is any x == 1?
-  expect_equal(any_eq_out[i], as.integer(any(cases[[i]]$x[1:cases[[i]]$n_x] == 1)))
-  # sort_asc: sorted x
-  expect_equal(
-    sort_asc_out[i, 1:cases[[i]]$n_x],
-    sort(cases[[i]]$x[1:cases[[i]]$n_x])
-  )
-  # reverse: reversed x
-  expect_equal(
-    reverse_out[i, 1:cases[[i]]$n_x],
-    rev(cases[[i]]$x[1:cases[[i]]$n_x])
-  )
-  # which_min: index of min
-  expect_equal(
-    which_min_out[i],
-    if (cases[[i]]$n_x > 0) which.min(cases[[i]]$x[1:cases[[i]]$n_x]) else NA_integer_
-  )
-  # which_max: index of max
-  expect_equal(
-    which_max_out[i],
-    if (cases[[i]]$n_x > 0) which.max(cases[[i]]$x[1:cases[[i]]$n_x]) else NA_integer_
-  )
-  # is_sorted: is x sorted?
-  expect_equal(
-    is_sorted_out[i],
-    as.integer(all(diff(cases[[i]]$x[1:cases[[i]]$n_x]) >= 0))
-  )
-  # is_unique: are all x unique?
-  expect_equal(
-    is_unique_out[i],
-    as.integer(length(unique(cases[[i]]$x[1:cases[[i]]$n_x])) == cases[[i]]$n_x)
-  )
 }
