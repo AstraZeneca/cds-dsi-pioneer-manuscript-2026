@@ -30,7 +30,12 @@ tuple(array[] int, array[] int, array[] int) cutoff_visits(
     int visit_start, visit_end;
     (visit_start, visit_end) = get_pos(patient_visit_pos, i);
     int n_patient_visits = visit_end - visit_start + 1;
-    
+    if (n_patient_visits <= 0) {
+      last_visit_day[i] = 0;
+      last_visit_week[i] = 0;
+      last_visit_calendar_day[i] = 0;
+      continue;
+    }
     // Convert global cutoff to patient-specific study day
     int patient_cutoff_study_day = calendar_date_to_study_date(patient_calendar_day[i], cutoff_calendar_day);
     
