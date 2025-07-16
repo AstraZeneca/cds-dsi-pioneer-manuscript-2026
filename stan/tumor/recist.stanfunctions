@@ -6,7 +6,7 @@
  */
 array[] int calculate_target_recist(vector sld_trajectory) {
   int n = rows(sld_trajectory);
-  array[n] int target_status;
+  array[n - 1] int target_status;
   real baseline = sld_trajectory[1];
   
   // Define RECIST categories as integers
@@ -15,22 +15,19 @@ array[] int calculate_target_recist(vector sld_trajectory) {
   int SD = 3;  // Stable Disease
   int PD = 4;  // Progressive Disease
   
-  // First time point is baseline, so it's SD by definition
-  target_status[1] = SD;
-  
   // Calculate RECIST status for each subsequent time point based on targets only
   for (t in 2:n) {
     if (sld_trajectory[t] == 0) {
-      target_status[t] = CR;
+      target_status[t - 1] = CR;
     } else {
       real ratio = sld_trajectory[t] / baseline;
       
       if (ratio >= 1.2) {
-        target_status[t] = PD;
+        target_status[t - 1] = PD;
       } else if (ratio <= 0.7) {
-        target_status[t] = PR;
+        target_status[t - 1] = PR;
       } else {
-        target_status[t] = SD;
+        target_status[t - 1] = SD;
       }
     }
   }
@@ -48,7 +45,7 @@ array[] int calculate_target_recist(vector sld_trajectory) {
  */
 array[] int calculate_recist(vector sld_trajectory, array[] int new_lesions, array[] int non_target_status) {
   int n = rows(sld_trajectory);
-  array[n] int recist_status;
+  array[n - 1] int recist_status;
   
   // Define RECIST categories as integers
   int CR = 1;  // Complete Response
@@ -62,10 +59,10 @@ array[] int calculate_recist(vector sld_trajectory, array[] int new_lesions, arr
   int NT_PD = 3;
   
   // First get target-only RECIST status
-  array[n] int target_status = calculate_target_recist(sld_trajectory);
+  array[n - 1] int target_status = calculate_target_recist(sld_trajectory);
   
   // Then combine with non-target and new lesion information
-  for (t in 1:n) {
+  for (t in 1:(n - 1)) {
     // Check for progression criteria first
     if (new_lesions[t] == 1 || non_target_status[t] == NT_PD || target_status[t] == PD) {
       recist_status[t] = PD;

@@ -65,7 +65,17 @@ transformed data {
   array[n_patients + 1] int<lower = 1> patient_visit_m1_pos = create_pos(n_patient_visits, -1);
   
   int<lower = 1> n_train_patients = train_patients_end - train_patients_pos + 1;
-  int<lower = 1> n_total_train_visits_m1 = sum(n_patient_visits[train_patients_pos:train_patients_end]) - n_train_patients;
+  array[n_train_patients] int<lower = 0> n_train_patient_visits = n_patient_visits[train_patients_pos:train_patients_end];
+  int<lower = 1> n_total_train_visits = sum(n_train_patient_visits);
+  int<lower = 1> n_total_train_visits_m1 = n_total_train_visits - n_train_patients;
+  
+  array[n_total_train_visits] int train_patient_visits = get_int_sub_array(t_patient_visits, patient_visit_pos, train_patients_pos, train_patients_end);
+  
+  array[n_train_patients + 1] int<lower = 1> train_patient_visit_pos = create_pos(n_train_patient_visits);
+  array[n_train_patients + 1] int<lower = 1> train_patient_visit_m1_pos = create_pos(n_train_patient_visits, -1);
+  array[n_train_patients + 1] int<lower = 1> train_forecast_visits_pos = create_pos(n_patient_forecast_visits[train_patients_pos:train_patients_end]);
+  
+  int<lower = 1> n_total_train_forecast_visits = get_pos_total_size(train_forecast_visits_pos);
   
   real log_lod = log(0.1);
   
@@ -182,7 +192,8 @@ transformed parameters {
       append_col(patient_log_decrease_prop, patient_log_growth_prop),
       exp(patient_log_decrease_rate), exp(patient_log_growth_rate),
       exp(patient_log_growth_lag), exp(pop_log_growth_transition_rate),
-      run_parallel
+      run_parallel && !debug,
+      debug
     ); 
   }
 }
@@ -225,25 +236,26 @@ model {
   
   profile("loglik") { 
     if (fit_tumor_data) { 
-      // for (i in 1:n_patients) {
       for (i in train_patients_pos:train_patients_end) {
+        int train_idx = i - train_patients_pos + 1;
+        
+        int train_visit_start, train_visit_end;
+        (train_visit_start, train_visit_end) = get_pos(train_patient_visit_pos, train_idx);
+        
         int visit_pos, visit_end;
         (visit_pos, visit_end) = get_pos(patient_visit_pos, i);
         
-        normalized_sld[visit_pos:visit_end] ~ sf_log_space_obs(states[visit_pos:visit_end], measure_sd, log_lod - log(sum_tumor_size[visit_pos]));
-    
-        if (debug) {    
-          print(i, ": normalized_sld = ", normalized_sld[visit_pos:visit_end], ", exp(states) = ", exp(states));
-        }
+        normalized_sld[visit_pos:visit_end] ~ sf_log_space_obs(states[train_visit_start:train_visit_end], measure_sd, log_lod - log(sum_tumor_size[visit_pos]));
       }
     }
   }
 }
 
 generated quantities {
-  vector[n_train_patients] patient_log_growth_rate_residual = patient_log_growth_rate - (pop_log_net_rate - log_diff_exp(pop_log_rate_ratio, 0));
   real pop_log_growth_rate = pop_log_net_rate - log_diff_exp(pop_log_rate_ratio, 0);
-  vector[n_train_patients] patient_log_decrease_rate_residual = patient_log_decrease_rate - (pop_log_growth_rate + pop_log_rate_ratio);
+  vector[n_train_patients] patient_log_growth_rate_residual = patient_log_growth_rate - pop_log_growth_rate;
+  real pop_log_decrease_rate = (pop_log_growth_rate + pop_log_rate_ratio);
+  vector[n_train_patients] patient_log_decrease_rate_residual = patient_log_decrease_rate - pop_log_growth_rate;
   vector[n_train_patients] patient_decrease_prop_residual = inv_logit(patient_decrease_prop_logis) - inv_logit(pop_decrease_prop_logis);
   
   corr_matrix[independ_cross_process_noise ? 0 : 2] process_corr;
@@ -254,18 +266,34 @@ generated quantities {
   
   vector<lower = 0, upper = 1>[max_t_width] all_growth_factor = get_growth_lag_factor(all_tumor_measure_t, exp(pop_log_growth_lag), exp(pop_log_growth_transition_rate));
   matrix[max_t_width, 2] all_scaled_process_sd = scale_process_sd(all_tumor_measure_t, pop_process_sd);
-  matrix[n_total_train_visits_m1, 2] obs_patient_process_noise;
-  matrix[forecast ? get_pos_total_size(forecast_visits_pos) : 0, 2] forecast_patient_process_noise;
-  matrix[forecast ? get_pos_total_size(forecast_visits_pos) : 0, 2] forecast_patient_states;
-  array[forecast ? get_pos_total_size(forecast_visits_pos) : 0] real forecast_patient_log_sld;
-  array[forecast ? get_pos_total_size(forecast_visits_pos) : 0] int<lower = CR, upper = PD> forecast_recist;
+  matrix[n_total_train_visits_m1, 2] obs_patient_process_noise;arim/fix-states
+  matrix[forecast ? n_total_train_forecast_visits : 0, 2] forecast_patient_process_noise;
+  matrix[forecast ? n_total_train_forecast_visits : 0, 2] forecast_patient_states;
+  vector[forecast ? n_total_train_forecast_visits : 0] forecast_patient_log_sld;
+  array[forecast ? n_total_train_forecast_visits : 0] int<lower = CR, upper = PD> forecast_recist;
   
   for (i in train_patients_pos:train_patients_end) {
+    int train_idx = i - train_patients_pos + 1;
+
+    int train_visit_start, train_visit_end;
+    (train_visit_start, train_visit_end) = get_pos(train_patient_visit_pos, train_idx);
+
+    int train_visit_m1_start, train_visit_m1_end;
+    (train_visit_m1_start, train_visit_m1_end) = get_pos(train_patient_visit_m1_pos, train_idx);
+    int train_visit_m1_size = train_visit_m1_end - train_visit_m1_start + 1;
+
+    int train_forecast_visit_start, train_forecast_visit_end;
+    (train_forecast_visit_start, train_forecast_visit_end) = get_pos(train_forecast_visits_pos, train_idx);
+
+    int visit_pos, visit_end;
+    (visit_pos, visit_end) = get_pos(patient_visit_pos, i);
+    
     int visit_m1_start, visit_m1_end;
     (visit_m1_start, visit_m1_end) = get_pos(patient_visit_m1_pos, i);
     
     int forecast_visit_start, forecast_visit_end;
     (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
+    int forecast_size = forecast_visit_end - forecast_visit_start + 1; 
     
     obs_patient_process_noise[visit_m1_start:visit_m1_end] = calc_patient_process_noise(
       raw_patient_process_noise[visit_m1_start:visit_m1_end], get_int_sub_array(t_patient_visits, patient_visit_pos, i), patient_tumor_gp_rho[i], delta, pop_process_sd, L_process_corr,
@@ -274,10 +302,7 @@ generated quantities {
     
     array[n_patient_forecast_visits[i] + 1] int forecast_time = linspaced_int_array(n_patient_forecast_visits[i] + 1, patient_last_obs_visit[i], last_predict_visit);
     
-    if (forecast && n_patient_forecast_visits[i] > 0) {
-      int visit_pos, visit_end;
-      (visit_pos, visit_end) = get_pos(patient_visit_pos, i);
-      
+    if (forecast && n_patient_forecast_visits[i] > 0)
       forecast_patient_process_noise[forecast_visit_start:forecast_visit_end] = multi_normal_rng(
         obs_patient_process_noise[visit_m1_start:visit_m1_end],
         get_int_sub_array(t_patient_visits, patient_visit_pos, i)[2:],
@@ -297,15 +322,17 @@ generated quantities {
       ).2[2:];
     
       forecast_patient_log_sld[forecast_visit_start:forecast_visit_end] = 
-      normal_rng(
-        log_sum_exp(
+      to_vector(normal_rng(
+        to_vector(log_sum_exp(
           forecast_patient_states[forecast_visit_start:forecast_visit_end, 1], forecast_patient_states[forecast_visit_start:forecast_visit_end, 2]
-        ),
-        measure_sd
-      ) + log(sum_tumor_size[visit_pos]);
+        )) + log(sum_tumor_size[visit_pos]),
+        rep_vector(measure_sd, forecast_size)
+      ));
       
       forecast_recist[forecast_visit_start:forecast_visit_end] = calculate_target_recist(
         append_row(sum_tumor_size[visit_pos], exp(forecast_patient_log_sld[forecast_visit_start:forecast_visit_end]))
       );
     }
+  }
 }
+
