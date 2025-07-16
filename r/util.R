@@ -228,3 +228,18 @@ lognormal_sd <- function(mu = 0, sigma) {
 tar_bind_rows <- function(target_name, mapped, start, ...) {
   tar_combine_raw(deparse(substitute(target_name)), tar_select_targets(mapped, starts_with(start)), command = expression(bind_rows(!!!.x)), ...)
 }
+
+rvar_safe_qs2_format <- tar_format(
+  read = \(path) qs2::qs_read(path),
+  marshal = \(object) object, 
+  unmarshal = \(object) object, 
+  
+  write = function(object, path) {
+    if (tibble::is_tibble(object)) {
+      object <- dplyr::mutate(object, across(where(posterior::is_rvar), posterior:::invalidate_rvar_cache))
+    }
+    
+    qs2::qs_save(object, path)
+  },
+)
+

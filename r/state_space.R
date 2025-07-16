@@ -4,26 +4,13 @@ get_state_patients <- function(analysis_data, sample_size = 12, random = TRUE) {
     unnest(visit_data) |> 
     mutate(n = seq(n())) |> 
     nest(visit_data = !c(usubjid, patient_max_t)) |> 
-    mutate(i = seq(n())) %>% {  
+    mutate(
+      i = seq(n()),
+      base_sld = map_dbl(visit_data, \(v) first(v$mmsumdiam))
+    ) %>% {  
       if (random) sample_n(., sample_size) else slice(., seq(sample_size))
     } |> 
     unnest(visit_data)  
-
-get_states <- function(res, patient_states_data) {
-  states_data <- spread_rvars(res, states[n, p]) |> 
-    right_join(
-      patient_states_data |> 
-        group_by(i) |> 
-        filter(min_rank(ady) > 1) |> 
-        mutate(n = n - first(i)) |> 
-        ungroup(), 
-      by = "n"
-    ) |> 
-    mutate(states = exp(states)) |> 
-    group_by(usubjid) |> 
-    mutate(states = states * first(mmsumdiam)) |> 
-    ungroup()
-}
 
 add_states_sum <- function(states_data, states_col) {
   states_data |> 
@@ -31,22 +18,24 @@ add_states_sum <- function(states_data, states_col) {
     summarize(across(ends_with("states"), rvar_sum), .groups = "drop") |> 
     mutate(p = factor(3, levels = 1:3, labels = c("regress", "grow", "sum"))) |> 
     bind_rows(states_data) 
+
 }
 
-get_obs_state_var <- function(res, patient_states_data, var, transform = identity) {
+get_obs_state_var <- function(res, patient_states_data, var, drop_initial = FALSE, transform = identity) {
   var_expr <- expr({{ var }}[n,p])
   
+  if (drop_initial) {
+      patient_states_data <- patient_states_data |> 
+        group_by(i) |>
+        filter(min_rank(ady) > 1) |>
+        mutate(n = n - first(i)) |>
+        ungroup()
+  }
+  
   noise_data <- spread_rvars(res, !!var_expr) |> 
-    inner_join(
-      patient_states_data |> 
-        group_by(i) |> 
-        filter(min_rank(ady) > 1) |> 
-        mutate(n = n - first(i)) |> 
-        ungroup(), 
-      by = "n"
-    ) |>
+    inner_join(patient_states_data, by = "n") |>
     mutate(
-      {{ var }} := transform({{ var }})[1:n()],
+      {{ var }} := transform({{ var }}),
       p = factor(p, levels = 1:3, labels = c("regress", "grow", "sum"))
     )
   
@@ -55,14 +44,11 @@ get_obs_state_var <- function(res, patient_states_data, var, transform = identit
 
 get_states <- function(res, patient_states_data) {
   get_obs_state_var(res, patient_states_data, states, transform = exp) |> 
-    # group_by(usubjid) |> 
-    # mutate(states = states * first(mmsumdiam)) |> 
-    # ungroup() |> 
     add_states_sum(states)
 }
 
 get_process_noise <- function(res, patient_states_data) {
-  get_obs_state_var(res, patient_states_data, obs_patient_process_noise)
+  get_obs_state_var(res, patient_states_data, obs_patient_process_noise, drop_initial = TRUE)
 }
 
 get_subsample_forecast_data <- function(patient_states_data, analysis_data) {
@@ -99,57 +85,6 @@ get_forecast_states <- function(res, patient_states_data, analysis_data) {
 
 get_forecast_process_noise <- function(res, patient_states_data, analysis_data, ndraws = NULL) {
   get_forecast_state_var(res, patient_states_data, analysis_data, forecast_patient_process_noise, ndraws = ndraws) 
-}
-
-
-bin_point_intervals <- function(data, dist, breaks, ...) {
-  data |> 
-    bin_dist({{ dist }}, breaks = breaks) |> 
-    point_interval({{ dist }}, ...)
-}
-
-get_process_noise <- function(res, patient_states_data) {
-  noise_data <- spread_rvars(res, obs_patient_process_noise[n, p]) |> 
-    inner_join(
-      # mutate(patient_states_data, n = n - 1), 
-      patient_states_data |> 
-        group_by(i) |> 
-        filter(min_rank(ady) > 1) |> 
-        mutate(n = n - first(i)) |> 
-        ungroup(), 
-      by = "n"
-    ) 
-  
-  noise_data |> 
-    group_by(across(!c(p, obs_patient_process_noise))) |> 
-    summarize(across(ends_with("noise"), rvar_sum), .groups = "drop") |> 
-    mutate(p = 3) |> 
-    bind_rows(noise_data) |> 
-    mutate(p = factor(p, levels = 1:3, labels = c("regress", "grow", "sum")))
-
-}
-
-get_forecast_process_noise <- function(res, patient_states_data, analysis_data) {
-  overall_max_t <- max(analysis_data$patient_max_t)
-  
-  subsample_forecast_data <- analysis_data |> 
-    mutate(i = seq(n())) |> 
-    mutate(n_forecast_visits = overall_max_t - patient_max_t) |> 
-    filter(n_forecast_visits > 0) |> 
-    rowwise() |> 
-    reframe(i, usubjid, patient_max_t, n_forecast_visits, week = seq(patient_max_t + 1, overall_max_t)) |> 
-    mutate(n = seq(n())) |> 
-    semi_join(patient_states_data, by = "usubjid") 
-  
-  noise_data <- spread_rvars(res, forecast_patient_process_noise[n, p]) |> 
-    inner_join(subsample_forecast_data, by = "n")
-  
-  noise_data |>
-    group_by(across(!c(p, forecast_patient_process_noise))) |> 
-    summarize(across(ends_with("noise"), rvar_sum), .groups = "drop") |> 
-    mutate(p = 3) |> 
-    bind_rows(noise_data) |> 
-    mutate(p = factor(p, levels = 1:3, labels = c("regress", "grow", "sum")))
 }
 
 bin_point_intervals <- function(data, dist, breaks, ...) {
