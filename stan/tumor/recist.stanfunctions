@@ -25,49 +25,34 @@
  * @param sld_trajectory Vector of sum of longest diameters over time
  * @return Array of target-only RECIST status (1=CR, 2=PR, 3=SD, 4=PD)
  */
-array[] int calculate_target_recist(vector sld_trajectory, real pre_nadir) {
+array[] int calculate_target_recist(vector sld_trajectory, real pre_nadir, int n_screening) {
   int n = rows(sld_trajectory);
-  array[n - 1] int target_status;
-  real baseline = sld_trajectory[1];
-  real nadir = pre_nadir;  // Track the smallest sum achieved
-  
-  // Define RECIST categories as integers
-  int CR = 1;  // Complete Response
-  int PR = 2;  // Partial Response  
-  int SD = 3;  // Stable Disease
-  int PD = 4;  // Progressive Disease
-  
-  // Calculate RECIST status for each subsequent time point
-  for (t in 2:n) {
-    // Update nadir if current measurement is smaller
-    nadir = min([nadir, sld_trajectory[t]]);
-    
+  assert_greater_than_or_equal(n, n_screening);
+  int n_treat = n - n_screening;
+  array[n_treat] int target_status;
+  real baseline = sld_trajectory[n_screening];
+  real nadir = pre_nadir <= 0 ? baseline : pre_nadir;
+  int CR = 1;
+  int PR = 2;
+  int SD = 3;
+  int PD = 4;
+  for (t in (n_screening + 1):n) {
+    nadir = fmin(nadir, sld_trajectory[t]);
     if (sld_trajectory[t] == 0) {
-      target_status[t - 1] = CR;
+      target_status[t - n_screening] = CR;
+    } else if (nadir > 0 && sld_trajectory[t] > nadir && (sld_trajectory[t] - nadir) / nadir >= 0.2 && (sld_trajectory[t] - nadir) >= 5) {
+      target_status[t - n_screening] = PD;
+    } else if ((sld_trajectory[t] - baseline) / baseline <= -0.3) {
+      target_status[t - n_screening] = PR;
     } else {
-      real baseline_ratio = sld_trajectory[t] / baseline;
-      real nadir_ratio = sld_trajectory[t] / nadir;
-      
-      // PD: ≥20% increase from nadir AND ≥5mm absolute increase
-      if (nadir_ratio >= 1.2 && (sld_trajectory[t] - nadir) >= 5) {
-        target_status[t - 1] = PD;
-      } 
-      // PR: ≥30% decrease from baseline
-      else if (baseline_ratio <= 0.7) {
-        target_status[t - 1] = PR;
-      } 
-      // SD: Neither PR nor PD criteria met
-      else {
-        target_status[t - 1] = SD;
-      }
+      target_status[t - n_screening] = SD;
     }
   }
-  
   return target_status;
 }
 
-array[] int calculate_target_recist(vector sld_trajectory) {
-  return calculate_target_recist(sld_trajectory, sld_trajectory[1]);
+array[] int calculate_target_recist(vector sld_trajectory, int n_screening) {
+  return calculate_target_recist(sld_trajectory, min(sld_trajectory[:n_screening]), n_screening);
 }
 
 /**
@@ -78,9 +63,13 @@ array[] int calculate_target_recist(vector sld_trajectory) {
  * @param non_target_status Array of non-target lesion status (1=CR, 2=Non-CR/Non-PD, 3=PD)
  * @return Array of overall RECIST status (1=CR, 2=PR, 3=SD, 4=PD)
  */
-array[] int calculate_recist(vector sld_trajectory, array[] int new_lesions, array[] int non_target_status) {
+array[] int calculate_recist(vector sld_trajectory, array[] int new_lesions, array[] int non_target_status, int n_screening) {
   int n = rows(sld_trajectory);
-  array[n - 1] int recist_status;
+  
+  assert_greater_than_or_equal(n, n_screening);
+  
+  int n_treat = n - n_screening;
+  array[n_treat] int recist_status;
   
   // Define RECIST categories as integers
   int CR = 1;  // Complete Response
@@ -94,10 +83,10 @@ array[] int calculate_recist(vector sld_trajectory, array[] int new_lesions, arr
   int NT_PD = 3;
   
   // First get target-only RECIST status
-  array[n - 1] int target_status = calculate_target_recist(sld_trajectory);
+  array[n_treat] int target_status = calculate_target_recist(sld_trajectory, n_screening);
   
   // Then combine with non-target and new lesion information
-  for (t in 1:(n - 1)) {
+  for (t in 1:n_treat) {
     // Check for progression criteria first
     if (new_lesions[t] == 1 || non_target_status[t] == NT_PD || target_status[t] == PD) {
       recist_status[t] = PD;

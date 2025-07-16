@@ -1,3 +1,5 @@
+# nolint start: object_usage_linte1r
+
 plot_baseline_hazard <- function(res_data, lambda_var, ...) {
   ggplot(res_data, aes(t)) +
     geom_line(
@@ -150,16 +152,28 @@ plot_surv_ppc <- function(ppc_data, surv_interval_col, ic_col, rc_col, rep_surv_
     NULL
 }
 
-plot_km <- function(res_data, obs_km_data, km_est, group = fit_type) {
+plot_km <- function(res_data, obs_km_data, km_est, analysis_data = NULL, group = fit_type, alpha_group = fit_type, linewidth = 0, ...) {
   pobj <- ggplot(res_data) +
-    stat_lineribbon(aes(x = t - 1, ydist = {{ km_est }}, fill = {{ group }}, alpha = {{ group }}), linewidth = 0, .width = 0.8) +
+    stat_lineribbon(aes(x = t - 1, ydist = {{ km_est }}, fill = {{ group }}, alpha = {{ alpha_group }}), 
+                    linewidth = linewidth, .width = 0.8, ...) +
     labs(y = "Survival Probability") +
     guides(alpha = "none") + 
     theme(legend.position = "bottom")
   
   if (!is_null(obs_km_data)) {
     pobj <- pobj + 
-      geom_step(aes(x = t, y = s, group = btype, color = btype), linewidth = 0.5, alpha = 0.5, data = \(d) semi_join(obs_km_data, d, by = "trial")) 
+      geom_step(aes(x = t, y = s, group = btype, color = btype), linewidth = 0.5, alpha = 0.5, data = \(d) semi_join(obs_km_data, d, by = "trial"))
+    
+    if (!is_null(analysis_data)) {
+      pobj <- pobj +
+        geom_point(aes(x = t, y = s, color = btype, shape = "censored"), size = 2, alpha = 0.7, 
+                   data = \(d) semi_join(obs_km_data, d, by = "trial") |> 
+                     inner_join(analysis_data |> filter(right_censored) |> select(pfs), by = c("t" = "pfs"), relationship = "many-to-many")) +
+        geom_point(aes(x = t, y = s, color = btype, shape = "death"), size = 2, alpha = 0.7, 
+                   data = \(d) semi_join(obs_km_data, d, by = "trial") |> 
+                     inner_join(analysis_data |> filter(!right_censored, !progression_before_death) |> select(pfs), by = c("t" = "pfs"), relationship = "many-to-many")) +
+        scale_shape_manual("", values = c(censored = "|", death = "o"), labels = c(censored = "Right Censored", death = "Death before PD"))
+    }
   }
   
   return(pobj)
@@ -639,17 +653,17 @@ plot_corr_decay <- function(res_data, param = .value) {
     NULL
 }
 
-plot_dynamics <- function(data, var) {
-  ggplot(data, aes(week)) +
-    stat_lineribbon(aes(ydist = {{ var }}, fill = stage), alpha = 0.25, .width = c(0.5, 0.8)) +
-    geom_point(aes(y = mmsumdiam), color = AZ_gold, size = 2) +
-    # geom_rect(
-    #   data = \(d) filter(d, fct_match(trial, "sclc")) |>  
-    #     group_by(trial, i) |>  
-    #     summarise(xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf),
-    #   aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
-    #   fill = NA, color = "#E91E63", linewidth = 2, inherit.aes = FALSE
-    # ) +
+plot_dynamics <- function(data, var, expect_rvar = TRUE, na.rm = FALSE) {
+  pobj <- ggplot(data, aes(week))
+  
+  if (expect_rvar) {
+    pobj <- pobj + stat_lineribbon(aes(ydist = {{ var }}, fill = stage), na.rm = na.rm, alpha = 0.25, linewidth = 0.5, .width = c(0.5, 0.8))
+  } else {
+    pobj <- pobj + stat_lineribbon(aes(y = {{ var }}, fill = stage), na.rm = na.rm, alpha = 0.25, .width = c(0.5, 0.8))
+  }
+  
+  pobj +
+    geom_point(aes(y = mmsumdiam), color = AZ_navy, size = 1.5, alpha = 0.75) +
     scale_fill_discrete("Stage", type = AZ_palette, label = c("obs" = "Observed", "forecast" = "Forecast")) +
     facet_wrap(vars(i), scales = "free") +
     NULL
@@ -696,6 +710,63 @@ plot_confusion_matrix <- function(data, recorded, calculated, p, n) {
     NULL
 }
 
+plot_ssls_coef <- function(res_data, name_var = n) {
+  res_data |> 
+    ggplot(aes(y = {{ name_var }})) +
+    stat_pointinterval(aes(xdist = .value, color = fit_type), point_size = 1, position = "dodge", .width = c(0.5, 0.8)) +
+    geom_vline(xintercept = 0)
+}
+
+# Prepare data for plotting
+prepare_recist_plot_data <- function(data) {
+  data |>
+    select(!matches("(forecast|rep)_recist")) |> 
+    group_by(i) |> 
+    mutate(succ_week = lead(week, default = max(week) + 1)) |> 
+    rowwise() |> 
+    reframe(across(everything()), week = seq(week, succ_week - 1)) |> 
+    pivot_longer(c(CR, PR, SD, PD), names_to = "recist_cat", values_to = "prob") |>
+    mutate(recist_cat = factor(recist_cat, levels = c("CR", "PR", "SD", "PD")))
+}
+
+plot_recist_predictions <- function(data, 
+                                   x_breaks = months_to_weeks(seq(0, 48, 12)),
+                                   y_label = "Posterior Probability",
+                                   caption = "Bar height represents probability; colors show RECIST categories;\nColored points represent observed RECIST.") {
+  # Create the plot
+  data |>
+    prepare_recist_plot_data() |>
+    ggplot(aes(week, y = prob)) +
+    geom_col(aes(alpha = stage, fill = recist_cat), position = "fill", width = 1.01, linewidth = 0) +
+    geom_vline(aes(xintercept = week), linetype = "dashed", 
+               data = \(d) filter(d, fct_match(stage, "obs")) |> group_by(i) |> slice_max(week)) +
+    geom_vline(aes(xintercept = pfs), linetype = "dashed", color = "white", 
+               data = \(d) filter(d, !right_censored)) +
+    geom_point(aes(y = 0.9, fill = response, shape = "obs"), 
+               color = "black", size = 2, 
+               show.legend = c(fill = TRUE, color = FALSE),
+               data = \(d) filter(d, fct_match(stage, "obs")) |> group_by(i, succ_week) |> slice_min(week)) +
+    geom_point(aes(y = 0.8, fill = det_response, shape = "target"), 
+               color = "black", size = 2.5, 
+               show.legend = c(fill = TRUE, color = FALSE),
+               data = \(d) filter(d, fct_match(stage, "obs")) |> group_by(i, succ_week) |> slice_min(week)) +
+    scale_x_continuous("Months", breaks = x_breaks, label = label_weeks_to_months) +
+    scale_y_continuous(labels = scales::percent_format(), expand = c(0, 0)) +
+    scale_fill_manual(values = c("CR" = AZ_green, "PR" = AZ_turquoise, "SD" = AZ_gold, "PD" = AZ_plum), 
+                      name = "RECIST Category", 
+                      aesthetics = c("color", "fill")) +
+    scale_alpha_manual("", values = c(obs = 0.25, forecast = 0.5), labels = c(obs = "Observed", forecast = "Forecast")) +
+    scale_shape_manual("", values = c(obs = 21, target = 23), labels = c(obs = "Observed", target = "Target Lesions Only")) +
+    labs(
+      y = y_label,
+      caption = caption
+    ) + 
+    facet_wrap(vars(i)) +
+    theme(legend.position = "bottom") + 
+    NULL
+}
+
+  
 # Distogram #######
 
 # First, create a helper function for the row-adding adjustment
@@ -796,3 +867,4 @@ stat_distogram <- function(mapping = NULL, data = NULL,
   )
 }
 
+# nolint end: object_usage_linter

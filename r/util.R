@@ -1,3 +1,5 @@
+# nolint start: object_usage_linter
+
 #' Utility Functions for Stan Model Sampling and Analysis
 #' 
 #' This file contains utility functions for conducting Bayesian analysis of 
@@ -56,6 +58,130 @@ sample_and_save <- function(model, ..., output_dir, output_basename, timestamp =
   return(fit)
 }
 
+#' Extract and compile decorated Stan functions 
+#' 
+#' @param stan_file Path to .stan file with decorated functions
+#' @param includes Optional vector of #include statements
+#' @return cmdstanr model object with exported functions
+export_stan_functions <- function(stan_file, includes = NULL) {
+  
+  # Read the Stan file
+  content <- readLines(stan_file) %>% paste(collapse = "\n")
+  
+  # Extract functions marked with @stan_export anywhere in their documentation
+  # Find @stan_export markers and extract the following function
+  
+  # Split content into lines for easier processing
+  lines <- strsplit(content, "\n")[[1]]
+  export_lines <- which(str_detect(lines, "@stan_export"))
+  
+  if (length(export_lines) == 0) {
+    stop("No functions marked with @stan_export found in ", stan_file)
+  }
+  
+  exported_functions <- c()
+  
+  for (export_line in export_lines) {
+    # Find the start of the function signature after @stan_export
+    func_start <- NULL
+    
+    # Look for the start of a function signature (could be multi-line)
+    for (i in (export_line + 1):length(lines)) {
+      line <- trimws(lines[i])
+      
+      # Skip empty lines and comment lines
+      if (line == "" || str_detect(line, "^\\s*//") || str_detect(line, "^\\s*/\\*")) {
+        next
+      }
+      
+      # Check if this line starts a function (return type or tuple)
+      if (str_detect(line, "^\\s*(?:real|int|vector|matrix|row_vector|array|void|tuple)")) {
+        func_start <- i
+        break
+      }
+    }
+    
+    if (is.null(func_start)) next
+    
+    # Find the complete function by tracking braces
+    brace_count <- 0
+    func_end <- NULL
+    found_opening_brace <- FALSE
+    
+    for (i in func_start:length(lines)) {
+      line <- lines[i]
+      
+      # Count opening and closing braces
+      open_braces <- str_count(line, "\\{")
+      close_braces <- str_count(line, "\\}")
+      
+      if (open_braces > 0) found_opening_brace <- TRUE
+      
+      brace_count <- brace_count + open_braces - close_braces
+      
+      if (found_opening_brace && brace_count == 0) {
+        func_end <- i
+        break
+      }
+    }
+    
+    if (!is.null(func_end)) {
+      func_text <- paste(lines[func_start:func_end], collapse = "\n")
+      exported_functions <- c(exported_functions, func_text)
+    }
+  }
+  
+  if (length(exported_functions) == 0) {
+    stop("No valid functions found after @stan_export markers in ", stan_file)
+  }
+  
+  functions_code <- exported_functions
+  
+  # Create Stan program with functions block
+  stan_program <- paste0(
+    "functions {\n",
+    if (!is.null(includes)) paste0("  ", includes, collapse = "\n"), "\n",
+    paste(functions_code, collapse = "\n\n"), "\n",
+    "}\n\n",
+    "data {}\n",
+    "parameters {}\n", 
+    "model {}\n"
+  )
+  
+  # Compile directly from string and expose functions
+  model <- cmdstan_model(stan_file = write_stan_file(stan_program), force_recompile = TRUE)
+  model$expose_functions()
+  return(model)
+}
+
+build_model <- function(model_file, include_files = NULL, dir = NULL) {
+  # Force dependency on include files
+  include_files
+  
+  model <- cmdstan_model(model_file, cpp_options = lst(stan_threads = TRUE), dir = dir)
+  
+  # Track the executable by including its hash in the return value
+  exe_path <- model$exe_file()
+  exe_hash <- digest::digest(file = exe_path, algo = "md5")
+  
+  # Store the hash as an attribute so targets tracks it
+  attr(model, "exe_hash") <- exe_hash
+  
+  return(model)
+}
+
+remove_incomplete_cases <- function(data, incomplete) {
+  if (is_empty(incomplete)) {
+    return(data)
+  } else {
+   return(slice(data, -incomplete))
+  }
+}
+
+get_conditioning_subgroups <- function(data, cond, other_cond) {
+  map(cond$cond_group_expr, \(x) transmute(data, cond = !!x & !!other_cond) |> pull(cond) |> which())
+}
+
 #' Convert Kaplan-Meier estimates to a tibble (data frame) format 
 #'
 #' @param trt_data Analysis data 
@@ -66,8 +192,8 @@ sample_and_save <- function(model, ..., output_dir, output_basename, timestamp =
 km_to_tibble <- function(trt_data, key, pfs_sym, censored_sym) { 
   rlang::inject(
     lst(
-      lb = ggsurvfit::survfit2(Surv(!!pfs_sym + 1, 1 - !!censored_sym) ~ 1, trt_data),
-      ub = ggsurvfit::survfit2(Surv(!!pfs_sym + interval_censored + 1, 1 - !!censored_sym) ~ 1, trt_data),
+      lb = ggsurvfit::survfit2(Surv(!!pfs_sym + 1 - !!censored_sym, 1 - !!censored_sym) ~ 1, trt_data),
+      ub = ggsurvfit::survfit2(Surv(!!pfs_sym + interval_censored + 1 - !!censored_sym, 1 - !!censored_sym) ~ 1, trt_data),
     )
   ) |> 
     map_dfr(broom::tidy, .id = "btype") |>  
@@ -183,34 +309,31 @@ determine_recist_response <- function(baseline_sld, current_sld, nadir_sld = NUL
   if (!is.na(non_target_response) && !non_target_response %in% c("CR", "NON-CR/NON-PD", "PD", "NE")) {
     stop("non_target_response must be 'CR', 'NON-CR/NON-PD', 'PD', or NA, got: ", non_target_response)
   }
-  
+
   # If nadir sum not provided, use baseline as nadir
   if (is_null(nadir_sld)) {
     nadir_sld <- min(baseline_sld, current_sld)
   } else {
     nadir_sld <- min(nadir_sld, current_sld)  # Update nadir if current sum is smaller
   }
-  
-  # Calculate changes
+
   change_from_baseline <- (current_sld - baseline_sld) / baseline_sld
   absolute_diff_from_nadir <- current_sld - nadir_sld
-  change_from_nadir <- absolute_diff_from_nadir / nadir_sld
-  
-  # Define progression for target lesions (≥20% increase from nadir AND ≥5mm absolute increase)
-  target_progression <- current_sld > nadir_sld && change_from_nadir >= 0.2 && absolute_diff_from_nadir >= 5 
-  
-  # If considering only target lesions
+  change_from_nadir <- ifelse(nadir_sld > 0, absolute_diff_from_nadir / nadir_sld, NA)
+
+  # RECIST 1.1: Order of checks: CR, PD, PR, SD
   if (!include_non_target && !new_lesions) {
     case_when(
       current_sld == 0 ~ "CR",
+      # PD: ≥20% increase from nadir AND ≥5mm absolute increase
+      nadir_sld > 0 & current_sld > nadir_sld & change_from_nadir >= 0.2 & absolute_diff_from_nadir >= 5 ~ "PD",
       change_from_baseline <= -0.3 ~ "PR",
-      target_progression ~ "PD",
       .default = "SD"
     )
   } else {
     case_when(
       # If including non-target lesions or new lesions
-      target_progression || (!is.na(non_target_response) && non_target_response == "PD") || new_lesions ~ "PD",
+      (nadir_sld > 0 & current_sld > nadir_sld & change_from_nadir >= 0.2 & absolute_diff_from_nadir >= 5) || (!is.na(non_target_response) && non_target_response == "PD") || new_lesions ~ "PD",
       current_sld == 0 && (non_target_response == "CR" || is.na(non_target_response)) ~ "CR",
       change_from_baseline <= -0.3 ~ "PR",
       .default = "SD"
@@ -380,8 +503,10 @@ determine_visit_data_response <- function(visit_data) {
 determine_pfs <- function(visit_data, pfs_confirm_visits = 1) {
   visit_data |> 
     summarize(
-      det_pfs = find_consecutive(det_response, "PD", pfs_confirm_visits) |> coalesce(max(week)),
-      det_right_censored = det_pfs == max(week)
+      det_pfs_idx = find_consecutive(det_response, "PD", pfs_confirm_visits), # |> coalesce(max(week)),
+      det_pfs = if_else(is.na(det_pfs_idx), max(week), pmax(1, week[det_pfs_idx])),
+      det_right_censored = is.na(det_pfs_idx), 
+      det_interval_censored = coalesce(week[det_pfs_idx + 1] - det_pfs - 1, 0)
     )
 }
 
@@ -450,3 +575,97 @@ find_consecutive <- function(vec, x, n = 1) {
     pull(start_index) |>  
     first() %||% NA
 }
+
+find_stan_includes <- function(stan_file, base_dir = NULL) {
+  # Set base directory - use the directory of the main .stan file if not specified
+  if (is.null(base_dir)) {
+    base_dir <- dirname(normalizePath(stan_file, mustWork = TRUE))
+  }
+  
+  # Initialize list to store all found files
+  all_files <- character(0)
+  processed_files <- character(0)
+  
+  # Recursive function to process a single file
+  process_file <- function(file_path) {
+    # Convert to absolute path
+    abs_path <- normalizePath(file_path, mustWork = TRUE)
+    
+    # Skip if already processed (prevents infinite loops)
+    if (abs_path %in% processed_files) {
+      return()
+    }
+    
+    # Mark as processed
+    processed_files <<- c(processed_files, abs_path)
+    
+    # Read the file
+    if (!file.exists(abs_path)) {
+      warning(paste("File not found:", abs_path))
+      return()
+    }
+    
+    lines <- readLines(abs_path, warn = FALSE)
+    
+    # Find #include statements
+    include_pattern <- "^\\s*#include\\s+[\"<]([^\"<>]+)[\">]"
+    include_matches <- grep(include_pattern, lines, value = TRUE)
+    
+    if (length(include_matches) > 0) {
+      # Extract file paths from include statements
+      included_files <- gsub(include_pattern, "\\1", include_matches)
+      
+      for (inc_file in included_files) {
+        # Handle relative paths
+        if (!file.path(inc_file) == inc_file || !startsWith(inc_file, "/")) {
+          # Relative path - resolve relative to current file's directory
+          inc_path <- file.path(dirname(abs_path), inc_file)
+        } else {
+          # Absolute path
+          inc_path <- inc_file
+        }
+        
+        # Try to normalize the path
+        tryCatch({
+          inc_path <- normalizePath(inc_path, mustWork = TRUE)
+          
+          # Add to results if not already there
+          if (!inc_path %in% all_files) {
+            all_files <<- c(all_files, inc_path)
+          }
+          
+          # Recursively process the included file
+          process_file(inc_path)
+          
+        }, error = function(e) {
+          # If file doesn't exist, try relative to base_dir
+          alt_path <- file.path(base_dir, inc_file)
+          tryCatch({
+            alt_path <- normalizePath(alt_path, mustWork = TRUE)
+            
+            if (!alt_path %in% all_files) {
+              all_files <<- c(all_files, alt_path)
+            }
+            
+            process_file(alt_path)
+            
+          }, error = function(e2) {
+            warning(paste("Could not find included file:", inc_file, "from", abs_path))
+          })
+        })
+      }
+    }
+  }
+  
+  # Start processing from the main file
+  process_file(stan_file)
+  
+  # Return sorted list of unique file paths
+  return(sort(unique(all_files)))
+}
+
+# Example usage:
+# included_files <- find_stan_includes("model.stan")
+# print(included_files)
+
+# nolint end: object_usage_linter

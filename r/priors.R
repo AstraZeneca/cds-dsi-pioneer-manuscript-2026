@@ -1,4 +1,4 @@
-get_tumor_priors <- function() {
+get_tumor_priors <- function(stan_data) {
   lst(
     # GP hyperparameters
     pop_tumor_gp_rho_meanlog = 3, 
@@ -14,17 +14,17 @@ get_tumor_priors <- function() {
     # Process parameters
     decrease_process_alpha = 9.7,
     decrease_process_beta = 38.4,
-    growth_process_alpha = 9.7,  # Same as decrease_process_alpha
-    growth_process_beta = 38.4,  # Same as decrease_process_beta
+    growth_process_alpha = 9.7,  
+    growth_process_beta = 38.4,
     
-    # Rate parameters
-    pop_log_net_rate_mean = -4, 
-    pop_log_net_rate_sd = 2,
-    pop_log_rate_ratio_mean = 2,
-    pop_log_rate_ratio_sd = 1,
-    patient_log_net_rate_sd_sd = 0.5,
-    patient_log_rate_ratio_sd_sd = 0.5,
-    trial_log_net_rate_sd_sd = 1.0,           # Between patient (0.5) and population (2)
+    # Rate parameters - ALIGNED WITH POSTERIOR EVIDENCE
+    pop_log_net_rate_mean = -3.5,        # Much lower net rate to shift growth left
+    pop_log_net_rate_sd = 1.8,           # Keep wide range
+    pop_log_rate_ratio_mean = 2.2,       # Keep high ratio: exp(2.2) ≈ 9 (d = 9g)
+    pop_log_rate_ratio_sd = 1.2,         # Very wide to allow flexibility
+    patient_log_net_rate_sd_sd = 0.5,    # Allow patient variation
+    patient_log_rate_ratio_sd_sd = 0.3,  # Allow patient variation  
+    trial_log_net_rate_sd_sd = 0.6,      # Allow trial variation
     
     # Growth lag parameters
     growth_lag_mean = 2.7,
@@ -36,14 +36,30 @@ get_tumor_priors <- function() {
     rate_corr_param = 2.0,
     
     # Proportion parameters
-    pop_decrease_prop_logis_mean = -1.5,    # logit^{-1}(-1.5) ≈ 0.18
-    pop_decrease_prop_logis_sd = 0.5,       # Much tighter
-    patient_decrease_prop_logis_sd_sd = 0.75,  # Also tighten patient-level
-    trial_decrease_prop_logis_sd_sd = 1.5,    # Between patient (2.5) and population (2) 
+    pop_decrease_prop_logis_mean = -1.0,    # logit^{-1}(-1.0) ≈ 0.27
+    pop_decrease_prop_logis_sd = 1.5,       # Wider but not extreme
+    patient_decrease_prop_logis_sd_sd = 1.0,
+    trial_decrease_prop_logis_sd_sd = 1.5,
+    
+    # Baseline hazard GP parameters
+    log_lambda_gp_pop_intercept_mean = array(-4.5),
+    log_lambda_gp_pop_intercept_sd = array(0.5),
+    log_lambda_gp_pop_alpha_sd = array(0.4),
+    log_lambda_gp_pop_rho_alpha = array(8.0),
+    log_lambda_gp_pop_rho_beta = array(12.0),
+    log_lambda_gp_trial_alpha_sd = array(0.25),
+    log_lambda_gp_trial_rho_alpha = array(5.0),
+    log_lambda_gp_trial_rho_beta = array(7.0),
+    log_lambda_gp_trial_intercept_sd_sd = array(0.3),
+    
+    # Covariate effect priors for net rates (for scaled but not centered covariates)
+    pop_log_net_rate_coef_mean = rep(0, stan_data$n_covar),
+    pop_log_net_rate_coef_sd = rep(0.5, stan_data$n_covar),
+    trial_log_net_rate_coef_sd_sd = rep(0.05, stan_data$n_covar),
     
     log_lod_sd = 0.2
   )
-}
+}    
 
 get_pfs_priors <- function() {
   lst(

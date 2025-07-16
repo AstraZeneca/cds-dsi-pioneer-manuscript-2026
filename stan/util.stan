@@ -118,24 +118,6 @@ array[] int calculate_n_missing_visits(array[] int unique_visits, array[] int un
     n_unique_missing_visits[p] = n_full - get_pos_size(unique_visits_pos, p);
   }
   
-  // array[sum(n_unique_missing_visits)] int unique_missing_visits;
-  // int curr_missing_idx = 1;
- 
-  // for (p in 1:n) { 
-  //   array[n_unique_visits[p]] int curr_unique_visits = sort_asc(get_int_sub_array(unique_visits, unique_visits_pos, p));
-  //   int curr_unique_visit_idx = 1;
-  //   
-  //   for (q in 1:n_full) {
-  //     if (q < curr_unique_visits[curr_unique_visit_idx]) {
-  //       n_unique_missing_visits[p] += 1;
-  //       // unique_missing_visits[curr_missing_idx] = q;
-  //       // curr_missing_idx += 1;
-  //     } else {
-  //       curr_unique_visit_idx += 1;
-  //     }
-  //   }
-  // }
-  
   return n_unique_missing_visits;
 }
 
@@ -621,7 +603,7 @@ void assert_equal(real x, real y) {
 }
 
 void assert_greater_than_or_equal(int x, int y) {
-  if (x > y) {
+  if (x < y) {
     fatal_error("Greater than or equal assertion failed.");
   }
 }
@@ -675,11 +657,88 @@ tuple(real, real, vector) standardize_tumor_sizes(vector tumor_size) {
   return (tumor_mean, tumor_sd, (tumor_size - tumor_mean) / tumor_sd); 
 }
 
-int find_first(array[] int all, int what) {
+/**
+ * Find the first occurrence of n_succ consecutive elements from the 'what' array
+ * within the 'all' array.
+ *
+ * @param all Array to search within
+ * @param what Array containing the values to search for (can contain duplicates)
+ * @param n_succ Number of consecutive elements to find
+ * 
+ * @return Starting index (1-based) of the first sequence of n_succ consecutive 
+ *         elements where each element is contained in 'what'. Returns 0 if no 
+ *         such sequence is found.
+ *
+ * @throws fatal_error if 'what' array is empty
+ *
+ * Example:
+ *   all = [1, 2, 3, 2, 2, 4]
+ *   what = [2, 3]
+ *   n_succ = 3
+ *   Returns: 2 (positions 2-4 contain [2, 3, 2], all from 'what')
+ *
+ * Note: Values from 'what' can be used multiple times in the sequence.
+ *       For efficiency, 'what' is sorted internally for binary search.
+ */
+int find_first(array[] int all, array[] int what, int n_succ) {
   int n = size(all);
-  int i = 1;
+  int n_what = size(what);
   
-  while (i <= n && all[i] != what) i += 1;
+  // Need at least n_succ elements in 'all' to find a match
+  if (n < n_succ) {
+    return 0;
+  }
   
-  return i <= n ? i : 0;
+  // Need at least one element in 'what' to match against
+  if (n_what == 0) {
+    fatal_error("find_first: 'what' array cannot be empty");
+  }
+  
+  // Sort 'what' array for faster searching
+  array[n_what] int sorted_what = sort_asc(what);
+  
+  // Check each possible starting position in 'all'
+  for (i in 1:(n - n_succ + 1)) {
+    int matches = 0;
+    
+    // Check if we can find n_succ consecutive matches starting at position i
+    for (j in 1:n_succ) {
+      int found_match = 0;
+      
+      // Binary search in sorted_what for all[i + j - 1]
+      int left = 1;
+      int right = n_what;
+      int search_val = all[i + j - 1];
+      
+      while (left <= right) {
+        int mid = left + (right - left) %/% 2;
+        if (sorted_what[mid] == search_val) {
+          found_match = 1;
+          break;
+        } else if (sorted_what[mid] < search_val) {
+          left = mid + 1;
+        } else {
+          right = mid - 1;
+        }
+      }
+      
+      if (found_match) {
+        matches += 1;
+      } else {
+        break;  // No match at this position, move to next starting position
+      }
+    }
+    
+    // If we found n_succ consecutive matches, return the starting index
+    if (matches == n_succ) {
+      return i;
+    }
+  }
+  
+  // No sequence of n_succ consecutive matches found
+  return 0;
+}
+
+int find_first(array[] int all, int what) {
+  return find_first(all, { what }, 1);
 }

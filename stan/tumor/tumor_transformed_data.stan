@@ -181,4 +181,4 @@ for (i in 1:n_patients) {
 }
 
 // Array of measurement times used for GP modeling
-array[max_t_width] real all_tumor_measure_t = linspaced_array(max_t_width, 1, max_t_width);
+array[max_all_t] real all_tumor_measure_t = linspaced_array(max_all_t, 1, max_all_t);
