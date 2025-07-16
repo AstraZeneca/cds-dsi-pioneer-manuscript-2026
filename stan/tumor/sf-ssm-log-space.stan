@@ -276,7 +276,7 @@ generated quantities {
   
   vector<lower = 0, upper = 1>[max_t_width] all_growth_factor = get_growth_lag_factor(all_tumor_measure_t, exp(pop_log_growth_lag), exp(pop_log_growth_transition_rate));
   matrix[max_t_width, 2] all_scaled_process_sd = scale_process_sd(all_tumor_measure_t, pop_process_sd);
-  matrix[n_total_train_visits_m1, 2] obs_patient_process_noise;
+  matrix[n_total_train_visits_m1, 2] obs_patient_process_noise;arim/fix-states
   matrix[forecast ? n_total_train_forecast_visits : 0, 2] forecast_patient_process_noise;
   matrix[forecast ? n_total_train_forecast_visits : 0, 2] forecast_patient_states;
   vector[forecast ? n_total_train_forecast_visits : 0] forecast_patient_log_sld;
