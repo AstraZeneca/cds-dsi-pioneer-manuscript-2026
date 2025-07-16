@@ -1,93 +1,78 @@
-# Stan Function Testing Pattern for Survival Analysis (Kaplan-Meier Example)
+# Stan Function Testing Pattern: All-in-One R/Stan Tests
 
-This document describes the robust testing pattern used for validating Stan survival analysis functions (e.g., `estimate_kaplan_meier`) in this repository. Follow this pattern to add new tests for other Stan functions.
+This repository uses a robust, unified pattern for testing Stan functions (e.g., `cutoff_visits`, `fine_cutoff_visits`, `get_oos_patients_idx`). All test cases for a function are run in a single Stan call, with all data prepared in R and all outputs checked in R.
 
-## Design Pattern Overview
+## How to Add a New Stan Test
 
-- **All test cases for a function are run from a single Stan model file.**
-  - This ensures that any change to the Stan function or its includes will force recompilation and all scenarios are tested together.
-- **Test data is defined in R as a list of cases.**
-  - Each test case is a list with all required inputs (e.g., event times, censoring, max_t, offsets).
-  - Zero-patient cases are excluded (all cases must have at least one patient).
-- **R test script prepares a single data list for Stan.**
-  - Data is packed into rectangular arrays/matrices for Stan input.
-  - Indices are tracked so each test case's results can be extracted from the Stan output.
-- **A single Stan test model runs all test cases in a vectorized way.**
-  - The Stan model loops over all cases, calling the function under test for each, and outputs results as rectangular arrays.
-- **R test script extracts and checks results for each case.**
-  - Output arrays are parsed per-case.
-  - All relevant properties (length, monotonicity, at-risk counts, event/censor counts, etc.) are checked for each case.
-  - Output is compared to R reference (e.g., `survfit2`) where possible.
-- **No skip logic for zero-patient cases.**
-  - All test cases are valid and robust.
-- **Test helper always forces Stan recompilation and prints compiler errors.**
+### 1. Stan Model File
 
+- Place your Stan test model in `tests/testthat/stan/` (e.g., `test_myfunction_all.stan`).
+- Include all required Stan files at the top (`#include "../lfo.stan"`, etc).
+- The model should loop over all test cases (vectorized if possible).
+- Output all results as rectangular arrays (pad with zeros if needed).
+- Use clear, unique output variable names.
 
-## What You Need to Add a New Stan Function Test
+### 2. R Test File
 
-Before adding a new Stan function test and creating a new all-in-one Stan testing model, gather the following information:
+- Place your R test script in `tests/testthat/` (e.g., `test-stan-myfunction.R`).
+- Inline all test cases as a single R list, or source them from a separate file if very large.
+- Each test case should be a named list with all required inputs and expected outputs.
+- Prepare a single rectangular data list for Stan, padding arrays as needed.
+- Use the provided helper (`test_stan_function`) to run the Stan model (this always recompiles and surfaces Stan errors).
+- Extract all outputs for each case and check them with `testthat::expect_equal()` or similar.
+- Always check edge cases and boundary conditions.
 
-- **Stan function signature**: Name, argument types, and expected output type/shape (scalar, vector, matrix, etc.).
-- **Test cases**: For each, the full set of input values and the expected output (including edge cases).
-- **R reference implementation**: If available, for expected results and debugging.
-- **Stan includes and dependencies**: List of all required Stan files to include (e.g., utility, math, or domain-specific functions). 
-- **Output conventions**: How the Stan model should output results (rectangular arrays, padding, sentinel values, etc.).
-- **Naming/location conventions**: Where to place the Stan test model and R test file (see previous files for pattern).
-- **Edge case handling**: Any special handling for zero-length, NA, or boundary cases.
+### 3. Naming and Structure
 
-### Checklist for Creating a New Test
+- Stan test models: `stan/test_<function>_all.stan`
+- R test scripts: `test-stan-<function>.R`
+- Inline all test cases in the R file unless they are very large (then source them).
+- Do not use legacy per-case files (e.g., `cutoff_visits_cases.R`); all cases should be inlined or sourced as a single list.
+- Only keep one test file per function; delete or archive old/fragmented test files.
 
-1. **Review previous all-in-one Stan test model files** (e.g., `stan/test_estimate_kaplan_meier_all.stan`, `stan/test_calculate_target_recist_all.stan`) for conventions:
-    - How includes are handled (relative paths, required dependencies)
-    - How data is declared and passed in
-    - How outputs are structured (rectangular arrays, padding)
-    - Any required blocks (functions, data, generated quantities)
-2. **Create a new all-in-one Stan test model** for your function, following the conventions above.
-3. **Add a new R test file** in this directory, using the pattern in the existing all-in-one test files. Define a list of test cases, each with all required inputs and expected outputs.
-4. **Update helper-stan.R** if new helper logic is needed for your function.
-5. **Run the test file** with `testthat::test_file()` and debug as needed. If you hit errors, check the Stan model includes, output structure, and compare to previous working models.
+### 4. Adding Test Cases
 
-**Important:**
-- Always review previous all-in-one Stan test models before starting a new one. Many issues (include paths, output shape, block structure) are solved by copying the working pattern.
-- If you hit errors, compare your new model to a previous one line by line. Most problems are due to missing includes, non-rectangular output, or block structure mismatches.
+- Add new cases directly to the unified list in the R test file.
+- Each case should include all necessary input data and expected outputs.
+- For ragged arrays, use position arrays and pad as needed.
+- Always provide at least one element for each array (Stan does not allow zero-length arrays).
+- For new edge cases, add them to the list and update the expected outputs.
 
-| What you need                | Why it's needed                                    |
-|-----------------------------|----------------------------------------------------|
-| Stan function signature     | To know what to test and how to call it            |
-| Test cases (inputs/outputs) | To check correctness and edge case handling        |
-| R reference implementation  | For expected results and debugging                 |
-| Stan includes/dependencies  | To avoid missing function errors                   |
-| Output conventions          | For robust R-side extraction and comparison        |
-| Naming/location conventions | To keep the test suite organized                   |
-| Edge case handling          | To ensure robustness and avoid silent failures     |
-| Review of previous models   | To avoid common pitfalls and follow conventions    |
+### 5. Debugging and Best Practices
+
+- If a test fails, check the Stan output, the R data prep, and the expected values.
+- Use diagnostic `cat()` prints in R to compare expected and actual outputs.
+- If you hit Stan errors, run the model standalone with the generated JSON to surface the true error.
+- Always review previous all-in-one test files for working patterns.
+
+### 6. Example Files
+
+- Stan: `tests/testthat/stan/test_lfo_all.stan`
+- R: `tests/testthat/test-stan-lfo.R`
+- Helper: `tests/testthat/helper-stan.R`
+
+### 7. What to Avoid
+
+- Do not use per-case R files or Stan files.
+- Do not keep unused JSON or helper files.
+- Do not skip zero-patient cases by logic; instead, always provide at least one patient.
 
 ---
 
-1. **Create a new Stan test model** in `tests/testthat/stan/` (e.g., `test_myfunction_all.stan`).
-   - Include all necessary Stan files.
-   - Loop over all test cases and output results as rectangular arrays.
-2. **Write an R test script** in `tests/testthat/` (e.g., `test-stan-myfunction-<signature>.R`).
-   - Define a list of test cases (no zero-patient cases).
-   - Prepare a single data list for Stan.
-   - Use the test helper to run the Stan model (forces recompilation, prints errors).
-   - Extract and check all relevant outputs for each case.
-3. **Follow the conventions in the Kaplan-Meier test** for naming, structure, and checks.
+**Summary Table**
 
-## Example Files
-
-- Stan model: `tests/testthat/stan/test_estimate_kaplan_meier_all.stan`
-- R test: `tests/testthat/test-stan-estimate_kaplan_meier-array_int-array_int-int-int.R`
-- Helper: `tests/testthat/helper-stan.R`
-
-## Key Conventions
-
-- All test cases in one Stan model per function.
-- Rectangular output arrays for robust R-side extraction.
-- No zero-patient cases or unnecessary skip logic.
-- All relevant properties and edge cases are checked.
-- Output matches R reference where possible.
+| What to do                        | How/Where                                      |
+|------------------------------------|------------------------------------------------|
+| Add Stan test model                | `tests/testthat/stan/test_<function>_all.stan`  |
+| Add R test script                  | `tests/testthat/test-stan-<function>.R`        |
+| Inline all test cases              | As a single list in the R file                  |
+| Prepare rectangular Stan data      | In the R test script                            |
+| Use helper for Stan runs           | `test_stan_function()` in R                     |
+| Check all outputs                  | `expect_equal()` in R                           |
+| Add new cases                      | Directly to the unified list                    |
+| Remove unused/legacy files         | Clean up as you go                              |
 
 ---
 
 **Replicate this pattern for all new Stan function tests to ensure robust, maintainable, and debuggable validation.**
+
