@@ -22,24 +22,7 @@ data {
 }
 
 generated quantities {
-  // which
-  array[N_CASES, MAX_LEN] int which_out;
-  // all_eq
-  array[N_CASES] int all_eq_out;
-  // any_eq
-  array[N_CASES] int any_eq_out;
-  // sort_asc
-  array[N_CASES, MAX_LEN] int sort_asc_out;
-  // reverse
-  array[N_CASES, MAX_LEN] int reverse_out;
-  // which_min
-  array[N_CASES] int which_min_out;
-  // which_max
-  array[N_CASES] int which_max_out;
-  // is_sorted
-  array[N_CASES] int is_sorted_out;
-  // is_unique
-  array[N_CASES] int is_unique_out;
+  // Only test functions that exist in util.stan
   // get_max_t
   array[N_CASES, MAX_LEN] int max_t_out;
   // num_unique
@@ -71,36 +54,6 @@ generated quantities {
       array[n_patients] int max_t = get_max_t(t_meas, n_meas, n_pat_tum);
       for (i in 1:n_patients) max_t_out[case, i] = max_t[i];
     }
-    // which (find indices where x == 1)
-    which_out[case] = rep_array(-9999, MAX_LEN);
-    if (n_x[case] > 0) {
-      array[MAX_LEN] int which_tmp = which(x[case,1:n_x[case]], 1);
-      for (i in 1:MAX_LEN) which_out[case,i] = which_tmp[i];
-    }
-    // all_eq (are all x == 1?)
-    all_eq_out[case] = all_eq(x[case,1:n_x[case]], 1);
-    // any_eq (is any x == 1?)
-    any_eq_out[case] = any_eq(x[case,1:n_x[case]], 1);
-    // sort_asc
-    sort_asc_out[case] = rep_array(-9999, MAX_LEN);
-    if (n_x[case] > 0) {
-      array[n_x[case]] int sort_tmp = sort_asc(x[case,1:n_x[case]]);
-      for (i in 1:n_x[case]) sort_asc_out[case,i] = sort_tmp[i];
-    }
-    // reverse
-    reverse_out[case] = rep_array(-9999, MAX_LEN);
-    if (n_x[case] > 0) {
-      array[n_x[case]] int rev_tmp = reverse(x[case,1:n_x[case]]);
-      for (i in 1:n_x[case]) reverse_out[case,i] = rev_tmp[i];
-    }
-    // which_min
-    which_min_out[case] = which_min(x[case,1:n_x[case]]);
-    // which_max
-    which_max_out[case] = which_max(x[case,1:n_x[case]]);
-    // is_sorted
-    is_sorted_out[case] = is_sorted(x[case,1:n_x[case]]);
-    // is_unique
-    is_unique_out[case] = is_unique(x[case,1:n_x[case]]);
     // num_unique
     num_unique_out[case] = num_unique(x[case,1:n_x[case]]);
     // unique
