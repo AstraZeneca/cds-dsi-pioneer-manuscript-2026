@@ -35,7 +35,7 @@ source(here::here("tests/testthat/helper-stan.R"))
 
 test_that("cutoff_visits and fine_cutoff_visits handle all edge cases and boundaries in a single Stan run", {
   # Load fine_cutoff_visits cases
-  source(here::here("tests/testthat/fine_cutoff_visits_cases.R"))
+
   fine_cases <- fine_cutoff_visits_cases
 
   # Inline cutoff_visits cases
