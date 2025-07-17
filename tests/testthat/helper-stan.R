@@ -34,11 +34,11 @@ test_stan_function <- function(stan_file, data, ...) {
     iter_sampling = 1,
     iter_warmup = 0,
     fixed_param = TRUE,
-   show_messages = TRUE,
+    show_messages = TRUE,
     refresh = 0,
     ...
   )
-  return(fit)
+  fit
 }
 
 #' Create mock PFS data for testing estimate_kaplan_meier
