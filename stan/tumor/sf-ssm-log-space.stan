@@ -501,6 +501,14 @@ generated quantities {
           forecast_target_right_censored[right_censored_idx] = forecast_target_pfs[right_censored_idx] == 0;
           
           if (!forecast_target_right_censored[right_censored_idx]) {
+            // For right-censored patients, we do not observe a progression event during the observed period.
+            // Instead, we simulate when progression might occur in the forecasted (future) visits.
+            // forecast_target_pfs[right_censored_idx] holds the index (not week) of the first predicted progression event in the forecasted RECIST sequence.
+            // The array forecast_time contains the actual visit weeks for the forecast period.
+            // By using forecast_time[forecast_target_pfs[right_censored_idx]], we convert the index of the simulated progression event
+            // into the actual week number in the future. This ensures that the forecasted PFS for right-censored patients is reported
+            // in real time units (weeks), not just as an index into the forecast array.
+            // This step is only needed for right-censored patients, because for uncensored patients, the progression time is already observed.
             forecast_target_pfs[right_censored_idx] = forecast_time[forecast_target_pfs[right_censored_idx]];
           } else {
             forecast_target_pfs[right_censored_idx] = max_all_t; 
