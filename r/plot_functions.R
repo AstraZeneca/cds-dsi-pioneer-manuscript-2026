@@ -1,5 +1,33 @@
 # nolint start: object_usage_linte1r
 
+prepare_pdl1_and_trial_info <- function(res_data) {
+  res_data |>
+    mutate(
+      trial = coalesce(trial, "sclc"),
+      across(c(cond_group_name, variable), \(l) coalesce(l, "all")),
+      variable = fct_recode(variable, "all" = "pdl1"),
+      cond_group_name = fct_recode(cond_group_name, "All" = "all", "PDL 1 Low" = "low", "PDL1 High" = "hi")
+    )
+}
+
+#' Plot outcome (e.g., ORR or Median PFS) by PDL1 status and trial for SCLC trial
+#'
+#' @param data Data frame with columns: outcome, cond_group_name, variable, trial, fit_type, etc.
+#' @param outcome Unquoted column name for the outcome to plot (e.g., orr, median_pfs)
+#' @param ... Additional arguments passed to ggplot2::stat_pointinterval
+#' @return A ggplot object
+plot_outcome_by_pdl1_and_trial <- function(res_data, outcome, ...) {
+  res_data |> 
+    prepare_pdl1_and_trial_info() |>
+    filter(fct_match(variable, c("all", "pdl1_naive")), fct_match(trial, "sclc")) |>  
+    ggplot() +
+    stat_pointinterval(aes(xdist = {{ outcome }}, y = cond_group_name, color = fit_type), position = "dodge", .width = c(0.5, 0.9), ...) +
+    scale_color_discrete("", type = AZ_palette, label = str_to_title) +
+    facet_grid(vars(variable), vars(trial), scales = "free", space = "free", 
+               labeller = labeller(trial = str_to_upper, variable = c("all" = "All", "pdl1_naive" = "First Line"))) +
+    NULL
+}
+
 plot_baseline_hazard <- function(res_data, lambda_var, ...) {
   ggplot(res_data, aes(t)) +
     geom_line(
@@ -152,10 +180,28 @@ plot_surv_ppc <- function(ppc_data, surv_interval_col, ic_col, rc_col, rep_surv_
     NULL
 }
 
-plot_km <- function(res_data, obs_km_data, km_est, analysis_data = NULL, group = fit_type, alpha_group = fit_type, linewidth = 0, ...) {
-  pobj <- ggplot(res_data) +
-    stat_lineribbon(aes(x = t - 1, ydist = {{ km_est }}, fill = {{ group }}, alpha = {{ alpha_group }}), 
-                    linewidth = linewidth, .width = 0.8, ...) +
+plot_km <- function(res_data, obs_km_data, km_est, analysis_data = NULL, group = fit_type, alpha_group = fit_type, color_group = fit_type, linewidth = 0, ...) {
+  pobj <- ggplot(res_data, aes(x = t - 1)) +
+    stat_lineribbon(
+      aes(
+      dist = {{ km_est }},
+      fill = {{ group }},
+      alpha = {{ alpha_group }},
+      group = {{ group }},
+      ),
+      linewidth = linewidth, .width = 0.8, ...
+    ) +
+    # stat_lineribbon(
+    #   aes(
+      # dist = {{ km_est }},
+    #   color = {{ color_group }}
+    #   ),
+    #   .width = 0, # only median line
+    #   linewidth = linewidth,
+    #   alpha = 1,
+    #   fill = NA,
+    #   show.legend = FALSE
+    # ) +
     labs(y = "Survival Probability") +
     guides(alpha = "none") + 
     theme(legend.position = "bottom")
