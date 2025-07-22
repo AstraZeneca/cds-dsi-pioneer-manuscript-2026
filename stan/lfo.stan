@@ -1,9 +1,12 @@
 /**
  * Determine which patient visits occurred before a given calendar day cutoff
- * 
+ *
+ * IMPORTANT: The cutoff is defined as the first day/week that is out-of-sample and NOT trained on.
+ * All data on or after the cutoff is excluded from training and considered for testing/forecasting only.
+ *
  * This version works with patient visits rather than individual tumor measurements.
  * It finds the last visit where SLD was measured across all tumors before the cutoff.
- * 
+ *
  * @param cutoff_calendar_day Calendar date to use as cutoff
  * @param patient_calendar_day Calendar date when each patient entered the study
  * @param t_patient_visits Week numbers for patient visits (ragged array)
@@ -11,7 +14,7 @@
  * @param patient_visit_pos Position array defining boundaries for each patient's visits
  * @return Tuple of (last_visit_day, last_visit_week, last_visit_calendar_day)
  */
-tuple(array[] int, array[] int, array[] int) cutoff_visits(
+tuple(array[] int, array[] int, array[] int, array[] int) cutoff_visits(
   int cutoff_calendar_day, 
   array[] int patient_calendar_day, 
   array[] int t_patient_visits,           // Week numbers for all patient visits
@@ -22,7 +25,8 @@ tuple(array[] int, array[] int, array[] int) cutoff_visits(
   
   // 0 is the default sentinel value if last visit is before cutoff
   array[n_patients] int last_visit_day = zeros_int_array(n_patients);
-  array[n_patients] int last_visit_week = zeros_int_array(n_patients); 
+  array[n_patients] int last_visit_week = zeros_int_array(n_patients), 
+                        last_visit_week_observed = ones_int_array(n_patients); 
   array[n_patients] int last_visit_calendar_day;
   
   for (i in 1:n_patients) {
@@ -54,12 +58,15 @@ tuple(array[] int, array[] int, array[] int) cutoff_visits(
       last_visit_day[i] = patient_t_visits_day[patient_visit_sort_idx[t_idx]]; 
       last_visit_week[i] = patient_t_visits_week[patient_visit_sort_idx[t_idx]]; 
     }
+
+    last_visit_week_observed[i] = last_visit_week[i] > 0;
+
     // Calculate the calendar date of this patient's final visit (regardless of cutoff)
     last_visit_calendar_day[i] = patient_calendar_day[i] + 
                                  patient_t_visits_day[patient_visit_sort_idx[n_patient_visits]] - 1;
   }
   
-  return (last_visit_day, last_visit_week, last_visit_calendar_day);
+  return (last_visit_day, last_visit_week, last_visit_calendar_day, last_visit_week_observed);
 }
 
 tuple(array[] int, array[] int, array[] int) fine_cutoff_visits(
