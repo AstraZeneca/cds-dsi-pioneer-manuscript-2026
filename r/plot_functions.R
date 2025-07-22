@@ -1,4 +1,4 @@
-# nolint start: object_usage_linte1r
+# nolint start: object_usage_linter
 
 prepare_pdl1_and_trial_info <- function(res_data) {
   res_data |>
