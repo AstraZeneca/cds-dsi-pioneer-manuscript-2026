@@ -352,6 +352,9 @@ transformed parameters {
       0 // debug 
     );
   }
+
+  vector[n_covar] pop_log_net_rate_coef = R_inv_covar_design_matrix * QR_pop_log_net_rate_coef;      
+  vector[n_covar] pop_decrease_prop_logis_coef = R_inv_covar_design_matrix * QR_pop_decrease_prop_logis_coef;
 }
 
 model {
@@ -382,8 +385,7 @@ model {
 }
 
 generated quantities {
-  vector[n_covar] pop_log_net_rate_coef = R_inv_covar_design_matrix * QR_pop_log_net_rate_coef;      // Population-level covariate effects on net rate
-  vector[n_covar] pop_decrease_prop_coef = R_inv_covar_design_matrix * QR_pop_decrease_prop_logis_coef;      // Population-level covariate effects on net rate
+  // Parameters //////////////////////////////////////////////
   
   real pop_log_growth_rate = pop_log_net_rate - log_diff_exp(pop_log_rate_ratio, 0);
   vector[n_trials] trial_log_growth_rate = pop_log_growth_rate + trial_log_net_rate_effect;
@@ -411,6 +413,8 @@ generated quantities {
   vector<lower = 0, upper = 1>[max_all_t] all_growth_factor = get_growth_lag_factor(all_tumor_measure_t, exp(pop_log_growth_lag), exp(pop_log_growth_transition_rate));
   
   matrix[max_all_t, 2] all_scaled_process_sd = scale_process_sd(all_tumor_measure_t, pop_process_sd);
+
+  // Latent states //////////////////////////////////////////
   
   matrix[n_total_train_visits_m1, 2] obs_patient_process_noise;
   matrix[n_total_train_forecast_visits, 2] forecast_patient_process_noise;
@@ -422,6 +426,8 @@ generated quantities {
   
   array[n_total_train_visits] int<lower = CR, upper = PD + 1> rep_recist = rep_array(PD + 1, n_total_train_visits);
   array[n_total_train_forecast_visits] int<lower = CR, upper = PD> forecast_recist;
+   
+  // Endpoints (PFS, ORR, Median PFS, PFSn, ...) ////////////
  
   array[n_train_patients] int<lower = 0> spop_target_pfs, spop_non_target_pfs, spop_pfs, spop_target_obs_cens_pfs; 
   array[n_train_patients] int<lower = 0, upper = 1> 

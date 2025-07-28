@@ -1,11 +1,9 @@
-get_tumor_priors <- function(stan_data) {
+get_tumor_priors <- function(stan_data, coef_elicited_priors) {
   lst(
     # GP hyperparameters
     pop_tumor_gp_rho_meanlog = 3, 
-    pop_tumor_gp_rho_sdlog = 0.6,
-    log_patient_tumor_gp_rho_sd_sd = 1.75,
-    
-    # Process noise parameters
+    pop_tumor_gp_rho_sdlog = 0.6, 
+    log_patient_tumor_gp_rho_sd_sd = 1.75, # Process noise parameters
     pop_decrease_process_sd_sd = 0.1,
     pop_growth_process_sd_sd = 0.1,
     process_corr_param = 2.0,
@@ -53,8 +51,16 @@ get_tumor_priors <- function(stan_data) {
     log_lambda_gp_trial_intercept_sd_sd = array(0.3),
     
     # Covariate effect priors for net rates (for scaled but not centered covariates)
-    pop_log_net_rate_coef_mean = rep(0, stan_data$n_covar),
-    pop_log_net_rate_coef_sd = rep(0.2, stan_data$n_covar),
+    # pop_log_net_rate_coef_mean = rep(0, stan_data$n_covar),
+    # pop_log_net_rate_coef_sd = rep(0.2, stan_data$n_covar),
+    pop_log_net_rate_coef_mean = with(coef_elicited_priors, mean * if_else(fct_match(effect_direction, "worsens"), 1, -1)),
+    pop_log_net_rate_coef_sd = coef_elicited_priors$sd,
+    # Covariate effect priors for decrease prop logis
+    # pop_decrease_prop_logis_coef_mean = rep(0, stan_data$n_covar),
+    # pop_decrease_prop_logis_coef_sd = rep(0.2, stan_data$n_covar),
+    pop_decrease_prop_logis_coef_mean = with(coef_elicited_priors, mean * if_else(fct_match(effect_direction, "worsens"), -1, 1)),
+    pop_decrease_prop_logis_coef_sd = coef_elicited_priors$sd,
+
     trial_log_net_rate_coef_sd_sd = rep(0.05, stan_data$n_covar),
     
     log_lod_sd = 0.2
