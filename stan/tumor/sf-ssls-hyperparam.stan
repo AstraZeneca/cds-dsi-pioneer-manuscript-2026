@@ -50,3 +50,6 @@ vector<lower = 0>[n_causes] log_lambda_gp_trial_intercept_sd_sd;
 vector[n_covar] pop_log_net_rate_coef_mean;
 vector<lower=0>[n_covar] pop_log_net_rate_coef_sd;
 row_vector<lower=0>[n_covar] trial_log_net_rate_coef_sd_sd;
+
+vector[n_covar] pop_decrease_prop_logis_coef_mean;
+vector<lower=0>[n_covar] pop_decrease_prop_logis_coef_sd;

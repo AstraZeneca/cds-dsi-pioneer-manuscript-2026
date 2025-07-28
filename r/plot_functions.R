@@ -2,11 +2,12 @@
 
 prepare_pdl1_and_trial_info <- function(res_data) {
   res_data |>
+    filter(!fct_match(variable, "first_liners") | !fct_match(cond_group_name, "no")) |> 
     mutate(
       trial = coalesce(trial, "sclc"),
       across(c(cond_group_name, variable), \(l) coalesce(l, "all")),
-      variable = fct_recode(variable, "all" = "pdl1"),
-      cond_group_name = fct_recode(cond_group_name, "All" = "all", "PDL 1 Low" = "low", "PDL1 High" = "hi")
+      variable = fct_collapse(variable, "all" = c("all", "pdl1"), "pdl1_naive" = c("pdl1_naive", "first_liners")),
+      cond_group_name = fct_collapse(cond_group_name, "All" = c("all", "yes"), "PDL 1 Low" = "low", "PDL1 High" = "hi")
     )
 }
 
