@@ -767,7 +767,7 @@ plot_ssls_coef <- function(res_data, name_var = n) {
 # Prepare data for plotting
 prepare_recist_plot_data <- function(data) {
   data |>
-    select(!matches("(forecast|rep)_recist")) |> 
+    select(!matches("((forecast|rep)_)?recist")) |> 
     group_by(i) |> 
     mutate(succ_week = lead(week, default = max(week) + 1)) |> 
     rowwise() |> 
