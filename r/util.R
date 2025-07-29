@@ -669,3 +669,36 @@ find_stan_includes <- function(stan_file, base_dir = NULL) {
 # print(included_files)
 
 # nolint end: object_usage_linter
+
+#' Find the first occurrence of n_succ consecutive elements from 'what' in 'all'
+#'
+#' @param all Integer vector to search within
+#' @param what Integer vector of values to search for (can contain duplicates)
+#' @param n_succ Number of consecutive elements to find (default 1)
+#' @return Starting index (1-based) of the first sequence of n_succ consecutive elements where each element is in 'what'. Returns 0 if not found.
+#' @examples
+#' find_first(c(1,2,3,2,2,4), c(2,3), 3) # returns 2
+find_first <- function(all, what, n_succ = 1) {
+  n <- length(all)
+  n_what <- length(what)
+  if (n < n_succ) return(0)
+  if (n_what == 0) stop("find_first: 'what' vector cannot be empty")
+  sorted_what <- sort(what)
+  for (i in seq_len(n - n_succ + 1)) {
+    matches <- 0
+    for (j in seq_len(n_succ)) {
+      search_val <- all[i + j - 1]
+      # Use binary search for efficiency
+      found_match <- search_val %in% sorted_what
+      if (found_match) {
+        matches <- matches + 1
+      } else {
+        break
+      }
+    }
+    if (matches == n_succ) return(i)
+  }
+  return(0)
+}
+
+# nolint end: object_usage_linter
