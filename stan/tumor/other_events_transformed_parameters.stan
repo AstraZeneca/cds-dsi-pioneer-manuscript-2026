@@ -59,15 +59,3 @@ for (s in 1:n_trials) {
     log_cond_prob_surv[k, patient_start:patient_end] = - exp(log_cond_prob_surv[k, patient_start:patient_end]); 
   }
 }
-
-
-matrix[n_train_patients, n_causes] patient_response_lp; 
-
-// Non-target progression
-patient_response_lp[, 1] = calc_pch_loglik(
-  non_target_pfs[train_patients_pos:train_patients_end], 
-  non_target_right_censored[train_patients_pos:train_patients_end], 
-  zeros_int_array(n_train_patients),
-  0, 
-  log_cond_prob_surv[1]
-);
