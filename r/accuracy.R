@@ -1,8 +1,9 @@
-  # LOO, lFO and Model Evaluation Utilities
   #
   # This file contains functions for Leave-Future-Out (LFO) cross-validation,
   # model stacking, and various model evaluation metrics for survival analysis
   # and clinical trial data.}
+
+# nolint start: object_usage_linter
 
 get_trial_loo <- function(res, log_lik_var = "trial_log_lik", moment_match = TRUE, ...) {
   res$loo(log_lik_var, moment_match = moment_match, save_psis = TRUE, ...)
@@ -212,9 +213,10 @@ get_lfo_cutoff_days <- function(first_cutoff_date, last_date, first_cutoff_day_i
 #' when the approximation quality (as measured by the Pareto k statistic) degrades.
 #'
 lfo <- function(
-    stan_data, model, cutoffs, output_path, basename, 
+    stan_data, model, cutoffs, output_path, basename, initializer, 
     output_timestamp = FALSE, refit_n = min(cutoffs$n), 
-    k_threshold = 0.7, lean = FALSE, verbose = FALSE, exact = FALSE, fit_only = FALSE, iter_warmup = 300, iter_sampling = 500, ...) {
+    k_threshold = 0.7, lean = FALSE, verbose = FALSE, exact = FALSE, fit_only = FALSE, 
+    iter_warmup = 300, iter_sampling = 500, parallel_chains = 4, adapt_delta = 0.9, ...) {
   if (verbose) {
     cat("Startin on:\n")
     print(cutoffs)
@@ -228,8 +230,8 @@ lfo <- function(
     sample_and_save(
       model,
       .,
-      iter_warmup = iter_warmup, iter_sampling = iter_sampling, parallel_chains = 4, adapt_delta = 0.9,
-      init = create_crcr_pfs_initializer(.),
+      iter_warmup = iter_warmup, iter_sampling = iter_sampling, parallel_chains = parallel_chains, adapt_delta = adapt_delta,
+      init = initializer,
       output_dir = file.path(output_path, "fit"), output_basename = str_glue("{basename}-{refit_n}"),
       timestamp = output_timestamp, 
       ...
@@ -263,8 +265,8 @@ lfo <- function(
     return(bind_rows(
       psis_results, 
       lfo(
-        stan_data, model, cutoffs, output_path, basename, output_timestamp, refit_n = min(next_cutoffs$n), 
-        k_threshold, lean, verbose, exact, fit_only, iter_warmup, iter_sampling, ...
+        stan_data, model, cutoffs, output_path, basename, initializer, output_timestamp, refit_n = min(next_cutoffs$n), 
+        k_threshold, lean, verbose, exact, fit_only, iter_warmup, iter_sampling, parallel_chains, adapt_delta, ...
       )
     ))
   } else {
@@ -485,4 +487,6 @@ lfo_stacking_weights <- function(model_log_lik, log_lik_var = E_log_lik) {
     loo::stacking_weights() |> 
     c() |> 
     set_names(names(model_log_lik))
-}
+} 
+
+# nolint end: object_usage_linter
