@@ -11,8 +11,9 @@
     array[n_patients] int last_visit_day;
     array[n_patients] int last_visit_week;
     array[n_patients] int last_visit_calendar_day_dummy;
+    array[n_patients] int cutoff_last_visit_idx_dummy; // Not used, but needed for new signature
 
-    (last_visit_day, last_visit_week, last_visit_calendar_day_dummy, cutoff_observed_patients_mask[, j]) = cutoff_visits(
+    (last_visit_day, last_visit_week, last_visit_calendar_day_dummy, cutoff_observed_patients_mask[, j], cutoff_last_visit_idx_dummy) = cutoff_visits(
       mature_cutoffs_calendar_days[j],
       calendar_day,
       t_patient_visits,

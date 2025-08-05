@@ -12,9 +12,9 @@
  * @param t_patient_visits Week numbers for patient visits (ragged array)
  * @param t_patient_visits_day Day numbers for patient visits (ragged array)
  * @param patient_visit_pos Position array defining boundaries for each patient's visits
- * @return Tuple of (last_visit_day, last_visit_week, last_visit_calendar_day)
+ * @return Tuple of (last_visit_day, last_visit_week, last_visit_calendar_day, last_visit_week_observed, cutoff_last_visit_idx)
  */
-tuple(array[] int, array[] int, array[] int, array[] int) cutoff_visits(
+tuple(array[] int, array[] int, array[] int, array[] int, array[] int) cutoff_visits(
   int cutoff_calendar_day, 
   array[] int patient_calendar_day, 
   array[] int t_patient_visits,           // Week numbers for all patient visits
@@ -29,6 +29,9 @@ tuple(array[] int, array[] int, array[] int, array[] int) cutoff_visits(
                         last_visit_week_observed = ones_int_array(n_patients); 
   array[n_patients] int last_visit_calendar_day;
   
+  // Precompute for each patient the last visit index before or at cutoff_last_visit_week
+  array[n_patients] int cutoff_last_visit_idx = zeros_int_array(n_patients);
+  
   for (i in 1:n_patients) {
     // Get start and end positions for this patient's visits
     int visit_start, visit_end;
@@ -38,6 +41,7 @@ tuple(array[] int, array[] int, array[] int, array[] int) cutoff_visits(
       last_visit_day[i] = 0;
       last_visit_week[i] = 0;
       last_visit_calendar_day[i] = 0;
+      cutoff_last_visit_idx[i] = 0;
       continue;
     }
     // Convert global cutoff to patient-specific study day
@@ -64,9 +68,20 @@ tuple(array[] int, array[] int, array[] int, array[] int) cutoff_visits(
     // Calculate the calendar date of this patient's final visit (regardless of cutoff)
     last_visit_calendar_day[i] = patient_calendar_day[i] + 
                                  patient_t_visits_day[patient_visit_sort_idx[n_patient_visits]] - 1;
+
+    // Calculate cutoff_last_visit_idx - the index of the last visit before or at cutoff_last_visit_week
+    if (last_visit_week[i] > 0) {
+      int j = visit_start;
+      while (j <= visit_end && t_patient_visits[j] <= last_visit_week[i]) {
+        cutoff_last_visit_idx[i] = j;
+        j += 1;
+      }
+    } else {
+      cutoff_last_visit_idx[i] = 0;
+    }
   }
   
-  return (last_visit_day, last_visit_week, last_visit_calendar_day, last_visit_week_observed);
+  return (last_visit_day, last_visit_week, last_visit_calendar_day, last_visit_week_observed, cutoff_last_visit_idx);
 }
 
 tuple(array[] int, array[] int, array[] int) fine_cutoff_visits(
@@ -225,24 +240,26 @@ array[] int get_oos_patients_idx(
  * - Returns actual week numbers, not indices
  * - Only processes patients identified as out-of-sample by oos_patient_idx
  * - For the last cutoff (m = n_futures), uses all remaining visits (up to max_all_t)
- * - Uses fatal_error if no testing visits found when expected
+ * - Returns 0 as sentinel value when no testing visits found after cutoff
  */
-tuple(array[,] int, array[,,] int) get_testing_visit_week_bounds(
+tuple(array[,] int, array[,,] int, array[,] int, array[,,] int) get_testing_visit_week_bounds(
   array[] int oos_patient_idx, 
   array[] int last_visit_calendar_day_sort_idx,
   array[] int cutoff_calendar_day, 
   array[] int patient_calendar_day,
-  array[] int t_measure, 
-  array[] int t_day_measure, 
-  array[] int patient_tumor_measure_pos
+  array[] int t_patient_visits_week, 
+  array[] int t_patient_visits_day, 
+  array[] int patient_visit_pos
 ) {
   int n_patients = size(patient_calendar_day);
   int n_futures = size(oos_patient_idx);
-  int min_all_t = min(t_measure);
+  int min_all_t = min(t_patient_visits_week);
   
   // Initialize output arrays
   array[n_futures, n_patients] int first_testing_visit_week = rep_array(0, n_futures, n_patients);
   array[n_futures, n_futures, n_patients] int last_testing_visit_week = rep_array(min_all_t, n_futures, n_futures, n_patients);
+  array[n_futures, n_patients] int testing_start_idx = rep_array(0, n_futures, n_patients);
+  array[n_futures, n_futures, n_patients] int testing_end_idx = rep_array(0, n_futures, n_futures, n_patients);
   
   // Process each cutoff
   for (n in 1:n_futures) {
@@ -251,69 +268,80 @@ tuple(array[,] int, array[,,] int) get_testing_visit_week_bounds(
     array[n_curr_patients] int curr_patients = last_visit_calendar_day_sort_idx[oos_patient_idx[n]:];
     
     // Convert cutoff n to patient-specific study days
-    array[n_curr_patients] int lower_cutoff_visit_days = calendar_date_to_study_date(
-      patient_calendar_day[curr_patients], cutoff_calendar_day[n]
-    );
+    array[n_curr_patients] int lower_cutoff_visit_days = calendar_date_to_study_date(patient_calendar_day[curr_patients], cutoff_calendar_day[n]);
+
+    // if (n == 1) {
+    //   print("patient_calendar_day[curr_patients] = ", patient_calendar_day[curr_patients], ", cutoff_calendar_day[n] = ", cutoff_calendar_day[n]);
+    // }
     
     // Find first testing visit for each patient after cutoff n
     for (i_idx in 1:n_curr_patients) {
       int i = curr_patients[i_idx];  // Actual patient ID
-      int t_measure_pos = patient_tumor_measure_pos[i]; 
-      int t_measure_end = patient_tumor_measure_pos[i + 1] - 1; 
-      int n_patient_measures = t_measure_end - t_measure_pos + 1;
+      int visit_start, visit_end;
+      (visit_start, visit_end) = get_pos(patient_visit_pos, i);
+      int n_patient_visits = visit_end - visit_start + 1;
       
       // Extract and sort patient's visits by day
-      array[n_patient_measures] int patient_t_measure = t_measure[t_measure_pos:t_measure_end];
-      array[n_patient_measures] int patient_t_day_measure = t_day_measure[t_measure_pos:t_measure_end];
-      array[n_patient_measures] int patient_measure_t_sort_idx = sort_indices_asc(patient_t_day_measure);
+      array[n_patient_visits] int patient_t_visits_week = t_patient_visits_week[visit_start:visit_end];
+      array[n_patient_visits] int patient_t_visits_day = t_patient_visits_day[visit_start:visit_end];
+
+      assert_strict_ascending(patient_t_visits_week);
+      assert_strict_ascending(patient_t_visits_day);
       
       // Find first visit after cutoff
       int t_idx = 1;
-      while (t_idx <= n_patient_measures && 
-             patient_t_day_measure[patient_measure_t_sort_idx[t_idx]] <= max(0, lower_cutoff_visit_days[i_idx])) {
+      while (t_idx <= n_patient_visits && 
+             patient_t_visits_day[t_idx] <= max(0, lower_cutoff_visit_days[i_idx])) {
         t_idx += 1;
       }
       
-      if (t_idx <= n_patient_measures) {
-        first_testing_visit_week[n, i] = patient_t_measure[patient_measure_t_sort_idx[t_idx]]; 
-      } else {
-        // This would only happen if we have a patient with only baseline visits
-        fatal_error("Unexpectedly could not find the first testing visit.");
-      }
+      if (t_idx <= n_patient_visits) {
+        first_testing_visit_week[n, i] = patient_t_visits_week[t_idx];
+        testing_start_idx[n, i] = visit_start + t_idx - 1;
+      } 
+
+      // if (i_idx <= 2 && n == 1) {
+      //   print(i_idx, ": visit_start = ", visit_start, ", visit_end = ", visit_end, ", patient_t_visits_week = ", patient_t_visits_week,
+      //   ", lower_cutoff_visit_days[i_idx] = ", lower_cutoff_visit_days[i_idx], 
+      //         ", n_patient_visits = ", n_patient_visits, ", t_idx = ", t_idx);
+      // }
     }
     
     // Find last testing visit for nested cross-validation windows
     for (m in (n + 1):n_futures) {
       // Convert cutoff m to patient-specific study days
-      array[n_curr_patients] int upper_cutoff_visit_days = calendar_date_to_study_date(
-        patient_calendar_day[curr_patients], cutoff_calendar_day[m]
-      );
+      array[n_curr_patients] int upper_cutoff_visit_days = calendar_date_to_study_date(patient_calendar_day[curr_patients], cutoff_calendar_day[m]);
     
       for (i_idx in 1:n_curr_patients) {
         int i = curr_patients[i_idx];  // Actual patient ID
-        int t_measure_pos = patient_tumor_measure_pos[i]; 
-        int t_measure_end = patient_tumor_measure_pos[i + 1] - 1; 
-        int n_patient_measures = t_measure_end - t_measure_pos + 1;
+        int visit_start, visit_end;
+        (visit_start, visit_end) = get_pos(patient_visit_pos, i);
+        int n_patient_visits = visit_end - visit_start + 1;
         
         // Extract and sort patient's visits by day (descending for last visit)
-        array[n_patient_measures] int patient_t_measure = t_measure[t_measure_pos:t_measure_end];
-        array[n_patient_measures] int patient_t_day_measure = t_day_measure[t_measure_pos:t_measure_end];
-        array[n_patient_measures] int patient_measure_t_sort_idx = sort_indices_desc(patient_t_day_measure);
+        array[n_patient_visits] int rev_patient_t_visits_week = reverse(t_patient_visits_week[visit_start:visit_end]);
+        array[n_patient_visits] int rev_patient_t_visits_day = reverse(t_patient_visits_day[visit_start:visit_end]);
         
         // Find last visit on or before cutoff m
         int t_idx = 1;
-        while (t_idx <= n_patient_measures && 
-               patient_t_day_measure[patient_measure_t_sort_idx[t_idx]] > max(0, upper_cutoff_visit_days[i_idx])) {
+        while (t_idx <= n_patient_visits && 
+               rev_patient_t_visits_day[t_idx] > max(0, upper_cutoff_visit_days[i_idx])) {
           t_idx += 1;
         }
         
-        if (t_idx <= n_patient_measures) {
-          last_testing_visit_week[n, m, i] = patient_t_measure[patient_measure_t_sort_idx[t_idx]]; 
+        if (t_idx <= n_patient_visits) {
+          last_testing_visit_week[n, m, i] = rev_patient_t_visits_week[t_idx];
+          testing_end_idx[n, m, i] = visit_end - t_idx + 1;
         } 
-        // If no visit found, keeps the initialized min_all_t value
-      } 
+
+        // if (i_idx <= 2 && n == 1 && m == 2) {
+        //   print(i_idx, ": visit_start = ", visit_start, ", visit_end = ", visit_end,
+        //   ", upper_cutoff_visit_days[i_idx] = ", upper_cutoff_visit_days[i_idx],
+        //         ", n_patient_visits = ", n_patient_visits, ", t_idx = ", t_idx);
+        // }
+      }
     }
   }
   
-  return (first_testing_visit_week, last_testing_visit_week);
+  return (first_testing_visit_week, last_testing_visit_week, testing_start_idx, testing_end_idx);
 }

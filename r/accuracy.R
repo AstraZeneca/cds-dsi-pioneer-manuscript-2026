@@ -236,15 +236,15 @@ lfo <- function(
       timestamp = output_timestamp, 
       ...
     ) 
-  
-  if (fit_only) {
-    return(fit)
-  }
-  
+
   psis_results <- fit |> 
     lfo_log_lik() |> 
     mutate(refit_n, n = n + refit_n - 1) |> 
     left_join(select(remaining_cutoffs, n, cutoff_date, cutoff_calendar_day), by = "n")
+  
+  if (fit_only) {
+    return(lst(fit, psis_results))
+  }
   
   if (lean) {
     psis_results <- psis_results |>
@@ -257,7 +257,7 @@ lfo <- function(
   
   if (verbose) {
     cat("LFO results:\n")
-    print(psis_results)
+    print(select(psis_results, n, m, refit_n, k))
     cat("\n")
   }
   
@@ -337,36 +337,36 @@ psis_resample <- function(l, w, recalc_full = FALSE) { #, negative_only = TRUE) 
 #' 4. Calculates approximated expected log-likelihoods using PSIS resampling.
 #' 5. Renames and reorganizes columns for clarity.
 #'
-#' This function is crucial for assessing model performance in a time-series context,
-#' particularly for clinical trial data with progression-free survival (PFS) and
-#' confirmed response (CRCR) outcomes.
+#' This function is crucial for assessing model performance in a time-series context.
 #'
 lfo_log_lik_rvar <- function(log_lik_rvar, max_n = Inf, future_window = 1) {
   log_lik_rvar |>   
     filter(m >= n) |>
     group_by(n, m) |> 
-    summarize(across(matches("^patient(_pfs|_crcr)?_log_lik"), \(l) list(draws_of(l))), .groups = "drop") |>
+    summarize(across(matches("^patient(_.+)?_log_lik"), \(l) list(draws_of(l))), .groups = "drop") |>
     (function(d) {
       inner_join(
-        filter(d, m == max(m)) |> select(!m), # From n to max(m)
-        filter(d, n == 1) |> select(!n),      # From 1 to n
+        filter(d, m == max(m)) |> select(!m), # From n to max(m), this is the out of sample loglik. For n = 1, that is the exact SAP.
+        filter(d, n == 1) |> select(!n),      # From 1 to, this is the loglik for the additional periods of time that we want to PSIS to approximate.
+                                              # This is relevant to predicting the _next_ row down.
         by = c("n" = "m"), suffix = c("", "_log_ratio")
-      ) |> 
+      ) |>
+        # This add loglik columns for M-SAP, rather than the full SAP we get from the above join.  
         left_join(
           mutate(d, m = m - future_window + 1) |> filter(n == m), 
-          by = "n", suffix = c("", "_w")
+          by = "n", suffix = c("", "_w") # _w is in reference to the m-sap "window"
         )
     })() |>
     filter(n <= max_n) |> 
     mutate(
       # fit = map(min_rank(n), \(nr) if (nr == 1) res),
       across(
-        matches("^patient(_pfs|_crcr)?_log_lik(_w)?$"), 
+        matches("^patient(_.+)?_log_lik(_w)?$"), 
         \(l) map(l, \(ln) plyr::aaply(ln, 2, \(lni) log_mean_exp(lni))), 
         .names = "mean_{.col}"
       ),
       across(
-        matches("^patient(_pfs|_crcr)?_log_lik_log_ratio$"),
+        matches("^patient(_.+)?_log_lik_log_ratio$"),
         \(l) map(l, \(ln) suppressWarnings(loo::psis(rowSums(ln)))), 
         .names = "psis_{.col}"
       ), 
