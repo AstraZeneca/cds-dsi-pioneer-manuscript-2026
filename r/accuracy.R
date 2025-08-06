@@ -213,7 +213,7 @@ get_lfo_cutoff_days <- function(first_cutoff_date, last_date, first_cutoff_day_i
 #' when the approximation quality (as measured by the Pareto k statistic) degrades.
 #'
 lfo <- function(
-    stan_data, model, cutoffs, output_path, basename, initializer, 
+    stan_data, model, cutoffs, all_cutoffs, output_path, basename, initializer, 
     output_timestamp = FALSE, refit_n = min(cutoffs$n), 
     k_threshold = 0.7, lean = FALSE, verbose = FALSE, exact = FALSE, fit_only = FALSE, 
     iter_warmup = 300, iter_sampling = 500, parallel_chains = 4, adapt_delta = 0.9, ...) {
@@ -224,9 +224,10 @@ lfo <- function(
   }
   
   remaining_cutoffs <- cutoffs |> filter(n >= refit_n) 
+  remaining_all_cutoffs <- all_cutoffs |> filter(n >= refit_n)
   
   fit <- stan_data |>
-    list_assign(cutoff_calendar_day = remaining_cutoffs$cutoff_calendar_day, n_cutoffs = nrow(remaining_cutoffs)) %>%
+    list_assign(cutoff_calendar_day = remaining_all_cutoffs$cutoff_calendar_day, n_cutoffs = nrow(remaining_all_cutoffs)) %>%
     sample_and_save(
       model,
       .,
@@ -239,8 +240,9 @@ lfo <- function(
 
   psis_results <- fit |> 
     lfo_log_lik() |> 
-    mutate(refit_n, n = n + refit_n - 1) |> 
-    left_join(select(remaining_cutoffs, n, cutoff_date, cutoff_calendar_day), by = "n")
+    mutate(across(c(n, m), \(x) x + refit_n - 1)) |> 
+    left_join(select(remaining_all_cutoffs, n, cutoff_date, cutoff_calendar_day), by = "n") |> 
+    mutate(tar_group = first(cutoffs$tar_group))
   
   if (fit_only) {
     return(lst(fit, psis_results))
@@ -265,7 +267,7 @@ lfo <- function(
     return(bind_rows(
       psis_results, 
       lfo(
-        stan_data, model, cutoffs, output_path, basename, initializer, output_timestamp, refit_n = min(next_cutoffs$n), 
+        stan_data, model, cutoffs, all_cutoffs, output_path, basename, initializer, output_timestamp, refit_n = min(next_cutoffs$n), 
         k_threshold, lean, verbose, exact, fit_only, iter_warmup, iter_sampling, parallel_chains, adapt_delta, ...
       )
     ))
