@@ -250,7 +250,7 @@ lfo <- function(
   
   if (lean) {
     psis_results <- psis_results |>
-      select(n, contains("E_"))
+      select(n, m, contains("E_"))
   }
   
   next_cutoffs <- psis_results |> 
@@ -383,12 +383,12 @@ lfo_log_lik_rvar <- function(log_lik_rvar, max_n = Inf, future_window = 1) {
     rename_with(\(n) str_replace_all(
       n, 
       c(r"{log_lik_log_ratio}" = "log_ratio",
-        r"{(k|lwt)_psis_patient(_pfs|_crcr)?_log_ratio}" = r"{\1\2}", 
-        r"{^psis_patient(_pfs|_crcr)?_log_ratio}" = r"{psis\1}")
+        r"{(k|lwt)_psis_patient(_.+)?_log_ratio}" = r"{\1\2}", 
+        r"{^psis_patient(_.+)?_log_ratio}" = r"{psis\1}")
     )) |>   
     mutate(
-      dplyover::across2(matches("^patient(_pfs|_crcr)?_log_lik$"), matches("^lwt(_pfs|crcr)?"), psis_resample, .names = "approx_mean_{xcol}"),
-      dplyover::across2(matches("^patient(_pfs|_crcr)?_log_lik_w$"), matches("^lwt(_pfs|crcr)?"), psis_resample, .names = "approx_mean_{xcol}"),
+      dplyover::across2(matches("^patient(_.+)?_log_lik$"), matches("^lwt(_.+)?"), psis_resample, .names = "approx_mean_{xcol}"),
+      dplyover::across2(matches("^patient(_.+)?_log_lik_w$"), matches("^lwt(_+)?"), psis_resample, .names = "approx_mean_{xcol}"),
       across(matches("^(approx_)?mean"), \(m) map_dbl(m, \(mn) if (!is_null(mn)) sum(mn) else NA_real_), .names = "E_{.col}")
     ) |> 
     rename_with(\(n) str_replace(n, r"{E_(approx_)?mean}", r"{\1E}"))
