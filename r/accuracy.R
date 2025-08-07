@@ -237,12 +237,12 @@ lfo <- function(
       timestamp = output_timestamp, 
       ...
     ) 
-
+  
   psis_results <- fit |> 
     lfo_log_lik() |> 
     mutate(across(c(n, m), \(x) x + refit_n - 1)) |> 
     left_join(select(remaining_all_cutoffs, n, cutoff_date, cutoff_calendar_day), by = "n") |> 
-    mutate(tar_group = first(cutoffs$tar_group))
+    mutate(tar_group = first(cutoffs$tar_group), refit_n)
   
   if (fit_only) {
     return(lst(fit, psis_results))
@@ -256,7 +256,7 @@ lfo <- function(
   next_cutoffs <- psis_results |> 
     filter(!is.na(k), k > k_threshold | exact, n > refit_n) %>%
     semi_join(remaining_cutoffs, ., by = "n")
-  
+
   if (verbose) {
     cat("LFO results:\n")
     print(select(psis_results, n, m, refit_n, k))
@@ -264,13 +264,12 @@ lfo <- function(
   }
   
   if (nrow(next_cutoffs) > 0) {
-    return(bind_rows(
-      psis_results, 
-      lfo(
+    next_results <- lfo(
         stan_data, model, cutoffs, all_cutoffs, output_path, basename, initializer, output_timestamp, refit_n = min(next_cutoffs$n), 
         k_threshold, lean, verbose, exact, fit_only, iter_warmup, iter_sampling, parallel_chains, adapt_delta, ...
       )
-    ))
+
+    return(bind_rows(psis_results, next_results))
   } else {
     return(psis_results)
   }
