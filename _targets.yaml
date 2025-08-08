@@ -34,5 +34,5 @@ endometrial_to_lung_june_impute:
 
 sclc:
   script: targets/sclc_targets.R
-  store: !expr file.path(output_path, Sys.getenv("TAR_PROJECT"), Sys.getenv("TAR_BRANCH"))
+  store: !expr file.path(output_path, Sys.getenv("TAR_PROJECT"), Sys.getenv("TAR_BRANCH"), "_targets")
   as_job: no
