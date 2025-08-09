@@ -2,8 +2,8 @@
 array[n_trials] int<lower=0> correct_recist_predictions = zeros_int_array(n_trials);
 array[n_trials] int<lower=0> total_recist_predictions = zeros_int_array(n_trials);
 array[n_trials] matrix<lower = 0>[PD, PD] recist_confusion_matrix; // rows = observed, cols = predicted
-array[n_trials] real weighted_recist_accuracy_linear = zeros_real_array(n_trials);
-array[n_trials] real weighted_recist_accuracy_quadratic = zeros_real_array(n_trials);
+array[n_trials] real weighted_recist_accuracy_linear = zeros_array(n_trials);
+array[n_trials] real weighted_recist_accuracy_quadratic = zeros_array(n_trials);
 array[n_trials] int<lower=0> correct_recist_response_class = zeros_int_array(n_trials);
 array[n_trials] int<lower=0> correct_recist_disease_control = zeros_int_array(n_trials);
 
