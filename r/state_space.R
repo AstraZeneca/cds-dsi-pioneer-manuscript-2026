@@ -55,11 +55,14 @@ get_subsample_forecast_data <- function(patient_states_data, analysis_data) {
   overall_max_t <- max(analysis_data$patient_max_t)
   
   analysis_data |> 
-    mutate(i = seq(n())) |> 
-    mutate(n_forecast_visits = overall_max_t - patient_max_t) |> 
+    mutate(
+      i = seq(n()), 
+      base_sld = map_dbl(visit_data, \(v) first(v$mmsumdiam)),
+      n_forecast_visits = overall_max_t - patient_max_t
+    ) |> 
     filter(n_forecast_visits > 0) |> 
     rowwise() |> 
-    reframe(i, usubjid, patient_max_t, n_forecast_visits, week = seq(patient_max_t + 1, overall_max_t)) |> 
+    reframe(i, usubjid, patient_max_t, n_forecast_visits, base_sld, week = seq(patient_max_t + 1, overall_max_t)) |> 
     mutate(n = seq(n())) |> 
     semi_join(patient_states_data, by = "usubjid") 
 }
