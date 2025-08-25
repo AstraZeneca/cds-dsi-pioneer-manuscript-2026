@@ -242,7 +242,7 @@ lfo <- function(
     lfo_log_lik() |> 
     mutate(across(c(n, m), \(x) x + refit_n - 1)) |> 
     left_join(select(remaining_all_cutoffs, n, cutoff_date, cutoff_calendar_day), by = "n") |> 
-    mutate(tar_group = first(cutoffs$tar_group), refit_n)
+    mutate(tar_group = first(cutoffs$tar_group %||% NA_integer_), refit_n)
   
   if (fit_only) {
     return(lst(fit, psis_results))
