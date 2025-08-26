@@ -1,5 +1,11 @@
 if (file.exists("~/.Rprofile")) source("~/.Rprofile")
 
+# Configure repositories
+options(repos = c(
+  manuelhentschel = "https://manuelhentschel.r-universe.dev",
+  CRAN = "https://cran.rstudio.com/"
+))
+
 source("renv/activate.R")
 
 # if (is_domino) {
