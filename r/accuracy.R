@@ -216,9 +216,9 @@ lfo <- function(
     stan_data, model, cutoffs, all_cutoffs, output_path, basename, initializer, 
     output_timestamp = FALSE, refit_n = min(cutoffs$n), 
     k_threshold = 0.7, lean = FALSE, verbose = FALSE, exact = FALSE, fit_only = FALSE, 
-    iter_warmup = 300, iter_sampling = 500, parallel_chains = 4, adapt_delta = 0.9, ...) {
+    iter_warmup = 300, iter_sampling = 500, parallel_chains = 4, adapt_delta = 0.9, future_window = 1, ...) {
   if (verbose) {
-    cat("Startin on:\n")
+    cat("Starting on:\n")
     print(cutoffs)
     cat("\n")
   }
@@ -239,7 +239,7 @@ lfo <- function(
     ) 
   
   psis_results <- fit |> 
-    lfo_log_lik() |> 
+    lfo_log_lik(future_window = future_window) |> 
     mutate(across(c(n, m), \(x) x + refit_n - 1)) |> 
     left_join(select(remaining_all_cutoffs, n, cutoff_date, cutoff_calendar_day), by = "n") |> 
     mutate(tar_group = first(cutoffs$tar_group %||% NA_integer_), refit_n)
