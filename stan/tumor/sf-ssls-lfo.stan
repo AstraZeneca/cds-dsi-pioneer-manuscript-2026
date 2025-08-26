@@ -41,7 +41,7 @@ transformed data {
 
   // This is an array of patient IDs (sorted by last visit calendar day)
   array[n_patients] int<lower = 1, upper = n_patients> last_visit_calendar_day_sort_idx = sort_indices_asc(last_visit_calendar_day);
-
+  
   // Per cutoff, which index in the above sorted list of patient IDs, identifying the first patient to be included in the out-of-sample testing set
   array[n_cutoffs] int<lower = 1, upper = n_patients> testing_patient_idx = 
     get_oos_patients_idx(last_visit_calendar_day[last_visit_calendar_day_sort_idx], cutoff_calendar_day);
@@ -63,6 +63,38 @@ transformed data {
   (oos_patient_first_testing_visit_week, oos_patient_last_testing_visit_week, testing_start_idx, testing_end_idx) = get_testing_visit_week_bounds(
     testing_patient_idx, last_visit_calendar_day_sort_idx, cutoff_calendar_day, calendar_day, t_patient_visits, t_patient_visits_day, patient_visit_pos
   );
+
+  for (n in 1:n_cutoffs) {
+    int n_curr_patients = n_patients - testing_patient_idx[n] + 1; // How many patients after the current patient index
+    array[n_curr_patients] int curr_patients = last_visit_calendar_day_sort_idx[testing_patient_idx[n]:]; // Who are these patients
+
+    array[n_cutoffs] int m_size = rep_array(-1, n_cutoffs);
+    
+    for (m in 1:n_cutoffs) {
+      if (m >= n) {
+        m_size[m] = 0;
+
+        for (i_idx in 1:n_curr_patients) {
+          // Note: i is the original patient ID (1-based index from input data), not a sort position.
+          // curr_patients contains original patient IDs that were reordered by sorting on last_visit_calendar_day
+          int i = curr_patients[i_idx];
+
+          int visit_start, visit_end;
+          (visit_start, visit_end) = get_pos(patient_visit_pos, i); 
+
+          int start_idx = testing_start_idx[n, i];
+          int end_idx = m < n_cutoffs ? testing_end_idx[n, m + 1, i] : visit_end;
+
+          if (start_idx > 0 && end_idx >= start_idx) {
+            m_size[m] += 1;    
+          }
+        }
+      }
+    }
+
+    print("Number of future visits:");
+    print(n,": ", m_size);
+  }
 }
 
 parameters {
@@ -111,6 +143,7 @@ model {
 }
 
 generated quantities {
+  // Reminder to self: log_lik can be positive; probability densities aren't restricted to [0, 1]
   array[n_cutoffs, n_cutoffs] vector[n_all_testing_patients] patient_log_lik;
 
   for (n in 1:n_cutoffs) {
@@ -119,7 +152,8 @@ generated quantities {
     array[n_curr_patients] int curr_patients = last_visit_calendar_day_sort_idx[testing_patient_idx[n]:]; // Who are these patients
     
     for (m in 1:n_cutoffs) {
-      patient_log_lik[n, m] = zeros_vector(n_all_testing_patients);
+      // patient_log_lik[n, m] = zeros_vector(n_all_testing_patients);
+      patient_log_lik[n, m] = rep_vector(negative_infinity(), n_all_testing_patients);
     
       if (m >= n) {
         for (i_idx in 1:n_curr_patients) {
