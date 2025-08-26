@@ -723,13 +723,12 @@ lite_gather_rvars <- function(fit, ..., ndraws = NULL, recover_data = NULL, calc
 }
 
 find_consecutive <- function(vec, x, n = 1) {
-  enframe(vec) |> 
-    count(value, name = "length") |> 
+  vctrs::vec_unrep(vec) |> 
     mutate(
-      end_index = cumsum(length),
-      start_index = end_index - length + 1
+      end_index = cumsum(times),
+      start_index = end_index - times + 1
     ) |> 
-    filter(value == x, length >= n) |> 
+    filter(key == x, times >= n) |> 
     pull(start_index) |>  
     first() %||% NA
 }
