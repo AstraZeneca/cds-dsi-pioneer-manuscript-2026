@@ -203,6 +203,48 @@ generated quantities {
     }
   }
 
+  array[sum(n_patient_testing_visits)] int<lower = CR, upper = PD + 1> oos_recist = rep_array(PD + 1, sum(n_patient_testing_visits));
+  array[n_cutoffs, n_cutoffs] matrix<lower = 0>[PD, PD] oos_recist_confusion_matrix; // rows = observed, cols = predicted
+
+  {
+    for (i in last_visit_calendar_day_sort_idx[testing_patient_idx[1]:]) {
+      int visit_start, visit_screening_end, visit_treat_pos, visit_end;
+      (visit_start, visit_screening_end, visit_treat_pos, visit_end) = get_visit_pos(patient_visit_pos, i, n_patient_screening_visits[i]);
+
+      int cutoff_idx = cutoff_last_visit_idx[i];
+      int visit_size = cutoff_idx - visit_start + 1;
+      int treat_visit_size = cutoff_idx - visit_treat_pos + 1;
+      int start_idx = testing_start_idx[1, i];
+      int n_oos_visits = visit_end - start_idx + 1; 
+
+      array[n_oos_visits + 1] int forecast_time = get_int_sub_array(t_patient_visits, patient_visit_pos, i)[cutoff_idx:visit_end];      
+      matrix[n_oos_visits, 2] forecast_patient_states;
+      vector[visit_size] rep_patient_log_sld;
+      vector[n_oos_visits] forecast_patient_log_sld;
+
+      (forecast_patient_states, rep_patient_log_sld, forecast_patient_log_sld) = 
+        generate_patient_states_rng(
+          states[visit_start:cutoff_idx],
+          forecast_time,
+          patient_log_decrease_rate[i], patient_log_growth_rate[i],
+          sum_tumor_size[visit_start], 
+          0.0001, 0.0001, // exp(patient_log_growth_lag[train_idx]), exp(pop_log_growth_transition_rate),
+          rep_matrix(0.0, n_oos_visits, 2), // Hardcode zeros for forecast process noise
+          measure_sd
+        );
+
+      array[treat_visit_size + n_oos_visits] int full_predict_recist = calculate_target_recist(
+        exp(append_row(rep_patient_log_sld, forecast_patient_log_sld)) * 10,
+        n_patient_screening_visits[i]
+      );
+
+      int oos_recist_start, oos_recist_end;
+      (oos_recist_start, oos_recist_end) = get_pos(testing_visit_pos, i);
+
+      oos_recist[oos_recist_start:oos_recist_end] = full_predict_recist[(treat_visit_size + 1):];
+    }
+  }
+
   for (n in 1:n_cutoffs) {
     int n_curr_patients = n_patients - testing_patient_idx[n] + 1; // How many patients after the current patient index
     int curr_first_testing_patient_idx = n_all_testing_patients - n_curr_patients + 1; 
@@ -210,6 +252,7 @@ generated quantities {
     
     for (m in 1:n_cutoffs) {
       patient_log_lik[n, m] = zeros_vector(n_all_testing_patients);
+      oos_recist_confusion_matrix[n, m] = rep_matrix(0, PD, PD);
       oos_recist_confusion_matrix[n, m] = rep_matrix(0, PD, PD);
     
       if (m >= n) {
@@ -225,6 +268,7 @@ generated quantities {
 
           int start_idx = testing_start_idx[n, i];
           int end_idx = m < n_cutoffs ? testing_end_idx[n, m + 1, i] : visit_end;
+          
           
 
           if (start_idx > 0 && end_idx >= start_idx) {
