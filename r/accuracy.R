@@ -354,8 +354,10 @@ lfo_log_lik_rvar <- function(log_lik_rvar, max_n = Inf, future_window = 1) {
       ) |>
         # This add loglik columns for M-SAP, rather than the full SAP we get from the above join.  
         left_join(
-          mutate(d, m = m - future_window + 1) |> filter(n == m), 
-          by = "n", suffix = c("", "_w") # _w is in reference to the m-sap "window"
+          # mutate(d, m = m - future_window + 1) |> filter(n == m), 
+          filter(d, n == m - future_window + 1),
+          by = "n", 
+          suffix = c("", "_w") # _w is in reference to the m-sap "window"
         )
     })() |>
     filter(n <= max_n) |> 
@@ -363,7 +365,7 @@ lfo_log_lik_rvar <- function(log_lik_rvar, max_n = Inf, future_window = 1) {
       # fit = map(min_rank(n), \(nr) if (nr == 1) res),
       across(
         matches("^patient(_.+)?_log_lik(_w)?$"), 
-        \(l) map(l, \(ln) plyr::aaply(ln, 2, \(lni) log_mean_exp(lni))), 
+        \(l) map_if(l, \(ln) !is_null(ln), \(ln) plyr::aaply(ln, 2, \(lni) log_mean_exp(lni))), 
         .names = "mean_{.col}"
       ),
       across(
@@ -377,7 +379,6 @@ lfo_log_lik_rvar <- function(log_lik_rvar, max_n = Inf, future_window = 1) {
         .names = "{.fn}_{.col}"
       ),
       across(matches("^(psis|lwt|k)"), lag),
-      
     ) |> 
     rename_with(\(n) str_replace_all(
       n, 
