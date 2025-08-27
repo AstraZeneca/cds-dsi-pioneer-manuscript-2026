@@ -17,12 +17,12 @@ prepare_pdl1_and_trial_info <- function(res_data) {
 #' @param outcome Unquoted column name for the outcome to plot (e.g., orr, median_pfs)
 #' @param ... Additional arguments passed to ggplot2::stat_pointinterval
 #' @return A ggplot object
-plot_outcome_by_pdl1_and_trial <- function(res_data, outcome, ...) {
+plot_outcome_by_pdl1_and_trial <- function(res_data, outcome, .width = c(0.5, 0.9), ...) {
   res_data |> 
     prepare_pdl1_and_trial_info() |>
     filter(fct_match(variable, c("all", "pdl1_naive")), fct_match(trial, "sclc")) |>  
     ggplot() +
-    stat_pointinterval(aes(xdist = {{ outcome }}, y = cond_group_name, color = fit_type), position = "dodge", .width = c(0.5, 0.9), ...) +
+    stat_pointinterval(aes(xdist = {{ outcome }}, y = cond_group_name, color = fit_type), position = "dodge", .width = .width, ...) +
     scale_color_discrete("", type = AZ_palette, label = str_to_title) +
     facet_grid(vars(variable), vars(trial), scales = "free", space = "free", 
                labeller = labeller(trial = str_to_upper, variable = c("all" = "All", "pdl1_naive" = "First Line"))) +
