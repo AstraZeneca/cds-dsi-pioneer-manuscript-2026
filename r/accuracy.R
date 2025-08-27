@@ -300,11 +300,13 @@ lfo_log_lik <- function(res, max_n = Inf, future_window = 1) {
 }
 
 psis_resample <- function(l, w, recalc_full = FALSE) { #, negative_only = TRUE) {
-  map2(l, w, function(ln, wn) { 
-    if (!is_null(wn)) {
-      plyr::aaply(ln, 2, \(lni) log_sum_exp(lni + wn * all(wn < 0))) 
-    } else if (recalc_full) { 
-      plyr::aaply(ln, 2, log_mean_exp)
+  map2(l, w, function(ln, wn) {
+    if (!is_null(ln)) {
+      if (!is_null(wn)) {
+        plyr::aaply(ln, 2, \(lni) log_sum_exp(lni + wn * all(wn < 0))) 
+      } else if (recalc_full) { 
+        plyr::aaply(ln, 2, log_mean_exp)
+      }
     }
   })
 }
