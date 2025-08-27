@@ -152,10 +152,9 @@ generated quantities {
     array[n_curr_patients] int curr_patients = last_visit_calendar_day_sort_idx[testing_patient_idx[n]:]; // Who are these patients
     
     for (m in 1:n_cutoffs) {
-      // patient_log_lik[n, m] = zeros_vector(n_all_testing_patients);
-      patient_log_lik[n, m] = rep_vector(negative_infinity(), n_all_testing_patients);
-    
       if (m >= n) {
+        patient_log_lik[n, m] = zeros_vector(n_all_testing_patients);
+
         for (i_idx in 1:n_curr_patients) {
           // Note: i is the original patient ID (1-based index from input data), not a sort position.
           // curr_patients contains original patient IDs that were reordered by sorting on last_visit_calendar_day
@@ -172,6 +171,8 @@ generated quantities {
                 normalized_sld[start_idx:end_idx] | states[start_idx:end_idx], measure_sd, log_lod - log(sum_tumor_size[visit_start]));
           }
         }
+      } else {
+        patient_log_lik[n, m] = rep_vector(negative_infinity(), n_all_testing_patients);
       }
     }
   } 
