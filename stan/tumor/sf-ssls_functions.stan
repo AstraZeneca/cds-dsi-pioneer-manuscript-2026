@@ -773,7 +773,7 @@ tuple(
   int forecast_size = size(forecast_time) - 1;
   
   // Calculate forecast states using provided parameters
-  matrix[forecast_size, 2] forecast_expected_states, forecast_states;
+  matrix[forecast_size + 1, 2] forecast_expected_states, forecast_states;
   (forecast_expected_states, forecast_states) = sf_log_space_trajectory_ncp(
     patient_states[n_patient_visits],
     forecast_time,
@@ -787,12 +787,12 @@ tuple(
   vector[forecast_size] forecast_log_sld = zeros_vector(forecast_size);
   if (forecast_size > 0) {
     forecast_log_sld = to_vector(normal_rng(
-      to_vector(log_sum_exp(forecast_states[, 1], forecast_states[, 2])) + log(sum_tumor_size_baseline),
+      to_vector(log_sum_exp(forecast_states[2:, 1], forecast_states[2:, 2])) + log(sum_tumor_size_baseline),
       rep_vector(measure_sd, forecast_size)
     ));
   }
   
-  return (forecast_states, rep_log_sld, forecast_log_sld);
+  return (forecast_states[2:], rep_log_sld, forecast_log_sld);
 }
 
 matrix multi_normal_rng(
