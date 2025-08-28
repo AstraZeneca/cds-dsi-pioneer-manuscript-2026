@@ -46,6 +46,8 @@ transformed data {
   array[n_cutoffs] int<lower = 1, upper = n_patients> testing_patient_idx = 
     get_oos_patients_idx(last_visit_calendar_day[last_visit_calendar_day_sort_idx], cutoff_calendar_day);
 
+  print("testing_patient_idx = ", testing_patient_idx);
+
   assert_ascending(testing_patient_idx);
 
   int<lower = 0, upper = n_patients> n_all_testing_patients = n_patients - testing_patient_idx[1] + 1;
@@ -96,7 +98,6 @@ transformed data {
     print(n,": ", m_size);
   }
 
-  // array[n_cutoffs, n_cutoffs, n_patients + 1] int<lower = 0> testing_visit_pos = rep_array(0, n_cutoffs, n_cutoffs, n_patients + 1);
   array[n_patients + 1] int<lower = 1> testing_visit_pos = zeros_int_array(n_patients + 1); 
   array[n_patients] int n_patient_testing_visits;
 
@@ -164,85 +165,43 @@ generated quantities {
   array[sum(n_patient_testing_visits)] int<lower = CR, upper = PD + 1> oos_recist = rep_array(PD + 1, sum(n_patient_testing_visits));
   array[n_cutoffs, n_cutoffs] matrix<lower = 0>[PD, PD] oos_recist_confusion_matrix; // rows = observed, cols = predicted
 
-  {
-    for (i in last_visit_calendar_day_sort_idx[testing_patient_idx[1]:]) {
-      int visit_start, visit_screening_end, visit_treat_pos, visit_end;
-      (visit_start, visit_screening_end, visit_treat_pos, visit_end) = get_visit_pos(patient_visit_pos, i, n_patient_screening_visits[i]);
+  for (i in last_visit_calendar_day_sort_idx[testing_patient_idx[1]:]) {
+    int visit_start, visit_screening_end, visit_treat_pos, visit_end;
+    (visit_start, visit_screening_end, visit_treat_pos, visit_end) = get_visit_pos(patient_visit_pos, i, n_patient_screening_visits[i]);
 
-      int cutoff_idx = cutoff_last_visit_idx[i];
-      int visit_size = cutoff_idx - visit_start + 1;
-      int treat_visit_size = cutoff_idx - visit_treat_pos + 1;
-      int start_idx = testing_start_idx[1, i];
-      int n_oos_visits = visit_end - start_idx + 1; 
+    int cutoff_idx = cutoff_last_visit_idx[i];
+    cutoff_idx = cutoff_idx > 0 ? cutoff_idx : visit_start;
 
-      array[n_oos_visits + 1] int forecast_time = get_int_sub_array(t_patient_visits, patient_visit_pos, i)[cutoff_idx:visit_end];      
-      matrix[n_oos_visits, 2] forecast_patient_states;
-      vector[visit_size] rep_patient_log_sld;
-      vector[n_oos_visits] forecast_patient_log_sld;
+    int visit_size = cutoff_idx - visit_start + 1;
+    int treat_visit_size = max(0, cutoff_idx - visit_treat_pos + 1);
+    int start_idx = testing_start_idx[1, i];
+    int n_oos_visits = visit_end - start_idx + 1; 
+    
+    array[n_oos_visits + 1] int forecast_time = get_int_sub_array(t_patient_visits, patient_visit_pos, i)[visit_size:];      
+    matrix[n_oos_visits, 2] forecast_patient_states;
+    vector[visit_size] rep_patient_log_sld;
+    vector[n_oos_visits] forecast_patient_log_sld;
 
-      (forecast_patient_states, rep_patient_log_sld, forecast_patient_log_sld) = 
-        generate_patient_states_rng(
-          states[visit_start:cutoff_idx],
-          forecast_time,
-          patient_log_decrease_rate[i], patient_log_growth_rate[i],
-          sum_tumor_size[visit_start], 
-          0.0001, 0.0001, // exp(patient_log_growth_lag[train_idx]), exp(pop_log_growth_transition_rate),
-          rep_matrix(0.0, n_oos_visits, 2), // Hardcode zeros for forecast process noise
-          measure_sd
-        );
-
-      array[treat_visit_size + n_oos_visits] int full_predict_recist = calculate_target_recist(
-        exp(append_row(rep_patient_log_sld, forecast_patient_log_sld)) * 10,
-        n_patient_screening_visits[i]
+    (forecast_patient_states, rep_patient_log_sld, forecast_patient_log_sld) = 
+      generate_patient_states_rng(
+        states[visit_start:cutoff_idx],
+        forecast_time,
+        patient_log_decrease_rate[i], patient_log_growth_rate[i],
+        sum_tumor_size[cutoff_idx], 
+        0.0001, 0.0001, // exp(patient_log_growth_lag[train_idx]), exp(pop_log_growth_transition_rate),
+        rep_matrix(0.0, n_oos_visits, 2), // Hardcode zeros for forecast process noise
+        measure_sd
       );
 
-      int oos_recist_start, oos_recist_end;
-      (oos_recist_start, oos_recist_end) = get_pos(testing_visit_pos, i);
+    array[treat_visit_size + n_oos_visits] int full_predict_recist = calculate_target_recist(
+      exp(append_row(rep_patient_log_sld, forecast_patient_log_sld)) * 10,
+      n_patient_screening_visits[i]
+    );
 
-      oos_recist[oos_recist_start:oos_recist_end] = full_predict_recist[(treat_visit_size + 1):];
-    }
-  }
+    int oos_recist_start, oos_recist_end;
+    (oos_recist_start, oos_recist_end) = get_pos(testing_visit_pos, i);
 
-  array[sum(n_patient_testing_visits)] int<lower = CR, upper = PD + 1> oos_recist = rep_array(PD + 1, sum(n_patient_testing_visits));
-  array[n_cutoffs, n_cutoffs] matrix<lower = 0>[PD, PD] oos_recist_confusion_matrix; // rows = observed, cols = predicted
-
-  {
-    for (i in last_visit_calendar_day_sort_idx[testing_patient_idx[1]:]) {
-      int visit_start, visit_screening_end, visit_treat_pos, visit_end;
-      (visit_start, visit_screening_end, visit_treat_pos, visit_end) = get_visit_pos(patient_visit_pos, i, n_patient_screening_visits[i]);
-
-      int cutoff_idx = cutoff_last_visit_idx[i];
-      int visit_size = cutoff_idx - visit_start + 1;
-      int treat_visit_size = cutoff_idx - visit_treat_pos + 1;
-      int start_idx = testing_start_idx[1, i];
-      int n_oos_visits = visit_end - start_idx + 1; 
-
-      array[n_oos_visits + 1] int forecast_time = get_int_sub_array(t_patient_visits, patient_visit_pos, i)[cutoff_idx:visit_end];      
-      matrix[n_oos_visits, 2] forecast_patient_states;
-      vector[visit_size] rep_patient_log_sld;
-      vector[n_oos_visits] forecast_patient_log_sld;
-
-      (forecast_patient_states, rep_patient_log_sld, forecast_patient_log_sld) = 
-        generate_patient_states_rng(
-          states[visit_start:cutoff_idx],
-          forecast_time,
-          patient_log_decrease_rate[i], patient_log_growth_rate[i],
-          sum_tumor_size[visit_start], 
-          0.0001, 0.0001, // exp(patient_log_growth_lag[train_idx]), exp(pop_log_growth_transition_rate),
-          rep_matrix(0.0, n_oos_visits, 2), // Hardcode zeros for forecast process noise
-          measure_sd
-        );
-
-      array[treat_visit_size + n_oos_visits] int full_predict_recist = calculate_target_recist(
-        exp(append_row(rep_patient_log_sld, forecast_patient_log_sld)) * 10,
-        n_patient_screening_visits[i]
-      );
-
-      int oos_recist_start, oos_recist_end;
-      (oos_recist_start, oos_recist_end) = get_pos(testing_visit_pos, i);
-
-      oos_recist[oos_recist_start:oos_recist_end] = full_predict_recist[(treat_visit_size + 1):];
-    }
+    oos_recist[oos_recist_start:oos_recist_end] = full_predict_recist[(treat_visit_size + 1):];
   }
 
   for (n in 1:n_cutoffs) {
@@ -268,9 +227,8 @@ generated quantities {
 
           int start_idx = testing_start_idx[n, i];
           int end_idx = m < n_cutoffs ? testing_end_idx[n, m + 1, i] : visit_end;
-          
-          
-
+         
+          // This does not exclude patients with post cutoff visits but no training visits (patients who aren't even in the study at the cutoff).
           if (start_idx > 0 && end_idx >= start_idx) {
             patient_log_lik[n, m, curr_first_testing_patient_idx + i_idx - 1] += sf_log_space_obs_lpdf(
                 normalized_sld[start_idx:end_idx] | states[start_idx:end_idx], measure_sd, log_lod - log(sum_tumor_size[visit_start]));
