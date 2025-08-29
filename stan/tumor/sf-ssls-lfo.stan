@@ -234,11 +234,20 @@ generated quantities {
                 normalized_sld[start_idx:end_idx] | states[start_idx:end_idx], measure_sd, log_lod - log(sum_tumor_size[visit_start]));
 
             int oos_recist_start, oos_recist_end;
-            (oos_recist_start, oos_recist_end) = get_pos(oos_recist, i);
+            (oos_recist_start, oos_recist_end) = get_pos(testing_visit_pos, i);
 
             int n_curr_testing_visits = end_idx - start_idx + 1;
 
-            assert_equal(oos_recist_start + n_curr_testing_visits + 1, oos_recist_end);
+            // print(
+            //   "n: ", n, " | m: ", m, " | i: ", i,
+            //   " | oos_recist_start: ", oos_recist_start,
+            //   " | oos_recist_end: ", oos_recist_end,
+            //   " | n_curr_testing_visits: ", n_curr_testing_visits,
+            //   " | start_idx: ", start_idx,
+            //   " | end_idx: ", end_idx
+            // );
+
+            assert_equal(oos_recist_start + n_curr_testing_visits - 1, oos_recist_end);
 
             for (t_idx in 1:n_curr_testing_visits) {
               oos_recist_confusion_matrix[recist[start_idx + t_idx - 1], oos_recist[oos_recist_start + t_idx - 1]] += 1;
