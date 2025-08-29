@@ -222,7 +222,7 @@ generated quantities {
           // curr_patients contains original patient IDs that were reordered by sorting on last_visit_calendar_day
           int i = curr_patients[i_idx];
 
-          int visit_start, visit_end;
+          int visit_start, visit_end, first_start_idx = testing_start_idx[1, i];
           (visit_start, visit_end) = get_pos(patient_visit_pos, i); 
 
           int start_idx = testing_start_idx[n, i];
@@ -237,6 +237,7 @@ generated quantities {
             (oos_recist_start, oos_recist_end) = get_pos(testing_visit_pos, i);
 
             int n_curr_testing_visits = end_idx - start_idx + 1;
+            int test_start_offset = start_idx - first_start_idx;
 
             // print(
             //   "n: ", n, " | m: ", m, " | i: ", i,
@@ -247,10 +248,10 @@ generated quantities {
             //   " | end_idx: ", end_idx
             // );
 
-            assert_equal(oos_recist_start + n_curr_testing_visits - 1, oos_recist_end);
+            // assert_equal(oos_recist_start + n_curr_testing_visits - 1, oos_recist_end);
 
             for (t_idx in 1:n_curr_testing_visits) {
-              oos_recist_confusion_matrix[recist[start_idx + t_idx - 1], oos_recist[oos_recist_start + t_idx - 1]] += 1;
+              oos_recist_confusion_matrix[recist[start_idx + t_idx - 1], oos_recist[oos_recist_start + test_start_offset + t_idx - 1]] += 1;
             }
           }
         }
