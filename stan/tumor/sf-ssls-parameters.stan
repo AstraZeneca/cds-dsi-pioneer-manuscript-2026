@@ -55,8 +55,8 @@ vector[pop_initial_states_param_only ? 0 : n_train_patients] raw_patient_decreas
 // real log_lod;
 
 // Covariate effects on rates
-vector[n_covar] QR_pop_log_net_rate_coef;      // Population-level covariate effects on net rate
-vector[n_covar] QR_pop_decrease_prop_logis_coef;
+vector[n_covar] pop_log_net_rate_coef;      // Population-level covariate effects on net rate (original space)
+vector[n_covar] pop_decrease_prop_logis_coef;
 
 // Optional: hierarchical covariate effects
 row_vector<lower=0>[pop_covar_coef_only ? 0 : n_covar] trial_log_net_rate_coef_sd;
