@@ -187,7 +187,7 @@ generated quantities {
         states[visit_start:cutoff_idx],
         forecast_time,
         patient_log_decrease_rate[i], patient_log_growth_rate[i],
-        sum_tumor_size[cutoff_idx], 
+        sum_tumor_size[visit_start], 
         0.0001, 0.0001, // exp(patient_log_growth_lag[train_idx]), exp(pop_log_growth_transition_rate),
         rep_matrix(0.0, n_oos_visits, 2), // Hardcode zeros for forecast process noise
         measure_sd
