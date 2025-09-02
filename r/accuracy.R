@@ -357,7 +357,7 @@ lfo_log_lik_rvar <- function(log_lik_rvar, max_n = Inf, future_window = 1) {
         # This add loglik columns for M-SAP, rather than the full SAP we get from the above join.  
         left_join(
           # mutate(d, m = m - future_window + 1) |> filter(n == m), 
-          filter(d, n == m - future_window + 1),
+          filter(d, m == n + future_window - 1),
           by = "n", 
           suffix = c("", "_w") # _w is in reference to the m-sap "window"
         )
