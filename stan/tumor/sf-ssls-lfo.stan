@@ -21,6 +21,8 @@ data {
 } 
 
 transformed data {
+  print("cutoff_calendar_day = ", cutoff_calendar_day);
+  
   #include "../base_transformed_data.stan"
   #include "tumor_transformed_data.stan"
   #include "sf-transformed_data.stan"
@@ -163,7 +165,7 @@ generated quantities {
   array[n_cutoffs, n_cutoffs] vector[n_all_testing_patients] patient_log_lik;
 
   array[sum(n_patient_testing_visits)] int<lower = CR, upper = PD + 1> oos_recist = rep_array(PD + 1, sum(n_patient_testing_visits));
-  array[n_cutoffs, n_cutoffs] matrix<lower = 0>[PD, PD] oos_recist_confusion_matrix; // rows = observed, cols = predicted
+  // array[n_cutoffs, n_cutoffs] matrix<lower = 0>[PD, PD] oos_recist_confusion_matrix; // rows = observed, cols = predicted
 
   for (i in last_visit_calendar_day_sort_idx[testing_patient_idx[1]:]) {
     int visit_start, visit_screening_end, visit_treat_pos, visit_end;
@@ -211,8 +213,8 @@ generated quantities {
     
     for (m in 1:n_cutoffs) {
       patient_log_lik[n, m] = zeros_vector(n_all_testing_patients);
-      oos_recist_confusion_matrix[n, m] = rep_matrix(0, PD, PD);
-      oos_recist_confusion_matrix[n, m] = rep_matrix(0, PD, PD);
+      // oos_recist_confusion_matrix[n, m] = rep_matrix(0, PD, PD);
+      // oos_recist_confusion_matrix[n, m] = rep_matrix(0, PD, PD);
     
       if (m >= n) {
         patient_log_lik[n, m] = zeros_vector(n_all_testing_patients);
@@ -250,9 +252,9 @@ generated quantities {
 
             // assert_equal(oos_recist_start + n_curr_testing_visits - 1, oos_recist_end);
 
-            for (t_idx in 1:n_curr_testing_visits) {
-              oos_recist_confusion_matrix[recist[start_idx + t_idx - 1], oos_recist[oos_recist_start + test_start_offset + t_idx - 1]] += 1;
-            }
+            // for (t_idx in 1:n_curr_testing_visits) {
+            //   oos_recist_confusion_matrix[recist[start_idx + t_idx - 1], oos_recist[oos_recist_start + test_start_offset + t_idx - 1]] += 1;
+            // }
           }
         }
       } else {
