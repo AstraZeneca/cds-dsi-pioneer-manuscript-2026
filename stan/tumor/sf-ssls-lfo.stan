@@ -162,7 +162,7 @@ model {
 }
 
 generated quantities {
-  // Reminder to self: log_lik can be positive; probability densities aren't restricted to [0, 1]
+  // Reminder to self: log_lik can be positive; probability densities aren't restricted to [-Inf, 0]
   array[n_cutoffs, n_cutoffs] vector[n_all_testing_patients] patient_log_lik;
 
   array[sum(n_patient_testing_visits)] int<lower = CR, upper = PD + 1> oos_recist = rep_array(PD + 1, sum(n_patient_testing_visits));
