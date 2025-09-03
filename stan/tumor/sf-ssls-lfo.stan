@@ -108,8 +108,9 @@ transformed data {
     (visit_start, visit_end) = get_pos(patient_visit_pos, i); 
 
     int start_idx = testing_start_idx[1, i];
-
-    n_patient_testing_visits[i] = visit_end - start_idx + 1;
+    // Only allocate OOS visits for patients who actually have a post-cutoff start.
+    // If start_idx == 0, the patient is not included at the first cutoff (no OOS window yet).
+    n_patient_testing_visits[i] = start_idx > 0 ? (visit_end - start_idx + 1) : 0;
   }
 
   testing_visit_pos = create_pos(n_patient_testing_visits);
@@ -177,33 +178,44 @@ generated quantities {
     int visit_size = cutoff_idx - visit_start + 1;
     int treat_visit_size = max(0, cutoff_idx - visit_treat_pos + 1);
     int start_idx = testing_start_idx[1, i];
-    int n_oos_visits = visit_end - start_idx + 1; 
+    // Only generate OOS when this patient has a post-cutoff start at the first cutoff.
+    if (start_idx > 0) {
+      int n_oos_visits = visit_end - start_idx + 1; 
     
-    array[n_oos_visits + 1] int forecast_time = get_int_sub_array(t_patient_visits, patient_visit_pos, i)[visit_size:];      
-    matrix[n_oos_visits, 2] forecast_patient_states;
-    vector[visit_size] rep_patient_log_sld;
-    vector[n_oos_visits] forecast_patient_log_sld;
+      array[n_oos_visits + 1] int forecast_time = get_int_sub_array(t_patient_visits, patient_visit_pos, i)[visit_size:];      
+      matrix[n_oos_visits, 2] forecast_patient_states;
+      vector[visit_size] rep_patient_log_sld;
+      vector[n_oos_visits] forecast_patient_log_sld;
 
-    (forecast_patient_states, rep_patient_log_sld, forecast_patient_log_sld) = 
-      generate_patient_states_rng(
-        states[visit_start:cutoff_idx],
-        forecast_time,
-        patient_log_decrease_rate[i], patient_log_growth_rate[i],
-        sum_tumor_size[visit_start], 
-        0.0001, 0.0001, // exp(patient_log_growth_lag[train_idx]), exp(pop_log_growth_transition_rate),
-        rep_matrix(0.0, n_oos_visits, 2), // Hardcode zeros for forecast process noise
-        measure_sd
+      (forecast_patient_states, rep_patient_log_sld, forecast_patient_log_sld) = 
+        generate_patient_states_rng(
+          states[visit_start:cutoff_idx],
+          forecast_time,
+          patient_log_decrease_rate[i], patient_log_growth_rate[i],
+          sum_tumor_size[visit_start], 
+          0.0001, 0.0001, // exp(patient_log_growth_lag[train_idx]), exp(pop_log_growth_transition_rate),
+          rep_matrix(0.0, n_oos_visits, 2), // Hardcode zeros for forecast process noise
+          measure_sd
+        );
+
+      // calculate_target_recist returns RECIST for treatment visits only (screening dropped),
+      // so length(full_predict_recist) == treat_visit_size + n_oos_visits.
+      array[treat_visit_size + n_oos_visits] int full_predict_recist = calculate_target_recist(
+        exp(append_row(rep_patient_log_sld, forecast_patient_log_sld)) * 10,
+        n_patient_screening_visits[i]
       );
 
-    array[treat_visit_size + n_oos_visits] int full_predict_recist = calculate_target_recist(
-      exp(append_row(rep_patient_log_sld, forecast_patient_log_sld)) * 10,
-      n_patient_screening_visits[i]
-    );
+      int oos_recist_start, oos_recist_end;
+      (oos_recist_start, oos_recist_end) = get_pos(testing_visit_pos, i);
 
-    int oos_recist_start, oos_recist_end;
-    (oos_recist_start, oos_recist_end) = get_pos(testing_visit_pos, i);
-
-    oos_recist[oos_recist_start:oos_recist_end] = full_predict_recist[(treat_visit_size + 1):];
+      // We write only the out-of-sample part: drop the in-sample treatment visits (treat_visit_size)
+      // and keep exactly n_oos_visits RECIST values.
+      if (n_patient_testing_visits[i] > 0) {
+        // Bounds/sanity checks for the per-patient OOS slice
+        assert_equal(oos_recist_end - oos_recist_start + 1, n_oos_visits);
+        oos_recist[oos_recist_start:oos_recist_end] = full_predict_recist[(treat_visit_size + 1):];
+      }
+    }
   }
 
   for (n in 1:n_cutoffs) {
@@ -250,7 +262,10 @@ generated quantities {
             //   " | end_idx: ", end_idx
             // );
 
-            // assert_equal(oos_recist_start + n_curr_testing_visits - 1, oos_recist_end);
+            // The patient slice in oos_recist spans all OOS visits from the first cutoff:
+            assert_equal(oos_recist_start + n_patient_testing_visits[i] - 1, oos_recist_end);
+            // For current (n, m) window, ensure we don't step past the end of that slice:
+            assert_greater_than_or_equal(oos_recist_end, oos_recist_start + test_start_offset + n_curr_testing_visits - 1);
 
             // for (t_idx in 1:n_curr_testing_visits) {
             //   oos_recist_confusion_matrix[recist[start_idx + t_idx - 1], oos_recist[oos_recist_start + test_start_offset + t_idx - 1]] += 1;
