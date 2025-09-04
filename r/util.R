@@ -365,10 +365,10 @@ lognormal_sd <- function(mu = 0, sigma) {
   sqrt((exp(sigma^2) - 1) * exp(2*mu + sigma^2))
 } 
 
-tar_bind_rows <- function(target_name, mapped, start, ...) {
+tar_bind_rows <- function(target_name, mapped, names, ...) {
   tar_combine_raw(
     deparse(substitute(target_name)), 
-    tar_select_targets(mapped, starts_with(start)), 
+    tar_select_targets(mapped, names), 
     command = expression(bind_rows(!!!.x)), ...)
 }
 
