@@ -33,6 +33,17 @@ tuple(int, int) find_first_week(
   }
   return (week, right_censored);
 }
+
+tuple(int, int) find_first_forecast_week(
+  array[] int arr,
+  array[] int values,
+  int min_run_length,
+  array[] int forecast_time,
+  int max_all_t
+) {
+  return find_first_week(arr, values, min_run_length, 0, zeros_int_array(0), forecast_time, max_all_t);
+}
+
 /**
  * Map an index (possibly after adding screening visits) to the actual week.
  * If the index is within the observed visits, use curr_visits; otherwise, use forecast_time.

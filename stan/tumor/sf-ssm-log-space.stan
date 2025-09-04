@@ -266,8 +266,7 @@ generated quantities {
           );
 
           (forecast_target_pfs[right_censored_idx], forecast_target_right_censored[right_censored_idx]) = 
-            find_first_week(forecast_recist[train_forecast_visit_start:train_forecast_visit_end], { PD }, 2, 
-                            n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
+            find_first_forecast_week(forecast_recist[train_forecast_visit_start:train_forecast_visit_end], { PD }, 2, forecast_time, max_all_t);
           
           forecast_pfs[right_censored_idx] = min(forecast_target_pfs[right_censored_idx], forecast_non_target_pfs[right_censored_idx]);
           forecast_right_censored[right_censored_idx] = forecast_target_right_censored[right_censored_idx] && forecast_non_target_right_censored[right_censored_idx];
