@@ -1,38 +1,32 @@
 main:
-  store: !expr file.path(output_path, "_targets")
+  store: /mnt/data/analysis-results/karim_naguib/_targets
   as_job: yes
-  
-# LUNG 
-
 endometrial_to_lung:
   script: endometrial_to_lung_targets.R
-  store: !expr file.path(output_path, "_targets/endometrial_to_lung")
+  store: /mnt/data/analysis-results/karim_naguib/_targets/endometrial_to_lung
   as_job: yes
 endometrial_to_lung_dco2:
   inherits: endometrial_to_lung
   script: endometrial_to_lung_targets_dco2.R
-  store: !expr file.path(output_path, "_targets/endometrial_to_lung/dco2")
+  store: /mnt/data/analysis-results/karim_naguib/_targets/endometrial_to_lung/dco2
   as_job: yes
 endometrial_to_lung_retro_dco1:
   inherits: endometrial_to_lung
   script: endometrial_to_lung_targets_retro_dco1.R
-  store: !expr file.path(output_path, "_targets/endometrial_to_lung/retro_dco1")
+  store: /mnt/data/analysis-results/karim_naguib/_targets/endometrial_to_lung/retro_dco1
 endometrial_to_lung_retro_dco2:
   inherits: endometrial_to_lung
   script: endometrial_to_lung_targets_retro_dco2.R
-  store: !expr file.path(output_path, "_targets/endometrial_to_lung/retro_dco2")
+  store: /mnt/data/analysis-results/karim_naguib/_targets/endometrial_to_lung/retro_dco2
 endometrial_to_lung_impute:
   inherits: endometrial_to_lung
   script: endometrial_to_lung_targets_impute.R
-  store: !expr file.path(output_path, "_targets/endometrial_to_lung/impute")
+  store: /mnt/data/analysis-results/karim_naguib/_targets/endometrial_to_lung/impute
 endometrial_to_lung_june_impute:
   inherits: endometrial_to_lung
   script: endometrial_to_lung_targets_june_impute.R
-  store: !expr file.path(output_path, "_targets/endometrial_to_lung/june_impute")
-  
-# SCLC
-
+  store: /mnt/data/analysis-results/karim_naguib/_targets/endometrial_to_lung/june_impute
 sclc:
   script: targets/sclc_targets.R
-  store: !expr file.path(output_path, Sys.getenv("TAR_PROJECT"), Sys.getenv("TAR_BRANCH"), "_targets")
+  store: /mnt/data/analysis-results/karim_naguib/sclc/lfo3/_targets
   as_job: no
