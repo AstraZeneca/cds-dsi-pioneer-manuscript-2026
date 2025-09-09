@@ -154,11 +154,11 @@ export_stan_functions <- function(stan_file, includes = NULL) {
   return(model)
 }
 
-build_model <- function(model_file, include_files = NULL, dir = NULL) {
+build_model <- function(model_file, include_files = NULL, dir = NULL, ...) {
   # Force dependency on include files
   include_files
   
-  model <- cmdstan_model(model_file, cpp_options = lst(stan_threads = TRUE), dir = dir)
+  model <- cmdstan_model(model_file, cpp_options = lst(stan_threads = TRUE), dir = dir, ...)
   
   # Track the executable by including its hash in the return value
   exe_path <- model$exe_file()
