@@ -4,4 +4,4 @@ RENV_CONFIG_SYNCHRONIZED_CHECK=false
 RENV_PATHS_CACHE=/home/ubuntu/.cache/R/renv
 
 TAR_PROJECT=sclc
-TAR_BRANCH=main
+TAR_BRANCH=lfo3
