@@ -24,6 +24,8 @@ transformed data {
   #include "other_events_transformed_data.stan"
   #include "mature_cutoffs_transformed_data.stan"
   #include "sf-ssls-outcomes_info_transformed_data.stan"
+  // One-time data-only consistency checks
+  #include "sf-checks.stan"
 }
 
 parameters {
@@ -189,9 +191,20 @@ generated quantities {
       int forecast_size = get_pos_size(forecast_visits_pos, i);
       
       array[n_patient_visits[i]] int curr_visits = get_int_sub_array(train_patient_visits, train_patient_visit_pos, train_idx);
+      // Treatment-only visits (exclude screening) for Convention B
+      array[train_visit_size - n_patient_screening_visits[i]] int treat_curr_visits = 
+        curr_visits[(n_patient_screening_visits[i] + 1):];
       
+      // Build forecast time WITH anchor (duplicate last observed week as element 1),
+      // so size = n_future + 1. The anchor is needed for state propagation but
+      // should be excluded from week mapping logic; hence we pass forecast_time[2:] there.
       array[n_patient_forecast_visits[i] + 1] int forecast_time = linspaced_int_array(
-        n_patient_forecast_visits[i] + 1, patient_last_obs_visit[i], last_predict_visit);
+        n_patient_forecast_visits[i] + 1,
+        patient_last_obs_visit[i],
+        last_predict_visit);
+      // Derived slice without anchor for mapping (progression / response) logic
+      array[n_patient_forecast_visits[i] > 0 ? n_patient_forecast_visits[i] : 0] int forecast_time_wo_anchor =
+        n_patient_forecast_visits[i] > 0 ? forecast_time[2:] : zeros_int_array(0);
       
       // Generate patient states using direct tuple assignment
       // Generate zeros for observed process noise (as it was hardcoded before)
@@ -243,21 +256,27 @@ generated quantities {
       array[n_mature_cutoffs_calendar_days] int cutoff_forecast_confirmed_response_week = zeros_int_array(n_mature_cutoffs_calendar_days),
                                                 cutoff_confirmed_response_censored = zeros_int_array(n_mature_cutoffs_calendar_days);
 
-      array[train_visit_size + forecast_size] int curr_recist;
-      curr_recist[:train_visit_size] = recist[visit_pos:visit_end];
+  array[train_visit_size + forecast_size] int curr_recist;
+  curr_recist[:train_visit_size] = recist[visit_pos:visit_end]; // includes screening, will slice below when calling find_first_week
           
       if (n_patient_forecast_visits[i] > 0) {
         curr_recist[(train_visit_size + 1):] = forecast_recist[train_forecast_visit_start:train_forecast_visit_end];
 
         (sample_target_pfs[train_idx], sample_target_right_censored[train_idx]) = 
-          find_first_week(curr_recist, { PD }, 2, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
+          find_first_week(curr_recist[(n_patient_screening_visits[i] + 1):], { PD }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
         (forecast_confirmed_response_week, confirmed_response_censored) = 
-          find_first_week(curr_recist, { PR, CR }, 2, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
+          find_first_week(curr_recist[(n_patient_screening_visits[i] + 1):], { PR, CR }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
 
         for (m in 1:n_mature_cutoffs_calendar_days) {
           int last_after_cutoff_visit = min(patient_relative_day_at_cutoff[i, m], train_visit_size + forecast_size);
-          (cutoff_forecast_confirmed_response_week[m], cutoff_confirmed_response_censored[m]) = find_first_week(
-            curr_recist[:last_after_cutoff_visit], { PR, CR }, 2, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
+          int treat_last_after_cutoff_visit = max(0, last_after_cutoff_visit - n_patient_screening_visits[i]);
+          if (treat_last_after_cutoff_visit > 0) {
+            (cutoff_forecast_confirmed_response_week[m], cutoff_confirmed_response_censored[m]) = find_first_week(
+              curr_recist[(n_patient_screening_visits[i] + 1):(n_patient_screening_visits[i] + treat_last_after_cutoff_visit)], { PR, CR }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
+          } else {
+            cutoff_forecast_confirmed_response_week[m] = max_all_t;
+            cutoff_confirmed_response_censored[m] = 1;
+          }
         }
          
         if (right_censored[i]) {
@@ -266,7 +285,7 @@ generated quantities {
           );
 
           (forecast_target_pfs[right_censored_idx], forecast_target_right_censored[right_censored_idx]) = 
-            find_first_forecast_week(forecast_recist[train_forecast_visit_start:train_forecast_visit_end], { PD }, 2, forecast_time, max_all_t);
+            find_first_forecast_week(forecast_recist[train_forecast_visit_start:train_forecast_visit_end], { PD }, 2, forecast_time_wo_anchor, max_all_t);
           
           forecast_pfs[right_censored_idx] = min(forecast_target_pfs[right_censored_idx], forecast_non_target_pfs[right_censored_idx]);
           forecast_right_censored[right_censored_idx] = forecast_target_right_censored[right_censored_idx] && forecast_non_target_right_censored[right_censored_idx];
@@ -277,19 +296,27 @@ generated quantities {
         (spop_target_pfs[train_idx], spop_target_right_censored[train_idx]) = find_first_week(
           append_array(rep_recist[train_treat_visit_start:train_visit_end], 
                        forecast_recist[train_forecast_visit_start:train_forecast_visit_end]), 
-          { PD }, 2, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t); 
+          { PD }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t); 
       } else {
         (spop_target_pfs[train_idx], spop_target_right_censored[train_idx]) = find_first_week(
-          rep_recist[train_treat_visit_start:train_visit_end], { PD }, 2, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t); 
+          rep_recist[train_treat_visit_start:train_visit_end], { PD }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t); 
+
         (sample_target_pfs[train_idx], sample_target_right_censored[train_idx]) = find_first_week(
-          recist[visit_pos:visit_end], { PD }, 2, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
+          curr_recist[(n_patient_screening_visits[i] + 1):], { PD }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
+
         (forecast_confirmed_response_week, confirmed_response_censored) = find_first_week(
-          recist[visit_pos:visit_end], { PR, CR }, 2, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
+          curr_recist[(n_patient_screening_visits[i] + 1):], { PR, CR }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
 
         for (m in 1:n_mature_cutoffs_calendar_days) {
           int last_after_cutoff_visit = min(patient_relative_day_at_cutoff[i, m], train_visit_size);
-          (cutoff_forecast_confirmed_response_week[m], cutoff_confirmed_response_censored[m]) = find_first_week(
-            recist[:last_after_cutoff_visit], { PR, CR }, 2, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
+          int treat_last_after_cutoff_visit = max(0, last_after_cutoff_visit - n_patient_screening_visits[i]);
+          if (treat_last_after_cutoff_visit > 0) {
+            (cutoff_forecast_confirmed_response_week[m], cutoff_confirmed_response_censored[m]) = find_first_week(
+              curr_recist[(n_patient_screening_visits[i] + 1):(n_patient_screening_visits[i] + treat_last_after_cutoff_visit)], { PR, CR }, 2, treat_curr_visits[:treat_last_after_cutoff_visit], forecast_time_wo_anchor, max_all_t);
+          } else {
+            cutoff_forecast_confirmed_response_week[m] = max_all_t;
+            cutoff_confirmed_response_censored[m] = 1;
+          }
         }
       }
      
