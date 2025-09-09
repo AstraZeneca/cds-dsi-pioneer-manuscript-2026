@@ -166,7 +166,7 @@ generated quantities {
   array[n_cutoffs, n_cutoffs] vector[n_all_testing_patients] patient_log_lik;
 
   array[sum(n_patient_testing_visits)] int<lower = CR, upper = PD + 1> oos_recist = rep_array(PD + 1, sum(n_patient_testing_visits));
-  // array[n_cutoffs, n_cutoffs] matrix<lower = 0>[PD, PD] oos_recist_confusion_matrix; // rows = observed, cols = predicted
+  array[n_cutoffs, n_cutoffs] matrix<lower = 0>[PD, PD] oos_recist_confusion_matrix; // rows = observed, cols = predicted
 
   for (i in last_visit_calendar_day_sort_idx[testing_patient_idx[1]:]) {
     int visit_start, visit_screening_end, visit_treat_pos, visit_end;
@@ -225,8 +225,8 @@ generated quantities {
     
     for (m in 1:n_cutoffs) {
       patient_log_lik[n, m] = zeros_vector(n_all_testing_patients);
-      // oos_recist_confusion_matrix[n, m] = rep_matrix(0, PD, PD);
-      // oos_recist_confusion_matrix[n, m] = rep_matrix(0, PD, PD);
+      oos_recist_confusion_matrix[n, m] = rep_matrix(0, PD, PD);
+      oos_recist_confusion_matrix[n, m] = rep_matrix(0, PD, PD);
     
       if (m >= n) {
         patient_log_lik[n, m] = zeros_vector(n_all_testing_patients);
@@ -253,23 +253,14 @@ generated quantities {
             int n_curr_testing_visits = end_idx - start_idx + 1;
             int test_start_offset = start_idx - first_start_idx;
 
-            // print(
-            //   "n: ", n, " | m: ", m, " | i: ", i,
-            //   " | oos_recist_start: ", oos_recist_start,
-            //   " | oos_recist_end: ", oos_recist_end,
-            //   " | n_curr_testing_visits: ", n_curr_testing_visits,
-            //   " | start_idx: ", start_idx,
-            //   " | end_idx: ", end_idx
-            // );
-
             // The patient slice in oos_recist spans all OOS visits from the first cutoff:
             assert_equal(oos_recist_start + n_patient_testing_visits[i] - 1, oos_recist_end);
             // For current (n, m) window, ensure we don't step past the end of that slice:
             assert_greater_than_or_equal(oos_recist_end, oos_recist_start + test_start_offset + n_curr_testing_visits - 1);
 
-            // for (t_idx in 1:n_curr_testing_visits) {
-            //   oos_recist_confusion_matrix[recist[start_idx + t_idx - 1], oos_recist[oos_recist_start + test_start_offset + t_idx - 1]] += 1;
-            // }
+            for (t_idx in 1:n_curr_testing_visits) {
+              oos_recist_confusion_matrix[recist[start_idx + t_idx - 1], oos_recist[oos_recist_start + test_start_offset + t_idx - 1]] += 1;
+            }
           }
         }
       } else {
