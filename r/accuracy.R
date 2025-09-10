@@ -251,6 +251,9 @@ lfo <- function(
   if (lean) {
     psis_results <- psis_results |>
       select(n, m, contains("E_"))
+  } else {
+    psis_results <- psis_results |>
+      mutate(fit = if_else(n == refit_n, list(fit), list(NULL)))
   }
   
   next_cutoffs <- psis_results |> 
