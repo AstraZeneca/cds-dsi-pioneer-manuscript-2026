@@ -62,6 +62,12 @@ transformed data {
   array[n_cutoffs, n_patients] int<lower = 0> oos_patient_first_testing_visit_week;
   array[n_cutoffs, n_cutoffs, n_patients] int oos_patient_last_testing_visit_week;
   array[n_cutoffs, n_patients] int testing_start_idx;
+  // testing_end_idx[n, m, i] stores the last inclusive visit index for patient i when evaluating
+  // a window that starts at cutoff n and ends just BEFORE cutoff m (i.e. m is the next cutoff).
+  // Therefore, for an evaluation horizon ending at cutoff m (with m >= n), we look up
+  // testing_end_idx[n, m + 1, i] unless m == n_cutoffs, in which case we fall back to the patient's
+  // final visit. This "shift by +1" in the second dimension lets us treat the final horizon uniformly
+  // without allocating an out-of-range m+1 cell.
   array[n_cutoffs, n_cutoffs, n_patients] int testing_end_idx;
 
   (oos_patient_first_testing_visit_week, oos_patient_last_testing_visit_week, testing_start_idx, testing_end_idx) = get_testing_visit_week_bounds(
@@ -71,7 +77,6 @@ transformed data {
   for (n in 1:n_cutoffs) {
     int n_curr_patients = n_patients - testing_patient_idx[n] + 1; // How many patients after the current patient index
     array[n_curr_patients] int curr_patients = last_visit_calendar_day_sort_idx[testing_patient_idx[n]:]; // Who are these patients
-
     array[n_cutoffs] int m_size = rep_array(-1, n_cutoffs);
     
     for (m in 1:n_cutoffs) {
@@ -165,7 +170,8 @@ generated quantities {
   // Reminder to self: log_lik can be positive; probability densities aren't restricted to [-Inf, 0]
   array[n_cutoffs, n_cutoffs] vector[n_all_testing_patients] patient_log_lik;
 
-  array[sum(n_patient_testing_visits)] int<lower = CR, upper = PD + 1> oos_recist = rep_array(PD + 1, sum(n_patient_testing_visits));
+  // Sentinel PD+1 not allowed by bound; assert below ensures no leakage
+  array[sum(n_patient_testing_visits)] int<lower = CR, upper = PD> oos_recist = rep_array(PD + 1, sum(n_patient_testing_visits));   
   array[n_cutoffs, n_cutoffs] matrix<lower = 0>[PD, PD] oos_recist_confusion_matrix; // rows = observed, cols = predicted
 
   for (i in last_visit_calendar_day_sort_idx[testing_patient_idx[1]:]) {
@@ -218,6 +224,11 @@ generated quantities {
     }
   }
 
+  // Index usage notes:
+  //   start_idx = testing_start_idx[n, i] is first post-cutoff-n visit (0 if none yet)
+  //   end_idx   = testing_end_idx[n, m+1, i] (inclusive) for horizon ending at cutoff m (< n_cutoffs), else patient's last visit
+  //   first_start_idx = testing_start_idx[1, i] anchor for contiguous per-patient OOS slice
+  //   test_start_offset = start_idx - first_start_idx (>=0) positions current window inside that slice
   for (n in 1:n_cutoffs) {
     int n_curr_patients = n_patients - testing_patient_idx[n] + 1; // How many patients after the current patient index
     int curr_first_testing_patient_idx = n_all_testing_patients - n_curr_patients + 1; 
@@ -226,11 +237,8 @@ generated quantities {
     for (m in 1:n_cutoffs) {
       patient_log_lik[n, m] = zeros_vector(n_all_testing_patients);
       oos_recist_confusion_matrix[n, m] = rep_matrix(0, PD, PD);
-      oos_recist_confusion_matrix[n, m] = rep_matrix(0, PD, PD);
     
       if (m >= n) {
-        patient_log_lik[n, m] = zeros_vector(n_all_testing_patients);
-
         for (i_idx in 1:n_curr_patients) {
           // Note: i is the original patient ID (1-based index from input data), not a sort position.
           // curr_patients contains original patient IDs that were reordered by sorting on last_visit_calendar_day
@@ -241,7 +249,7 @@ generated quantities {
 
           int start_idx = testing_start_idx[n, i];
           int end_idx = m < n_cutoffs ? testing_end_idx[n, m + 1, i] : visit_end;
-         
+
           // This does not exclude patients with post cutoff visits but no training visits (patients who aren't even in the study at the cutoff).
           if (start_idx > 0 && end_idx >= start_idx) {
             patient_log_lik[n, m, curr_first_testing_patient_idx + i_idx - 1] += sf_log_space_obs_lpdf(
@@ -252,6 +260,7 @@ generated quantities {
 
             int n_curr_testing_visits = end_idx - start_idx + 1;
             int test_start_offset = start_idx - first_start_idx;
+            assert_greater_than_or_equal(test_start_offset, 0);
 
             // The patient slice in oos_recist spans all OOS visits from the first cutoff:
             assert_equal(oos_recist_start + n_patient_testing_visits[i] - 1, oos_recist_end);
@@ -259,7 +268,15 @@ generated quantities {
             assert_greater_than_or_equal(oos_recist_end, oos_recist_start + test_start_offset + n_curr_testing_visits - 1);
 
             for (t_idx in 1:n_curr_testing_visits) {
-              oos_recist_confusion_matrix[recist[start_idx + t_idx - 1], oos_recist[oos_recist_start + test_start_offset + t_idx - 1]] += 1;
+              // Predicted RECIST must be within 1..PD
+              assert_less_or_equal(oos_recist[oos_recist_start + test_start_offset + t_idx - 1], PD);
+
+              int obs_val = recist[start_idx + t_idx - 1];
+              int pred_val = oos_recist[oos_recist_start + test_start_offset + t_idx - 1];
+
+              if (obs_val <= PD) { // Ignore first pre-screening visits that don't have a response yet 
+                oos_recist_confusion_matrix[n, m][obs_val, pred_val] += 1;
+              }
             }
           }
         }
