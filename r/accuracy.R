@@ -222,7 +222,7 @@ lfo <- function(
     print(cutoffs)
     cat("\n")
   }
-  
+
   remaining_cutoffs <- cutoffs |> filter(n >= refit_n) 
   remaining_all_cutoffs <- all_cutoffs |> filter(n >= refit_n)
   
@@ -237,7 +237,7 @@ lfo <- function(
       timestamp = output_timestamp, 
       ...
     ) 
-  
+
   psis_results <- fit |> 
     lfo_log_lik(future_window = future_window) |> 
     mutate(across(c(n, m), \(x) x + refit_n - 1)) |> 
@@ -269,7 +269,7 @@ lfo <- function(
   if (nrow(next_cutoffs) > 0) {
     next_results <- lfo(
         stan_data, model, cutoffs, all_cutoffs, output_path, basename, initializer, output_timestamp, refit_n = min(next_cutoffs$n), 
-        k_threshold, lean, verbose, exact, fit_only, iter_warmup, iter_sampling, parallel_chains, adapt_delta, ...
+        k_threshold, lean, verbose, exact, fit_only, iter_warmup, iter_sampling, parallel_chains, adapt_delta, future_window, ...
       )
 
     return(bind_rows(psis_results, next_results))
