@@ -496,4 +496,26 @@ lfo_stacking_weights <- function(model_log_lik, log_lik_var = E_log_lik) {
     set_names(names(model_log_lik))
 } 
 
+get_oos_confusion_marix <- function(lfo_res, recover_data) {
+  lfo_res |> 
+    mutate(
+      w = lead(n_visits_added, default = last(n_future_visits)) %>% divide_by(sum(.)),
+      oos_confusion_matrix = pmap(
+        lst(f = fit, n, m, refit_n), 
+        function(f, n, m, refit_n) { 
+          if (!is_null(f)) {
+            lite_spread_rvars(f, oos_recist_confusion_matrix[n_mat, m_mat, response, pred_response], recover_data = recover_data) |>
+              mutate(across(c(n_mat, m_mat), \(x) x + refit_n - 1)) |>
+              filter(n_mat == n, m_mat == m) |>
+              select(!c(n_mat, m_mat)) |>
+              unnest(oos_recist_confusion_matrix) |>
+              group_by(response) |> 
+              mutate(observed = sum(oos_recist_confusion_matrix) > 0) |> 
+              ungroup() |> 
+              filter(observed) 
+        }
+      })
+    ) |> 
+    unnest(oos_confusion_matrix) }
+
 # nolint end: object_usage_linter
