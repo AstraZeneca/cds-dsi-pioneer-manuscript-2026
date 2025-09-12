@@ -222,7 +222,7 @@ lfo <- function(
     print(cutoffs)
     cat("\n")
   }
-  
+
   remaining_cutoffs <- cutoffs |> filter(n >= refit_n) 
   remaining_all_cutoffs <- all_cutoffs |> filter(n >= refit_n)
   
@@ -233,11 +233,11 @@ lfo <- function(
       .,
       iter_warmup = iter_warmup, iter_sampling = iter_sampling, parallel_chains = parallel_chains, adapt_delta = adapt_delta,
       init = initializer,
-      output_dir = file.path(output_path, "fit"), output_basename = str_glue("{basename}-{refit_n}"),
+      output_dir = file.path(output_path, "fit"), output_basename = str_glue("{basename}-{refit_n}"), save_profiles = FALSE,
       timestamp = output_timestamp, 
       ...
     ) 
-  
+
   psis_results <- fit |> 
     lfo_log_lik(future_window = future_window) |> 
     mutate(across(c(n, m), \(x) x + refit_n - 1)) |> 
@@ -251,6 +251,9 @@ lfo <- function(
   if (lean) {
     psis_results <- psis_results |>
       select(n, m, contains("E_"))
+  } else {
+    psis_results <- psis_results |>
+      mutate(fit = if_else(n == refit_n, list(fit), list(NULL)))
   }
   
   next_cutoffs <- psis_results |> 
@@ -266,7 +269,7 @@ lfo <- function(
   if (nrow(next_cutoffs) > 0) {
     next_results <- lfo(
         stan_data, model, cutoffs, all_cutoffs, output_path, basename, initializer, output_timestamp, refit_n = min(next_cutoffs$n), 
-        k_threshold, lean, verbose, exact, fit_only, iter_warmup, iter_sampling, parallel_chains, adapt_delta, ...
+        k_threshold, lean, verbose, exact, fit_only, iter_warmup, iter_sampling, parallel_chains, adapt_delta, future_window, ...
       )
 
     return(bind_rows(psis_results, next_results))
@@ -357,7 +360,7 @@ lfo_log_lik_rvar <- function(log_lik_rvar, max_n = Inf, future_window = 1) {
         # This add loglik columns for M-SAP, rather than the full SAP we get from the above join.  
         left_join(
           # mutate(d, m = m - future_window + 1) |> filter(n == m), 
-          filter(d, n == m - future_window + 1),
+          filter(d, m == n + future_window - 1),
           by = "n", 
           suffix = c("", "_w") # _w is in reference to the m-sap "window"
         )
@@ -492,5 +495,27 @@ lfo_stacking_weights <- function(model_log_lik, log_lik_var = E_log_lik) {
     c() |> 
     set_names(names(model_log_lik))
 } 
+
+get_oos_confusion_marix <- function(lfo_res, recover_data) {
+  lfo_res |> 
+    mutate(
+      w = lead(n_visits_added, default = last(n_future_visits)) %>% divide_by(sum(.)),
+      oos_confusion_matrix = pmap(
+        lst(f = fit, n, m, refit_n), 
+        function(f, n, m, refit_n) { 
+          if (!is_null(f)) {
+            lite_spread_rvars(f, oos_recist_confusion_matrix[n_mat, m_mat, response, pred_response], recover_data = recover_data) |>
+              mutate(across(c(n_mat, m_mat), \(x) x + refit_n - 1)) |>
+              filter(n_mat == n, m_mat == m) |>
+              select(!c(n_mat, m_mat)) |>
+              unnest(oos_recist_confusion_matrix) |>
+              group_by(response) |> 
+              mutate(observed = sum(oos_recist_confusion_matrix) > 0) |> 
+              ungroup() |> 
+              filter(observed) 
+        }
+      })
+    ) |> 
+    unnest(oos_confusion_matrix) }
 
 # nolint end: object_usage_linter

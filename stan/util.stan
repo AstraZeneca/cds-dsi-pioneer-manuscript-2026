@@ -655,6 +655,18 @@ void assert_greater_than_or_equal(int x, int y) {
   }
 }
 
+void assert_greater(int x, int y) {
+  if (x <= y) {
+    fatal_error("Greater (strict) assertion failed.");
+  }
+}
+
+void assert_less_or_equal(int x, int y) {
+  if (x > y) {
+    fatal_error("Less or equal assertion failed.");
+  }
+}
+
 void assert_strict_ascending(array[] int x) {
   int n = size(x);
   for (i in 2:n) {

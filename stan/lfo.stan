@@ -27,7 +27,7 @@ tuple(array[] int, array[] int, array[] int, array[] int, array[] int) cutoff_vi
   array[n_patients] int last_visit_day = zeros_int_array(n_patients);
   array[n_patients] int last_visit_week = zeros_int_array(n_patients), 
                         last_visit_week_observed = ones_int_array(n_patients); 
-  array[n_patients] int last_visit_calendar_day;
+  array[n_patients] int last_visit_calendar_day = zeros_int_array(n_patients);
   
   // Precompute for each patient the last visit index before or at cutoff_last_visit_week
   array[n_patients] int cutoff_last_visit_idx = zeros_int_array(n_patients);
@@ -38,10 +38,6 @@ tuple(array[] int, array[] int, array[] int, array[] int, array[] int) cutoff_vi
     (visit_start, visit_end) = get_pos(patient_visit_pos, i);
     int n_patient_visits = visit_end - visit_start + 1;
     if (n_patient_visits <= 0) {
-      last_visit_day[i] = 0;
-      last_visit_week[i] = 0;
-      last_visit_calendar_day[i] = 0;
-      cutoff_last_visit_idx[i] = 0;
       continue;
     }
     // Convert global cutoff to patient-specific study day
