@@ -43,3 +43,32 @@ AZ_palette <- c(
   AZ_lightpurple
 )
 
+init_project <- function(output_path = output_path, artifacts_path = artifacts_path) {
+  library(magrittr)
+  library(tidyverse)
+  library(rlang)
+  library(targets)
+  library(tarchetypes)
+  library(stantargets)
+  library(crew)
+  library(autometric)
+  library(here)
+  library(cmdstanr)
+  library(posterior)
+  library(tidybayes)
+  library(qs2)
+  library(recipes)
+
+  source(here("r", "util.R"))
+  source(here("r", "priors.R"))
+  source(here("r", "posterior.R"))
+  source(here("r", "prepare_analysis_data.R"))
+  source(here("r", "initializers.R"))
+  source(here("r", "accuracy.R"))
+  source(here("r", "state_space.R"))
+  source(here("r", "plot_functions.R"))
+
+  source(here("r", "sclc", "priors.R"))
+  source(here("r", "sclc", "prepare_analysis_data.R"))
+  source(here("r", "sclc", "accuracy.R"))
+}
