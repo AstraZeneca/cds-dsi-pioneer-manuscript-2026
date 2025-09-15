@@ -52,9 +52,19 @@ sample_and_save <- function(model, ..., output_dir, output_basename, timestamp =
   }
   
   if (!no_save && save_profiles) {
-    try_fetch(
-      fit$save_profile_files(dir = output_dir, basename = output_basename, random = FALSE, timestamp = timestamp),
-      error = function(e) warning("Failed to save profile files: ", e$message)
+    tryCatch({
+        fit$save_profile_files(
+          dir = output_dir,
+          basename = output_basename,
+          random = FALSE,
+          timestamp = timestamp
+        )
+      },
+      error = function(e) {
+        warning("Failed to save profile files: ", conditionMessage(e))
+        # Optionally return a sentinel or do nothing
+        NULL
+      }
     )
   }
   
