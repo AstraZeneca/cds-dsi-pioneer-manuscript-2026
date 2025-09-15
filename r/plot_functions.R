@@ -736,12 +736,14 @@ plot_level_decrease_prop <- function(res_data) {
     NULL
 }
 
-plot_confusion_matrix <- function(data, recorded, calculated, p, n) {
+plot_confusion_matrix <- function(data, recorded, calculated, p, n = NULL) {
+  nq <- enquo(n)
+  
   data |> 
     mutate(
-      nvar = {{ n }},
+      nvar = if (quo_is_null(nq)) "Unknown" else !!nq,
       pvar = {{ p }},
-      n_label = if (!is_null(nvar)) str_glue("(n={ nvar })") else "",
+      n_label = if (!quo_is_null(nq)) str_glue("(n={ nvar })") else "",
       size_label = str_glue("{round(pvar, 3)}
                              {n_label}")
     ) |>  
@@ -749,8 +751,8 @@ plot_confusion_matrix <- function(data, recorded, calculated, p, n) {
     geom_tile(aes(fill = {{ p }}), alpha = 0.5, color = "white", linewidth = 0.5) +
     geom_text(aes(label = size_label), color = AZ_darkpurple, size = 3) +
     scale_fill_gradient(low = AZ_turquoise, high = AZ_pink, name = "Proportion") +
-    scale_x_discrete(limits = fct_rev) +
-    facet_wrap(vars(trial), labeller = labeller(.default = str_to_upper)) +
+    scale_x_discrete(limits = fct_rev, drop = FALSE) +
+    scale_y_discrete(drop = FALSE) +
     coord_fixed() +
     theme_minimal() +
     theme(panel.grid.major = element_blank()) +

@@ -52,7 +52,10 @@ sample_and_save <- function(model, ..., output_dir, output_basename, timestamp =
   }
   
   if (!no_save && save_profiles) {
-    fit$save_profile_files(dir = output_dir, basename = output_basename, random = FALSE, timestamp = timestamp)
+    try_fetch(
+      fit$save_profile_files(dir = output_dir, basename = output_basename, random = FALSE, timestamp = timestamp),
+      error = function(e) warning("Failed to save profile files: ", e$message)
+    )
   }
   
   return(fit)
@@ -240,6 +243,7 @@ sample_hist <- function(pred, breaks, freq = TRUE,...) {
 
 # This function is used to treated_pfs_analysis_dataallow us to generate a distribution of histograms
 rvar_sample_hist <- posterior::rfun(sample_hist, rvar_dots = FALSE)
+rvar_weighted_mean <- posterior::rfun(weighted.mean, rvar_args = "x") 
 
 #' Name coefficient indices with meaningful labels
 #'
