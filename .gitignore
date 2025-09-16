@@ -76,3 +76,5 @@ _targets/
 .vscode/Machine/
 .vscode/settings.json
 quarto/*.rmarkdown
+
+**/*.quarto_ipynb
