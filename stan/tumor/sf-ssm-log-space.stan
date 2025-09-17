@@ -258,12 +258,13 @@ generated quantities {
 
       array[train_visit_size + forecast_size] int curr_recist;
       curr_recist[:train_visit_size] = recist[visit_pos:visit_end]; // includes screening, will slice below when calling find_first_week
+
+      sample_target_pfs[train_idx] = pfs[i] + interval_censored[i] + 1; 
+      sample_target_right_censored[train_idx] = right_censored[i];
           
       if (n_patient_forecast_visits[i] > 0) {
         curr_recist[(train_visit_size + 1):] = forecast_recist[train_forecast_visit_start:train_forecast_visit_end];
 
-        (sample_target_pfs[train_idx], sample_target_right_censored[train_idx]) = 
-          find_first_week(curr_recist[(n_patient_screening_visits[i] + 1):], { PD }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
         (forecast_confirmed_response_week, confirmed_response_censored) = 
           find_first_week(curr_recist[(n_patient_screening_visits[i] + 1):], { PR, CR }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
 
@@ -280,6 +281,9 @@ generated quantities {
         }
          
         if (right_censored[i]) {
+          (sample_target_pfs[train_idx], sample_target_right_censored[train_idx]) = 
+            find_first_week(curr_recist[(n_patient_screening_visits[i] + 1):], { PD }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
+
           (forecast_non_target_pfs[right_censored_idx], forecast_non_target_right_censored[right_censored_idx]) = survival_time_rng(
             log_cond_prob_surv[1, train_idx], pfs[i] + interval_censored[i], right_censored[i], 0
           );
@@ -291,7 +295,7 @@ generated quantities {
           forecast_right_censored[right_censored_idx] = forecast_target_right_censored[right_censored_idx] && forecast_non_target_right_censored[right_censored_idx];
           
           right_censored_idx += 1;
-        }
+        } 
         
         (spop_target_pfs[train_idx], spop_target_right_censored[train_idx]) = find_first_week(
           append_array(rep_recist[train_treat_visit_start:train_visit_end], 
@@ -300,9 +304,6 @@ generated quantities {
       } else {
         (spop_target_pfs[train_idx], spop_target_right_censored[train_idx]) = find_first_week(
           rep_recist[train_treat_visit_start:train_visit_end], { PD }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t); 
-
-        (sample_target_pfs[train_idx], sample_target_right_censored[train_idx]) = find_first_week(
-          curr_recist[(n_patient_screening_visits[i] + 1):], { PD }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
 
         (forecast_confirmed_response_week, confirmed_response_censored) = find_first_week(
           curr_recist[(n_patient_screening_visits[i] + 1):], { PR, CR }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
