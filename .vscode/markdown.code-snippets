@@ -1,0 +1,24 @@
+{
+  "Inline Math": {
+    "prefix": "imath",
+    "body": ["$${1:expression}$$"],
+    "description": "Insert display math block with placeholder"
+  },
+  "Inline Math Single": {
+    "prefix": "math",
+    "body": ["$${1:var}$$"],
+    "description": "Wrap a short inline math expression"
+  },
+  "Aligned Block": {
+    "prefix": "aligned",
+    "body": [
+      "$$",
+      "\\begin{aligned}",
+      "${1:y} &= ${2:f(x)} \\",
+      "${3:log p} &= ${4:expression}",
+      "\\end{aligned}",
+      "$$"
+    ],
+    "description": "Insert an aligned equation environment"
+  }
+}
