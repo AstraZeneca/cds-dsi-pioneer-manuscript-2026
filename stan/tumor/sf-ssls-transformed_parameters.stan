@@ -1,44 +1,54 @@
-vector[n_train_trials] trial_log_net_rate_effect = zeros_vector(n_train_trials);
-vector[n_train_patients] patient_log_net_rate_effect = zeros_vector(n_train_patients);
-vector[n_train_patients] patient_log_net_rate = rep_vector(pop_log_net_rate, n_train_patients);
-// vector[n_train_patients] patient_log_rate_ratio_effect = zeros_vector(n_train_patients);
-vector[n_train_patients] patient_log_rate_ratio = rep_vector(pop_log_rate_ratio, n_train_patients);
+vector[n_train_trials] trial_log_total_rate_effect = zeros_vector(n_train_trials);
+vector[n_train_patients] patient_log_total_rate_effect = zeros_vector(n_train_patients);
+vector[n_train_patients] patient_log_total_rate = rep_vector(pop_log_total_rate, n_train_patients);
+// Fraction logit (population intercept only initially)
+vector[n_train_patients] patient_decrease_frac_logit = rep_vector(pop_decrease_frac_logit, n_train_patients);
   
-// QR-space coefficients derived once for use in linear predictors
-vector[n_covar] QR_pop_log_net_rate_coef = R_covar_design_matrix * pop_log_net_rate_coef;      
+// QR-space coefficients (now on fraction logit)
+vector[n_covar] QR_pop_decrease_frac_logit_coef = R_covar_design_matrix * pop_decrease_frac_logit_coef;
 vector[n_covar] QR_pop_decrease_prop_logis_coef = R_covar_design_matrix * pop_decrease_prop_logis_coef;
   
-// Calculate linear predictors for rates
-vector[n_train_patients] patient_log_net_rate_linpred = Q_covar_design_matrix * QR_pop_log_net_rate_coef;
+// Linear predictor now modifies fraction logit instead of total rate
+vector[n_train_patients] patient_decrease_frac_logit_linpred = Q_covar_design_matrix * QR_pop_decrease_frac_logit_coef;
   
-matrix[n_train_trials, n_covar] trial_log_net_rate_coef = rep_matrix(0, n_train_trials, n_covar);
+// Trial-level covariate coeff matrix
+// old: trial_log_net_rate_coef
+matrix[n_train_trials, n_covar] trial_decrease_frac_logit_coef = rep_matrix(0, n_train_trials, n_covar);
   
 if (!pop_covar_coef_only) {
-  // Trial-level covariate effects
-  trial_log_net_rate_coef = rep_matrix(trial_log_net_rate_coef_sd, n_train_trials) .* raw_trial_log_net_rate_coef;
+  // old: trial_log_net_rate_coef = rep_matrix(trial_log_net_rate_coef_sd, n_train_trials) .* raw_trial_log_net_rate_coef;
+  // Vectorized column-wise scaling: broadcast row_vector of SDs across rows
+  trial_decrease_frac_logit_coef = raw_trial_decrease_frac_logit_coef .* rep_matrix(trial_decrease_frac_logit_coef_sd, n_train_trials);
   
-  patient_log_net_rate_linpred += rows_dot_product(Q_covar_design_matrix,
-                                                   trial_log_net_rate_coef[train_patient_trial]);
-  
-  // Patient-level covariate effects (if you want this level of complexity)
-  // matrix[n_train_patients, n_covar] patient_log_net_rate_coef = patient_log_net_rate_coef_sd * raw_patient_log_net_rate_coef;
-  // patient_log_net_rate_lp += rows_dot_product(covar_design_matrix[train_patients_pos:train_patients_end], patient_log_net_rate_coef);
+  patient_decrease_frac_logit_linpred += rows_dot_product(Q_covar_design_matrix,
+                                                     trial_decrease_frac_logit_coef[train_patient_trial]);
+  // (patient-level covariate effects could be added analogously)
 }
 
-// Add hierarchical covariate effects if needed
+// Hierarchical random effects
 if (!pop_rates_param_only) {
-  if (add_trial_level_net_rate) {
-    trial_log_net_rate_effect = trial_log_net_rate_sd * raw_trial_log_net_rate;
+  if (add_trial_level_total_rate) {              // old flag add_trial_level_net_rate
+    trial_log_total_rate_effect = trial_log_total_rate_sd * raw_trial_log_total_rate;
   }
-  
-  patient_log_net_rate_effect = patient_log_net_rate_sd * raw_patient_log_net_rate;
+  patient_log_total_rate_effect = patient_log_total_rate_sd * raw_patient_log_total_rate;
 }
 
-// Update the rate calculations to include covariate effects
-patient_log_net_rate += patient_log_net_rate_linpred + trial_log_net_rate_effect[train_patient_trial] + patient_log_net_rate_effect;
-  
-vector[n_train_patients] patient_log_growth_rate = patient_log_net_rate - log_diff_exp(patient_log_rate_ratio, zeros_vector(n_train_patients));
-vector[n_train_patients] patient_log_decrease_rate = patient_log_growth_rate + patient_log_rate_ratio;
+// Apply linear predictor & random effects
+// old: patient_log_total_rate += patient_log_net_rate_linpred + trial_log_net_rate_effect[...] + patient_log_net_rate_effect;
+patient_decrease_frac_logit += patient_decrease_frac_logit_linpred
+                               + trial_log_total_rate_effect[train_patient_trial] // still allow total rate random effects
+                               + patient_log_total_rate_effect;
+
+// Recompute population fraction pieces for each patient
+vector[n_train_patients] patient_log_decrease_frac = -log1p_exp(-patient_decrease_frac_logit);
+vector[n_train_patients] patient_log_growth_frac   = -log1p_exp(patient_decrease_frac_logit);
+
+// Update total rate only with random effects (no covariate shift)
+patient_log_total_rate += trial_log_total_rate_effect[train_patient_trial] + patient_log_total_rate_effect;
+
+// Derive patient-specific growth/decrease rates from total and fractions
+vector[n_train_patients] patient_log_decrease_rate = patient_log_total_rate + patient_log_decrease_frac;
+vector[n_train_patients] patient_log_growth_rate   = patient_log_total_rate + patient_log_growth_frac;
   
 vector[n_train_patients] patient_log_growth_lag_effect = zeros_vector(n_train_patients);
 vector[n_train_patients] patient_log_growth_lag = rep_vector(pop_log_growth_lag, n_train_patients);
@@ -98,5 +108,3 @@ profile("states") {
     0 // debug 
   );
 }
-
-// (moved QR coefficient definitions to the top of transformed parameters)
