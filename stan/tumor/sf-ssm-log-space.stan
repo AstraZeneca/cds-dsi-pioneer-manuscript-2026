@@ -192,7 +192,7 @@ generated quantities {
   
       int train_forecast_visit_start, train_forecast_visit_end;
       (train_forecast_visit_start, train_forecast_visit_end) = get_pos(train_forecast_visits_pos, train_idx);
-  
+
       int visit_pos, visit_screening_end, visit_treat_pos, visit_end;
       (visit_pos, visit_screening_end, visit_treat_pos, visit_end) = 
         get_visit_pos(patient_visit_pos, i, n_patient_screening_visits[i]);
@@ -206,7 +206,8 @@ generated quantities {
       
       array[n_patient_visits[i]] int curr_visits = get_int_sub_array(train_patient_visits, train_patient_visit_pos, train_idx);
       // Treatment-only visits (exclude screening) for Convention B
-      k
+      array[train_visit_size - n_patient_screening_visits[i]] int treat_curr_visits = curr_visits[(n_patient_screening_visits[i] + 1):];
+  
       
       // Build forecast time WITH anchor (duplicate last observed week as element 1),
       // so size = n_future + 1. The anchor is needed for state propagation but
@@ -223,7 +224,7 @@ generated quantities {
       // Generate zeros for observed process noise (as it was hardcoded before)
       obs_patient_process_noise[train_visit_m1_start:train_visit_m1_end] = rep_matrix(0.0, n_patient_visits[i] - 1, 2);
 
-      mean_patient_log_sld[train_visit_start:train_visit_end] = calc_mean_log_sld(states[train_visit_start:train_visit_end], sum_tumor_size[visit_pos]);
+      mean_patient_log_sld[train_visit_start:train_visit_end] = calc_log_sld_mean(states[train_visit_start:train_visit_end], sum_tumor_size[visit_pos]);
       
       // Generate states, SLD replications, and forecasts
       (forecast_patient_states[train_forecast_visit_start:train_forecast_visit_end], 
@@ -240,7 +241,7 @@ generated quantities {
         );
 
       forecast_mean_patient_log_sld[train_forecast_visit_start:train_forecast_visit_end] = 
-        calc_mean_log_sld(forecast_patient_states[train_forecast_visit_start:train_forecast_visit_end], sum_tumor_size[visit_pos]);
+        calc_log_sld_mean(forecast_patient_states[train_forecast_visit_start:train_forecast_visit_end], sum_tumor_size[visit_pos]);
       
       // Generate forecast process noise conditionally (as it was in the original code)
       if (independ_long_process_noise) {

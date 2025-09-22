@@ -736,7 +736,7 @@ matrix calc_patient_process_noise(
 }
 
 vector calc_log_sld_mean(matrix patient_states, real sum_tumor_size_baseline) {
-  assert_equal(ncol(patient_states), 2);
+  assert_equal(cols(patient_states), 2);
 
   return to_vector(log_sum_exp(patient_states[, 1], patient_states[, 2])) + log(sum_tumor_size_baseline);
 }
