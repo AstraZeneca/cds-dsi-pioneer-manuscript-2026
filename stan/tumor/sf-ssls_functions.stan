@@ -320,7 +320,8 @@ matrix calc_states(
       n_visits = get_pos_size(visit_pos, i);
       
       states[visit_start:visit_end] = calc_patient_states(
-        initial_states[i], get_int_sub_array(t_visits, visit_pos, i), decrease_rate[i], growth_rate[i], growth_lag[i], growth_transition_rate, 
+        initial_states[i], get_int_sub_array(t_visits, visit_pos, i), decrease_rate[i], 
+        growth_rate[i], growth_lag[i], growth_transition_rate, 
         get_sub_vert_matrix(raw_process_noise, visit_m1_pos, i), lognormal_noise, rho[i], delta, process_sd, L_process_corr,
         independ_long_process_noise, independ_cross_process_noise
       ).2;
@@ -734,6 +735,12 @@ matrix calc_patient_process_noise(
   return noise;
 }
 
+vector calc_log_sld_mean(matrix patient_states, real sum_tumor_size_baseline) {
+  assert_equal(ncol(patient_states), 2);
+
+  return to_vector(log_sum_exp(patient_states[, 1], patient_states[, 2])) + log(sum_tumor_size_baseline);
+}
+
 /**
  * Generate patient states including process noise, SLD trajectories, and forecast states
  */
@@ -763,11 +770,7 @@ tuple(
   
   // Subsequent visits are generated from states with measurement noise
   if (n_patient_visits > 1) {
-    rep_log_sld[2:] = to_vector(normal_rng(
-      to_vector(log_sum_exp(patient_states[2:, 1], patient_states[2:, 2])) + 
-        log(sum_tumor_size_baseline),
-      rep_vector(measure_sd, n_patient_visits - 1)
-    ));
+    rep_log_sld[2:] = to_vector(normal_rng(calc_log_sld_mean(patient_states[2:], sum_tumor_size_baseline), rep_vector(measure_sd, n_patient_visits - 1)));
   }
 
   int forecast_size = size(forecast_time) - 1;
@@ -786,10 +789,7 @@ tuple(
   // Calculate forecast SLD with measurement noise
   vector[forecast_size] forecast_log_sld = zeros_vector(forecast_size);
   if (forecast_size > 0) {
-    forecast_log_sld = to_vector(normal_rng(
-      to_vector(log_sum_exp(forecast_states[2:, 1], forecast_states[2:, 2])) + log(sum_tumor_size_baseline),
-      rep_vector(measure_sd, forecast_size)
-    ));
+    forecast_log_sld = to_vector(normal_rng(calc_log_sld_mean(forecast_states[2:], sum_tumor_size_baseline), rep_vector(measure_sd, forecast_size)));
   }
   
   return (forecast_states[2:], rep_log_sld, forecast_log_sld);
