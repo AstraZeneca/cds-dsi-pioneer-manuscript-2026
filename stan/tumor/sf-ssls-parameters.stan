@@ -1,17 +1,20 @@
-real pop_log_net_rate;            // Population-level net rate (log(d-g))
-real<lower = 0> pop_log_rate_ratio; // Population-level ratio (log(d/g))
+real pop_log_total_rate;
+real pop_decrease_frac_logit;
 
-// Trial-level variation for net rate only
-real<lower=0> trial_log_net_rate_sd;
-vector[pop_rates_param_only || !add_trial_level_net_rate ? 0 : n_train_trials] raw_trial_log_net_rate;
+real<lower=0> trial_log_total_rate_sd;
+vector[n_train_trials] raw_trial_log_total_rate;
 
-// Patient-level variation for net rate only
-real<lower=0> patient_log_net_rate_sd;
-// vector<offset = pop_log_net_rate, multiplier = patient_log_net_rate_sd>[n_patients] patient_log_net_rate;
-vector[pop_rates_param_only ? 0 : n_train_patients] raw_patient_log_net_rate;
+real<lower=0> patient_log_total_rate_sd;
+vector[n_train_patients] raw_patient_log_total_rate;
 
-// real<lower=0> patient_log_rate_ratio_sd;
-// vector[pop_rates_param_only ? 0 : n_train_patients] raw_patient_log_rate_ratio; 
+// Covariate coefficients now on fraction (decrease share) instead of total rate
+vector[n_covar] pop_decrease_frac_logit_coef;
+// Population covariate coefficients for initial state proportion (logit scale)
+vector[n_covar] pop_decrease_prop_logis_coef;
+matrix[n_train_trials, n_covar] raw_trial_decrease_frac_logit_coef;
+row_vector<lower=0>[n_covar] trial_decrease_frac_logit_coef_sd;
+
+// (If patient-level covariate effects later, add analogous *_total_rate_coef params)
 
 real pop_log_growth_lag;
 real pop_log_growth_transition_rate;
@@ -54,13 +57,4 @@ vector[pop_initial_states_param_only ? 0 : n_train_patients] raw_patient_decreas
 
 // real log_lod;
 
-// Covariate effects on rates
-vector[n_covar] pop_log_net_rate_coef;      // Population-level covariate effects on net rate (original space)
-vector[n_covar] pop_decrease_prop_logis_coef;
-
-// Optional: hierarchical covariate effects
-row_vector<lower=0>[pop_covar_coef_only ? 0 : n_covar] trial_log_net_rate_coef_sd;
-matrix[pop_covar_coef_only ? 0 : n_train_trials, n_covar] raw_trial_log_net_rate_coef;
-
-// real<lower=0> patient_log_net_rate_coef_sd;
-// matrix[pop_rates_param_only ? 0 : n_train_patients, n_covar] raw_patient_log_net_rate_coef;
+// (Legacy net rate covariate hyperparameters removed)
