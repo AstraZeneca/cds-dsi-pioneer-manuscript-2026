@@ -67,10 +67,9 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     log_lambda_gp_trial_intercept_sd_sd = array(0.3),
 
     # Covariate effects (fraction & initial state proportion)
-    pop_decrease_frac_logit_coef_mean = pop_decrease_frac_logit_coef_mean,
+    pop_decrease_frac_logit_coef_mean = with(coef_elicited_priors, mean * if_else(fct_match(effect_direction, "worsens"), -1, 1)),
     pop_decrease_frac_logit_coef_sd   = pop_decrease_frac_logit_coef_sd,
-    pop_decrease_prop_logis_coef_mean = with(coef_elicited_priors,
-      mean * if_else(fct_match(effect_direction, "worsens"), -1, 1)),
+    pop_decrease_prop_logis_coef_mean = with(coef_elicited_priors, mean * if_else(fct_match(effect_direction, "worsens"), -1, 1)),
     pop_decrease_prop_logis_coef_sd = coef_elicited_priors$sd,
     trial_decrease_frac_logit_coef_sd_sd = rep(0.05, stan_data$n_covar),
 
