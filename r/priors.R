@@ -24,7 +24,7 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     pop_decrease_process_sd_sd = 0.1,
     pop_growth_process_sd_sd = 0.1,
     process_corr_param = 2.0,
-    measure_sd_sd = 0.05,
+    measure_sd_sd = 0.2, # 0.05,
 
     # Process parameters
     decrease_process_alpha = 9.7,
