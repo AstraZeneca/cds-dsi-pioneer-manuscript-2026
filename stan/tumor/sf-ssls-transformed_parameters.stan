@@ -12,17 +12,11 @@ vector[n_covar] QR_pop_decrease_prop_logis_coef = R_covar_design_matrix * pop_de
 vector[n_train_patients] patient_decrease_frac_logit_linpred = Q_covar_design_matrix * QR_pop_decrease_frac_logit_coef;
   
 // Trial-level covariate coeff matrix
-// old: trial_log_net_rate_coef
 matrix[n_train_trials, n_covar] trial_decrease_frac_logit_coef = rep_matrix(0, n_train_trials, n_covar);
   
 if (!pop_covar_coef_only) {
-  // old: trial_log_net_rate_coef = rep_matrix(trial_log_net_rate_coef_sd, n_train_trials) .* raw_trial_log_net_rate_coef;
-  // Vectorized column-wise scaling: broadcast row_vector of SDs across rows
   trial_decrease_frac_logit_coef = raw_trial_decrease_frac_logit_coef .* rep_matrix(trial_decrease_frac_logit_coef_sd, n_train_trials);
-  
-  patient_decrease_frac_logit_linpred += rows_dot_product(Q_covar_design_matrix,
-                                                     trial_decrease_frac_logit_coef[train_patient_trial]);
-  // (patient-level covariate effects could be added analogously)
+  patient_decrease_frac_logit_linpred += rows_dot_product(Q_covar_design_matrix, trial_decrease_frac_logit_coef[train_patient_trial]);
 }
 
 // Hierarchical random effects
@@ -35,9 +29,9 @@ if (!pop_rates_param_only) {
 
 // Apply linear predictor & random effects
 // old: patient_log_total_rate += patient_log_net_rate_linpred + trial_log_net_rate_effect[...] + patient_log_net_rate_effect;
-patient_decrease_frac_logit += patient_decrease_frac_logit_linpred
-                               + trial_log_total_rate_effect[train_patient_trial] // still allow total rate random effects
-                               + patient_log_total_rate_effect;
+// Removed total rate random effects from fraction logit to prevent double counting scale effects.
+// Fraction logit should only reflect relative allocation (mix) independent of total rate.
+patient_decrease_frac_logit += patient_decrease_frac_logit_linpred; // (add dedicated frac REs here later if needed)
 
 // Recompute population fraction pieces for each patient
 vector[n_train_patients] patient_log_decrease_frac = -log1p_exp(-patient_decrease_frac_logit);
