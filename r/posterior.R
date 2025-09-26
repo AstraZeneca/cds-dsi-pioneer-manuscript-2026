@@ -1,3 +1,5 @@
+# nolint start: object_usage_linter
+
 # PFS and Confirmed Response Analysis Functions
 #
 # This file contains a collection of functions for analyzing Progression-Free Survival (PFS)
@@ -496,14 +498,18 @@ get_orr <- function(res, analysis_data) {
 
 # SSM ########
 
-get_tumor_ssls_level_param <- function(res, level = c("patient", "trial"), param, type, breaks, exp_breaks) {
+get_tumor_ssls_level_param <- function(res, level = c("patient", "trial"), param, rvar_extractor = lite_spread_rvars) {
   level <- rlang::arg_match(level)
   
   # Create dynamic parameter names using the level prefix
   params <- rlang::parse_exprs(str_glue("{level}_{param}[n]"))
   
   res |> 
-    lite_gather_rvars(!!!params) |> 
+    rvar_extractor(!!!params) 
+}
+
+get_tumor_ssls_level_param_binned <- function(res, level, param, type, breaks = seq(-1, 1, 0.1), exp_breaks = exp(seq(-1, 1, 0.1))) {
+  get_tumor_ssls_level_param(res, level, param, lite_gather_rvars) |>
     mutate(.value_exp = exp(.value), fit_type = type) |>   
     group_by(.variable, fit_type) |>
     group_modify(\(d, g) bind_rows(
@@ -512,3 +518,5 @@ get_tumor_ssls_level_param <- function(res, level = c("patient", "trial"), param
     )) |> 
     ungroup()
 }
+
+# nolint end: object_usage_linter
