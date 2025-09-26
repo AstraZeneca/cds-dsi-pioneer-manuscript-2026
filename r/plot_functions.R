@@ -815,19 +815,26 @@ plot_recist_predictions <- function(data,
     NULL
 }
 
-plot_pfs_ppc <- function(data) {
-  data |> 
+plot_pfs_ppc <- function(data, pfs_var = spop_target_pfs, label_patients = FALSE) {
+  plot_obj <- data |> 
     ggplot(aes(pfs + interval_censored + 1)) +
     geom_abline(slope = 1, linetype = "dashed") +
     scale_x_continuous("Recorded PFS [Months]", breaks = months_to_weeks(seq(0, 48, 6)), label = label_weeks_to_months) +
     scale_y_continuous("Posterior PFS [Months]", breaks = months_to_weeks(seq(0, 48, 6)), label = label_weeks_to_months) +
-    stat_pointinterval(aes(ydist = spop_target_pfs, color = event_type), .width = 0.8, alpha = 0.5, linewidth = 1, size = 0.5) +
-    # geom_label_repel(aes(y = median(spop_pfs), label = i), size = 2.5) +
+    stat_pointinterval(aes(ydist = {{ pfs_var }}, color = event_type), .width = 0.8, alpha = 0.5, linewidth = 1, size = 0.5) +
     scale_color_discrete("Event Type", labels = c(death = "Death", target_pd = "Target PD", nontarget_pd = "Non-target PD"), type = AZ_palette) +
     labs(caption = "Restricted to uncensored patients.") +
     facet_wrap(vars(trial), scales = "free", labeller = labeller(trial = str_to_upper)) +
     theme(legend.position = "bottom") + 
     NULL
+
+  if (label_patients) {
+    plot_obj <- plot_obj +
+      geom_label_repel(aes(y = median({{ pfs_var}}), label = i), size = 2.5) +
+      NULL
+  }
+
+  return(plot_obj)
 }
   
 # Distogram #######
