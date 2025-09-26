@@ -4,7 +4,7 @@ functions {
   #include "../gp.stan"
   #include "../pfs_functions.stan"
   #include "../lfo.stan"
-  #include "sf-ssls_functions.stan"
+  #include "../ssls/legacy/sf-ssls_functions.stan"
   #include "recist.stanfunctions"
 }  
 
@@ -12,9 +12,9 @@ data {
   #include "../base_data.stan"
   #include "base_data.stan"
   
-  #include "sf-ssls-outcomes_info.stan"
+  #include "../ssls/legacy/sf-ssls-outcomes_info.stan"
   
-  #include "sf-ssls-hyperparam.stan" 
+  #include "../ssls/legacy/sf-ssls-hyperparam.stan" 
 } 
 
 transformed data {
@@ -23,19 +23,19 @@ transformed data {
   #include "sf-transformed_data.stan"
   #include "other_events_transformed_data.stan"
   #include "mature_cutoffs_transformed_data.stan"
-  #include "sf-ssls-outcomes_info_transformed_data.stan"
+  #include "../ssls/legacy/sf-ssls-outcomes_info_transformed_data.stan"
   // One-time data-only consistency checks
   #include "sf-checks.stan"
 }
 
 parameters {
   #include "other_events_parameters.stan"
-  #include "sf-ssls-parameters.stan"
+  #include "../ssls/legacy/sf-ssls-parameters.stan"
 }
 
 transformed parameters {
   #include "other_events_transformed_parameters.stan"
-  #include "sf-ssls-transformed_parameters.stan"
+  #include "../ssls/legacy/sf-ssls-transformed_parameters.stan"
   
   matrix[n_train_patients, n_causes] patient_response_lp = rep_matrix(0, n_train_patients, n_causes); 
 
@@ -51,7 +51,7 @@ transformed parameters {
 
 model {
   #include "other_events_priors.stan"
-  #include "sf-ssls-priors.stan"
+  #include "../ssls/legacy/sf-ssls-priors.stan"
 
   profile("loglik") { 
     if (fit_tumor_data) {
@@ -487,6 +487,6 @@ generated quantities {
     }
   }
   
-  #include "sf-ssls-accuracy_gen_quant.stan"
+  #include "../ssls/legacy/sf-ssls-accuracy_gen_quant.stan"
 } // end generated quantities
 
