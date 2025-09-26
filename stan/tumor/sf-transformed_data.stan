@@ -85,6 +85,3 @@ int NT_PD = 3;
 matrix[n_train_patients, n_covar] Q_covar_design_matrix = 
   qr_thin_Q(covar_design_matrix[train_patients_pos:train_patients_end]) * sqrt(n_train_patients - 1);
 matrix[n_covar, n_covar] R_covar_design_matrix = qr_thin_R(covar_design_matrix[train_patients_pos:train_patients_end]) / sqrt(n_train_patients - 1);
-matrix[n_covar, n_covar] R_inv_covar_design_matrix = inverse(R_covar_design_matrix);
-
-real log_abs_det_R_covar_design_matrix = log(abs(determinant(R_covar_design_matrix)));

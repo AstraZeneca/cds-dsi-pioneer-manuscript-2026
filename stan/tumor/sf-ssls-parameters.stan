@@ -7,12 +7,23 @@ vector[n_train_trials] raw_trial_log_total_rate;
 real<lower=0> patient_log_total_rate_sd;
 vector[n_train_patients] raw_patient_log_total_rate;
 
-// Covariate coefficients now on fraction (decrease share) instead of total rate
-vector[n_covar] pop_decrease_frac_logit_coef;
-// Population covariate coefficients for initial state proportion (logit scale)
-vector[n_covar] pop_decrease_prop_logis_coef;
+// QR-space population covariate coefficients (theta) for decrease fraction logit.
+// Original-scale coefficients (beta) will be recovered in transformed parameters via backsolve with R.
+vector[n_covar] pop_decrease_frac_logit_coef_qr;
+// QR-space population covariate coefficients (theta) for initial state proportion (logit scale)
+vector[n_covar] pop_decrease_prop_logis_coef_qr;
+// Trial-level ORIGINAL-scale raw (standard normal) coefficients for decrease fraction logit
 matrix[n_train_trials, n_covar] raw_trial_decrease_frac_logit_coef;
+// Per-covariate trial-level sd hyperparameters (hierarchical scaling on original beta scale)
 row_vector<lower=0>[n_covar] trial_decrease_frac_logit_coef_sd;
+// Patient-level ORIGINAL-scale raw coefficients (if enabled) for decrease fraction logit
+matrix[add_patient_level_frac ? n_train_patients : 0, n_covar] raw_patient_decrease_frac_logit_coef;
+// Per-covariate patient-level sd hyperparameters (original beta scale)
+row_vector<lower=0>[n_covar] patient_decrease_frac_logit_coef_sd;
+
+// Patient-level intercept (random effect) for decrease fraction logit (gated)
+real<lower=0> patient_decrease_frac_logit_sd; // hierarchical SD for patient fraction intercept
+vector[add_patient_level_frac ? n_train_patients : 0] raw_patient_decrease_frac_logit; // standard normal draws
 
 // (If patient-level covariate effects later, add analogous *_total_rate_coef params)
 
@@ -56,5 +67,3 @@ real<lower = 0> patient_decrease_prop_logis_sd;
 vector[pop_initial_states_param_only ? 0 : n_train_patients] raw_patient_decrease_prop_logis;
 
 // real log_lod;
-
-// (Legacy net rate covariate hyperparameters removed)
