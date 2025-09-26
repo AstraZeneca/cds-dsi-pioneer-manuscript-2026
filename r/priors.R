@@ -8,29 +8,53 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
   pop_decrease_frac_logit_sd   <- 1.2
 
   lst(
-    # GP hyperparameters
+    # GP hyperparameters 
     pop_tumor_gp_rho_meanlog = 3,
     pop_tumor_gp_rho_sdlog = 0.6,
     log_patient_tumor_gp_rho_sd_sd = 1.75,
     pop_decrease_process_sd_sd = 0.1,
     pop_growth_process_sd_sd = 0.1,
     process_corr_param = 2.0,
-    measure_sd_sd = 0.2, # 0.05,
+    measure_sd_sd = 0.2,
 
-    # Process parameters
+    # Process parameters 
     decrease_process_alpha = 9.7,
     decrease_process_beta = 38.4,
     growth_process_alpha = 9.7,
     growth_process_beta = 38.4,
 
-    # Rate parameters (derived mapping)
-    pop_log_total_rate_mean = pop_log_total_rate_mean,
-    pop_log_total_rate_sd   = pop_log_total_rate_sd,
-    pop_decrease_frac_logit_mean = pop_decrease_frac_logit_mean,
-    pop_decrease_frac_logit_sd   = pop_decrease_frac_logit_sd,
-    patient_log_total_rate_sd_sd      = 0.5,
-    patient_decrease_frac_logit_sd_sd = 0.3,
-    trial_log_total_rate_sd_sd        = 0.6,
+    # Total rate module hyperparams
+    tr_loc_pop_mean = tr_loc_pop_mean,
+    tr_loc_pop_sd   = tr_loc_pop_sd,
+    tr_sd_trial_intercept_sd   = 0.6,  # formerly trial_log_total_rate_sd_sd
+    tr_sd_patient_intercept_sd = 0.5,  # formerly patient_log_total_rate_sd_sd
+    # Placeholder covariate hyperparams until elicited mapping provided for total rate
+    tr_coef_pop_mean = rep(0, stan_data$n_covar),
+    tr_coef_pop_sd   = rep(1, stan_data$n_covar),
+    tr_sd_trial_slope_sd   = rep(0.15, stan_data$n_covar),
+    tr_sd_patient_slope_sd = rep(0.10, stan_data$n_covar),
+
+    # Fraction module hyperparams
+    frac_logit_loc_pop_mean = frac_logit_loc_pop_mean,
+    frac_logit_loc_pop_sd   = frac_logit_loc_pop_sd,
+    frac_sd_trial_intercept_sd   = 0.3,  # formerly patient_decrease_frac_logit_sd_sd reused
+    frac_sd_patient_intercept_sd = 0.3,
+    frac_coef_pop_mean = with(coef_elicited_priors, mean * dir_sign),
+    frac_coef_pop_sd   = elicited_priors$sd,
+    frac_sd_trial_slope_sd   = rep(0.05, stan_data$n_covar),
+    frac_sd_patient_slope_sd = rep(0.03, stan_data$n_covar),
+
+    # Initial state proportion module hyperparams
+    init_logit_loc_pop_mean = init_logit_loc_pop_mean,
+    init_logit_loc_pop_sd   = init_logit_loc_pop_sd,
+    init_sd_trial_intercept_sd   = 1.5, # formerly trial_decrease_prop_logis_sd_sd
+    init_sd_patient_intercept_sd = 1.0, # formerly patient_decrease_prop_logis_sd_sd
+
+    # Initial proportion covariate effects: mirror fraction approach using dir_sign
+    init_coef_pop_mean = with(coef_elicited_priors, mean * dir_sign),
+    init_coef_pop_sd   = coef_elicited_priors$sd,
+    init_sd_trial_slope_sd   = rep(0.10, stan_data$n_covar),
+    init_sd_patient_slope_sd = rep(0.08, stan_data$n_covar),
 
     # Growth lag
     growth_lag_mean = 2.7,
@@ -40,13 +64,7 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
 
     rate_corr_param = 2.0,
 
-    # Initial state proportions
-    pop_decrease_prop_logis_mean = -1.0,
-    pop_decrease_prop_logis_sd   = 1.5,
-    patient_decrease_prop_logis_sd_sd = 1.0,
-    trial_decrease_prop_logis_sd_sd   = 1.5,
-
-    # Baseline hazard GP
+    # Baseline hazard GP (unchanged)
     log_lambda_gp_pop_intercept_mean = array(-4.5),
     log_lambda_gp_pop_intercept_sd   = array(0.5),
     log_lambda_gp_pop_alpha_sd       = array(0.4),

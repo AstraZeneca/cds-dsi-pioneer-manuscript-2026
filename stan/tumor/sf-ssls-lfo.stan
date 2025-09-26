@@ -4,7 +4,7 @@ functions {
   #include "../gp.stan"
   #include "../pfs_functions.stan"
   #include "../lfo.stan"
-  #include "sf-ssls_functions.stan"
+  #include "../ssls/legacy/sf-ssls_functions.stan"
   #include "recist.stanfunctions"
 }  
 
@@ -12,7 +12,7 @@ data {
   #include "../base_data.stan"
   #include "base_data.stan"
 
-  #include "sf-ssls-hyperparam.stan"
+  #include "../ssls/legacy/sf-ssls-hyperparam.stan"
 
   // --- LFO CV specific ---
   int<lower = 0, upper = 1> train_beyond_cutoff;
@@ -123,17 +123,17 @@ transformed data {
 
 parameters {
 //   #include "other_events_parameters.stan"
-  #include "sf-ssls-parameters.stan"
+  #include "../ssls/legacy/sf-ssls-parameters.stan"
 }
 
 transformed parameters {
 //   #include "other_events_transformed_parameters.stan"
-  #include "sf-ssls-transformed_parameters.stan"
+  #include "../ssls/legacy/sf-ssls-transformed_parameters.stan"
 }
 
 model {
 //   #include "other_events_priors.stan"
-  #include "sf-ssls-priors.stan"
+  #include "../ssls/legacy/sf-ssls-priors.stan"
 
   if (fit_tumor_data) {
     // --- LFO CV specific ---
