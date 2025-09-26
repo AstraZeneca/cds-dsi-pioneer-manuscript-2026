@@ -7,9 +7,20 @@ patient_log_total_rate_sd ~ normal(0, patient_log_total_rate_sd_sd);
 raw_trial_log_total_rate ~ std_normal();
 raw_patient_log_total_rate ~ std_normal();
 
+// Priors on ORIGINAL-scale (beta) coefficients recovered from QR space.
+// No Jacobian needed: sampling occurs in QR space (theta parameters named *_qr) but priors are placed on
+// recovered original-scale coefficients (data * backsolve). R is data, so log|det R^{-1}| is constant and omitted.
 pop_decrease_frac_logit_coef ~ normal(pop_decrease_frac_logit_coef_mean, pop_decrease_frac_logit_coef_sd);
 to_vector(raw_trial_decrease_frac_logit_coef) ~ std_normal();
 trial_decrease_frac_logit_coef_sd ~ normal(0, trial_decrease_frac_logit_coef_sd_sd);
+
+if (add_patient_level_frac) {
+  to_vector(raw_patient_decrease_frac_logit_coef) ~ std_normal();
+  patient_decrease_frac_logit_coef_sd ~ normal(0, patient_decrease_frac_logit_coef_sd_sd);
+  // Patient-level fraction intercept (hierarchical)
+  patient_decrease_frac_logit_sd ~ normal(0, patient_decrease_frac_logit_sd_sd);
+  raw_patient_decrease_frac_logit ~ std_normal();
+}
 
 // Growth lag and transition rate priors (missing previously)
 pop_log_growth_lag ~ normal(growth_lag_mean, growth_lag_sd);
@@ -51,10 +62,6 @@ raw_patient_decrease_prop_logis ~ std_normal();
 // log_lod ~ normal(log(lod), log_lod_sd);
 
 // Priors for covariate effects using hyperparameters from data block (original space)
-// (Legacy net rate coefficient prior removed)
 pop_decrease_prop_logis_coef ~ normal(pop_decrease_prop_logis_coef_mean, pop_decrease_prop_logis_coef_sd);
 
-// No Jacobian needed: parameters are in original space; QR is used only in predictor
 
-// Legacy net-rate trial-level coefficient block removed; if future trial-level total-rate covariate effects are added,
-// introduce analogous parameters guarded by add_trial_level_total_rate.

@@ -56,6 +56,8 @@ vector<lower = 0>[n_causes] log_lambda_gp_trial_intercept_sd_sd;
 vector[n_covar] pop_decrease_frac_logit_coef_mean;
 vector<lower=0>[n_covar] pop_decrease_frac_logit_coef_sd;
 row_vector<lower=0>[n_covar] trial_decrease_frac_logit_coef_sd_sd;
+// Patient-level (original beta scale) per-covariate SD hyperparameters for decrease fraction logit coefficients
+row_vector<lower=0>[n_covar] patient_decrease_frac_logit_coef_sd_sd;
 
 // Initial state proportion covariate effects remain
 vector[n_covar] pop_decrease_prop_logis_coef_mean;

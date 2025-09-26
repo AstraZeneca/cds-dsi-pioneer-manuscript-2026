@@ -72,6 +72,8 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     pop_decrease_prop_logis_coef_mean = with(coef_elicited_priors, mean * if_else(fct_match(effect_direction, "worsens"), -1, 1)),
     pop_decrease_prop_logis_coef_sd = coef_elicited_priors$sd,
     trial_decrease_frac_logit_coef_sd_sd = rep(0.05, stan_data$n_covar),
+  # Patient-level per-covariate SD hyper-hyperprior (kept tighter than trial to discourage overfitting)
+    patient_decrease_frac_logit_coef_sd_sd = rep(0.03, stan_data$n_covar),
 
     log_lod_sd = 0.2
   )
