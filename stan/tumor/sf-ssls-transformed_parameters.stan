@@ -18,11 +18,6 @@ vector[n_train_patients] patient_decrease_frac_logit_linpred = Q_covar_design_ma
 matrix[add_patient_level_frac ? n_train_patients : 0, n_covar] patient_decrease_frac_logit_coef; 
 
 if (!pop_covar_coef_only) {
-  // Trial-level beta coefficients
-  // trial_decrease_frac_logit_coef = raw_trial_decrease_frac_logit_coef .* rep_matrix(trial_decrease_frac_logit_coef_sd, n_train_trials);
-  // matrix[n_train_trials, n_covar] trial_decrease_frac_logit_coef_qr = trial_decrease_frac_logit_coef * R_covar_design_matrix';
-  // patient_decrease_frac_logit_linpred += rows_dot_product(Q_covar_design_matrix, trial_decrease_frac_logit_coef_qr[train_patient_trial]);
-
   if (add_patient_level_frac) {
     patient_decrease_frac_logit_coef = raw_patient_decrease_frac_logit_coef .* rep_matrix(patient_decrease_frac_logit_coef_sd, n_train_patients);
     matrix[n_train_patients, n_covar] patient_decrease_frac_logit_coef_qr = patient_decrease_frac_logit_coef * R_covar_design_matrix';
@@ -49,8 +44,8 @@ if (add_patient_level_frac) {
 }
 
 // Recompute population fraction pieces for each patient
-vector[n_train_patients] patient_log_decrease_frac = -log1p_exp(-patient_decrease_frac_logit);
-vector[n_train_patients] patient_log_growth_frac   = -log1p_exp(patient_decrease_frac_logit);
+vector[n_train_patients] patient_log_decrease_frac = log_inv_logit(patient_decrease_frac_logit);
+vector[n_train_patients] patient_log_growth_frac   = log1m_inv_logit(patient_decrease_frac_logit);
 
 // Update total rate only with random effects (no covariate shift)
 patient_log_total_rate += trial_log_total_rate_effect[train_patient_trial] + patient_log_total_rate_effect;
@@ -80,11 +75,12 @@ if (!pop_initial_states_param_only ) {
   }
  
   patient_decrease_prop_logis_effect = patient_decrease_prop_logis_sd * raw_patient_decrease_prop_logis; 
-  patient_decrease_prop_logis += trial_decrease_prop_logis_effect[patient_trial[train_patients_pos:train_patients_end]] + patient_decrease_prop_logis_effect;
+  patient_decrease_prop_logis += trial_decrease_prop_logis_effect[patient_trial[train_patients_pos:train_patients_end]] 
+                              + patient_decrease_prop_logis_effect;
 } 
   
-vector[n_train_patients] patient_log_decrease_prop = -log1p_exp(- patient_decrease_prop_logis);
-vector[n_train_patients] patient_log_growth_prop = patient_log_decrease_prop - patient_decrease_prop_logis;
+vector[n_train_patients] patient_log_decrease_prop = log_inv_logit(patient_decrease_prop_logis);
+vector[n_train_patients] patient_log_growth_prop = log1m_inv_logit(patient_decrease_prop_logis);
   
 vector[n_train_patients] patient_tumor_gp_rho = independ_long_process_noise ? zeros_vector(n_train_patients) : rep_vector(exp(log_pop_tumor_gp_rho), n_train_patients);  
   
