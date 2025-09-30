@@ -20,5 +20,5 @@ vector[n_train_patients] patient_decrease_frac_logit = pop_decrease_frac_logit
   + frac_effect_patient_intercept
   + frac_linpred_pop + frac_linpred_patient_dev;
 
-vector[n_train_patients] patient_log_decrease_frac = -log1p_exp(-patient_decrease_frac_logit);
-vector[n_train_patients] patient_log_growth_frac   = -log1p_exp(patient_decrease_frac_logit);
+vector[n_train_patients] patient_log_decrease_frac = log_inv_logit(patient_decrease_frac_logit);
+vector[n_train_patients] patient_log_growth_frac   = log1m_inv_logit(patient_decrease_frac_logit);

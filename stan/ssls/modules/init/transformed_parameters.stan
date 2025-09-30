@@ -19,5 +19,5 @@ vector[n_train_patients] patient_decrease_prop_logis = pop_decrease_prop_logis
   + init_effect_patient_intercept 
   + init_linpred_pop + init_linpred_patient_dev;
 
-vector[n_train_patients] patient_log_decrease_prop = -log1p_exp(- patient_decrease_prop_logis);
-vector[n_train_patients] patient_log_growth_prop = patient_log_decrease_prop - patient_decrease_prop_logis;
+vector[n_train_patients] patient_log_decrease_prop = log_inv_logit(patient_decrease_prop_logis);
+vector[n_train_patients] patient_log_growth_prop   = log1m_inv_logit(patient_decrease_prop_logis);
