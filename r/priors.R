@@ -1,20 +1,11 @@
 get_tumor_priors <- function(stan_data, coef_elicited_priors) {
   # Directly specified priors (simplified)
   # Choose log-total rate prior similar to historical center; adjust if needed.
-  pop_log_total_rate_mean <- -3.2   # simplified fixed value
-  pop_log_total_rate_sd   <-  2.0   # broader to absorb previous mapping uncertainty
+  pop_log_total_rate_mean <- -1.0   # simplified fixed value
+  pop_log_total_rate_sd   <-  1.2   # broader to absorb previous mapping uncertainty
   # Fraction (logit) prior keeps strong shrinkage bias (>0.5 fraction)
-  pop_decrease_frac_logit_mean <- 2.2
+  pop_decrease_frac_logit_mean <- -1.0
   pop_decrease_frac_logit_sd   <- 1.2
-
-  # Covariate effects: interpret 'worsens' as increasing fraction-driven shrinkage.
-  dir_sign <- with(coef_elicited_priors, case_when(
-    fct_match(effect_direction, "worsens")  ~  1,
-    fct_match(effect_direction, "improves") ~ -1,
-    TRUE                                     ~  0
-  ))
-  pop_decrease_frac_logit_coef_mean <- coef_elicited_priors$mean * dir_sign
-  pop_decrease_frac_logit_coef_sd   <- coef_elicited_priors$sd
 
   lst(
     # GP hyperparameters
@@ -67,10 +58,10 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     log_lambda_gp_trial_intercept_sd_sd = array(0.3),
 
     # Covariate effects (fraction & initial state proportion)
-    pop_decrease_frac_logit_coef_mean = with(coef_elicited_priors, mean * if_else(fct_match(effect_direction, "worsens"), -1, 1)),
-    pop_decrease_frac_logit_coef_sd   = pop_decrease_frac_logit_coef_sd,
-    pop_decrease_prop_logis_coef_mean = with(coef_elicited_priors, mean * if_else(fct_match(effect_direction, "worsens"), -1, 1)),
-    pop_decrease_prop_logis_coef_sd = coef_elicited_priors$sd,
+    pop_decrease_frac_logit_coef_mean = with(coef_elicited_priors, coef_mean * 0),
+    pop_decrease_frac_logit_coef_sd   = coef_elicited_priors$coef_sd,
+    pop_decrease_prop_logis_coef_mean = with(coef_elicited_priors, coef_mean * 0),
+    pop_decrease_prop_logis_coef_sd = coef_elicited_priors$coef_sd,
     trial_decrease_frac_logit_coef_sd_sd = rep(0.05, stan_data$n_covar),
   # Patient-level per-covariate SD hyper-hyperprior (kept tighter than trial to discourage overfitting)
     patient_decrease_frac_logit_coef_sd_sd = rep(0.03, stan_data$n_covar),
