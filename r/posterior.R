@@ -508,12 +508,12 @@ get_tumor_ssls_level_param <- function(res, level = c("patient", "trial"), param
     rvar_extractor(!!!params) 
 }
 
-get_tumor_ssls_level_param_binned <- function(res, level, param, type, breaks = seq(-1, 1, 0.1), exp_breaks = exp(seq(-1, 1, 0.1))) {
+get_tumor_ssls_level_param_binned <- function(res, level, param, type, breaks = seq(-1, 1, 0.1), inv_link = exp, inv_link_breaks = exp(seq(-1, 1, 0.1))) {
   get_tumor_ssls_level_param(res, level, param, lite_gather_rvars) |>
-    mutate(.value_exp = exp(.value), fit_type = type) |>   
+    mutate(.rs_value = inv_link(.value), fit_type = type) |> # response scale 
     group_by(.variable, fit_type) |>
     group_modify(\(d, g) bind_rows(
-      bin_point_intervals(d, .value_exp, breaks = exp_breaks, .width = c(0.5, 0.8)),
+      bin_point_intervals(d, .rs_value, breaks = inv_link_breaks, .width = c(0.5, 0.8)),
       bin_point_intervals(d, .value, breaks = breaks, .width = c(0.5, 0.8))
     )) |> 
     ungroup()

@@ -254,6 +254,7 @@ sample_hist <- function(pred, breaks, freq = TRUE,...) {
 # This function is used to treated_pfs_analysis_dataallow us to generate a distribution of histograms
 rvar_sample_hist <- posterior::rfun(sample_hist, rvar_dots = FALSE)
 rvar_weighted_mean <- posterior::rfun(weighted.mean, rvar_args = "x") 
+rvar_plogis <- posterior::rfun(plogis, rvar_args = "q")
 
 #' Name coefficient indices with meaningful labels
 #'

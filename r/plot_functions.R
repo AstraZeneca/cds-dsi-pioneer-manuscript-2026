@@ -716,6 +716,18 @@ plot_dynamics <- function(data, var, expect_rvar = TRUE, na.rm = FALSE) {
     NULL
 }
 
+plot_level_param <- function(res_data, param = .value) {
+  res_data |> 
+    filter(!is.na({{ param }})) |>
+    ggplot() +
+    geom_lineribbon(aes(x, {{ param }}, ymin = .lower, ymax = .upper, color = fit_type, fill = fit_type, group = .width), 
+                    alpha = 0.25, step = "hv", linewidth = 0) +
+    scale_color_discrete("", type = AZ_palette, aesthetics = c("color", "fill"), label = str_to_title) +
+    scale_x_continuous("") + 
+    labs(y = "", breaks = NULL) +
+    NULL
+}
+
 plot_level_rates <- function(res_data) {
   ggplot(res_data) +
     geom_lineribbon(aes(x, .value, ymin = .lower, ymax = .upper, color = fit_type, fill = fit_type, group = .width), alpha = 0.25, step = "hv") +
