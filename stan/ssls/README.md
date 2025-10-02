@@ -24,14 +24,13 @@ stan/ssls/
       transformed_parameters.stan
       priors.stan
       generated_quantities.stan
-    shared/
-      helpers.stan
-      covar_qr.stan
   modules_aggregator.stan (usage examples & include ordering)
 ```
 
-## Naming & Flags
-See `docs/tumor_total_fraction_init_inventory.md` Sections 2.1–2.4 for the canonical source of naming patterns and flag semantics.
+## Documentation
+
+- **[MODULE_DESIGN.md](MODULE_DESIGN.md)** - Comprehensive inventory and design specification for tr (total rate), frac (fraction mix), and init (initial proportions) modules. See Sections 2.1–2.4 for canonical naming patterns and flag semantics.
+- **[NAMING_CONVENTION.md](NAMING_CONVENTION.md)** - Naming convention compliance tracking and migration status.
 
 ## Migration Strategy
 1. Populate data flags in existing main model (add includes).
@@ -42,8 +41,7 @@ See `docs/tumor_total_fraction_init_inventory.md` Sections 2.1–2.4 for the can
 
 ## Conventions
 - `flags.stan` (singular) per module keeps naming concise (`frac/flags.stan` acceptable; kept plural for clarity—can rename to `flag.stan` if preferred globally).
-- All function-style helpers go in `shared/helpers.stan` (will wrap in a `functions {}` block once populated in use sites).
-- QR decomposition objects reside in `shared/covar_qr.stan` once extracted from legacy `base_data.stan`.
+- Stan built-in functions (`log_inv_logit`, `log1m_inv_logit`) are used for numerically stable logit transformations.
 
 ## Next Actions
 Proceed with Task 6: hyperparameter alignment, then incrementally migrate code into these stubs.

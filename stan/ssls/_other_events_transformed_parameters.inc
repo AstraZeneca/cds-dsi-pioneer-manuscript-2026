@@ -16,11 +16,11 @@ if (add_trial_level_baseline_hazard) {
     }
   }
 }
-array[n_causes] matrix<upper = 0>[n_train_patients, max_all_t] log_cond_prob_surv;
+array[n_causes] matrix<upper = 0>[n_patients, max_all_t] log_cond_prob_surv;
 for (s in 1:n_trials) {
-  int patient_start, patient_end; (patient_start, patient_end) = get_pos(train_trial_patient_pos, s);
+  int patient_start, patient_end; (patient_start, patient_end) = get_pos(trial_patient_pos, s);
   for (k in 1:n_causes) {
-    log_cond_prob_surv[k, patient_start:patient_end] = rep_matrix(log_trial_lambda[k, s], get_pos_size(train_trial_patient_pos, s));
+    log_cond_prob_surv[k, patient_start:patient_end] = rep_matrix(log_trial_lambda[k, s], get_pos_size(trial_patient_pos, s));
     log_cond_prob_surv[k, patient_start:patient_end] = - exp(log_cond_prob_surv[k, patient_start:patient_end]); 
   }
 }
