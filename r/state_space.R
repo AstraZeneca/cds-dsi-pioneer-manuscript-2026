@@ -1,3 +1,4 @@
+
 get_state_patients <- function(analysis_data, sample_size = 12, random = TRUE, by = NULL, cond = TRUE, slicer = if (random) slice_sample else slice_head) {
   analysis_data |> 
     mutate(i = seq(n()), selected = {{ cond }}) |> 
@@ -19,6 +20,7 @@ add_states_sum <- function(states_data, states_col) {
     summarize(across(ends_with("states"), rvar_sum), .groups = "drop") |> 
     mutate(p = factor(3, levels = 1:3, labels = c("regress", "grow", "sum"))) |> 
     bind_rows(states_data) 
+
 }
 
 get_obs_var <- function(res, var, patient_states_data = NULL, relationship = "one-to-one", drop_initial = FALSE) {

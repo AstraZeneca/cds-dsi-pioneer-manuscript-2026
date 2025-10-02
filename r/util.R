@@ -665,6 +665,5 @@ find_stan_includes <- function(stan_file, base_dir = NULL) {
   return(sort(unique(all_files)))
 }
 
-# Example usage:
-# included_files <- find_stan_includes("model.stan")
-# print(included_files)
+
+

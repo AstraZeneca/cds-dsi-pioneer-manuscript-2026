@@ -216,13 +216,13 @@ array[] int get_pos_size(array[] int pos) {
   return sizes;
 }
 
-
 /**
  * Get total number of elements across all groups
  * 
  * @param pos Position array
  * @return Total number of elements
  */
+
 int get_pos_total_size(array[] int pos) {
   return pos[size(pos)] - 1;
 }
