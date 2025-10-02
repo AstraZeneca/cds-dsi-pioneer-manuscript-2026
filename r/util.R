@@ -1,4 +1,4 @@
-#Don't implement anything yet. I want you to propose a design for the current modules that can handle trial and patient level hierarchy such that we can have an arbitrary number of levels. For each patient there should be one of the groups in each level (this becomes a multilevel design rather than a hierarchical one). So I imagine that in the base_data or something there would a [n_levels, n_patients] sized array with the id of each patient for each level. Perhaps a ragged array of the sizes of each group in each level. We can then create a #file:pos.stan array to indicate where each level is. Maybe an array[n_patients, n_levels] of patient ids ordered by their group member ship (because as the patients are sorted in the data, they might not all together with the other members of all the levels). Perhaps a pos pair for that too. Now the parameters will likely have to rely on ragged arrays with priors and access applied to different segments. nolint start: object_usage_linter
+# nolint start: object_usage_linter
 
 #' Utility Functions for Stan Model Sampling and Analysis
 #' 
@@ -40,6 +40,8 @@ sample_and_save <- function(
   model, ..., output_dir, 
   output_basename = NULL, timestamp = TRUE, no_save = FALSE, save_profiles = TRUE, sampler_fun = c("sample", "pathfinder", "variational")) {
   sampler_fun <- arg_match(sampler_fun)
+
+  fs::dir_create(output_dir, recurse = TRUE)
   
   if (!no_save && !timestamp) {
     # fit <- model$sample(..., output_dir = output_dir, output_basename = output_basename)
