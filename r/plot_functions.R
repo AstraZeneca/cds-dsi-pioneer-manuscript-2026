@@ -741,7 +741,7 @@ plot_level_rates <- function(res_data) {
 
 plot_level_decrease_prop <- function(res_data) {
   ggplot(res_data) +
-    geom_lineribbon(aes(x, .value_exp, ymin = .lower, ymax = .upper, color = fit_type, fill = fit_type, group = .width), alpha = 0.25, step = "hv") +
+    geom_lineribbon(aes(x, .rs_value, ymin = .lower, ymax = .upper, color = fit_type, fill = fit_type, group = .width), alpha = 0.25, step = "hv") +
     scale_color_discrete("", type = AZ_palette, aesthetics = c("color", "fill"), label = str_to_title) +
     scale_x_continuous("", breaks = seq(-1, 1, 0.2)) +
     scale_y_continuous("", breaks = NULL) +
