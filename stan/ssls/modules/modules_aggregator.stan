@@ -15,7 +15,6 @@
 //   #include "ssls/modules/tr/flags.stan"
 //   #include "ssls/modules/frac/flags.stan"
 //   #include "ssls/modules/init/flags.stan"
-//   #include "ssls/modules/shared/covar_qr.stan"  // when moved from base data
 // }
 // parameters {
 //   #include "ssls/modules/tr/parameters.stan"
