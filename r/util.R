@@ -1,3 +1,29 @@
+#' Utility Functions for Stan Model Sampling and Analysis
+#' 
+#' This file contains utility functions for conducting Bayesian analysis of 
+#' oncology clinical trials, with particular focus on tumor growth modeling
+#' and survival analysis using Stan.
+#'
+#' Key functionality includes:
+#' - Stan model sampling with automatic file saving
+#' - Kaplan-Meier survival analysis helpers
+#' - RECIST response evaluation and trajectory analysis
+#' - Prior specification utilities for tumor growth and PFS models
+#' - Data preprocessing and visualization helpers
+#' - File format handling for rvar objects
+#'
+#' Dependencies:
+#' @importFrom posterior rfun is_rvar
+#' @importFrom survival survfit2 Surv
+#' @importFrom broom tidy
+#' @importFrom purrr map_dfr map2_chr accumulate
+#' @importFrom dplyr mutate select bind_cols group_by case_when
+#' @importFrom tibble is_tibble as_tibble
+#' @importFrom qs2 qs_save qs_read
+#' @importFrom scales label_number
+#' @importFrom targets tar_combine_raw tar_select_targets tar_format
+#'
+
 #' Sample from a Stan model and optionally save the output
 #'
 #' @param model A Stan model object
@@ -30,6 +56,118 @@ sample_and_save <- function(model, ..., output_dir, output_basename, timestamp =
   return(fit)
 }
 
+#' Extract and compile decorated Stan functions 
+#' 
+#' @param stan_file Path to .stan file with decorated functions
+#' @param includes Optional vector of #include statements
+#' @return cmdstanr model object with exported functions
+export_stan_functions <- function(stan_file, includes = NULL) {
+  
+  # Read the Stan file
+  content <- readLines(stan_file) %>% paste(collapse = "\n")
+  
+  # Extract functions marked with @stan_export anywhere in their documentation
+  # Find @stan_export markers and extract the following function
+  
+  # Split content into lines for easier processing
+  lines <- strsplit(content, "\n")[[1]]
+  export_lines <- which(str_detect(lines, "@stan_export"))
+  
+  if (length(export_lines) == 0) {
+    stop("No functions marked with @stan_export found in ", stan_file)
+  }
+  
+  exported_functions <- c()
+  
+  for (export_line in export_lines) {
+    # Find the start of the function signature after @stan_export
+    func_start <- NULL
+    
+    # Look for the start of a function signature (could be multi-line)
+    for (i in (export_line + 1):length(lines)) {
+      line <- trimws(lines[i])
+      
+      # Skip empty lines and comment lines
+      if (line == "" || str_detect(line, "^\\s*//") || str_detect(line, "^\\s*/\\*")) {
+        next
+      }
+      
+      # Check if this line starts a function (return type or tuple)
+      if (str_detect(line, "^\\s*(?:real|int|vector|matrix|row_vector|array|void|tuple)")) {
+        func_start <- i
+        break
+      }
+    }
+    
+    if (is.null(func_start)) next
+    
+    # Find the complete function by tracking braces
+    brace_count <- 0
+    func_end <- NULL
+    found_opening_brace <- FALSE
+    
+    for (i in func_start:length(lines)) {
+      line <- lines[i]
+      
+      # Count opening and closing braces
+      open_braces <- str_count(line, "\\{")
+      close_braces <- str_count(line, "\\}")
+      
+      if (open_braces > 0) found_opening_brace <- TRUE
+      
+      brace_count <- brace_count + open_braces - close_braces
+      
+      if (found_opening_brace && brace_count == 0) {
+        func_end <- i
+        break
+      }
+    }
+    
+    if (!is.null(func_end)) {
+      func_text <- paste(lines[func_start:func_end], collapse = "\n")
+      exported_functions <- c(exported_functions, func_text)
+    }
+  }
+  
+  if (length(exported_functions) == 0) {
+    stop("No valid functions found after @stan_export markers in ", stan_file)
+  }
+  
+  functions_code <- exported_functions
+  
+  # Create Stan program with functions block
+  stan_program <- paste0(
+    "functions {\n",
+    if (!is.null(includes)) paste0("  ", includes, collapse = "\n"), "\n",
+    paste(functions_code, collapse = "\n\n"), "\n",
+    "}\n\n",
+    "data {}\n",
+    "parameters {}\n", 
+    "model {}\n"
+  )
+  
+  # Compile directly from string and expose functions
+  model <- cmdstan_model(stan_file = write_stan_file(stan_program), force_recompile = TRUE)
+  model$expose_functions()
+  return(model)
+}
+
+build_model <- function(model_file, include_files, dir) {
+  # Force dependency on include files
+  include_files
+  
+  model <- cmdstan_model(model_file, cpp_options = lst(stan_threads = TRUE), dir = dir)
+  
+  # Track the executable by including its hash in the return value
+  exe_path <- model$exe_file()
+  exe_hash <- digest::digest(file = exe_path, algo = "md5")
+  
+  # Store the hash as an attribute so targets tracks it
+  attr(model, "exe_hash") <- exe_hash
+  
+  return(model)
+}
+
 #' Convert Kaplan-Meier estimates to a tibble (data frame) format 
 #'
 #' @param trt_data Analysis data 
@@ -37,25 +175,27 @@ sample_and_save <- function(model, ..., output_dir, output_basename, timestamp =
 #' @param pfs_var Name of variable were PFS is stored in the data 
 #'
 #' @return tibble object with Kaplan-Meier results.
-km_to_tibble <- function(trt_data, key, pfs_var) { 
-  stan_data <- base_prepare_pfs_stan_data(trt_data, pfs_var = pfs_var) |> 
-    magrittr::extract(c("pfs", "interval_censored", "right_censored"))
-  
-  lst(
-    lb = survfit2(Surv(pfs + 1, 1 - right_censored) ~ 1, stan_data),
-    ub = survfit2(Surv(pfs + interval_censored + 1, 1 - right_censored) ~ 1, stan_data),
+km_to_tibble <- function(trt_data, key, pfs_sym, censored_sym) { 
+  rlang::inject(
+    lst(
+      lb = ggsurvfit::survfit2(Surv(!!pfs_sym + 1 - !!censored_sym, 1 - !!censored_sym) ~ 1, trt_data),
+      ub = ggsurvfit::survfit2(Surv(!!pfs_sym + interval_censored + 1 - !!censored_sym, 1 - !!censored_sym) ~ 1, trt_data),
+    )
   ) |> 
     map_dfr(broom::tidy, .id = "btype") |>  
     select(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event, btype) |> 
     bind_cols(key)
 }
 
-get_km_res <- function(analysis_data, pfs_var, ...) {
+get_km_res <- function(analysis_data, pfs_var, censored_var, ...) {
+  pfs_sym <- rlang::ensym(pfs_var)
+  censored_sym <- rlang::ensym(censored_var)
+  
   analysis_data |>
     group_by(trial, ...) |>  
-    group_map(\(trt_data, key) km_to_tibble(trt_data, key, pfs_var), .keep = TRUE) |>  
+    group_map(\(trt_data, key) km_to_tibble(trt_data, key, pfs_sym, censored_sym), .keep = TRUE) |>  
     bind_rows() 
-} 
+}
 
 add_confirmed_resp_priors <- function(stan_data, priors) {
   stan_data |> 
@@ -127,23 +267,6 @@ get_fake_stan_data_list <- function(prior_res, origin_stan_data, n = 5) {
     group_map(\(d, k, ...) list_assign(origin_stan_data, !!!d, draw = first(k$.draw), confirmed_response_interval_censored = rep(0, nrow(d)))) 
 }
 
-# recist_response <- function(baseline_sum, current_sum) {
-#   if (!is.numeric(baseline_sum) || !is.numeric(current_sum) || 
-#       baseline_sum <= 0 || current_sum < 0) {
-#     stop("Inputs must be positive numbers, with baseline > 0")
-#   }
-#   
-#   absolute_change <- current_sum - baseline_sum
-#   percent_change <- absolute_change / baseline_sum 
-#   
-#   case_when(
-#     current_sum == 0 ~ "CR",
-#     percent_change <= -0.3 ~ "PR",
-#     percent_change >= 0.2 & absolute_change >= 5 ~ "PD",
-#     TRUE ~ "SD"
-#   )
-# }
-
 #' Determine RECIST 1.1 Response
 #'
 #' This function calculates the RECIST 1.1 response category based on measurements
@@ -207,6 +330,12 @@ determine_recist_response <- function(baseline_sld, current_sld, nadir_sld = NUL
   }
 }
 
+determine_trajectory_recist_target_response <- function(sld) {
+  nadir <- accumulate(sld, min)
+  
+  map2_chr(sld[-1], nadir[-1], \(curr_sld, curr_nadir) determine_recist_response(first(sld), curr_sld, curr_nadir))
+}
+
 weeks_to_months <- function(weeks) weeks * 7 * 12 / 365.25
 label_weeks_to_months <- scales::label_number(scale = weeks_to_months(1))
 months_to_weeks <- function(months) months / weeks_to_months(1) 
@@ -226,21 +355,303 @@ lognormal_sd <- function(mu = 0, sigma) {
 } 
 
 tar_bind_rows <- function(target_name, mapped, start, ...) {
-  tar_combine_raw(deparse(substitute(target_name)), tar_select_targets(mapped, starts_with(start)), command = expression(bind_rows(!!!.x)), ...)
+  tar_combine_raw(
+    deparse(substitute(target_name)), 
+    tar_select_targets(mapped, starts_with(start)), 
+    command = expression(bind_rows(!!!.x)), ...)
 }
 
+#' Safe QS2 Format for RVar Objects in Targets Pipeline
+#'
+#' A custom targets format that safely handles tibbles containing posterior::rvar
+#' objects by removing problematic cache attributes before serialization and
+#' ensuring proper tibble conversion on read.
+#'
+#' @details
+#' This format addresses issues with serializing rvar objects that contain
+#' cached attributes which can cause problems during the save/load process.
+#' The format:
+#' 1. Detects tibbles containing rvar columns
+#' 2. Removes the "cache" attribute from rvar objects before saving
+#' 3. Uses qs2 for efficient serialization
+#' 4. Ensures objects are returned as tibbles on read
+#'
+#' The marshal/unmarshal functions are pass-through (identity functions)
+#' since the main processing happens in write/read.
+#'
+#' @section Usage:
+#' Use this format in targets pipelines when working with posterior samples
+#' stored as rvar objects:
+#' ```
+#' tar_target(
+#'   name = my_posterior_data,
+#'   command = analyze_posterior(),
+#'   format = rvar_safe_qs2_format
+#' )
+#' ```
+#'
+#' @section Performance:
+#' - Uses qs2 for fast serialization of large objects
+#' - Minimal overhead for non-rvar objects
+#' - Only processes rvar columns when detected
+#'
+#' @return A targets format object with custom read/write methods
+#'
+#' @seealso 
+#' - [targets::tar_format()] for creating custom formats
+#' - [posterior::rvar()] for random variable objects
+#' - [qs2::qs_save()] and [qs2::qs_read()] for serialization
+#'
+#' @examples
+#' \dontrun{
+#' # In a _targets.R file
+#' library(targets)
+#' library(posterior)
+#' 
+#' tar_pipeline(
+#'   tar_target(
+#'     posterior_results,
+#'     my_stan_analysis(),
+#'     format = rvar_safe_qs2_format
+#'   )
+#' )
+#' }
 rvar_safe_qs2_format <- tar_format(
-  read = \(path) qs2::qs_read(path),
-  marshal = \(object) object, 
-  unmarshal = \(object) object, 
-  
   write = function(object, path) {
-    if (tibble::is_tibble(object)) {
+    if (tibble::is_tibble(object) && any(purrr::map_lgl(object, posterior::is_rvar))) {
       object <- as.data.frame(object) |> 
         dplyr::mutate(across(where(posterior::is_rvar), \(r) { attr(r, "cache") <- NULL; r }))
     }
     
     qs2::qs_save(object, path)
   },
+  
+  read = function(path) { 
+    object <- qs2::qs_read(path)
+    
+    if (is.data.frame(object) && !tibble::is_tibble(object)) {
+      object <- tibble::as_tibble(object)
+    }
+    
+    return(object);
+  }
 )
+
+cmdstanr_format <- tar_format(
+  read = function(path) {
+    cmdstanr::as_cmdstan_fit(readr::read_rds(path)$csv_files, check_diagnostics = FALSE, format = "draws_list")
+    # readr::read_rds(path)$file |> 
+    #   readr::read_rds()
+  },
+  write = function(object, path) {
+    # obj_file <- stringr::str_c(path, "_cmdstanr_object.rds")
+    # object$save_object(path)
+    
+    # Calculate hash of all CSV files combined
+    csv_files <- object$output_files()
+    # csv_hash <- digest::digest(purrr::map(csv_files, \(f) digest::digest(file = f)), algo = "xxhash64")  # Fast hash algorithm
+    csv_hash <- purrr::map(csv_files, \(f) digest::digest(file = f, algo = "xxhash64"))  # Fast hash algorithm
+
+    # Save both fit object and hash
+    readr::write_rds(
+      tibble::lst(
+        # fit = object,
+        # file = obj_file,
+        csv_files,
+        csv_hash  # This changes when CSV content changes
+      ),
+      path
+    )
+  }
+)
+
+tar_cmdstan_sample <- function(name, model, stan_data, init_factory = \(...) \(...) NULL, ...) {
+  tar_target(
+    name,
+    sample_and_save(
+      model,
+      stan_data,
+      init = init_factory(stan_data),
+      timestamp = FALSE,
+      format = cmdstanr_format,
+      ...
+    ),
+  )
+}
+
+determine_visit_data_response <- function(visit_data) {
+  visit_data |> 
+    group_by(usubjid) |> 
+    mutate(det_response = c(NA, determine_trajectory_recist_target_response(mmsumdiam))) |> 
+    ungroup() |> 
+    mutate(
+      across(c(response, det_response), \(r) ordered(r, levels = c("CR", "PR", "SD", "PD"))),
+    )
+}
+
+determine_pfs <- function(visit_data, pfs_confirm_visits = 1) {
+  visit_data |> 
+    summarize(
+      det_pfs_idx = find_consecutive(det_response, "PD", pfs_confirm_visits), # |> coalesce(max(week)),
+      det_pfs = if_else(is.na(det_pfs_idx), max(week), pmax(1, week[det_pfs_idx])),
+      det_right_censored = is.na(det_pfs_idx), 
+      det_interval_censored = coalesce(week[det_pfs_idx + 1] - det_pfs - 1, 0)
+    )
+}
+
+# Helper function to parse parameter specifications and find matching columns
+get_param_names_from_dots <- function(dots, all_cols) {
+  if (length(dots) == 0) {
+    # If no parameters specified, return all non-metadata columns
+    return(setdiff(all_cols, c(".chain", ".iteration", ".draw")))
+  }
+  
+  # Extract the base parameter names from the expressions
+  param_names <- character()
+ 
+  param_names <- map_chr(dots, function(dot) {
+    expr_str <- rlang::as_label(dot)
+    # Extract base name (e.g., "beta" from "beta[i]")
+    base_name <- stringr::str_extract(expr_str, "^[^\\[]+")
+    # Find all columns that match this base name
+    str_subset(all_cols, str_glue(r"{^{base_name}(\[|$)}"))
+  })
+  
+  return(unique(param_names))
+}
+
+get_draws <- function(fit, ..., recover_data = NULL) {
+  d <- enquos(...) |> 
+    map_chr(as_label) |> 
+    str_extract(r"{^[^\[]+}") |> 
+    fit$draws() 
+  
+  if (!is_null(recover_data)) {
+    d |> recover_types(recover_data) 
+  } else {
+    d
+  }
+} 
+
+lite_spread_rvars <- function(fit, ..., ndraws = NULL, recover_data = NULL) {
+  get_draws(fit, ..., recover_data = recover_data) |> 
+    tidybayes::spread_rvars(..., ndraws = ndraws)
+}
+
+lite_gather_rvars <- function(fit, ..., ndraws = NULL, recover_data = NULL, calc_rhat = FALSE, calc_ess = FALSE) {
+  d <- get_draws(fit, ..., recover_data = recover_data) |> 
+    tidybayes::gather_rvars(..., ndraws = ndraws)
+  
+  if (calc_rhat) {
+    d <- d |> mutate(rh = posterior::rhat(.value))
+  } 
+  
+  if (calc_ess) {
+    d <- d |> mutate(ess_b = posterior::ess_bulk(.value), ess_t = posterior::ess_tail(.value))
+  }
+  
+  return(d)
+}
+
+find_consecutive <- function(vec, x, n = 1) {
+  enframe(vec) |> 
+    count(value, name = "length") |> 
+    mutate(
+      end_index = cumsum(length),
+      start_index = end_index - length + 1
+    ) |> 
+    filter(value == x, length >= n) |> 
+    pull(start_index) |>  
+    first() %||% NA
+}
+
+find_stan_includes <- function(stan_file, base_dir = NULL) {
+  # Set base directory - use the directory of the main .stan file if not specified
+  if (is.null(base_dir)) {
+    base_dir <- dirname(normalizePath(stan_file, mustWork = TRUE))
+  }
+  
+  # Initialize list to store all found files
+  all_files <- character(0)
+  processed_files <- character(0)
+  
+  # Recursive function to process a single file
+  process_file <- function(file_path) {
+    # Convert to absolute path
+    abs_path <- normalizePath(file_path, mustWork = TRUE)
+    
+    # Skip if already processed (prevents infinite loops)
+    if (abs_path %in% processed_files) {
+      return()
+    }
+    
+    # Mark as processed
+    processed_files <<- c(processed_files, abs_path)
+    
+    # Read the file
+    if (!file.exists(abs_path)) {
+      warning(paste("File not found:", abs_path))
+      return()
+    }
+    
+    lines <- readLines(abs_path, warn = FALSE)
+    
+    # Find #include statements
+    include_pattern <- "^\\s*#include\\s+[\"<]([^\"<>]+)[\">]"
+    include_matches <- grep(include_pattern, lines, value = TRUE)
+    
+    if (length(include_matches) > 0) {
+      # Extract file paths from include statements
+      included_files <- gsub(include_pattern, "\\1", include_matches)
+      
+      for (inc_file in included_files) {
+        # Handle relative paths
+        if (!file.path(inc_file) == inc_file || !startsWith(inc_file, "/")) {
+          # Relative path - resolve relative to current file's directory
+          inc_path <- file.path(dirname(abs_path), inc_file)
+        } else {
+          # Absolute path
+          inc_path <- inc_file
+        }
+        
+        # Try to normalize the path
+        tryCatch({
+          inc_path <- normalizePath(inc_path, mustWork = TRUE)
+          
+          # Add to results if not already there
+          if (!inc_path %in% all_files) {
+            all_files <<- c(all_files, inc_path)
+          }
+          
+          # Recursively process the included file
+          process_file(inc_path)
+          
+        }, error = function(e) {
+          # If file doesn't exist, try relative to base_dir
+          alt_path <- file.path(base_dir, inc_file)
+          tryCatch({
+            alt_path <- normalizePath(alt_path, mustWork = TRUE)
+            
+            if (!alt_path %in% all_files) {
+              all_files <<- c(all_files, alt_path)
+            }
+            
+            process_file(alt_path)
+            
+          }, error = function(e2) {
+            warning(paste("Could not find included file:", inc_file, "from", abs_path))
+          })
+        })
+      }
+    }
+  }
+  
+  # Start processing from the main file
+  process_file(stan_file)
+  
+  # Return sorted list of unique file paths
+  return(sort(unique(all_files)))
+}
+
+
 
