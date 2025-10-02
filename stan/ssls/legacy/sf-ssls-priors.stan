@@ -4,16 +4,14 @@
 pop_log_growth_lag ~ normal(growth_lag_mean, growth_lag_sd);
 pop_log_growth_transition_rate ~ normal(0, log_growth_transition_rate_sd); // Center at 0 (log scale); adjust hyperparam name if mean provided later
 patient_log_growth_lag_sd ~ normal(0, patient_log_growth_lag_sd_sd);
-if (!pop_growth_lag_param_only) {
-  raw_patient_log_growth_lag ~ std_normal();
-}
+
+raw_patient_log_growth_lag ~ std_normal();
 
 // GP rho (length-scale) prior (population) and hierarchical patient variation
-log_pop_tumor_gp_rho ~ lognormal(pop_tumor_gp_rho_meanlog, pop_tumor_gp_rho_sdlog);
+log_pop_tumor_gp_rho ~ normal(pop_tumor_gp_rho_meanlog, pop_tumor_gp_rho_sdlog);
 log_patient_tumor_gp_rho_sd ~ normal(0, log_patient_tumor_gp_rho_sd_sd);
-if (!independ_long_process_noise && !pop_rho_param_only) {
-  raw_log_patient_tumor_gp_rho_effect ~ std_normal();
-}
+
+raw_log_patient_tumor_gp_rho_effect ~ std_normal();
 
 // If patient-level:
 // patient_log_total_rate_effect ~ normal(0, sigma_patient_total);

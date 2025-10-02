@@ -19,28 +19,27 @@ for (s in 1:n_trials) {
   recist_category_counts[s] = zeros_vector(PD);
 }
 
-for (i in train_patients_pos:train_patients_end) {
-  int train_idx = i - train_patients_pos + 1;
+for (i in 1:n_patients) {
   int trial_idx = patient_trial[i];
 
-  int train_visit_start, train_visit_end;
-  (train_visit_start, train_visit_end) = get_pos(train_patient_visit_pos, train_idx);
+  int visit_start, visit_end;
+  (visit_start, visit_end) = get_pos(patient_visit_pos, i);
   
-  for (t in (train_visit_start + n_patient_screening_visits[i]):train_visit_end) {
-    if (train_obs_recist[t] <= PD) {
+  for (t in (visit_start + n_patient_screening_visits[i]):visit_end) {
+    if (recist[t] <= PD) {
       if (rep_recist[t] > PD) {
-        reject(i, ": rep_recist = ", rep_recist[train_visit_start:train_visit_end], 
-                  ", train_obs_recist = ", train_obs_recist[train_visit_start:train_visit_end]);
+        reject(i, ": rep_recist = ", rep_recist[visit_start:visit_end], 
+                  ", recist = ", recist[visit_start:visit_end]);
       }
       
       // Update confusion matrix inline
-      recist_confusion_matrix[trial_idx][train_obs_recist[t], rep_recist[t]] += 1;
+      recist_confusion_matrix[trial_idx][recist[t], rep_recist[t]] += 1;
       
       // Update all other metrics using the function
       (correct_recist_predictions[trial_idx], recist_category_counts[trial_idx],
        weighted_recist_accuracy_linear[trial_idx], weighted_recist_accuracy_quadratic[trial_idx],
        correct_recist_response_class[trial_idx], correct_recist_disease_control[trial_idx]) = update_recist_metrics(
-        train_obs_recist[t], rep_recist[t],
+        recist[t], rep_recist[t],
         correct_recist_predictions[trial_idx], recist_category_counts[trial_idx],
         weighted_recist_accuracy_linear[trial_idx], weighted_recist_accuracy_quadratic[trial_idx],
         correct_recist_response_class[trial_idx], correct_recist_disease_control[trial_idx]
