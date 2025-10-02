@@ -422,3 +422,14 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
     return(init_vals)
   }
 }
+
+create_tumor_ssls_initializer <- function(stan_data) {
+  function(chain_id) {
+    with(stan_data, lst(
+      trial_log_net_rate_sd = abs(rnorm(1, sd = trial_log_net_rate_sd_sd)),
+      raw_trial_log_net_rate = rnorm(n_trials),
+      trial_decrease_prop_logis_sd = abs(rnorm(1, sd = trial_decrease_prop_logis_sd_sd)),
+      raw_trial_decrease_prop_logis = rnorm(n_trials)
+    ))
+  }
+}
