@@ -150,13 +150,30 @@ plot_surv_ppc <- function(ppc_data, surv_interval_col, ic_col, rc_col, rep_surv_
     NULL
 }
 
-plot_km <- function(res_data, obs_km_data, km_est, group = fit_type) {
-  ggplot(res_data) +
-    geom_step(aes(x = t, y = s, group = btype, color = btype), linewidth = 0.5, alpha = 0.5, data = \(d) semi_join(obs_km_data, d, by = "trial")) +
-    stat_lineribbon(aes(x = t - 1, ydist = {{ km_est }}, fill = {{ group }}, alpha = {{ group }}), linewidth = 0, .width = 0.8) +
+plot_km <- function(res_data, obs_km_data, km_est, analysis_data = NULL, group = fit_type, linewidth = 0) {
+  pobj <- ggplot(res_data) +
+    stat_lineribbon(aes(x = t - 1, ydist = {{ km_est }}, fill = {{ group }}, alpha = {{ group }}), linewidth = linewidth, .width = 0.8) +
     labs(y = "Survival Probability") +
     guides(alpha = "none") + 
     theme(legend.position = "bottom")
+  
+  if (!is_null(obs_km_data)) {
+    pobj <- pobj + 
+      geom_step(aes(x = t, y = s, group = btype, color = btype), linewidth = 0.5, alpha = 0.5, data = \(d) semi_join(obs_km_data, d, by = "trial"))
+    
+    if (!is_null(analysis_data)) {
+      pobj <- pobj +
+        geom_point(aes(x = t, y = s, color = btype, shape = "censored"), size = 2, alpha = 0.7, 
+                   data = \(d) semi_join(obs_km_data, d, by = "trial") |> 
+                     inner_join(analysis_data |> filter(right_censored) |> select(pfs), by = c("t" = "pfs"), relationship = "many-to-many")) +
+        geom_point(aes(x = t, y = s, color = btype, shape = "death"), size = 2, alpha = 0.7, 
+                   data = \(d) semi_join(obs_km_data, d, by = "trial") |> 
+                     inner_join(analysis_data |> filter(!right_censored, !progression_before_death) |> select(pfs), by = c("t" = "pfs"), relationship = "many-to-many")) +
+        scale_shape_manual("", values = c(censored = "|", death = "o"), labels = c(censored = "Right Censored", death = "Death before PD"))
+    }
+  }
+  
+  return(pobj)
 }
 
 plot_gng <- function(res_data, outcome, lrv_tv, model_type_names) {
@@ -630,6 +647,63 @@ plot_corr_decay <- function(res_data, param = .value) {
     stat_lineribbon(aes(ydist = {{ param }}, fill = fit_type, color = fit_type), alpha = 0.25, .width = c(0.5, 0.8), linewidth = 0.5) +
     scale_fill_discrete("", type = AZ_palette, label = str_to_title, aesthetics = c("fill", "color")) +
     labs(x = "Week", y = "Correlation") +
+    NULL
+}
+
+plot_dynamics <- function(data, var, expect_rvar = TRUE, na.rm = FALSE) {
+  pobj <- ggplot(data, aes(week))
+  
+  if (expect_rvar) {
+    pobj <- pobj + stat_lineribbon(aes(ydist = {{ var }}, fill = stage), na.rm = na.rm, alpha = 0.25, linewidth = 0.5, .width = c(0.5, 0.8))
+  } else {
+    pobj <- pobj + stat_lineribbon(aes(y = {{ var }}, fill = stage), na.rm = na.rm, alpha = 0.25, .width = c(0.5, 0.8))
+  }
+  
+  pobj +
+    geom_point(aes(y = mmsumdiam), color = AZ_navy, size = 1.5, alpha = 0.75) +
+    scale_fill_discrete("Stage", type = AZ_palette, label = c("obs" = "Observed", "forecast" = "Forecast")) +
+    facet_wrap(vars(i), scales = "free") +
+    NULL
+}
+
+plot_level_rates <- function(res_data) {
+  ggplot(res_data) +
+    geom_lineribbon(aes(x, .value, ymin = .lower, ymax = .upper, color = fit_type, fill = fit_type, group = .width), alpha = 0.25, step = "hv") +
+    scale_color_discrete("", type = AZ_palette, aesthetics = c("color", "fill"), label = str_to_title) +
+    scale_x_continuous("") + 
+    labs(y = "") +
+    facet_wrap(vars(.variable), scales = "free") + #, labeller = labeller(.variable = \(l) str_remove(l, "log_"))) +
+    # coord_cartesian(xlim = c(0, 10)) +
+    NULL
+}
+
+plot_level_decrease_prop <- function(res_data) {
+  ggplot(res_data) +
+    geom_lineribbon(aes(x, .value_exp, ymin = .lower, ymax = .upper, color = fit_type, fill = fit_type, group = .width), alpha = 0.25, step = "hv") +
+    scale_color_discrete("", type = AZ_palette, aesthetics = c("color", "fill"), label = str_to_title) +
+    scale_x_continuous("", breaks = seq(-1, 1, 0.2)) +
+    scale_y_continuous("", breaks = NULL) +
+    NULL
+}
+
+plot_confusion_matrix <- function(data, recorded, calculated, p, n) {
+  data |> 
+    mutate(
+      nvar = {{ n }},
+      pvar = {{ p }},
+      n_label = if (!is_null(nvar)) str_glue("(n={ nvar })") else "",
+      size_label = str_glue("{round(pvar, 3)}
+                             {n_label}")
+    ) |>  
+    ggplot(aes(x = {{ recorded }}, y = {{ calculated }})) +
+    geom_tile(aes(fill = {{ p }}), alpha = 0.5, color = "white", linewidth = 0.5) +
+    geom_text(aes(label = size_label), color = AZ_darkpurple, size = 3) +
+    scale_fill_gradient(low = AZ_turquoise, high = AZ_pink, name = "Proportion") +
+    scale_x_discrete(limits = fct_rev) +
+    facet_wrap(vars(trial), labeller = labeller(.default = str_to_upper)) +
+    coord_fixed() +
+    theme_minimal() +
+    theme(panel.grid.major = element_blank()) +
     NULL
 }
 
