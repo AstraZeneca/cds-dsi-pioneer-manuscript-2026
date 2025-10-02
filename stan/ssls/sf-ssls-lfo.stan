@@ -13,6 +13,12 @@ data {
   #include "../tumor/base_data.stan"
 
   #include "legacy/sf-ssls-hyperparam.stan"
+  #include "modules/tr/hyperparams.stan"
+  #include "modules/frac/hyperparams.stan"
+  #include "modules/init/hyperparams.stan"
+  #include "modules/tr/flags.stan"
+  #include "modules/frac/flags.stan"
+  #include "modules/init/flags.stan"
 
   // --- LFO CV specific ---
   int<lower = 0, upper = 1> train_beyond_cutoff;
@@ -25,7 +31,7 @@ transformed data {
   
   #include "../base_transformed_data.stan"
   #include "../tumor/tumor_transformed_data.stan"
-  #include "sf-transformed_data.stan"
+  #include "_sf_transformed_data.inc"
 //   #include "other_events_transformed_data.stan"
 
   // --- LFO CV specific (visit-based) ---
@@ -123,16 +129,25 @@ transformed data {
 
 parameters {
 //   #include "other_events_parameters.stan"
+  #include "modules/tr/parameters.stan"
+  #include "modules/frac/parameters.stan"
+  #include "modules/init/parameters.stan"
   #include "legacy/sf-ssls-parameters.stan"
 }
 
 transformed parameters {
 //   #include "other_events_transformed_parameters.stan"
+  #include "modules/tr/transformed_parameters.stan"
+  #include "modules/frac/transformed_parameters.stan"
+  #include "modules/init/transformed_parameters.stan"
   #include "legacy/sf-ssls-transformed_parameters.stan"
 }
 
 model {
 //   #include "other_events_priors.stan"
+  #include "modules/tr/priors.stan"
+  #include "modules/frac/priors.stan"
+  #include "modules/init/priors.stan"
   #include "legacy/sf-ssls-priors.stan"
 
   if (fit_tumor_data) {
@@ -285,8 +300,4 @@ generated quantities {
       }
     }
   } 
-}
-
-generated quantities {
-  // Placeholder for LFO-specific diagnostics / likelihood slices
 }
