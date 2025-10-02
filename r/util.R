@@ -36,7 +36,9 @@
 #' @param no_save Boolean, if TRUE, don't save any output files
 #'
 #' @return A fitted Stan model object
-sample_and_save <- function(model, ..., output_dir, output_basename, timestamp = TRUE, no_save = FALSE, save_profiles = TRUE, sampler_fun = c("sample", "pathfinder", "variational")) {
+sample_and_save <- function(
+  model, ..., output_dir, 
+  output_basename = NULL, timestamp = TRUE, no_save = FALSE, save_profiles = TRUE, sampler_fun = c("sample", "pathfinder", "variational")) {
   sampler_fun <- arg_match(sampler_fun)
   
   if (!no_save && !timestamp) {
