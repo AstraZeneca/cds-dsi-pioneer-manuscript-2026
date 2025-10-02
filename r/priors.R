@@ -1,11 +1,14 @@
 get_tumor_priors <- function(stan_data, coef_elicited_priors) {
   # Directly specified priors (simplified)
   # Choose log-total rate prior similar to historical center; adjust if needed.
-  pop_log_total_rate_mean <- -1.0   # simplified fixed value
-  pop_log_total_rate_sd   <-  1.2   # broader to absorb previous mapping uncertainty
+  tr_loc_pop_mean <- -1.0   # simplified fixed value (formerly pop_log_total_rate_mean)
+  tr_loc_pop_sd   <-  1.2   # broader to absorb previous mapping uncertainty
   # Fraction (logit) prior keeps strong shrinkage bias (>0.5 fraction)
-  pop_decrease_frac_logit_mean <- -1.0
-  pop_decrease_frac_logit_sd   <- 1.2
+  frac_logit_loc_pop_mean <- -1.0  # formerly pop_decrease_frac_logit_mean
+  frac_logit_loc_pop_sd   <- 1.2   # formerly pop_decrease_frac_logit_sd
+  # Initial proportion logit
+  init_logit_loc_pop_mean <- 0.0   # formerly pop_decrease_prop_logis_mean
+  init_logit_loc_pop_sd   <- 1.5   # formerly pop_decrease_prop_logis_sd
 
   lst(
     # GP hyperparameters 
@@ -40,7 +43,7 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     frac_sd_trial_intercept_sd   = 0.3,  # formerly patient_decrease_frac_logit_sd_sd reused
     frac_sd_patient_intercept_sd = 0.3,
     frac_coef_pop_mean = with(coef_elicited_priors, mean * dir_sign),
-    frac_coef_pop_sd   = elicited_priors$sd,
+    frac_coef_pop_sd   = coef_elicited_priors$sd,
     frac_sd_trial_slope_sd   = rep(0.05, stan_data$n_covar),
     frac_sd_patient_slope_sd = rep(0.03, stan_data$n_covar),
 
@@ -49,8 +52,6 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     init_logit_loc_pop_sd   = init_logit_loc_pop_sd,
     init_sd_trial_intercept_sd   = 1.5, # formerly trial_decrease_prop_logis_sd_sd
     init_sd_patient_intercept_sd = 1.0, # formerly patient_decrease_prop_logis_sd_sd
-
-    # Initial proportion covariate effects: mirror fraction approach using dir_sign
     init_coef_pop_mean = with(coef_elicited_priors, mean * dir_sign),
     init_coef_pop_sd   = coef_elicited_priors$sd,
     init_sd_trial_slope_sd   = rep(0.10, stan_data$n_covar),
@@ -74,15 +75,6 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     log_lambda_gp_trial_rho_alpha    = array(5.0),
     log_lambda_gp_trial_rho_beta     = array(7.0),
     log_lambda_gp_trial_intercept_sd_sd = array(0.3),
-
-    # Covariate effects (fraction & initial state proportion)
-    pop_decrease_frac_logit_coef_mean = with(coef_elicited_priors, coef_mean * 0),
-    pop_decrease_frac_logit_coef_sd   = coef_elicited_priors$coef_sd,
-    pop_decrease_prop_logis_coef_mean = with(coef_elicited_priors, coef_mean * 0),
-    pop_decrease_prop_logis_coef_sd = coef_elicited_priors$coef_sd,
-    trial_decrease_frac_logit_coef_sd_sd = rep(0.05, stan_data$n_covar),
-  # Patient-level per-covariate SD hyper-hyperprior (kept tighter than trial to discourage overfitting)
-    patient_decrease_frac_logit_coef_sd_sd = rep(0.03, stan_data$n_covar),
 
     log_lod_sd = 0.2
   )
