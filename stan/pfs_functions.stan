@@ -458,6 +458,11 @@ tuple(int, int) survival_time_rng(row_vector log_cond_prob_surv, int obs_surv_ti
   return(survival_time, forecast_right_censored);
 }
 
+
+tuple(int, int) survival_time_rng(row_vector log_cond_prob_surv, int obs_surv_time) {
+  return survival_time_rng(log_cond_prob_surv, obs_surv_time, 1, 0);
+}
+
 /**
  * Generate a survival time within the range of interval censored intervals
  *
@@ -544,8 +549,9 @@ tuple(vector, array[] int, array[] int, array[,] int) estimate_kaplan_meier(arra
  * @param right_censored Right censoring per patient
  * @param max_t The last interval to report Kaplan-Meier results
  * @return (Proportion surviving, Number at risk, Number right censored, Number for whom disease progressed) for each week
+ * @stan_export
  */
-tuple(vector, array[] int, array[] int, array[] int) estimate_kaplan_meier(array[] int pfs, array[] int right_censored, int max_t) {
+tuple(vector, array[] int, array[] int, array[] int) estimate_kaplan_meier(array[] int pfs, array[] int right_censored, int max_t, int pfs_offset) {
   int n_pfs = size(pfs); // How many patients
   array[n_pfs] int sorted_pfs_idx = sort_indices_asc(pfs);
   int pfs_pos = 1;
@@ -562,7 +568,7 @@ tuple(vector, array[] int, array[] int, array[] int) estimate_kaplan_meier(array
     while ((n > 0) && (pfs_pos <= n_pfs) && (pfs[sorted_pfs_idx[pfs_pos]] <= t)) {
       if (t <= max_t) {
         // Remember that we define "pfs" as the last interval survived not the interval of exit.
-        n_exited[t + 1] += !right_censored[sorted_pfs_idx[pfs_pos]]; 
+        n_exited[t + pfs_offset] += !right_censored[sorted_pfs_idx[pfs_pos]]; 
       }
       
       n_right_censored[t] += right_censored[sorted_pfs_idx[pfs_pos]];
@@ -578,6 +584,10 @@ tuple(vector, array[] int, array[] int, array[] int) estimate_kaplan_meier(array
   
   return (s, at_risk, n_right_censored, n_exited); 
 }  
+
+tuple(vector, array[] int, array[] int, array[] int) estimate_kaplan_meier(array[] int pfs, array[] int right_censored, int max_t) {
+  return estimate_kaplan_meier(pfs, right_censored, max_t, 1);
+}
 
 /**
  * Calculate the Concordance Index (C-index) for survival data
