@@ -45,3 +45,8 @@ vector<lower = 0>[n_causes] log_lambda_gp_pop_intercept_sd;
 vector<lower = 0>[n_causes] log_lambda_gp_trial_alpha_sd;
 vector<lower = 0>[n_causes] log_lambda_gp_trial_rho_alpha, log_lambda_gp_trial_rho_beta;
 vector<lower = 0>[n_causes] log_lambda_gp_trial_intercept_sd_sd;
+
+// Prior hyperparameters for covariate effects
+vector[n_covar] pop_log_net_rate_coef_mean;
+vector<lower=0>[n_covar] pop_log_net_rate_coef_sd;
+row_vector<lower=0>[n_covar] trial_log_net_rate_coef_sd_sd;
