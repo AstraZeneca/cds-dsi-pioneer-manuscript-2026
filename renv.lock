@@ -6811,10 +6811,6 @@
         "R (>= 3.4)"
       ],
       "Imports": [
-      "Repository": "CRAN",
-      "Requirements": [
-        "R",
-        "stats",
         "tools",
         "utils",
         "stats"
