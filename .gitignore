@@ -65,3 +65,13 @@ quarto/*_files/
 
 _extensions/
 _targets/
+
+# VS Code
+.vscode/User/
+.vscode/CachedExtensionVSIXs/
+.vscode/CachedProfilesData/
+.vscode/logs/
+.vscode/code-server-ipc.sock
+.vscode/coder.json
+.vscode/Machine/
+.vscode/settings.json
