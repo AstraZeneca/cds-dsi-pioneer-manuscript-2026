@@ -17,25 +17,9 @@ data {
   #include "modules/tr/hyperparams.stan"
   #include "modules/frac/hyperparams.stan"
   #include "modules/init/hyperparams.stan"
-
-  // Total rate flags
-  int<lower=0,upper=1> enable_pop_cov_tr;
-  int<lower=0,upper=1> enable_trial_intercept_tr;
-  int<lower=0,upper=1> enable_trial_cov_tr;
-  int<lower=0,upper=1> enable_patient_intercept_tr;
-  int<lower=0,upper=1> enable_patient_cov_tr;
-  // Fraction flags
-  int<lower=0,upper=1> enable_pop_cov_frac;
-  int<lower=0,upper=1> enable_trial_intercept_frac;
-  int<lower=0,upper=1> enable_trial_cov_frac;
-  int<lower=0,upper=1> enable_patient_intercept_frac;
-  int<lower=0,upper=1> enable_patient_cov_frac;
-  // Initial proportion flags
-  int<lower=0,upper=1> enable_pop_cov_init;
-  int<lower=0,upper=1> enable_trial_intercept_init;
-  int<lower=0,upper=1> enable_trial_cov_init;
-  int<lower=0,upper=1> enable_patient_intercept_init;
-  int<lower=0,upper=1> enable_patient_cov_init;
+  #include "modules/tr/flags.stan"
+  #include "modules/frac/flags.stan"
+  #include "modules/init/flags.stan"
 }
 
 transformed data {
