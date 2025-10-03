@@ -1,5 +1,34 @@
 
 /**
+ * Truncate PFS and right_censored arrays at a given max time (per-patient cutoff)
+ *
+ * For each patient, if pfs[i] > max_time[i], set pfs[i] = max_time[i] and right_censored[i] = 1.
+ * If pfs[i] <= max_time[i], leave as is.
+ *
+ * @param pfs Array of observed survival times (e.g., weeks or days)
+ * @param right_censored Array of censoring indicators (1 = censored, 0 = event)
+ * @param max_time Array of cutoff times (same length as pfs)
+ * @return tuple of (truncated_pfs, truncated_right_censored)
+ */
+tuple(array[] int, array[] int) truncate_at_max_time(array[] int pfs, array[] int right_censored, array[] int max_time) {
+  int n = size(pfs);
+  array[n] int truncated_pfs;
+  array[n] int truncated_right_censored;
+
+  for (i in 1:n) {
+    if (pfs[i] > max_time[i]) {
+      truncated_pfs[i] = max_time[i];
+      truncated_right_censored[i] = 1;
+    } else {
+      truncated_pfs[i] = pfs[i];
+      truncated_right_censored[i] = right_censored[i];
+    }
+  }
+
+  return (truncated_pfs, truncated_right_censored);
+}
+
+/**
  * Calculate the marginal probability of disease progression at every interval.
  *
  * This function computes the log marginal probability of disease progression
@@ -587,10 +616,20 @@ int interval_censored_survival_time_rng(row_vector ic_log_cond_prob_surv) {
  *
  * Note: The returned arrays and vector are of length max_t + 1, with index 1 corresponding to t=0.
  */
-tuple(vector, array[] int, array[] int, array[,] int) estimate_kaplan_meier(array[] int last_surv, array[] int cause, array[] int right_censored, int max_t) {
-  int n_patients = size(last_surv); // How many patients
+tuple(vector, array[] int, array[] int, array[,] int) estimate_kaplan_meier(
+  array[] int last_surv, array[] int cause, array[] int right_censored, int max_t
+) {
+  // Only keep patients with last_surv > 0 using which() and count_positive()
+  int n_patients_full = size(last_surv);
   int n_causes = size(cause);
-  array[n_patients] int sorted_last_surv_idx = sort_indices_asc(last_surv);
+  int n_patients = count_positive(last_surv);
+  array[n_patients] int keep_idx = which(last_surv);
+
+  array[n_patients] int filtered_last_surv = last_surv[keep_idx];
+  array[n_patients] int filtered_cause = cause[keep_idx];
+  array[n_patients] int filtered_right_censored = right_censored[keep_idx];
+
+  array[n_patients] int sorted_last_surv_idx = sort_indices_asc(filtered_last_surv);
   int last_surv_pos = 1;
   int n = n_patients;
 
@@ -608,10 +647,10 @@ tuple(vector, array[] int, array[] int, array[,] int) estimate_kaplan_meier(arra
     while (
       (n > 0) &&  
       (last_surv_pos <= n_patients) &&  
-      (right_censored[sorted_last_surv_idx[last_surv_pos]] || (last_surv[sorted_last_surv_idx[last_surv_pos]] <= t))
+      (filtered_right_censored[sorted_last_surv_idx[last_surv_pos]] || (filtered_last_surv[sorted_last_surv_idx[last_surv_pos]] <= t))
     ) {
-      n_exited[t + 1, cause[sorted_last_surv_idx[last_surv_pos]]] += !right_censored[sorted_last_surv_idx[last_surv_pos]];
-      n_right_censored[t + 1] += right_censored[sorted_last_surv_idx[last_surv_pos]];
+      n_exited[t + 1, filtered_cause[sorted_last_surv_idx[last_surv_pos]]] += !filtered_right_censored[sorted_last_surv_idx[last_surv_pos]];
+      n_right_censored[t + 1] += filtered_right_censored[sorted_last_surv_idx[last_surv_pos]];
 
       last_surv_pos += 1;
     }

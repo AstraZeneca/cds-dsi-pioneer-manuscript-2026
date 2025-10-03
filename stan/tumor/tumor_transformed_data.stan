@@ -69,28 +69,28 @@ patient_measured_tumor_visits_pos[1] = 1;
 
 {
   int post_treat_pos = 1;
-  
+
   for (s in 1:n_trials) {
-    int curr_patient_pos, curr_patient_end; 
+    int curr_patient_pos, curr_patient_end;
     (curr_patient_pos, curr_patient_end) = get_pos(trial_patient_pos, s);
-    
+
     for (i in curr_patient_pos:curr_patient_end) {
       n_patient_forecast_visits[i] = last_predict_visit - patient_last_obs_visit[i];
-      
+
       int curr_patient_visits_pos, curr_patient_visits_end;
       (curr_patient_visits_pos, curr_patient_visits_end) = get_pos(patient_visit_pos, i);
-      
+
       for (m in curr_patient_visits_pos:curr_patient_visits_end) {
         if (t_patient_visits[m] > 0) {
           if (sum_tumor_size[m] <= 0) {
             n_patient_non_measured_tumor_visits[i] += 1;
           }
-          
+
           post_treat_sld[post_treat_pos] = sum_tumor_size[m];
           post_treat_pos += 1;
         }
       }
-      
+
       patient_non_measured_tumor_visits_pos[i + 1] = sum(n_patient_non_measured_tumor_visits[:i]) + 1;
       n_patient_post_treat_visits[i] = n_patient_visits[i] - n_patient_screening_visits[i];
       patient_measured_tumor_visits_pos[i + 1] = sum(n_patient_post_treat_visits[:i]) - sum(n_patient_non_measured_tumor_visits[:i]) + 1;
