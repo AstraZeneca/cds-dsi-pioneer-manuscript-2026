@@ -19,9 +19,9 @@ real<lower=0> frac_logit_loc_pop_sd;
 real<lower=0> frac_sd_trial_intercept_sd;   // may be repurposed from existing trial frac intercept hyperparam (define in R later if missing)
 real<lower=0> frac_sd_patient_intercept_sd; // from patient_decrease_frac_logit_sd_sd
 
-// Population covariate coefficient hyperparameters
-vector[n_covar] frac_coef_pop_mean;
-vector<lower=0>[n_covar] frac_coef_pop_sd;
+// QR-space coefficient hyperparameters (applied in model block)
+vector[n_covar] frac_coef_qr_pop_mean;                   // mean for QR coefficients (typically 0)
+vector<lower=0>[n_covar] frac_coef_qr_pop_sd;            // sd for QR coefficients (typically 1)
 
 // Per-covariate slope SD hyperpriors
 row_vector<lower=0>[n_covar] frac_sd_trial_slope_sd;

@@ -31,9 +31,8 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     tr_loc_pop_sd   = tr_loc_pop_sd,
     tr_sd_trial_intercept_sd   = 0.6,  # formerly trial_log_total_rate_sd_sd
     tr_sd_patient_intercept_sd = 0.5,  # formerly patient_log_total_rate_sd_sd
-    # Placeholder covariate hyperparams until elicited mapping provided for total rate
-    tr_coef_pop_mean = rep(0, stan_data$n_covar),
-    tr_coef_pop_sd   = rep(1, stan_data$n_covar),
+    tr_coef_qr_pop_mean = rep(0, stan_data$n_covar),
+    tr_coef_qr_pop_sd   = rep(1, stan_data$n_covar),
     tr_sd_trial_slope_sd   = rep(0.15, stan_data$n_covar),
     tr_sd_patient_slope_sd = rep(0.10, stan_data$n_covar),
 
@@ -42,8 +41,8 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     frac_logit_loc_pop_sd   = frac_logit_loc_pop_sd,
     frac_sd_trial_intercept_sd   = 0.3,  # formerly patient_decrease_frac_logit_sd_sd reused
     frac_sd_patient_intercept_sd = 0.3,
-    frac_coef_pop_mean = coef_elicited_priors$coef_mean,
-    frac_coef_pop_sd   = coef_elicited_priors$coef_sd,
+    frac_coef_qr_pop_mean = coef_elicited_priors$coef_mean,
+    frac_coef_qr_pop_sd   = coef_elicited_priors$coef_sd,
     frac_sd_trial_slope_sd   = rep(0.05, stan_data$n_covar),
     frac_sd_patient_slope_sd = rep(0.03, stan_data$n_covar),
 
@@ -52,8 +51,8 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     init_logit_loc_pop_sd   = init_logit_loc_pop_sd,
     init_sd_trial_intercept_sd   = 1.5, # formerly trial_decrease_prop_logis_sd_sd
     init_sd_patient_intercept_sd = 1.0, # formerly patient_decrease_prop_logis_sd_sd
-    init_coef_pop_mean = coef_elicited_priors$coef_mean,
-    init_coef_pop_sd   = coef_elicited_priors$coef_sd,
+    init_coef_qr_pop_mean = coef_elicited_priors$coef_mean,
+    init_coef_qr_pop_sd   = coef_elicited_priors$coef_sd,
     init_sd_trial_slope_sd   = rep(0.10, stan_data$n_covar),
     init_sd_patient_slope_sd = rep(0.08, stan_data$n_covar),
 

@@ -17,9 +17,9 @@ real<lower=0> tr_loc_pop_sd;          // sd prior for population log total rate
 real<lower=0> tr_sd_trial_intercept_sd;    // prior SD for trial intercept SD
 real<lower=0> tr_sd_patient_intercept_sd;  // prior SD for patient intercept SD
 
-// Population covariate coefficient hyperparameters (full length; gating happens in priors usage)
-vector[n_covar] tr_coef_pop_mean;           // mean of each population covariate coefficient (log scale)
-vector<lower=0>[n_covar] tr_coef_pop_sd;    // sd of each population covariate coefficient
+// QR-space coefficient hyperparameters (applied in model block)
+vector[n_covar] tr_coef_qr_pop_mean;                   // mean for QR coefficients (typically 0)
+vector<lower=0>[n_covar] tr_coef_qr_pop_sd;            // sd for QR coefficients (typically 1)
 
 // Hierarchical slope SD hyperpriors (per covariate)
 row_vector<lower=0>[n_covar] tr_sd_trial_slope_sd;    // prior SD for each trial-level slope SD
