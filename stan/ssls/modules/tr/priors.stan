@@ -3,7 +3,7 @@
 tr_loc_pop ~ normal(tr_loc_pop_mean, tr_loc_pop_sd);
 
 if (enable_pop_cov_tr) {
-	tr_coef_qr_pop ~ normal(0, 1);
+	tr_coef_qr_pop ~ normal(tr_coef_qr_pop_mean, tr_coef_qr_pop_sd);
 }
 
 // Always put priors on SDs (they exist even when raw vectors are length 0)

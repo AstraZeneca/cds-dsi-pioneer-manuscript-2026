@@ -430,9 +430,9 @@ create_tumor_ssls_initializer <- function(stan_data) {
         init_sd_patient_intercept = abs(rnorm(1, sd = init_sd_patient_intercept_sd)),
         init_raw_patient_intercept = if (enable_patient_intercept_init) rnorm(n_train_patients),
 
-        tr_coef_qr_pop = if (n_covar > 0 && enable_trial_cov_tr) rnorm(n_covar, 0, 1),  # QR space, standard normal
-        frac_coef_qr_pop = if (n_covar > 0 && enable_trial_cov_frac) rnorm(n_covar, 0, 1),  # QR space, standard normal
-        init_coef_qr_pop = if (n_covar > 0 && enable_trial_cov_init) rnorm(n_covar, 0, 1),  # QR space, standard normal
+        tr_coef_qr_pop = if (n_covar > 0 && enable_trial_cov_tr) rnorm(n_covar, tr_coef_qr_pop_mean, tr_coef_qr_pop_sd),
+        frac_coef_qr_pop = if (n_covar > 0 && enable_trial_cov_frac) rnorm(n_covar, frac_coef_qr_pop_mean, frac_coef_qr_pop_sd),
+        init_coef_qr_pop = if (n_covar > 0 && enable_trial_cov_init) rnorm(n_covar, init_coef_qr_pop_mean, init_coef_qr_pop_sd),
 
         tr_sd_trial_slope = if (n_covar > 0 && enable_trial_cov_tr) abs(rnorm(n_covar, sd = tr_sd_trial_slope_sd)),
         tr_raw_trial_slope = if (n_covar > 0 && enable_trial_cov_tr) matrix(rnorm(n_covar * n_trials), n_trials, n_covar),
