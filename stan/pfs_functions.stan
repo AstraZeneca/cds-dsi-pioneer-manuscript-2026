@@ -14,27 +14,6 @@
 
 tuple(int, int) find_first_week(
   array[] int arr,
-  int value,
-  int n_screening_visits,
-  array[] int curr_visits,
-  array[] int forecast_time,
-  int max_all_t
-) {
-  int idx = find_first(arr, value);
-  int week;
-  int right_censored;
-  if (idx == 0) {
-    week = max_all_t;
-    right_censored = 1;
-  } else {
-    week = map_idx_to_week(idx + n_screening_visits, curr_visits, forecast_time, max_all_t);
-    right_censored = 0;
-  }
-  return (week, right_censored);
-}
-
-tuple(int, int) find_first_week(
-  array[] int arr,
   array[] int values,
   int min_run_length,
   int n_screening_visits,
