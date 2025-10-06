@@ -734,6 +734,67 @@ matrix calc_patient_process_noise(
   return noise;
 }
 
+/**
+ * Generate patient states including process noise, SLD trajectories, and forecast states
+ */
+tuple(
+  matrix,  // forecast_patient_states for this patient
+  vector,  // rep_patient_log_sld for this patient
+  vector   // forecast_patient_log_sld for this patient
+) generate_patient_states_rng(
+  matrix patient_states,              // states for this patient's visits
+  array[] real forecast_time,         // forecast time points (should be real, not int)
+  real patient_log_decrease_rate,     // patient_log_decrease_rate
+  real patient_log_growth_rate,       // patient_log_growth_rate
+  real sum_tumor_size_baseline,       // baseline tumor size
+  // Forecast configuration parameters
+  real forecast_growth_lag,           // growth lag for forecast (was hardcoded to negative_infinity())
+  real forecast_growth_transition,    // growth transition for forecast (was hardcoded to 1)
+  matrix forecast_process_noise,      // process noise for forecast (was generated internally)
+  // Global parameters
+  real measure_sd
+) {
+  int n_patient_visits = rows(patient_states);
+  // Calculate replicated SLD for observed visits
+  vector[n_patient_visits] rep_log_sld = zeros_vector(n_patient_visits);
+  
+  // First visit uses baseline measurement
+  rep_log_sld[1] = log(sum_tumor_size_baseline);
+  
+  // Subsequent visits are generated from states with measurement noise
+  if (n_patient_visits > 1) {
+    rep_log_sld[2:] = to_vector(normal_rng(
+      to_vector(log_sum_exp(patient_states[2:, 1], patient_states[2:, 2])) + 
+        log(sum_tumor_size_baseline),
+      rep_vector(measure_sd, n_patient_visits - 1)
+    ));
+  }
+
+  int forecast_size = size(forecast_time) - 1;
+  
+  // Calculate forecast states using provided parameters
+  matrix[forecast_size + 1, 2] forecast_expected_states, forecast_states;
+  (forecast_expected_states, forecast_states) = sf_log_space_trajectory_ncp(
+    patient_states[n_patient_visits],
+    forecast_time,
+    exp(patient_log_decrease_rate), exp(patient_log_growth_rate),
+    forecast_growth_lag, forecast_growth_transition, // Use parameters instead of hardcoded values
+    forecast_process_noise, // Use provided process noise
+    0 // No debug
+  );
+  
+  // Calculate forecast SLD with measurement noise
+  vector[forecast_size] forecast_log_sld = zeros_vector(forecast_size);
+  if (forecast_size > 0) {
+    forecast_log_sld = to_vector(normal_rng(
+      to_vector(log_sum_exp(forecast_states[2:, 1], forecast_states[2:, 2])) + log(sum_tumor_size_baseline),
+      rep_vector(measure_sd, forecast_size)
+    ));
+  }
+  
+  return (forecast_states[2:], rep_log_sld, forecast_log_sld);
+}
+
 matrix multi_normal_rng(
   matrix y_obs,                 // Observed values [n_obs, 2]
   array[] int time_obs,        // Observed time points

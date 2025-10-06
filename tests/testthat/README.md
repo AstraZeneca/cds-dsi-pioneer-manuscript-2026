@@ -47,11 +47,44 @@ This repository uses a robust, unified pattern for testing Stan functions (e.g.,
 
 ### 6. Example Files
 
-- Stan: `tests/testthat/stan/test_lfo_all.stan`
+- Stan: `tests/testthat/stan/test_lfo_all.stan` (tests `cutoff_visits`, `fine_cutoff_visits`, `get_oos_patients_idx`, `get_testing_visit_week_bounds`)
+- Stan: `tests/testthat/stan/test_get_testing_visit_week_bounds_all.stan` (dedicated test for `get_testing_visit_week_bounds`)
+- R: `tests/testthat/test-stan-lfo.R` (comprehensive LFO function tests)
+- R: `tests/testthat/test-stan-get_testing_visit_week_bounds.R` (dedicated test for `get_testing_visit_week_bounds`)
 - R: `tests/testthat/test-stan-lfo.R`
 - Helper: `tests/testthat/helper-stan.R`
 
-### 7. What to Avoid
+### 7. Testing Complex Functions
+
+For complex functions like `get_testing_visit_week_bounds` that return multiple arrays and have nested logic:
+
+- **Create comprehensive test cases**: Include simple cases, edge cases, and complex nested scenarios
+- **Test all return values**: Validate each returned array separately
+- **Handle expected errors**: Use `tryCatch()` for cases that should produce `fatal_error`
+- **Document test case logic**: Include comments explaining the expected behavior for each test case
+- **Use meaningful test case names**: Make it easy to identify which scenario failed
+
+### 8. Extreme Stress Testing
+
+For critical functions, create extreme stress tests that push the function beyond normal boundaries:
+
+- **Boundary value testing**: Test with values at integer limits, zero, negative numbers
+- **Performance stress**: Test with massive arrays (50+ visits, 5+ patients × cutoffs)
+- **Pathological inputs**: Huge gaps between visits, unordered data, duplicate values
+- **Error injection**: Systematically test all failure modes and edge cases
+- **Complex combinations**: Multi-dimensional parameter spaces with overlapping conditions
+
+**Example extreme stress test scenarios:**
+- `test-stan-get_testing_visit_week_bounds.R` includes 18 comprehensive test cases covering:
+  - Basic functionality and multi-patient/cutoff scenarios
+  - Boundary conditions (visits exactly at cutoffs, patient entry edge cases)
+  - Error conditions (no visits after cutoff, baseline-only visits)
+  - Extreme values (integer boundaries, massive visit counts, huge time gaps)
+  - Complex scenarios (asymmetric patterns, overlapping windows, mixed orderings)
+
+This approach ensures functions are robust against real-world data anomalies and edge cases.
+
+### 8. What to Avoid
 
 - Do not use per-case R files or Stan files.
 - Do not keep unused JSON or helper files.

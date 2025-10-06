@@ -1,8 +1,9 @@
-  # LOO, lFO and Model Evaluation Utilities
   #
   # This file contains functions for Leave-Future-Out (LFO) cross-validation,
   # model stacking, and various model evaluation metrics for survival analysis
   # and clinical trial data.}
+
+# nolint start: object_usage_linter
 
 get_trial_loo <- function(res, log_lik_var = "trial_log_lik", moment_match = TRUE, ...) {
   res$loo(log_lik_var, moment_match = moment_match, save_psis = TRUE, ...)
@@ -212,61 +213,63 @@ get_lfo_cutoff_days <- function(first_cutoff_date, last_date, first_cutoff_day_i
 #' when the approximation quality (as measured by the Pareto k statistic) degrades.
 #'
 lfo <- function(
-    stan_data, model, cutoffs, output_path, basename, 
+    stan_data, model, cutoffs, all_cutoffs, output_path, basename, initializer, 
     output_timestamp = FALSE, refit_n = min(cutoffs$n), 
-    k_threshold = 0.7, lean = FALSE, verbose = FALSE, exact = FALSE, fit_only = FALSE, iter_warmup = 300, iter_sampling = 500, ...) {
+    k_threshold = 0.7, lean = FALSE, verbose = FALSE, exact = FALSE, fit_only = FALSE, 
+    iter_warmup = 300, iter_sampling = 500, parallel_chains = 4, adapt_delta = 0.9, future_window = 1, ...) {
   if (verbose) {
-    cat("Startin on:\n")
+    cat("Starting on:\n")
     print(cutoffs)
     cat("\n")
   }
   
   remaining_cutoffs <- cutoffs |> filter(n >= refit_n) 
+  remaining_all_cutoffs <- all_cutoffs |> filter(n >= refit_n)
   
   fit <- stan_data |>
-    list_assign(cutoff_calendar_day = remaining_cutoffs$cutoff_calendar_day, n_cutoffs = nrow(remaining_cutoffs)) %>%
+    list_assign(cutoff_calendar_day = remaining_all_cutoffs$cutoff_calendar_day, n_cutoffs = nrow(remaining_all_cutoffs)) %>%
     sample_and_save(
       model,
       .,
-      iter_warmup = iter_warmup, iter_sampling = iter_sampling, parallel_chains = 4, adapt_delta = 0.9,
-      init = create_crcr_pfs_initializer(.),
+      iter_warmup = iter_warmup, iter_sampling = iter_sampling, parallel_chains = parallel_chains, adapt_delta = adapt_delta,
+      init = initializer,
       output_dir = file.path(output_path, "fit"), output_basename = str_glue("{basename}-{refit_n}"),
       timestamp = output_timestamp, 
       ...
     ) 
   
-  if (fit_only) {
-    return(fit)
-  }
-  
   psis_results <- fit |> 
-    lfo_log_lik() |> 
-    mutate(refit_n, n = n + refit_n - 1) |> 
-    left_join(select(remaining_cutoffs, n, cutoff_date, cutoff_calendar_day), by = "n")
+    lfo_log_lik(future_window = future_window) |> 
+    mutate(across(c(n, m), \(x) x + refit_n - 1)) |> 
+    left_join(select(remaining_all_cutoffs, n, cutoff_date, cutoff_calendar_day), by = "n") |> 
+    mutate(tar_group = first(cutoffs$tar_group %||% NA_integer_), refit_n)
+  
+  if (fit_only) {
+    return(lst(fit, psis_results))
+  }
   
   if (lean) {
     psis_results <- psis_results |>
-      select(n, contains("E_"))
+      select(n, m, contains("E_"))
   }
   
   next_cutoffs <- psis_results |> 
     filter(!is.na(k), k > k_threshold | exact, n > refit_n) %>%
     semi_join(remaining_cutoffs, ., by = "n")
-  
+
   if (verbose) {
     cat("LFO results:\n")
-    print(psis_results)
+    print(select(psis_results, n, m, refit_n, k))
     cat("\n")
   }
   
   if (nrow(next_cutoffs) > 0) {
-    return(bind_rows(
-      psis_results, 
-      lfo(
-        stan_data, model, cutoffs, output_path, basename, output_timestamp, refit_n = min(next_cutoffs$n), 
-        k_threshold, lean, verbose, exact, fit_only, iter_warmup, iter_sampling, ...
+    next_results <- lfo(
+        stan_data, model, cutoffs, all_cutoffs, output_path, basename, initializer, output_timestamp, refit_n = min(next_cutoffs$n), 
+        k_threshold, lean, verbose, exact, fit_only, iter_warmup, iter_sampling, parallel_chains, adapt_delta, ...
       )
-    ))
+
+    return(bind_rows(psis_results, next_results))
   } else {
     return(psis_results)
   }
@@ -297,11 +300,13 @@ lfo_log_lik <- function(res, max_n = Inf, future_window = 1) {
 }
 
 psis_resample <- function(l, w, recalc_full = FALSE) { #, negative_only = TRUE) {
-  map2(l, w, function(ln, wn) { 
-    if (!is_null(wn)) {
-      plyr::aaply(ln, 2, \(lni) log_sum_exp(lni + wn * all(wn < 0))) 
-    } else if (recalc_full) { 
-      plyr::aaply(ln, 2, log_mean_exp)
+  map2(l, w, function(ln, wn) {
+    if (!is_null(ln)) {
+      if (!is_null(wn)) {
+        plyr::aaply(ln, 2, \(lni) log_sum_exp(lni + wn * all(wn < 0))) 
+      } else if (recalc_full) { 
+        plyr::aaply(ln, 2, log_mean_exp)
+      }
     }
   })
 }
@@ -335,36 +340,38 @@ psis_resample <- function(l, w, recalc_full = FALSE) { #, negative_only = TRUE) 
 #' 4. Calculates approximated expected log-likelihoods using PSIS resampling.
 #' 5. Renames and reorganizes columns for clarity.
 #'
-#' This function is crucial for assessing model performance in a time-series context,
-#' particularly for clinical trial data with progression-free survival (PFS) and
-#' confirmed response (CRCR) outcomes.
+#' This function is crucial for assessing model performance in a time-series context.
 #'
 lfo_log_lik_rvar <- function(log_lik_rvar, max_n = Inf, future_window = 1) {
   log_lik_rvar |>   
     filter(m >= n) |>
     group_by(n, m) |> 
-    summarize(across(matches("^patient(_pfs|_crcr)?_log_lik"), \(l) list(draws_of(l))), .groups = "drop") |>
+    summarize(across(matches("^patient(_.+)?_log_lik"), \(l) list(draws_of(l))), .groups = "drop") |>
     (function(d) {
       inner_join(
-        filter(d, m == max(m)) |> select(!m), # From n to max(m)
-        filter(d, n == 1) |> select(!n),      # From 1 to n
+        filter(d, m == max(m)) |> select(!m), # From n to max(m), this is the out of sample loglik. For n = 1, that is the exact SAP.
+        filter(d, n == 1) |> select(!n),      # From 1 to, this is the loglik for the additional periods of time that we want to PSIS to approximate.
+                                              # This is relevant to predicting the _next_ row down.
         by = c("n" = "m"), suffix = c("", "_log_ratio")
-      ) |> 
+      ) |>
+        # This add loglik columns for M-SAP, rather than the full SAP we get from the above join.  
         left_join(
-          mutate(d, m = m - future_window + 1) |> filter(n == m), 
-          by = "n", suffix = c("", "_w")
+          # mutate(d, m = m - future_window + 1) |> filter(n == m), 
+          filter(d, n == m - future_window + 1),
+          by = "n", 
+          suffix = c("", "_w") # _w is in reference to the m-sap "window"
         )
     })() |>
     filter(n <= max_n) |> 
     mutate(
       # fit = map(min_rank(n), \(nr) if (nr == 1) res),
       across(
-        matches("^patient(_pfs|_crcr)?_log_lik(_w)?$"), 
-        \(l) map(l, \(ln) plyr::aaply(ln, 2, \(lni) log_mean_exp(lni))), 
+        matches("^patient(_.+)?_log_lik(_w)?$"), 
+        \(l) map_if(l, \(ln) !is_null(ln), \(ln) plyr::aaply(ln, 2, \(lni) log_mean_exp(lni))), 
         .names = "mean_{.col}"
       ),
       across(
-        matches("^patient(_pfs|_crcr)?_log_lik_log_ratio$"),
+        matches("^patient(_.+)?_log_lik_log_ratio$"),
         \(l) map(l, \(ln) suppressWarnings(loo::psis(rowSums(ln)))), 
         .names = "psis_{.col}"
       ), 
@@ -374,17 +381,16 @@ lfo_log_lik_rvar <- function(log_lik_rvar, max_n = Inf, future_window = 1) {
         .names = "{.fn}_{.col}"
       ),
       across(matches("^(psis|lwt|k)"), lag),
-      
     ) |> 
     rename_with(\(n) str_replace_all(
       n, 
       c(r"{log_lik_log_ratio}" = "log_ratio",
-        r"{(k|lwt)_psis_patient(_pfs|_crcr)?_log_ratio}" = r"{\1\2}", 
-        r"{^psis_patient(_pfs|_crcr)?_log_ratio}" = r"{psis\1}")
+        r"{(k|lwt)_psis_patient(_.+)?_log_ratio}" = r"{\1\2}", 
+        r"{^psis_patient(_.+)?_log_ratio}" = r"{psis\1}")
     )) |>   
     mutate(
-      dplyover::across2(matches("^patient(_pfs|_crcr)?_log_lik$"), matches("^lwt(_pfs|crcr)?"), psis_resample, .names = "approx_mean_{xcol}"),
-      dplyover::across2(matches("^patient(_pfs|_crcr)?_log_lik_w$"), matches("^lwt(_pfs|crcr)?"), psis_resample, .names = "approx_mean_{xcol}"),
+      dplyover::across2(matches("^patient(_.+)?_log_lik$"), matches("^lwt(_.+)?"), psis_resample, .names = "approx_mean_{xcol}"),
+      dplyover::across2(matches("^patient(_.+)?_log_lik_w$"), matches("^lwt(_+)?"), psis_resample, .names = "approx_mean_{xcol}"),
       across(matches("^(approx_)?mean"), \(m) map_dbl(m, \(mn) if (!is_null(mn)) sum(mn) else NA_real_), .names = "E_{.col}")
     ) |> 
     rename_with(\(n) str_replace(n, r"{E_(approx_)?mean}", r"{\1E}"))
@@ -485,4 +491,6 @@ lfo_stacking_weights <- function(model_log_lik, log_lik_var = E_log_lik) {
     loo::stacking_weights() |> 
     c() |> 
     set_names(names(model_log_lik))
-}
+} 
+
+# nolint end: object_usage_linter
