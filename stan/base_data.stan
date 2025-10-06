@@ -31,6 +31,7 @@ array[n_patients] int<lower = 1> n_patient_visits;
 
 
 array[sum(n_patient_visits)] int t_patient_visits;
+array[sum(n_patient_visits)] int t_patient_visits_day; // Days
 
 /*
  * Diagram for t_measure and t_day_measure:

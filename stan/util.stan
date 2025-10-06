@@ -1,3 +1,19 @@
+/**
+ * Count the number of positive (>0) values in an integer array.
+ *
+ * @param arr Array of integers
+ * @return Number of elements in arr that are >0
+ */
+int count_positive(array[] int arr) {
+  int n = size(arr);
+  int count = 0;
+  for (i in 1:n) {
+    if (arr[i] > 0) {
+      count += 1;
+    }
+  }
+  return count;
+}
 /** Calculate the last observed measure for each patient. 
  *
  * @param t_measure The week each assessment was done.
@@ -267,16 +283,44 @@ int num_leq(array[] int x, int y) {
   return n;
 }
 
+/**
+ * Return the indices of elements > 0 (or <= 0 if inverse=1) in an indicator array.
+ * @param mask Array of integers (0/1 or any integer)
+ * @param inverse If 1, return indices where mask <= 0; if 0 (default), return indices where mask > 0
+ * @return Array of indices (1-based) where mask > 0 (or <= 0 if inverse=1)
+ */
+array[] int which(array[] int mask, int inverse) {
+  int n = size(mask);
+  int count = 0;
+  for (i in 1:n) {
+    if ((inverse == 0 && mask[i] > 0) || (inverse == 1 && mask[i] <= 0)) count += 1;
+  }
+  array[count] int idx;
+  int pos = 1;
+  for (i in 1:n) {
+    if ((inverse == 0 && mask[i] > 0) || (inverse == 1 && mask[i] <= 0)) {
+      idx[pos] = i;
+      pos += 1;
+    }
+  }
+  return idx;
+}
+
+/**
+ * Overload: Return the indices of elements equal to 1 in a binary indicator array.
+ * @param mask Binary array (0/1)
+ * @return Array of indices (1-based) where mask == 1
+ */
+array[] int which(array[] int mask) {
+  return which(mask, 0);
+}
+
 /** Identify which elements in a binary array are 0 and which are 1.
  * @param mask Binary array
  * @return tuple(indices of 0 elements, indices of 1 elements)
  */
 tuple(array[] int, array[] int) get_mask_idx(array[] int mask) {
-  int n = size(mask);
-  int n_0 = n - sum(mask);
-  array[n] int sorted_idx = sort_indices_asc(mask);
-
-  return(sorted_idx[:n_0], sorted_idx[(n_0 + 1):]); 
+  return (which(mask, 1), which(mask, 0));
 }
 
 /** Repeat each value a specific number of times.
