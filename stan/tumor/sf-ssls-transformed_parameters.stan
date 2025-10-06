@@ -4,6 +4,10 @@ vector[n_train_patients] patient_log_net_rate = rep_vector(pop_log_net_rate, n_t
 // vector[n_train_patients] patient_log_rate_ratio_effect = zeros_vector(n_train_patients);
 vector[n_train_patients] patient_log_rate_ratio = rep_vector(pop_log_rate_ratio, n_train_patients);
   
+// QR-space coefficients derived once for use in linear predictors
+vector[n_covar] QR_pop_log_net_rate_coef = R_covar_design_matrix * pop_log_net_rate_coef;      
+vector[n_covar] QR_pop_decrease_prop_logis_coef = R_covar_design_matrix * pop_decrease_prop_logis_coef;
+  
 // Calculate linear predictors for rates
 vector[n_train_patients] patient_log_net_rate_linpred = Q_covar_design_matrix * QR_pop_log_net_rate_coef;
   
@@ -95,5 +99,4 @@ profile("states") {
   );
 }
 
-vector[n_covar] pop_log_net_rate_coef = R_inv_covar_design_matrix * QR_pop_log_net_rate_coef;      
-vector[n_covar] pop_decrease_prop_logis_coef = R_inv_covar_design_matrix * QR_pop_decrease_prop_logis_coef;
+// (moved QR coefficient definitions to the top of transformed parameters)
