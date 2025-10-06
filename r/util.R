@@ -207,17 +207,40 @@ get_conditioning_subgroups <- function(data, cond, other_cond) {
 #'
 #' @return tibble object with Kaplan-Meier results.
 km_to_tibble <- function(trt_data, key, pfs_sym, censored_sym) { 
-  rlang::inject(
+  survfit_objs <- rlang::inject(
     lst(
       lb = ggsurvfit::survfit2(Surv(!!pfs_sym + 1 - !!censored_sym, 1 - !!censored_sym) ~ 1, trt_data),
       ub = ggsurvfit::survfit2(Surv(!!pfs_sym + interval_censored + 1 - !!censored_sym, 1 - !!censored_sym) ~ 1, trt_data),
     )
-  ) |> 
+  )
+  
+  # Extract median survival times and confidence intervals
+  median_data <- survfit_objs |>
+    map_dfr(\(fit) {
+      # Extract median from survfit object
+      median_surv <- summary(fit)$table
+      tibble(
+        median_pfs = unname(median_surv["median"]),
+        median_pfs_lower = unname(median_surv["0.95LCL"]),
+        median_pfs_upper = unname(median_surv["0.95UCL"])
+      )
+    }, .id = "btype")
+  
+  survfit_objs |> 
     map_dfr(broom::tidy, .id = "btype") |>  
     select(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event, btype) |> 
+    left_join(median_data, by = "btype") |>
     bind_cols(key)
 }
 
+#' Extract Kaplan-Meier estimates with median PFS
+#'
+#' @param analysis_data The full analysis dataset
+#' @param pfs_var Name of the PFS time variable
+#' @param censored_var Name of the censoring indicator variable
+#' @param ... Additional grouping variables (e.g., treatment arm, biomarker subgroups)
+#'
+#' @return A tibble with KM estimates and median PFS (with confidence intervals) for each group
 get_km_res <- function(analysis_data, pfs_var, censored_var, ...) {
   pfs_sym <- rlang::ensym(pfs_var)
   censored_sym <- rlang::ensym(censored_var)
