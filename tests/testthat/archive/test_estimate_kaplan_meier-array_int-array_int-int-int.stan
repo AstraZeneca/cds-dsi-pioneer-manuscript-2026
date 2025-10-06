@@ -1,7 +1,6 @@
 functions {
-  #include "../../../stan/pos.stan"
-  #include "../../../stan/util.stan"
-  #include "../../../stan/pfs_functions.stan"
+  #include util.stan
+  #include pfs_functions.stan
 }
 
 data {
@@ -20,3 +19,4 @@ generated quantities {
   
   (km_survival, at_risk, n_right_censored, n_exited) = estimate_kaplan_meier(event_time, right_censored, max_t, pfs_offset);
 }
+
