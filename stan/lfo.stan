@@ -30,30 +30,30 @@ tuple(array[] int, array[] int, array[] int) cutoff_visits(
     int visit_start, visit_end;
     (visit_start, visit_end) = get_pos(patient_visit_pos, i);
     int n_patient_visits = visit_end - visit_start + 1;
-    
+    if (n_patient_visits <= 0) {
+      last_visit_day[i] = 0;
+      last_visit_week[i] = 0;
+      last_visit_calendar_day[i] = 0;
+      continue;
+    }
     // Convert global cutoff to patient-specific study day
     int patient_cutoff_study_day = calendar_date_to_study_date(patient_calendar_day[i], cutoff_calendar_day);
-    
     // Extract this patient's visit data
     array[n_patient_visits] int patient_t_visits_week = t_patient_visits[visit_start:visit_end];
     array[n_patient_visits] int patient_t_visits_day = t_patient_visits_day[visit_start:visit_end];
-    
     // Sort visits by day to find chronological order
     array[n_patient_visits] int patient_visit_sort_idx = sort_indices_asc(patient_t_visits_day);
-    
     // Find the last visit on or before the cutoff
     int t_idx = 0;
     while (t_idx < n_patient_visits && 
            patient_t_visits_day[patient_visit_sort_idx[t_idx + 1]] <= patient_cutoff_study_day) {
       t_idx += 1;
     }
-    
     // If at least one visit occurred before cutoff, record it
     if (t_idx > 0) {  
       last_visit_day[i] = patient_t_visits_day[patient_visit_sort_idx[t_idx]]; 
       last_visit_week[i] = patient_t_visits_week[patient_visit_sort_idx[t_idx]]; 
     }
-    
     // Calculate the calendar date of this patient's final visit (regardless of cutoff)
     last_visit_calendar_day[i] = patient_calendar_day[i] + 
                                  patient_t_visits_day[patient_visit_sort_idx[n_patient_visits]] - 1;
@@ -73,27 +73,32 @@ tuple(array[] int, array[] int, array[] int) fine_cutoff_visits(
   array[n_patients] int last_visit_calendar_day;
   
   for (i in 1:n_patients) {
-    int t_measure_pos = patient_tumor_measure_pos[i]; 
-    int t_measure_end = patient_tumor_measure_pos[i + 1] - 1; 
+    int t_measure_pos = patient_tumor_measure_pos[i];
+    int t_measure_end = patient_tumor_measure_pos[i + 1] - 1;
     int n_patient_measures = t_measure_end - t_measure_pos + 1;
-    
-    // This is the study date for this patient that such a cutoff would have occured on
-    int patient_cutoff_study_day = calendar_date_to_study_date(patient_calendar_day[i], cutoff_calendar_day); 
-    
-    array[n_patient_measures] int patient_t_measure = t_measure[t_measure_pos:t_measure_end];
-    array[n_patient_measures] int patient_t_day_measure = t_day_measure[t_measure_pos:t_measure_end];
+    if (n_patient_measures <= 0) {
+      last_visit_day[i] = 0;
+      last_visit_week[i] = 0;
+      last_visit_calendar_day[i] = 0;
+      continue;
+    }
+    // Defensive: only access arrays if n_patient_measures > 0
+    int patient_cutoff_study_day = calendar_date_to_study_date(patient_calendar_day[i], cutoff_calendar_day);
+    array[n_patient_measures] int patient_t_measure;
+    array[n_patient_measures] int patient_t_day_measure;
+    for (j in 1:n_patient_measures) {
+      patient_t_measure[j] = t_measure[t_measure_pos + j - 1];
+      patient_t_day_measure[j] = t_day_measure[t_measure_pos + j - 1];
+    }
     array[n_patient_measures] int patient_measure_t_sort_idx = sort_indices_asc(patient_t_day_measure);
-    int t_idx = 0;
-    
-    while (t_idx < n_patient_measures && patient_t_day_measure[patient_measure_t_sort_idx[t_idx + 1]] <= patient_cutoff_study_day) {
+    int t_idx = 1;
+    while (t_idx <= n_patient_measures && patient_t_day_measure[patient_measure_t_sort_idx[t_idx]] <= patient_cutoff_study_day) {
       t_idx += 1;
     }
-    
-    if (t_idx > 0) {  
-      last_visit_day[i] = patient_t_day_measure[patient_measure_t_sort_idx[t_idx]]; 
-      last_visit_week[i] = patient_t_measure[patient_measure_t_sort_idx[t_idx]]; 
+    if (t_idx > 1) {
+      last_visit_day[i] = patient_t_day_measure[patient_measure_t_sort_idx[t_idx - 1]];
+      last_visit_week[i] = patient_t_measure[patient_measure_t_sort_idx[t_idx - 1]];
     }
-    
     last_visit_calendar_day[i] = patient_calendar_day[i] + patient_t_day_measure[patient_measure_t_sort_idx[n_patient_measures]] - 1;
   }
   

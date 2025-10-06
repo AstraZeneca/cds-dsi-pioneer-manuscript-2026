@@ -478,7 +478,7 @@ int get_int(array[] int x, array[] int pos, int p, int n) {
   
   // Bounds checking
   if (idx >= pos[p + 1] || n < 1) {
-    fatal_error("Unexpected index: ", n);
+    fatal_error("Unexpected index: ", n, " in group ", p, " of size ", get_pos_size(pos, p), " with pos: ", pos);
   }
   
   return x[pos[p] + n - 1]; 
@@ -493,7 +493,7 @@ int get_int(array[] int x, array[] int pos, int p, int n) {
  * @return Last element in group p
  */
 int get_last_int(array[] int x, array[] int pos, int p) {
-  return get_int(x, pos, p, pos[p + 1] - 1);
+  return get_int(x, pos, p, pos[p + 1] - pos[p]);
 }
 
 array[] int validate_pos(array[] int pos) {

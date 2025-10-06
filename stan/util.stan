@@ -10,17 +10,22 @@ array[] int get_max_t(array[] int t_measure, array[] int n_measures, array[] int
   int t_pos = 1;
   int tumor_pos = 1;
   array[n_patients] int max_t;
-    
+
   for (i in 1:n_patients) {
     int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
-    int t_end = t_pos + sum(n_measures[tumor_pos:tumor_end]) - 1; 
-    
-    max_t[i] = max(t_measure[t_pos:t_end]);
-    
-    t_pos = t_end + 1;
+    int n_meas_sum = 0;
+    for (j in tumor_pos:tumor_end) n_meas_sum += n_measures[j];
+    if (n_patient_tumors[i] == 0 || n_meas_sum == 0) {
+      // No tumors or no measures for this patient, set to 0 or a sentinel value
+      max_t[i] = 0;
+      t_pos += n_meas_sum; // still advance t_pos for consistency
+    } else {
+      int t_end = t_pos + n_meas_sum - 1;
+      max_t[i] = max(t_measure[t_pos:t_end]);
+      t_pos = t_end + 1;
+    }
     tumor_pos = tumor_end + 1;
   }
-  
   return max_t;
 }
 
@@ -117,24 +122,6 @@ array[] int calculate_n_missing_visits(array[] int unique_visits, array[] int un
   for (p in 1:n) {
     n_unique_missing_visits[p] = n_full - get_pos_size(unique_visits_pos, p);
   }
-  
-  // array[sum(n_unique_missing_visits)] int unique_missing_visits;
-  // int curr_missing_idx = 1;
- 
-  // for (p in 1:n) { 
-  //   array[n_unique_visits[p]] int curr_unique_visits = sort_asc(get_int_sub_array(unique_visits, unique_visits_pos, p));
-  //   int curr_unique_visit_idx = 1;
-  //   
-  //   for (q in 1:n_full) {
-  //     if (q < curr_unique_visits[curr_unique_visit_idx]) {
-  //       n_unique_missing_visits[p] += 1;
-  //       // unique_missing_visits[curr_missing_idx] = q;
-  //       // curr_missing_idx += 1;
-  //     } else {
-  //       curr_unique_visit_idx += 1;
-  //     }
-  //   }
-  // }
   
   return n_unique_missing_visits;
 }
@@ -573,18 +560,16 @@ array[] int get_level2level_idx(array[] int hi_level, array[] int hi_pos, array[
 }
 
 array[] int get_idx_dict(array[] int idx) {
-  int max_idx = size(idx) > 0 ? max(idx) : 0; 
+  int max_idx = size(idx) > 0 ? max(idx) : 0;
   array[max_idx] int idx_dict = zeros_int_array(max_idx);
-  
-  int idx_pos = 1;
-  
   for (i in 1:max_idx) {
-    if (idx[idx_pos] == i) {
-      idx_dict[i] = idx_pos;
-      idx_pos += 1;
+    for (j in 1:size(idx)) {
+      if (idx[j] == i) {
+        idx_dict[i] = j;
+        break;
+      }
     }
   }
-  
   return idx_dict;
 }
 
