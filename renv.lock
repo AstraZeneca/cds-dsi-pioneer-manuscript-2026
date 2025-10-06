@@ -425,7 +425,7 @@
       "NeedsCompilation": "yes",
       "Author": "Dirk Eddelbuettel [aut, cre] (ORCID: <https://orcid.org/0000-0001-6419-907X>), Romain Francois [aut] (ORCID: <https://orcid.org/0000-0002-2444-4226>), JJ Allaire [aut] (ORCID: <https://orcid.org/0000-0003-0174-9868>), Kevin Ushey [aut] (ORCID: <https://orcid.org/0000-0003-2880-7407>), Qiang Kou [aut] (ORCID: <https://orcid.org/0000-0001-6786-5453>), Nathan Russell [aut], Iñaki Ucar [aut] (ORCID: <https://orcid.org/0000-0001-6403-5550>), Doug Bates [aut] (ORCID: <https://orcid.org/0000-0001-8316-9503>), John Chambers [aut]",
       "Maintainer": "Dirk Eddelbuettel <edd@debian.org>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "RcppEigen": {
       "Package": "RcppEigen",
@@ -582,7 +582,7 @@
       "Author": "Ravi Varadhan",
       "Maintainer": "Ravi Varadhan <ravi.varadhan@jhu.edu>",
       "URL": "https://coah.jhu.edu/people/Faculty_personal_Pages/Varadhan.html",
-      "Repository": "CRAN",
+      "Repository": "RSPM",
       "NeedsCompilation": "no",
       "Encoding": "UTF-8"
     },
@@ -620,7 +620,7 @@
       "Biarch": "true",
       "Author": "Jeroen Ooms [aut, cre] (ORCID: <https://orcid.org/0000-0002-4035-0289>), Jan Marvin Garbuszus [ctb]",
       "Maintainer": "Jeroen Ooms <jeroenooms@gmail.com>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "abind": {
       "Package": "abind",
@@ -735,7 +735,7 @@
       "NeedsCompilation": "yes",
       "Author": "Neal Richardson [aut], Ian Cook [aut], Nic Crane [aut], Dewey Dunnington [aut] (ORCID: <https://orcid.org/0000-0002-9415-4582>), Romain François [aut] (ORCID: <https://orcid.org/0000-0002-2444-4226>), Jonathan Keane [aut, cre], Dragoș Moldovan-Grünfeld [aut], Jeroen Ooms [aut], Jacob Wujciak-Jens [aut], Javier Luraschi [ctb], Karl Dunkle Werner [ctb] (ORCID: <https://orcid.org/0000-0003-0523-7309>), Jeffrey Wong [ctb], Apache Arrow [aut, cph]",
       "Maintainer": "Jonathan Keane <jkeane@gmail.com>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "askpass": {
       "Package": "askpass",
@@ -941,7 +941,7 @@
       "Encoding": "UTF-8",
       "NeedsCompilation": "no",
       "Author": "Jonah Gabry [aut, cre], Tristan Mahr [aut], Paul-Christian Bürkner [ctb], Martin Modrák [ctb], Malcolm Barrett [ctb], Frank Weber [ctb], Eduardo Coronado Sroka [ctb], Teemu Sailynoja [ctb], Aki Vehtari [ctb]",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "bigD": {
       "Package": "bigD",
@@ -1333,7 +1333,7 @@
       "NeedsCompilation": "no",
       "Author": "David Robinson [aut], Alex Hayes [aut] (ORCID: <https://orcid.org/0000-0002-4985-5160>), Simon Couch [aut, cre] (ORCID: <https://orcid.org/0000-0001-5676-5107>), Posit Software, PBC [cph, fnd] (ROR: <https://ror.org/03wc8by49>), Indrajeet Patil [ctb] (ORCID: <https://orcid.org/0000-0003-1995-6531>), Derek Chiu [ctb], Matthieu Gomez [ctb], Boris Demeshev [ctb], Dieter Menne [ctb], Benjamin Nutter [ctb], Luke Johnston [ctb], Ben Bolker [ctb], Francois Briatte [ctb], Jeffrey Arnold [ctb], Jonah Gabry [ctb], Luciano Selzer [ctb], Gavin Simpson [ctb], Jens Preussner [ctb], Jay Hesselberth [ctb], Hadley Wickham [ctb], Matthew Lincoln [ctb], Alessandro Gasparini [ctb], Lukasz Komsta [ctb], Frederick Novometsky [ctb], Wilson Freitas [ctb], Michelle Evans [ctb], Jason Cory Brunson [ctb], Simon Jackson [ctb], Ben Whalley [ctb], Karissa Whiting [ctb], Yves Rosseel [ctb], Michael Kuehn [ctb], Jorge Cimentada [ctb], Erle Holgersen [ctb], Karl Dunkle Werner [ctb] (ORCID: <https://orcid.org/0000-0003-0523-7309>), Ethan Christensen [ctb], Steven Pav [ctb], Paul PJ [ctb], Ben Schneider [ctb], Patrick Kennedy [ctb], Lily Medina [ctb], Brian Fannin [ctb], Jason Muhlenkamp [ctb], Matt Lehman [ctb], Bill Denney [ctb] (ORCID: <https://orcid.org/0000-0002-5759-428X>), Nic Crane [ctb], Andrew Bates [ctb], Vincent Arel-Bundock [ctb] (ORCID: <https://orcid.org/0000-0003-2042-7063>), Hideaki Hayashi [ctb], Luis Tobalina [ctb], Annie Wang [ctb], Wei Yang Tham [ctb], Clara Wang [ctb], Abby Smith [ctb] (ORCID: <https://orcid.org/0000-0002-3207-0375>), Jasper Cooper [ctb] (ORCID: <https://orcid.org/0000-0002-8639-3188>), E Auden Krauska [ctb] (ORCID: <https://orcid.org/0000-0002-1466-5850>), Alex Wang [ctb], Malcolm Barrett [ctb] (ORCID: <https://orcid.org/0000-0003-0299-5825>), Charles Gray [ctb] (ORCID: <https://orcid.org/0000-0002-9978-011X>), Jared Wilber [ctb], Vilmantas Gegzna [ctb] (ORCID: <https://orcid.org/0000-0002-9500-5167>), Eduard Szoecs [ctb], Frederik Aust [ctb] (ORCID: <https://orcid.org/0000-0003-4900-788X>), Angus Moore [ctb], Nick Williams [ctb], Marius Barth [ctb] (ORCID: <https://orcid.org/0000-0002-3421-6665>), Bruna Wundervald [ctb] (ORCID: <https://orcid.org/0000-0001-8163-220X>), Joyce Cahoon [ctb] (ORCID: <https://orcid.org/0000-0001-7217-4702>), Grant McDermott [ctb] (ORCID: <https://orcid.org/0000-0001-7883-8573>), Kevin Zarca [ctb], Shiro Kuriwaki [ctb] (ORCID: <https://orcid.org/0000-0002-5687-2647>), Lukas Wallrich [ctb] (ORCID: <https://orcid.org/0000-0003-2121-5177>), James Martherus [ctb] (ORCID: <https://orcid.org/0000-0002-8285-3300>), Chuliang Xiao [ctb] (ORCID: <https://orcid.org/0000-0002-8466-9398>), Joseph Larmarange [ctb], Max Kuhn [ctb], Michal Bojanowski [ctb], Hakon Malmedal [ctb], Clara Wang [ctb], Sergio Oller [ctb], Luke Sonnet [ctb], Jim Hester [ctb], Ben Schneider [ctb], Bernie Gray [ctb] (ORCID: <https://orcid.org/0000-0001-9190-6032>), Mara Averick [ctb], Aaron Jacobs [ctb], Andreas Bender [ctb], Sven Templer [ctb], Paul-Christian Buerkner [ctb], Matthew Kay [ctb], Erwan Le Pennec [ctb], Johan Junkka [ctb], Hao Zhu [ctb], Benjamin Soltoff [ctb], Zoe Wilkinson Saldana [ctb], Tyler Littlefield [ctb], Charles T. Gray [ctb], Shabbh E. Banks [ctb], Serina Robinson [ctb], Roger Bivand [ctb], Riinu Ots [ctb], Nicholas Williams [ctb], Nina Jakobsen [ctb], Michael Weylandt [ctb], Lisa Lendway [ctb], Karl Hailperin [ctb], Josue Rodriguez [ctb], Jenny Bryan [ctb], Chris Jarvis [ctb], Greg Macfarlane [ctb], Brian Mannakee [ctb], Drew Tyre [ctb], Shreyas Singh [ctb], Laurens Geffert [ctb], Hong Ooi [ctb], Henrik Bengtsson [ctb], Eduard Szocs [ctb], David Hugh-Jones [ctb], Matthieu Stigler [ctb], Hugo Tavares [ctb] (ORCID: <https://orcid.org/0000-0001-9373-2726>), R. Willem Vervoort [ctb], Brenton M. Wiernik [ctb], Josh Yamamoto [ctb], Jasme Lee [ctb], Taren Sanders [ctb] (ORCID: <https://orcid.org/0000-0002-4504-6008>), Ilaria Prosdocimi [ctb] (ORCID: <https://orcid.org/0000-0001-8565-094X>), Daniel D. Sjoberg [ctb] (ORCID: <https://orcid.org/0000-0003-0862-2018>), Alex Reinhart [ctb] (ORCID: <https://orcid.org/0000-0002-6658-514X>)",
       "Maintainer": "Simon Couch <simon.couch@posit.co>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "bslib": {
       "Package": "bslib",
@@ -1495,7 +1495,7 @@
       "NeedsCompilation": "no",
       "Author": "Daniel D. Sjoberg [aut, cre] (ORCID: <https://orcid.org/0000-0003-0862-2018>), Becca Krouse [aut], Emily de la Rua [aut], F. Hoffmann-La Roche AG [cph, fnd], GlaxoSmithKline Research & Development Limited [cph]",
       "Maintainer": "Daniel D. Sjoberg <danield.sjoberg@gmail.com>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "cellranger": {
       "Package": "cellranger",
@@ -1719,7 +1719,7 @@
       "NeedsCompilation": "yes",
       "Author": "Davis Vaughan [aut, cre], Posit Software, PBC [cph, fnd]",
       "Maintainer": "Davis Vaughan <davis@posit.co>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "cluster": {
       "Package": "cluster",
@@ -1957,7 +1957,7 @@
       "NeedsCompilation": "yes",
       "Author": "Jeroen Ooms [aut, cre] (ORCID: <https://orcid.org/0000-0002-4035-0289>), John MacFarlane [cph] (Author of cmark)",
       "Maintainer": "Jeroen Ooms <jeroenooms@gmail.com>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "conflicted": {
       "Package": "conflicted",
@@ -2182,7 +2182,7 @@
       "NeedsCompilation": "no",
       "Author": "William Michael Landau [aut, cre] (ORCID: <https://orcid.org/0000-0003-1878-3253>), Daniel Woodie [ctb], Eli Lilly and Company [cph, fnd]",
       "Maintainer": "William Michael Landau <will.landau.oss@gmail.com>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "curl": {
       "Package": "curl",
@@ -2216,7 +2216,7 @@
       "NeedsCompilation": "yes",
       "Author": "Jeroen Ooms [aut, cre] (ORCID: <https://orcid.org/0000-0002-4035-0289>), Hadley Wickham [ctb], Posit Software, PBC [cph]",
       "Maintainer": "Jeroen Ooms <jeroenooms@gmail.com>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "data.table": {
       "Package": "data.table",
@@ -2250,7 +2250,7 @@
       "NeedsCompilation": "yes",
       "Author": "Tyson Barrett [aut, cre] (ORCID: <https://orcid.org/0000-0002-2137-1391>), Matt Dowle [aut], Arun Srinivasan [aut], Jan Gorecki [aut], Michael Chirico [aut] (ORCID: <https://orcid.org/0000-0003-0787-087X>), Toby Hocking [aut] (ORCID: <https://orcid.org/0000-0002-3146-0865>), Benjamin Schwendinger [aut] (ORCID: <https://orcid.org/0000-0003-3315-8114>), Ivan Krylov [aut] (ORCID: <https://orcid.org/0000-0002-0172-3812>), Pasha Stetsenko [ctb], Tom Short [ctb], Steve Lianoglou [ctb], Eduard Antonyan [ctb], Markus Bonsch [ctb], Hugh Parsonage [ctb], Scott Ritchie [ctb], Kun Ren [ctb], Xianying Tan [ctb], Rick Saporta [ctb], Otto Seiskari [ctb], Xianghui Dong [ctb], Michel Lang [ctb], Watal Iwasaki [ctb], Seth Wenchel [ctb], Karl Broman [ctb], Tobias Schmidt [ctb], David Arenburg [ctb], Ethan Smith [ctb], Francois Cocquemas [ctb], Matthieu Gomez [ctb], Philippe Chataignon [ctb], Nello Blaser [ctb], Dmitry Selivanov [ctb], Andrey Riabushenko [ctb], Cheng Lee [ctb], Declan Groves [ctb], Daniel Possenriede [ctb], Felipe Parages [ctb], Denes Toth [ctb], Mus Yaramaz-David [ctb], Ayappan Perumal [ctb], James Sams [ctb], Martin Morgan [ctb], Michael Quinn [ctb], @javrucebo [ctb], @marc-outins [ctb], Roy Storey [ctb], Manish Saraswat [ctb], Morgan Jacob [ctb], Michael Schubmehl [ctb], Davis Vaughan [ctb], Leonardo Silvestri [ctb], Jim Hester [ctb], Anthony Damico [ctb], Sebastian Freundt [ctb], David Simons [ctb], Elliott Sales de Andrade [ctb], Cole Miller [ctb], Jens Peder Meldgaard [ctb], Vaclav Tlapak [ctb], Kevin Ushey [ctb], Dirk Eddelbuettel [ctb], Tony Fischetti [ctb], Ofek Shilon [ctb], Vadim Khotilovich [ctb], Hadley Wickham [ctb], Bennet Becker [ctb], Kyle Haynes [ctb], Boniface Christian Kamgang [ctb], Olivier Delmarcell [ctb], Josh O'Brien [ctb], Dereck de Mezquita [ctb], Michael Czekanski [ctb], Dmitry Shemetov [ctb], Nitish Jha [ctb], Joshua Wu [ctb], Iago Giné-Vázquez [ctb], Anirban Chetia [ctb], Doris Amoakohene [ctb], Angel Feliz [ctb], Michael Young [ctb], Mark Seeto [ctb], Philippe Grosjean [ctb], Vincent Runge [ctb], Christian Wia [ctb], Elise Maigné [ctb], Vincent Rocher [ctb], Vijay Lulla [ctb], Aljaž Sluga [ctb], Bill Evans [ctb]",
       "Maintainer": "Tyson Barrett <t.barrett88@gmail.com>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "dbplyr": {
       "Package": "dbplyr",
@@ -2370,7 +2370,7 @@
       "License": "GPL (>= 2)",
       "LazyData": "yes",
       "NeedsCompilation": "no",
-      "Repository": "CRAN",
+      "Repository": "RSPM",
       "Encoding": "UTF-8"
     },
     "diffobj": {
@@ -2662,7 +2662,7 @@
       "NeedsCompilation": "no",
       "Author": "Hadley Wickham [aut, cre], Yihui Xie [aut] (ORCID: <https://orcid.org/0000-0003-0645-5666>), Michael Lawrence [ctb], Thomas Kluyver [ctb], Jeroen Ooms [ctb], Barret Schloerke [ctb], Adam Ryczkowski [ctb], Hiroaki Yutani [ctb], Michel Lang [ctb], Karolis Koncevičius [ctb], Posit Software, PBC [cph, fnd]",
       "Maintainer": "Hadley Wickham <hadley@posit.co>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "fansi": {
       "Package": "fansi",
@@ -2997,7 +2997,7 @@
       "NeedsCompilation": "no",
       "Author": "Henrik Bengtsson [aut, cre, cph] (ORCID: <https://orcid.org/0000-0002-7579-5165>)",
       "Maintainer": "Henrik Bengtsson <henrikb@braju.com>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "future.apply": {
       "Package": "future.apply",
@@ -3034,7 +3034,7 @@
       "NeedsCompilation": "no",
       "Author": "Henrik Bengtsson [aut, cre, cph] (ORCID: <https://orcid.org/0000-0002-7579-5165>), R Core Team [cph, ctb]",
       "Maintainer": "Henrik Bengtsson <henrikb@braju.com>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "gargle": {
       "Package": "gargle",
@@ -3360,7 +3360,7 @@
       "NeedsCompilation": "no",
       "Author": "Teun van den Brand [aut, cre] (ORCID: <https://orcid.org/0000-0002-9335-7468>)",
       "Maintainer": "Teun van den Brand <tahvdbrand@gmail.com>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "ggplot2": {
       "Package": "ggplot2",
@@ -3593,7 +3593,7 @@
       "NeedsCompilation": "no",
       "Author": "Henrik Bengtsson [aut, cre, cph], Davis Vaughan [ctb]",
       "Maintainer": "Henrik Bengtsson <henrikb@braju.com>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "glue": {
       "Package": "glue",
@@ -3755,7 +3755,7 @@
       "RoxygenNote": "7.3.2",
       "NeedsCompilation": "yes",
       "Author": "Mark van der Loo [aut, cre], David Turner [ctb]",
-      "Repository": "CRAN",
+      "Repository": "RSPM",
       "Encoding": "UTF-8"
     },
     "gridExtra": {
@@ -3967,7 +3967,7 @@
       "NeedsCompilation": "no",
       "Author": "Daniel D. Sjoberg [aut, cre] (ORCID: <https://orcid.org/0000-0003-0862-2018>), Joseph Larmarange [aut] (ORCID: <https://orcid.org/0000-0001-7097-700X>), Michael Curry [aut] (ORCID: <https://orcid.org/0000-0002-0261-4044>), Emily de la Rua [aut] (ORCID: <https://orcid.org/0009-0000-8738-5561>), Jessica Lavery [aut] (ORCID: <https://orcid.org/0000-0002-2746-5647>), Karissa Whiting [aut] (ORCID: <https://orcid.org/0000-0002-4683-1868>), Emily C. Zabor [aut] (ORCID: <https://orcid.org/0000-0002-1402-4498>), Xing Bai [ctb], Esther Drill [ctb] (ORCID: <https://orcid.org/0000-0002-3315-4538>), Jessica Flynn [ctb] (ORCID: <https://orcid.org/0000-0001-8310-6684>), Margie Hannum [ctb] (ORCID: <https://orcid.org/0000-0002-2953-0449>), Stephanie Lobaugh [ctb], Shannon Pileggi [ctb] (ORCID: <https://orcid.org/0000-0002-7732-4164>), Amy Tin [ctb] (ORCID: <https://orcid.org/0000-0002-8005-0694>), Gustavo Zapata Wainberg [ctb] (ORCID: <https://orcid.org/0000-0002-2524-3637>)",
       "Maintainer": "Daniel D. Sjoberg <danield.sjoberg@gmail.com>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "hardhat": {
       "Package": "hardhat",
@@ -4473,7 +4473,7 @@
       "NeedsCompilation": "yes",
       "Author": "Andrea Peters [aut], Torsten Hothorn [aut, cre], Brian D. Ripley [ctb], Terry Therneau [ctb], Beth Atkinson [ctb]",
       "Maintainer": "Torsten Hothorn <Torsten.Hothorn@R-project.org>",
-      "Repository": "CRAN",
+      "Repository": "RSPM",
       "Encoding": "UTF-8"
     },
     "isoband": {
@@ -4943,7 +4943,7 @@
       "Encoding": "UTF-8",
       "RoxygenNote": "7.3.2",
       "NeedsCompilation": "no",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "lazyeval": {
       "Package": "lazyeval",
@@ -5091,7 +5091,7 @@
       "NeedsCompilation": "no",
       "Author": "Henrik Bengtsson [aut, cre, cph]",
       "Maintainer": "Henrik Bengtsson <henrikb@braju.com>",
-      "Repository": "CRAN",
+      "Repository": "RSPM",
       "Encoding": "UTF-8"
     },
     "litedown": {
@@ -5679,7 +5679,7 @@
       "NeedsCompilation": "yes",
       "Author": "Jeroen Ooms [aut, cre] (ORCID: <https://orcid.org/0000-0002-4035-0289>), Oliver Keyes [ctb]",
       "Maintainer": "Jeroen Ooms <jeroenooms@gmail.com>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "packrat": {
       "Package": "packrat",
@@ -5745,7 +5745,7 @@
       "NeedsCompilation": "yes",
       "Author": "Henrik Bengtsson [aut, cre, cph] (ORCID: <https://orcid.org/0000-0002-7579-5165>), Mike Cheng [ctb]",
       "Maintainer": "Henrik Bengtsson <henrikb@braju.com>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "patchwork": {
       "Package": "patchwork",
@@ -5846,7 +5846,7 @@
       "NeedsCompilation": "no",
       "Author": "Kirill Müller [aut, cre] (ORCID: <https://orcid.org/0000-0002-1416-3412>), Hadley Wickham [aut], RStudio [cph]",
       "Maintainer": "Kirill Müller <kirill@cynkra.com>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "pkgbuild": {
       "Package": "pkgbuild",
@@ -6303,7 +6303,7 @@
       "RoxygenNote": "7.3.2",
       "NeedsCompilation": "yes",
       "Author": "Thomas A. Gerds [aut, cre]",
-      "Repository": "CRAN",
+      "Repository": "RSPM",
       "Encoding": "UTF-8"
     },
     "progress": {
@@ -6384,7 +6384,7 @@
       "NeedsCompilation": "no",
       "Author": "Henrik Bengtsson [aut, cre, cph] (<https://orcid.org/0000-0002-7579-5165>)",
       "Maintainer": "Henrik Bengtsson <henrikb@braju.com>",
-      "Repository": "CRAN",
+      "Repository": "RSPM",
       "Encoding": "UTF-8"
     },
     "promises": {
@@ -6518,7 +6518,7 @@
       "NeedsCompilation": "yes",
       "Author": "Hadley Wickham [aut, cre] (ORCID: <https://orcid.org/0000-0003-4757-117X>), Lionel Henry [aut], Posit Software, PBC [cph, fnd] (ROR: <https://ror.org/03wc8by49>)",
       "Maintainer": "Hadley Wickham <hadley@posit.co>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "qs": {
       "Package": "qs",
@@ -6995,7 +6995,7 @@
       "NeedsCompilation": "no",
       "Author": "Max Kuhn [aut, cre], Hadley Wickham [aut], Emil Hvitfeldt [aut], Posit Software, PBC [cph, fnd] (ROR: <https://ror.org/03wc8by49>)",
       "Maintainer": "Max Kuhn <max@posit.co>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "rematch": {
       "Package": "rematch",
@@ -7723,7 +7723,7 @@
       "Description": "Functions for plotting graphical shapes such as ellipses, circles, cylinders, arrows, ...",
       "License": "GPL (>= 3)",
       "NeedsCompilation": "no",
-      "Repository": "CRAN",
+      "Repository": "RSPM",
       "Encoding": "UTF-8"
     },
     "snowflakeauth": {
@@ -7823,7 +7823,7 @@
       "NeedsCompilation": "yes",
       "Author": "Emil Hvitfeldt [aut, cre] (ORCID: <https://orcid.org/0000-0002-0679-1945>), Davis Vaughan [ctb], Posit Software, PBC [cph, fnd] (ROR: <https://ror.org/03wc8by49>)",
       "Maintainer": "Emil Hvitfeldt <emil.hvitfeldt@posit.co>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "stantargets": {
       "Package": "stantargets",
@@ -8847,7 +8847,7 @@
       "NeedsCompilation": "no",
       "Author": "Diethelm Wuertz [aut] (original code), Tobias Setz [aut], Yohan Chalabi [aut], Martin Maechler [ctb] (<https://orcid.org/0000-0002-8685-9910>), Joe W. Byers [ctb], Georgi N. Boshnakov [cre, aut]",
       "Maintainer": "Georgi N. Boshnakov <georgi.boshnakov@manchester.ac.uk>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "timechange": {
       "Package": "timechange",
@@ -9035,7 +9035,7 @@
       "NeedsCompilation": "yes",
       "Author": "Patrick O. Perry [aut, cph], Kirill Müller [cre] (ORCID: <https://orcid.org/0000-0002-1416-3412>), Unicode, Inc. [cph, dtc] (Unicode Character Database)",
       "Maintainer": "Kirill Müller <kirill@cynkra.com>",
-      "Repository": "CRAN"
+      "Repository": "RSPM"
     },
     "uuid": {
       "Package": "uuid",
@@ -9245,6 +9245,39 @@
       "Author": "Jim Hester [aut] (<https://orcid.org/0000-0002-2739-7082>), Hadley Wickham [aut] (<https://orcid.org/0000-0003-4757-117X>), Jennifer Bryan [aut, cre] (<https://orcid.org/0000-0002-6983-2759>), Shelby Bearrows [ctb], https://github.com/mandreyel/ [cph] (mio library), Jukka Jylänki [cph] (grisu3 implementation), Mikkel Jørgensen [cph] (grisu3 implementation), Posit Software, PBC [cph, fnd]",
       "Maintainer": "Jennifer Bryan <jenny@posit.co>",
       "Repository": "RSPM"
+    },
+    "vscDebugger": {
+      "Package": "vscDebugger",
+      "Version": "0.5.4",
+      "Source": "Repository",
+      "Title": "Support for Visual Studio Code Debugger",
+      "Authors@R": "c( person( given = \"Manuel\", family = \"Hentschel\", role = c(\"aut\", \"cre\"), email = \"Manuel.Hentschel@outlook.com\" ), person( given = \"Kun\", family = \"Ren\", role = \"ctb\", email = \"mail@renkun.me\" ), person( given = \"Denes\",  family = \"Toth\",  role = \"ctb\", email = \"toth.denes@kogentum.hu\",  comment = c(ORCID = \"0000-0003-4262-3217\") ))",
+      "Description": "Provides support for a visual studio code debugger",
+      "License": "MIT",
+      "URL": "https://ManuelHentschel.github.io/vscDebugger/, https://github.com/ManuelHentschel/vscDebugger",
+      "BugReports": "https://github.com/ManuelHentschel/vscDebugger/issues",
+      "Imports": [
+        "jsonlite",
+        "R6",
+        "tcltk"
+      ],
+      "Suggests": [
+        "pkgload",
+        "knitr",
+        "rmarkdown",
+        "markdown"
+      ],
+      "Encoding": "UTF-8",
+      "NeedsCompilation": "yes",
+      "Roxygen": "list(markdown = TRUE)",
+      "RoxygenNote": "7.3.1",
+      "VignetteBuilder": "knitr",
+      "Repository": "https://manuelhentschel.r-universe.dev",
+      "RemoteUrl": "https://github.com/ManuelHentschel/vscDebugger",
+      "RemoteRef": "v0.5.4",
+      "RemoteSha": "759debe9aab9764264ed062cfcf771c2af1d19c6",
+      "Author": "Manuel Hentschel [aut, cre], Kun Ren [ctb], Denes Toth [ctb] (ORCID: <https://orcid.org/0000-0003-4262-3217>)",
+      "Maintainer": "Manuel Hentschel <Manuel.Hentschel@outlook.com>"
     },
     "waldo": {
       "Package": "waldo",
