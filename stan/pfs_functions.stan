@@ -1,3 +1,80 @@
+/**
+ * Find the first occurrence of a value (or set of values) in a RECIST or similar array,
+ * and map the resulting index to the actual week using map_idx_to_week.
+ *
+ * @param arr Array to search (e.g., RECIST codes)
+ * @param value Value or array of values to search for (can be int or array[] int)
+ * @param n_train_patient_visits Number of observed visits (excluding screening)
+ * @param curr_visits Array of observed visit weeks (length n_train_patient_visits)
+ * @param forecast_time Array of forecast visit weeks (length >= pfs_idx - n_train_patient_visits)
+ * @param max_all_t Value to use if censored (optional, default 0)
+ * @param ... (optional) start_idx, min_run_length, etc. (passed to find_first)
+ * @return The week corresponding to the first match, or max_all_t if not found
+ */
+
+tuple(int, int) find_first_week(
+  array[] int arr,
+  int value,
+  int n_screening_visits,
+  array[] int curr_visits,
+  array[] int forecast_time,
+  int max_all_t
+) {
+  int idx = find_first(arr, value);
+  int week;
+  int right_censored;
+  if (idx == 0) {
+    week = max_all_t;
+    right_censored = 1;
+  } else {
+    week = map_idx_to_week(idx + n_screening_visits, curr_visits, forecast_time, max_all_t);
+    right_censored = 0;
+  }
+  return (week, right_censored);
+}
+
+tuple(int, int) find_first_week(
+  array[] int arr,
+  array[] int values,
+  int min_run_length,
+  int n_screening_visits,
+  array[] int curr_visits,
+  array[] int forecast_time,
+  int max_all_t
+) {
+  int idx = find_first(arr, values, min_run_length);
+  int week;
+  int right_censored;
+  if (idx == 0) {
+    week = max_all_t;
+    right_censored = 1;
+  } else {
+    week = map_idx_to_week(idx + n_screening_visits, curr_visits, forecast_time, max_all_t);
+    right_censored = 0;
+  }
+  return (week, right_censored);
+}
+/**
+ * Map an index (possibly after adding screening visits) to the actual week.
+ * If the index is within the observed visits, use curr_visits; otherwise, use forecast_time.
+ *
+ * @param idx Index (1-based) after adding screening visits
+ * @param curr_visits Array of observed visit weeks
+ * @param forecast_time Array of forecast visit weeks (length >= idx - size(curr_visits))
+ * @param max_all_t Value to use if censored (optional, default 0)
+ * @return The week corresponding to the index, or max_all_t if censored (if idx == 0)
+ */
+int map_idx_to_week(int idx, array[] int curr_visits, array[] int forecast_time, int max_all_t) {
+  int n_train_patient_visits = size(curr_visits);
+  if (idx == 0) {
+    return max_all_t;
+  }
+  if (idx <= n_train_patient_visits) {
+    return curr_visits[idx];
+  } else {
+    return forecast_time[idx - n_train_patient_visits];
+  }
+}
 
 /**
  * Truncate PFS and right_censored arrays at a given max time (per-patient cutoff)

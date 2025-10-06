@@ -432,42 +432,45 @@ generated quantities {
    
   // Endpoints (PFS, ORR, Median PFS, PFSn, ...) ////////////
  
-  array[n_train_patients] int<lower = 0> spop_target_pfs, spop_non_target_pfs, spop_pfs, spop_target_obs_cens_pfs; 
+  array[n_train_patients] int<lower = 0> sample_target_pfs, spop_target_pfs, spop_non_target_pfs, spop_pfs, spop_target_obs_cens_pfs; 
   array[n_train_patients] int<lower = 0, upper = 1> 
-    spop_target_right_censored, spop_non_target_right_censored, spop_right_censored, spop_target_obs_cens_right_censored; 
+    sample_target_right_censored, spop_target_right_censored, spop_non_target_right_censored, spop_right_censored, spop_target_obs_cens_right_censored; 
 
   // Forecasting for right censored patients 
-  array[n_train_right_censored_patients] int<lower = 0> forecast_target_pfs, forecast_non_target_pfs, forecast_pfs; // Zero means right censored
+  array[n_train_right_censored_patients] int<lower = 0> forecast_target_pfs, forecast_non_target_pfs, forecast_pfs; 
   array[n_train_right_censored_patients] int<lower = 0, upper = 1> 
     forecast_target_right_censored, forecast_non_target_right_censored, forecast_right_censored; 
   
   array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_km_est, // sample_target_km_est, sample_non_target_km_est,
                                                               spop_target_km_est, spop_non_target_km_est, spop_km_est, spop_target_obs_cens_km_est;
 
-  array[n_trials, n_mature_cutoffs_calendar_days] vector<lower = 0, upper = 1>[truncated_max_all_t + 1] 
-    cutoff_sample_km_est, cutoff_spop_target_km_est; //, cutoff_spop_non_target_km_est, cutoff_spop_km_est, cutoff_spop_target_obs_cens_km_est;
-  
-  array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] // cond_sample_km_est,  
+  array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_km_est, 
     cond_spop_target_km_est, cond_spop_non_target_km_est, cond_spop_km_est, cond_spop_target_obs_cens_km_est;
 
-  array[n_cond_group, n_mature_cutoffs_calendar_days] vector<lower = 0, upper = 1>[truncated_max_all_t + 1] cutoff_cond_spop_target_km_est;
-   
-  array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] forecast_target_pfs_n; //, forecast_pfs_n;
-  array[n_cond_group] vector<lower = 0, upper = 1>[n_pfs_timepoints] cond_forecast_target_pfs_n; //, forecast_pfs_n;
+  array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] forecast_target_pfs_n; //, sample_pfs_n; 
+  array[n_cond_group] vector<lower = 0, upper = 1>[n_pfs_timepoints] cond_forecast_target_pfs_n; //, cond_sample_pfs_n;
 
-  array[n_trials, n_mature_cutoffs_calendar_days] vector<lower = 0, upper = 1>[n_pfs_timepoints] cutoff_forecast_target_pfs_n;
-  array[n_cond_group, n_mature_cutoffs_calendar_days] vector<lower = 0, upper = 1>[n_pfs_timepoints] cutoff_cond_forecast_target_pfs_n;
-    
   array[n_train_patients] int<lower = 0, upper = 1> forecast_confirmed_response;
   vector<lower = 0, upper = 1>[n_trials] forecast_target_orr;
   vector<lower = 0, upper = 1>[n_cond_group] cond_forecast_target_orr;
 
+  vector<lower = 0>[n_trials] trial_median_pfs = zeros_vector(n_trials);
+  vector<lower = 0>[n_cond_group] cond_median_pfs = zeros_vector(n_cond_group);
+
+  // Cutoffs at different maturity times //////////////////////////////////////////////
+  
+  array[n_trials, n_mature_cutoffs_calendar_days] vector<lower = 0, upper = 1>[truncated_max_all_t + 1] 
+    cutoff_sample_km_est, cutoff_spop_target_km_est; //, cutoff_spop_non_target_km_est, cutoff_spop_km_est, cutoff_spop_target_obs_cens_km_est;
+
+  array[n_cond_group, n_mature_cutoffs_calendar_days] vector<lower = 0, upper = 1>[truncated_max_all_t + 1] 
+    cutoff_cond_spop_target_km_est;
+   
+  array[n_trials, n_mature_cutoffs_calendar_days] vector<lower = 0, upper = 1>[n_pfs_timepoints] cutoff_forecast_target_pfs_n;
+  array[n_cond_group, n_mature_cutoffs_calendar_days] vector<lower = 0, upper = 1>[n_pfs_timepoints] cutoff_cond_forecast_target_pfs_n;
+
   array[n_train_patients, n_mature_cutoffs_calendar_days] int<lower = 0, upper = 1> cutoff_forecast_confirmed_response;
   matrix<lower = 0, upper = 1>[n_trials, n_mature_cutoffs_calendar_days] cutoff_forecast_target_orr;
   matrix<lower = 0, upper = 1>[n_cond_group, n_mature_cutoffs_calendar_days] cutoff_cond_forecast_target_orr;
-
-  vector<lower = 0>[n_trials] trial_median_pfs = zeros_vector(n_trials);
-  vector<lower = 0>[n_cond_group] cond_median_pfs = zeros_vector(n_cond_group);
 
   matrix<lower = 0>[n_trials, n_mature_cutoffs_calendar_days] cutoff_trial_median_pfs = rep_matrix(0, n_trials, n_mature_cutoffs_calendar_days);
   matrix<lower = 0>[n_cond_group, n_mature_cutoffs_calendar_days] cutoff_cond_median_pfs = rep_matrix(0, n_cond_group, n_mature_cutoffs_calendar_days);
@@ -482,6 +485,7 @@ generated quantities {
       (train_visit_start, train_screening_visit_end, train_treat_visit_start, train_visit_end) = get_visit_pos(
         train_patient_visit_pos, train_idx, n_patient_screening_visits[i]);
       int train_visit_size = get_pos_size(train_patient_visit_pos, train_idx);
+      int n_obs_treat_visits = train_visit_size - n_patient_screening_visits[i];
   
       int train_visit_m1_start,  train_visit_m1_end;
       (train_visit_m1_start, train_visit_m1_end) = get_pos(train_patient_visit_m1_pos, train_idx);
@@ -501,8 +505,6 @@ generated quantities {
       int forecast_size = get_pos_size(forecast_visits_pos, i);
       
       array[n_patient_visits[i]] int curr_visits = get_int_sub_array(train_patient_visits, train_patient_visit_pos, train_idx);
-      
-      int n_obs_treat_visits = train_visit_size - n_patient_screening_visits[i];
     
       obs_patient_process_noise[train_visit_m1_start:train_visit_m1_end] = rep_matrix(0, train_visit_m1_size, 2); 
       
@@ -564,39 +566,36 @@ generated quantities {
       
       rep_recist[train_treat_visit_start:train_visit_end] = full_predict_recist[:n_obs_treat_visits]; 
       forecast_recist[train_forecast_visit_start:train_forecast_visit_end] = full_predict_recist[(n_obs_treat_visits + 1):];
+     
+      int forecast_confirmed_response_week = 0, confirmed_response_censored = 0; 
+      array[n_mature_cutoffs_calendar_days] int cutoff_forecast_confirmed_response_week = zeros_int_array(n_mature_cutoffs_calendar_days),
+                                                cutoff_confirmed_response_censored = zeros_int_array(n_mature_cutoffs_calendar_days);
+
+      array[train_visit_size + forecast_size] int curr_recist;
+      curr_recist[:train_visit_size] = recist[visit_pos:visit_end];
           
       if (n_patient_forecast_visits[i] > 0) {
-        array[train_visit_size + forecast_size] int curr_recist = 
-          append_array(recist[visit_pos:visit_end], forecast_recist[train_forecast_visit_start:train_forecast_visit_end]);
+        curr_recist[(train_visit_size + 1):] = forecast_recist[train_forecast_visit_start:train_forecast_visit_end];
 
-        forecast_confirmed_response[train_idx] = find_first(curr_recist, { PR, CR }, 2) > 0;
+        (sample_target_pfs[train_idx], sample_target_right_censored[train_idx]) = 
+          find_first_week(curr_recist, PD, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
+        (forecast_confirmed_response_week, confirmed_response_censored) = 
+          find_first_week(curr_recist, { PR, CR }, 2, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
 
         for (m in 1:n_mature_cutoffs_calendar_days) {
-          int last_after_cutoff_visit = min(patient_relative_day_at_cutoff[i, m], n_patient_visits[i]);
-          cutoff_forecast_confirmed_response[train_idx, m] = find_first(curr_recist[:last_after_cutoff_visit], { PR, CR }, 2) > 0;
+          int last_after_cutoff_visit = min(patient_relative_day_at_cutoff[i, m], train_visit_size + forecast_size);
+          (cutoff_forecast_confirmed_response_week[m], cutoff_confirmed_response_censored[m]) = find_first_week(
+            curr_recist[:last_after_cutoff_visit], { PR, CR }, 2, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
         }
          
         if (right_censored[i]) {
           (forecast_non_target_pfs[right_censored_idx], forecast_non_target_right_censored[right_censored_idx]) = survival_time_rng(
             log_cond_prob_surv[1, train_idx], pfs[i] + interval_censored[i], right_censored[i], 0
           );
-          
-          forecast_target_pfs[right_censored_idx] = find_first(forecast_recist[train_forecast_visit_start:train_forecast_visit_end], PD);
-          forecast_target_right_censored[right_censored_idx] = forecast_target_pfs[right_censored_idx] == 0;
-          
-          if (!forecast_target_right_censored[right_censored_idx]) {
-            // For right-censored patients, we do not observe a progression event during the observed period.
-            // Instead, we simulate when progression might occur in the forecasted (future) visits.
-            // forecast_target_pfs[right_censored_idx] holds the index (not week) of the first predicted progression event in the forecasted RECIST sequence.
-            // The array forecast_time contains the actual visit weeks for the forecast period.
-            // By using forecast_time[forecast_target_pfs[right_censored_idx]], we convert the index of the simulated progression event
-            // into the actual week number in the future. This ensures that the forecasted PFS for right-censored patients is reported
-            // in real time units (weeks), not just as an index into the forecast array.
-            // This step is only needed for right-censored patients, because for uncensored patients, the progression time is already observed.
-            forecast_target_pfs[right_censored_idx] = forecast_time[forecast_target_pfs[right_censored_idx]];
-          } else {
-            forecast_target_pfs[right_censored_idx] = max_all_t; 
-          }
+
+          (forecast_target_pfs[right_censored_idx], forecast_target_right_censored[right_censored_idx]) = 
+            find_first_week(forecast_recist[train_forecast_visit_start:train_forecast_visit_end], PD, 
+                            n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
           
           forecast_pfs[right_censored_idx] = min(forecast_target_pfs[right_censored_idx], forecast_non_target_pfs[right_censored_idx]);
           forecast_right_censored[right_censored_idx] = forecast_target_right_censored[right_censored_idx] && forecast_non_target_right_censored[right_censored_idx];
@@ -604,34 +603,44 @@ generated quantities {
           right_censored_idx += 1;
         }
         
-        spop_target_pfs[train_idx] = find_first(append_array(rep_recist[train_treat_visit_start:train_visit_end], 
-                                                             forecast_recist[train_forecast_visit_start:train_forecast_visit_end]), 
-                                        PD); 
+        (spop_target_pfs[train_idx], spop_target_right_censored[train_idx]) = find_first_week(
+          append_array(rep_recist[train_treat_visit_start:train_visit_end], 
+                       forecast_recist[train_forecast_visit_start:train_forecast_visit_end]), 
+          PD, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t); 
       } else {
-        spop_target_pfs[train_idx] = find_first(rep_recist[train_treat_visit_start:train_visit_end], PD); 
-      }
-      
-      // Why add one? We're passing the recist array excluding the first one.
-      spop_target_right_censored[train_idx] = spop_target_pfs[train_idx] == 0;
-      
-      if (!spop_target_right_censored[train_idx]) { 
-        // Why add one? We're passing the recist array excluding the screening visits.
-        spop_target_pfs[train_idx] += n_patient_screening_visits[i];
-        
-        spop_target_pfs[train_idx] = spop_target_pfs[train_idx] <= n_train_patient_visits[train_idx] ? 
-                              curr_visits[spop_target_pfs[train_idx]] :
-                              forecast_time[spop_target_pfs[train_idx] - n_train_patient_visits[train_idx]]; 
-      } else {
-        spop_target_pfs[train_idx] = max_all_t;
+        (spop_target_pfs[train_idx], spop_target_right_censored[train_idx]) = find_first_week(
+          rep_recist[train_treat_visit_start:train_visit_end], PD, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t); 
+        (sample_target_pfs[train_idx], sample_target_right_censored[train_idx]) = find_first_week(
+          recist[visit_pos:visit_end], PD, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
+        (forecast_confirmed_response_week, confirmed_response_censored) = find_first_week(
+          recist[visit_pos:visit_end], { PR, CR }, 2, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
+
+        for (m in 1:n_mature_cutoffs_calendar_days) {
+          int last_after_cutoff_visit = min(patient_relative_day_at_cutoff[i, m], train_visit_size);
+          (cutoff_forecast_confirmed_response_week[m], cutoff_confirmed_response_censored[m]) = find_first_week(
+            recist[:last_after_cutoff_visit], { PR, CR }, 2, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
+        }
       }
      
-      // spop_target_obs_cens_right_censored[train_idx] = (spop_target_pfs[train_idx] > pfs[i] && right_censored[i]) || spop_target_right_censored[train_idx]; 
       spop_target_obs_cens_right_censored[train_idx] = right_censored[i]; 
       spop_target_obs_cens_pfs[train_idx] = right_censored[i] ? min(spop_target_pfs[train_idx], pfs[i]) : spop_target_pfs[train_idx];
       
       spop_pfs[train_idx] = min(spop_non_target_pfs[train_idx] + 1, 
                                 max(0, spop_target_pfs[train_idx])); // BUG a couple of patients end up with negative weeks. We need to figure out why.
       spop_right_censored[train_idx] = spop_target_right_censored[train_idx] && spop_non_target_right_censored[train_idx]; 
+
+      forecast_confirmed_response[train_idx] = 
+        !confirmed_response_censored && forecast_confirmed_response_week < sample_target_pfs[train_idx];
+
+      // if (i == 3 && forecast_confirmed_response[train_idx] == 1) {
+      //   print("forecast_confirmed_response_week = ", forecast_confirmed_response_week, ", curr_recist = ", curr_recist, 
+      //         ", sample_target_pfs[train_idx] = ", sample_target_pfs[train_idx]);
+      // }
+
+      for (m in 1:n_mature_cutoffs_calendar_days) {
+        cutoff_forecast_confirmed_response[train_idx, m] = 
+          !cutoff_confirmed_response_censored[m] && cutoff_forecast_confirmed_response_week[m] < sample_target_pfs[train_idx];
+      }
     }
       
     for (s in 1:n_trials) {
@@ -643,9 +652,9 @@ generated quantities {
         int n_curr_right_censored = get_pos_size(train_trial_right_censored_pos, s);
 
         array[n_curr_uncensored_obs + n_curr_right_censored] int curr_sample_pfs = 
-          append_array(ub_pfs_p1[curr_uncensored_obs], get_int_sub_array(forecast_pfs, train_trial_right_censored_pos, s)),
+          get_int_sub_array(sample_target_pfs, train_trial_patient_pos, s),
                                                                  curr_sample_right_censored = 
-          append_array(right_censored[curr_uncensored_obs], get_int_sub_array(forecast_right_censored, train_trial_right_censored_pos, s));
+          get_int_sub_array(sample_target_right_censored, train_trial_patient_pos, s);
 
         sample_km_est[s] = estimate_kaplan_meier(curr_sample_pfs, curr_sample_right_censored, max_all_t).1; 
 
@@ -668,10 +677,10 @@ generated quantities {
                                                get_int_sub_array(spop_right_censored, train_trial_patient_pos, s), 
                                                max_all_t, 0).1;
                                                
-        trial_median_pfs[s] = km_median(spop_target_km_est[s]).1;
+        trial_median_pfs[s] = km_median(sample_km_est[s]).1;
 
         for (n in 1:n_pfs_timepoints) {
-          forecast_target_pfs_n[s, n] = calc_km_pfs_n(spop_target_km_est[s], months_to_weeks(pfs_timepoints[n])); 
+          forecast_target_pfs_n[s, n] = calc_km_pfs_n(sample_km_est[s], months_to_weeks(pfs_timepoints[n])); 
         }
 
         for (m in 1:n_mature_cutoffs_calendar_days) {
@@ -692,13 +701,12 @@ generated quantities {
           cutoff_spop_target_km_est[s, m] = estimate_kaplan_meier(
             curr_truncated_spop_target_pfs, curr_truncated_spop_target_right_censored, truncated_max_all_t).1; 
 
-          cutoff_trial_median_pfs[s, m] = km_median(cutoff_spop_target_km_est[s, m]).1;
+          cutoff_trial_median_pfs[s, m] = km_median(cutoff_sample_km_est[s, m]).1;
 
           for (n in 1:n_pfs_timepoints) {
-            cutoff_forecast_target_pfs_n[s, m, n] = calc_km_pfs_n(cutoff_spop_target_km_est[s, m], months_to_weeks(pfs_timepoints[n])); 
+            cutoff_forecast_target_pfs_n[s, m, n] = calc_km_pfs_n(cutoff_sample_km_est[s, m], months_to_weeks(pfs_timepoints[n])); 
           }
         }
-           
       } else {
         spop_target_km_est[s] = zeros_vector(max_all_t + 1);
         spop_target_obs_cens_km_est[s] = zeros_vector(max_all_t + 1);
@@ -712,6 +720,10 @@ generated quantities {
       array[cond_group_size[c]] int curr_group_patients = get_int_sub_array(cond_group, cond_group_pos, c);
       
       cond_forecast_target_orr[c] = mean(forecast_confirmed_response[curr_group_patients]);
+
+      cond_sample_km_est[c] = estimate_kaplan_meier(sample_target_pfs[curr_group_patients], 
+                                             sample_target_right_censored[curr_group_patients],
+                                             max_all_t, 0).1;
     
       cond_spop_target_km_est[c] = estimate_kaplan_meier(spop_target_pfs[curr_group_patients], 
                                              spop_target_right_censored[curr_group_patients],
@@ -729,10 +741,10 @@ generated quantities {
                                              spop_right_censored[curr_group_patients],
                                              max_all_t, 0).1; 
 
-      cond_median_pfs[c] = km_median(cond_spop_target_km_est[c]).1;
+      cond_median_pfs[c] = km_median(cond_sample_km_est[c]).1;
 
       for (n in 1:n_pfs_timepoints) {
-        cond_forecast_target_pfs_n[c, n] = calc_km_pfs_n(cond_spop_target_km_est[c], months_to_weeks(pfs_timepoints[n])); 
+        cond_forecast_target_pfs_n[c, n] = calc_km_pfs_n(cond_sample_km_est[c], months_to_weeks(pfs_timepoints[n])); 
       }
 
       for (m in 1:n_mature_cutoffs_calendar_days) {
