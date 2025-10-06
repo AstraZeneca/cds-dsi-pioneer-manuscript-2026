@@ -10,48 +10,9 @@ functions {
 
 data {
   #include "../base_data.stan"
+  #include "base_data.stan"
   
-  int<lower = 0, upper = 1> fit_tumor_data;
-  int<lower = 0> sf_rep_T;
-  int<lower = 0, upper = 1> debug;
-  int<lower = 0, upper = 1> pop_growth_lag_param_only;
-  int<lower = 0, upper = 1> pop_initial_states_param_only;
-  int<lower = 0, upper = 1> pop_rates_param_only;
-  int<lower = 0, upper = 1> pop_rho_param_only; 
-  int<lower = 0, upper = 1> pop_covar_coef_only;
-  int<lower = 0, upper = 1> independ_long_process_noise;
-  int<lower = 0, upper = 1> independ_cross_process_noise;
-  int<lower = 1, upper = n_patients> train_patients_pos, train_patients_end;
-  int<lower = 1, upper = n_patients> n_shards;
-
-  int<lower = 0, upper = 1> add_trial_level_net_rate; 
-  int<lower = 0, upper = 1> add_trial_level_baseline_hazard;
-  int<lower = 0, upper = 1> add_trial_level_prop;
-  
-  array[sum(n_patient_visits)] int<lower = 1, upper = 5> recist;
-  
-  array[n_patients] int<lower = 0> pfs; // How many periods after baseline did patient survive. The last week observed with no progression.
-  array[n_patients] int<lower = 0, upper = 1> right_censored;
-  array[n_patients] int<lower = 0> interval_censored; // The number of weeks after `pfs` that actual progression could have happened. E.g., zero means progression happened the next week.
-  
-  array[n_patients] int<lower = 0> target_pfs; // PFS based on target tumor SLD only 
-  array[n_patients] int<lower = 0, upper = 1> target_right_censored;
-  
-  array[n_patients] int<lower = 0> death_week;
- 
-  int<lower = 0> n_covar; 
-  matrix[n_patients, n_covar] covar_design_matrix;
-  
-  int<lower = 0> n_pfs_timepoints;
-  array[n_pfs_timepoints] int<lower = 0> pfs_timepoints; // In months
- 
-  // Conditioning groups or strata to estimate outcomes for a particular covar 
-  int<lower = 0> n_cond_group;
-  array[n_cond_group] int<lower = 1> cond_group_size;
-  array[sum(cond_group_size)] int <lower = 1, upper = n_patients> cond_group;
-
-  int<lower = 0> n_mature_cutoffs_calendar_days;
-  array[n_mature_cutoffs_calendar_days] int<lower = 0> mature_cutoffs_calendar_days;
+  #include "sf-ssls-outcomes_info.stan"
   
   #include "sf-ssls-hyperparam.stan" 
 } 
@@ -61,303 +22,29 @@ transformed data {
   #include "tumor_transformed_data.stan"
   #include "sf-transformed_data.stan"
   #include "other_events_transformed_data.stan"
-
-  int<lower = 1> n_total_visits_m1 = sum(n_patient_visits) - n_patients;
-  array[n_patients + 1] int<lower = 1> patient_visit_m1_pos = create_pos(n_patient_visits, -1);
-
-  int<lower = 1, upper = n_trials> n_train_trials = max(patient_trial) - min(patient_trial) + 1;
-  int<lower = 1> n_train_patients = train_patients_end - train_patients_pos + 1;
-  array[n_train_patients] int<lower = 0> n_train_patient_visits = n_patient_visits[train_patients_pos:train_patients_end];
-  int<lower = 1> n_total_train_visits = sum(n_train_patient_visits);
-  int<lower = 1> n_total_train_visits_m1 = n_total_train_visits - n_train_patients;
-
-  array[n_total_train_visits] int train_patient_visits = get_int_sub_array(t_patient_visits, patient_visit_pos, train_patients_pos, train_patients_end);
-
-  array[n_train_patients + 1] int<lower = 1> train_patient_visit_pos = create_pos(n_train_patient_visits);
-  array[n_train_patients + 1] int<lower = 1> train_patient_visit_m1_pos = create_pos(n_train_patient_visits, -1);
-  array[n_train_patients + 1] int<lower = 1> train_forecast_visits_pos = create_pos(n_patient_forecast_visits[train_patients_pos:train_patients_end]);
-
-  int<lower = 1> n_total_train_forecast_visits = get_pos_total_size(train_forecast_visits_pos);
-
-  array[n_total_train_visits] int train_obs_recist = get_int_sub_array(recist, patient_visit_pos, train_patients_pos, train_patients_end);
-
-  int<lower = 0, upper = n_patients> n_train_right_censored_patients = sum(right_censored[train_patients_pos:train_patients_end]);
-  int<lower = 0, upper = n_patients> n_train_right_uncensored_patients = n_patients - n_train_right_censored_patients;
-  array[n_train_right_uncensored_patients] int<lower = 1, upper = n_patients> train_right_uncensored_patients;
-
-  array[n_trials + 1] int train_trial_right_censored_pos, train_trial_right_uncensored_pos;
-
-  array[n_trials + 1] int train_trial_patient_pos = resize_pos(trial_patient_pos, train_patients_pos, train_patients_end);
-  print("train_trial_patient_pos = ", train_trial_patient_pos);
-
-  array[n_train_patients] int<lower = 1> train_patient_trial = patient_trial[train_patients_pos:train_patients_end];
-
-  {
-    int right_uncensored_idx = 1;
-    array[n_trials] int n_train_trial_censored = zeros_int_array(n_trials), n_train_trial_uncensored = zeros_int_array(n_trials);
-
-    for (i in train_patients_pos:train_patients_end) {
-      if (right_censored[i]) {
-        n_train_trial_censored[patient_trial[i]] += 1;
-      } else {
-        train_right_uncensored_patients[right_uncensored_idx] = i;
-        right_uncensored_idx += 1;
-        n_train_trial_uncensored[patient_trial[i]] += 1;
-      }
-    }
-
-    train_trial_right_censored_pos = create_pos(n_train_trial_censored);
-    train_trial_right_uncensored_pos = create_pos(n_train_trial_uncensored);
-  }
-
-  array[n_patients] int<lower = 1> ub_pfs_p1;
-
-  for (i in 1:n_patients) {
-    ub_pfs_p1[i] = pfs[i] + interval_censored[i] + 1;
-  }
-
-  real log_lod = log(0.1);
-
-  // Define RECIST categories as integers
-  int CR = 1;  // Complete Response
-  int PR = 2;  // Partial Response
-  int SD = 3;  // Stable Disease
-  int PD = 4;  // Progressive Disease
-
-  // Define non-target status categories
-  int NT_CR = 1;
-  int NT_STABLE = 2;  // Non-CR/Non-PD
-  int NT_PD = 3;
-
-  array[n_pfs_timepoints] int<lower = 0> sorted_pfs_timepoints = sort_asc(pfs_timepoints);
-
-  array[n_cond_group + 1] int cond_group_pos = create_pos(cond_group_size);
-
-  matrix[n_train_patients, n_covar] Q_covar_design_matrix = 
-    qr_thin_Q(covar_design_matrix[train_patients_pos:train_patients_end]) * sqrt(n_train_patients - 1);
-  matrix[n_covar, n_covar] R_covar_design_matrix = qr_thin_R(covar_design_matrix[train_patients_pos:train_patients_end]) / sqrt(n_train_patients - 1);
-  matrix[n_covar, n_covar] R_inv_covar_design_matrix = inverse(R_covar_design_matrix);
-
-  // --- Compute patient relative day and week for each mature cutoff using cutoff_visits ---
-  array[n_patients, n_mature_cutoffs_calendar_days] int patient_relative_day_at_cutoff;
-  array[n_patients, n_mature_cutoffs_calendar_days] int patient_relative_week_at_cutoff;
-  array[n_patients, n_mature_cutoffs_calendar_days] int cutoff_observed_patients_mask;
-
-  array[n_mature_cutoffs_calendar_days] int<lower = 0> n_cutoff_observed_patients;
-
-  int truncated_max_all_t = 0; 
-
-  for (j in 1:n_mature_cutoffs_calendar_days) {
-    array[n_patients] int last_visit_day;
-    array[n_patients] int last_visit_week;
-    array[n_patients] int last_visit_calendar_day_dummy;
-
-    (last_visit_day, last_visit_week, last_visit_calendar_day_dummy, cutoff_observed_patients_mask[, j]) = cutoff_visits(
-      mature_cutoffs_calendar_days[j],
-      calendar_day,
-      t_patient_visits,
-      t_patient_visits_day,
-      patient_visit_pos
-    );
-
-    n_cutoff_observed_patients[j] = sum(cutoff_observed_patients_mask[, j]);
-
-    patient_relative_day_at_cutoff[, j] = last_visit_day;
-    patient_relative_week_at_cutoff[, j] = last_visit_week;
-
-    truncated_max_all_t = 
-      max(truncated_max_all_t, max(last_visit_week)); // Update the maximum observed week across all patients and cutoffs
-  }
-
-  array[sum(n_cutoff_observed_patients)] int<lower = 1, upper = n_patients> cutoff_observed_patients;
-  array[n_mature_cutoffs_calendar_days + 1] int<lower = 1> cutoff_observed_patients_pos = create_pos(n_cutoff_observed_patients);
-
-  for (j in 1:n_mature_cutoffs_calendar_days) {
-    int cutoff_start, cutoff_end;
-    (cutoff_start, cutoff_end) = get_pos(cutoff_observed_patients_pos, j);
-
-    cutoff_observed_patients[cutoff_start:cutoff_end] = which(cutoff_observed_patients_mask[, j]);
-  } 
-
-  real log_abs_det_R_covar_design_matrix = log(abs(determinant(R_covar_design_matrix)));
+  #include "mature_cutoffs_transformed_data.stan"
+  #include "sf-ssls-outcomes_info_transformed_data.stan"
 }
 
 parameters {
   #include "other_events_parameters.stan"
-  
-  real pop_log_net_rate;            // Population-level net rate (log(d-g))
-  real<lower = 0> pop_log_rate_ratio; // Population-level ratio (log(d/g))
-  
-  // Trial-level variation for net rate only
-  real<lower=0> trial_log_net_rate_sd;
-  vector[pop_rates_param_only || !add_trial_level_net_rate ? 0 : n_train_trials] raw_trial_log_net_rate;
-
-  // Patient-level variation for net rate only
-  real<lower=0> patient_log_net_rate_sd;
-  // vector<offset = pop_log_net_rate, multiplier = patient_log_net_rate_sd>[n_patients] patient_log_net_rate;
-  vector[pop_rates_param_only ? 0 : n_train_patients] raw_patient_log_net_rate;
- 
-  // real<lower=0> patient_log_rate_ratio_sd;
-  // vector[pop_rates_param_only ? 0 : n_train_patients] raw_patient_log_rate_ratio; 
-
-  real pop_log_growth_lag;
-  real pop_log_growth_transition_rate;
-
-  real<lower = 0> patient_log_growth_lag_sd;
-  // vector<offset = pop_log_growth_lag, multiplier = patient_log_growth_lag_sd>[n_patients] patient_log_growth_lag;
-  vector[pop_growth_lag_param_only ? 0 : n_train_patients] raw_patient_log_growth_lag;
-  
-  // Patient-level GP
-  // row_vector<lower = 0>[2] pop_tumor_gp_alpha;
-  real log_pop_tumor_gp_rho;
-  
-  // Hierarchical length-scale parameter
-  // vector<lower = 0>[2] log_trial_tumor_gp_rho_sd;
-  // vector[add_trial_level_tumor_gp_param ? n_trials : 0] raw_log_trial_tumor_gp_rho_effect; 
-  
-  real<lower = 0> log_patient_tumor_gp_rho_sd;
-  vector[independ_long_process_noise || pop_rho_param_only ? 0 : n_train_patients] raw_log_patient_tumor_gp_rho_effect; 
-  
-  matrix[n_total_train_visits_m1, 2] raw_patient_process_noise;
-
-  // real<lower=0> pop_decrease_process_sd;
-  // real<lower=0> pop_growth_process_sd;
-  vector<lower = 0>[2] pop_process_sd;
-  cholesky_factor_corr[independ_cross_process_noise ? 0 : 2] L_process_corr;
-  
-  real<lower=0> measure_sd;        // Measurement noise variance
-  
-  // real<lower = 0> patient_log_decrease_rate_sd;
-  // real<lower = 0> patient_log_growth_rate_sd;
-  
-  real pop_decrease_prop_logis;
-  
-  real<lower = 0> trial_decrease_prop_logis_sd;
-  vector[pop_initial_states_param_only || !add_trial_level_prop ? 0 : n_train_trials] raw_trial_decrease_prop_logis;
-
-  real<lower = 0> patient_decrease_prop_logis_sd;
-  // vector<offset = pop_decrease_prop_logis, multiplier = patient_decrease_prop_logis_sd>[n_patients] patient_decrease_prop_logis;
-  vector[pop_initial_states_param_only ? 0 : n_train_patients] raw_patient_decrease_prop_logis;
-  
-  // real log_lod;
-  
-  // Covariate effects on rates
-  vector[n_covar] QR_pop_log_net_rate_coef;      // Population-level covariate effects on net rate
-  vector[n_covar] QR_pop_decrease_prop_logis_coef;
-  
-  // Optional: hierarchical covariate effects
-  row_vector<lower=0>[pop_covar_coef_only ? 0 : n_covar] trial_log_net_rate_coef_sd;
-  matrix[pop_covar_coef_only ? 0 : n_train_trials, n_covar] raw_trial_log_net_rate_coef;
-  
-  // real<lower=0> patient_log_net_rate_coef_sd;
-  // matrix[pop_rates_param_only ? 0 : n_train_patients, n_covar] raw_patient_log_net_rate_coef;
+  #include "sf-ssls-parameters.stan"
 }
 
 transformed parameters {
   #include "other_events_transformed_parameters.stan"
+  #include "sf-ssls-transformed_parameters.stan"
   
-  vector[n_train_trials] trial_log_net_rate_effect = zeros_vector(n_train_trials);
-  vector[n_train_patients] patient_log_net_rate_effect = zeros_vector(n_train_patients);
-  vector[n_train_patients] patient_log_net_rate = rep_vector(pop_log_net_rate, n_train_patients);
-  // vector[n_train_patients] patient_log_rate_ratio_effect = zeros_vector(n_train_patients);
-  vector[n_train_patients] patient_log_rate_ratio = rep_vector(pop_log_rate_ratio, n_train_patients);
-  
-  // Calculate linear predictors for rates
-  vector[n_train_patients] patient_log_net_rate_linpred = Q_covar_design_matrix * QR_pop_log_net_rate_coef;
-  
-  matrix[n_train_trials, n_covar] trial_log_net_rate_coef = rep_matrix(0, n_train_trials, n_covar);
-  
-  if (!pop_covar_coef_only) {
-    // Trial-level covariate effects
-    trial_log_net_rate_coef = rep_matrix(trial_log_net_rate_coef_sd, n_train_trials) .* raw_trial_log_net_rate_coef;
-    
-    patient_log_net_rate_linpred += rows_dot_product(Q_covar_design_matrix,
-                                                     trial_log_net_rate_coef[train_patient_trial]);
-    
-    // Patient-level covariate effects (if you want this level of complexity)
-    // matrix[n_train_patients, n_covar] patient_log_net_rate_coef = patient_log_net_rate_coef_sd * raw_patient_log_net_rate_coef;
-    // patient_log_net_rate_lp += rows_dot_product(covar_design_matrix[train_patients_pos:train_patients_end], patient_log_net_rate_coef);
-  }
+  matrix[n_train_patients, n_causes] patient_response_lp = rep_matrix(0, n_train_patients, n_causes); 
 
-  // Add hierarchical covariate effects if needed
-  if (!pop_rates_param_only) {
-    if (add_trial_level_net_rate) {
-      trial_log_net_rate_effect = trial_log_net_rate_sd * raw_trial_log_net_rate;
-    }
-    
-    patient_log_net_rate_effect = patient_log_net_rate_sd * raw_patient_log_net_rate;
-  }
-
-  // Update the rate calculations to include covariate effects
-  patient_log_net_rate += patient_log_net_rate_linpred + trial_log_net_rate_effect[train_patient_trial] + patient_log_net_rate_effect;
-  
-  vector[n_train_patients] patient_log_growth_rate = patient_log_net_rate - log_diff_exp(patient_log_rate_ratio, zeros_vector(n_train_patients));
-  vector[n_train_patients] patient_log_decrease_rate = patient_log_growth_rate + patient_log_rate_ratio;
-  
-  vector[n_train_patients] patient_log_growth_lag_effect = zeros_vector(n_train_patients);
-  vector[n_train_patients] patient_log_growth_lag = rep_vector(pop_log_growth_lag, n_train_patients);
-  
-  if (!pop_growth_lag_param_only) {
-    patient_log_growth_lag_effect = patient_log_growth_lag_sd * raw_patient_log_growth_lag;
-    patient_log_growth_lag += patient_log_growth_lag_effect;
-  }
-  
-  vector[n_train_patients] patient_decrease_prop_logis_linpred = Q_covar_design_matrix * QR_pop_decrease_prop_logis_coef;
-
-  vector[n_trials] trial_decrease_prop_logis = rep_vector(pop_decrease_prop_logis, n_trials);
-  vector[n_trials] trial_decrease_prop_logis_effect = zeros_vector(n_trials);
-  vector[n_train_patients] patient_decrease_prop_logis = rep_vector(pop_decrease_prop_logis, n_train_patients) + patient_decrease_prop_logis_linpred; 
-  vector[n_train_patients] patient_decrease_prop_logis_effect = zeros_vector(n_train_patients);
-  
-  if (!pop_initial_states_param_only ) {
-    if (add_trial_level_prop) {
-      trial_decrease_prop_logis_effect = trial_decrease_prop_logis_sd * raw_trial_decrease_prop_logis;
-      trial_decrease_prop_logis += trial_decrease_prop_logis_effect;
-    }
-   
-    patient_decrease_prop_logis_effect = patient_decrease_prop_logis_sd * raw_patient_decrease_prop_logis; 
-    patient_decrease_prop_logis += trial_decrease_prop_logis_effect[patient_trial[train_patients_pos:train_patients_end]] + patient_decrease_prop_logis_effect;
-  } 
-  
-  vector[n_train_patients] patient_log_decrease_prop = -log1p_exp(- patient_decrease_prop_logis);
-  vector[n_train_patients] patient_log_growth_prop = patient_log_decrease_prop - patient_decrease_prop_logis;
-
-  vector[n_train_patients] patient_tumor_gp_rho = independ_long_process_noise ? zeros_vector(n_train_patients) : rep_vector(exp(log_pop_tumor_gp_rho), n_train_patients);  
-  
-  matrix[n_total_train_visits, 2] states; 
-  
-  vector[independ_long_process_noise ? 0 : n_train_patients] patient_tumor_gp_rho;
-  
-  profile("states") {
-    vector[independ_long_process_noise || pop_rho_param_only ? 0 : n_train_patients] log_patient_tumor_gp_rho_effect; 
-    vector[independ_long_process_noise || pop_rho_param_only ? 0 : n_trials] log_trial_tumor_gp_rho_effect;
-    
-    if (!independ_long_process_noise && !pop_rho_param_only) {
-      log_patient_tumor_gp_rho_effect = log_patient_tumor_gp_rho_sd * raw_log_patient_tumor_gp_rho_effect;
-      log_trial_tumor_gp_rho_effect = zeros_vector(n_trials);
-      patient_tumor_gp_rho = exp(log_pop_tumor_gp_rho + log_trial_tumor_gp_rho_effect[patient_trial[train_patients_pos:train_patients_end]] + log_patient_tumor_gp_rho_effect);
-    }
-
-    states = calc_states(
-      train_patient_visit_pos,
-      train_patient_visits,
-      patient_tumor_gp_rho,
-      delta,
-      pop_process_sd,
-      independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr,
-      // raw_patient_process_noise,
-      independ_long_process_noise, independ_cross_process_noise,
-      append_col(patient_log_decrease_prop, patient_log_growth_prop),
-      exp(patient_log_decrease_rate), exp(patient_log_growth_rate),
-      rep_vector(0.0001, n_train_patients), // exp(patient_log_growth_lag), 
-      0.0001, // exp(pop_log_growth_transition_rate),
-      n_shards, // && !debug,
-      0 // debug 
-    );
-  }
-
-  vector[n_covar] pop_log_net_rate_coef = R_inv_covar_design_matrix * QR_pop_log_net_rate_coef;      
-  vector[n_covar] pop_decrease_prop_logis_coef = R_inv_covar_design_matrix * QR_pop_decrease_prop_logis_coef;
+  // Non-target progression
+  patient_response_lp[, 1] = calc_pch_loglik(
+    non_target_pfs[train_patients_pos:train_patients_end], 
+    non_target_right_censored[train_patients_pos:train_patients_end], 
+    zeros_int_array(n_train_patients),
+    0, 
+    log_cond_prob_surv[1]
+  );
 }
 
 model {
@@ -365,19 +52,16 @@ model {
   #include "sf-ssls-priors.stan"
 
   profile("loglik") { 
-    if (fit_tumor_data) { 
+    if (fit_tumor_data) {
       for (i in train_patients_pos:train_patients_end) {
         int train_idx = i - train_patients_pos + 1;
-        
         int train_visit_start, train_visit_end;
         (train_visit_start, train_visit_end) = get_pos(train_patient_visit_pos, train_idx);
-        
         int visit_pos, visit_end;
         (visit_pos, visit_end) = get_pos(patient_visit_pos, i);
-        
         normalized_sld[visit_pos:visit_end] ~ sf_log_space_obs(states[train_visit_start:train_visit_end], measure_sd, log_lod - log(sum_tumor_size[visit_pos]));
       }
-      
+
       for (s in 1:n_trials) {
         for (k in 1:n_causes) {
           target += sum(get_sub_vector(patient_response_lp[, k], train_trial_patient_pos, s));
@@ -505,58 +189,46 @@ generated quantities {
       int forecast_size = get_pos_size(forecast_visits_pos, i);
       
       array[n_patient_visits[i]] int curr_visits = get_int_sub_array(train_patient_visits, train_patient_visit_pos, train_idx);
-    
-      obs_patient_process_noise[train_visit_m1_start:train_visit_m1_end] = rep_matrix(0, train_visit_m1_size, 2); 
       
-      rep_patient_log_sld[train_visit_start] = log(sum_tumor_size[visit_pos]);
-      rep_patient_log_sld[(train_visit_start + 1):train_visit_end] =
-        to_vector(normal_rng(
-          to_vector(log_sum_exp(states[(train_visit_start + 1):train_visit_end, 1], states[(train_visit_start + 1):train_visit_end, 2])) + 
-            log(sum_tumor_size[visit_pos]),
-          rep_vector(measure_sd, n_patient_visits[i] - 1)
-        ));
-        
       array[n_patient_forecast_visits[i] + 1] int forecast_time = linspaced_int_array(
         n_patient_forecast_visits[i] + 1, patient_last_obs_visit[i], last_predict_visit);
-     
-      (spop_non_target_pfs[train_idx], spop_non_target_right_censored[train_idx]) = survival_time_rng(log_cond_prob_surv[1, train_idx]);
       
-      if (n_patient_forecast_visits[i] > 0) {
-        if (independ_long_process_noise) {
-          forecast_patient_process_noise[train_forecast_visit_start:train_forecast_visit_end] = multi_normal_rng(
-            forecast_size, pop_process_sd, independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr
-          );
-        } else {
-          forecast_patient_process_noise[train_forecast_visit_start:train_forecast_visit_end] = multi_normal_rng(
-            obs_patient_process_noise[train_visit_m1_start:train_visit_m1_end],
-            get_int_sub_array(t_patient_visits, patient_visit_pos, i)[2:],
-            forecast_time[2:],
-            exp(log_pop_tumor_gp_rho),
-            pop_process_sd,
-            independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr,
-            delta
-          );
-        }
-        
-        forecast_patient_states[train_forecast_visit_start:train_forecast_visit_end] = sf_log_space_trajectory_ncp(
-          states[train_patient_visit_pos[train_idx + 1] - 1],
+      // Generate patient states using direct tuple assignment
+      // Generate zeros for observed process noise (as it was hardcoded before)
+      obs_patient_process_noise[train_visit_m1_start:train_visit_m1_end] = rep_matrix(0.0, n_patient_visits[i] - 1, 2);
+      
+      // Generate states, SLD replications, and forecasts
+      (forecast_patient_states[train_forecast_visit_start:train_forecast_visit_end], 
+       rep_patient_log_sld[train_visit_start:train_visit_end], 
+       forecast_patient_log_sld[train_forecast_visit_start:train_forecast_visit_end]) = 
+        generate_patient_states_rng(
+          states[train_visit_start:train_visit_end],
           forecast_time,
-          exp(patient_log_decrease_rate[train_idx]), exp(patient_log_growth_rate[train_idx]),
-          0.0001, // exp(patient_log_growth_lag[train_idx]), 
-          0.0001, // exp(pop_log_growth_transition_rate),
-          rep_matrix(0, forecast_size, 2)
-          // forecast_patient_process_noise[train_forecast_visit_start:train_forecast_visit_end]
-        ).2[2:];
-  
-        forecast_patient_log_sld[train_forecast_visit_start:train_forecast_visit_end] =
-          to_vector(normal_rng(
-            to_vector(log_sum_exp(
-              forecast_patient_states[train_forecast_visit_start:train_forecast_visit_end, 1], 
-              forecast_patient_states[train_forecast_visit_start:train_forecast_visit_end, 2]
-            )) + log(sum_tumor_size[visit_pos]),
-            rep_vector(measure_sd, forecast_size)
-          ));
-      }
+          patient_log_decrease_rate[train_idx], patient_log_growth_rate[train_idx],
+          sum_tumor_size[visit_pos], 
+          0.0001, 0.0001, // exp(patient_log_growth_lag[train_idx]), exp(pop_log_growth_transition_rate),
+          rep_matrix(0.0, forecast_size, 2), // Hardcode zeros for forecast process noise
+          measure_sd
+        );
+      
+      // Generate forecast process noise conditionally (as it was in the original code)
+      if (independ_long_process_noise) {
+        forecast_patient_process_noise[train_forecast_visit_start:train_forecast_visit_end] = multi_normal_rng(
+          forecast_size, pop_process_sd, independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr
+        );
+      } else {
+        forecast_patient_process_noise[train_forecast_visit_start:train_forecast_visit_end] = multi_normal_rng(
+          obs_patient_process_noise[train_visit_m1_start:train_visit_m1_end],
+          get_int_sub_array(t_patient_visits, patient_visit_pos, i)[2:],
+          forecast_time[2:],
+          exp(log_pop_tumor_gp_rho),
+          pop_process_sd,
+          independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr,
+          delta
+        );
+      }      
+      
+      (spop_non_target_pfs[train_idx], spop_non_target_right_censored[train_idx]) = survival_time_rng(log_cond_prob_surv[1, train_idx]);
       
       array[n_obs_treat_visits + forecast_size] int full_predict_recist = calculate_target_recist(
         exp(append_row(rep_patient_log_sld[train_visit_start:train_visit_end], 
@@ -578,7 +250,7 @@ generated quantities {
         curr_recist[(train_visit_size + 1):] = forecast_recist[train_forecast_visit_start:train_forecast_visit_end];
 
         (sample_target_pfs[train_idx], sample_target_right_censored[train_idx]) = 
-          find_first_week(curr_recist, PD, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
+          find_first_week(curr_recist, { PD }, 2, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
         (forecast_confirmed_response_week, confirmed_response_censored) = 
           find_first_week(curr_recist, { PR, CR }, 2, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
 
@@ -594,7 +266,7 @@ generated quantities {
           );
 
           (forecast_target_pfs[right_censored_idx], forecast_target_right_censored[right_censored_idx]) = 
-            find_first_week(forecast_recist[train_forecast_visit_start:train_forecast_visit_end], PD, 
+            find_first_week(forecast_recist[train_forecast_visit_start:train_forecast_visit_end], { PD }, 2, 
                             n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
           
           forecast_pfs[right_censored_idx] = min(forecast_target_pfs[right_censored_idx], forecast_non_target_pfs[right_censored_idx]);
@@ -606,12 +278,12 @@ generated quantities {
         (spop_target_pfs[train_idx], spop_target_right_censored[train_idx]) = find_first_week(
           append_array(rep_recist[train_treat_visit_start:train_visit_end], 
                        forecast_recist[train_forecast_visit_start:train_forecast_visit_end]), 
-          PD, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t); 
+          { PD }, 2, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t); 
       } else {
         (spop_target_pfs[train_idx], spop_target_right_censored[train_idx]) = find_first_week(
-          rep_recist[train_treat_visit_start:train_visit_end], PD, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t); 
+          rep_recist[train_treat_visit_start:train_visit_end], { PD }, 2, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t); 
         (sample_target_pfs[train_idx], sample_target_right_censored[train_idx]) = find_first_week(
-          recist[visit_pos:visit_end], PD, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
+          recist[visit_pos:visit_end], { PD }, 2, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
         (forecast_confirmed_response_week, confirmed_response_censored) = find_first_week(
           recist[visit_pos:visit_end], { PR, CR }, 2, n_patient_screening_visits[i], curr_visits, forecast_time, max_all_t);
 
@@ -631,11 +303,6 @@ generated quantities {
 
       forecast_confirmed_response[train_idx] = 
         !confirmed_response_censored && forecast_confirmed_response_week < sample_target_pfs[train_idx];
-
-      // if (i == 3 && forecast_confirmed_response[train_idx] == 1) {
-      //   print("forecast_confirmed_response_week = ", forecast_confirmed_response_week, ", curr_recist = ", curr_recist, 
-      //         ", sample_target_pfs[train_idx] = ", sample_target_pfs[train_idx]);
-      // }
 
       for (m in 1:n_mature_cutoffs_calendar_days) {
         cutoff_forecast_confirmed_response[train_idx, m] = 

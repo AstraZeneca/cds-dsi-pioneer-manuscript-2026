@@ -434,8 +434,8 @@ create_tumor_ssls_initializer <- function(stan_data) {
         trial_decrease_prop_logis_sd = abs(rnorm(1, sd = trial_decrease_prop_logis_sd_sd)),
         raw_trial_decrease_prop_logis = if (add_trial_level_prop) rnorm(n_trials),
         
-        QR_pop_log_net_rate_coef = rnorm(n_covar, pop_log_net_rate_coef_mean, pop_log_net_rate_coef_sd),
-        QR_pop_decrease_prop_logis_coef = rnorm(n_covar, pop_log_net_rate_coef_mean, pop_log_net_rate_coef_sd),
+        pop_log_net_rate_coef = rnorm(n_covar, pop_log_net_rate_coef_mean, pop_log_net_rate_coef_sd),
+        pop_decrease_prop_logis_coef = rnorm(n_covar, pop_decrease_prop_logis_coef_mean, pop_decrease_prop_logis_coef_sd),
         
         trial_log_net_rate_coef_sd = if (n_covar > 0 && !pop_covar_coef_only) abs(rnorm(n_covar, sd = trial_log_net_rate_coef_sd_sd)),
         raw_trial_log_net_rate_coef = if (n_covar > 0 && !pop_covar_coef_only) matrix(rnorm(n_covar * n_trials), n_trials, n_covar),

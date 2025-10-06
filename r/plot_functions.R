@@ -17,12 +17,12 @@ prepare_pdl1_and_trial_info <- function(res_data) {
 #' @param outcome Unquoted column name for the outcome to plot (e.g., orr, median_pfs)
 #' @param ... Additional arguments passed to ggplot2::stat_pointinterval
 #' @return A ggplot object
-plot_outcome_by_pdl1_and_trial <- function(res_data, outcome, ...) {
+plot_outcome_by_pdl1_and_trial <- function(res_data, outcome, .width = c(0.5, 0.9), ...) {
   res_data |> 
     prepare_pdl1_and_trial_info() |>
     filter(fct_match(variable, c("all", "pdl1_naive")), fct_match(trial, "sclc")) |>  
     ggplot() +
-    stat_pointinterval(aes(xdist = {{ outcome }}, y = cond_group_name, color = fit_type), position = "dodge", .width = c(0.5, 0.9), ...) +
+    stat_pointinterval(aes(xdist = {{ outcome }}, y = cond_group_name, color = fit_type), position = "dodge", .width = .width, ...) +
     scale_color_discrete("", type = AZ_palette, label = str_to_title) +
     facet_grid(vars(variable), vars(trial), scales = "free", space = "free", 
                labeller = labeller(trial = str_to_upper, variable = c("all" = "All", "pdl1_naive" = "First Line"))) +
@@ -813,6 +813,20 @@ plot_recist_predictions <- function(data,
     NULL
 }
 
+plot_pfs_ppc <- function(data) {
+  data |> 
+    ggplot(aes(pfs + interval_censored + 1)) +
+    geom_abline(slope = 1, linetype = "dashed") +
+    scale_x_continuous("Recorded PFS [Months]", breaks = months_to_weeks(seq(0, 48, 6)), label = label_weeks_to_months) +
+    scale_y_continuous("Posterior PFS [Months]", breaks = months_to_weeks(seq(0, 48, 6)), label = label_weeks_to_months) +
+    stat_pointinterval(aes(ydist = spop_target_pfs, color = event_type), .width = 0.8, alpha = 0.5, linewidth = 1, size = 0.5) +
+    # geom_label_repel(aes(y = median(spop_pfs), label = i), size = 2.5) +
+    scale_color_discrete("Event Type", labels = c(death = "Death", target_pd = "Target PD", nontarget_pd = "Non-target PD"), type = AZ_palette) +
+    labs(caption = "Restricted to uncensored patients.") +
+    facet_wrap(vars(trial), scales = "free", labeller = labeller(trial = str_to_upper)) +
+    theme(legend.position = "bottom") + 
+    NULL
+}
   
 # Distogram #######
 

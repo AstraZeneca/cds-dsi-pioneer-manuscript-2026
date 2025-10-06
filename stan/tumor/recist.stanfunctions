@@ -132,23 +132,21 @@ array[] int calculate_best_overall_response(array[] int recist_status) {
  * @param obs_cat Observed RECIST category
  * @param pred_cat Predicted RECIST category
  * @param correct_predictions Running count of correct predictions
- * @param confusion_matrix Confusion matrix to update
  * @param category_counts Counts per observed category
  * @param weighted_acc_linear Running weighted accuracy (linear penalty)
  * @param weighted_acc_quad Running weighted accuracy (quadratic penalty)
  * @param correct_response Running count of correct response classifications
  * @param correct_control Running count of correct disease control classifications
- * @return Tuple of all updated metrics
+ * @return Tuple of all updated metrics (excluding confusion matrix)
  */
-tuple(int, matrix, vector, real, real, int, int) update_recist_metrics(
+tuple(int, vector, real, real, int, int) update_recist_metrics(
   int obs_cat, int pred_cat,
-  int correct_predictions, matrix confusion_matrix, vector category_counts,
+  int correct_predictions, vector category_counts,
   real weighted_acc_linear, real weighted_acc_quad,
   int correct_response, int correct_control
 ) {
 // Create local copies for updates
     int updated_correct_predictions = correct_predictions;
-    matrix[4, 4] updated_confusion_matrix = confusion_matrix;
     vector[4] updated_category_counts = category_counts;
     real updated_weighted_acc_linear = weighted_acc_linear;
     real updated_weighted_acc_quad = weighted_acc_quad;
@@ -160,8 +158,7 @@ tuple(int, matrix, vector, real, real, int, int) update_recist_metrics(
       updated_correct_predictions += 1;
     }
     
-    // Update confusion matrix and category counts
-    updated_confusion_matrix[obs_cat, pred_cat] += 1;
+    // Update category counts
     updated_category_counts[obs_cat] += 1;
     
     // Update weighted accuracies
@@ -182,7 +179,7 @@ tuple(int, matrix, vector, real, real, int, int) update_recist_metrics(
       updated_correct_control += 1;
     }
     
-    return (updated_correct_predictions, updated_confusion_matrix, updated_category_counts,
+    return (updated_correct_predictions, updated_category_counts,
             updated_weighted_acc_linear, updated_weighted_acc_quad,
             updated_correct_response, updated_correct_control);
 }

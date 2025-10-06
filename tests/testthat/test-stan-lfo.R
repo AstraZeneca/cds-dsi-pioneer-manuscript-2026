@@ -2,6 +2,26 @@ library(testthat)
 library(cmdstanr)
 source(here::here("tests/testthat/helper-stan.R"))
 
+# Test cases for get_testing_visit_week_bounds function
+get_testing_visit_week_bounds_cases <- list(
+  # Case 1: Simple case with 2 patients, 2 cutoffs
+  list(
+    case_name = "simple_2_patients_2_cutoffs",
+    n_patients = 2L,
+    n_cutoffs = 2L, 
+    n_visits = 6L,
+    oos_patient_idx = c(1L, 1L),
+    last_visit_calendar_day_sort_idx = c(1L, 2L),
+    cutoff_calendar_day = c(130L, 150L),
+    patient_calendar_day = c(100L, 110L),
+    t_patient_visits = c(1L, 3L, 5L, 2L, 4L, 6L),
+    t_patient_visits_day = c(7L, 21L, 35L, 14L, 28L, 42L),
+    patient_visit_pos = c(1L, 4L, 7L),
+    expected_first_testing_visit_week = matrix(c(5L, 0L, 4L, 0L), nrow=2, ncol=2, byrow=TRUE),
+    expected_testing_start_idx = matrix(c(3L, 0L, 5L, 0L), nrow=2, ncol=2, byrow=TRUE)
+  )
+)
+
 
 
 
@@ -48,7 +68,8 @@ test_that("cutoff_visits and fine_cutoff_visits handle all edge cases and bounda
       t_patient_visits_day = c(5,10,15,8,18,2,4,6,8),
       patient_visit_pos = c(1,4,6,10),
       expected_last_visit_day = c(15,18,8),
-      expected_last_visit_week = c(3,2,4)
+      expected_last_visit_week = c(3,2,4),
+      expected_cutoff_last_visit_idx = c(3,5,9) # Patient 1: visits 1,2,3 -> last is idx 3; Patient 2: visits 4,5 -> last is idx 5; Patient 3: visits 6,7,8,9 -> last is idx 9
     ),
     # 2. Some patients have no visits before the cutoff
     list(
@@ -58,7 +79,8 @@ test_that("cutoff_visits and fine_cutoff_visits handle all edge cases and bounda
       t_patient_visits_day = c(10,20,10,20,10,20),
       patient_visit_pos = c(1,3,5,7),
       expected_last_visit_day = c(0,0,0),
-      expected_last_visit_week = c(0,0,0)
+      expected_last_visit_week = c(0,0,0),
+      expected_cutoff_last_visit_idx = c(0,0,0) # No visits before cutoff
     ),
     # 3. Some patients have visits exactly at the cutoff
     list(
@@ -68,7 +90,8 @@ test_that("cutoff_visits and fine_cutoff_visits handle all edge cases and bounda
       t_patient_visits_day = c(10,20,10,20),
       patient_visit_pos = c(1,3,5),
       expected_last_visit_day = c(10,0),
-      expected_last_visit_week = c(1,0)
+      expected_last_visit_week = c(1,0),
+      expected_cutoff_last_visit_idx = c(1,0) # Patient 1: visit 1 has week 1 <= 1; Patient 2: no visits before cutoff
     ),
     # 4. Patient with visits at irregular intervals, cutoff between visits
     list(
@@ -78,7 +101,8 @@ test_that("cutoff_visits and fine_cutoff_visits handle all edge cases and bounda
       t_patient_visits_day = c(5,10,20,30),
       patient_visit_pos = c(1,5),
       expected_last_visit_day = c(10),
-      expected_last_visit_week = c(2)
+      expected_last_visit_week = c(2),
+      expected_cutoff_last_visit_idx = c(2) # Visits 1,2 have weeks 1,2 <= 2
     ),
     # 5. Patient with negative entry date (enrolled before study "start")
     list(
@@ -88,7 +112,8 @@ test_that("cutoff_visits and fine_cutoff_visits handle all edge cases and bounda
       t_patient_visits_day = c(3,8),
       patient_visit_pos = c(1,3),
       expected_last_visit_day = c(8),
-      expected_last_visit_week = c(2)
+      expected_last_visit_week = c(2),
+      expected_cutoff_last_visit_idx = c(2) # Visits 1,2 have weeks 1,2 <= 2
     ),
     # 6. Patient with visits on non-monotonic days (should be sorted)
     list(
@@ -98,7 +123,8 @@ test_that("cutoff_visits and fine_cutoff_visits handle all edge cases and bounda
       t_patient_visits_day = c(10,5,15),
       patient_visit_pos = c(1,4),
       expected_last_visit_day = c(15),
-      expected_last_visit_week = c(3)
+      expected_last_visit_week = c(3),
+      expected_cutoff_last_visit_idx = c(3) # Visits 1,2,3 have weeks 1,2,3 <= 3
     ),
     # 7. Patient with duplicate visit days
     list(
@@ -108,7 +134,8 @@ test_that("cutoff_visits and fine_cutoff_visits handle all edge cases and bounda
       t_patient_visits_day = c(5,5,10),
       patient_visit_pos = c(1,4),
       expected_last_visit_day = c(10),
-      expected_last_visit_week = c(3)
+      expected_last_visit_week = c(3),
+      expected_cutoff_last_visit_idx = c(3) # Visits 1,2,3 have weeks 1,2,3 <= 3
     ),
     # 8. Patient with only one visit, after cutoff
     list(
@@ -118,7 +145,8 @@ test_that("cutoff_visits and fine_cutoff_visits handle all edge cases and bounda
       t_patient_visits_day = c(10),
       patient_visit_pos = c(1,2),
       expected_last_visit_day = c(0),
-      expected_last_visit_week = c(0)
+      expected_last_visit_week = c(0),
+      expected_cutoff_last_visit_idx = c(0) # No visits before cutoff
     )
   )
 
@@ -151,6 +179,7 @@ test_that("cutoff_visits and fine_cutoff_visits handle all edge cases and bounda
   expected_fine_last_visit_week <- matrix(NA_integer_, N_cases, max_n_patients)
   expected_cutoff_last_visit_day <- matrix(NA_integer_, N_cases, max_n_patients)
   expected_cutoff_last_visit_week <- matrix(NA_integer_, N_cases, max_n_patients)
+  expected_cutoff_last_visit_idx <- matrix(NA_integer_, N_cases, max_n_patients)
 
   for (i in seq_len(N_cases)) {
     case <- all_cases[[i]]
@@ -191,13 +220,47 @@ test_that("cutoff_visits and fine_cutoff_visits handle all edge cases and bounda
       patient_tumor_measure_pos[i, seq_len(np+1)] <- rep(1L, np+1)
       expected_cutoff_last_visit_day[i, 1:np] <- case$expected_last_visit_day
       expected_cutoff_last_visit_week[i, 1:np] <- case$expected_last_visit_week
+      expected_cutoff_last_visit_idx[i, 1:np] <- case$expected_cutoff_last_visit_idx
       expected_fine_last_visit_day[i, 1:np] <- 0
       expected_fine_last_visit_week[i, 1:np] <- 0
     }
   }
 
   # Prepare OOS (get_oos_patients_idx) data from dummy case
-  oos_case <- get_oos_patients_idx_cases[[1]]
+  # Prepare testing bounds cases data
+  n_testing_bounds_cases <- length(get_testing_visit_week_bounds_cases)
+  max_n_patients_testing <- if(n_testing_bounds_cases > 0) max(sapply(get_testing_visit_week_bounds_cases, function(x) x$n_patients)) else 1L
+  max_n_cutoffs_testing <- if(n_testing_bounds_cases > 0) max(sapply(get_testing_visit_week_bounds_cases, function(x) x$n_cutoffs)) else 1L
+  max_n_visits_testing <- if(n_testing_bounds_cases > 0) max(sapply(get_testing_visit_week_bounds_cases, function(x) x$n_visits)) else 1L
+  
+  # Initialize testing bounds arrays
+  n_patients_testing <- integer(max(n_testing_bounds_cases, 1))
+  n_cutoffs_testing <- integer(max(n_testing_bounds_cases, 1))
+  n_visits_testing <- integer(max(n_testing_bounds_cases, 1))
+  oos_patient_idx_testing <- matrix(1L, max(n_testing_bounds_cases, 1), max_n_cutoffs_testing)
+  last_visit_calendar_day_sort_idx_testing <- matrix(1L, max(n_testing_bounds_cases, 1), max_n_patients_testing)
+  cutoff_calendar_day_testing <- matrix(0L, max(n_testing_bounds_cases, 1), max_n_cutoffs_testing)
+  patient_calendar_day_testing <- matrix(0L, max(n_testing_bounds_cases, 1), max_n_patients_testing)
+  t_patient_visits_testing <- matrix(0L, max(n_testing_bounds_cases, 1), max_n_visits_testing)
+  t_patient_visits_day_testing <- matrix(0L, max(n_testing_bounds_cases, 1), max_n_visits_testing)
+  patient_visit_pos_testing <- matrix(1L, max(n_testing_bounds_cases, 1), max_n_patients_testing + 1)
+  
+  # Fill testing bounds data
+  if (n_testing_bounds_cases > 0) {
+    for (i in seq_len(n_testing_bounds_cases)) {
+      case <- get_testing_visit_week_bounds_cases[[i]]
+      n_patients_testing[i] <- case$n_patients
+      n_cutoffs_testing[i] <- case$n_cutoffs
+      n_visits_testing[i] <- case$n_visits
+      oos_patient_idx_testing[i, 1:case$n_cutoffs] <- case$oos_patient_idx
+      last_visit_calendar_day_sort_idx_testing[i, 1:case$n_patients] <- case$last_visit_calendar_day_sort_idx
+      cutoff_calendar_day_testing[i, 1:case$n_cutoffs] <- case$cutoff_calendar_day
+      patient_calendar_day_testing[i, 1:case$n_patients] <- case$patient_calendar_day
+      t_patient_visits_testing[i, 1:case$n_visits] <- case$t_patient_visits
+      t_patient_visits_day_testing[i, 1:case$n_visits] <- case$t_patient_visits_day
+      patient_visit_pos_testing[i, 1:(case$n_patients + 1)] <- case$patient_visit_pos
+    }
+  }
   stan_data <- list(
     N_cases = N_cases,
     max_n_patients = max_n_patients,
@@ -216,12 +279,27 @@ test_that("cutoff_visits and fine_cutoff_visits handle all edge cases and bounda
     n_visits = n_visits,
     # Minimal valid OOS data
     n_oos_cases = 1L,
-    max_n_patients_oos = oos_case$n_patients,
-    max_n_cutoffs_oos = oos_case$n_cutoffs,
-    n_patients_oos = oos_case$n_patients,
-    n_cutoffs_oos = oos_case$n_cutoffs,
-    sorted_last_visit_calendar_day_oos = oos_case$sorted_last_visit_calendar_day,
-    cutoff_calendar_day_oos = oos_case$cutoff_calendar_day
+    max_n_patients_oos = 1L,
+    max_n_cutoffs_oos = 1L,
+    n_patients_oos = 1L,
+    n_cutoffs_oos = 1L,
+    sorted_last_visit_calendar_day_oos = matrix(0L, 1, 1),
+    cutoff_calendar_day_oos = matrix(0L, 1, 1),
+    # Testing bounds data
+    n_testing_bounds_cases = n_testing_bounds_cases,
+    max_n_patients_testing = max_n_patients_testing,
+    max_n_cutoffs_testing = max_n_cutoffs_testing,
+    max_n_visits_testing = max_n_visits_testing,
+    n_patients_testing = n_patients_testing,
+    n_cutoffs_testing = n_cutoffs_testing,
+    n_visits_testing = n_visits_testing,
+    oos_patient_idx_testing = oos_patient_idx_testing,
+    last_visit_calendar_day_sort_idx_testing = last_visit_calendar_day_sort_idx_testing,
+    cutoff_calendar_day_testing = cutoff_calendar_day_testing,
+    patient_calendar_day_testing = patient_calendar_day_testing,
+    t_patient_visits_testing = t_patient_visits_testing,
+    t_patient_visits_day_testing = t_patient_visits_day_testing,
+    patient_visit_pos_testing = patient_visit_pos_testing
   )
 
   fit <- test_stan_function("stan/test_lfo_all.stan", data = stan_data)
@@ -229,7 +307,8 @@ test_that("cutoff_visits and fine_cutoff_visits handle all edge cases and bounda
   draws_df <- spread_draws(
     fit$draws(),
     last_visit_day[case, patient], last_visit_week[case, patient],
-    fine_last_visit_day[case, patient], fine_last_visit_week[case, patient]
+    fine_last_visit_day[case, patient], fine_last_visit_week[case, patient],
+    cutoff_last_visit_idx[case, patient]
   )
 
   for (i in seq_len(N_cases)) {
@@ -246,6 +325,11 @@ test_that("cutoff_visits and fine_cutoff_visits handle all edge cases and bounda
         as.integer(df$last_visit_week),
         expected_cutoff_last_visit_week[i, 1:np],
         label = paste("last_visit_week, case", i)
+      )
+      expect_equal(
+        as.integer(df$cutoff_last_visit_idx),
+        expected_cutoff_last_visit_idx[i, 1:np],
+        label = paste("cutoff_last_visit_idx, case", i)
       )
     }
     # Check fine_cutoff_visits outputs if expected values are not NA
@@ -264,6 +348,40 @@ test_that("cutoff_visits and fine_cutoff_visits handle all edge cases and bounda
         expected_fine_last_visit_week[i, 1:np],
         label = paste("fine_last_visit_week, case", i)
       )
+    }
+  }
+  
+  # Test get_testing_visit_week_bounds outputs if we have test cases
+  if (n_testing_bounds_cases > 0) {
+    bounds_draws_df <- spread_draws(
+      fit$draws(),
+      first_testing_visit_week_out[case, n, i],
+      testing_start_idx_out[case, n, i]
+    )
+    
+    for (i in seq_len(n_testing_bounds_cases)) {
+      case <- get_testing_visit_week_bounds_cases[[i]]
+      case_draws <- bounds_draws_df[bounds_draws_df$.iteration == 1 & bounds_draws_df$.chain == 1 & bounds_draws_df$case == i, ]
+      
+      for (n in 1:case$n_cutoffs) {
+        for (p in 1:case$n_patients) {
+          # Check first_testing_visit_week
+          actual_first <- case_draws[case_draws$n == n & case_draws$i == p, ]$first_testing_visit_week_out
+          expected_first <- case$expected_first_testing_visit_week[n, p]
+          expect_equal(
+            actual_first, expected_first,
+            label = paste("first_testing_visit_week case", i, "n", n, "i", p)
+          )
+          
+          # Check testing_start_idx
+          actual_idx <- case_draws[case_draws$n == n & case_draws$i == p, ]$testing_start_idx_out
+          expected_idx <- case$expected_testing_start_idx[n, p]
+          expect_equal(
+            actual_idx, expected_idx,
+            label = paste("testing_start_idx case", i, "n", n, "i", p)
+          )
+        }
+      }
     }
   }
 })

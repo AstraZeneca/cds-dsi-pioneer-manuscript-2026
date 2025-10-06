@@ -654,6 +654,25 @@ void assert_greater_than_or_equal(int x, int y) {
     fatal_error("Greater than or equal assertion failed.");
   }
 }
+
+void assert_strict_ascending(array[] int x) {
+  int n = size(x);
+  for (i in 2:n) {
+    if (x[i] <= x[i - 1]) {
+      fatal_error("Array is not strictly ascending at position ", i, ": ", x[i], " <= ", x[i - 1]);
+    }
+  }
+}
+
+void assert_ascending(array[] int x) {
+  int n = size(x);
+  for (i in 2:n) {
+    if (x[i] < x[i - 1]) {
+      fatal_error("Array is not ascending at position ", i, ": ", x[i], " <= ", x[i - 1]);
+    }
+  }
+}
+
 /** How many assessments for each tumor were pre-screening assessments (t <= 0).
  *
  * @param n_patient_tumors Array with the number of tumors per patient.
