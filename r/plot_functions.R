@@ -1,3 +1,5 @@
+# nolint start: object_usage_linte1r
+
 plot_baseline_hazard <- function(res_data, lambda_var, ...) {
   ggplot(res_data, aes(t)) +
     geom_line(
@@ -150,9 +152,10 @@ plot_surv_ppc <- function(ppc_data, surv_interval_col, ic_col, rc_col, rep_surv_
     NULL
 }
 
-plot_km <- function(res_data, obs_km_data, km_est, analysis_data = NULL, group = fit_type, linewidth = 0) {
+plot_km <- function(res_data, obs_km_data, km_est, analysis_data = NULL, group = fit_type, alpha_group = fit_type, linewidth = 0, ...) {
   pobj <- ggplot(res_data) +
-    stat_lineribbon(aes(x = t - 1, ydist = {{ km_est }}, fill = {{ group }}, alpha = {{ group }}), linewidth = linewidth, .width = 0.8) +
+    stat_lineribbon(aes(x = t - 1, ydist = {{ km_est }}, fill = {{ group }}, alpha = {{ alpha_group }}), 
+                    linewidth = linewidth, .width = 0.8, ...) +
     labs(y = "Survival Probability") +
     guides(alpha = "none") + 
     theme(legend.position = "bottom")
@@ -713,6 +716,56 @@ plot_ssls_coef <- function(res_data, name_var = n) {
     stat_pointinterval(aes(xdist = .value, color = fit_type), point_size = 1, position = "dodge", .width = c(0.5, 0.8)) +
     geom_vline(xintercept = 0)
 }
+
+# Prepare data for plotting
+prepare_recist_plot_data <- function(data) {
+  data |>
+    select(!matches("(forecast|rep)_recist")) |> 
+    group_by(i) |> 
+    mutate(succ_week = lead(week, default = max(week) + 1)) |> 
+    rowwise() |> 
+    reframe(across(everything()), week = seq(week, succ_week - 1)) |> 
+    pivot_longer(c(CR, PR, SD, PD), names_to = "recist_cat", values_to = "prob") |>
+    mutate(recist_cat = factor(recist_cat, levels = c("CR", "PR", "SD", "PD")))
+}
+
+plot_recist_predictions <- function(data, 
+                                   x_breaks = months_to_weeks(seq(0, 48, 12)),
+                                   y_label = "Posterior Probability",
+                                   caption = "Bar height represents probability; colors show RECIST categories;\nColored points represent observed RECIST.") {
+  # Create the plot
+  data |>
+    prepare_recist_plot_data() |>
+    ggplot(aes(week, y = prob)) +
+    geom_col(aes(alpha = stage, fill = recist_cat), position = "fill", width = 1.01, linewidth = 0) +
+    geom_vline(aes(xintercept = week), linetype = "dashed", 
+               data = \(d) filter(d, fct_match(stage, "obs")) |> group_by(i) |> slice_max(week)) +
+    geom_vline(aes(xintercept = pfs), linetype = "dashed", color = "white", 
+               data = \(d) filter(d, !right_censored)) +
+    geom_point(aes(y = 0.9, fill = response, shape = "obs"), 
+               color = "black", size = 2, 
+               show.legend = c(fill = TRUE, color = FALSE),
+               data = \(d) filter(d, fct_match(stage, "obs")) |> group_by(i, succ_week) |> slice_min(week)) +
+    geom_point(aes(y = 0.8, fill = det_response, shape = "target"), 
+               color = "black", size = 2.5, 
+               show.legend = c(fill = TRUE, color = FALSE),
+               data = \(d) filter(d, fct_match(stage, "obs")) |> group_by(i, succ_week) |> slice_min(week)) +
+    scale_x_continuous("Months", breaks = x_breaks, label = label_weeks_to_months) +
+    scale_y_continuous(labels = scales::percent_format(), expand = c(0, 0)) +
+    scale_fill_manual(values = c("CR" = AZ_green, "PR" = AZ_turquoise, "SD" = AZ_gold, "PD" = AZ_plum), 
+                      name = "RECIST Category", 
+                      aesthetics = c("color", "fill")) +
+    scale_alpha_manual("", values = c(obs = 0.25, forecast = 0.5), labels = c(obs = "Observed", forecast = "Forecast")) +
+    scale_shape_manual("", values = c(obs = 21, target = 23), labels = c(obs = "Observed", target = "Target Lesions Only")) +
+    labs(
+      y = y_label,
+      caption = caption
+    ) + 
+    facet_wrap(vars(i)) +
+    theme(legend.position = "bottom") + 
+    NULL
+}
+
   
 # Distogram #######
 
@@ -814,3 +867,4 @@ stat_distogram <- function(mapping = NULL, data = NULL,
   )
 }
 
+# nolint end: object_usage_linter

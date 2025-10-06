@@ -382,22 +382,119 @@ tuple(real, int) survival_median(array[] int surv_time, int last_surv_time) {
   return(q[1], c[1]);
 }
 
+/**
+ * Calculate quantiles from a Kaplan-Meier survival curve
+ *
+ * This function computes specified quantiles from a pre-calculated Kaplan-Meier survival curve.
+ * It uses linear interpolation when the quantile falls between two time points for more accurate estimates.
+ * Optimized to perform a single pass through the survival curve for all quantiles.
+ *
+ * @param km_survival Vector of Kaplan-Meier survival probabilities S(t) for t = 0, 1, 2, ..., max_t
+ * @param p Vector of percentiles to calculate (e.g., [0.25, 0.5, 0.75] for quartiles)
+ * @return A tuple containing:
+ *         1. A vector of calculated quantiles (time points where survival drops to specified percentiles)
+ *         2. An array indicating which quantiles couldn't be calculated (1 if not calculable, 0 if calculable)
+ */
+tuple(vector, array[] int) km_quantiles(vector km_survival, vector p) {
+  int T = num_elements(km_survival);
+  int P = num_elements(p);
+  vector[P] quantiles = rep_vector(0.0, P);
+  array[P] int cannot_calculate = rep_array(1, P);
+  
+  // Sort percentiles in descending order to match decreasing survival curve
+  array[P] int p_indices = sort_indices_desc(p);
+  int current_p_idx = 1;
+  
+  // Handle percentiles higher than initial survival
+  while (current_p_idx <= P && p[p_indices[current_p_idx]] > km_survival[1]) {
+    quantiles[p_indices[current_p_idx]] = 0.0;
+    cannot_calculate[p_indices[current_p_idx]] = 0;
+    current_p_idx += 1;
+  }
+  
+  // Single pass through survival curve
+  for (t in 2:T) {
+    // Process all percentiles that cross at this time point
+    while (current_p_idx <= P && 
+           km_survival[t] <= p[p_indices[current_p_idx]] && 
+           km_survival[t-1] > p[p_indices[current_p_idx]]) {
+      
+      int idx = p_indices[current_p_idx];
+      // Linear interpolation between time points t-1 and t
+      real weight = (km_survival[t-1] - p[idx]) / (km_survival[t-1] - km_survival[t]);
+      quantiles[idx] = (t - 2) + weight; // Convert to 0-based indexing
+      cannot_calculate[idx] = 0;
+      current_p_idx += 1;
+    }
+    
+    // Early termination if all percentiles found
+    if (current_p_idx > P) break;
+  }
+  
+  return (quantiles, cannot_calculate);
+}
+
+/**
+ * Calculate median from a Kaplan-Meier survival curve
+ *
+ * This function is a specialized version of km_quantiles that calculates only the median (50th percentile)
+ * from a pre-calculated Kaplan-Meier survival curve.
+ *
+ * @param km_survival Vector of Kaplan-Meier survival probabilities S(t) for t = 0, 1, 2, ..., max_t
+ * @return A tuple containing:
+ *         1. The calculated median survival time
+ *         2. An integer flag indicating whether the median could be calculated (0 if calculable, 1 if not calculable)
+ */
+tuple(real, int) km_median(vector km_survival) {
+  vector[1] q;
+  array[1] int c;
+  (q, c) = km_quantiles(km_survival, [0.5]');
+  
+  return (q[1], c[1]);
+}
+
 /** Calculate the proportion of patients who survived beyond time time n (PFSn).
  * 
  * @param surv_time Patient survival times
  * @param n
  * @return Proportion surviving >= n
  */
-real calc_pfs_n(array[] int surv_time, real n) {
+real calc_pfs_n(array[] int surv_time, data real n) {
   int n_patients = size(surv_time);
   array[n_patients] int sorted_surv_time = sort_desc(surv_time);
   int pfs_n = 0;
   
-  while (pfs_n < n_patients && sorted_surv_time[pfs_n + 1] >= n) {
+  while (pfs_n < n_patients && sorted_surv_time[pfs_n + 1] >= to_int(n)) {
     pfs_n += 1;
   }
   
   return 1.0 * pfs_n / n_patients;
+}
+
+/**
+ * Calculate the proportion of patients who survived beyond time n (PFSn) using Kaplan-Meier curve
+ *
+ * This function computes PFSn directly from a pre-calculated Kaplan-Meier survival curve,
+ * which can be more efficient when the KM curve is already available.
+ *
+ * @param km_survival Vector of Kaplan-Meier survival probabilities S(t) for t = 0, 1, 2, ..., max_t
+ * @param n Time point at which to evaluate survival probability
+ * @return Proportion surviving beyond time n
+ */
+real calc_km_pfs_n(vector km_survival, data real n) {
+  int max_t = num_elements(km_survival) - 1;
+  int t_index = min(max_t + 1, max(1, to_int(floor(n)) + 1));
+  
+  if (n <= 0) {
+    return km_survival[1];
+  } else if (n >= max_t) {
+    return km_survival[max_t + 1];
+  } else {
+    // Linear interpolation between time points
+    int t_floor = to_int(floor(n));
+    real weight = n - t_floor;
+    return (1 - weight) * km_survival[t_floor + 1] + weight * km_survival[t_floor + 2];
+  }
 }
 
 /**
@@ -551,42 +648,112 @@ tuple(vector, array[] int, array[] int, array[,] int) estimate_kaplan_meier(arra
  * @return (Proportion surviving, Number at risk, Number right censored, Number for whom disease progressed) for each week
  * @stan_export
  */
-tuple(vector, array[] int, array[] int, array[] int) estimate_kaplan_meier(array[] int pfs, array[] int right_censored, int max_t, int pfs_offset) {
-  int n_pfs = size(pfs); // How many patients
-  array[n_pfs] int sorted_pfs_idx = sort_indices_asc(pfs);
-  int pfs_pos = 1;
-  int n = n_pfs; // How many patients still haven't seen disease progression. 
+/**
+ * Estimate the Kaplan-Meier survival function
+ *
+ * This function implements the standard Kaplan-Meier estimator for survival analysis.
+ * 
+ * IMPORTANT OUTPUT CONVENTION:
+ * - The returned survival vector IMPLICITLY assumes S(0) = 1.0
+ * - The output starts from S(1), S(2), S(3), etc.
+ * - If you need S(0) explicitly, prepend 1.0 to the returned vector
+ * - This differs from R's survfit which can optionally include S(0)
+ *
+ * ALGORITHM:
+ * - Applies pfs_offset to event_time to get actual event times
+ * - Processes events in chronological order (sorts by adjusted event times)
+ * - For each time t, counts events where (event_time + pfs_offset) == t
+ * - Handles immediate events (adjusted event time = 0) correctly at time 0
+ * - Updates survival using standard formula: S(t) = S(t-1) * (n_at_risk - n_events) / n_at_risk
+ * - Accounts for both events and censoring at each time point
+ *
+ * IMPORTANT: event_time represents raw event times before applying the offset.
+ * The actual event time is event_time + pfs_offset.
+ * Example: event_time=3, pfs_offset=2 means actual event occurs at time 5.
+ *
+ * @param event_time Array of raw event times (before applying offset)
+ * @param right_censored Array indicating whether each patient is right-censored (1) or had event (0)
+ * @param max_t Maximum time to compute survival estimates for
+ * @param pfs_offset Offset to add to each event_time to get the actual event time
+ * @return Tuple containing:
+ *   - vector: Survival probabilities S(0), S(1), ..., S(max_t) where S(0) may be < 1 if immediate events occur
+ *   - array[] int: Number at risk at start of each time interval
+ *   - array[] int: Number censored at each time point  
+ *   - array[] int: Number of events at each time point
+ */
+tuple(vector, array[] int, array[] int, array[] int) estimate_kaplan_meier(array[] int event_time, array[] int right_censored, int max_t, int pfs_offset) {
+  int n_pfs = size(event_time); // How many patients
+  
+  // Apply offset to get actual event times
+  array[n_pfs] int adjusted_event_time;
+  for (i in 1:n_pfs) {
+    adjusted_event_time[i] = event_time[i] + pfs_offset;
+  }
+  
+  array[n_pfs] int sorted_pfs_idx = sort_indices_asc(adjusted_event_time);
   
   vector[max_t + 1] s = rep_vector(1.0, max_t + 1);
-  array[max_t + 1] int at_risk = rep_array(n, max_t + 1);
+  array[max_t + 1] int at_risk = rep_array(0, max_t + 1);
   array[max_t + 1] int n_right_censored = rep_array(0, max_t + 1);
   array[max_t + 1] int n_exited = rep_array(0, max_t + 1); 
   
-  for (t in 1:(max_t + 1)) {
-    real prev_s = t > 1 ? s[t - 1] : 1.0;
-    
-    while ((n > 0) && (pfs_pos <= n_pfs) && (pfs[sorted_pfs_idx[pfs_pos]] <= t)) {
-      if (t <= max_t) {
-        // Remember that we define "pfs" as the last interval survived not the interval of exit.
-        n_exited[t + pfs_offset] += !right_censored[sorted_pfs_idx[pfs_pos]]; 
-      }
-      
-      n_right_censored[t] += right_censored[sorted_pfs_idx[pfs_pos]];
-     
-      pfs_pos += 1; 
-      
-    }
+  // s[1] = S(0), s[2] = S(1), s[3] = S(2), etc.
+  // S(t) = probability of surviving past time t
   
-    s[t] = n > 0 ? prev_s * (n - n_exited[t]) / n : prev_s;
-    at_risk[t] = n; 
-    n -= n_exited[t] + n_right_censored[t];
+  // Track current position in sorted array and current risk set size
+  int pfs_pos = 1;
+  int n = n_pfs;
+  
+  // Set initial at-risk count
+  at_risk[1] = n;
+  
+  // Process each time point from 0 to max_t
+  for (t in 0:max_t) {
+    int events_at_t = 0;
+    int censored_at_t = 0;
+    
+    // Count events and censoring that occur exactly at time t
+    while ((pfs_pos <= n_pfs) && (adjusted_event_time[sorted_pfs_idx[pfs_pos]] == t)) {
+      if (!right_censored[sorted_pfs_idx[pfs_pos]]) {
+        events_at_t += 1;
+      } else {
+        censored_at_t += 1;
+      }
+      pfs_pos += 1;
+    }
+    
+    // Store the counts (using 1-based indexing: t=0 -> index 1)
+    n_exited[t + 1] = events_at_t;
+    n_right_censored[t + 1] = censored_at_t;
+    
+    // Update survival probability using Kaplan-Meier formula
+    if (n > 0 && events_at_t > 0) {
+      // For time t, multiply previous survival by (n_at_risk - events) / n_at_risk
+      if (t == 0) {
+        // For time 0, start from 1.0
+        s[1] = 1.0 * (n - events_at_t) / n;
+      } else {
+        // For time t > 0, multiply previous survival
+        s[t + 1] = s[t] * (n - events_at_t) / n;
+      }
+    } else if (t > 0) {
+      // No events, carry forward previous survival
+      s[t + 1] = s[t];
+    }
+    // If t == 0 and no events, s[1] stays at initial value 1.0
+    
+    // Update at-risk count for next time point (if not the last iteration)
+    if (t < max_t) {
+      n -= events_at_t + censored_at_t;
+      at_risk[t + 2] = n;
+    }
   }
   
   return (s, at_risk, n_right_censored, n_exited); 
 }  
 
-tuple(vector, array[] int, array[] int, array[] int) estimate_kaplan_meier(array[] int pfs, array[] int right_censored, int max_t) {
-  return estimate_kaplan_meier(pfs, right_censored, max_t, 1);
+tuple(vector, array[] int, array[] int, array[] int) estimate_kaplan_meier(array[] int event_time, array[] int right_censored, int max_t) {
+  return estimate_kaplan_meier(event_time, right_censored, max_t, 0);
 }
 
 /**

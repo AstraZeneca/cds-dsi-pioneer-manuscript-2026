@@ -1,3 +1,5 @@
+# nolint start: object_usage_linter
+
 #' Utility Functions for Stan Model Sampling and Analysis
 #' 
 #' This file contains utility functions for conducting Bayesian analysis of 
@@ -177,7 +179,7 @@ remove_incomplete_cases <- function(data, incomplete) {
 }
 
 get_conditioning_subgroups <- function(data, cond, other_cond) {
-  map(cond, \(x) transmute(data, cond = !!x & !!other_cond) |> pull(cond) |> which())
+  map(cond$cond_group_expr, \(x) transmute(data, cond = !!x & !!other_cond) |> pull(cond) |> which())
 }
 
 #' Convert Kaplan-Meier estimates to a tibble (data frame) format 
@@ -665,5 +667,8 @@ find_stan_includes <- function(stan_file, base_dir = NULL) {
   return(sort(unique(all_files)))
 }
 
+# Example usage:
+# included_files <- find_stan_includes("model.stan")
+# print(included_files)
 
-
+# nolint end: object_usage_linter
