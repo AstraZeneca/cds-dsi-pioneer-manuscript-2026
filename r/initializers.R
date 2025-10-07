@@ -170,97 +170,82 @@ create_tumor_ss_initializer <- function(stan_data) {
     # Calculate number of visits minus 1 for training patients only
     n_total_train_visits_m1 <- sum(stan_data$n_patient_visits[train_patients_pos:train_patients_end]) - n_train_patients
     
-    # Population-level parameters
-    pop_log_net_rate <- rnorm(1, stan_data$pop_log_net_rate_mean, stan_data$pop_log_net_rate_sd)
-    pop_log_rate_ratio <- rnorm(1, stan_data$pop_log_rate_ratio_mean, stan_data$pop_log_rate_ratio_sd)
-    pop_log_rate_ratio <- max(pop_log_rate_ratio, 0.125)  # Enforce model constraint
-    
+    # Population-level parameters (renamed)
+    pop_log_total_rate <- rnorm(1, stan_data$pop_log_total_rate_mean, stan_data$pop_log_total_rate_sd)
+    pop_decrease_frac_logit <- rnorm(1, stan_data$pop_decrease_frac_logit_mean, stan_data$pop_decrease_frac_logit_sd)
+
     # GP parameters
     log_pop_tumor_gp_rho <- rnorm(1, stan_data$pop_tumor_gp_rho_meanlog, stan_data$pop_tumor_gp_rho_sdlog)
-    
-    # Handle GP parameters based on independence flags
     log_patient_tumor_gp_rho_sd <- abs(rnorm(1, 0, stan_data$log_patient_tumor_gp_rho_sd_sd))
-    
+
     # Growth lag parameters
     pop_log_growth_lag <- rnorm(1, stan_data$growth_lag_mean, stan_data$growth_lag_sd)
     pop_log_growth_transition_rate <- abs(rnorm(1, 0, stan_data$log_growth_transition_rate_sd))
     patient_log_growth_lag_sd <- abs(rnorm(1, 0, stan_data$patient_log_growth_lag_sd_sd))
-    
-    # Process noise parameters
+
+    # Process noise
     pop_process_sd <- c(
       abs(rnorm(1, 0, stan_data$pop_decrease_process_sd_sd)),
       abs(rnorm(1, 0, stan_data$pop_growth_process_sd_sd))
     )
     measure_sd <- abs(rnorm(1, 0, stan_data$measure_sd_sd))
-    
-    # Hierarchical standard deviations
-    patient_log_net_rate_sd <- abs(rnorm(1, 0, stan_data$patient_log_net_rate_sd_sd))
-    
-    # Proportion parameters 
-    pop_decrease_prop_logis <- rnorm(1, 
-                                     stan_data$pop_decrease_prop_logis_mean,
-                                     stan_data$pop_decrease_prop_logis_sd)
+
+    # Hierarchical SDs (renamed)
+    patient_log_total_rate_sd <- abs(rnorm(1, 0, stan_data$patient_log_total_rate_sd_sd))
+    patient_decrease_frac_logit_sd <- abs(rnorm(1, 0, stan_data$patient_decrease_frac_logit_sd_sd))
+
+    # Existing initial state proportion parameters (unchanged)
+    pop_decrease_prop_logis <- rnorm(1,
+      stan_data$pop_decrease_prop_logis_mean,
+      stan_data$pop_decrease_prop_logis_sd
+    )
     patient_decrease_prop_logis_sd <- abs(rnorm(1, 0, stan_data$patient_decrease_prop_logis_sd_sd))
-    
-    # Process correlation - initialize to identity or nothing based on flags
+
     use_cross_process_corr <- !stan_data$independ_cross_process_noise
     L_process_corr <- if (use_cross_process_corr) diag(2) else matrix(numeric(0), 0, 0)
-    
-    # Create the return list with appropriate dimensions
+
     init_vals <- list(
-      # Population parameters
-      pop_log_net_rate = pop_log_net_rate,
-      pop_log_rate_ratio = pop_log_rate_ratio,
-      
-      # GP parameters
+      pop_log_total_rate = pop_log_total_rate,
+      pop_decrease_frac_logit = pop_decrease_frac_logit,
       log_pop_tumor_gp_rho = log_pop_tumor_gp_rho,
       log_patient_tumor_gp_rho_sd = log_patient_tumor_gp_rho_sd,
-      
-      # Growth lag parameters
       pop_log_growth_lag = pop_log_growth_lag,
       pop_log_growth_transition_rate = pop_log_growth_transition_rate,
       patient_log_growth_lag_sd = patient_log_growth_lag_sd,
-      
-      # Noise parameters
       pop_process_sd = pop_process_sd,
       measure_sd = measure_sd
     )
-    
-    # Add L_process_corr only if needed
-    if (use_cross_process_corr) {
-      init_vals$L_process_corr <- L_process_corr
-    }
-    
-    # Proportion parameters
+
+    if (use_cross_process_corr) init_vals$L_process_corr <- L_process_corr
+
     init_vals$pop_decrease_prop_logis <- pop_decrease_prop_logis
     init_vals$patient_decrease_prop_logis_sd <- patient_decrease_prop_logis_sd
-    
+    init_vals$patient_log_total_rate_sd <- patient_log_total_rate_sd
+    init_vals$patient_decrease_frac_logit_sd <- patient_decrease_frac_logit_sd
+
     if (!stan_data$pop_rates_param_only) {
-      init_vals$raw_patient_log_net_rate <- rep(0, n_train_patients)
-    } 
-    
+      init_vals$raw_patient_log_total_rate <- rep(0, n_train_patients)
+      init_vals$raw_patient_decrease_frac_logit <- rep(0, n_train_patients)
+    }
+
     if (!stan_data$pop_initial_states_param_only) {
       init_vals$raw_patient_decrease_prop_logis <- rep(0, n_train_patients)
     }
-    
+
     if (!stan_data$pop_growth_lag_param_only) {
-      init_vals$raw_patient_log_growth_lag <- rep(0, n_train_patients) 
+      init_vals$raw_patient_log_growth_lag <- rep(0, n_train_patients)
     }
-      
-    # GP effect parameters only if not independent
+
     if (!stan_data$independ_long_process_noise && !stan_data$pop_rho_param_only) {
       init_vals$raw_log_patient_tumor_gp_rho_effect <- rep(0, n_train_patients)
     }
-    
-    # Initialize raw process noise and states
+
     init_vals$raw_patient_process_noise <- matrix(0, nrow = n_total_train_visits_m1, ncol = 2)
     init_vals$raw_states <- matrix(0, nrow = n_total_train_visits_m1, ncol = 2)
-    
-    return(init_vals)
+    init_vals
   }
 }
 
-# AI written function hence the ugliness.
 create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
   # Extract draws from the pathfinder fit
   draws_df <- posterior::as_draws_df(pathfinder_fit$draws())
@@ -336,14 +321,14 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
   
   # Collect parameter information
   scalar_params <- c(
-    "pop_log_net_rate", "pop_log_rate_ratio", 
-    "log_pop_tumor_gp_rho", "pop_log_growth_lag", 
+    "pop_log_total_rate", "pop_decrease_frac_logit",
+    "log_pop_tumor_gp_rho", "pop_log_growth_lag",
     "pop_log_growth_transition_rate", "measure_sd",
     "pop_decrease_prop_logis",
-    "log_patient_tumor_gp_rho_sd", "patient_log_net_rate_sd", 
-    "patient_log_growth_lag_sd", "patient_decrease_prop_logis_sd"
-  ) |>  
-    purrr::keep(\(p) p %in% param_names)
+    "log_patient_tumor_gp_rho_sd", "patient_log_total_rate_sd",
+    "patient_log_growth_lag_sd", "patient_decrease_prop_logis_sd",
+    "patient_decrease_frac_logit_sd"
+  ) |> purrr::keep(\(p) p %in% param_names)
   
   # Vector parameters
   vector_params <- list(
@@ -352,12 +337,12 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
   
   # Patient-level parameters
   patient_params <- list(
-    raw_patient_log_net_rate = if (!stan_data$pop_rates_param_only) n_train_patients,
+    raw_patient_log_total_rate = if (!stan_data$pop_rates_param_only) n_train_patients,
+    raw_patient_decrease_frac_logit = if (!stan_data$pop_rates_param_only) n_train_patients,
     raw_patient_log_growth_lag = if (!stan_data$pop_growth_lag_param_only) n_train_patients,
     raw_patient_decrease_prop_logis = if (!stan_data$pop_initial_states_param_only) n_train_patients,
-    raw_log_patient_tumor_gp_rho_effect = if (use_long_process_corr && !stan_data$pop_rho_param_only) n_train_patients 
-  ) |>  
-    compact() 
+    raw_log_patient_tumor_gp_rho_effect = if (use_long_process_corr && !stan_data$pop_rho_param_only) n_train_patients
+  ) |> compact() 
   
   # Matrix parameters
   matrix_params <- list(
@@ -427,19 +412,28 @@ create_tumor_ssls_initializer <- function(stan_data) {
   function(chain_id) {
     with(stan_data, {
       n_train_patients <- train_patients_end - train_patients_pos + 1
-      
       lst(
-        trial_log_net_rate_sd = abs(rnorm(1, sd = trial_log_net_rate_sd_sd)),
-        raw_trial_log_net_rate = if (!pop_rates_param_only && add_trial_level_net_rate) rnorm(n_trials),
+        trial_log_total_rate_sd = abs(rnorm(1, sd = trial_log_total_rate_sd_sd)),
+        raw_trial_log_total_rate = if (!pop_rates_param_only && add_trial_level_total_rate) rnorm(n_trials),
         trial_decrease_prop_logis_sd = abs(rnorm(1, sd = trial_decrease_prop_logis_sd_sd)),
         raw_trial_decrease_prop_logis = if (add_trial_level_prop) rnorm(n_trials),
-        
-        pop_log_net_rate_coef = rnorm(n_covar, pop_log_net_rate_coef_mean, pop_log_net_rate_coef_sd),
+
+        # Patient-level hierarchical standard deviations (added)
+        patient_log_total_rate_sd = abs(rnorm(1, sd = patient_log_total_rate_sd_sd)),
+        patient_decrease_frac_logit_sd = abs(rnorm(1, sd = patient_decrease_frac_logit_sd_sd)),
+        patient_decrease_prop_logis_sd = abs(rnorm(1, sd = patient_decrease_prop_logis_sd_sd)),
+
+        pop_decrease_frac_logit_coef = rnorm(n_covar, pop_decrease_frac_logit_coef_mean, pop_decrease_frac_logit_coef_sd),
         pop_decrease_prop_logis_coef = rnorm(n_covar, pop_decrease_prop_logis_coef_mean, pop_decrease_prop_logis_coef_sd),
-        
-        trial_log_net_rate_coef_sd = if (n_covar > 0 && !pop_covar_coef_only) abs(rnorm(n_covar, sd = trial_log_net_rate_coef_sd_sd)),
-        raw_trial_log_net_rate_coef = if (n_covar > 0 && !pop_covar_coef_only) matrix(rnorm(n_covar * n_trials), n_trials, n_covar),
+
+        trial_decrease_frac_logit_coef_sd = if (n_covar > 0 && !pop_covar_coef_only) abs(rnorm(n_covar, sd = trial_decrease_frac_logit_coef_sd_sd)),
+        raw_trial_decrease_frac_logit_coef = if (n_covar > 0 && !pop_covar_coef_only) matrix(rnorm(n_covar * n_trials), n_trials, n_covar),
+
+        # Patient-level raw effects (zeros for stability)
+        raw_patient_log_total_rate = if (!pop_rates_param_only) rep(0, n_train_patients),
+        raw_patient_decrease_frac_logit = if (!pop_rates_param_only) rep(0, n_train_patients),
+        raw_patient_decrease_prop_logis = if (!pop_initial_states_param_only) rep(0, n_train_patients)
       )
-    }) |> compact() # Get rid of NULLs
+    }) |> compact()
   }
 }

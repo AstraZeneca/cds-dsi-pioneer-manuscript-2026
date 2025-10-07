@@ -121,7 +121,7 @@ plot_crcr_covar_coef <- function(res_data) {
   res_data |> 
     filter(fct_match(.variable, "crcr_covar_trial_coef")) |> 
     select(!.value) |> 
-    pivot_wider(names_from = k, values_from = .exp_value) |> 
+    pivot_wider(names_from = k, values_from = .rs_value) |> 
     mutate(tumor = str_detect(covar, "tumor sizes"), hazard_ratio = Response / `Non-response`) |> 
     ggplot(aes(y = covar)) +
     stat_pointinterval(aes(xdist = hazard_ratio, color = fit_type), point_size = 1, position = "dodge", .width = c(0.5, 0.8)) +
@@ -136,7 +136,7 @@ plot_pfs_covar_coef <- function(res_data) {
   res_data |> 
     filter(fct_match(.variable, "covar_trial_coef")) |> 
     ggplot(aes(y = covar)) +
-    stat_pointinterval(aes(xdist = .exp_value, color = fit_type), point_size = 1, position = "dodge", .width = c(0.5, 0.8)) +
+    stat_pointinterval(aes(xdist = .rs_value, color = fit_type), point_size = 1, position = "dodge", .width = c(0.5, 0.8)) +
     geom_vline(xintercept = 1, linetype = "dotted") +
     labs(x = "Exponential of Parameter",  y = "Parameter", caption = "Showing the posterior median, 50% CI, and 80% CI.") +
     theme(legend.position = "bottom", strip.text.y = element_blank()) +
@@ -516,7 +516,7 @@ get_all_pfs_crcr_lambda_trial_intercept <- function(res) {
 
 get_crcr_pfs_pred_param <- function(res, stan_data) {
   gather_rvars(res, covar_trial_coef[trial, m], covar_effect[trial, m], tumor_stim_pop_coef[trial, m]) |> 
-    mutate(.exp_value = exp(.value)) |> 
+    mutate(.rs_value = exp(.value)) |> 
     name_coef_indices(m, trial, stan_data)
 }
 
@@ -716,6 +716,18 @@ plot_dynamics <- function(data, var, expect_rvar = TRUE, na.rm = FALSE) {
     NULL
 }
 
+plot_level_param <- function(res_data, param = .value) {
+  res_data |> 
+    filter(!is.na({{ param }})) |>
+    ggplot() +
+    geom_lineribbon(aes(x, {{ param }}, ymin = .lower, ymax = .upper, color = fit_type, fill = fit_type, group = .width), 
+                    alpha = 0.25, step = "hv", linewidth = 0) +
+    scale_color_discrete("", type = AZ_palette, aesthetics = c("color", "fill"), label = str_to_title) +
+    scale_x_continuous("") + 
+    labs(y = "", breaks = NULL) +
+    NULL
+}
+
 plot_level_rates <- function(res_data) {
   ggplot(res_data) +
     geom_lineribbon(aes(x, .value, ymin = .lower, ymax = .upper, color = fit_type, fill = fit_type, group = .width), alpha = 0.25, step = "hv") +
@@ -729,7 +741,7 @@ plot_level_rates <- function(res_data) {
 
 plot_level_decrease_prop <- function(res_data) {
   ggplot(res_data) +
-    geom_lineribbon(aes(x, .value_exp, ymin = .lower, ymax = .upper, color = fit_type, fill = fit_type, group = .width), alpha = 0.25, step = "hv") +
+    geom_lineribbon(aes(x, .rs_value, ymin = .lower, ymax = .upper, color = fit_type, fill = fit_type, group = .width), alpha = 0.25, step = "hv") +
     scale_color_discrete("", type = AZ_palette, aesthetics = c("color", "fill"), label = str_to_title) +
     scale_x_continuous("", breaks = seq(-1, 1, 0.2)) +
     scale_y_continuous("", breaks = NULL) +
@@ -815,19 +827,26 @@ plot_recist_predictions <- function(data,
     NULL
 }
 
-plot_pfs_ppc <- function(data) {
-  data |> 
+plot_pfs_ppc <- function(data, pfs_var = spop_target_pfs, label_patients = FALSE) {
+  plot_obj <- data |> 
     ggplot(aes(pfs + interval_censored + 1)) +
     geom_abline(slope = 1, linetype = "dashed") +
     scale_x_continuous("Recorded PFS [Months]", breaks = months_to_weeks(seq(0, 48, 6)), label = label_weeks_to_months) +
     scale_y_continuous("Posterior PFS [Months]", breaks = months_to_weeks(seq(0, 48, 6)), label = label_weeks_to_months) +
-    stat_pointinterval(aes(ydist = spop_target_pfs, color = event_type), .width = 0.8, alpha = 0.5, linewidth = 1, size = 0.5) +
-    # geom_label_repel(aes(y = median(spop_pfs), label = i), size = 2.5) +
+    stat_pointinterval(aes(ydist = {{ pfs_var }}, color = event_type), .width = 0.8, alpha = 0.5, linewidth = 1, size = 0.5) +
     scale_color_discrete("Event Type", labels = c(death = "Death", target_pd = "Target PD", nontarget_pd = "Non-target PD"), type = AZ_palette) +
     labs(caption = "Restricted to uncensored patients.") +
     facet_wrap(vars(trial), scales = "free", labeller = labeller(trial = str_to_upper)) +
     theme(legend.position = "bottom") + 
     NULL
+
+  if (label_patients) {
+    plot_obj <- plot_obj +
+      geom_label_repel(aes(y = median({{ pfs_var}}), label = i), size = 2.5) +
+      NULL
+  }
+
+  return(plot_obj)
 }
   
 # Distogram #######
