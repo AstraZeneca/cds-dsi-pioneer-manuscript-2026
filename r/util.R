@@ -52,7 +52,10 @@ sample_and_save <- function(model, ..., output_dir, output_basename, timestamp =
   }
   
   if (!no_save && save_profiles) {
-    fit$save_profile_files(dir = output_dir, basename = output_basename, random = FALSE, timestamp = timestamp)
+    try_fetch(
+      fit$save_profile_files(dir = output_dir, basename = output_basename, random = FALSE, timestamp = timestamp),
+      error = function(e) warning("Failed to save profile files: ", e$message)
+    )
   }
   
   return(fit)
@@ -154,11 +157,11 @@ export_stan_functions <- function(stan_file, includes = NULL) {
   return(model)
 }
 
-build_model <- function(model_file, include_files = NULL, dir = NULL) {
+build_model <- function(model_file, include_files = NULL, dir = NULL, ...) {
   # Force dependency on include files
   include_files
   
-  model <- cmdstan_model(model_file, cpp_options = lst(stan_threads = TRUE), dir = dir)
+  model <- cmdstan_model(model_file, cpp_options = lst(stan_threads = TRUE), dir = dir, ...)
   
   # Track the executable by including its hash in the return value
   exe_path <- model$exe_file()
@@ -240,6 +243,7 @@ sample_hist <- function(pred, breaks, freq = TRUE,...) {
 
 # This function is used to treated_pfs_analysis_dataallow us to generate a distribution of histograms
 rvar_sample_hist <- posterior::rfun(sample_hist, rvar_dots = FALSE)
+rvar_weighted_mean <- posterior::rfun(weighted.mean, rvar_args = "x") 
 
 #' Name coefficient indices with meaningful labels
 #'
