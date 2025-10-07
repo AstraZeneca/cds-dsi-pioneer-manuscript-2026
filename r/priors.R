@@ -1,68 +1,71 @@
 get_tumor_priors <- function(stan_data, coef_elicited_priors) {
+  # Directly specified priors (simplified)
+  # Choose log-total rate prior similar to historical center; adjust if needed.
+  pop_log_total_rate_mean <- -1.0   # simplified fixed value
+  pop_log_total_rate_sd   <-  1.2   # broader to absorb previous mapping uncertainty
+  # Fraction (logit) prior keeps strong shrinkage bias (>0.5 fraction)
+  pop_decrease_frac_logit_mean <- -1.0
+  pop_decrease_frac_logit_sd   <- 1.2
+
   lst(
     # GP hyperparameters
-    pop_tumor_gp_rho_meanlog = 3, 
-    pop_tumor_gp_rho_sdlog = 0.6, 
-    log_patient_tumor_gp_rho_sd_sd = 1.75, # Process noise parameters
+    pop_tumor_gp_rho_meanlog = 3,
+    pop_tumor_gp_rho_sdlog = 0.6,
+    log_patient_tumor_gp_rho_sd_sd = 1.75,
     pop_decrease_process_sd_sd = 0.1,
     pop_growth_process_sd_sd = 0.1,
     process_corr_param = 2.0,
-    measure_sd_sd = 0.2,
-    
+    measure_sd_sd = 0.2, # 0.05,
+
     # Process parameters
     decrease_process_alpha = 9.7,
     decrease_process_beta = 38.4,
-    growth_process_alpha = 9.7,  
+    growth_process_alpha = 9.7,
     growth_process_beta = 38.4,
-    
-    # Rate parameters - ALIGNED WITH POSTERIOR EVIDENCE
-    pop_log_net_rate_mean = -3.5,        # Much lower net rate to shift growth left
-    pop_log_net_rate_sd = 1.8,           # Keep wide range
-    pop_log_rate_ratio_mean = 2.2,       # Keep high ratio: exp(2.2) ≈ 9 (d = 9g)
-    pop_log_rate_ratio_sd = 1.2,         # Very wide to allow flexibility
-    patient_log_net_rate_sd_sd = 0.5,    # Allow patient variation
-    patient_log_rate_ratio_sd_sd = 0.3,  # Allow patient variation  
-    trial_log_net_rate_sd_sd = 0.6,      # Allow trial variation
-    
-    # Growth lag parameters
+
+    # Rate parameters (derived mapping)
+    pop_log_total_rate_mean = pop_log_total_rate_mean,
+    pop_log_total_rate_sd   = pop_log_total_rate_sd,
+    pop_decrease_frac_logit_mean = pop_decrease_frac_logit_mean,
+    pop_decrease_frac_logit_sd   = pop_decrease_frac_logit_sd,
+    patient_log_total_rate_sd_sd      = 0.5,
+    patient_decrease_frac_logit_sd_sd = 0.3,
+    trial_log_total_rate_sd_sd        = 0.6,
+
+    # Growth lag
     growth_lag_mean = 2.7,
-    growth_lag_sd = 0.5,
+    growth_lag_sd   = 0.5,
     patient_log_growth_lag_sd_sd = 1,
     log_growth_transition_rate_sd = 1,
-    
-    # Correlation parameters
-    rate_corr_param = 2.0,
-    
-    # Proportion parameters
-    pop_decrease_prop_logis_mean = -1.0,    # logit^{-1}(-1.0) ≈ 0.27
-    pop_decrease_prop_logis_sd = 1.5,       # Wider but not extreme
-    patient_decrease_prop_logis_sd_sd = 1.0,
-    trial_decrease_prop_logis_sd_sd = 1.5,
-    
-    # Baseline hazard GP parameters
-    log_lambda_gp_pop_intercept_mean = array(-4.5),
-    log_lambda_gp_pop_intercept_sd = array(0.5),
-    log_lambda_gp_pop_alpha_sd = array(0.4),
-    log_lambda_gp_pop_rho_alpha = array(8.0),
-    log_lambda_gp_pop_rho_beta = array(12.0),
-    log_lambda_gp_trial_alpha_sd = array(0.25),
-    log_lambda_gp_trial_rho_alpha = array(5.0),
-    log_lambda_gp_trial_rho_beta = array(7.0),
-    log_lambda_gp_trial_intercept_sd_sd = array(0.3),
-    
-    # Covariate effect priors for net rates (for scaled but not centered covariates)
-    # pop_log_net_rate_coef_mean = rep(0, stan_data$n_covar),
-    # pop_log_net_rate_coef_sd = rep(0.2, stan_data$n_covar),
-    pop_log_net_rate_coef_mean = with(coef_elicited_priors, mean * if_else(fct_match(effect_direction, "worsens"), 1, -1)),
-    pop_log_net_rate_coef_sd = coef_elicited_priors$sd,
-    # Covariate effect priors for decrease prop logis
-    # pop_decrease_prop_logis_coef_mean = rep(0, stan_data$n_covar),
-    # pop_decrease_prop_logis_coef_sd = rep(0.2, stan_data$n_covar),
-    pop_decrease_prop_logis_coef_mean = with(coef_elicited_priors, mean * if_else(fct_match(effect_direction, "worsens"), -1, 1)),
-    pop_decrease_prop_logis_coef_sd = coef_elicited_priors$sd,
 
-    trial_log_net_rate_coef_sd_sd = rep(0.05, stan_data$n_covar),
-    
+    rate_corr_param = 2.0,
+
+    # Initial state proportions
+    pop_decrease_prop_logis_mean = -1.0,
+    pop_decrease_prop_logis_sd   = 1.5,
+    patient_decrease_prop_logis_sd_sd = 1.0,
+    trial_decrease_prop_logis_sd_sd   = 1.5,
+
+    # Baseline hazard GP
+    log_lambda_gp_pop_intercept_mean = array(-4.5),
+    log_lambda_gp_pop_intercept_sd   = array(0.5),
+    log_lambda_gp_pop_alpha_sd       = array(0.4),
+    log_lambda_gp_pop_rho_alpha      = array(8.0),
+    log_lambda_gp_pop_rho_beta       = array(12.0),
+    log_lambda_gp_trial_alpha_sd     = array(0.25),
+    log_lambda_gp_trial_rho_alpha    = array(5.0),
+    log_lambda_gp_trial_rho_beta     = array(7.0),
+    log_lambda_gp_trial_intercept_sd_sd = array(0.3),
+
+    # Covariate effects (fraction & initial state proportion)
+    pop_decrease_frac_logit_coef_mean = with(coef_elicited_priors, coef_mean * 0),
+    pop_decrease_frac_logit_coef_sd   = coef_elicited_priors$coef_sd,
+    pop_decrease_prop_logis_coef_mean = with(coef_elicited_priors, coef_mean * 0),
+    pop_decrease_prop_logis_coef_sd = coef_elicited_priors$coef_sd,
+    trial_decrease_frac_logit_coef_sd_sd = rep(0.05, stan_data$n_covar),
+  # Patient-level per-covariate SD hyper-hyperprior (kept tighter than trial to discourage overfitting)
+    patient_decrease_frac_logit_coef_sd_sd = rep(0.03, stan_data$n_covar),
+
     log_lod_sd = 0.2
   )
 }    
