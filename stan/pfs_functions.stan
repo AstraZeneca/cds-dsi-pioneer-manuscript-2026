@@ -4,9 +4,8 @@
  *
  * @param arr Array to search (e.g., RECIST codes)
  * @param value Value or array of values to search for (can be int or array[] int)
- * @param n_train_patient_visits Number of observed visits (excluding screening)
- * @param curr_visits Array of observed visit weeks (length n_train_patient_visits)
- * @param forecast_time Array of forecast visit weeks (length >= pfs_idx - n_train_patient_visits)
+ * @param curr_visits Array of observed (treatment) visit weeks (screening removed)
+ * @param forecast_time Array of forecast visit weeks (length >= pfs_idx - size(curr_visits))
  * @param max_all_t Value to use if censored (optional, default 0)
  * @param ... (optional) start_idx, min_run_length, etc. (passed to find_first)
  * @return The week corresponding to the first match, or max_all_t if not found
@@ -16,11 +15,11 @@ tuple(int, int) find_first_week(
   array[] int arr,
   array[] int values,
   int min_run_length,
-  int n_screening_visits,
   array[] int curr_visits,
   array[] int forecast_time,
   int max_all_t
 ) {
+  // Convention B: arr and curr_visits exclude screening visits; index maps directly.
   int idx = find_first(arr, values, min_run_length);
   int week;
   int right_censored;
@@ -28,31 +27,49 @@ tuple(int, int) find_first_week(
     week = max_all_t;
     right_censored = 1;
   } else {
-    week = map_idx_to_week(idx + n_screening_visits, curr_visits, forecast_time, max_all_t);
+    week = map_idx_to_week(idx, curr_visits, forecast_time, max_all_t);
     right_censored = 0;
   }
   return (week, right_censored);
 }
+
+tuple(int, int) find_first_forecast_week(
+  array[] int arr,
+  array[] int values,
+  int min_run_length,
+  array[] int forecast_time,
+  int max_all_t
+) {
+  // Only forecast visits (no observed visits supplied)
+  return find_first_week(arr, values, min_run_length, zeros_int_array(0), forecast_time, max_all_t);
+}
+
 /**
- * Map an index (possibly after adding screening visits) to the actual week.
- * If the index is within the observed visits, use curr_visits; otherwise, use forecast_time.
+ * Map a (treatment+forecast) visit index to an actual week.
  *
- * @param idx Index (1-based) after adding screening visits
- * @param curr_visits Array of observed visit weeks
- * @param forecast_time Array of forecast visit weeks (length >= idx - size(curr_visits))
- * @param max_all_t Value to use if censored (optional, default 0)
- * @return The week corresponding to the index, or max_all_t if censored (if idx == 0)
+ * Convention: forecast_time[1] is the FIRST future assessment AFTER the last observed
+ * treatment visit (i.e. we do NOT duplicate the last observed week). If the calling
+ * code still provides forecast_time that starts with the last observed week, then
+ * leaving the old behavior would timestamp a forecast-only event at the last observed
+ * week. To avoid double-counting / anchoring progression at the final observed week,
+ * we skip that duplicated anchor by shifting the forecast indexing by +1.
+ *
+ * If you ensure forecast_time already omits the anchor week, set SKIP_FORECAST_ANCHOR=0
+ * (hardcoded below) or remove the +1 shift.
+ *
+ * @param idx 1-based index into concatenated treatment (curr_visits) then forecast sequence.
+ * @param curr_visits Observed treatment visit weeks (screening removed).
+ * @param forecast_time Future assessment weeks (may currently include anchor as first element).
+ * @param max_all_t Censoring sentinel.
  */
 int map_idx_to_week(int idx, array[] int curr_visits, array[] int forecast_time, int max_all_t) {
-  int n_train_patient_visits = size(curr_visits);
-  if (idx == 0) {
-    return max_all_t;
-  }
-  if (idx <= n_train_patient_visits) {
-    return curr_visits[idx];
-  } else {
-    return forecast_time[idx - n_train_patient_visits];
-  }
+  int n_obs = size(curr_visits);
+  if (idx == 0) return max_all_t;
+  if (idx <= n_obs) return curr_visits[idx];
+  // Forecast_time now starts strictly AFTER last observed visit, so direct offset (idx - n_obs)
+  int forecast_idx = idx - n_obs;
+  if (forecast_idx < 1 || forecast_idx > size(forecast_time)) return max_all_t; // defensive
+  return forecast_time[forecast_idx];
 }
 
 /**
