@@ -121,7 +121,7 @@ plot_crcr_covar_coef <- function(res_data) {
   res_data |> 
     filter(fct_match(.variable, "crcr_covar_trial_coef")) |> 
     select(!.value) |> 
-    pivot_wider(names_from = k, values_from = .exp_value) |> 
+    pivot_wider(names_from = k, values_from = .rs_value) |> 
     mutate(tumor = str_detect(covar, "tumor sizes"), hazard_ratio = Response / `Non-response`) |> 
     ggplot(aes(y = covar)) +
     stat_pointinterval(aes(xdist = hazard_ratio, color = fit_type), point_size = 1, position = "dodge", .width = c(0.5, 0.8)) +
@@ -136,7 +136,7 @@ plot_pfs_covar_coef <- function(res_data) {
   res_data |> 
     filter(fct_match(.variable, "covar_trial_coef")) |> 
     ggplot(aes(y = covar)) +
-    stat_pointinterval(aes(xdist = .exp_value, color = fit_type), point_size = 1, position = "dodge", .width = c(0.5, 0.8)) +
+    stat_pointinterval(aes(xdist = .rs_value, color = fit_type), point_size = 1, position = "dodge", .width = c(0.5, 0.8)) +
     geom_vline(xintercept = 1, linetype = "dotted") +
     labs(x = "Exponential of Parameter",  y = "Parameter", caption = "Showing the posterior median, 50% CI, and 80% CI.") +
     theme(legend.position = "bottom", strip.text.y = element_blank()) +
@@ -516,7 +516,7 @@ get_all_pfs_crcr_lambda_trial_intercept <- function(res) {
 
 get_crcr_pfs_pred_param <- function(res, stan_data) {
   gather_rvars(res, covar_trial_coef[trial, m], covar_effect[trial, m], tumor_stim_pop_coef[trial, m]) |> 
-    mutate(.exp_value = exp(.value)) |> 
+    mutate(.rs_value = exp(.value)) |> 
     name_coef_indices(m, trial, stan_data)
 }
 
