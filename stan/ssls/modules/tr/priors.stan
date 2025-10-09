@@ -15,12 +15,10 @@ tr_raw_patient_intercept ~ std_normal();
 
 if (n_covar > 0 && enable_trial_cov_tr) {
 	tr_sd_trial_slope ~ normal(0, tr_sd_trial_slope_sd);
+	to_vector(tr_raw_trial_slope) ~ std_normal();
 }
-
-to_vector(tr_raw_trial_slope) ~ std_normal();
 
 if (n_covar > 0 && enable_patient_cov_tr) {
 	tr_sd_patient_slope ~ normal(0, tr_sd_patient_slope_sd);
+	to_vector(tr_raw_patient_slope) ~ std_normal();
 }
-
-to_vector(tr_raw_patient_slope) ~ std_normal();
