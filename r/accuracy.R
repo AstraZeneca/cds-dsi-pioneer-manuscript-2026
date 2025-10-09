@@ -233,7 +233,7 @@ lfo <- function(
       .,
       iter_warmup = iter_warmup, iter_sampling = iter_sampling, parallel_chains = parallel_chains, adapt_delta = adapt_delta,
       init = initializer,
-      output_dir = file.path(output_path, "fit"), output_basename = str_glue("{basename}-{refit_n}"), save_profiles = FALSE,
+      output_dir = file.path(output_path, "fit", str_glue("{basename}-{refit_n}")), save_profiles = FALSE,
       timestamp = output_timestamp, 
       ...
     ) 
