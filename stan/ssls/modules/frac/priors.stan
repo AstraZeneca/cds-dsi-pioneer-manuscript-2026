@@ -17,12 +17,12 @@ frac_sd_patient_intercept ~ normal(0, frac_sd_patient_intercept_sd);
 frac_raw_trial_intercept ~ std_normal();
 frac_raw_patient_intercept ~ std_normal();
 
-if (enable_trial_cov_frac) {
+if (n_covar > 0 && enable_trial_cov_frac) {
   frac_sd_trial_slope ~ normal(0, frac_sd_trial_slope_sd);
+  to_vector(frac_raw_trial_slope) ~ std_normal();
 }
-to_vector(frac_raw_trial_slope) ~ std_normal();
 
-if (enable_patient_cov_frac) {
+if (n_covar > 0 && enable_patient_cov_frac) {
   frac_sd_patient_slope ~ normal(0, frac_sd_patient_slope_sd);
+  to_vector(frac_raw_patient_slope) ~ std_normal();
 }
-to_vector(frac_raw_patient_slope) ~ std_normal();
