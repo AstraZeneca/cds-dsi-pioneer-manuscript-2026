@@ -29,5 +29,10 @@ array[n_patients] int<lower = 1> ub_pfs_p1; for (i in 1:n_patients) ub_pfs_p1[i]
 real log_lod = log(0.1);
 int CR = 1; int PR = 2; int SD = 3; int PD = 4;
 int NT_CR = 1; int NT_STABLE = 2; int NT_PD = 3;
-matrix[n_patients, n_covar] Q_covar_design_matrix = qr_thin_Q(covar_design_matrix) * sqrt(n_patients - 1);
-matrix[n_covar, n_covar] R_covar_design_matrix = qr_thin_R(covar_design_matrix) / sqrt(n_patients - 1);
+matrix[n_patients, n_covar] Q_covar_design_matrix;
+matrix[n_covar, n_covar] R_covar_design_matrix;
+
+if (n_covar > 0) {
+  Q_covar_design_matrix = qr_thin_Q(covar_design_matrix) * sqrt(n_patients - 1);
+  R_covar_design_matrix = qr_thin_R(covar_design_matrix) / sqrt(n_patients - 1);
+}
