@@ -31,30 +31,30 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     tr_loc_pop_sd   = tr_loc_pop_sd,
     tr_sd_trial_intercept_sd   = 0.6,  # formerly trial_log_total_rate_sd_sd
     tr_sd_patient_intercept_sd = 0.5,  # formerly patient_log_total_rate_sd_sd
-    tr_coef_qr_pop_mean = rep(0, stan_data$n_covar),
-    tr_coef_qr_pop_sd   = rep(1, stan_data$n_covar),
-    tr_sd_trial_slope_sd   = rep(0.15, stan_data$n_covar),
-    tr_sd_patient_slope_sd = rep(0.10, stan_data$n_covar),
+    tr_coef_qr_pop_mean = as.array(rep(0, stan_data$n_covar)),
+    tr_coef_qr_pop_sd   = as.array(rep(1, stan_data$n_covar)),
+    tr_sd_trial_slope_sd   = as.array(rep(0.15, stan_data$n_covar)),
+    tr_sd_patient_slope_sd = as.array(rep(0.10, stan_data$n_covar)),
 
     # Fraction module hyperparams
     frac_logit_loc_pop_mean = frac_logit_loc_pop_mean,
     frac_logit_loc_pop_sd   = frac_logit_loc_pop_sd,
     frac_sd_trial_intercept_sd   = 0.3,  # formerly patient_decrease_frac_logit_sd_sd reused
     frac_sd_patient_intercept_sd = 0.3,
-    frac_coef_qr_pop_mean = coef_elicited_priors$coef_mean,
-    frac_coef_qr_pop_sd   = coef_elicited_priors$coef_sd,
-    frac_sd_trial_slope_sd   = rep(0.05, stan_data$n_covar),
-    frac_sd_patient_slope_sd = rep(0.03, stan_data$n_covar),
+    frac_coef_qr_pop_mean = as.array(coef_elicited_priors$coef_mean),
+    frac_coef_qr_pop_sd   = as.array(coef_elicited_priors$coef_sd),
+    frac_sd_trial_slope_sd   = as.array(rep(0.05, stan_data$n_covar)),
+    frac_sd_patient_slope_sd = as.array(rep(0.03, stan_data$n_covar)),
 
     # Initial state proportion module hyperparams
     init_logit_loc_pop_mean = init_logit_loc_pop_mean,
     init_logit_loc_pop_sd   = init_logit_loc_pop_sd,
     init_sd_trial_intercept_sd   = 1.5, # formerly trial_decrease_prop_logis_sd_sd
     init_sd_patient_intercept_sd = 1.0, # formerly patient_decrease_prop_logis_sd_sd
-    init_coef_qr_pop_mean = coef_elicited_priors$coef_mean,
-    init_coef_qr_pop_sd   = coef_elicited_priors$coef_sd,
-    init_sd_trial_slope_sd   = rep(0.10, stan_data$n_covar),
-    init_sd_patient_slope_sd = rep(0.08, stan_data$n_covar),
+    init_coef_qr_pop_mean = as.array(coef_elicited_priors$coef_mean),
+    init_coef_qr_pop_sd   = as.array(coef_elicited_priors$coef_sd),
+    init_sd_trial_slope_sd   = as.array(rep(0.10, stan_data$n_covar)),
+    init_sd_patient_slope_sd = as.array(rep(0.08, stan_data$n_covar)),
 
     # Growth lag
     growth_lag_mean = 2.7,
@@ -64,7 +64,6 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
 
     rate_corr_param = 2.0,
 
-    # Baseline hazard GP (unchanged)
     log_lambda_gp_pop_intercept_mean = array(-4.5),
     log_lambda_gp_pop_intercept_sd   = array(0.5),
     log_lambda_gp_pop_alpha_sd       = array(0.4),
