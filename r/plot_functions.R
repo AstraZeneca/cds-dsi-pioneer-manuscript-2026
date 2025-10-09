@@ -181,7 +181,7 @@ plot_surv_ppc <- function(ppc_data, surv_interval_col, ic_col, rc_col, rep_surv_
     NULL
 }
 
-plot_km <- function(res_data, obs_km_data, km_est, analysis_data = NULL, group = fit_type, alpha_group = fit_type, color_group = fit_type, linewidth = 0, ...) {
+base_plot_km <- function(res_data, obs_km_data, km_est, analysis_data = NULL, group = fit_type, alpha_group = fit_type, color_group = fit_type, linewidth = 0, ...) {
   pobj <- ggplot(res_data, aes(x = t - 1)) +
     stat_lineribbon(
       aes(
@@ -771,10 +771,10 @@ plot_confusion_matrix <- function(data, recorded, calculated, p, n = NULL) {
     NULL
 }
 
-plot_ssls_coef <- function(res_data, name_var = n) {
+plot_ssls_coef <- function(res_data, name_var = n, ...) {
   res_data |> 
     ggplot(aes(y = {{ name_var }})) +
-    stat_pointinterval(aes(xdist = .value, color = fit_type), point_size = 1, position = "dodge", .width = c(0.5, 0.8)) +
+    stat_pointinterval(aes(xdist = .value, ...), point_size = 1, position = "dodge", .width = c(0.5, 0.8)) +
     geom_vline(xintercept = 0)
 }
 
