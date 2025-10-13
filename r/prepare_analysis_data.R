@@ -174,7 +174,7 @@ base_prepare_pfs_stan_data <- function(analysis_data, ..., pfs_var = pfs) {
 #'
 identify_incomplete_cases <- function(analysis_data, covar_formula) {
   # Handle NULL formula (no covariates case)
-  if (is.null(covar_formula)) {
+  if (is_null(covar_formula)) {
     return(integer(0))
   }
   
