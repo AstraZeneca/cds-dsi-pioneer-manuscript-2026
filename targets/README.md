@@ -60,7 +60,7 @@ The second `tar_map()` creates targets for different covariate configurations:
 ```r
 tar_map(
   tribble(
-    ~covar_group,  ~covar_group_formula,  ~limited, ~hist, 
+    ~model,  ~model_formula,  ~limited, ~hist, 
     "ctdna",       covar_formula,         TRUE,     TRUE,
     "no_ctdna",    covar_formula_no_ctdna, TRUE,    TRUE,
     "ctdna_only",  covar_formula_ctdna_only, TRUE,  TRUE,
@@ -68,7 +68,7 @@ tar_map(
     "no_covar",    NULL,                   TRUE,     TRUE,
     "no_hist",     covar_formula,          TRUE,     FALSE,
   ),
-  names = "covar_group",
+  names = "model",
   ...
 )
 ```
