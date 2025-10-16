@@ -1,4 +1,3 @@
-// _other_events_transformed_data.inc
 // Recreated from tumor/other_events_transformed_data.stan for modular ssls build.
 // Provides non-target PFS event timing and right-censor indicators restricted
 // to the full patient set (legacy logic preserved).
