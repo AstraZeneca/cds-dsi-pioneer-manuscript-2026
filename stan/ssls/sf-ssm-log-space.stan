@@ -25,15 +25,15 @@ data {
 transformed data {
   #include "../base_transformed_data.stan"
   #include "../tumor/tumor_transformed_data.stan"
-  #include "_sf_transformed_data.inc"
-  #include "_other_events_transformed_data.inc"
-  #include "_mature_cutoffs_transformed_data.inc"
+  #include "_sf_transformed_data.stan"
+  #include "_other_events_transformed_data.stan"
+  #include "_mature_cutoffs_transformed_data.stan"
   #include "legacy/sf-ssls-outcomes_info_transformed_data.stan"
   #include "sf-checks.stan"
 }
 
 parameters {
-  #include "_other_events_parameters.inc"
+  #include "_other_events_parameters.stan"
   #include "modules/tr/parameters.stan"
   #include "modules/frac/parameters.stan"
   #include "modules/init/parameters.stan"
@@ -41,7 +41,7 @@ parameters {
 }
 
 transformed parameters {
-  #include "_other_events_transformed_parameters.inc"
+  #include "_other_events_transformed_parameters.stan"
   #include "modules/tr/transformed_parameters.stan"
   #include "modules/frac/transformed_parameters.stan"
   #include "modules/init/transformed_parameters.stan"
@@ -58,7 +58,7 @@ transformed parameters {
 }
 
 model {
-  #include "_other_events_priors.inc"
+  #include "_other_events_priors.stan"
   #include "modules/tr/priors.stan"
   #include "modules/frac/priors.stan"
   #include "modules/init/priors.stan"
