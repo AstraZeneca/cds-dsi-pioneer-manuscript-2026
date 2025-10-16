@@ -31,7 +31,7 @@ transformed data {
   
   #include "../base_transformed_data.stan"
   #include "../tumor/tumor_transformed_data.stan"
-  #include "_sf_transformed_data.inc"
+  #include "_sf_transformed_data.stan"
 //   #include "other_events_transformed_data.stan"
 
   // --- LFO CV specific (visit-based) ---
