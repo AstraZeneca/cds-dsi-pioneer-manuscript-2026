@@ -564,6 +564,15 @@ array[] int get_level2level_idx(array[] int hi_level, array[] int low_level) {
     }
   }
   
+  // Check for any unmatched values
+  for (i in 1:size_low) {
+    if (idx[i] == 0) {
+      reject("get_level2level_idx: Value ", low_level[i], " at position ", i, 
+             " in low_level not found in hi_level. ",
+             "low_level: ", low_level, ", hi_level: ", hi_level);
+    }
+  }
+  
   return idx;
 }
 
