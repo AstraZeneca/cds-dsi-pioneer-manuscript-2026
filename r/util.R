@@ -176,16 +176,16 @@ build_model <- function(model_file, include_files = NULL, dir = NULL, compile_co
   include_files
   
   # Set MAKEFLAGS for parallel compilation
-  withr::local_envvar(MAKEFLAGS = paste0("-j", compile_cores))
+  withr::local_envvar(MAKEFLAGS = str_c("-j", compile_cores))
   
   model <- cmdstan_model(
     model_file, 
     cpp_options = lst(
       stan_threads = TRUE,
-      "CXXFLAGS += -O3",           # Maximum C++ optimization
-      "CXXFLAGS += -march=native"   # Optimize for local CPU architecture
+      "CXXFLAGS += -O3", 
+      "CXXFLAGS += - -rch=native"   # Optimize for local CPU architecture
     ),
-    stanc_options = list("O1"),      # Stan compiler optimizations
+    # stanc_options = list("O1"),      # Stan compiler optimizations
     dir = dir, 
     ...
   )
