@@ -202,7 +202,8 @@ tuple(matrix, matrix) sf_log_space_trajectory_ncp(
   real decrease_rate, real growth_rate, real growth_lag, real transition_rate,
   matrix process_noise
 ) {
-  return sf_log_space_trajectory_ncp(x0, times, decrease_rate, growth_rate, growth_lag, transition_rate, process_noise, 0); 
+  // Use vectorized version for better performance
+  return sf_log_space_trajectory_ncp_vectorized(x0, times, decrease_rate, growth_rate, growth_lag, transition_rate, process_noise, 0); 
 }
 
 tuple(matrix, matrix) sf_log_space_trajectory_ncp(
@@ -229,6 +230,59 @@ tuple(matrix, matrix) sf_log_space_trajectory_ncp(
     (expected_x[t], x[t]) = sf_log_space_transition_ncp(x[t - 1], times[t], times[t - 1], decrease_rate, time_varying_factor[t] * growth_rate, process_noise[t - 1]);
     
     if (debug) {
+      print("log x[", t, "] = (", expected_x[t], ", ", x[t], "), x[", t, "] = (", exp(expected_x[t]), ", ", exp(x[t]), ")");
+    }
+  }
+  
+  return (expected_x, x);
+}
+
+/**
+ * Vectorized version using cumulative sum instead of sequential loop
+ * Should be mathematically equivalent but faster due to vectorization
+ */
+tuple(matrix, matrix) sf_log_space_trajectory_ncp_vectorized(
+  row_vector x0, array[] real times,
+  real decrease_rate, real growth_rate, real growth_lag, real transition_rate,
+  matrix process_noise, int debug
+) {
+  int T = size(times);
+  int T_m1 = T - 1;
+  
+  if (debug) {
+    print("times = ", times, ", decrease_rate = ", decrease_rate, ", growth_rate = ", growth_rate);
+    print("noise = ", process_noise);
+    print("log x[1] = ", x0);
+  }
+  
+  // Compute patient-specific delta_t (handles sparse visit schedules)
+  vector[T_m1] delta_t = to_vector(times[2:]) - to_vector(times[:T_m1]);
+  
+  // Time-varying growth factors at actual visit times
+  vector[T] time_varying_factor = get_growth_lag_factor(times, growth_lag, transition_rate);
+  
+  // Deterministic increments (without noise)
+  vector[T_m1] decrease_inc_det = -decrease_rate * delta_t;
+  vector[T_m1] growth_inc_det = growth_rate * time_varying_factor[2:] .* delta_t;
+  
+  // Increments with noise
+  vector[T_m1] decrease_inc = decrease_inc_det + process_noise[, 1];
+  vector[T_m1] growth_inc = growth_inc_det + process_noise[, 2];
+  
+  // Expected states (no noise) - vectorized cumulative sum
+  matrix[T, 2] expected_x;
+  expected_x[1] = x0;
+  expected_x[2:, 1] = x0[1] + cumulative_sum(decrease_inc_det);
+  expected_x[2:, 2] = x0[2] + cumulative_sum(growth_inc_det);
+  
+  // Actual states (with noise) - vectorized cumulative sum
+  matrix[T, 2] x;
+  x[1] = x0;
+  x[2:, 1] = x0[1] + cumulative_sum(decrease_inc);
+  x[2:, 2] = x0[2] + cumulative_sum(growth_inc);
+  
+  if (debug) {
+    for (t in 2:T) {
       print("log x[", t, "] = (", expected_x[t], ", ", x[t], "), x[", t, "] = (", exp(expected_x[t]), ", ", exp(x[t]), ")");
     }
   }
@@ -508,9 +562,11 @@ matrix calc_states(
       
       thetas[patient_shard[i], rates_start:rates_end] = [ decrease_rate[i], growth_rate[i], growth_lag[i], growth_transition_rate ]';
     }
-    
-    // Call map_rect to process patients in parallel
-    states = to_matrix(map_rect(calc_patient_states_rect, phi, thetas, rep_array({ delta }, n_shards), x_is), size(t_visits), 2, 0);
+
+    profile("map_rect") {
+      // Call map_rect to process patients in parallel
+      states = to_matrix(map_rect(calc_patient_states_rect, phi, thetas, rep_array({ delta }, n_shards), x_is), size(t_visits), 2, 0);
+    }
   }
 
   return states;  
@@ -590,7 +646,6 @@ vector calc_patient_states_rect(vector phi, vector theta, data array[] real x_r,
   
   // Process each patient in the shard
   for (p in 1:n_patients_in_shard) {
-    // Get patient-specific data positions
     int x_i_patient_start, x_i_patient_end;
     (x_i_patient_start, x_i_patient_end) = get_pos(x_is_patient_pos, p + 2);  // +2 to skip common section and its pos
     
@@ -607,44 +662,57 @@ vector calc_patient_states_rect(vector phi, vector theta, data array[] real x_r,
     int visits_start, visits_end;
     (visits_start, visits_end) = get_offset_pos(x_i_pos, 2, x_i_patient_start - 1);
     array[n_visits] int time_points = x_i[visits_start:visits_end];
-    
-    // Extract theta positions
-    int theta_pos_start, theta_pos_end;
-    (theta_pos_start, theta_pos_end) = get_offset_pos(x_i_pos, 3, x_i_patient_start - 1);
-    array[theta_pos_size + 1] int theta_pos = x_i[theta_pos_start:theta_pos_end];
-    
-    // Extract patient parameters from theta
-    real rho = theta[theta_patient_start];
-    
-    // Process noise std already in phi
-    // Skip the process_sd values in theta (positions 2-3)
-    
-    // Correlation matrix
+
+    real rho;
+
     matrix[2, 2] L_process_corr = rep_matrix(0, 2, 2);
-    L_process_corr[1, 1] = 1.0;
-    L_process_corr[2, 1] = theta[theta_patient_start + 3];
-    L_process_corr[2, 2] = sqrt(1 - square(L_process_corr[2, 1]));
-    
-    // Extract process noise
-    int noise_start, noise_end;
-    (noise_start, noise_end) = get_offset_pos(theta_pos, 4, theta_patient_start - 1);
-    matrix[n_visits_m1, 2] raw_process_noise = to_matrix(theta[noise_start:noise_end], n_visits_m1, 2);
-    
-    // Extract initial states
-    int init_start, init_end;
-    (init_start, init_end) = get_offset_pos(theta_pos, 5, theta_patient_start - 1);
-    row_vector[2] initial_states = theta[init_start:init_end]';
-    
-    // Extract rates
-    int rates_start, rates_end;
-    (rates_start, rates_end) = get_offset_pos(theta_pos, 6, theta_patient_start - 1);
-    vector[4] rates = theta[rates_start:rates_end];
-    
-    real decrease_rate = rates[1];
-    real growth_rate = rates[2];
-    real growth_lag = rates[3];
-    real growth_transition_rate = rates[4];
-    
+
+    matrix[n_visits_m1, 2] raw_process_noise;
+
+    row_vector[2] initial_states;
+    real decrease_rate;
+    real growth_rate;
+    real growth_lag;
+    real growth_transition_rate;
+
+    { 
+      // Extract theta positions
+      int theta_pos_start, theta_pos_end;
+      (theta_pos_start, theta_pos_end) = get_offset_pos(x_i_pos, 3, x_i_patient_start - 1);
+      array[theta_pos_size + 1] int theta_pos = x_i[theta_pos_start:theta_pos_end];
+      
+      // Extract patient parameters from theta
+      rho = theta[theta_patient_start];
+      
+      // Process noise std already in phi
+      // Skip the process_sd values in theta (positions 2-3)
+      
+      // Correlation matrix
+      L_process_corr[1, 1] = 1.0;
+      L_process_corr[2, 1] = theta[theta_patient_start + 3];
+      L_process_corr[2, 2] = sqrt(1 - square(L_process_corr[2, 1]));
+      
+      // Extract process noise
+      int noise_start, noise_end;
+      (noise_start, noise_end) = get_offset_pos(theta_pos, 4, theta_patient_start - 1);
+      raw_process_noise = to_matrix(theta[noise_start:noise_end], n_visits_m1, 2);
+      
+      // Extract initial states
+      int init_start, init_end;
+      (init_start, init_end) = get_offset_pos(theta_pos, 5, theta_patient_start - 1);
+      initial_states = theta[init_start:init_end]';
+      
+      // Extract rates
+      int rates_start, rates_end;
+      (rates_start, rates_end) = get_offset_pos(theta_pos, 6, theta_patient_start - 1);
+      vector[4] rates = theta[rates_start:rates_end];
+      
+      decrease_rate = rates[1];
+      growth_rate = rates[2];
+      growth_lag = rates[3];
+      growth_transition_rate = rates[4];
+    }
+
     // Calculate states for this patient
     matrix[n_visits, 2] expected_states, states;
     

@@ -41,19 +41,11 @@ if (n_covar > 0) {
 // Create cumulative sum indicator matrix for batched state computation
 // ============================================================================
 
-// Find max time across all patients
-int max_patient_time = max(t_patient_visits);
-int min_patient_time = min(t_patient_visits);
-int time_range = max_patient_time - min_patient_time;
-
-// Build cumulative sum indicator matrix [n_pop_unique_visits × time_range]
-// Each row v has 1's from min_time up to pop_unique_visits[v], then 0's
-// This matrix enables: cumsum_states = visit_cumsum_mat * increments'
-matrix[n_pop_unique_visits, time_range] visit_cumsum_mat = rep_matrix(0, n_pop_unique_visits, time_range);
+int max_unique_visit = max(pop_unique_visits) - min(pop_unique_visits) + 1;
+matrix[n_pop_unique_visits, max_unique_visit] visit_cumsum_mat = rep_matrix(0, n_pop_unique_visits, max_unique_visit);
 
 for (v in 1:n_pop_unique_visits) {
-  int t_idx = pop_unique_visits[v] - min_patient_time;  // Convert to 0-indexed
-  if (t_idx > 0) {
-    visit_cumsum_mat[v, 1:t_idx] = ones_row_vector(t_idx);
-  }
+  int shifted_visit = pop_unique_visits[v] - min(pop_unique_visits) + 1;
+
+  visit_cumsum_mat[v, :shifted_visit] = ones_row_vector(shifted_visit);
 }
