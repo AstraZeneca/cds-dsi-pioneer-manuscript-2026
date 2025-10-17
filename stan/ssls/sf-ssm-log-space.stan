@@ -71,6 +71,7 @@ model {
         (visit_start, visit_end) = get_pos(patient_visit_pos, i);
         normalized_sld[visit_start:visit_end] ~ sf_log_space_obs(states[visit_start:visit_end], measure_sd, log_lod - log(sum_tumor_size[visit_start]));
       }
+
       for (s in 1:n_trials) for (k in 1:n_causes) target += sum(get_sub_vector(patient_response_lp[, k], trial_patient_pos, s));
     }
   }
@@ -151,7 +152,7 @@ generated quantities {
   matrix<lower = 0>[n_trials, n_mature_cutoffs_calendar_days] cutoff_trial_median_pfs = rep_matrix(0, n_trials, n_mature_cutoffs_calendar_days);
   matrix<lower = 0>[n_cond_group, n_mature_cutoffs_calendar_days] cutoff_cond_median_pfs = rep_matrix(0, n_cond_group, n_mature_cutoffs_calendar_days);
   
-  {
+  profile("gen_quant") {
     int right_censored_idx = 1;
     
     for (i in 1:n_patients) {
