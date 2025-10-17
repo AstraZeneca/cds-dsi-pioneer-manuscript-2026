@@ -91,7 +91,9 @@ array[] int create_pos(array[] int n_x, int inc) {
   } 
   
   // Verify total size matches expectation
-  assert_equal(pos[n + 1] - 1, sum(n_x) + n * inc);
+  // Cast to int to avoid type mismatch with optimized fma() function
+  int expected_size = sum(n_x) + n * inc;
+  assert_equal(pos[n + 1] - 1, expected_size);
   
   return pos;
 }
