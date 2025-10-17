@@ -175,7 +175,17 @@ build_model <- function(model_file, include_files = NULL, dir = NULL, ...) {
   # Force dependency on include files
   include_files
   
-  model <- cmdstan_model(model_file, cpp_options = lst(stan_threads = TRUE), dir = dir, ...)
+  model <- cmdstan_model(
+    model_file, 
+    cpp_options = lst(
+      stan_threads = TRUE,
+      "CXXFLAGS += -O3",           # Maximum C++ optimization
+      "CXXFLAGS += -march=native"   # Optimize for local CPU architecture
+    ),
+    stanc_options = list("O1"),      # Stan compiler optimizations
+    dir = dir, 
+    ...
+  )
   
   # Track the executable by including its hash in the return value
   exe_path <- model$exe_file()
