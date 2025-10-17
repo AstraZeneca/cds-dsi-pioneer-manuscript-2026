@@ -10,9 +10,12 @@ array[n_patients] int<lower = 0> n_patient_post_treat_visits = zeros_int_array(n
 
 // Population indices ////
 
-int<lower = 0> n_pop_unique_visits = num_unique(t_patient_visits);
-array[n_pop_unique_visits] int pop_unique_visits = unique(t_patient_visits);
+int<lower = 0> n_pop_unique_visits = num_unique(t_patient_visits, 0);
+array[n_pop_unique_visits] int pop_unique_visits = unique(t_patient_visits, 0);
 array[n_pop_unique_visits] int<lower = 1> pop_unique_visits_idx = id2idx(pop_unique_visits); 
+
+print("n_pop_unique_visits = ", n_pop_unique_visits);
+print("pop_unique_visits = ", pop_unique_visits);
 
 int<lower = 0> n_pop_unique_missing_visits = calculate_n_missing_visits(pop_unique_visits, max(pop_unique_visits));
 array[n_pop_unique_missing_visits] int<lower = 1> pop_unique_missing_visits = get_missing_visits(pop_unique_visits, max(pop_unique_visits));
@@ -23,13 +26,15 @@ print("last_predict_visit = ", last_predict_visit);
 
 // Trial indices ////
 
-array[n_trials] int<lower = 0> n_trial_unique_visits = num_unique(t_patient_visits, trial_visit_pos);
+array[n_trials] int<lower = 0> n_trial_unique_visits = num_unique(t_patient_visits, trial_visit_pos, 0);
 array[sum(n_trial_unique_visits)] int trial_unique_visits;
 array[n_trials + 1] int<lower = 1> trial_unique_visits_pos;
-(trial_unique_visits, trial_unique_visits_pos) = unique_by_pos(t_patient_visits, trial_visit_pos);
-array[sum(n_trial_unique_visits)] int<lower = 1> trial_unique_visits_idx = id2idx(trial_unique_visits, trial_unique_visits_pos);
-array[sum(n_trial_unique_visits)] int<lower = 1, upper = n_pop_unique_visits> trial2pop_unique_visit_idx = 
-  get_level2level_idx(pop_unique_visits, trial_unique_visits, trial_unique_visits_pos); 
+(trial_unique_visits, trial_unique_visits_pos) = unique_by_pos(t_patient_visits, trial_visit_pos, 0);
+
+// I don't think the below idx is right
+// array[sum(n_trial_unique_visits)] int<lower = 1> trial_unique_visits_idx = id2idx(trial_unique_visits, trial_unique_visits_pos);
+// array[sum(n_trial_unique_visits)] int<lower = 1, upper = n_pop_unique_visits> trial2pop_unique_visit_idx = 
+//   get_level2level_idx(pop_unique_visits, trial_unique_visits, trial_unique_visits_pos); 
   
 array[n_trials] int<lower = 0> n_trial_unique_missing_visits = calculate_n_missing_visits(trial_unique_visits, trial_unique_visits_pos, max(pop_unique_visits));
 array[n_trials + 1] int<lower = 1> trial_unique_missing_visits_pos = create_pos(n_trial_unique_missing_visits); 
@@ -37,23 +42,19 @@ array[sum(n_trial_unique_missing_visits)] int<lower = 1> trial_unique_missing_vi
  
 // Patient indicies ////
 
-// This part kind of repeats what happens in base_transformed_data.stan but here we're excluding screening
-array[n_patients] int<lower = 0> n_patient_unique_visits = num_unique(t_patient_visits, patient_visit_pos);
-array[sum(n_patient_unique_visits)] int patient_unique_visits;
-array[n_patients + 1] int<lower = 1> patient_unique_visits_pos;
-(patient_unique_visits, patient_unique_visits_pos) = unique_by_pos(t_patient_visits, patient_visit_pos);
-array[sum(n_patient_unique_visits)] int<lower = 1> patient_unique_visits_idx = id2idx(patient_unique_visits, patient_unique_visits_pos);
-array[sum(n_patient_unique_visits)] int<lower = 1, upper = n_pop_unique_visits> patient2pop_unique_visit_idx = 
-  get_level2level_idx(pop_unique_visits, patient_unique_visits, patient_unique_visits_pos); 
-array[sum(n_patient_unique_visits)] int<lower = 1, upper = max(n_trial_unique_visits)> patient2trial_unique_visit_idx = 
-  get_level2level_idx(trial_unique_visits, trial_unique_visits_pos, patient_unique_visits, patient_unique_visits_pos, trial_patient_pos); 
+// Note: t_patient_visits already contains unique visit times per patient (constructed in R with unique()),
+// so we can directly use it without calling unique_by_pos. This includes both screening (<=0) and treatment (>0) visits.
+array[n_patients] int<lower = 0> n_patient_unique_visits = n_patient_visits;
+array[sum(n_patient_visits)] int patient_unique_visits = t_patient_visits;
+array[n_patients + 1] int<lower = 1> patient_unique_visits_pos = patient_visit_pos;
+array[sum(n_patient_visits)] int<lower = 1, upper = n_pop_unique_visits> patient2pop_unique_visit_idx = 
+  get_level2level_idx(pop_unique_visits, t_patient_visits, patient_visit_pos); 
+// array[sum(n_patient_visits)] int<lower = 1, upper = max(n_trial_unique_visits)> patient2trial_unique_visit_idx = 
+//   get_level2level_idx(trial_unique_visits, trial_unique_visits_pos, t_patient_visits, patient_visit_pos, trial_patient_pos); 
   
-array[n_patients] int<lower = 1> patient_max_unique_visits_idx = get_max_pos(patient_unique_visits_idx, patient_unique_visits_pos);
-array[n_patients + 1] int<lower = 1> patient_full_visits_pos = create_pos(patient_max_unique_visits_idx);
-
-array[n_patients] int<lower = 0> n_patient_unique_missing_visits = calculate_n_missing_visits(patient_unique_visits, patient_unique_visits_pos, last_predict_visit);
+array[n_patients] int<lower = 0> n_patient_unique_missing_visits = calculate_n_missing_visits(t_patient_visits, patient_visit_pos, last_predict_visit);
 array[n_patients + 1] int<lower = 1> patient_unique_missing_visits_pos = create_pos(n_patient_unique_missing_visits); 
-array[sum(n_patient_unique_missing_visits)] int<lower = 1> patient_unique_missing_visits = get_missing_visits(patient_unique_visits, patient_unique_visits_pos, last_predict_visit);
+array[sum(n_patient_unique_missing_visits)] int<lower = 1> patient_unique_missing_visits = get_missing_visits(t_patient_visits, patient_visit_pos, last_predict_visit);
 
 array[n_patients] int<lower = 1> patient_last_obs_visit = get_max_pos(t_patient_visits, patient_visit_pos);
 array[n_patients] int<lower = 0, upper = last_predict_visit> n_patient_forecast_visits; 
