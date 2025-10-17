@@ -171,9 +171,12 @@ export_stan_functions <- function(stan_file, includes = NULL) {
   return(model)
 }
 
-build_model <- function(model_file, include_files = NULL, dir = NULL, ...) {
+build_model <- function(model_file, include_files = NULL, dir = NULL, compile_cores = parallel::detectCores(), ...) {
   # Force dependency on include files
   include_files
+  
+  # Set MAKEFLAGS for parallel compilation
+  withr::local_envvar(MAKEFLAGS = paste0("-j", compile_cores))
   
   model <- cmdstan_model(
     model_file, 
