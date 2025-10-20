@@ -97,15 +97,15 @@ generated quantities {
   // Latent states //////////////////////////////////////////
   
   matrix[n_total_visits_m1, 2] obs_patient_process_noise;
-  matrix[n_total_train_forecast_visits, 2] forecast_patient_process_noise;
+  matrix[n_total_forecast_visits, 2] forecast_patient_process_noise;
   
-  matrix[n_total_train_forecast_visits, 2] forecast_patient_states;
+  matrix[n_total_forecast_visits, 2] forecast_patient_states;
   
   vector[sum(n_patient_visits)] mean_patient_log_sld, rep_patient_log_sld;
-  vector[n_total_train_forecast_visits] forecast_mean_patient_log_sld, forecast_patient_log_sld;
+  vector[n_total_forecast_visits] forecast_mean_patient_log_sld, forecast_patient_log_sld;
   
   array[sum(n_patient_visits)] int<lower = CR, upper = PD + 1> rep_recist = rep_array(PD + 1, sum(n_patient_visits));
-  array[n_total_train_forecast_visits] int<lower = CR, upper = PD> forecast_recist;
+  array[n_total_forecast_visits] int<lower = CR, upper = PD> forecast_recist;
    
   // Endpoints (PFS, ORR, Median PFS, PFSn, ...) ////////////
  

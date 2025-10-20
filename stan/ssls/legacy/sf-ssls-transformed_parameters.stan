@@ -11,7 +11,7 @@ if (!pop_growth_lag_param_only) {
   patient_log_growth_lag += patient_log_growth_lag_effect;
 }
 vector[n_patients] patient_tumor_gp_rho = independ_long_process_noise ? zeros_vector(n_patients) : rep_vector(exp(log_pop_tumor_gp_rho), n_patients);  
-matrix[n_total_train_visits, 2] states; 
+matrix[n_total_visits, 2] states; 
 
 vector[n_patients] patient_decrease_rate = exp(patient_log_decrease_rate);
 vector[n_patients] patient_growth_rate = exp(patient_log_growth_rate);
