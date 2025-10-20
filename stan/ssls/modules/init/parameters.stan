@@ -11,7 +11,7 @@ vector[enable_pop_cov_init ? n_covar : 0] init_coef_qr_pop;
 
 // Trial-level random intercept hierarchy
 real<lower=0> init_sd_trial_intercept; // prior scale hyperparam
-vector[enable_trial_intercept_init ? n_train_trials : 0] init_raw_trial_intercept; // std normal draws
+vector[enable_trial_intercept_init ? n_trials : 0] init_raw_trial_intercept; // std normal draws
 
 // Patient-level random intercept hierarchy
 real<lower=0> init_sd_patient_intercept;
@@ -19,7 +19,7 @@ vector[enable_patient_intercept_init ? n_patients : 0] init_raw_patient_intercep
 
 // Trial-level covariate slope deviations (originally on QR scale)
 vector<lower=0>[enable_trial_cov_init ? n_covar : 0] init_sd_trial_slope;
-matrix[enable_trial_cov_init ? n_train_trials : 0, enable_trial_cov_init ? n_covar : 0] init_raw_trial_slope;
+matrix[enable_trial_cov_init ? n_trials : 0, enable_trial_cov_init ? n_covar : 0] init_raw_trial_slope;
 
 // Patient-level covariate slope deviations
 vector<lower=0>[enable_patient_cov_init ? n_covar : 0] init_sd_patient_slope;
