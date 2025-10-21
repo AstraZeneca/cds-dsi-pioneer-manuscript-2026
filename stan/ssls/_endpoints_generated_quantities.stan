@@ -30,20 +30,20 @@
    
   // Endpoints (PFS, ORR, Median PFS, PFSn, ...) ////////////
  
-  array[n_patients] int<lower = 0> sample_target_pfs, spop_target_pfs, spop_non_target_pfs, spop_pfs, spop_target_obs_cens_pfs; 
+  array[n_patients] int<lower = 0> sample_target_pfs, spop_target_pfs, spop_target_obs_cens_pfs; // spop_non_target_pfs, spop_pfs,  
   array[n_patients] int<lower = 0, upper = 1> 
-    sample_target_right_censored, spop_target_right_censored, spop_non_target_right_censored, spop_right_censored, spop_target_obs_cens_right_censored; 
+    sample_target_right_censored, spop_target_right_censored, spop_target_obs_cens_right_censored; // spop_non_target_right_censored, spop_right_censored; 
 
   // Forecasting for right censored patients 
-  array[n_right_censored_patients] int<lower = 0> forecast_target_pfs, forecast_non_target_pfs, forecast_pfs; 
+  array[n_right_censored_patients] int<lower = 0> forecast_target_pfs; //, forecast_non_target_pfs, forecast_pfs; 
   array[n_right_censored_patients] int<lower = 0, upper = 1> 
-    forecast_target_right_censored, forecast_non_target_right_censored, forecast_right_censored; 
+    forecast_target_right_censored; //, forecast_non_target_right_censored, forecast_right_censored; 
   
   array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_km_est, // sample_target_km_est, sample_non_target_km_est,
-                                                              spop_target_km_est, spop_non_target_km_est, spop_km_est, spop_target_obs_cens_km_est;
+                                                              spop_target_km_est, spop_target_obs_cens_km_est; // spop_non_target_km_est, spop_km_est, 
 
   array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_km_est, 
-    cond_spop_target_km_est, cond_spop_non_target_km_est, cond_spop_km_est, cond_spop_target_obs_cens_km_est;
+    cond_spop_target_km_est, cond_spop_target_obs_cens_km_est; // cond_spop_non_target_km_est, cond_spop_km_est, 
 
   array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] forecast_target_pfs_n; //, sample_pfs_n; 
   array[n_cond_group] vector<lower = 0, upper = 1>[n_pfs_timepoints] cond_forecast_target_pfs_n; //, cond_sample_pfs_n;
@@ -130,7 +130,7 @@
         );
       }      
       
-      (spop_non_target_pfs[i], spop_non_target_right_censored[i]) = survival_time_rng(log_cond_prob_surv[1, i]);
+    //   (spop_non_target_pfs[i], spop_non_target_right_censored[i]) = survival_time_rng(log_cond_prob_surv[1, i]);
      
       array[n_obs_treat_visits + forecast_size] int full_predict_recist = calculate_target_recist(
         // exp(append_row(rep_patient_log_sld[visit_start:visit_end], 
@@ -163,15 +163,15 @@
           (sample_target_pfs[i], sample_target_right_censored[i]) = 
             find_first_week(curr_recist[(n_patient_screening_visits[i] + 1):], { PD }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
 
-          (forecast_non_target_pfs[right_censored_idx], forecast_non_target_right_censored[right_censored_idx]) = survival_time_rng(
-            log_cond_prob_surv[1, i], pfs[i] + interval_censored[i], right_censored[i], 0
-          );
+        //   (forecast_non_target_pfs[right_censored_idx], forecast_non_target_right_censored[right_censored_idx]) = survival_time_rng(
+        //     log_cond_prob_surv[1, i], pfs[i] + interval_censored[i], right_censored[i], 0
+        //   );
 
           (forecast_target_pfs[right_censored_idx], forecast_target_right_censored[right_censored_idx]) = 
             find_first_forecast_week(forecast_recist[forecast_visit_start:forecast_visit_end], { PD }, 1, forecast_time_wo_anchor, max_all_t);
           
-          forecast_pfs[right_censored_idx] = min(forecast_target_pfs[right_censored_idx], forecast_non_target_pfs[right_censored_idx]);
-          forecast_right_censored[right_censored_idx] = forecast_target_right_censored[right_censored_idx] && forecast_non_target_right_censored[right_censored_idx];
+        //   forecast_pfs[right_censored_idx] = min(forecast_target_pfs[right_censored_idx], forecast_non_target_pfs[right_censored_idx]);
+        //   forecast_right_censored[right_censored_idx] = forecast_target_right_censored[right_censored_idx] && forecast_non_target_right_censored[right_censored_idx];
           
           right_censored_idx += 1;
         } 
@@ -191,9 +191,9 @@
       spop_target_obs_cens_right_censored[i] = right_censored[i]; 
       spop_target_obs_cens_pfs[i] = right_censored[i] ? min(spop_target_pfs[i], pfs[i]) : spop_target_pfs[i];
       
-      spop_pfs[i] = min(spop_non_target_pfs[i] + 1, 
-                                max(0, spop_target_pfs[i])); // BUG a couple of patients end up with negative weeks. We need to figure out why.
-      spop_right_censored[i] = spop_target_right_censored[i] && spop_non_target_right_censored[i]; 
+    //   spop_pfs[i] = min(spop_non_target_pfs[i] + 1, 
+    //                             max(0, spop_target_pfs[i])); // BUG a couple of patients end up with negative weeks. We need to figure out why.
+    //   spop_right_censored[i] = spop_target_right_censored[i] && spop_non_target_right_censored[i]; 
 
       forecast_confirmed_response[i] = 
         !confirmed_response_censored && forecast_confirmed_response_week < sample_target_pfs[i];
@@ -207,17 +207,15 @@
         array[n_curr_uncensored_obs] int curr_uncensored_obs = get_int_sub_array(right_uncensored_patients, trial_right_uncensored_pos, s);
         int n_curr_right_censored = get_pos_size(trial_right_censored_pos, s);
 
-        array[n_curr_uncensored_obs + n_curr_right_censored] int curr_sample_pfs = 
-          get_int_sub_array(sample_target_pfs, trial_patient_pos, s),
-                                                                 curr_sample_right_censored = 
-          get_int_sub_array(sample_target_right_censored, trial_patient_pos, s);
+        array[n_curr_uncensored_obs + n_curr_right_censored] int 
+            curr_sample_pfs = get_int_sub_array(sample_target_pfs, trial_patient_pos, s),
+            curr_sample_right_censored = get_int_sub_array(sample_target_right_censored, trial_patient_pos, s);
 
         sample_km_est[s] = estimate_kaplan_meier(curr_sample_pfs, curr_sample_right_censored, max_all_t).1; 
 
-        array[n_curr_uncensored_obs + n_curr_right_censored] int curr_spop_target_pfs = 
-          get_int_sub_array(spop_target_pfs, trial_patient_pos, s),
-                                                                 curr_spop_target_right_censored = 
-          get_int_sub_array(spop_target_right_censored, trial_patient_pos, s); 
+        array[n_curr_uncensored_obs + n_curr_right_censored] int 
+            curr_spop_target_pfs = get_int_sub_array(spop_target_pfs, trial_patient_pos, s),
+            curr_spop_target_right_censored = get_int_sub_array(spop_target_right_censored, trial_patient_pos, s); 
         
         spop_target_km_est[s] = estimate_kaplan_meier(curr_spop_target_pfs, curr_spop_target_right_censored, max_all_t, 0).1; 
                                                
@@ -225,13 +223,13 @@
                                                get_int_sub_array(spop_target_obs_cens_right_censored, trial_patient_pos, s), 
                                                max_all_t, 0).1; 
                                                
-        spop_non_target_km_est[s] = estimate_kaplan_meier(get_int_sub_array(spop_non_target_pfs, trial_patient_pos, s), 
-                                               get_int_sub_array(spop_non_target_right_censored, trial_patient_pos, s), 
-                                               max_all_t, 0).1; 
+        // spop_non_target_km_est[s] = estimate_kaplan_meier(get_int_sub_array(spop_non_target_pfs, trial_patient_pos, s), 
+        //                                        get_int_sub_array(spop_non_target_right_censored, trial_patient_pos, s), 
+        //                                        max_all_t, 0).1; 
         
-        spop_km_est[s] = estimate_kaplan_meier(get_int_sub_array(spop_pfs, trial_patient_pos, s), 
-                                               get_int_sub_array(spop_right_censored, trial_patient_pos, s), 
-                                               max_all_t, 0).1;
+        // spop_km_est[s] = estimate_kaplan_meier(get_int_sub_array(spop_pfs, trial_patient_pos, s), 
+        //                                        get_int_sub_array(spop_right_censored, trial_patient_pos, s), 
+        //                                        max_all_t, 0).1;
                                                
         trial_median_pfs[s] = km_median(sample_km_est[s]).1;
 
@@ -241,8 +239,8 @@
       } else {
         spop_target_km_est[s] = zeros_vector(max_all_t + 1);
         spop_target_obs_cens_km_est[s] = zeros_vector(max_all_t + 1);
-        spop_non_target_km_est[s] = zeros_vector(max_all_t + 1);
-        spop_km_est[s] = zeros_vector(max_all_t + 1);
+        // spop_non_target_km_est[s] = zeros_vector(max_all_t + 1);
+        // spop_km_est[s] = zeros_vector(max_all_t + 1);
         sample_km_est[s] = zeros_vector(max_all_t + 1);
       }
     } 
@@ -264,13 +262,13 @@
                                              spop_target_obs_cens_right_censored[curr_group_patients],
                                              max_all_t, 0).1; 
                                              
-      cond_spop_non_target_km_est[c] = estimate_kaplan_meier(spop_non_target_pfs[curr_group_patients],
-                                             spop_non_target_right_censored[curr_group_patients],
-                                             max_all_t, 0).1; 
+    //   cond_spop_non_target_km_est[c] = estimate_kaplan_meier(spop_non_target_pfs[curr_group_patients],
+    //                                          spop_non_target_right_censored[curr_group_patients],
+    //                                          max_all_t, 0).1; 
       
-      cond_spop_km_est[c] = estimate_kaplan_meier(spop_pfs[curr_group_patients],
-                                             spop_right_censored[curr_group_patients],
-                                             max_all_t, 0).1; 
+    //   cond_spop_km_est[c] = estimate_kaplan_meier(spop_pfs[curr_group_patients],
+    //                                          spop_right_censored[curr_group_patients],
+    //                                          max_all_t, 0).1; 
 
       cond_median_pfs[c] = km_median(cond_sample_km_est[c]).1;
 
