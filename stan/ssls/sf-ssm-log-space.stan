@@ -27,7 +27,6 @@ transformed data {
   #include "../tumor/tumor_transformed_data.stan"
   #include "_sf_transformed_data.stan"
   #include "_other_events_transformed_data.stan"
-  #include "_mature_cutoffs_transformed_data.stan"
   #include "legacy/sf-ssls-outcomes_info_transformed_data.stan"
   #include "sf-checks.stan"
 }
