@@ -5,6 +5,3 @@ array[n_pfs_timepoints] int<lower = 0> pfs_timepoints; // In months
 int<lower = 0> n_cond_group;
 array[n_cond_group] int<lower = 1> cond_group_size;
 array[sum(cond_group_size)] int <lower = 1, upper = n_patients> cond_group;
-
-int<lower = 0> n_mature_cutoffs_calendar_days;
-array[n_mature_cutoffs_calendar_days] int<lower = 0> mature_cutoffs_calendar_days;
