@@ -96,7 +96,7 @@ get_recist <- function(res, patient_states_data) {
 }
 
 get_subsample_forecast_data <- function(analysis_data, patient_states_data, forecast_extent = 0) {
-  overall_max_t <- max(max(analysis_data$patient_max_t), forecast_extent)
+  overall_max_t <- max(max(analysis_data$patient_max_t) + 1, forecast_extent)
   
   analysis_data |> 
     mutate(
