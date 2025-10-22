@@ -3,10 +3,10 @@
 get_state_patients <- function(analysis_data, sample_size = 12, random = TRUE, by = NULL, cond = TRUE, slicer = if (random) slice_sample else slice_head) {
   analysis_data |> 
     mutate(i = seq(n()), selected = {{ cond }}) |> 
-    select(trial, i, usubjid, visit_data, patient_max_t, selected, pfs, right_censored) |> 
+    select(trial, i, usubjid, visit_data, selected, pfs, right_censored) |> 
     unnest(visit_data) |> 
     mutate(n = seq(n())) |> 
-    nest(visit_data = !c(trial, i, usubjid, patient_max_t, selected, pfs, right_censored)) |> 
+    nest(visit_data = !c(trial, i, usubjid, selected, pfs, right_censored)) |> 
     filter(selected) |> 
     mutate(base_sld = map_dbl(visit_data, \(v) first(v$mmsumdiam))) |> 
     group_by({{ by }}) |> 
@@ -96,7 +96,11 @@ get_recist <- function(res, patient_states_data) {
 }
 
 get_subsample_forecast_data <- function(analysis_data, patient_states_data, forecast_extent = 0) {
-  overall_max_t <- max(max(analysis_data$patient_max_t) + 1, forecast_extent)
+  max_obs_visit <- analysis_data |> 
+    unnest(visit_data) |> 
+    pull(week) |> 
+    max()
+  overall_max_t <- max(max_obs_visit + 1, forecast_extent)
   
   analysis_data |> 
     mutate(
