@@ -102,11 +102,12 @@ get_subsample_forecast_data <- function(analysis_data, patient_states_data, fore
     mutate(
       i = seq(n()), 
       base_sld = map_dbl(visit_data, \(v) first(v$mmsumdiam)),
-      n_forecast_visits = overall_max_t - patient_max_t
+      actual_patient_max_t = map_int(visit_data, \(d) max(d$week)),
+      n_forecast_visits = overall_max_t - actual_patient_max_t 
     ) |> 
     filter(n_forecast_visits > 0) |> 
     rowwise() |> 
-    reframe(trial, i, usubjid, patient_max_t, n_forecast_visits, base_sld, week = seq(patient_max_t + 1, overall_max_t)) |> 
+    reframe(trial, i, usubjid, actual_patient_max_t, patient_max_t, n_forecast_visits, base_sld, week = seq(actual_patient_max_t + 1, overall_max_t)) |> 
     mutate(n = seq(n())) |> 
     semi_join(patient_states_data, by = c("trial", "usubjid"))
 }
