@@ -164,13 +164,8 @@ create_tumor_initializer <- function(stan_data) {
 
 create_tumor_ss_initializer <- function(stan_data) {
   function(chain_id) {
-    # Get training patient range
-    train_patients_pos <- stan_data$train_patients_pos
-    train_patients_end <- stan_data$train_patients_end
-    n_train_patients <- train_patients_end - train_patients_pos + 1
-    
     # Calculate number of visits minus 1 for training patients only
-    n_total_train_visits_m1 <- sum(stan_data$n_patient_visits[train_patients_pos:train_patients_end]) - n_train_patients
+    n_total_train_visits_m1 <- sum(stan_data$n_patient_visits) - n_patients
     
     # Population-level parameters (using new naming convention)
     tr_loc_pop <- rnorm(1, stan_data$tr_loc_pop_mean, stan_data$tr_loc_pop_sd)
@@ -226,20 +221,20 @@ create_tumor_ss_initializer <- function(stan_data) {
     init_vals$frac_sd_patient_intercept <- frac_sd_patient_intercept
 
   if (!stan_data$enable_pop_cov_tr) {
-      init_vals$tr_raw_patient_intercept <- rep(0, n_train_patients)
-      init_vals$frac_raw_patient_intercept <- rep(0, n_train_patients)
+      init_vals$tr_raw_patient_intercept <- rep(0, n_patients)
+      init_vals$frac_raw_patient_intercept <- rep(0, n_patients)
     }
 
   if (!stan_data$enable_pop_cov_init) {
-      init_vals$init_raw_patient_intercept <- rep(0, n_train_patients)
+      init_vals$init_raw_patient_intercept <- rep(0, n_patients)
     }
 
   if (!stan_data$enable_pop_cov_tr) {
-      init_vals$raw_patient_log_growth_lag <- rep(0, n_train_patients)
+      init_vals$raw_patient_log_growth_lag <- rep(0, n_patients)
     }
 
   if (!stan_data$independ_long_process_noise && !stan_data$enable_pop_cov_tr) {
-      init_vals$raw_log_patient_tumor_gp_rho_effect <- rep(0, n_train_patients)
+      init_vals$raw_log_patient_tumor_gp_rho_effect <- rep(0, n_patients)
     }
 
     init_vals$raw_patient_process_noise <- matrix(0, nrow = n_total_train_visits_m1, ncol = 2)
@@ -257,13 +252,8 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
     stringr::str_subset("^\\.", negate = TRUE) |>  
     stringr::str_subset("lp__|divergent__", negate = TRUE)
   
-  # Get training patient range
-  train_patients_pos <- stan_data$train_patients_pos
-  train_patients_end <- stan_data$train_patients_end
-  n_train_patients <- train_patients_end - train_patients_pos + 1
-  
   # Calculate number of visits minus 1 for training patients only
-  n_total_train_visits_m1 <- sum(stan_data$n_patient_visits[train_patients_pos:train_patients_end]) - n_train_patients
+  n_total_train_visits_m1 <- sum(stan_data$n_patient_visits) - n_patients
   
   # Flag for model configuration
   use_cross_process_corr <- !stan_data$independ_cross_process_noise
@@ -339,11 +329,11 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
   
   # Patient-level parameters
   patient_params <- list(
-    tr_raw_patient_intercept = if (!stan_data$enable_pop_cov_tr) n_train_patients,
-    frac_raw_patient_intercept = if (!stan_data$enable_pop_cov_tr) n_train_patients,
-    raw_patient_log_growth_lag = if (!stan_data$enable_pop_cov_tr) n_train_patients,
-    init_raw_patient_intercept = if (!stan_data$enable_pop_cov_init) n_train_patients,
-    raw_log_patient_tumor_gp_rho_effect = if (use_long_process_corr && !stan_data$enable_pop_cov_tr) n_train_patients
+    tr_raw_patient_intercept = if (!stan_data$enable_pop_cov_tr) n_patients,
+    frac_raw_patient_intercept = if (!stan_data$enable_pop_cov_tr) n_patients,
+    raw_patient_log_growth_lag = if (!stan_data$enable_pop_cov_tr) n_patients,
+    init_raw_patient_intercept = if (!stan_data$enable_pop_cov_init) n_patients,
+    raw_log_patient_tumor_gp_rho_effect = if (use_long_process_corr && !stan_data$enable_pop_cov_tr) n_patients
   ) |> compact() 
   
   # Matrix parameters
@@ -413,7 +403,6 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
 create_tumor_ssls_initializer <- function(stan_data) {
   function(chain_id) {
     with(stan_data, {
-      n_train_patients <- train_patients_end - train_patients_pos + 1
       lst(
         tr_sd_trial_intercept = abs(rnorm(1, sd = tr_sd_trial_intercept_sd)),
         tr_raw_trial_intercept = if (enable_trial_intercept_tr) rnorm(n_trials),
@@ -424,11 +413,11 @@ create_tumor_ssls_initializer <- function(stan_data) {
 
         # Patient-level hierarchical standard deviations (new naming)
         tr_sd_patient_intercept = abs(rnorm(1, sd = tr_sd_patient_intercept_sd)),
-        tr_raw_patient_intercept = if (enable_patient_intercept_tr) rnorm(n_train_patients),
+        tr_raw_patient_intercept = if (enable_patient_intercept_tr) rnorm(n_patients),
         frac_sd_patient_intercept = abs(rnorm(1, sd = frac_sd_patient_intercept_sd)),
-        frac_raw_patient_intercept = if (enable_patient_intercept_frac) rnorm(n_train_patients),
+        frac_raw_patient_intercept = if (enable_patient_intercept_frac) rnorm(n_patients),
         init_sd_patient_intercept = abs(rnorm(1, sd = init_sd_patient_intercept_sd)),
-        init_raw_patient_intercept = if (enable_patient_intercept_init) rnorm(n_train_patients),
+        init_raw_patient_intercept = if (enable_patient_intercept_init) rnorm(n_patients),
 
         tr_coef_qr_pop = if (n_covar > 0 && enable_trial_cov_tr) rnorm(n_covar, tr_coef_qr_pop_mean, tr_coef_qr_pop_sd),
         frac_coef_qr_pop = if (n_covar > 0 && enable_trial_cov_frac) rnorm(n_covar, frac_coef_qr_pop_mean, frac_coef_qr_pop_sd),
@@ -443,11 +432,11 @@ create_tumor_ssls_initializer <- function(stan_data) {
 
         # Patient-level slope SDs and raw effects for tr, frac, and init modules
         tr_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_tr) abs(rnorm(n_covar, sd = tr_sd_patient_slope_sd)),
-        tr_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_tr) matrix(rnorm(n_train_patients * n_covar), nrow = n_train_patients, ncol = n_covar),
+        tr_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_tr) matrix(rnorm(n_patients * n_covar), nrow = n_patients, ncol = n_covar),
         frac_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_frac) abs(rnorm(n_covar, sd = frac_sd_patient_slope_sd)),
-        frac_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_frac) matrix(rnorm(n_train_patients * n_covar), nrow = n_train_patients, ncol = n_covar),
+        frac_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_frac) matrix(rnorm(n_patients * n_covar), nrow = n_patients, ncol = n_covar),
         init_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_init) abs(rnorm(n_covar, sd = init_sd_patient_slope_sd)),
-        init_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_init) matrix(rnorm(n_train_patients * n_covar), nrow = n_train_patients, ncol = n_covar),
+        init_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_init) matrix(rnorm(n_patients * n_covar), nrow = n_patients, ncol = n_covar),
       )
     }) |> compact()
   }
