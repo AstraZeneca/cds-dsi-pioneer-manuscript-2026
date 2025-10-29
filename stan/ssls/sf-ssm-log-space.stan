@@ -77,6 +77,22 @@ model {
 }
 
 generated quantities {
+  real pop_log_decrease_frac = log_inv_logit(frac_logit_loc_pop);
+  real pop_log_growth_frac   = log1m_inv_logit(frac_logit_loc_pop);
+  real pop_log_decrease_rate = tr_loc_pop + pop_log_decrease_frac;
+  real pop_log_growth_rate   = tr_loc_pop + pop_log_growth_frac;
+  vector[n_trials] trial_log_total_rate = tr_loc_pop + tr_effect_trial_intercept;
+  vector[n_trials] trial_log_decrease_rate = trial_log_total_rate + pop_log_decrease_frac;
+  vector[n_trials] trial_log_growth_rate   = trial_log_total_rate + pop_log_growth_frac;
+  vector[n_trials] trial_log_growth_rate_residual = trial_log_growth_rate - pop_log_growth_rate;
+  vector[n_patients] patient_log_growth_rate_residual = patient_log_growth_rate - trial_log_growth_rate[patient_trial];
+  vector[n_trials] trial_log_decrease_rate_residual = trial_log_decrease_rate - pop_log_decrease_rate;
+  vector[n_patients] patient_log_decrease_rate_residual = patient_log_decrease_rate - trial_log_decrease_rate[patient_trial];
+
+  vector<lower = 0, upper = 1>[max_all_t] all_growth_factor = get_growth_lag_factor(all_tumor_measure_t, exp(pop_log_growth_lag), exp(pop_log_growth_transition_rate));
+  
+  matrix[max_all_t, 2] all_scaled_process_sd = scale_process_sd(all_tumor_measure_t, pop_process_sd);
+
   #include "_endpoints_generated_quantities.stan"  
   #include "legacy/sf-ssls-accuracy_gen_quant.stan"
 }
