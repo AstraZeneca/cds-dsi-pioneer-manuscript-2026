@@ -11,6 +11,7 @@ functions {
 data {
   #include "../base_data.stan"
   #include "../tumor/base_data.stan"
+  #include "legacy/sf-ssls-outcomes_info.stan"
 
   #include "legacy/sf-ssls-hyperparam.stan"
   #include "modules/tr/hyperparams.stan"
@@ -20,10 +21,10 @@ data {
   #include "modules/frac/flags.stan"
   #include "modules/init/flags.stan"
 
+  #include "_sf-ssls-lfo-data.stan"
+  
   // --- LFO CV specific ---
   int<lower = 0, upper = 1> train_beyond_cutoff;
-  int<lower = 1> n_cutoffs;
-  array[n_cutoffs] int<lower = 1> cutoff_calendar_day;
 } 
 
 transformed data {
@@ -33,6 +34,7 @@ transformed data {
   #include "../tumor/tumor_transformed_data.stan"
   #include "_sf_transformed_data.stan"
 //   #include "other_events_transformed_data.stan"
+  #include "legacy/sf-ssls-outcomes_info_transformed_data.stan"
   #include "_lfo_transformed_data.stan"
 }
 
@@ -114,11 +116,14 @@ generated quantities {
     
       array[n_oos_visits + 1] int forecast_time = get_int_sub_array(t_patient_visits, patient_visit_pos, i)[visit_size:];      
       matrix[n_oos_visits, 2] forecast_patient_states;
-      vector[visit_size] rep_patient_log_sld, mean_rep_patient_log_sld;
-      vector[n_oos_visits] forecast_patient_log_sld, mean_forecast_patient_log_sld;
+      vector[visit_size] rep_patient_log_sld, rep_mean_patient_log_sld;
+      vector[n_oos_visits] forecast_patient_log_sld, forecast_mean_patient_log_sld;
+      matrix[visit_size - 1, 2] obs_patient_process_noise;
 
-      (forecast_patient_states, rep_patient_log_sld, forecast_patient_log_sld) = 
-        generate_patient_states_rng(
+      (forecast_patient_states, rep_patient_log_sld, rep_mean_patient_log_sld,
+       forecast_patient_log_sld, forecast_mean_patient_log_sld,
+       obs_patient_process_noise) = 
+        generate_patient_states_with_means_rng(
           states[visit_start:cutoff_idx],
           forecast_time,
           patient_log_decrease_rate[i], patient_log_growth_rate[i],
@@ -128,13 +133,10 @@ generated quantities {
           measure_sd
         );
 
-      mean_rep_patient_log_sld = calc_log_sld_mean(states[visit_start:cutoff_idx], sum_tumor_size[visit_start]);
-      mean_forecast_patient_log_sld = calc_log_sld_mean(forecast_patient_states, sum_tumor_size[visit_start]);
-
       // calculate_target_recist returns RECIST for treatment visits only (screening dropped),
       // so length(full_predict_recist) == treat_visit_size + n_oos_visits.
       array[treat_visit_size + n_oos_visits] int full_predict_recist = calculate_target_recist(
-        exp(append_row(rep_patient_log_sld, forecast_patient_log_sld)) * 10,
+        exp(append_row(rep_mean_patient_log_sld, forecast_mean_patient_log_sld)) * 10,
         n_patient_screening_visits[i]
       );
 
