@@ -20,6 +20,8 @@ data {
   #include "modules/tr/flags.stan"
   #include "modules/frac/flags.stan"
   #include "modules/init/flags.stan"
+
+  #include "_sf-ssls-lfo-data.stan"
 } 
 
 transformed data {
@@ -28,6 +30,7 @@ transformed data {
   #include "_sf_transformed_data.stan"
 //   #include "other_events_transformed_data.stan"
   #include "legacy/sf-ssls-outcomes_info_transformed_data.stan"
+  #include "_lfo_transformed_data.stan"
 }
 
 parameters {
@@ -47,5 +50,5 @@ transformed parameters {
 }
 
 generated quantities {
-  #include "_endpoints_generated_quantities.stan"  
+  #include "_lfo_endpoints_generated_quantities.stan"  
 }

@@ -829,3 +829,127 @@ int find_first(array[] int all, array[] int what, int n_succ) {
 int find_first(array[] int all, int what) {
   return find_first(all, { what }, 1);
 }
+
+/**
+ * Create a compact array of observed patients and a mapping from original IDs to compact indices.
+ * Patients are "observed" if their mask value is 1.
+ *
+ * @param observed_mask Array of 0/1 values indicating which patients are observed (sized n_patients)
+ * @param n_observed Number of observed patients (pre-computed)
+ * @return Tuple of (observed_patients array, patient_to_compact_idx mapping)
+ *   - observed_patients[1:n_observed]: Original patient IDs for observed patients
+ *   - patient_to_compact_idx[1:n_patients]: Maps original patient ID to compact index (0 if not observed)
+ */
+tuple(array[] int, array[] int) create_compact_patient_mapping(
+  array[] int observed_mask,
+  int n_observed
+) {
+  int n_patients = size(observed_mask);
+  array[n_observed] int observed_patients;
+  array[n_patients] int patient_to_compact_idx = zeros_int_array(n_patients);
+  
+  int obs_idx = 1;
+  for (i in 1:n_patients) {
+    if (observed_mask[i] == 1) {
+      observed_patients[obs_idx] = i;
+      patient_to_compact_idx[i] = obs_idx;
+      obs_idx += 1;
+    }
+  }
+  
+  return (observed_patients, patient_to_compact_idx);
+}
+
+/**
+ * Create trial/group position array for compact (observed-only) patients.
+ * Counts how many observed patients belong to each trial/group.
+ *
+ * @param compact_patients Array of original patient IDs for observed patients
+ * @param patient_group Array mapping original patient ID to group/trial ID (sized n_patients)
+ * @param n_groups Number of groups/trials
+ * @return Position array (sized n_groups + 1) created by create_pos
+ */
+array[] int create_compact_group_pos(
+  array[] int compact_patients,
+  array[] int patient_group,
+  int n_groups
+) {
+  int n_compact = size(compact_patients);
+  array[n_groups] int group_size = zeros_int_array(n_groups);
+  
+  for (obs_idx in 1:n_compact) {
+    int i = compact_patients[obs_idx];
+    int group_id = patient_group[i];
+    group_size[group_id] += 1;
+  }
+  
+  return create_pos(group_size);
+}
+
+/**
+ * Remap a grouped array to use compact patient indices instead of original IDs.
+ * This handles the common pattern of remapping cond_group or similar arrays.
+ *
+ * @param group Array of original patient IDs organized by group (sized total_entries)
+ * @param group_pos Position array for the groups (sized n_groups + 1)
+ * @param observed_mask Mask indicating which patients are observed (sized n_patients)
+ * @param patient_to_compact_idx Mapping from original ID to compact index (sized n_patients)
+ * @param n_groups Number of groups
+ * @return Tuple of (compact_group array, compact_group_pos array)
+ *   - compact_group: Remapped array with compact patient indices
+ *   - compact_group_pos: New position array for compact groups
+ */
+tuple(array[] int, array[] int) remap_group_to_compact(
+  array[] int group,
+  array[] int group_pos,
+  array[] int observed_mask,
+  array[] int patient_to_compact_idx,
+  int n_groups
+) {
+  int total_entries = size(group);
+  
+  // First pass: count how many observed patients are in each group
+  array[n_groups] int compact_group_size = zeros_int_array(n_groups);
+  
+  for (g_idx in 1:total_entries) {
+    int patient_id = group[g_idx];
+    if (observed_mask[patient_id] == 1) {
+      // Determine which group this entry belongs to
+      int group_id = 1;
+      while (group_id <= n_groups && g_idx >= group_pos[group_id + 1]) {
+        group_id += 1;
+      }
+      compact_group_size[group_id] += 1;
+    }
+  }
+  
+  array[n_groups + 1] int compact_group_pos = create_pos(compact_group_size);
+  int n_compact_entries = compact_group_pos[n_groups + 1] - 1;
+  
+  // Handle case when all groups are empty (no observed patients)
+  if (n_compact_entries == 0) {
+    return (rep_array(0, 0), compact_group_pos);  // Return empty array and position array
+  }
+  
+  array[n_compact_entries] int compact_group;
+  
+  // Second pass: populate with compact patient indices
+  array[n_groups] int group_fill_idx = compact_group_pos[1:n_groups];
+  
+  for (g_idx in 1:total_entries) {
+    int patient_id = group[g_idx];
+    if (observed_mask[patient_id] == 1) {
+      // Determine which group this entry belongs to
+      int group_id = 1;
+      while (group_id <= n_groups && g_idx >= group_pos[group_id + 1]) {
+        group_id += 1;
+      }
+      // Store the compact patient index
+      compact_group[group_fill_idx[group_id]] = patient_to_compact_idx[patient_id];
+      group_fill_idx[group_id] += 1;
+    }
+  }
+  
+  return (compact_group, compact_group_pos);
+}
+
