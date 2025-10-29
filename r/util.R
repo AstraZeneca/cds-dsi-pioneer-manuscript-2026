@@ -735,9 +735,25 @@ find_consecutive <- function(vec, x, n = 1) {
 }
 
 find_stan_includes <- function(stan_file, base_dir = NULL) {
-  # Set base directory - use the directory of the main .stan file if not specified
+  # Set base directory - find the stan root directory
+  # Walk up from the main file to find a directory named "stan"
   if (is.null(base_dir)) {
-    base_dir <- dirname(normalizePath(stan_file, mustWork = TRUE))
+    abs_stan_file <- normalizePath(stan_file, mustWork = TRUE)
+    current_dir <- dirname(abs_stan_file)
+    
+    # Walk up to find the "stan" directory
+    while (current_dir != dirname(current_dir)) {  # Not at filesystem root
+      if (basename(current_dir) == "stan") {
+        base_dir <- current_dir
+        break
+      }
+      current_dir <- dirname(current_dir)
+    }
+    
+    # If we didn't find a "stan" directory, fall back to the file's directory
+    if (is.null(base_dir)) {
+      base_dir <- dirname(abs_stan_file)
+    }
   }
   
   # Initialize list to store all found files
@@ -765,13 +781,17 @@ find_stan_includes <- function(stan_file, base_dir = NULL) {
     
     lines <- readLines(abs_path, warn = FALSE)
     
-    # Find #include statements
-    include_pattern <- "^\\s*#include\\s+[\"<]([^\"<>]+)[\">]"
+    # Find #include statements - improved pattern that properly handles quotes/brackets
+    # Pattern captures the path between quotes or angle brackets
+    include_pattern <- '^\\s*#include\\s+[\"<]([^\"<>]+)[\">]'
     include_matches <- grep(include_pattern, lines, value = TRUE)
     
     if (length(include_matches) > 0) {
       # Extract file paths from include statements
-      included_files <- gsub(include_pattern, "\\1", include_matches)
+      # This will capture the path between the opening and closing quote/bracket
+      included_files <- sub('^\\s*#include\\s+[\"<]([^\"<>]+)[\">].*$', '\\1', include_matches)
+      # Trim any whitespace from extracted paths
+      included_files <- trimws(included_files)
       
       for (inc_file in included_files) {
         # Handle relative paths
@@ -796,7 +816,7 @@ find_stan_includes <- function(stan_file, base_dir = NULL) {
           process_file(inc_path)
           
         }, error = function(e) {
-          # If file doesn't exist, try relative to base_dir
+          # If file doesn't exist, try relative to base_dir (stan root)
           alt_path <- file.path(base_dir, inc_file)
           tryCatch({
             alt_path <- normalizePath(alt_path, mustWork = TRUE)
