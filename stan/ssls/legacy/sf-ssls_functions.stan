@@ -1480,6 +1480,8 @@ tuple(
  *   - spop_target_obs_cens_km_est: Observed-censored posterior KM curves
  *   - sample_target_median_pfs: Sample median PFS per trial
  *   - spop_target_median_pfs: Posterior predictive median PFS per trial
+ *   - sample_target_median_pfs_exceeds_max: Indicator if sample median exceeds max_all_t per trial
+ *   - spop_target_median_pfs_exceeds_max: Indicator if spop median exceeds max_all_t per trial
  *   - sample_target_pfs_n: Sample PFS-n per trial
  *   - spop_target_pfs_n: Posterior predictive PFS-n per trial
  */
@@ -1491,6 +1493,8 @@ tuple(
   array[] vector, // spop_target_obs_cens_km_est [n_trials][max_all_t + 1]
   vector,         // sample_target_median_pfs [n_trials]
   vector,         // spop_target_median_pfs [n_trials]
+  array[] int,    // sample_target_median_pfs_exceeds_max [n_trials]
+  array[] int,    // spop_target_median_pfs_exceeds_max [n_trials]
   array[] vector, // sample_target_pfs_n [n_trials][n_pfs_timepoints]
   array[] vector  // spop_target_pfs_n [n_trials][n_pfs_timepoints]
 ) aggregate_trial_metrics(
@@ -1517,6 +1521,8 @@ tuple(
   array[n_trials] vector[max_all_t + 1] spop_target_obs_cens_km_est;
   vector[n_trials] sample_target_median_pfs = zeros_vector(n_trials);
   vector[n_trials] spop_target_median_pfs = zeros_vector(n_trials);
+  array[n_trials] int sample_target_median_pfs_exceeds_max = zeros_int_array( n_trials);
+  array[n_trials] int spop_target_median_pfs_exceeds_max = zeros_int_array(n_trials);
   array[n_trials] vector[n_pfs_timepoints] sample_target_pfs_n;
   array[n_trials] vector[n_pfs_timepoints] spop_target_pfs_n;
   
@@ -1550,9 +1556,9 @@ tuple(
         get_int_sub_array(spop_target_obs_cens_right_censored, trial_patient_pos, s),
         max_all_t, 0).1;
       
-      // Calculate median PFS
-      sample_target_median_pfs[s] = km_median(sample_target_km_est[s]).1;
-      spop_target_median_pfs[s] = km_median(spop_target_km_est[s]).1;
+      // Calculate median PFS and capture exceeds_max indicators
+      (sample_target_median_pfs[s], sample_target_median_pfs_exceeds_max[s]) = km_median(sample_target_km_est[s]);
+      (spop_target_median_pfs[s], spop_target_median_pfs_exceeds_max[s]) = km_median(spop_target_km_est[s]);
       
       // Calculate PFS-n at specified timepoints
       for (n in 1:n_pfs_timepoints) {
@@ -1579,6 +1585,8 @@ tuple(
     spop_target_obs_cens_km_est,
     sample_target_median_pfs,
     spop_target_median_pfs,
+    sample_target_median_pfs_exceeds_max,
+    spop_target_median_pfs_exceeds_max,
     sample_target_pfs_n,
     spop_target_pfs_n
   );
@@ -1611,6 +1619,8 @@ tuple(
  *   - cond_spop_target_obs_cens_km_est: Observed-censored posterior KM curves
  *   - cond_sample_target_median_pfs: Sample median PFS per group
  *   - cond_spop_target_median_pfs: Posterior predictive median PFS per group
+ *   - cond_sample_target_median_pfs_exceeds_max: Indicator if sample median exceeds max_all_t per group
+ *   - cond_spop_target_median_pfs_exceeds_max: Indicator if spop median exceeds max_all_t per group
  *   - cond_sample_target_pfs_n: Sample PFS-n per group
  *   - cond_spop_target_pfs_n: Posterior predictive PFS-n per group
  */
@@ -1622,6 +1632,8 @@ tuple(
   array[] vector, // cond_spop_target_obs_cens_km_est [n_cond_group][max_all_t + 1]
   vector,         // cond_sample_target_median_pfs [n_cond_group]
   vector,         // cond_spop_target_median_pfs [n_cond_group]
+  array[] int,    // cond_sample_target_median_pfs_exceeds_max [n_cond_group]
+  array[] int,    // cond_spop_target_median_pfs_exceeds_max [n_cond_group]
   array[] vector, // cond_sample_target_pfs_n [n_cond_group][n_pfs_timepoints]
   array[] vector  // cond_spop_target_pfs_n [n_cond_group][n_pfs_timepoints]
 ) aggregate_conditional_group_metrics(
@@ -1649,6 +1661,8 @@ tuple(
   array[n_cond_group] vector[max_all_t + 1] cond_spop_target_obs_cens_km_est;
   vector[n_cond_group] cond_sample_target_median_pfs = zeros_vector(n_cond_group);
   vector[n_cond_group] cond_spop_target_median_pfs = zeros_vector(n_cond_group);
+  array[n_cond_group] int cond_sample_target_median_pfs_exceeds_max = zeros_int_array(n_cond_group);
+  array[n_cond_group] int cond_spop_target_median_pfs_exceeds_max = zeros_int_array(n_cond_group);
   array[n_cond_group] vector[n_pfs_timepoints] cond_sample_target_pfs_n;
   array[n_cond_group] vector[n_pfs_timepoints] cond_spop_target_pfs_n;
   
@@ -1678,9 +1692,9 @@ tuple(
         spop_target_obs_cens_right_censored[curr_group_patients],
         max_all_t, 0).1;
       
-      // Calculate median PFS
-      cond_sample_target_median_pfs[c] = km_median(cond_sample_target_km_est[c]).1;
-      cond_spop_target_median_pfs[c] = km_median(cond_spop_target_km_est[c]).1;
+      // Calculate median PFS and capture exceeds_max indicators
+      (cond_sample_target_median_pfs[c], cond_sample_target_median_pfs_exceeds_max[c]) = km_median(cond_sample_target_km_est[c]);
+      (cond_spop_target_median_pfs[c], cond_spop_target_median_pfs_exceeds_max[c]) = km_median(cond_spop_target_km_est[c]);
       
       // Calculate PFS-n at specified timepoints
       for (n in 1:n_pfs_timepoints) {
@@ -1705,6 +1719,8 @@ tuple(
     cond_spop_target_obs_cens_km_est,
     cond_sample_target_median_pfs,
     cond_spop_target_median_pfs,
+    cond_sample_target_median_pfs_exceeds_max,
+    cond_spop_target_median_pfs_exceeds_max,
     cond_sample_target_pfs_n,
     cond_spop_target_pfs_n
   );
