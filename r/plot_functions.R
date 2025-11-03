@@ -7,7 +7,7 @@ prepare_pdl1_and_trial_info <- function(res_data) {
       trial = coalesce(trial, "sclc"),
       across(c(cond_group_name, variable), \(l) coalesce(l, "all")),
       variable = fct_collapse(variable, "all" = c("all", "pdl1"), "pdl1_naive" = c("pdl1_naive", "first_liners")),
-      cond_group_name = fct_collapse(cond_group_name, "All" = c("all", "yes"), "PDL 1 Low" = "low", "PDL1 High" = "hi")
+      cond_group_name = fct_collapse(cond_group_name, "All" = c("all", "yes"), "PDL1 Low" = "low", "PDL1 High" = "hi")
     )
 }
 
