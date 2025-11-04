@@ -25,15 +25,15 @@ data {
 transformed data {
   #include "../base_transformed_data.stan"
   #include "../tumor/tumor_transformed_data.stan"
-  #include "_sf_transformed_data.inc"
-  #include "_other_events_transformed_data.inc"
-  #include "_mature_cutoffs_transformed_data.inc"
+  #include "_sf_transformed_data.stan"
+  #include "_other_events_transformed_data.stan"
+  #include "_mature_cutoffs_transformed_data.stan"
   #include "legacy/sf-ssls-outcomes_info_transformed_data.stan"
   #include "sf-checks.stan"
 }
 
 parameters {
-  #include "_other_events_parameters.inc"
+  #include "_other_events_parameters.stan"
   #include "modules/tr/parameters.stan"
   #include "modules/frac/parameters.stan"
   #include "modules/init/parameters.stan"
@@ -41,7 +41,7 @@ parameters {
 }
 
 transformed parameters {
-  #include "_other_events_transformed_parameters.inc"
+  #include "_other_events_transformed_parameters.stan"
   #include "modules/tr/transformed_parameters.stan"
   #include "modules/frac/transformed_parameters.stan"
   #include "modules/init/transformed_parameters.stan"
@@ -58,7 +58,7 @@ transformed parameters {
 }
 
 model {
-  #include "_other_events_priors.inc"
+  #include "_other_events_priors.stan"
   #include "modules/tr/priors.stan"
   #include "modules/frac/priors.stan"
   #include "modules/init/priors.stan"
@@ -71,6 +71,7 @@ model {
         (visit_start, visit_end) = get_pos(patient_visit_pos, i);
         normalized_sld[visit_start:visit_end] ~ sf_log_space_obs(states[visit_start:visit_end], measure_sd, log_lod - log(sum_tumor_size[visit_start]));
       }
+
       for (s in 1:n_trials) for (k in 1:n_causes) target += sum(get_sub_vector(patient_response_lp[, k], trial_patient_pos, s));
     }
   }
@@ -96,15 +97,15 @@ generated quantities {
   // Latent states //////////////////////////////////////////
   
   matrix[n_total_visits_m1, 2] obs_patient_process_noise;
-  matrix[n_total_train_forecast_visits, 2] forecast_patient_process_noise;
+  matrix[n_total_forecast_visits, 2] forecast_patient_process_noise;
   
-  matrix[n_total_train_forecast_visits, 2] forecast_patient_states;
+  matrix[n_total_forecast_visits, 2] forecast_patient_states;
   
   vector[sum(n_patient_visits)] mean_patient_log_sld, rep_patient_log_sld;
-  vector[n_total_train_forecast_visits] forecast_mean_patient_log_sld, forecast_patient_log_sld;
+  vector[n_total_forecast_visits] forecast_mean_patient_log_sld, forecast_patient_log_sld;
   
   array[sum(n_patient_visits)] int<lower = CR, upper = PD + 1> rep_recist = rep_array(PD + 1, sum(n_patient_visits));
-  array[n_total_train_forecast_visits] int<lower = CR, upper = PD> forecast_recist;
+  array[n_total_forecast_visits] int<lower = CR, upper = PD> forecast_recist;
    
   // Endpoints (PFS, ORR, Median PFS, PFSn, ...) ////////////
  
@@ -151,7 +152,7 @@ generated quantities {
   matrix<lower = 0>[n_trials, n_mature_cutoffs_calendar_days] cutoff_trial_median_pfs = rep_matrix(0, n_trials, n_mature_cutoffs_calendar_days);
   matrix<lower = 0>[n_cond_group, n_mature_cutoffs_calendar_days] cutoff_cond_median_pfs = rep_matrix(0, n_cond_group, n_mature_cutoffs_calendar_days);
   
-  {
+  profile("gen_quant") {
     int right_censored_idx = 1;
     
     for (i in 1:n_patients) {
