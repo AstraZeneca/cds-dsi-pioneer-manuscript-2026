@@ -183,7 +183,7 @@ build_model <- function(model_file, include_files = NULL, dir = NULL, compile_co
     cpp_options = lst(
       stan_threads = TRUE,
       "CXXFLAGS += -O3", 
-      "CXXFLAGS += - -rch=native"   # Optimize for local CPU architecture
+      "CXXFLAGS += --march=native"   # Optimize for local CPU architecture
     ),
     # stanc_options = list("O1"),      # Stan compiler optimizations
     dir = dir, 
