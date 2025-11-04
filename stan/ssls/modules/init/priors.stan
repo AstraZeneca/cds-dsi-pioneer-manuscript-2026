@@ -15,12 +15,12 @@ init_sd_patient_intercept ~ normal(0, init_sd_patient_intercept_sd);
 init_raw_trial_intercept ~ std_normal();
 init_raw_patient_intercept ~ std_normal();
 
-if (enable_trial_cov_init) {
+if (n_covar > 0 && enable_trial_cov_init) {
   init_sd_trial_slope ~ normal(0, init_sd_trial_slope_sd);
+  to_vector(init_raw_trial_slope) ~ std_normal();
 }
-to_vector(init_raw_trial_slope) ~ std_normal();
 
-if (enable_patient_cov_init) {
+if (n_covar > 0 && enable_patient_cov_init) {
   init_sd_patient_slope ~ normal(0, init_sd_patient_slope_sd);
+  to_vector(init_raw_patient_slope) ~ std_normal();
 }
-to_vector(init_raw_patient_slope) ~ std_normal();

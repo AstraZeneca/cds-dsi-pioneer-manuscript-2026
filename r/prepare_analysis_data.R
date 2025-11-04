@@ -1,3 +1,5 @@
+# nolint start: object_usage_linter
+
 #' Calculate progression-free survival from clinical data for each patient 
 #'
 #' @param progress_week Progress week 
@@ -171,6 +173,11 @@ base_prepare_pfs_stan_data <- function(analysis_data, ..., pfs_var = pfs) {
 #' print(incomplete_cases)  # Should return c(3, 4)
 #'
 identify_incomplete_cases <- function(analysis_data, covar_formula) {
+  # Handle NULL formula (no covariates case)
+  if (is_null(covar_formula)) {
+    return(integer(0))
+  }
+  
   select(analysis_data, all_of(all.vars(covar_formula))) |> 
     map_if(is.ordered, \(f) factor(f, ordered = FALSE)) |> 
     complete.cases() |> 
@@ -327,3 +334,5 @@ prepare_confirmed_resp_km <- function(stan_data) {
       )) |> transmute(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event)),
     )
 }
+
+# nolint end: object_usage_linter
