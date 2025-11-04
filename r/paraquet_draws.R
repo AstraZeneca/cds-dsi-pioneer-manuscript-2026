@@ -1,3 +1,4 @@
+# nolint start: object_usage_linter
 
 # Define the parquet_draws class
 new_parquet_draws <- function(path) {
@@ -131,3 +132,5 @@ ess_tail.parquet_draws <- function(x, ...) {
   .get_draws(x, ...) |> 
     posterior::ess_tail()
 }
+
+# nolint end: object_usage_linter
