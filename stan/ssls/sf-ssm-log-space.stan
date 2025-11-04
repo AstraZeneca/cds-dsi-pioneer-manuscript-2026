@@ -140,7 +140,7 @@ generated quantities {
     cutoff_sample_km_est, cutoff_spop_target_km_est; //, cutoff_spop_non_target_km_est, cutoff_spop_km_est, cutoff_spop_target_obs_cens_km_est;
 
   array[n_cond_group, n_mature_cutoffs_calendar_days] vector<lower = 0, upper = 1>[truncated_max_all_t + 1] 
-    cutoff_cond_spop_target_km_est;
+    cutoff_cond_sample_km_est, cutoff_cond_spop_target_km_est;
    
   array[n_trials, n_mature_cutoffs_calendar_days] vector<lower = 0, upper = 1>[n_pfs_timepoints] cutoff_forecast_target_pfs_n;
   array[n_cond_group, n_mature_cutoffs_calendar_days] vector<lower = 0, upper = 1>[n_pfs_timepoints] cutoff_cond_forecast_target_pfs_n;
@@ -436,6 +436,15 @@ generated quantities {
       for (m in 1:n_mature_cutoffs_calendar_days) {
         cutoff_cond_forecast_target_orr[c, m] = mean(cutoff_forecast_confirmed_response[curr_group_patients, m]);
 
+        array[cond_group_size[c]] int curr_truncated_cond_sample_pfs, curr_truncated_cond_sample_right_censored;
+        (curr_truncated_cond_sample_pfs, curr_truncated_cond_sample_right_censored) = truncate_at_max_time(
+          sample_target_pfs[curr_group_patients], sample_target_right_censored[curr_group_patients], 
+          patient_relative_week_at_cutoff[, m] 
+        );
+
+        cutoff_cond_sample_km_est[c, m] = estimate_kaplan_meier(
+          curr_truncated_cond_sample_pfs, curr_truncated_cond_sample_right_censored, truncated_max_all_t).1;
+
         array[cond_group_size[c]] int curr_truncated_cond_spop_target_pfs, curr_truncated_conf_spop_target_right_censored;
         (curr_truncated_cond_spop_target_pfs, curr_truncated_conf_spop_target_right_censored) = truncate_at_max_time(
           spop_target_pfs[curr_group_patients], spop_target_right_censored[curr_group_patients], 
@@ -445,10 +454,10 @@ generated quantities {
         cutoff_cond_spop_target_km_est[c, m] = estimate_kaplan_meier(
           curr_truncated_cond_spop_target_pfs, curr_truncated_conf_spop_target_right_censored, truncated_max_all_t).1;
 
-        cutoff_cond_median_pfs[c, m] = km_median(cutoff_cond_spop_target_km_est[c, m]).1;
+        cutoff_cond_median_pfs[c, m] = km_median(cutoff_cond_sample_km_est[c, m]).1;
 
         for (n in 1:n_pfs_timepoints) {
-          cutoff_cond_forecast_target_pfs_n[c, m, n] = calc_km_pfs_n(cutoff_cond_spop_target_km_est[c, m], months_to_weeks(pfs_timepoints[n])); 
+          cutoff_cond_forecast_target_pfs_n[c, m, n] = calc_km_pfs_n(cutoff_cond_sample_km_est[c, m], months_to_weeks(pfs_timepoints[n])); 
         }
       }
     }
