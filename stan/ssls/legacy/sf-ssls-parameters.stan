@@ -18,7 +18,7 @@ real log_pop_tumor_gp_rho;
 real<lower = 0> log_patient_tumor_gp_rho_sd;
 vector[independ_long_process_noise || pop_rho_param_only ? 0 : n_patients] raw_log_patient_tumor_gp_rho_effect; 
 
-matrix[n_total_train_visits_m1, 2] raw_patient_process_noise;
+matrix[n_total_visits_m1, 2] raw_patient_process_noise;
 
 // real<lower=0> pop_decrease_process_sd;
 // real<lower=0> pop_growth_process_sd;
