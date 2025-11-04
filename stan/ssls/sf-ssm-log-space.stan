@@ -48,9 +48,9 @@ transformed parameters {
 
   matrix[n_patients, n_causes] patient_response_lp = rep_matrix(0, n_patients, n_causes); 
   patient_response_lp[, 1] = calc_pch_loglik(
-    non_target_pfs, 
-    non_target_right_censored, 
-    zeros_int_array(n_patients),
+    other_events_pfs, 
+    other_events_right_censored, 
+    other_events_interval_censored,
     0, 
     log_cond_prob_surv[1]
   );

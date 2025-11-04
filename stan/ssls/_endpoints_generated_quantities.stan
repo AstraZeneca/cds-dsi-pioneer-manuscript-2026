@@ -13,19 +13,19 @@ array[n_total_forecast_visits] int<lower = CR, upper = PD> forecast_recist;
   
 // Endpoints (PFS, ORR, Median PFS, PFSn, ...) ////////////
 
-array[n_patients] int<lower = 0> sample_target_pfs, spop_target_pfs, spop_target_obs_cens_pfs; // spop_non_target_pfs, spop_pfs,  
+array[n_patients] int<lower = 0> sample_target_pfs, spop_target_pfs, spop_target_obs_cens_pfs; // spop_other_events_pfs, spop_pfs,  
 array[n_patients] int<lower = 0, upper = 1> 
-  sample_target_right_censored, spop_target_right_censored, spop_target_obs_cens_right_censored; // spop_non_target_right_censored, spop_right_censored; 
+  sample_target_right_censored, spop_target_right_censored, spop_target_obs_cens_right_censored; // spop_other_events_right_censored, spop_right_censored; 
 
 // Forecasting for right censored patients 
-array[n_right_censored_patients] int<lower = 0> forecast_target_pfs; //, forecast_non_target_pfs, forecast_pfs; 
-array[n_right_censored_patients] int<lower = 0, upper = 1> forecast_target_right_censored; //, forecast_non_target_right_censored, forecast_right_censored; 
+array[n_right_censored_patients] int<lower = 0> forecast_target_pfs; //, forecast_other_events_pfs, forecast_pfs; 
+array[n_right_censored_patients] int<lower = 0, upper = 1> forecast_target_right_censored; //, forecast_other_events_right_censored, forecast_right_censored; 
 
-array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_target_km_est, // sample_non_target_km_est,
-                                                            spop_target_km_est, spop_target_obs_cens_km_est; // spop_non_target_km_est, spop_km_est, 
+array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_target_km_est, // sample_other_events_km_est,
+                                                            spop_target_km_est, spop_target_obs_cens_km_est; // spop_other_events_km_est, spop_km_est, 
 
 array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_target_km_est, 
-  cond_spop_target_km_est, cond_spop_target_obs_cens_km_est; // cond_spop_non_target_km_est, cond_spop_km_est, 
+  cond_spop_target_km_est, cond_spop_target_obs_cens_km_est; // cond_spop_other_events_km_est, cond_spop_km_est, 
 
 array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] sample_target_pfs_n, spop_target_pfs_n; 
 array[n_cond_group] vector<lower = 0, upper = 1>[n_pfs_timepoints] cond_sample_target_pfs_n, cond_spop_target_pfs_n;
