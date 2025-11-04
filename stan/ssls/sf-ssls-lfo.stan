@@ -76,10 +76,10 @@ model {
 
     //   matrix[n_patients, n_causes] patient_response_lp = rep_matrix(0, n_patients, n_causes);
 
-    //   // Non-target progression
+    //   // Other events progression (non-target lesions, new lesions, death, etc.)
     //   patient_response_lp[, 1] = calc_pch_loglik(
-    //     non_target_pfs, 
-    //     non_target_right_censored, 
+    //     other_events_pfs, 
+    //     other_events_right_censored, 
     //     zeros_int_array(n_train_patients),
     //     0, 
     //     log_cond_prob_surv[1],
