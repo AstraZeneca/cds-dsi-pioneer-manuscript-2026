@@ -4,14 +4,14 @@ functions {
   #include "../gp.stan"
   #include "../pfs_functions.stan"
   #include "../lfo.stan"
-  #include "legacy/sf-ssls_functions.stan"
+  #include "_sf_functions.stan"
   #include "../recist.stanfunctions"
 }  
 
 data {
   #include "../base_data.stan"
   #include "../tumor/base_data.stan"
-  #include "legacy/sf-ssls-outcomes_info.stan"
+  #include "_sf_outcomes_info.stan"
 
   #include "legacy/sf-ssls-hyperparam.stan"
   #include "modules/tr/hyperparams.stan"
@@ -34,7 +34,6 @@ transformed data {
   #include "../tumor/tumor_transformed_data.stan"
   #include "_sf_transformed_data.stan"
 //   #include "other_events_transformed_data.stan"
-  #include "legacy/sf-ssls-outcomes_info_transformed_data.stan"
   #include "_lfo_transformed_data.stan"
 }
 

@@ -5,14 +5,14 @@ functions {
   #include "../gp.stan"
   #include "../pfs_functions.stan"
   #include "../lfo.stan"
-  #include "legacy/sf-ssls_functions.stan"
+  #include "_sf_functions.stan"
   #include "../recist.stanfunctions"
 }
 
 data {
   #include "../base_data.stan"
   #include "../tumor/base_data.stan" // tumor-specific base
-  #include "legacy/sf-ssls-outcomes_info.stan"
+  #include "_sf_outcomes_info.stan"
   #include "legacy/sf-ssls-hyperparam.stan"
   #include "modules/tr/hyperparams.stan"
   #include "modules/frac/hyperparams.stan"
@@ -27,8 +27,7 @@ transformed data {
   #include "../tumor/tumor_transformed_data.stan"
   #include "_sf_transformed_data.stan"
   #include "_other_events_transformed_data.stan"
-  #include "legacy/sf-ssls-outcomes_info_transformed_data.stan"
-  #include "sf-checks.stan"
+  #include "_sf-checks.stan"
 }
 
 parameters {
@@ -94,5 +93,5 @@ generated quantities {
   matrix[max_all_t, 2] all_scaled_process_sd = scale_process_sd(all_tumor_measure_t, pop_process_sd);
 
   #include "_endpoints_generated_quantities.stan"  
-  #include "legacy/sf-ssls-accuracy_gen_quant.stan"
+  #include "_sf_accuracy_generated_quantities.stan"
 }
