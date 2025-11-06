@@ -1491,10 +1491,10 @@ tuple(
   array[] vector, // sample_target_km_est [n_trials][max_all_t + 1]
   array[] vector, // spop_target_km_est [n_trials][max_all_t + 1]
   array[] vector, // spop_target_obs_cens_km_est [n_trials][max_all_t + 1]
-  vector,         // sample_target_median_pfs [n_trials]
-  vector,         // spop_target_median_pfs [n_trials]
-  array[] int,    // sample_target_median_pfs_exceeds_max [n_trials]
-  array[] int,    // spop_target_median_pfs_exceeds_max [n_trials]
+  array[] vector, // sample_target_quant_pfs [n_trials][n_pfs_quantiles]
+  array[] vector, // spop_target_quant_pfs [n_trials][n_pfs_quantiles]
+  array[,] int, // sample_target_quant_pfs_exceeds_max [n_trials, n_pfs_quantiles]
+  array[,] int, // spop_target_quant_pfs_exceeds_max [n_trials, n_pfs_quantiles]
   array[] vector, // sample_target_pfs_n [n_trials][n_pfs_timepoints]
   array[] vector  // spop_target_pfs_n [n_trials][n_pfs_timepoints]
 ) aggregate_trial_metrics(
@@ -1508,9 +1508,11 @@ tuple(
   array[] int spop_target_obs_cens_right_censored,
   array[] int trial_patient_pos,
   int max_all_t,
+  vector pfs_quantiles,
   array[] int pfs_timepoints
 ) {
   int n_trials = size(trial_patient_pos) - 1;  // Position arrays have size n_groups + 1
+  int n_pfs_quantiles = num_elements(pfs_quantiles);
   int n_pfs_timepoints = size(pfs_timepoints);
   
   // Initialize output arrays
@@ -1519,10 +1521,10 @@ tuple(
   array[n_trials] vector[max_all_t + 1] sample_target_km_est;
   array[n_trials] vector[max_all_t + 1] spop_target_km_est;
   array[n_trials] vector[max_all_t + 1] spop_target_obs_cens_km_est;
-  vector[n_trials] sample_target_median_pfs = zeros_vector(n_trials);
-  vector[n_trials] spop_target_median_pfs = zeros_vector(n_trials);
-  array[n_trials] int sample_target_median_pfs_exceeds_max = zeros_int_array( n_trials);
-  array[n_trials] int spop_target_median_pfs_exceeds_max = zeros_int_array(n_trials);
+  array[n_trials] vector[n_pfs_quantiles] sample_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+  array[n_trials] vector[n_pfs_quantiles] spop_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+  array[n_trials, n_pfs_quantiles] int sample_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+  array[n_trials, n_pfs_quantiles] int spop_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
   array[n_trials] vector[n_pfs_timepoints] sample_target_pfs_n;
   array[n_trials] vector[n_pfs_timepoints] spop_target_pfs_n;
   
@@ -1556,9 +1558,11 @@ tuple(
         get_int_sub_array(spop_target_obs_cens_right_censored, trial_patient_pos, s),
         max_all_t, 0).1;
       
-      // Calculate median PFS and capture exceeds_max indicators
-      (sample_target_median_pfs[s], sample_target_median_pfs_exceeds_max[s]) = km_median(sample_target_km_est[s]);
-      (spop_target_median_pfs[s], spop_target_median_pfs_exceeds_max[s]) = km_median(spop_target_km_est[s]);
+      // Calculate quantile PFS and capture exceeds_max indicators using vectorized function
+      (sample_target_quant_pfs[s], sample_target_quant_pfs_exceeds_max[s]) = 
+        km_quantiles(sample_target_km_est[s], pfs_quantiles);
+      (spop_target_quant_pfs[s], spop_target_quant_pfs_exceeds_max[s]) = 
+        km_quantiles(spop_target_km_est[s], pfs_quantiles);
       
       // Calculate PFS-n at specified timepoints
       for (n in 1:n_pfs_timepoints) {
@@ -1583,10 +1587,10 @@ tuple(
     sample_target_km_est,
     spop_target_km_est,
     spop_target_obs_cens_km_est,
-    sample_target_median_pfs,
-    spop_target_median_pfs,
-    sample_target_median_pfs_exceeds_max,
-    spop_target_median_pfs_exceeds_max,
+    sample_target_quant_pfs,
+    spop_target_quant_pfs,
+    sample_target_quant_pfs_exceeds_max,
+    spop_target_quant_pfs_exceeds_max,
     sample_target_pfs_n,
     spop_target_pfs_n
   );
@@ -1630,10 +1634,10 @@ tuple(
   array[] vector, // cond_sample_target_km_est [n_cond_group][max_all_t + 1]
   array[] vector, // cond_spop_target_km_est [n_cond_group][max_all_t + 1]
   array[] vector, // cond_spop_target_obs_cens_km_est [n_cond_group][max_all_t + 1]
-  vector,         // cond_sample_target_median_pfs [n_cond_group]
-  vector,         // cond_spop_target_median_pfs [n_cond_group]
-  array[] int,    // cond_sample_target_median_pfs_exceeds_max [n_cond_group]
-  array[] int,    // cond_spop_target_median_pfs_exceeds_max [n_cond_group]
+  array[] vector, // cond_sample_target_quant_pfs [n_cond_group][n_pfs_quantiles]
+  array[] vector, // cond_spop_target_quant_pfs [n_cond_group][n_pfs_quantiles]
+  array[,] int, // cond_sample_target_quant_pfs_exceeds_max [n_cond_group, n_pfs_quantiles]
+  array[,] int, // cond_spop_target_quant_pfs_exceeds_max [n_cond_group, n_pfs_quantiles]
   array[] vector, // cond_sample_target_pfs_n [n_cond_group][n_pfs_timepoints]
   array[] vector  // cond_spop_target_pfs_n [n_cond_group][n_pfs_timepoints]
 ) aggregate_conditional_group_metrics(
@@ -1648,9 +1652,11 @@ tuple(
   array[] int cond_group,
   array[] int cond_group_pos,
   int max_all_t,
+  vector pfs_quantiles,
   array[] int pfs_timepoints
 ) {
   int n_cond_group = size(cond_group_pos) - 1;
+  int n_pfs_quantiles = num_elements(pfs_quantiles);
   int n_pfs_timepoints = size(pfs_timepoints);
   
   // Initialize output arrays
@@ -1659,10 +1665,10 @@ tuple(
   array[n_cond_group] vector[max_all_t + 1] cond_sample_target_km_est;
   array[n_cond_group] vector[max_all_t + 1] cond_spop_target_km_est;
   array[n_cond_group] vector[max_all_t + 1] cond_spop_target_obs_cens_km_est;
-  vector[n_cond_group] cond_sample_target_median_pfs = zeros_vector(n_cond_group);
-  vector[n_cond_group] cond_spop_target_median_pfs = zeros_vector(n_cond_group);
-  array[n_cond_group] int cond_sample_target_median_pfs_exceeds_max = zeros_int_array(n_cond_group);
-  array[n_cond_group] int cond_spop_target_median_pfs_exceeds_max = zeros_int_array(n_cond_group);
+  array[n_cond_group] vector[n_pfs_quantiles] cond_sample_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group] vector[n_pfs_quantiles] cond_spop_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group, n_pfs_quantiles] int cond_sample_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group, n_pfs_quantiles] int cond_spop_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
   array[n_cond_group] vector[n_pfs_timepoints] cond_sample_target_pfs_n;
   array[n_cond_group] vector[n_pfs_timepoints] cond_spop_target_pfs_n;
   
@@ -1692,9 +1698,11 @@ tuple(
         spop_target_obs_cens_right_censored[curr_group_patients],
         max_all_t, 0).1;
       
-      // Calculate median PFS and capture exceeds_max indicators
-      (cond_sample_target_median_pfs[c], cond_sample_target_median_pfs_exceeds_max[c]) = km_median(cond_sample_target_km_est[c]);
-      (cond_spop_target_median_pfs[c], cond_spop_target_median_pfs_exceeds_max[c]) = km_median(cond_spop_target_km_est[c]);
+      // Calculate quantile PFS and capture exceeds_max indicators using vectorized function
+      (cond_sample_target_quant_pfs[c], cond_sample_target_quant_pfs_exceeds_max[c]) = 
+        km_quantiles(cond_sample_target_km_est[c], pfs_quantiles);
+      (cond_spop_target_quant_pfs[c], cond_spop_target_quant_pfs_exceeds_max[c]) = 
+        km_quantiles(cond_spop_target_km_est[c], pfs_quantiles);
       
       // Calculate PFS-n at specified timepoints
       for (n in 1:n_pfs_timepoints) {
@@ -1717,10 +1725,10 @@ tuple(
     cond_sample_target_km_est,
     cond_spop_target_km_est,
     cond_spop_target_obs_cens_km_est,
-    cond_sample_target_median_pfs,
-    cond_spop_target_median_pfs,
-    cond_sample_target_median_pfs_exceeds_max,
-    cond_spop_target_median_pfs_exceeds_max,
+    cond_sample_target_quant_pfs,
+    cond_spop_target_quant_pfs,
+    cond_sample_target_quant_pfs_exceeds_max,
+    cond_spop_target_quant_pfs_exceeds_max,
     cond_sample_target_pfs_n,
     cond_spop_target_pfs_n
   );
