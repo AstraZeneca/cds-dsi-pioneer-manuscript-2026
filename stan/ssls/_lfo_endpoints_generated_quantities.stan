@@ -66,9 +66,6 @@ profile("gen_quant") {
       cutoff_patient_visit_pos,
       cutoff_patient_visit_m1_pos,
       cutoff_forecast_visits_pos,
-      cutoff_n_patient_visits,
-      cutoff_n_patient_screening_visits,
-      cutoff_n_patient_forecast_visits,
       cutoff_patient_last_obs_visit,
       max_all_t,  // Forecast up to max time
       cutoff_t_patient_visits,
@@ -82,7 +79,8 @@ profile("gen_quant") {
       pop_process_sd,
       L_process_corr,
       log_pop_tumor_gp_rho,
-      delta
+      delta,
+      cutoff_n_patient_screening_visits
     );
   
   // Calculate RECIST classifications for cutoff-observed patients (including forecasts)
@@ -91,34 +89,40 @@ profile("gen_quant") {
     cutoff_forecast_mean_patient_log_sld,
     cutoff_patient_visit_pos,
     cutoff_forecast_visits_pos,
-    cutoff_n_patient_visits,
-    cutoff_n_patient_screening_visits,
-    cutoff_n_patient_forecast_visits
+    cutoff_n_patient_screening_visits
   );
   
   // Calculate patient-level endpoints for cutoff-observed patients (including forecasts)
+  array[n_cutoff_observed_patients] int sample_other_events_pfs, sample_other_events_right_censored;
+  array[n_cutoff_observed_patients] int spop_other_events_pfs, spop_other_events_right_censored;
+  array[n_cutoff_observed_patients] int sample_pfs, sample_right_censored;
+  array[n_cutoff_observed_patients] int spop_pfs, spop_right_censored;
+  
   (sample_target_pfs, sample_target_right_censored,
    spop_target_pfs, spop_target_right_censored,
    spop_target_obs_cens_pfs, spop_target_obs_cens_right_censored,
+   sample_other_events_pfs, sample_other_events_right_censored,
+   spop_other_events_pfs, spop_other_events_right_censored,
+   sample_pfs, sample_right_censored,
+   spop_pfs, spop_right_censored,
    sample_target_confirmed_response, sample_target_unconfirmed_response,
    spop_target_confirmed_response, spop_target_unconfirmed_response,
    forecast_target_pfs, forecast_target_right_censored) =
-    calculate_all_patients_endpoints(
+    calculate_all_patients_endpoints_rng(
       cutoff_recist,
       cutoff_rep_recist,
       cutoff_forecast_recist,
+      log_cond_prob_surv[cutoff_observed_patients, ],  // Subset to cutoff-observed patients
       cutoff_pfs,
       cutoff_interval_censored,
       cutoff_right_censored,
       cutoff_patient_visit_pos,
       cutoff_forecast_visits_pos,
-      cutoff_n_patient_visits,
-      cutoff_n_patient_screening_visits,
-      cutoff_n_patient_forecast_visits,
       cutoff_patient_last_obs_visit,
       max_all_t,
       cutoff_t_patient_visits,
-      max_all_t
+      max_all_t,
+      cutoff_n_patient_screening_visits
     );
     
   // Aggregate to trial-level metrics (using cutoff-observed patients only)
@@ -136,7 +140,7 @@ profile("gen_quant") {
       spop_target_right_censored,
       spop_target_obs_cens_pfs,
       spop_target_obs_cens_right_censored,
-      cutoff_trial_patient_pos,  // Use cutoff-specific trial grouping
+      cutoff_trial_patient_pos,
       max_all_t,
       pfs_quantiles,
       pfs_timepoints
@@ -157,8 +161,8 @@ profile("gen_quant") {
       spop_target_right_censored,
       spop_target_obs_cens_pfs,
       spop_target_obs_cens_right_censored,
-      cutoff_cond_group,           // Use cutoff-specific conditional group
-      cutoff_cond_group_pos,       // Use cutoff-specific conditional group positions
+      cutoff_cond_group,
+      cutoff_cond_group_pos,
       max_all_t,
       pfs_quantiles,
       pfs_timepoints

@@ -44,15 +44,6 @@ transformed parameters {
   #include "modules/frac/transformed_parameters.stan"
   #include "modules/init/transformed_parameters.stan"
   #include "legacy/sf-ssls-transformed_parameters.stan"
-
-  matrix[n_patients, n_causes] patient_response_lp = rep_matrix(0, n_patients, n_causes); 
-  patient_response_lp[, 1] = calc_pch_loglik(
-    other_events_pfs, 
-    other_events_right_censored, 
-    other_events_interval_censored,
-    0, 
-    log_cond_prob_surv[1]
-  );
 }
 
 model {
@@ -70,7 +61,17 @@ model {
         normalized_sld[visit_start:visit_end] ~ sf_log_space_obs(states[visit_start:visit_end], measure_sd, log_lod - log(sum_tumor_size[visit_start]));
       }
 
-      for (s in 1:n_trials) for (k in 1:n_causes) target += sum(get_sub_vector(patient_response_lp[, k], trial_patient_pos, s));
+      // Other events likelihood contribution
+      matrix[n_patients, n_causes] patient_response_lp = rep_matrix(0, n_patients, n_causes); 
+      patient_response_lp[, 1] = calc_pch_loglik(
+        ic_other_events_pfs, 
+        other_events_right_censored, 
+        zeros_int_array(n_patients), // other_events_interval_censored
+        0, 
+        log_cond_prob_surv[1]
+      );
+
+      target += sum(patient_response_lp);
     }
   }
 }

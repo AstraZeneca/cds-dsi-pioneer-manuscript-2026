@@ -33,12 +33,12 @@ transformed data {
   #include "../base_transformed_data.stan"
   #include "../tumor/tumor_transformed_data.stan"
   #include "_sf_transformed_data.stan"
-//   #include "other_events_transformed_data.stan"
+  #include "other_events_transformed_data.stan"
   #include "_lfo_transformed_data.stan"
 }
 
 parameters {
-//   #include "other_events_parameters.stan"
+  #include "other_events_parameters.stan"
   #include "modules/tr/parameters.stan"
   #include "modules/frac/parameters.stan"
   #include "modules/init/parameters.stan"
@@ -46,7 +46,7 @@ parameters {
 }
 
 transformed parameters {
-//   #include "other_events_transformed_parameters.stan"
+  #include "_other_events_transformed_parameters.stan"
   #include "modules/tr/transformed_parameters.stan"
   #include "modules/frac/transformed_parameters.stan"
   #include "modules/init/transformed_parameters.stan"
@@ -54,7 +54,7 @@ transformed parameters {
 }
 
 model {
-//   #include "other_events_priors.stan"
+  #include "other_events_priors.stan"
   #include "modules/tr/priors.stan"
   #include "modules/frac/priors.stan"
   #include "modules/init/priors.stan"
@@ -73,21 +73,21 @@ model {
       }
     }
 
-    //   matrix[n_patients, n_causes] patient_response_lp = rep_matrix(0, n_patients, n_causes);
+    // Other events likelihood contribution (cutoff-aware)
+    matrix[n_cutoff_observed_patients, n_causes] patient_response_lp = rep_matrix(0, n_cutoff_observed_patients, n_causes);
 
-    //   // Other events progression (non-target lesions, new lesions, death, etc.)
-    //   patient_response_lp[, 1] = calc_pch_loglik(
-    //     other_events_pfs, 
-    //     other_events_right_censored, 
-    //     zeros_int_array(n_train_patients),
-    //     0, 
-    //     log_cond_prob_surv[1],
-    //     ones_int_array(n_patients), train_beyond_cutoff ? rep_array(max_all_t, n_patients) : cutoff_last_visit_week
-    //   );
+    // Use cutoff-censored data and enforce time window to prevent data leakage
+    patient_response_lp[, 1] = calc_pch_loglik(
+      cutoff_ic_other_events_pfs, 
+      cutoff_other_events_right_censored, 
+      zeros_int_array(n_cutoff_observed_patients), // interval_censored
+      0, 
+      log_cond_prob_surv[1, cutoff_observed_patients],
+      ones_int_array(n_cutoff_observed_patients), // start_from
+      train_beyond_cutoff ? rep_array(max_all_t, n_cutoff_observed_patients) : cutoff_last_visit_week // end_at
+    );
 
-    //   for (k in 1:n_causes) { 
-    //     target += sum(patient_response_lp[, k]);
-    //   }
+    target += sum(patient_response_lp);
   }
 }
 
