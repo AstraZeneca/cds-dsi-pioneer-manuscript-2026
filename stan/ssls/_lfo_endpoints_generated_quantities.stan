@@ -33,6 +33,16 @@ array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_target_unconf
 vector<lower = 0, upper = 1>[n_trials] sample_target_orr, spop_target_orr;
 vector<lower = 0, upper = 1>[n_cond_group] cond_sample_target_orr = zeros_vector(n_cond_group), cond_spop_target_orr = zeros_vector(n_cond_group);
 
+array[n_trials] vector<lower = 0>[n_pfs_quantiles] sample_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+array[n_trials] vector<lower = 0>[n_pfs_quantiles] spop_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_sample_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_spop_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+
+array[n_trials, n_pfs_quantiles] int sample_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+array[n_trials, n_pfs_quantiles] int spop_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+array[n_cond_group, n_pfs_quantiles] int cond_sample_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+array[n_cond_group, n_pfs_quantiles] int cond_spop_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+
 vector<lower = 0>[n_trials] sample_target_median_pfs = zeros_vector(n_trials), spop_target_median_pfs = zeros_vector(n_trials);
 vector<lower = 0>[n_cond_group] cond_sample_target_median_pfs = zeros_vector(n_cond_group), cond_spop_target_median_pfs = zeros_vector(n_cond_group);
 
@@ -114,8 +124,8 @@ profile("gen_quant") {
   // Aggregate to trial-level metrics (using cutoff-observed patients only)
   (sample_target_orr, spop_target_orr,
    sample_target_km_est, spop_target_km_est, spop_target_obs_cens_km_est,
-   sample_target_median_pfs, spop_target_median_pfs,
-   sample_target_median_pfs_exceeds_max, spop_target_median_pfs_exceeds_max,
+   sample_target_quant_pfs, spop_target_quant_pfs,
+   sample_target_quant_pfs_exceeds_max, spop_target_quant_pfs_exceeds_max,
    sample_target_pfs_n, spop_target_pfs_n) =
     aggregate_trial_metrics(
       sample_target_confirmed_response,
@@ -128,14 +138,15 @@ profile("gen_quant") {
       spop_target_obs_cens_right_censored,
       cutoff_trial_patient_pos,  // Use cutoff-specific trial grouping
       max_all_t,
+      pfs_quantiles,
       pfs_timepoints
     );
   
   // Aggregate to conditional group-level metrics (using cutoff-observed patients only)
   (cond_sample_target_orr, cond_spop_target_orr,
    cond_sample_target_km_est, cond_spop_target_km_est, cond_spop_target_obs_cens_km_est,
-   cond_sample_target_median_pfs, cond_spop_target_median_pfs,
-   cond_sample_target_median_pfs_exceeds_max, cond_spop_target_median_pfs_exceeds_max,
+   cond_sample_target_quant_pfs, cond_spop_target_quant_pfs,
+   cond_sample_target_quant_pfs_exceeds_max, cond_spop_target_quant_pfs_exceeds_max,
    cond_sample_target_pfs_n, cond_spop_target_pfs_n) =
     aggregate_conditional_group_metrics(
       sample_target_confirmed_response,
@@ -149,6 +160,7 @@ profile("gen_quant") {
       cutoff_cond_group,           // Use cutoff-specific conditional group
       cutoff_cond_group_pos,       // Use cutoff-specific conditional group positions
       max_all_t,
+      pfs_quantiles,
       pfs_timepoints
     );
 }
