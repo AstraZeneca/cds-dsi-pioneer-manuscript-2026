@@ -1072,9 +1072,6 @@ tuple(
   array[] int patient_visit_pos,
   array[] int patient_visit_m1_pos,
   array[] int forecast_visits_pos,
-  array[] int n_patient_visits,
-  array[] int n_patient_screening_visits,
-  array[] int n_patient_forecast_visits,
   array[] int patient_last_obs_visit,
   int last_predict_visit,
   array[] int t_patient_visits,
@@ -1089,12 +1086,13 @@ tuple(
   vector pop_process_sd,
   matrix L_process_corr,
   real log_pop_tumor_gp_rho,
-  real delta
+  real delta,
+  array[] int n_patient_screening_visits  // Number of screening visits per patient
 ) {
-  // Calculate sizes from input arrays
-  int n_patients = size(n_patient_visits);
-  int n_total_visits = sum(n_patient_visits);
-  int n_total_forecast_visits = sum(n_patient_forecast_visits);
+  // Calculate sizes from position arrays
+  int n_patients = size(patient_visit_pos) - 1;
+  int n_total_visits = get_pos_total_size(patient_visit_pos);
+  int n_total_forecast_visits = get_pos_total_size(forecast_visits_pos);
   int n_total_visits_m1 = n_total_visits - n_patients;
   
   // Initialize output arrays
@@ -1108,6 +1106,10 @@ tuple(
   
   // Process each patient: generate noise then states
   for (i in 1:n_patients) {
+    // Compute sizes from position arrays
+    int visit_size = get_pos_size(patient_visit_pos, i);
+    int forecast_size = get_pos_size(forecast_visits_pos, i);
+    
     int visit_start, visit_screening_end, treat_visit_start, visit_end;
     (visit_start, visit_screening_end, treat_visit_start, visit_end) = get_visit_pos(
       patient_visit_pos, i, n_patient_screening_visits[i]);
@@ -1118,8 +1120,6 @@ tuple(
     int forecast_visit_start, forecast_visit_end;
     (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
     
-    int forecast_size = n_patient_forecast_visits[i];
-    
     // Build forecast time WITH anchor
     array[forecast_size + 1] int forecast_time = linspaced_int_array(
       forecast_size + 1,
@@ -1128,11 +1128,11 @@ tuple(
     
     // Generate patient states first
     matrix[forecast_size, 2] temp_forecast_patient_states;
-    vector[n_patient_visits[i]] temp_rep_patient_log_sld;
-    vector[n_patient_visits[i]] temp_rep_mean_patient_log_sld;
+    vector[visit_size] temp_rep_patient_log_sld;
+    vector[visit_size] temp_rep_mean_patient_log_sld;
     vector[forecast_size] temp_forecast_patient_log_sld;
     vector[forecast_size] temp_forecast_mean_patient_log_sld;
-    matrix[n_patient_visits[i] - 1, 2] temp_obs_patient_process_noise;
+    matrix[visit_size - 1, 2] temp_obs_patient_process_noise;
     
     (temp_forecast_patient_states, temp_rep_patient_log_sld, temp_rep_mean_patient_log_sld,
      temp_forecast_patient_log_sld, temp_forecast_mean_patient_log_sld,
@@ -1216,13 +1216,13 @@ tuple(
   vector forecast_mean_patient_log_sld,
   array[] int patient_visit_pos,
   array[] int forecast_visits_pos,
-  array[] int n_patient_visits,
-  array[] int n_patient_screening_visits,
-  array[] int n_patient_forecast_visits
+  array[] int n_patient_screening_visits  // Number of screening visits per patient
 ) {
-  int n_patients = size(n_patient_visits);
-  int n_total_visits = sum(n_patient_visits);
-  int n_total_forecast_visits = sum(n_patient_forecast_visits);
+  int n_patients = size(patient_visit_pos) - 1;
+  
+  // Compute total sizes from position arrays
+  int n_total_visits = get_pos_total_size(patient_visit_pos);
+  int n_total_forecast_visits = get_pos_total_size(forecast_visits_pos);
   
   // RECIST constants
   int CR = 1; int PR = 2; int SD = 3; int PD = 4;
@@ -1234,20 +1234,23 @@ tuple(
   
   // Process each patient
   for (i in 1:n_patients) {
+    // Compute sizes from position arrays
+    int visit_size = get_pos_size(patient_visit_pos, i);
+    int forecast_size = get_pos_size(forecast_visits_pos, i);
+    int n_obs_treat_visits = visit_size - n_patient_screening_visits[i];
+    
     // Get full visit positions (for extracting SLD means and indexing rep_recist)
     int visit_start, screening_visit_end, treat_visit_start, visit_end;
     (visit_start, screening_visit_end, treat_visit_start, visit_end) = get_visit_pos(
       patient_visit_pos, i, n_patient_screening_visits[i]);
-    
-    int n_obs_treat_visits = n_patient_visits[i] - n_patient_screening_visits[i];
     
     // Get forecast visit positions
     int forecast_visit_start, forecast_visit_end;
     (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
     
     // Calculate RECIST for observed + forecast SLD
-    // calculate_target_recist drops screening visits, so output length = n_obs_treat_visits + n_patient_forecast_visits[i]
-    array[n_obs_treat_visits + n_patient_forecast_visits[i]] int full_predict_recist = calculate_target_recist(
+    // calculate_target_recist drops screening visits, so output length = n_obs_treat_visits + forecast_size
+    array[n_obs_treat_visits + forecast_size] int full_predict_recist = calculate_target_recist(
       exp(append_row(rep_mean_patient_log_sld[visit_start:visit_end], 
                     forecast_mean_patient_log_sld[forecast_visit_start:forecast_visit_end])) * 10,
       n_patient_screening_visits[i]
@@ -1304,30 +1307,37 @@ tuple(
   array[] int,  // spop_target_right_censored
   array[] int,  // spop_target_obs_cens_pfs
   array[] int,  // spop_target_obs_cens_right_censored
+  array[] int,  // sample_other_events_pfs
+  array[] int,  // sample_other_events_right_censored
+  array[] int,  // spop_other_events_pfs
+  array[] int,  // spop_other_events_right_censored
+  array[] int,  // sample_pfs
+  array[] int,  // sample_right_censored
+  array[] int,  // spop_pfs
+  array[] int,  // spop_right_censored
   array[] int,  // sample_target_confirmed_response
   array[] int,  // sample_target_unconfirmed_response
   array[] int,  // spop_target_confirmed_response
   array[] int,  // spop_target_unconfirmed_response
   array[] int,  // forecast_target_pfs
   array[] int   // forecast_target_right_censored
-) calculate_all_patients_endpoints(
+) calculate_all_patients_endpoints_rng(
   array[] int recist,
   array[] int rep_recist,
   array[] int forecast_recist,
+  array[] matrix log_cond_prob_surv,  // [n_causes] matrix[n_patients, max_all_t] - log conditional survival probabilities for each cause
   array[] int pfs,
   array[] int interval_censored,
   array[] int right_censored,
   array[] int patient_visit_pos,
   array[] int forecast_visits_pos,
-  array[] int n_patient_visits,
-  array[] int n_patient_screening_visits,
-  array[] int n_patient_forecast_visits,
   array[] int patient_last_obs_visit,
   int last_predict_visit,
   array[] int t_patient_visits,
-  int max_all_t
+  int max_all_t,
+  array[] int n_patient_screening_visits  // Number of screening visits per patient
 ) {
-  int n_patients = size(n_patient_visits);
+  int n_patients = size(patient_visit_pos) - 1;
   int n_right_censored_patients = sum(right_censored);
   
   // RECIST constants
@@ -1347,21 +1357,35 @@ tuple(
   array[n_right_censored_patients] int forecast_target_pfs;
   array[n_right_censored_patients] int forecast_target_right_censored;
   
+  // Other events PFS (cause 1 in competing risks)
+  array[n_patients] int sample_other_events_pfs;
+  array[n_patients] int sample_other_events_right_censored;
+  array[n_patients] int spop_other_events_pfs;
+  array[n_patients] int spop_other_events_right_censored;
+  
+  // Combined PFS (minimum of target and other events)
+  array[n_patients] int sample_pfs;
+  array[n_patients] int sample_right_censored;
+  array[n_patients] int spop_pfs;
+  array[n_patients] int spop_right_censored;
+  
   int right_censored_idx = 1;
   
   // Process each patient
   for (i in 1:n_patients) {
+    // Compute sizes from position arrays
+    int visit_size = get_pos_size(patient_visit_pos, i);
+    int forecast_size = get_pos_size(forecast_visits_pos, i);
+    int n_obs_treat_visits = visit_size - n_patient_screening_visits[i];
+    
     int visit_start, screening_visit_end, treat_visit_start, visit_end;
     (visit_start, screening_visit_end, treat_visit_start, visit_end) = get_visit_pos(
       patient_visit_pos, i, n_patient_screening_visits[i]);
-    int visit_size = n_patient_visits[i];
-    int n_obs_treat_visits = visit_size - n_patient_screening_visits[i];
     
     int forecast_visit_start, forecast_visit_end;
     (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
-    int forecast_size = n_patient_forecast_visits[i];
     
-    array[n_patient_visits[i]] int curr_visits = get_int_sub_array(t_patient_visits, patient_visit_pos, i);
+    array[visit_size] int curr_visits = get_int_sub_array(t_patient_visits, patient_visit_pos, i);
     array[n_obs_treat_visits] int treat_curr_visits = curr_visits[(n_patient_screening_visits[i] + 1):];
     
     // Build forecast time
@@ -1437,6 +1461,31 @@ tuple(
     
     spop_target_unconfirmed_response[i] = !spop_target_unconfirmed_response_censored && 
       spop_target_unconfirmed_response_week <= spop_target_pfs[i];
+    
+    // Calculate other events PFS using survival_time_rng from cause 1 (other events)
+    // For right-censored patients: forecast from observed time
+    // For non-right-censored: use observed PFS + interval_censored + 1 (convention: week progress detected)
+    if (right_censored[i]) {
+      (sample_other_events_pfs[i], sample_other_events_right_censored[i]) = 
+        survival_time_rng(log_cond_prob_surv[1, i], pfs[i], right_censored[i], interval_censored[i]);
+      sample_other_events_pfs[i] += 1;  // Convert to conventional week (week of detection)
+    } else {
+      // Match convention: pfs is the week progression was detected
+      sample_other_events_pfs[i] = pfs[i] + interval_censored[i] + 1;
+      sample_other_events_right_censored[i] = 0;
+    }
+    
+    // Unconditional posterior predictive (always sample from scratch)
+    (spop_other_events_pfs[i], spop_other_events_right_censored[i]) = 
+      survival_time_rng(log_cond_prob_surv[1, i]);
+    spop_other_events_pfs[i] += 1;  // Convert to conventional week (week of detection)
+    
+    // Combined PFS is minimum of target and other events
+    sample_pfs[i] = min(sample_target_pfs[i], sample_other_events_pfs[i]);
+    sample_right_censored[i] = (sample_target_pfs[i] == sample_pfs[i] ? sample_target_right_censored[i] : sample_other_events_right_censored[i]);
+    
+    spop_pfs[i] = min(spop_target_pfs[i], spop_other_events_pfs[i]);
+    spop_right_censored[i] = (spop_target_pfs[i] == spop_pfs[i] ? spop_target_right_censored[i] : spop_other_events_right_censored[i]);
   }
   
   return (
@@ -1446,6 +1495,14 @@ tuple(
     spop_target_right_censored,
     spop_target_obs_cens_pfs,
     spop_target_obs_cens_right_censored,
+    sample_other_events_pfs,
+    sample_other_events_right_censored,
+    spop_other_events_pfs,
+    spop_other_events_right_censored,
+    sample_pfs,
+    sample_right_censored,
+    spop_pfs,
+    spop_right_censored,
     sample_target_confirmed_response,
     sample_target_unconfirmed_response,
     spop_target_confirmed_response,

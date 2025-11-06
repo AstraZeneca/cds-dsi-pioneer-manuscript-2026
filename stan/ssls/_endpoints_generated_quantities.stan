@@ -13,9 +13,12 @@ array[n_total_forecast_visits] int<lower = CR, upper = PD> forecast_recist;
   
 // Endpoints (PFS, ORR, Median PFS, PFSn, ...) ////////////
 
-array[n_patients] int<lower = 0> sample_target_pfs, spop_target_pfs, spop_target_obs_cens_pfs; // spop_other_events_pfs, spop_pfs,  
+array[n_patients] int<lower = 0> sample_target_pfs, spop_target_pfs, sample_other_events_pfs, spop_other_events_pfs, spop_target_obs_cens_pfs,
+                                 sample_pfs, spop_pfs; 
 array[n_patients] int<lower = 0, upper = 1> 
-  sample_target_right_censored, spop_target_right_censored, spop_target_obs_cens_right_censored; // spop_other_events_right_censored, spop_right_censored; 
+  sample_target_right_censored, spop_target_right_censored, spop_target_obs_cens_right_censored, 
+  sample_other_events_right_censored, spop_other_events_right_censored, 
+  sample_right_censored, spop_right_censored;
 
 // Forecasting for right censored patients 
 array[n_right_censored_patients] int<lower = 0> forecast_target_pfs; //, forecast_other_events_pfs, forecast_pfs; 
@@ -59,9 +62,6 @@ profile("gen_quant") {
       patient_visit_pos,
       patient_visit_m1_pos,
       forecast_visits_pos,
-      n_patient_visits,
-      n_patient_screening_visits,
-      n_patient_forecast_visits,
       patient_last_obs_visit,
       last_predict_visit,
       t_patient_visits,
@@ -75,7 +75,8 @@ profile("gen_quant") {
       pop_process_sd,
       L_process_corr,
       log_pop_tumor_gp_rho,
-      delta
+      delta,
+      n_patient_screening_visits
     );
   
   // Calculate RECIST classifications for all patients at once
@@ -84,36 +85,37 @@ profile("gen_quant") {
     forecast_mean_patient_log_sld,
     patient_visit_pos,
     forecast_visits_pos,
-    n_patient_visits,
-    n_patient_screening_visits,
-    n_patient_forecast_visits
+    n_patient_screening_visits
   );
   
   // Calculate patient-level endpoints (PFS, response) for all patients at once
   (sample_target_pfs, sample_target_right_censored,
    spop_target_pfs, spop_target_right_censored,
    spop_target_obs_cens_pfs, spop_target_obs_cens_right_censored,
+   sample_other_events_pfs, sample_other_events_right_censored,
+   spop_other_events_pfs, spop_other_events_right_censored,
+   sample_pfs, sample_right_censored,
+   spop_pfs, spop_right_censored,
    sample_target_confirmed_response, sample_target_unconfirmed_response,
    spop_target_confirmed_response, spop_target_unconfirmed_response,
-   forecast_target_pfs, forecast_target_right_censored) =
-    calculate_all_patients_endpoints(
-      recist,
-      rep_recist,
-      forecast_recist,
-      pfs,
-      interval_censored,
-      right_censored,
-      patient_visit_pos,
-      forecast_visits_pos,
-      n_patient_visits,
-      n_patient_screening_visits,
-      n_patient_forecast_visits,
-      patient_last_obs_visit,
-      last_predict_visit,
-      t_patient_visits,
-      max_all_t
-    );
-    
+   forecast_target_pfs, forecast_target_right_censored
+  ) = calculate_all_patients_endpoints_rng(
+    recist,
+    rep_recist,
+    forecast_recist,
+    log_cond_prob_surv,
+    pfs,
+    interval_censored,
+    right_censored,
+    patient_visit_pos,
+    forecast_visits_pos,
+    patient_last_obs_visit,
+    last_predict_visit,
+    t_patient_visits,
+    max_all_t,
+    n_patient_screening_visits
+  );
+  
   // Aggregate to trial-level metrics
   (sample_target_orr, spop_target_orr,
    sample_target_km_est, spop_target_km_est, spop_target_obs_cens_km_est,

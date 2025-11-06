@@ -150,6 +150,24 @@ for (obs_idx in 1:n_cutoff_observed_patients) {
   }
 }
 
+// Create cutoff-censored other events data
+array[n_cutoff_observed_patients] int cutoff_ic_other_events_pfs;
+array[n_cutoff_observed_patients] int cutoff_other_events_right_censored;
+
+for (obs_idx in 1:n_cutoff_observed_patients) {
+  int i = cutoff_observed_patients[obs_idx];  // Original patient ID
+  
+  // If patient's other events PFS is after the cutoff, censor them at cutoff
+  if (other_events_pfs[i] > cutoff_last_visit_week[i]) {
+    cutoff_ic_other_events_pfs[obs_idx] = cutoff_last_visit_week[i] + other_events_interval_censored[i];
+    cutoff_other_events_right_censored[obs_idx] = 1;  // Censored at cutoff
+  } else {
+    // Event occurred before cutoff, use actual observed data
+    cutoff_ic_other_events_pfs[obs_idx] = ic_other_events_pfs[i];
+    cutoff_other_events_right_censored[obs_idx] = other_events_right_censored[i];
+  }
+}
+
 // Create compact visit-level data for cutoff-observed patients
 // First, count total visits for observed patients at cutoff
 int n_cutoff_visits = 0;

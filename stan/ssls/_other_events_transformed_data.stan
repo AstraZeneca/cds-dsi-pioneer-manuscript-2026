@@ -14,7 +14,7 @@
 // The other events hazard model (GP baseline hazard) captures everything except
 // target lesion progression, creating a two-component competing risks model.
 
-array[n_patients] int<lower = 0> other_events_pfs; 
+array[n_patients] int<lower = 0> other_events_pfs, ic_other_events_pfs; 
 array[n_patients] int<lower = 0> other_events_interval_censored;
 array[n_patients] int<lower = 0, upper = 1> other_events_right_censored = zeros_int_array(n_patients);
 
@@ -31,4 +31,6 @@ for (i in 1:n_patients) {
   // Interval censoring only applies when other events are observed (not censored)
   // When censored, we observe survival up to pfs[i] with no interval uncertainty
   other_events_interval_censored[i] = other_events_right_censored[i] ? 0 : interval_censored[i];
+
+  ic_other_events_pfs[i] = other_events_pfs[i] + other_events_interval_censored[i]; 
 }
