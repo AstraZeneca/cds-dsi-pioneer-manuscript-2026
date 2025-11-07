@@ -66,15 +66,24 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
 
     rate_corr_param = 2.0,
 
-    log_lambda_gp_pop_intercept_mean = array(-4.5),
-    log_lambda_gp_pop_intercept_sd   = array(0.5),
-    log_lambda_gp_pop_alpha_sd       = array(0.4),
-    log_lambda_gp_pop_rho_alpha      = array(8.0),
-    log_lambda_gp_pop_rho_beta       = array(12.0),
-    log_lambda_gp_trial_alpha_sd     = array(0.25),
-    log_lambda_gp_trial_rho_alpha    = array(5.0),
-    log_lambda_gp_trial_rho_beta     = array(7.0),
-    log_lambda_gp_trial_intercept_sd_sd = array(0.3),
+    # Other events baseline hazard GP hyperparameters
+    oe_log_lambda_gp_pop_intercept_mean = array(-4.5, dim = c(stan_data$n_causes)),
+    oe_log_lambda_gp_pop_intercept_sd   = array(0.5, dim = c(stan_data$n_causes)),
+    oe_log_lambda_gp_pop_alpha_sd       = array(0.4, dim = c(stan_data$n_causes)),
+    oe_log_lambda_gp_pop_rho_alpha      = array(8.0, dim = c(stan_data$n_causes)),
+    oe_log_lambda_gp_pop_rho_beta       = array(12.0, dim = c(stan_data$n_causes)),
+    oe_log_lambda_gp_trial_alpha_sd     = array(0.25, dim = c(stan_data$n_causes)),
+    oe_log_lambda_gp_trial_rho_alpha    = array(5.0, dim = c(stan_data$n_causes)),
+    oe_log_lambda_gp_trial_rho_beta     = array(7.0, dim = c(stan_data$n_causes)),
+    oe_log_lambda_gp_trial_intercept_sd_sd = array(0.3, dim = c(stan_data$n_causes)),
+    
+    # Other events covariate effect hyperparameters
+    oe_tumor_coef_qr_pop_mean = array(rep(0, stan_data$n_tumor_covar), dim = c(stan_data$n_causes, stan_data$n_tumor_covar)),
+    oe_tumor_coef_qr_pop_sd   = array(rep(1, stan_data$n_tumor_covar), dim = c(stan_data$n_causes, stan_data$n_tumor_covar)),
+    oe_covar_coef_qr_pop_mean = array(rep(0, stan_data$n_covar), dim = c(stan_data$n_causes, stan_data$n_covar)),
+    oe_covar_coef_qr_pop_sd   = array(rep(1, stan_data$n_covar), dim = c(stan_data$n_causes, stan_data$n_covar)),
+    oe_sd_trial_tumor_slope_sd = array(rep(0.15, stan_data$n_tumor_covar), dim = c(stan_data$n_causes, stan_data$n_tumor_covar)),
+    oe_sd_trial_slope_sd = array(rep(0.15, stan_data$n_covar), dim = c(stan_data$n_causes, stan_data$n_covar)),
 
     log_lod_sd = 0.2
   )

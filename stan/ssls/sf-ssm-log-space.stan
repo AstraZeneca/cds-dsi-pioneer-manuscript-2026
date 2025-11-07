@@ -14,6 +14,9 @@ data {
   #include "../tumor/base_data.stan" // tumor-specific base
   #include "_sf_outcomes_info.stan"
   #include "legacy/sf-ssls-hyperparam.stan"
+  #include "modules/other_events/data.stan"
+  #include "modules/other_events/hyperparams.stan"
+  #include "modules/other_events/flags.stan"
   #include "modules/tr/hyperparams.stan"
   #include "modules/frac/hyperparams.stan"
   #include "modules/init/hyperparams.stan"
@@ -26,12 +29,12 @@ transformed data {
   #include "../base_transformed_data.stan"
   #include "../tumor/tumor_transformed_data.stan"
   #include "_sf_transformed_data.stan"
-  #include "_other_events_transformed_data.stan"
+  #include "modules/other_events/transformed_data.stan"
   #include "_sf-checks.stan"
 }
 
 parameters {
-  #include "_other_events_parameters.stan"
+  #include "modules/other_events/parameters.stan"
   #include "modules/tr/parameters.stan"
   #include "modules/frac/parameters.stan"
   #include "modules/init/parameters.stan"
@@ -39,7 +42,7 @@ parameters {
 }
 
 transformed parameters {
-  #include "_other_events_transformed_parameters.stan"
+  #include "modules/other_events/transformed_parameters.stan"
   #include "modules/tr/transformed_parameters.stan"
   #include "modules/frac/transformed_parameters.stan"
   #include "modules/init/transformed_parameters.stan"
@@ -47,7 +50,7 @@ transformed parameters {
 }
 
 model {
-  #include "_other_events_priors.stan"
+  #include "modules/other_events/priors.stan"
   #include "modules/tr/priors.stan"
   #include "modules/frac/priors.stan"
   #include "modules/init/priors.stan"

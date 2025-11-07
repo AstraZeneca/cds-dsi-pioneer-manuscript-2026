@@ -437,6 +437,32 @@ create_tumor_ssls_initializer <- function(stan_data) {
         frac_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_frac) matrix(rnorm(n_patients * n_covar), nrow = n_patients, ncol = n_covar),
         init_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_init) abs(rnorm(n_covar, sd = init_sd_patient_slope_sd)),
         init_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_init) matrix(rnorm(n_patients * n_covar), nrow = n_patients, ncol = n_covar),
+        
+        # Other events baseline hazard (trial level)
+        log_lambda_gp_trial_intercept_sd = if (oe_enable_trial_baseline_hazard) abs(rnorm(n_causes, sd = oe_log_lambda_gp_trial_intercept_sd_sd)),
+        log_lambda_gp_trial_alpha = if (oe_enable_trial_baseline_hazard) abs(rnorm(n_causes, sd = oe_log_lambda_gp_trial_alpha_sd)),
+        
+        # Other events covariate effects (tumor covariates)
+        oe_tumor_coef_qr_pop = if (n_tumor_covar > 0 && oe_enable_pop_tumor_cov) {
+          array(replicate(n_causes, rnorm(n_tumor_covar, 0, 1)), dim = c(n_causes, n_tumor_covar))
+        },
+        oe_sd_trial_tumor_slope = if (n_tumor_covar > 0 && oe_enable_trial_tumor_cov) {
+          array(replicate(n_causes, abs(rnorm(n_tumor_covar, sd = 0.15))), dim = c(n_causes, n_tumor_covar))
+        },
+        oe_raw_trial_tumor_slope = if (n_tumor_covar > 0 && oe_enable_trial_tumor_cov) {
+          array(replicate(n_causes, matrix(rnorm(n_trials * n_tumor_covar), n_trials, n_tumor_covar), simplify = FALSE), dim = c(n_causes, n_trials, n_tumor_covar))
+        },
+        
+        # Other events covariate effects (design matrix covariates)
+        oe_covar_coef_qr_pop = if (n_covar > 0 && oe_enable_pop_cov) {
+          array(replicate(n_causes, rnorm(n_covar, 0, 1)), dim = c(n_causes, n_covar))
+        },
+        oe_sd_trial_slope = if (n_covar > 0 && oe_enable_trial_cov) {
+          array(replicate(n_causes, abs(rnorm(n_covar, sd = 0.15))), dim = c(n_causes, n_covar))
+        },
+        oe_raw_trial_slope = if (n_covar > 0 && oe_enable_trial_cov) {
+          array(replicate(n_causes, matrix(rnorm(n_trials * n_covar), n_trials, n_covar), simplify = FALSE), dim = c(n_causes, n_trials, n_covar))
+        },
       )
     }) |> compact()
   }

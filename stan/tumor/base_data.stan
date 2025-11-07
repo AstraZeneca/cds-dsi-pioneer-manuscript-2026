@@ -8,8 +8,7 @@ int<lower = 0, upper = 1> independ_long_process_noise;
 int<lower = 0, upper = 1> independ_cross_process_noise;
 int<lower = 1, upper = n_patients> n_shards;
 
-// Trial-level random effect for total (overall) log rate (replaces legacy add_trial_level_net_rate)
-int<lower = 0, upper = 1> add_trial_level_baseline_hazard;
+// Note: add_trial_level_baseline_hazard moved to modules/other_events/flags.stan as oe_enable_trial_baseline_hazard
 
 array[sum(n_patient_visits)] int<lower = 1, upper = 5> recist;
 
