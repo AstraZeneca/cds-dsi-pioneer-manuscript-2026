@@ -219,7 +219,7 @@ get_conditioning_subgroups <- function(data, cond, other_cond) {
 #' @param pfs_var Name of variable were PFS is stored in the data 
 #'
 #' @return tibble object with Kaplan-Meier results.
-km_to_tibble <- function(trt_data, key, pfs_sym, censored_sym) { 
+km_to_tibble <- function(trt_data, key, pfs_sym, censored_sym, probs = c(0.5, 0.8)) { 
   survfit_objs <- rlang::inject(
     lst(
       lb = ggsurvfit::survfit2(Surv(!!pfs_sym + 1 - !!censored_sym, 1 - !!censored_sym) ~ 1, trt_data),
@@ -227,22 +227,24 @@ km_to_tibble <- function(trt_data, key, pfs_sym, censored_sym) {
     )
   )
   
-  # Extract median survival times and confidence intervals
-  median_data <- survfit_objs |>
-    map_dfr(\(fit) {
-      # Extract median from survfit object
-      median_surv <- summary(fit)$table
-      tibble(
-        median_pfs = unname(median_surv["median"]),
-        median_pfs_lower = unname(median_surv["0.95LCL"]),
-        median_pfs_upper = unname(median_surv["0.95UCL"])
-      )
-    }, .id = "btype")
-  
   survfit_objs |> 
-    map_dfr(broom::tidy, .id = "btype") |>  
-    select(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event, btype) |> 
-    left_join(median_data, by = "btype") |>
+    imap_dfr(\(fit, btype) {
+      # Get tidy KM estimates
+      km_data <- broom::tidy(fit) |>  
+        select(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event)
+      
+      # Get quantiles directly from survfit object
+      quantiles <- tibble(
+        quantile = probs,
+        pfs = quantile(fit, probs = probs)$quantile
+      )
+      
+      tibble(
+        btype = btype,
+        km_data = list(km_data),
+        quantiles = list(quantiles)
+      )
+    }) |>
     bind_cols(key)
 }
 
@@ -254,14 +256,14 @@ km_to_tibble <- function(trt_data, key, pfs_sym, censored_sym) {
 #' @param ... Additional grouping variables (e.g., treatment arm, biomarker subgroups)
 #'
 #' @return A tibble with KM estimates and median PFS (with confidence intervals) for each group
-get_km_res <- function(analysis_data, pfs_var, censored_var, ...) {
+get_km_res <- function(analysis_data, pfs_var, censored_var, ..., probs = c(0.5, 0.8)) {
   pfs_sym <- rlang::ensym(pfs_var)
   censored_sym <- rlang::ensym(censored_var)
   
   analysis_data |>
-    group_by(trial, ...) |>  
-    group_map(\(trt_data, key) km_to_tibble(trt_data, key, pfs_sym, censored_sym), .keep = TRUE) |>  
-    bind_rows() 
+    group_by(trial, ...) |>
+    group_map(\(trt_data, key) km_to_tibble(trt_data, key, pfs_sym, censored_sym, probs = probs), .keep = TRUE) |>
+    bind_rows()
 }
 
 #' Adjust PFS Data Based on Calendar Day Cutoff
