@@ -29,7 +29,7 @@ transformed data {
   #include "../tumor/tumor_transformed_data.stan"
   #include "_sf_transformed_data.stan"
 //   #include "other_events_transformed_data.stan"
-  #include "_lfo_transformed_data.stan"
+  (#include "_lfo_transformed_data.stan"
 }
 
 parameters {
@@ -45,7 +45,7 @@ transformed parameters {
   #include "modules/tr/transformed_parameters.stan"
   #include "modules/frac/transformed_parameters.stan"
   #include "modules/init/transformed_parameters.stan"
-  #include "legacy/sf-ssls-transformed_parameters.stan"
+  #include "_sf_transformed_parameters.stan"
 }
 
 generated quantities {

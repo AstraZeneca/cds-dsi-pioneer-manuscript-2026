@@ -20,26 +20,21 @@ for (k in 1:n_causes) {
 }
 
 // --- Proportional Hazard: Covariate Effects ---
-if (oe_enable_pop_cov || oe_enable_pop_tumor_cov || 
-    oe_enable_trial_cov || oe_enable_trial_tumor_cov) {
+if (oe_enable_pop_cov || oe_enable_pop_tumor_cov || oe_enable_trial_cov) {
   for (k in 1:n_causes) {
-    // Population-level priors
+    // Population-level time-varying tumor coefficients (vector)
     if (oe_enable_pop_tumor_cov) {
-      oe_tumor_coef_qr_pop[k] ~ normal(oe_tumor_coef_qr_pop_mean[k], 
-                                        oe_tumor_coef_qr_pop_sd[k]);
+      oe_tumor_coef_pop[k] ~ normal(oe_tumor_coef_pop_mean[k], 
+                                     oe_tumor_coef_pop_sd[k]);
     }
     
+    // Population-level non-tumor covariates (QR space, vector)
     if (oe_enable_pop_cov) {
       oe_covar_coef_qr_pop[k] ~ normal(oe_covar_coef_qr_pop_mean[k], 
                                         oe_covar_coef_qr_pop_sd[k]);
     }
     
-    // Trial-level hierarchical priors
-    if (oe_enable_trial_tumor_cov) {
-      oe_sd_trial_tumor_slope[k] ~ normal(0, oe_sd_trial_tumor_slope_sd[k]);
-      to_vector(oe_raw_trial_tumor_slope[k]) ~ std_normal();
-    }
-    
+    // Trial-level hierarchical priors (non-tumor covariates only)
     if (oe_enable_trial_cov) {
       oe_sd_trial_slope[k] ~ normal(0, oe_sd_trial_slope_sd[k]);
       to_vector(oe_raw_trial_slope[k]) ~ std_normal();

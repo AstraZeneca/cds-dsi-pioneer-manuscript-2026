@@ -64,3 +64,7 @@ for (t in 1:max_t_width) {
   all_measure_t[t] = t / 12.0; // Scaling factor for time intervals. The 12 here is arbitrary (if it actually had any meaning at one point).
 }
 
+// Time grid for full states computation: [1, 2, 3, ..., max_t_width]
+// Each value represents weeks since patient's first visit
+row_vector[max_t_width] time_since_first_visit = linspaced_row_vector(max_t_width, 1, max_t_width);
+

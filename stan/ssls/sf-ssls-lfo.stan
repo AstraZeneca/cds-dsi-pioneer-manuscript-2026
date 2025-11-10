@@ -49,11 +49,11 @@ parameters {
 }
 
 transformed parameters {
-  #include "modules/other_events/transformed_parameters.stan"
   #include "modules/tr/transformed_parameters.stan"
   #include "modules/frac/transformed_parameters.stan"
   #include "modules/init/transformed_parameters.stan"
-  #include "legacy/sf-ssls-transformed_parameters.stan"
+  #include "_sf_transformed_parameters.stan"
+  #include "modules/other_events/transformed_parameters.stan"
 }
 
 model {
@@ -72,7 +72,7 @@ model {
 
         int cutoff_idx = cutoff_last_visit_idx[i];
 
-        normalized_sld[visit_start:cutoff_idx] ~ sf_log_space_obs(states[visit_start:cutoff_idx], measure_sd, log_lod - log(sum_tumor_size[visit_start]));
+        normalized_sld[visit_start:cutoff_idx] ~ sf_log_space_obs(states[visit_start:cutoff_idx], measure_sd, log_lod - log_baseline_sld[i]);
       }
     }
 
@@ -184,7 +184,7 @@ generated quantities {
           // This does not exclude patients with post cutoff visits but no training visits (patients who aren't even in the study at the cutoff).
           if (start_idx > 0 && end_idx >= start_idx) {
             patient_log_lik[n, m, curr_first_testing_patient_idx + i_idx - 1] += sf_log_space_obs_lpdf(
-                normalized_sld[start_idx:end_idx] | states[start_idx:end_idx], measure_sd, log_lod - log(sum_tumor_size[visit_start]));
+                normalized_sld[start_idx:end_idx] | states[start_idx:end_idx], measure_sd, log_lod - log_baseline_sld[i]);
 
             int oos_recist_start, oos_recist_end;
             (oos_recist_start, oos_recist_end) = get_pos(testing_visit_pos, i);
