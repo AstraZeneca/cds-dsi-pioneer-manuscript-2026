@@ -15,13 +15,14 @@ array[n_causes] matrix[oe_enable_trial_baseline_hazard ? n_trials : 0, max_all_t
 array[n_causes] vector[oe_enable_trial_baseline_hazard ? n_trials : 0] raw_log_lambda_gp_trial_intercept;
 vector<lower=0>[oe_enable_trial_baseline_hazard ? n_causes : 0] log_lambda_gp_trial_intercept_sd;
 
-// --- Proportional Hazard: Population-level Coefficients (QR space) ---
-array[n_causes] vector[oe_enable_pop_tumor_cov ? n_tumor_covar : 0] oe_tumor_coef_qr_pop;
+// --- Proportional Hazard: Population-level Coefficients ---
+// Time-varying tumor coefficients: scales log(SLD) and potentially derivatives
+array[n_causes] vector[oe_enable_pop_tumor_cov ? n_tumor_covar : 0] oe_tumor_coef_pop;
+
+// Non-tumor covariate coefficients (QR space)
 array[n_causes] vector[oe_enable_pop_cov ? n_covar : 0] oe_covar_coef_qr_pop;
 
 // --- Proportional Hazard: Trial-level Random Slopes (non-centered) ---
-array[n_causes] vector<lower=0>[oe_enable_trial_tumor_cov ? n_tumor_covar : 0] oe_sd_trial_tumor_slope;
-array[n_causes] matrix[oe_enable_trial_tumor_cov ? n_trials : 0, oe_enable_trial_tumor_cov ? n_tumor_covar : 0] oe_raw_trial_tumor_slope;
-
+// Non-tumor covariate random slopes
 array[n_causes] vector<lower=0>[oe_enable_trial_cov ? n_covar : 0] oe_sd_trial_slope;
 array[n_causes] matrix[oe_enable_trial_cov ? n_trials : 0, oe_enable_trial_cov ? n_covar : 0] oe_raw_trial_slope;

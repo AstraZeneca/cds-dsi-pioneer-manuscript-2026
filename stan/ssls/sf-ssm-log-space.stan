@@ -42,11 +42,11 @@ parameters {
 }
 
 transformed parameters {
-  #include "modules/other_events/transformed_parameters.stan"
   #include "modules/tr/transformed_parameters.stan"
   #include "modules/frac/transformed_parameters.stan"
   #include "modules/init/transformed_parameters.stan"
-  #include "legacy/sf-ssls-transformed_parameters.stan"
+  #include "_sf_transformed_parameters.stan"
+  #include "modules/other_events/transformed_parameters.stan"
 }
 
 model {
@@ -61,7 +61,7 @@ model {
       for (i in 1:n_patients) {
         int visit_start, visit_end;
         (visit_start, visit_end) = get_pos(patient_visit_pos, i);
-        normalized_sld[visit_start:visit_end] ~ sf_log_space_obs(states[visit_start:visit_end], measure_sd, log_lod - log(sum_tumor_size[visit_start]));
+        normalized_sld[visit_start:visit_end] ~ sf_log_space_obs(states[visit_start:visit_end], measure_sd, log_lod - log_baseline_sld[i]);
       }
 
       // Other events likelihood contribution
