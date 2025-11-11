@@ -24,8 +24,12 @@ array[n_cutoff_right_censored_patients] int<lower = 0, upper = 1> forecast_targe
 array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_target_km_est, spop_target_km_est, spop_target_obs_cens_km_est;
 array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_target_km_est, cond_spop_target_km_est, cond_spop_target_obs_cens_km_est;
 
-array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] sample_target_pfs_n, spop_target_pfs_n;
-array[n_cond_group] vector<lower = 0, upper = 1>[n_pfs_timepoints] cond_sample_target_pfs_n, cond_spop_target_pfs_n;
+array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] sample_target_pfs_n, spop_target_pfs_n,
+                                                               sample_other_events_pfs_n, spop_other_events_pfs_n,
+                                                               sample_pfs_n, spop_pfs_n;
+array[n_cond_group] vector<lower = 0, upper = 1>[n_pfs_timepoints] cond_sample_target_pfs_n, cond_spop_target_pfs_n,
+                                                                   cond_sample_other_events_pfs_n, cond_spop_other_events_pfs_n,
+                                                                   cond_sample_pfs_n, cond_spop_pfs_n;
 
 array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_target_confirmed_response, spop_target_confirmed_response;
 array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_target_unconfirmed_response, spop_target_unconfirmed_response;
@@ -163,7 +167,9 @@ profile("gen_quant") {
    sample_other_events_quant_pfs_exceeds_max, spop_other_events_quant_pfs_exceeds_max,
    sample_quant_pfs, spop_quant_pfs,
    sample_quant_pfs_exceeds_max, spop_quant_pfs_exceeds_max,
-   sample_target_pfs_n, spop_target_pfs_n) =
+   sample_target_pfs_n, spop_target_pfs_n,
+   sample_other_events_pfs_n, spop_other_events_pfs_n,
+   sample_pfs_n, spop_pfs_n) =
     aggregate_trial_metrics(
       sample_target_confirmed_response,
       spop_target_confirmed_response,
@@ -201,7 +207,9 @@ profile("gen_quant") {
    cond_sample_other_events_quant_pfs_exceeds_max, cond_spop_other_events_quant_pfs_exceeds_max,
    cond_sample_quant_pfs, cond_spop_quant_pfs,
    cond_sample_quant_pfs_exceeds_max, cond_spop_quant_pfs_exceeds_max,
-   cond_sample_target_pfs_n, cond_spop_target_pfs_n) =
+   cond_sample_target_pfs_n, cond_spop_target_pfs_n,
+   cond_sample_other_events_pfs_n, cond_spop_other_events_pfs_n,
+   cond_sample_pfs_n, cond_spop_pfs_n) =
     aggregate_conditional_group_metrics(
       sample_target_confirmed_response,
       spop_target_confirmed_response,
