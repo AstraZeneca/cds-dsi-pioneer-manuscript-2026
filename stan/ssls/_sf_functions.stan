@@ -1570,7 +1570,11 @@ tuple(
   array[,] int,   // sample_quant_pfs_exceeds_max [n_trials, n_pfs_quantiles]
   array[,] int,   // spop_quant_pfs_exceeds_max [n_trials, n_pfs_quantiles]
   array[] vector, // sample_target_pfs_n [n_trials][n_pfs_timepoints]
-  array[] vector  // spop_target_pfs_n [n_trials][n_pfs_timepoints]
+  array[] vector, // spop_target_pfs_n [n_trials][n_pfs_timepoints]
+  array[] vector, // sample_other_events_pfs_n [n_trials][n_pfs_timepoints]
+  array[] vector, // spop_other_events_pfs_n [n_trials][n_pfs_timepoints]
+  array[] vector, // sample_pfs_n [n_trials][n_pfs_timepoints]
+  array[] vector  // spop_pfs_n [n_trials][n_pfs_timepoints]
 ) aggregate_trial_metrics(
   array[] int sample_target_confirmed_response,
   array[] int spop_target_confirmed_response,
@@ -1621,6 +1625,10 @@ tuple(
   array[n_trials, n_pfs_quantiles] int spop_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
   array[n_trials] vector[n_pfs_timepoints] sample_target_pfs_n;
   array[n_trials] vector[n_pfs_timepoints] spop_target_pfs_n;
+  array[n_trials] vector[n_pfs_timepoints] sample_other_events_pfs_n;
+  array[n_trials] vector[n_pfs_timepoints] spop_other_events_pfs_n;
+  array[n_trials] vector[n_pfs_timepoints] sample_pfs_n;
+  array[n_trials] vector[n_pfs_timepoints] spop_pfs_n;
   
   // Process each trial
   for (s in 1:n_trials) {
@@ -1692,6 +1700,10 @@ tuple(
       for (n in 1:n_pfs_timepoints) {
         sample_target_pfs_n[s, n] = calc_km_pfs_n(sample_target_km_est[s], months_to_weeks(pfs_timepoints[n]));
         spop_target_pfs_n[s, n] = calc_km_pfs_n(spop_target_km_est[s], months_to_weeks(pfs_timepoints[n]));
+        sample_other_events_pfs_n[s, n] = calc_km_pfs_n(sample_other_events_km_est[s], months_to_weeks(pfs_timepoints[n]));
+        spop_other_events_pfs_n[s, n] = calc_km_pfs_n(spop_other_events_km_est[s], months_to_weeks(pfs_timepoints[n]));
+        sample_pfs_n[s, n] = calc_km_pfs_n(sample_km_est[s], months_to_weeks(pfs_timepoints[n]));
+        spop_pfs_n[s, n] = calc_km_pfs_n(spop_km_est[s], months_to_weeks(pfs_timepoints[n]));
       }
     } else {
       // Empty trial - set to zero
@@ -1706,6 +1718,10 @@ tuple(
       spop_km_est[s] = zeros_vector(max_all_t + 1);
       sample_target_pfs_n[s] = zeros_vector(n_pfs_timepoints);
       spop_target_pfs_n[s] = zeros_vector(n_pfs_timepoints);
+      sample_other_events_pfs_n[s] = zeros_vector(n_pfs_timepoints);
+      spop_other_events_pfs_n[s] = zeros_vector(n_pfs_timepoints);
+      sample_pfs_n[s] = zeros_vector(n_pfs_timepoints);
+      spop_pfs_n[s] = zeros_vector(n_pfs_timepoints);
     }
   }
   
@@ -1732,7 +1748,11 @@ tuple(
     sample_quant_pfs_exceeds_max,
     spop_quant_pfs_exceeds_max,
     sample_target_pfs_n,
-    spop_target_pfs_n
+    spop_target_pfs_n,
+    sample_other_events_pfs_n,
+    spop_other_events_pfs_n,
+    sample_pfs_n,
+    spop_pfs_n
   );
 }
 
@@ -1791,7 +1811,11 @@ tuple(
   array[,] int,   // cond_sample_quant_pfs_exceeds_max [n_cond_group, n_pfs_quantiles]
   array[,] int,   // cond_spop_quant_pfs_exceeds_max [n_cond_group, n_pfs_quantiles]
   array[] vector, // cond_sample_target_pfs_n [n_cond_group][n_pfs_timepoints]
-  array[] vector  // cond_spop_target_pfs_n [n_cond_group][n_pfs_timepoints]
+  array[] vector, // cond_spop_target_pfs_n [n_cond_group][n_pfs_timepoints]
+  array[] vector, // cond_sample_other_events_pfs_n [n_cond_group][n_pfs_timepoints]
+  array[] vector, // cond_spop_other_events_pfs_n [n_cond_group][n_pfs_timepoints]
+  array[] vector, // cond_sample_pfs_n [n_cond_group][n_pfs_timepoints]
+  array[] vector  // cond_spop_pfs_n [n_cond_group][n_pfs_timepoints]
 ) aggregate_conditional_group_metrics(
   array[] int sample_target_confirmed_response,
   array[] int spop_target_confirmed_response,
@@ -1843,6 +1867,10 @@ tuple(
   array[n_cond_group, n_pfs_quantiles] int cond_spop_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
   array[n_cond_group] vector[n_pfs_timepoints] cond_sample_target_pfs_n;
   array[n_cond_group] vector[n_pfs_timepoints] cond_spop_target_pfs_n;
+  array[n_cond_group] vector[n_pfs_timepoints] cond_sample_other_events_pfs_n;
+  array[n_cond_group] vector[n_pfs_timepoints] cond_spop_other_events_pfs_n;
+  array[n_cond_group] vector[n_pfs_timepoints] cond_sample_pfs_n;
+  array[n_cond_group] vector[n_pfs_timepoints] cond_spop_pfs_n;
   
   // Process each conditional group
   for (c in 1:n_cond_group) {
@@ -1910,6 +1938,10 @@ tuple(
       for (n in 1:n_pfs_timepoints) {
         cond_sample_target_pfs_n[c, n] = calc_km_pfs_n(cond_sample_target_km_est[c], months_to_weeks(pfs_timepoints[n]));
         cond_spop_target_pfs_n[c, n] = calc_km_pfs_n(cond_spop_target_km_est[c], months_to_weeks(pfs_timepoints[n]));
+        cond_sample_other_events_pfs_n[c, n] = calc_km_pfs_n(cond_sample_other_events_km_est[c], months_to_weeks(pfs_timepoints[n]));
+        cond_spop_other_events_pfs_n[c, n] = calc_km_pfs_n(cond_spop_other_events_km_est[c], months_to_weeks(pfs_timepoints[n]));
+        cond_sample_pfs_n[c, n] = calc_km_pfs_n(cond_sample_km_est[c], months_to_weeks(pfs_timepoints[n]));
+        cond_spop_pfs_n[c, n] = calc_km_pfs_n(cond_spop_km_est[c], months_to_weeks(pfs_timepoints[n]));
       }
     } else {
       // Empty group - set to zero
@@ -1922,6 +1954,10 @@ tuple(
       cond_spop_km_est[c] = zeros_vector(max_all_t + 1);
       cond_sample_target_pfs_n[c] = zeros_vector(n_pfs_timepoints);
       cond_spop_target_pfs_n[c] = zeros_vector(n_pfs_timepoints);
+      cond_sample_other_events_pfs_n[c] = zeros_vector(n_pfs_timepoints);
+      cond_spop_other_events_pfs_n[c] = zeros_vector(n_pfs_timepoints);
+      cond_sample_pfs_n[c] = zeros_vector(n_pfs_timepoints);
+      cond_spop_pfs_n[c] = zeros_vector(n_pfs_timepoints);
     }
   }
   
@@ -1948,6 +1984,10 @@ tuple(
     cond_sample_quant_pfs_exceeds_max,
     cond_spop_quant_pfs_exceeds_max,
     cond_sample_target_pfs_n,
-    cond_spop_target_pfs_n
+    cond_spop_target_pfs_n,
+    cond_sample_other_events_pfs_n,
+    cond_spop_other_events_pfs_n,
+    cond_sample_pfs_n,
+    cond_spop_pfs_n
   );
 }
