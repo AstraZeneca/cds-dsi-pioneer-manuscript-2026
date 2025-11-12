@@ -168,7 +168,25 @@ for (obs_idx in 1:n_cutoff_observed_patients) {
   }
 }
 
-// Create compact visit-level data for cutoff-observed patients
+// Create cutoff-censored target lesion PFS data
+array[n_cutoff_observed_patients] int cutoff_target_pfs;
+array[n_cutoff_observed_patients] int cutoff_target_right_censored;
+
+for (obs_idx in 1:n_cutoff_observed_patients) {
+  int i = cutoff_observed_patients[obs_idx];  // Original patient ID
+  
+  // If patient's target PFS is after the cutoff, censor them at cutoff
+  if (target_pfs[i] > cutoff_last_visit_week[i]) {
+    cutoff_target_pfs[obs_idx] = cutoff_last_visit_week[i];
+    cutoff_target_right_censored[obs_idx] = 1;  // Censored at cutoff
+  } else {
+    // Event occurred before cutoff, use actual observed data
+    cutoff_target_pfs[obs_idx] = target_pfs[i];
+    cutoff_target_right_censored[obs_idx] = target_right_censored[i];
+  }
+}
+
+// Create compact patient state data for cutoff-observed patients
 // First, count total visits for observed patients at cutoff
 int n_cutoff_visits = 0;
 array[n_cutoff_observed_patients] int cutoff_n_patient_visits;

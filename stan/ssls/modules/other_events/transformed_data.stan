@@ -2,28 +2,21 @@
 // Other Events Model Transformed Data
 // ============================================================================
 
-// --- Competing Risks Censoring Logic ---
-// COMPETING RISKS FRAMEWORK:
-// Overall PFS is the minimum of:
-//   1. Target lesion PFS (from tumor dynamics model)
-//   2. Other events PFS (from this model)
+// --- Independent Events Framework ---
+// INDEPENDENT EVENTS MODEL:
+// Target progression (from tumor dynamics) and other-events (from this model)
+// are modeled as INDEPENDENT processes. Both can be observed for the same patient.
 //
-// Other events include: non-target progression, new lesions, death, etc.
+// Other events include: non-target progression, new lesions, death, dropout, etc.
+// Some other events (e.g., non-target PD) may be non-terminal - patient continues.
 
-array[n_patients] int<lower=0> other_events_pfs, ic_other_events_pfs; 
+array[n_patients] int<lower=0> ic_other_events_pfs; 
 array[n_patients] int<lower=0> other_events_interval_censored;
-array[n_patients] int<lower=0,upper=1> other_events_right_censored = zeros_int_array(n_patients);
 
 for (i in 1:n_patients) {
-  // Other events PFS equals overall PFS time (minimum of all causes)
-  other_events_pfs[i] = pfs[i];
-  
-  // Other events are censored if:
-  // 1. Patient was overall censored (no event observed), OR
-  // 2. Target lesions progressed first (competing event)
-  other_events_right_censored[i] = right_censored[i] || (!target_right_censored[i] && pfs[i] >= target_pfs[i]);
-  
   // Interval censoring only applies when other events observed (not censored)
+  // Note: We assume interval_censored applies to whichever event occurred
+  // If both events observed, we use the same interval uncertainty for other-events
   other_events_interval_censored[i] = other_events_right_censored[i] ? 0 : interval_censored[i];
   ic_other_events_pfs[i] = other_events_pfs[i] + other_events_interval_censored[i]; 
 }

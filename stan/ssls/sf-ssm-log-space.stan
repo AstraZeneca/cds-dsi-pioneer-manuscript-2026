@@ -23,6 +23,8 @@ data {
   #include "modules/tr/flags.stan"
   #include "modules/frac/flags.stan"
   #include "modules/init/flags.stan"
+
+  int<lower = 0, upper = 1> fit_other_events_data;
 }
 
 transformed data {
@@ -63,7 +65,9 @@ model {
         (visit_start, visit_end) = get_pos(patient_visit_pos, i);
         normalized_sld[visit_start:visit_end] ~ sf_log_space_obs(states[visit_start:visit_end], measure_sd, log_lod - log_baseline_sld[i]);
       }
+    }
 
+    if (fit_other_events_data) {
       // Other events likelihood contribution
       matrix[n_patients, n_causes] patient_response_lp = rep_matrix(0, n_patients, n_causes); 
       patient_response_lp[, 1] = calc_pch_loglik(
