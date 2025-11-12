@@ -143,6 +143,8 @@ profile("gen_quant") {
       cutoff_pfs,
       cutoff_interval_censored,
       cutoff_right_censored,
+      cutoff_target_pfs,
+      cutoff_target_right_censored,
       cutoff_other_events_right_censored,
       cutoff_patient_visit_pos,
       cutoff_forecast_visits_pos,

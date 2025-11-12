@@ -21,8 +21,8 @@ array[n_patients] int<lower = 0, upper = 1>
   sample_right_censored, spop_right_censored;
 
 // Forecasting for right censored patients 
-array[sum(right_censored)] int<lower = 0> forecast_target_pfs;
-array[sum(right_censored)] int<lower = 0, upper = 1> forecast_target_right_censored; 
+array[sum(target_right_censored)] int<lower = 0> forecast_target_pfs;
+array[sum(target_right_censored)] int<lower = 0, upper = 1> forecast_target_right_censored; 
 
 array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_target_km_est, spop_target_km_est, 
                                                             spop_target_obs_cens_km_est, 
@@ -137,6 +137,8 @@ profile("gen_quant") {
     pfs,
     interval_censored,
     right_censored,
+    target_pfs,
+    target_right_censored,
     other_events_right_censored,
     patient_visit_pos,
     forecast_visits_pos,
