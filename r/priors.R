@@ -80,8 +80,8 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     # Other events covariate effect hyperparameters
     oe_tumor_coef_pop_mean = array(rep(0, stan_data$n_tumor_covar), dim = c(stan_data$n_causes, stan_data$n_tumor_covar)),
     oe_tumor_coef_pop_sd   = array(rep(0.5, stan_data$n_tumor_covar), dim = c(stan_data$n_causes, stan_data$n_tumor_covar)),
-    oe_covar_coef_qr_pop_mean = array(rep(0, stan_data$n_covar), dim = c(stan_data$n_causes, stan_data$n_covar)),
-    oe_covar_coef_qr_pop_sd   = array(rep(1, stan_data$n_covar), dim = c(stan_data$n_causes, stan_data$n_covar)),
+    oe_covar_coef_qr_pop_mean = array(- coef_elicited_priors$coef_mean, dim = c(stan_data$n_causes, stan_data$n_covar)),
+    oe_covar_coef_qr_pop_sd   = array(coef_elicited_priors$coef_sd, dim = c(stan_data$n_causes, stan_data$n_covar)),
     oe_sd_trial_slope_sd = array(rep(0.15, stan_data$n_covar), dim = c(stan_data$n_causes, stan_data$n_covar)),
 
     log_lod_sd = 0.2
