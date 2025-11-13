@@ -1329,6 +1329,8 @@ tuple(
   array[] int pfs,
   array[] int interval_censored,
   array[] int right_censored,
+  array[] int target_pfs,  // PFS based on target lesions only (observed data)
+  array[] int target_right_censored,  // Censoring status for target lesions only (observed data)
   array[] int other_events_right_censored,  // From transformed data - censoring status for other events
   array[] int patient_visit_pos,
   array[] int forecast_visits_pos,
@@ -1339,7 +1341,7 @@ tuple(
   array[] int n_patient_screening_visits  // Number of screening visits per patient
 ) {
   int n_patients = size(patient_visit_pos) - 1;
-  int n_right_censored_patients = sum(right_censored);
+  int n_target_right_censored_patients = sum(target_right_censored);
   
   // RECIST constants
   int CR = 1; int PR = 2; int SD = 3; int PD = 4;
@@ -1355,8 +1357,8 @@ tuple(
   array[n_patients] int sample_target_unconfirmed_response;
   array[n_patients] int spop_target_confirmed_response;
   array[n_patients] int spop_target_unconfirmed_response;
-  array[n_right_censored_patients] int forecast_target_pfs;
-  array[n_right_censored_patients] int forecast_target_right_censored;
+  array[n_target_right_censored_patients] int forecast_target_pfs;
+  array[n_target_right_censored_patients] int forecast_target_right_censored;
   
   // Other events PFS (cause 1 in competing risks)
   array[n_patients] int sample_other_events_pfs;
@@ -1390,16 +1392,13 @@ tuple(
     array[n_obs_treat_visits] int treat_curr_visits = curr_visits[(n_patient_screening_visits[i] + 1):];
     
     // Build forecast time
-    array[forecast_size + 1] int forecast_time = linspaced_int_array(
-      forecast_size + 1, patient_last_obs_visit[i], last_predict_visit);
-    array[forecast_size > 0 ? forecast_size : 0] int forecast_time_wo_anchor =
-      forecast_size > 0 ? forecast_time[2:] : zeros_int_array(0);
+    array[forecast_size + 1] int forecast_time = linspaced_int_array(forecast_size + 1, patient_last_obs_visit[i], last_predict_visit);
+    array[forecast_size > 0 ? forecast_size : 0] int forecast_time_wo_anchor = forecast_size > 0 ? forecast_time[2:] : zeros_int_array(0);
     
     // Get RECIST for this patient
     array[n_obs_treat_visits] int patient_rep_recist = rep_recist[treat_visit_start:visit_end];
     array[forecast_size] int patient_forecast_recist = forecast_recist[forecast_visit_start:forecast_visit_end];
-    array[n_obs_treat_visits + forecast_size] int full_predict_recist = 
-      append_array(patient_rep_recist, patient_forecast_recist);
+    array[n_obs_treat_visits + forecast_size] int full_predict_recist = append_array(patient_rep_recist, patient_forecast_recist);
     
     // Initialize response tracking variables
     int sample_target_confirmed_response_week, sample_target_confirmed_response_censored;
@@ -1407,25 +1406,11 @@ tuple(
     int spop_target_confirmed_response_week, spop_target_confirmed_response_censored;
     int spop_target_unconfirmed_response_week, spop_target_unconfirmed_response_censored;
     
-    // Calculate sample PFS from observed data
-    sample_target_pfs[i] = pfs[i] + interval_censored[i] + 1;
-    // For target-specific PFS: right-censored if overall right-censored OR if event was due to other causes
-    // If other_event was NOT censored (other_events_right_censored[i] == 0), it means an other-event occurred,
-    // which means the patient should be right-censored for target-lesion PFS
-    sample_target_right_censored[i] = right_censored[i] || !other_events_right_censored[i];
-    
     // Calculate posterior predictive target PFS
     (spop_target_pfs[i], spop_target_right_censored[i]) = find_first_week(
       full_predict_recist, { PD }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
     
-    // Calculate response weeks for observed data
-    (sample_target_confirmed_response_week, sample_target_confirmed_response_censored) = find_first_week(
-      recist[visit_start:visit_end], { PR, CR }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
-    
-    (sample_target_unconfirmed_response_week, sample_target_unconfirmed_response_censored) = find_first_week(
-      recist[visit_start:visit_end], { PR, CR }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
-    
-    // Calculate response weeks for posterior predictive
+    // Calculate response weeks for posterior predictive (always use full prediction)
     (spop_target_confirmed_response_week, spop_target_confirmed_response_censored) = find_first_week(
       full_predict_recist, { PR, CR }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
     
@@ -1433,64 +1418,80 @@ tuple(
       full_predict_recist, { PR, CR }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
     
     // Handle right-censored patients with forecast
-    if (forecast_size > 0 && right_censored[i]) {
+    if (forecast_size > 0 && target_right_censored[i]) {
+      // Combine observed + forecast RECIST for sample outcomes
+      array[n_obs_treat_visits + forecast_size] int combined_recist = append_array(recist[treat_visit_start:visit_end], patient_forecast_recist);
+      
       (sample_target_pfs[i], sample_target_right_censored[i]) = 
-        find_first_week(patient_forecast_recist, { PD }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
+        find_first_week(combined_recist, { PD }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
       
       forecast_target_pfs[right_censored_idx] = sample_target_pfs[i];
       forecast_target_right_censored[right_censored_idx] = sample_target_right_censored[i];
       
       (sample_target_confirmed_response_week, sample_target_confirmed_response_censored) = find_first_week(
-        patient_forecast_recist, { PR, CR }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
+        combined_recist, { PR, CR }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
       
       (sample_target_unconfirmed_response_week, sample_target_unconfirmed_response_censored) = find_first_week(
-        patient_forecast_recist, { PR, CR }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
+        combined_recist, { PR, CR }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
       
       right_censored_idx += 1;
+    } else {
+      // Calculate sample target PFS from observed target-lesion data
+      // Use target_pfs (deterministic PFS from target lesions only) not overall pfs
+      sample_target_pfs[i] = target_pfs[i] + interval_censored[i] + 1;
+      sample_target_right_censored[i] = target_right_censored[i];
+
+      // Calculate response weeks for observed data (will be updated with forecast if censored)
+      (sample_target_confirmed_response_week, sample_target_confirmed_response_censored) = find_first_week(
+        recist[treat_visit_start:visit_end], { PR, CR }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
+      
+      (sample_target_unconfirmed_response_week, sample_target_unconfirmed_response_censored) = find_first_week(
+        recist[treat_visit_start:visit_end], { PR, CR }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
     }
     
     // Calculate observed-censored posterior PFS
-    spop_target_obs_cens_right_censored[i] = right_censored[i];
-    spop_target_obs_cens_pfs[i] = right_censored[i] ? min(spop_target_pfs[i], pfs[i]) : spop_target_pfs[i];
+    spop_target_obs_cens_right_censored[i] = target_right_censored[i];
+    spop_target_obs_cens_pfs[i] = target_right_censored[i] ? min(spop_target_pfs[i], target_pfs[i]) : spop_target_pfs[i];
     
     // Calculate response indicators
-    sample_target_confirmed_response[i] = !sample_target_confirmed_response_censored && 
-      sample_target_confirmed_response_week < sample_target_pfs[i];
+    sample_target_confirmed_response[i] = !sample_target_confirmed_response_censored && sample_target_confirmed_response_week < sample_target_pfs[i];
+    sample_target_unconfirmed_response[i] = !sample_target_unconfirmed_response_censored && sample_target_unconfirmed_response_week <= sample_target_pfs[i];
     
-    sample_target_unconfirmed_response[i] = !sample_target_unconfirmed_response_censored && 
-      sample_target_unconfirmed_response_week <= sample_target_pfs[i];
-    
-    spop_target_confirmed_response[i] = !spop_target_confirmed_response_censored && 
-      spop_target_confirmed_response_week < spop_target_pfs[i];
-    
-    spop_target_unconfirmed_response[i] = !spop_target_unconfirmed_response_censored && 
-      spop_target_unconfirmed_response_week <= spop_target_pfs[i];
+    spop_target_confirmed_response[i] = !spop_target_confirmed_response_censored && spop_target_confirmed_response_week < spop_target_pfs[i];
+    spop_target_unconfirmed_response[i] = !spop_target_unconfirmed_response_censored && spop_target_unconfirmed_response_week <= spop_target_pfs[i];
     
     // Calculate other events PFS using survival_time_rng from cause 1 (other events)
-    // For right-censored patients: forecast from observed time
-    // For non-right-censored: use observed PFS + interval_censored + 1 (convention: week progress detected)
-    if (right_censored[i]) {
-      // Administrative censoring: forecast the other-event time
-      (sample_other_events_pfs[i], sample_other_events_right_censored[i]) = 
-        survival_time_rng(log_cond_prob_surv[1, i], pfs[i], right_censored[i], interval_censored[i]);
+    // For other-events censored (either admin or competing target): forecast from observed time
+    // For other-events observed: use observed time with interval censoring
+    if (other_events_right_censored[i]) {
+      // Other-event is censored (either no event at all, or target progressed first)
+      // Forecast what WOULD happen with other-events
+      // right_censored=1 forces forecast
+      (sample_other_events_pfs[i], sample_other_events_right_censored[i]) = survival_time_rng(log_cond_prob_surv[1, i], pfs[i], 1, 0); 
       sample_other_events_pfs[i] += 1;
     } else {
-      // An event occurred - use observed time regardless of which event
+      // Other-event actually occurred - use observed time
       sample_other_events_pfs[i] = pfs[i] + interval_censored[i] + 1;
-      sample_other_events_right_censored[i] = other_events_right_censored[i];
+      sample_other_events_right_censored[i] = 0;  // Not censored
     }
     
     // Unconditional posterior predictive (always sample from scratch)
-    (spop_other_events_pfs[i], spop_other_events_right_censored[i]) = 
-      survival_time_rng(log_cond_prob_surv[1, i]);
+    (spop_other_events_pfs[i], spop_other_events_right_censored[i]) = survival_time_rng(log_cond_prob_surv[1, i]);
     spop_other_events_pfs[i] += 1;  // Convert to conventional week (week of detection)
     
-    // Combined PFS is minimum of target and other events
+    // Combined PFS: For independent events, these represent "first of any event"
+    // Note: With independent events, both target AND other-events can occur
+    // Combined variables represent whichever happened first (for backward compatibility)
     sample_pfs[i] = min(sample_target_pfs[i], sample_other_events_pfs[i]);
-    sample_right_censored[i] = (sample_target_pfs[i] == sample_pfs[i] ? sample_target_right_censored[i] : sample_other_events_right_censored[i]);
+    // Censored only if BOTH event types are censored
+    sample_right_censored[i] = sample_target_right_censored[i] && sample_other_events_right_censored[i];
     
     spop_pfs[i] = min(spop_target_pfs[i], spop_other_events_pfs[i]);
-    spop_right_censored[i] = (spop_target_pfs[i] == spop_pfs[i] ? spop_target_right_censored[i] : spop_other_events_right_censored[i]);
+    spop_right_censored[i] = spop_target_right_censored[i] && spop_other_events_right_censored[i];
+
+    sample_pfs[i] = min(sample_target_pfs[i], sample_other_events_pfs[i]);
+    // Censored only if BOTH event types are censored
+    sample_right_censored[i] = sample_target_right_censored[i] && sample_other_events_right_censored[i];
   }
   
   return (
