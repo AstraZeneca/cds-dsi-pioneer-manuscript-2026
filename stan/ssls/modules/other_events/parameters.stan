@@ -16,7 +16,9 @@ array[n_causes] vector[oe_enable_trial_baseline_hazard ? n_trials : 0] raw_log_l
 vector<lower=0>[oe_enable_trial_baseline_hazard ? n_causes : 0] log_lambda_gp_trial_intercept_sd;
 
 // --- Proportional Hazard: Population-level Coefficients ---
-// Time-varying tumor coefficients: scales log(SLD) and potentially derivatives
+// Tumor-derived coefficients (size determined by hyperparameters):
+//   Minimum 1: log(SLD) effect
+//   If size >= 3: also includes log(decrease rate) and log(growth rate) effects
 array[n_causes] vector[oe_enable_pop_tumor_cov ? n_tumor_covar : 0] oe_tumor_coef_pop;
 
 // Non-tumor covariate coefficients (QR space)
