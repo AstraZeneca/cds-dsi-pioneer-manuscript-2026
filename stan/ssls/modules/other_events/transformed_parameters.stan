@@ -49,12 +49,17 @@ array[n_causes] vector[n_patients] oe_time_invariant_log_hazard_ratio = rep_arra
 // Time-varying tumor burden covariate: log(SLD) at each time point
 // states_full_grid[1] = log(regression), states_full_grid[2] = log(growth)
 // log(SLD) = log(regression + growth) = log_sum_exp(log_regression, log_growth)
+// Patient rates (patient_log_decrease_rate, patient_log_growth_rate) are used directly
 array[n_causes] matrix[n_patients, max_all_t] oe_time_varying_log_hazard_ratio = rep_array(rep_matrix(0, n_patients, max_all_t), n_causes);
 
 // Compute time-varying tumor burden from states if enabled
 if (oe_enable_pop_tumor_cov) {
   for (k in 1:n_causes) {
-    real tumor_coef = oe_tumor_coef_pop[k][1];
+    // Tumor covariate coefficients:
+    // [1] = log(SLD) effect
+    // [2] = log(decrease rate) effect  
+    // [3] = log(growth rate) effect
+    // [4] = SLD velocity effect (d/dt log(SLD))
     
     for (i in 1:n_patients) {
       int visit_start, visit_end;
@@ -81,8 +86,41 @@ if (oe_enable_pop_tumor_cov) {
       // This makes coefficient interpretable as log HR per 1-SD change in log(SLD in cm)
       row_vector[max_all_t] log_sld_z = (log_sld_absolute - mean_log_sld_all) / sd_log_sld_all;
       
-      // Apply tumor coefficient to get time-varying log hazard ratio
-      oe_time_varying_log_hazard_ratio[k, i] = tumor_coef * log_sld_z;
+      // Initialize with log(SLD) effect
+      oe_time_varying_log_hazard_ratio[k, i] = oe_tumor_coef_pop[k][1] * log_sld_z;
+      
+      // Add patient-level rate effects if coefficients are provided (time-invariant, broadcasted)
+      if (n_tumor_covar >= 3) {
+        // Use patient-level rates directly from _sf_transformed_parameters.stan
+        // These are time-invariant (constant per patient), so broadcast to all time points
+        // Z-score normalize using population distribution
+        real log_decrease_rate_z = (patient_log_decrease_rate[i] - mean(patient_log_decrease_rate)) / sd(patient_log_decrease_rate);
+        real log_growth_rate_z = (patient_log_growth_rate[i] - mean(patient_log_growth_rate)) / sd(patient_log_growth_rate);
+        
+        // Add rate effects to hazard ratio (broadcasted across all time points)
+        oe_time_varying_log_hazard_ratio[k, i] += oe_tumor_coef_pop[k][2] * log_decrease_rate_z;
+        oe_time_varying_log_hazard_ratio[k, i] += oe_tumor_coef_pop[k][3] * log_growth_rate_z;
+      }
+      
+      // Add SLD velocity (time-varying first derivative)
+      if (n_tumor_covar >= 4) {
+        // Compute velocity as weekly change in log(SLD)
+        // velocity[t] = log_sld[t] - log_sld[t-1]
+        row_vector[max_all_t] sld_velocity = rep_row_vector(0, max_all_t);
+        
+        // Vectorized computation: velocity[2:T] = log_sld[2:T] - log_sld[1:T-1]
+        // First time point remains 0 (no prior measurement)
+        sld_velocity[2:max_all_t] = log_sld_absolute[2:] - log_sld_absolute[:(max_all_t - 1)];
+        
+        // Z-score normalize velocity
+        // Use statistics from t >= 2 (exclude first point which is zero by construction)
+        real mean_velocity = mean(sld_velocity[2:]);
+        real sd_velocity = sd(sld_velocity[2:]);
+        row_vector[max_all_t] sld_velocity_z = (sld_velocity - mean_velocity) / sd_velocity;
+        
+        // Add velocity effect to hazard ratio
+        oe_time_varying_log_hazard_ratio[k, i] += oe_tumor_coef_pop[k][4] * sld_velocity_z;
+      }
     }
   }
 }

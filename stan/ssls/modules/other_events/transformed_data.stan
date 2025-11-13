@@ -20,17 +20,3 @@ for (i in 1:n_patients) {
   other_events_interval_censored[i] = other_events_right_censored[i] ? 0 : interval_censored[i];
   ic_other_events_pfs[i] = other_events_pfs[i] + other_events_interval_censored[i]; 
 }
-
-// --- QR Decomposition for Covariates ---
-matrix[n_patients, n_tumor_covar] Q_tumor_sum_covar;
-matrix[n_tumor_covar, n_tumor_covar] R_tumor_sum_covar;
-
-if (n_tumor_covar > 0) {
-  Q_tumor_sum_covar = qr_thin_Q(tumor_sum_covar) * sqrt(n_patients - 1);
-  R_tumor_sum_covar = qr_thin_R(tumor_sum_covar) / sqrt(n_patients - 1);
-} else {
-  Q_tumor_sum_covar = rep_matrix(0, n_patients, 0);
-  R_tumor_sum_covar = rep_matrix(0, 0, 0);
-}
-
-// Q_covar_design_matrix and R_covar_design_matrix already in _sf_transformed_data.stan

@@ -15,9 +15,11 @@ array[n_patients] int<lower=0> other_events_pfs;
 array[n_patients] int<lower=0, upper=1> other_events_right_censored;
 
 // Number of tumor-derived covariates for proportional hazards
-// Typically: baseline SLD, sum of tumor sizes, etc.
+// Tumor covariates are extracted from the state-space model:
+//   1. log(SLD) - current tumor burden (time-varying)
+//   2. log(decrease rate) - patient-specific regression rate (time-invariant, from tr + frac modules)
+//   3. log(growth rate) - patient-specific growth rate (time-invariant, from tr + frac modules)
+// Note: These are NOT passed as data but extracted from states_full_grid in transformed_parameters
+// n_tumor_covar is kept for backward compatibility but currently unused (scaffolding)
 int<lower=0> n_tumor_covar;
 
-// Tumor-derived covariate matrix [n_patients x n_tumor_covar]
-// Note: This will be QR-decomposed in transformed_data if n_tumor_covar > 0
-matrix[n_patients, n_tumor_covar] tumor_sum_covar;
