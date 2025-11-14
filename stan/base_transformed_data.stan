@@ -27,7 +27,11 @@ real delta = 1e-5; // Small value used for GP modeling to avoid numerical issues
 
 int min_all_t = min(t_patient_visits); // Earliest measurement time across all patients
 int<lower = min_all_t> max_all_t = max(max(t_patient_visits) + 1, extend_max_all_t); // Latest measurement time or extended time, whichever is greater
-int<lower = 0> max_t_width = max(t_patient_visits) - min_all_t + 1;
+int<lower = 0> max_t_width = max_all_t - min_all_t + 1;
+
+print("max(t_patient_visits) = ", max(t_patient_visits));
+print("max_all_t = ", max_all_t);
+print("max_t_width = ", max_t_width);
 
 array[n_patients] int<lower = 0> patient_max_t_width; // Number of time intervals between first and last measurement for each patient
 array[sum(n_patient_visits)] int<lower = 1> t_patient_visit_idx; // Index of each patient visit relative to the first visit for each patient
