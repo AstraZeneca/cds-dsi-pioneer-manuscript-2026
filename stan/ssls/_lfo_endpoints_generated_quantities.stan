@@ -17,6 +17,12 @@ array[n_cutoff_total_forecast_visits] int<lower = CR, upper = PD> cutoff_forecas
 array[n_cutoff_observed_patients] int<lower = 0> sample_target_pfs, spop_target_pfs, spop_target_obs_cens_pfs;
 array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_target_right_censored, spop_target_right_censored, spop_target_obs_cens_right_censored;
 
+// Other events and combined PFS (declared at top level for use in confusion matrix)
+array[n_cutoff_observed_patients] int<lower = 0> sample_other_events_pfs, spop_other_events_pfs;
+array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_other_events_right_censored, spop_other_events_right_censored;
+array[n_cutoff_observed_patients] int<lower = 0> sample_pfs, spop_pfs;
+array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_right_censored, spop_right_censored;
+
 // Forecasting for right-censored patients at cutoff
 array[n_cutoff_right_censored_patients] int<lower = 0> forecast_target_pfs;
 array[n_cutoff_right_censored_patients] int<lower = 0, upper = 1> forecast_target_right_censored;
@@ -120,11 +126,6 @@ profile("gen_quant") {
   );
   
   // Calculate patient-level endpoints for cutoff-observed patients (including forecasts)
-  array[n_cutoff_observed_patients] int sample_other_events_pfs, sample_other_events_right_censored;
-  array[n_cutoff_observed_patients] int spop_other_events_pfs, spop_other_events_right_censored;
-  array[n_cutoff_observed_patients] int sample_pfs, sample_right_censored;
-  array[n_cutoff_observed_patients] int spop_pfs, spop_right_censored;
-  
   (sample_target_pfs, sample_target_right_censored,
    spop_target_pfs, spop_target_right_censored,
    spop_target_obs_cens_pfs, spop_target_obs_cens_right_censored,

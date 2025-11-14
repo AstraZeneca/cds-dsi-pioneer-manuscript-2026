@@ -95,6 +95,9 @@ model {
 }
 
 generated quantities {
+  // Include comprehensive endpoints that integrate other events with target RECIST
+  #include "_lfo_endpoints_generated_quantities.stan"
+  
   // Reminder to self: log_lik can be positive; probability densities aren't restricted to [-Inf, 0]
   array[n_cutoffs, n_cutoffs] vector[n_all_testing_patients] patient_log_lik;
 
@@ -112,8 +115,11 @@ generated quantities {
     int visit_size = cutoff_idx - visit_start + 1;
     int treat_visit_size = max(0, cutoff_idx - visit_treat_pos + 1);
     int start_idx = testing_start_idx[1, i];
-    // Only generate OOS when this patient has a post-cutoff start at the first cutoff.
-    if (start_idx > 0) {
+    // Only generate OOS predictions for patients who:
+    // 1) Have post-cutoff visits at the first cutoff (start_idx > 0), AND
+    // 2) Were observed before/at the cutoff (cutoff_observed_mask[i] == 1)
+    // This excludes newly enrolled patients who entered the study after the cutoff.
+    if (start_idx > 0 && cutoff_observed_mask[i] == 1) {
       int n_oos_visits = visit_end - start_idx + 1; 
     
       array[n_oos_visits + 1] int forecast_time = get_int_sub_array(t_patient_visits, patient_visit_pos, i)[visit_size:];      
@@ -137,10 +143,43 @@ generated quantities {
 
       // calculate_target_recist returns RECIST for treatment visits only (screening dropped),
       // so length(full_predict_recist) == treat_visit_size + n_oos_visits.
-      array[treat_visit_size + n_oos_visits] int full_predict_recist = calculate_target_recist(
+      array[treat_visit_size + n_oos_visits] int full_predict_overall_recist = calculate_target_recist(
         exp(append_row(rep_mean_patient_log_sld, forecast_mean_patient_log_sld)) * 10,
         n_patient_screening_visits[i]
       );
+      
+      // Check if there was already a PD in the in-sample (observed) period
+      // If so, all forecast visits must also be PD (overall RECIST remains PD once reached)
+      int had_insample_pd = treat_visit_size > 0 && full_predict_overall_recist[treat_visit_size] == PD;
+      
+      // Mark all forecast visits as PD if:
+      // 1) Patient had PD in the in-sample period (had_insample_pd == 1), OR
+      // 2) Other events cause PD in the forecast period
+      if (had_insample_pd == 1) {
+        // All forecast visits are PD since patient already had PD before cutoff
+        full_predict_overall_recist[(treat_visit_size + 1):] = rep_array(PD, n_oos_visits);
+      } else {
+        // Integrate other events PFS to mark RECIST as PD when other events cause progression
+        // Since we only process cutoff-observed patients (cutoff_observed_mask[i] == 1),
+        // we can always use the already-calculated sample_other_events_pfs from _lfo_endpoints_generated_quantities.stan
+        int cutoff_patient_idx = patient_to_cutoff_idx[i];
+        int forecast_other_events_pfs = sample_other_events_pfs[cutoff_patient_idx];
+        int forecast_other_events_censored = sample_other_events_right_censored[cutoff_patient_idx];
+
+        if (!forecast_other_events_censored) {
+          // Other events PD occurs at week forecast_other_events_pfs
+          // Find first forecast visit at or after other events PFS
+          int forecast_other_events_visit_idx = 1;
+          while (forecast_other_events_visit_idx <= n_oos_visits && forecast_time[forecast_other_events_visit_idx + 1] < forecast_other_events_pfs) {
+            forecast_other_events_visit_idx += 1;
+          }
+          
+          // Mark all subsequent forecast visits as PD (from the first visit >= other events PFS onward)
+          if (forecast_other_events_visit_idx <= n_oos_visits) {
+            full_predict_overall_recist[(treat_visit_size + forecast_other_events_visit_idx):] = rep_array(PD, n_oos_visits - forecast_other_events_visit_idx + 1);
+          }
+        }
+      }
 
       int oos_recist_start, oos_recist_end;
       (oos_recist_start, oos_recist_end) = get_pos(testing_visit_pos, i);
@@ -150,7 +189,7 @@ generated quantities {
       if (n_patient_testing_visits[i] > 0) {
         // Bounds/sanity checks for the per-patient OOS slice
         assert_equal(oos_recist_end - oos_recist_start + 1, n_oos_visits);
-        oos_recist[oos_recist_start:oos_recist_end] = full_predict_recist[(treat_visit_size + 1):];
+        oos_recist[oos_recist_start:oos_recist_end] = full_predict_overall_recist[(treat_visit_size + 1):];
       }
     }
   }
@@ -181,8 +220,9 @@ generated quantities {
           int start_idx = testing_start_idx[n, i];
           int end_idx = m < n_cutoffs ? testing_end_idx[n, m + 1, i] : visit_end;
 
-          // This does not exclude patients with post cutoff visits but no training visits (patients who aren't even in the study at the cutoff).
-          if (start_idx > 0 && end_idx >= start_idx) {
+          // Only evaluate patients who were observed at cutoff (exclude newly enrolled patients)
+          // cutoff_observed_mask[i] == 1 means patient had at least one visit before/at cutoff
+          if (start_idx > 0 && end_idx >= start_idx && cutoff_observed_mask[i] == 1) {
             patient_log_lik[n, m, curr_first_testing_patient_idx + i_idx - 1] += sf_log_space_obs_lpdf(
                 normalized_sld[start_idx:end_idx] | states[start_idx:end_idx], measure_sd, log_lod - log_baseline_sld[i]);
 
