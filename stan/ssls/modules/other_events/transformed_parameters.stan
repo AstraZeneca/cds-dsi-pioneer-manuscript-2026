@@ -54,6 +54,10 @@ array[n_causes] matrix[n_patients, max_all_t] oe_time_varying_log_hazard_ratio =
 
 // Compute time-varying tumor burden from states if enabled
 if (oe_enable_pop_tumor_cov) {
+  // Normalization constants (median and IQR) for SLD are computed in transformed_data from observed data
+  // This provides fixed, iteration-stable normalization for consistent prior interpretation
+  
+  // Compute tumor covariate effects using normalized values
   for (k in 1:n_causes) {
     // Tumor covariate coefficients:
     // [1] = log(SLD) effect
@@ -82,24 +86,26 @@ if (oe_enable_pop_tumor_cov) {
       // Add baseline to get absolute SLD in cm
       row_vector[max_all_t] log_sld_absolute = log_baseline_sld[i] + log_sld_normalized;
       
-      // Z-score normalize using distribution of ALL observed SLD values
-      // This makes coefficient interpretable as log HR per 1-SD change in log(SLD in cm)
-      row_vector[max_all_t] log_sld_z = (log_sld_absolute - mean_log_sld_all) / sd_log_sld_all;
-      
+      // Median-center and IQR-scale using constants from observed data (computed in transformed_data)
+      // This makes coefficient interpretable as log HR per IQR change in log(SLD)
+      // Uses fixed normalization for stable priors across MCMC iterations
+      row_vector[max_all_t] log_sld_standardized = (log_sld_absolute - median_log_sld_obs) / iqr_log_sld_obs;
+
       // Initialize with log(SLD) effect
-      oe_time_varying_log_hazard_ratio[k, i] = oe_tumor_coef_pop[k][1] * log_sld_z;
+      oe_time_varying_log_hazard_ratio[k, i] = oe_tumor_coef_pop[k][1] * log_sld_standardized;
+
+      // print("Patient ", i, ", Cause ", k, ": log_sld_standardized = ", log_sld_standardized, ", oe_time_varying_log_hazard_ratio = ", oe_time_varying_log_hazard_ratio[k, i]);
       
       // Add patient-level rate effects if coefficients are provided (time-invariant, broadcasted)
       if (n_tumor_covar >= 3) {
         // Use patient-level rates directly from _sf_transformed_parameters.stan
         // These are time-invariant (constant per patient), so broadcast to all time points
-        // Z-score normalize using population distribution
-        real log_decrease_rate_z = (patient_log_decrease_rate[i] - mean(patient_log_decrease_rate)) / sd(patient_log_decrease_rate);
-        real log_growth_rate_z = (patient_log_growth_rate[i] - mean(patient_log_growth_rate)) / sd(patient_log_growth_rate);
+        // Rates are already patient-normalized (relative to each patient's baseline)
+        // No additional normalization needed - they represent rate of change, not absolute burden
         
         // Add rate effects to hazard ratio (broadcasted across all time points)
-        oe_time_varying_log_hazard_ratio[k, i] += oe_tumor_coef_pop[k][2] * log_decrease_rate_z;
-        oe_time_varying_log_hazard_ratio[k, i] += oe_tumor_coef_pop[k][3] * log_growth_rate_z;
+        oe_time_varying_log_hazard_ratio[k, i] += oe_tumor_coef_pop[k][2] * patient_log_decrease_rate[i];
+        oe_time_varying_log_hazard_ratio[k, i] += oe_tumor_coef_pop[k][3] * patient_log_growth_rate[i];
       }
       
       // Add SLD velocity (time-varying first derivative)

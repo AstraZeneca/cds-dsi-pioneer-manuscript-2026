@@ -21,36 +21,6 @@ for (i in 1:n_patients) {
 }
 
 // ============================================================================
-// SLD normalization constants for time-varying covariates
-// ============================================================================
-
-// Compute mean and SD of log(SLD) across ALL observed tumor measurements
-// This ensures tumor covariate coefficients have interpretable scale:
-// coefficient = log HR per 1-SD change in log(SLD)
-// Using all measurements (not just baseline) captures full range of variation
-real mean_log_sld_all;
-real sd_log_sld_all;
-
-// Patient-level baseline SLD (in cm) for converting normalized states to absolute SLD
-vector[n_patients] log_baseline_sld;
-
-{
-  // Get all observed log(SLD) values across all patients and visits
-  vector[sum(n_patient_visits)] log_sld_all_obs = log(sum_tumor_size);
-  
-  // Compute normalization constants from full distribution
-  mean_log_sld_all = mean(log_sld_all_obs);
-  sd_log_sld_all = sd(log_sld_all_obs);
-  
-  // Also store baseline SLD for each patient (for converting states)
-  for (i in 1:n_patients) {
-    int visit_start, visit_end;
-    (visit_start, visit_end) = get_pos(patient_visit_pos, i);
-    log_baseline_sld[i] = log(sum_tumor_size[visit_start]);
-  }
-}
-
-// ============================================================================
 // Visit indexing and counts
 // ============================================================================
 
