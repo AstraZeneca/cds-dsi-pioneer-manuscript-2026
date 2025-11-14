@@ -137,6 +137,14 @@ array[] int calculate_n_missing_visits(array[] int unique_visits, array[] int un
   
   for (p in 1:n) {
     n_unique_missing_visits[p] = n_full - get_pos_size(unique_visits_pos, p);
+
+    if (n_unique_missing_visits[p] < 0) {
+      reject("calculate_n_missing_visits: Group ", p, " has more unique visits (", 
+             get_pos_size(unique_visits_pos, p), 
+             ") than n_full (", n_full, "). ",
+             "n_full must be >= the maximum number of unique visits in any group. ",
+             "Group unique visits: ", get_int_sub_array(unique_visits, unique_visits_pos, p));
+    }
   }
   
   return n_unique_missing_visits;
@@ -195,7 +203,13 @@ array[] int get_missing_visits(array[] int unique_visits, array[] int unique_vis
   array[n] int n_unique_missing_visits = zeros_int_array(n);
   
   for (p in 1:n) {
-    n_unique_missing_visits[p] = n_full - get_pos_size(unique_visits_pos, p);
+    int n_visits = get_pos_size(unique_visits_pos, p);
+    if (n_visits > n_full) {
+      reject("get_missing_visits: Group ", p, " has ", n_visits, 
+             " unique visits but n_full is only ", n_full, ". ",
+             "n_full must be >= the maximum number of unique visits in any group.");
+    }
+    n_unique_missing_visits[p] = n_full - n_visits;
   }
   
   array[sum(n_unique_missing_visits)] int unique_missing_visits;
@@ -207,6 +221,12 @@ array[] int get_missing_visits(array[] int unique_visits, array[] int unique_vis
     
     for (q in 1:n_full) {
       if (curr_unique_visit_idx > n_unique_visits[p] || q < curr_unique_visits[curr_unique_visit_idx]) {
+        if (q <= 0) {
+          reject("get_missing_visits: n_full includes non-positive visit ", q, ". unique visits must be positive integers.",
+                 " Group: ", p, ", curr_unique_visits: ", curr_unique_visits, ", curr_unique_visit_idx: ", curr_unique_visit_idx, 
+                 ", n_unique_visits[p]: ", n_unique_visits[p]);
+        }
+
         unique_missing_visits[curr_missing_idx] = q;
         curr_missing_idx += 1;
       } else {
