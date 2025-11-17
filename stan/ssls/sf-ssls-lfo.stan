@@ -77,20 +77,22 @@ model {
     }
 
     // Other events likelihood contribution (cutoff-aware)
-    matrix[n_cutoff_observed_patients, n_causes] patient_response_lp = rep_matrix(0, n_cutoff_observed_patients, n_causes);
+    if (n_causes > 0) {
+      matrix[n_cutoff_observed_patients, n_causes] patient_response_lp = rep_matrix(0, n_cutoff_observed_patients, n_causes);
 
-    // Use cutoff-censored data and enforce time window to prevent data leakage
-    patient_response_lp[, 1] = calc_pch_loglik(
-      cutoff_ic_other_events_pfs, 
-      cutoff_other_events_right_censored, 
-      zeros_int_array(n_cutoff_observed_patients), // interval_censored
-      0, 
-      log_cond_prob_surv[1, cutoff_observed_patients],
-      ones_int_array(n_cutoff_observed_patients), // start_from
-      train_beyond_cutoff ? rep_array(max_all_t, n_cutoff_observed_patients) : cutoff_last_visit_week // end_at
-    );
+      // Use cutoff-censored data and enforce time window to prevent data leakage
+      patient_response_lp[, 1] = calc_pch_loglik(
+        cutoff_ic_other_events_pfs, 
+        cutoff_other_events_right_censored, 
+        zeros_int_array(n_cutoff_observed_patients), // interval_censored
+        0, 
+        log_cond_prob_surv[1, cutoff_observed_patients],
+        ones_int_array(n_cutoff_observed_patients), // start_from
+        train_beyond_cutoff ? rep_array(max_all_t, n_cutoff_observed_patients) : cutoff_last_visit_week // end_at
+      );
 
-    target += sum(patient_response_lp);
+      target += sum(patient_response_lp);
+    }
   }
 }
 

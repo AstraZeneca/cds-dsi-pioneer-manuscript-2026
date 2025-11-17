@@ -5,28 +5,32 @@
 // --- Baseline Hazard: Population-level GP ---
 array[n_causes] row_vector[max_all_t] log_pop_lambda;
 
-for (k in 1:n_causes) {
-  log_pop_lambda[k] = calc_gp_pred(
-    all_tumor_measure_t, 
-    log_lambda_gp_pop_intercept[k], 
-    log_lambda_gp_pop_alpha[k], 
-    log_lambda_gp_pop_rho[k], 
-    delta, 
-    log_lambda_gp_pop_eta[k]
-  );
+if (n_causes > 0) {
+  for (k in 1:n_causes) {
+    log_pop_lambda[k] = calc_gp_pred(
+      all_tumor_measure_t, 
+      log_lambda_gp_pop_intercept[k], 
+      log_lambda_gp_pop_alpha[k], 
+      log_lambda_gp_pop_rho[k], 
+      delta, 
+      log_lambda_gp_pop_eta[k]
+    );
+  }
 }
 
 // --- Baseline Hazard: Trial-level GP (additive to population) ---
 array[n_causes] matrix[oe_enable_trial_baseline_hazard ? n_trials : 0, max_all_t] log_trial_lambda_residual; 
 array[n_causes] matrix[n_trials, max_all_t] log_trial_lambda; 
 
-for (k in 1:n_causes) {
-  log_trial_lambda[k] = rep_matrix(log_pop_lambda[k], n_trials); 
+if (n_causes > 0) {
+  for (k in 1:n_causes) {
+    log_trial_lambda[k] = rep_matrix(log_pop_lambda[k], n_trials); 
+  }
 }
 
 array[n_causes] vector[oe_enable_trial_baseline_hazard ? n_trials : 0] log_lambda_gp_trial_intercept;
 
-if (oe_enable_trial_baseline_hazard) {
+if (n_causes > 0 && oe_enable_trial_baseline_hazard) {
   for (k in 1:n_causes) {
     log_lambda_gp_trial_intercept[k] = raw_log_lambda_gp_trial_intercept[k] * log_lambda_gp_trial_intercept_sd[k];
     for (s in 1:n_trials) {
@@ -53,7 +57,7 @@ array[n_causes] vector[n_patients] oe_time_invariant_log_hazard_ratio = rep_arra
 array[n_causes] matrix[n_patients, max_all_t] oe_time_varying_log_hazard_ratio = rep_array(rep_matrix(0, n_patients, max_all_t), n_causes);
 
 // Compute time-varying tumor burden from states if enabled
-if (oe_enable_pop_tumor_cov) {
+if (n_causes > 0 && oe_enable_pop_tumor_cov) {
   // Normalization constants (median and IQR) for SLD are computed in transformed_data from observed data
   // This provides fixed, iteration-stable normalization for consistent prior interpretation
   
@@ -132,7 +136,7 @@ if (oe_enable_pop_tumor_cov) {
 }
 
 // Compute time-INVARIANT non-tumor covariate effects if enabled
-if (oe_enable_pop_cov || oe_enable_trial_cov) {
+if (n_causes > 0 && (oe_enable_pop_cov || oe_enable_trial_cov)) {
   for (k in 1:n_causes) {
     vector[n_patients] covar_linpred = rep_vector(0, n_patients);
     
@@ -156,21 +160,23 @@ if (oe_enable_pop_cov || oe_enable_trial_cov) {
 // --- Combined: log_cond_prob_surv ---
 array[n_causes] matrix<upper=0>[n_patients, max_all_t] log_cond_prob_surv = oe_time_varying_log_hazard_ratio;
 
-for (s in 1:n_trials) {
-  int patient_start, patient_end; 
-  (patient_start, patient_end) = get_pos(trial_patient_pos, s);
+if (n_causes > 0) {
+  for (s in 1:n_trials) {
+    int patient_start, patient_end; 
+    (patient_start, patient_end) = get_pos(trial_patient_pos, s);
 
-  for (k in 1:n_causes) {
-    // Start with baseline hazard (population + trial GP)
-    log_cond_prob_surv[k, patient_start:patient_end] += rep_matrix(log_trial_lambda[k, s], get_pos_size(trial_patient_pos, s));
-    
-    // Add time-invariant covariate effects (broadcast to all times)
-    log_cond_prob_surv[k, patient_start:patient_end] += rep_matrix(oe_time_invariant_log_hazard_ratio[k, patient_start:patient_end], max_all_t);
-    
-    // Add time-varying tumor burden effect
-      // log_cond_prob_surv[k, patient_start:patient_end] += oe_time_varying_log_hazard_ratio[k, patient_start:patient_end];
-    
-    // Transform to log conditional survival probability
-    log_cond_prob_surv[k, patient_start:patient_end] = - exp(log_cond_prob_surv[k, patient_start:patient_end]); 
+    for (k in 1:n_causes) {
+      // Start with baseline hazard (population + trial GP)
+      log_cond_prob_surv[k, patient_start:patient_end] += rep_matrix(log_trial_lambda[k, s], get_pos_size(trial_patient_pos, s));
+      
+      // Add time-invariant covariate effects (broadcast to all times)
+      log_cond_prob_surv[k, patient_start:patient_end] += rep_matrix(oe_time_invariant_log_hazard_ratio[k, patient_start:patient_end], max_all_t);
+      
+      // Add time-varying tumor burden effect
+        // log_cond_prob_surv[k, patient_start:patient_end] += oe_time_varying_log_hazard_ratio[k, patient_start:patient_end];
+      
+      // Transform to log conditional survival probability
+      log_cond_prob_surv[k, patient_start:patient_end] = - exp(log_cond_prob_surv[k, patient_start:patient_end]); 
+    }
   }
 }
