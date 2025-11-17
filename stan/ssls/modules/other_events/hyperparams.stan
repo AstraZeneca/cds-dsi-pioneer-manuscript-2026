@@ -2,8 +2,6 @@
 // Other Events Model Hyperparameters
 // ============================================================================
 
-int<lower=1> n_causes; // Number of competing risk causes (e.g., death, non-target PD)
-
 // --- Baseline Hazard GP: Population-level ---
 vector<lower=0>[n_causes] oe_log_lambda_gp_pop_alpha_sd;
 vector<lower=0>[n_causes] oe_log_lambda_gp_pop_rho_alpha;

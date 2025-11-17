@@ -7,6 +7,9 @@
 // Other events include: non-target progression, new lesions, death, dropout, etc.
 // Both target progression AND other-events can be observed for the same patient.
 
+// Number of competing risk causes (set to 0 to disable other events model)
+int<lower=0> n_causes;
+
 // Other events progression-free survival (weeks from baseline)
 // This is independent from target_pfs - both can be observed
 array[n_patients] int<lower=0> other_events_pfs;
