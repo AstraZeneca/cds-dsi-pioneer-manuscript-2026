@@ -237,6 +237,8 @@ other_events_pfs = 40
 **Date Implemented:** November 13, 2025  
 **Updated:** November 14, 2025 (Normalization approach)
 
+> **📖 Detailed Technical Specification:** For complete implementation details, see [`docs/other_events_mechanistic_rates.md`](other_events_mechanistic_rates.md)
+
 ### Motivation
 
 The mechanistic state-space model provides rich patient-specific information beyond current tumor burden:
