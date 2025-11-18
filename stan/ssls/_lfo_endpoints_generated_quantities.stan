@@ -23,10 +23,6 @@ array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_other_events_
 array[n_cutoff_observed_patients] int<lower = 0> sample_pfs, spop_pfs;
 array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_right_censored, spop_right_censored;
 
-// Forecasting for right-censored patients at cutoff
-array[n_cutoff_right_censored_patients] int<lower = 0> forecast_target_pfs;
-array[n_cutoff_right_censored_patients] int<lower = 0, upper = 1> forecast_target_right_censored;
-
 array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_target_km_est, spop_target_km_est, spop_target_obs_cens_km_est;
 array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_target_km_est, cond_spop_target_km_est, cond_spop_target_obs_cens_km_est;
 
@@ -42,6 +38,10 @@ array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_target_unconf
 
 vector<lower = 0, upper = 1>[n_trials] sample_target_orr, spop_target_orr;
 vector<lower = 0, upper = 1>[n_cond_group] cond_sample_target_orr = zeros_vector(n_cond_group), cond_spop_target_orr = zeros_vector(n_cond_group);
+
+// Forecasting for target-right-censored patients at cutoff (sized by target censoring, not combined)
+array[sum(cutoff_target_right_censored)] int<lower = 0> forecast_target_pfs;
+array[sum(cutoff_target_right_censored)] int<lower = 0, upper = 1> forecast_target_right_censored;
 
 // PFS quantiles - target events
 array[n_trials] vector<lower = 0>[n_pfs_quantiles] sample_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
@@ -140,7 +140,7 @@ profile("gen_quant") {
       cutoff_recist,
       cutoff_rep_recist,
       cutoff_forecast_recist,
-      log_cond_prob_surv[cutoff_observed_patients, ],  // Subset to cutoff-observed patients
+      log_cond_prob_surv[1:1, cutoff_observed_patients],  // Subset to cutoff-observed patients
       cutoff_pfs,
       cutoff_interval_censored,
       cutoff_right_censored,
