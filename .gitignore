@@ -65,3 +65,6 @@ quarto/*_files/
 
 _extensions/
 _targets/
+
+# Core dump files
+core.*
