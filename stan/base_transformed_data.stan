@@ -72,3 +72,11 @@ for (t in 1:max_t_width) {
 // Each value represents weeks since patient's first visit
 row_vector[max_t_width] time_since_first_visit = linspaced_row_vector(max_t_width, 1, max_t_width);
 
+// Upper triangular matrix for cumulative sum integration of time-varying rates
+// Column t contains sum of rates from columns 1 to t-1
+// Used when enable_patient_process_noise_tr = 1
+matrix[max_t_width, max_t_width] cumsum_integration_matrix = rep_matrix(0, max_t_width, max_t_width);
+for (t in 2:max_t_width) {
+  cumsum_integration_matrix[1:(t-1), t] = rep_vector(1, t-1);
+}
+

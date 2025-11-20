@@ -402,9 +402,7 @@ create_tumor_ss_initializer <- function(stan_data) {
       init_vals$raw_patient_log_growth_lag <- rep(0, n_patients)
     }
 
-    if (
-      !stan_data$independ_long_process_noise && !stan_data$enable_pop_cov_tr
-    ) {
+    if (!stan_data$independ_long_process_noise && !stan_data$enable_pop_cov_tr) {
       init_vals$raw_log_patient_tumor_gp_rho_effect <- rep(0, n_patients)
     }
 
@@ -522,9 +520,7 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
     frac_raw_patient_intercept = if (!stan_data$enable_pop_cov_tr) n_patients,
     raw_patient_log_growth_lag = if (!stan_data$enable_pop_cov_tr) n_patients,
     init_raw_patient_intercept = if (!stan_data$enable_pop_cov_init) n_patients,
-    raw_log_patient_tumor_gp_rho_effect = if (
-      use_long_process_corr && !stan_data$enable_pop_cov_tr
-    ) {
+    raw_log_patient_tumor_gp_rho_effect = if (use_long_process_corr && !stan_data$enable_pop_cov_tr) {
       n_patients
     }
   ) |>
@@ -611,6 +607,13 @@ create_tumor_ssls_initializer <- function(stan_data) {
   )
 
   function(chain_id) {
+    # Compute max_t_width (same as in Stan's transformed data)
+    # Stan: max_all_t = max(max(t_patient_visits) + 1, extend_max_all_t)
+    #       max_t_width = max_all_t - min_all_t + 1
+    min_all_t <- min(stan_data$t_patient_visits)
+    max_all_t <- max(max(stan_data$t_patient_visits) + 1, stan_data$extend_max_all_t %||% 0)
+    max_t_width <- max_all_t - min_all_t + 1
+
     with(stan_data, {
       lst(
         tr_sd_trial_intercept = abs(rnorm(1, sd = tr_sd_trial_intercept_sd)),
@@ -702,6 +705,20 @@ create_tumor_ssls_initializer <- function(stan_data) {
           matrix(rnorm(n_patients * n_covar), nrow = n_patients, ncol = n_covar)
         },
 
+        # Total rate process noise (AR(1) time-varying deviations)
+        tr_raw_patient_process_noise = if (enable_patient_process_noise_tr) {
+          matrix(rnorm(n_patients * max_t_width), nrow = n_patients, ncol = max_t_width)
+        },
+        tr_log_sd_pop_process_noise = rnorm(1, mean = log(0.05), sd = 0.5), # log SD around 0.05
+        tr_sd_patient_log_sd_process_noise = abs(rnorm(1, sd = 0.3)),
+        tr_raw_patient_log_sd_process_noise = if (enable_patient_process_noise_sd_tr) rnorm(n_patients),
+        tr_logit_phi_pop_process_noise = rnorm(1, mean = 2, sd = 1), # AR(1) coef around 0.88 on logit scale
+        tr_sd_patient_phi_process_noise = abs(rnorm(1, sd = 0.1)),
+        tr_raw_patient_phi_process_noise = if (enable_patient_process_noise_phi_tr) rnorm(n_patients),
+
+        # Measurement error
+        measure_sd = abs(rnorm(1, sd = measure_sd_sd)),
+
         # Other events baseline hazard (population level)
         log_lambda_gp_pop_alpha = if (n_causes > 0) {
           pmin(
@@ -735,9 +752,7 @@ create_tumor_ssls_initializer <- function(stan_data) {
         },
 
         # Other events baseline hazard (trial level)
-        log_lambda_gp_trial_intercept_sd = if (
-          oe_enable_trial_baseline_hazard
-        ) {
+        log_lambda_gp_trial_intercept_sd = if (oe_enable_trial_baseline_hazard) {
           abs(rnorm(n_causes, sd = oe_log_lambda_gp_trial_intercept_sd_sd))
         },
         log_lambda_gp_trial_alpha = if (oe_enable_trial_baseline_hazard) {
@@ -760,9 +775,7 @@ create_tumor_ssls_initializer <- function(stan_data) {
             20
           )
         },
-        raw_log_lambda_gp_trial_intercept = if (
-          oe_enable_trial_baseline_hazard
-        ) {
+        raw_log_lambda_gp_trial_intercept = if (oe_enable_trial_baseline_hazard) {
           matrix(rnorm(n_causes * n_trials), n_causes, n_trials)
         },
         log_lambda_gp_trial_eta = if (oe_enable_trial_baseline_hazard) {
@@ -773,25 +786,19 @@ create_tumor_ssls_initializer <- function(stan_data) {
         },
 
         # Other events covariate effects (tumor covariates)
-        oe_tumor_coef_qr_pop = if (
-          n_tumor_covar > 0 && oe_enable_pop_tumor_cov
-        ) {
+        oe_tumor_coef_qr_pop = if (n_tumor_covar > 0 && oe_enable_pop_tumor_cov) {
           array(
             replicate(n_causes, rnorm(n_tumor_covar, 0, 1)),
             dim = c(n_causes, n_tumor_covar)
           )
         },
-        oe_sd_trial_tumor_slope = if (
-          n_tumor_covar > 0 && oe_enable_trial_tumor_cov
-        ) {
+        oe_sd_trial_tumor_slope = if (n_tumor_covar > 0 && oe_enable_trial_tumor_cov) {
           array(
             replicate(n_causes, abs(rnorm(n_tumor_covar, sd = 0.15))),
             dim = c(n_causes, n_tumor_covar)
           )
         },
-        oe_raw_trial_tumor_slope = if (
-          n_tumor_covar > 0 && oe_enable_trial_tumor_cov
-        ) {
+        oe_raw_trial_tumor_slope = if (n_tumor_covar > 0 && oe_enable_trial_tumor_cov) {
           array(
             replicate(
               n_causes,

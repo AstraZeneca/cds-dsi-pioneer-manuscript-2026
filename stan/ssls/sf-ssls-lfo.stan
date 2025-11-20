@@ -13,12 +13,13 @@ data {
   #include "../tumor/base_data.stan"
   #include "_sf_outcomes_info.stan"
 
-  #include "legacy/sf-ssls-hyperparam.stan"
+  #include "modules/measurement/hyperparams.stan"
   #include "modules/other_events/data.stan"
   #include "modules/tr/hyperparams.stan"
   #include "modules/frac/hyperparams.stan"
   #include "modules/init/hyperparams.stan"
   #include "modules/other_events/hyperparams.stan"
+  #include "modules/measurement/flags.stan"
   #include "modules/other_events/flags.stan"
   #include "modules/tr/flags.stan"
   #include "modules/frac/flags.stan"
@@ -35,20 +36,22 @@ transformed data {
   
   #include "../base_transformed_data.stan"
   #include "../tumor/tumor_transformed_data.stan"
+  #include "modules/measurement/transformed_data.stan"
   #include "_sf_transformed_data.stan"
   #include "modules/other_events/transformed_data.stan"
   #include "_lfo_transformed_data.stan"
 }
 
 parameters {
+  #include "modules/measurement/parameters.stan"
   #include "modules/other_events/parameters.stan"
   #include "modules/tr/parameters.stan"
   #include "modules/frac/parameters.stan"
   #include "modules/init/parameters.stan"
-  #include "legacy/sf-ssls-parameters.stan"
 }
 
 transformed parameters {
+  #include "modules/measurement/transformed_parameters.stan"
   #include "modules/tr/transformed_parameters.stan"
   #include "modules/frac/transformed_parameters.stan"
   #include "modules/init/transformed_parameters.stan"
@@ -57,11 +60,11 @@ transformed parameters {
 }
 
 model {
+  #include "modules/measurement/priors.stan"
   #include "modules/other_events/priors.stan"
   #include "modules/tr/priors.stan"
   #include "modules/frac/priors.stan"
   #include "modules/init/priors.stan"
-  #include "legacy/sf-ssls-priors.stan"
 
   if (fit_tumor_data) {
     // --- LFO CV specific ---
@@ -121,23 +124,48 @@ generated quantities {
       int n_oos_visits = visit_end - start_idx + 1; 
     
       array[n_oos_visits + 1] int forecast_time = get_int_sub_array(t_patient_visits, patient_visit_pos, i)[visit_size:];      
+      
+      // Extract observed visit indices for this patient
+      array[visit_size] int visit_indices = t_patient_visit_idx[visit_start:cutoff_idx];
+      
+      // Extract observed states from full grid
+      matrix[visit_size, 2] patient_states;
+      patient_states[, 1] = to_vector(states_full_grid[1][i, visit_indices]);
+      patient_states[, 2] = to_vector(states_full_grid[2][i, visit_indices]);
+      
+      // Extract forecast states from full grid
+      // forecast_time[2:] are absolute weeks which directly index the grid
       matrix[n_oos_visits, 2] forecast_patient_states;
-      vector[visit_size] rep_patient_log_sld, rep_mean_patient_log_sld;
-      vector[n_oos_visits] forecast_patient_log_sld, forecast_mean_patient_log_sld;
-      matrix[visit_size - 1, 2] obs_patient_process_noise;
-
-      (forecast_patient_states, rep_patient_log_sld, rep_mean_patient_log_sld,
-       forecast_patient_log_sld, forecast_mean_patient_log_sld,
-       obs_patient_process_noise) = 
-        generate_patient_states_with_means_rng(
-          states[visit_start:cutoff_idx],
-          forecast_time,
-          patient_log_decrease_rate[i], patient_log_growth_rate[i],
-          sum_tumor_size[visit_start], 
-          0.0001, 0.0001, // exp(patient_log_growth_lag[train_idx]), exp(pop_log_growth_transition_rate),
-          rep_matrix(0.0, n_oos_visits, 2), // Hardcode zeros for forecast process noise
-          measure_sd
-        );
+      if (n_oos_visits > 0) {
+        forecast_patient_states[, 1] = to_vector(states_full_grid[1][i, forecast_time[2:]]);
+        forecast_patient_states[, 2] = to_vector(states_full_grid[2][i, forecast_time[2:]]);
+      }
+      
+      // Calculate replicated SLD for observed visits
+      vector[visit_size] rep_patient_log_sld = zeros_vector(visit_size);
+      rep_patient_log_sld[1] = log(sum_tumor_size[visit_start]);
+      if (visit_size > 1) {
+        rep_patient_log_sld[2:] = to_vector(normal_rng(
+          calc_log_sld_mean(patient_states[2:], sum_tumor_size[visit_start]),
+          rep_vector(measure_sd, visit_size - 1)
+        ));
+      }
+      
+      // Calculate mean log SLD (deterministic, no measurement noise)
+      vector[visit_size] rep_mean_patient_log_sld = 
+        calc_log_sld_mean(patient_states, sum_tumor_size[visit_start]);
+      
+      // Calculate forecast SLD with measurement noise
+      vector[n_oos_visits] forecast_patient_log_sld = zeros_vector(n_oos_visits);
+      vector[n_oos_visits] forecast_mean_patient_log_sld = zeros_vector(n_oos_visits);
+      if (n_oos_visits > 0) {
+        forecast_mean_patient_log_sld = 
+          calc_log_sld_mean(forecast_patient_states, sum_tumor_size[visit_start]);
+        forecast_patient_log_sld = to_vector(normal_rng(
+          forecast_mean_patient_log_sld,
+          rep_vector(measure_sd, n_oos_visits)
+        ));
+      }
 
       // calculate_target_recist returns RECIST for treatment visits only (screening dropped),
       // so length(full_predict_recist) == treat_visit_size + n_oos_visits.

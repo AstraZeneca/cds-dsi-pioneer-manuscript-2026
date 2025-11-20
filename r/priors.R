@@ -37,6 +37,15 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     tr_coef_qr_pop_sd = as.array(rep(1, stan_data$n_covar)),
     tr_sd_trial_slope_sd = as.array(rep(0.15, stan_data$n_covar)),
     tr_sd_patient_slope_sd = as.array(rep(0.10, stan_data$n_covar)),
+    
+    # Total rate process noise (AR(1) time-varying rates)
+    # Note: These are deviations in log-rates (decrease/growth), which integrate over time
+    # Even small rate deviations accumulate into substantial tumor trajectory effects
+    tr_log_sd_pop_process_noise_sd        = 0.5,   # allows σ ~[0.4, 2.7] (95% CI), median ≈ 1.0
+    tr_logit_phi_pop_process_noise_mean   = 1.4,   # logit(0.8) ≈ 1.39, favors high correlation
+    tr_logit_phi_pop_process_noise_sd     = 0.5,   # allows φ ~[0.6, 0.9] (95% CI)
+    tr_log_sd_patient_process_noise_sd    = 0.3,   # patient-level variation in log(σ)
+    tr_phi_patient_process_noise_sd       = 0.3,   # patient-level variation on logit(φ) scale
 
     # Fraction module hyperparams
     frac_logit_loc_pop_mean = frac_logit_loc_pop_mean,
