@@ -7,7 +7,7 @@ prepare_pdl1_and_trial_info <- function(res_data) {
       trial = coalesce(trial, "sclc"),
       across(c(cond_group_name, variable), \(l) coalesce(l, "all")),
       variable = fct_collapse(variable, "all" = c("all", "pdl1"), "pdl1_naive" = c("pdl1_naive", "first_liners")),
-      cond_group_name = fct_collapse(cond_group_name, "All" = c("all", "yes"), "PDL 1 Low" = "low", "PDL1 High" = "hi")
+      cond_group_name = fct_collapse(cond_group_name, "All" = c("all", "yes"), "PDL1 Low" = "low", "PDL1 High" = "hi")
     )
 }
 
@@ -181,21 +181,29 @@ plot_surv_ppc <- function(ppc_data, surv_interval_col, ic_col, rc_col, rep_surv_
     NULL
 }
 
-base_plot_km <- function(res_data, obs_km_data, km_est, analysis_data = NULL, group = fit_type, alpha_group = fit_type, color_group = fit_type, linewidth = 0, ...) {
+base_plot_km <- function(res_data, obs_km_data, km_est, analysis_data = NULL, group = fit_type, alpha_group = NULL, color_group = NULL, linewidth = 0, ...) {
+  # Handle defaults - check if NULL and assign
+  group_quo <- enquo(group)
+  alpha_group_quo <- enquo(alpha_group)
+  color_group_quo <- enquo(color_group)
+  
+  if (rlang::quo_is_null(alpha_group_quo)) alpha_group_quo <- group_quo
+  if (rlang::quo_is_null(color_group_quo)) color_group_quo <- group_quo
+  
   pobj <- ggplot(res_data, aes(x = t - 1)) +
     stat_lineribbon(
       aes(
       dist = {{ km_est }},
-      fill = {{ group }},
-      alpha = {{ alpha_group }},
-      group = {{ group }},
+      fill = !!group_quo, 
+      alpha = !!alpha_group_quo,
+      group = !!group_quo,
       ),
       linewidth = linewidth, .width = 0.8, ...
     ) +
     # stat_lineribbon(
     #   aes(
       # dist = {{ km_est }},
-    #   color = {{ color_group }}
+    #   color = !!color_group_quo
     #   ),
     #   .width = 0, # only median line
     #   linewidth = linewidth,
