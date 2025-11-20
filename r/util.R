@@ -264,6 +264,109 @@ get_km_res <- function(analysis_data, pfs_var, censored_var, ...) {
     bind_rows() 
 }
 
+#' Adjust PFS Data Based on Calendar Day Cutoff
+#'
+#' This function artificially cuts off analysis data at a specific calendar day,
+#' adjusting PFS times and censoring indicators as if the data collection had
+#' stopped at that cutoff date. This is useful for retrospective analyses and
+#' simulating data availability at earlier timepoints.
+#'
+#' @param analysis_data A tibble containing the analysis dataset with nested visit_data
+#' @param cutoff_calendar_day The calendar day at which to cut off the data
+#' @param pfs_var Name of the PFS variable (unquoted, default: pfs)
+#' @param week_var Name of the week variable in visit_data (unquoted, default: week)
+#' @param calendar_day_var Name of the calendar day variable in visit_data (unquoted, default: calendar_day)
+#'
+#' @return A modified tibble with adjusted PFS, right_censored, and interval_censored values
+#'
+#' @details
+#' For each patient, the function:
+#' 1. Filters visits to only those occurring on or before the cutoff calendar day
+#' 2. If the patient's original PFS event occurred after the cutoff, sets them as right-censored
+#'    at the time of their last visit before/at the cutoff
+#' 3. Recalculates interval censoring based on the gap between the last observed visit
+#'    and the cutoff date
+#' 4. Preserves the original PFS if it occurred before the cutoff
+#'
+#' @examples
+#' \dontrun{
+#' # Simulate a data cutoff 6 months into the trial
+#' cutoff_data <- apply_calendar_cutoff(
+#'   analysis_data, 
+#'   cutoff_calendar_day = 180
+#' )
+#' 
+#' # Use with custom variable names
+#' cutoff_data <- apply_calendar_cutoff(
+#'   analysis_data,
+#'   cutoff_calendar_day = 180,
+#'   pfs_var = my_pfs,
+#'   week_var = my_week
+#' )
+#' }
+apply_calendar_cutoff <- function(
+  analysis_data, 
+  cutoff_calendar_day,
+  pfs_var = pfs,
+  week_var = week, 
+  calendar_day_var = visit_calendar_day
+) {
+  analysis_data |>
+    mutate(
+      # Filter visit data to only include visits at or before cutoff
+      visit_data = map(visit_data, \(vd) {
+        vd |> filter({{ calendar_day_var }} <= cutoff_calendar_day)
+      })
+    ) |>
+    # Remove patients who have no visits before/at the cutoff
+    filter(map_int(visit_data, nrow) > 0) |>
+    mutate(
+      # Determine last observed week before cutoff
+      last_obs_week = map_int(visit_data, \(vd) {
+        vd |> pull({{ week_var }}) |> max(na.rm = TRUE)
+      }),
+      
+      # Determine last observed calendar day before cutoff
+      last_obs_calendar_day = map_int(visit_data, \(vd) {
+        vd |> pull({{ calendar_day_var }}) |> max(na.rm = TRUE)
+      }),
+      
+      # Adjust PFS: if event was after cutoff, censor at last observation
+      cutoff_pfs = if_else(
+        last_obs_week < {{ pfs_var }},
+        last_obs_week,
+        {{ pfs_var }}
+      ),
+      
+      # Adjust right censoring: becomes censored if original event was after cutoff
+      cutoff_right_censored = if_else(
+        last_obs_week < {{ pfs_var }},
+        1L,
+        right_censored
+      ),
+      
+      # Adjust interval censoring: calculate gap from last visit to cutoff
+      # Only applies if we're now right-censored due to cutoff
+      cutoff_interval_censored = if_else(
+        last_obs_week < {{ pfs_var }},
+        pmax(0L, as.integer(cutoff_calendar_day - last_obs_calendar_day) %/% 7L),
+        if_else(
+          cutoff_right_censored == 1L,
+          pmax(0L, as.integer(cutoff_calendar_day - last_obs_calendar_day) %/% 7L),
+          interval_censored
+        )
+      )
+    ) |>
+    # Replace original variables with cutoff versions
+    mutate(
+      {{ pfs_var }} := cutoff_pfs,
+      right_censored = cutoff_right_censored,
+      interval_censored = cutoff_interval_censored
+    ) |>
+    # Clean up temporary columns
+    select(!c(starts_with("cutoff_"), last_obs_week, last_obs_calendar_day))
+}
+
 add_confirmed_resp_priors <- function(stan_data, priors) {
   stan_data |> 
     list_assign(!!!priors) 
@@ -632,9 +735,25 @@ find_consecutive <- function(vec, x, n = 1) {
 }
 
 find_stan_includes <- function(stan_file, base_dir = NULL) {
-  # Set base directory - use the directory of the main .stan file if not specified
+  # Set base directory - find the stan root directory
+  # Walk up from the main file to find a directory named "stan"
   if (is.null(base_dir)) {
-    base_dir <- dirname(normalizePath(stan_file, mustWork = TRUE))
+    abs_stan_file <- normalizePath(stan_file, mustWork = TRUE)
+    current_dir <- dirname(abs_stan_file)
+    
+    # Walk up to find the "stan" directory
+    while (current_dir != dirname(current_dir)) {  # Not at filesystem root
+      if (basename(current_dir) == "stan") {
+        base_dir <- current_dir
+        break
+      }
+      current_dir <- dirname(current_dir)
+    }
+    
+    # If we didn't find a "stan" directory, fall back to the file's directory
+    if (is.null(base_dir)) {
+      base_dir <- dirname(abs_stan_file)
+    }
   }
   
   # Initialize list to store all found files
@@ -662,13 +781,17 @@ find_stan_includes <- function(stan_file, base_dir = NULL) {
     
     lines <- readLines(abs_path, warn = FALSE)
     
-    # Find #include statements
-    include_pattern <- "^\\s*#include\\s+[\"<]([^\"<>]+)[\">]"
+    # Find #include statements - improved pattern that properly handles quotes/brackets
+    # Pattern captures the path between quotes or angle brackets
+    include_pattern <- '^\\s*#include\\s+[\"<]([^\"<>]+)[\">]'
     include_matches <- grep(include_pattern, lines, value = TRUE)
     
     if (length(include_matches) > 0) {
       # Extract file paths from include statements
-      included_files <- gsub(include_pattern, "\\1", include_matches)
+      # This will capture the path between the opening and closing quote/bracket
+      included_files <- sub('^\\s*#include\\s+[\"<]([^\"<>]+)[\">].*$', '\\1', include_matches)
+      # Trim any whitespace from extracted paths
+      included_files <- trimws(included_files)
       
       for (inc_file in included_files) {
         # Handle relative paths
@@ -693,7 +816,7 @@ find_stan_includes <- function(stan_file, base_dir = NULL) {
           process_file(inc_path)
           
         }, error = function(e) {
-          # If file doesn't exist, try relative to base_dir
+          # If file doesn't exist, try relative to base_dir (stan root)
           alt_path <- file.path(base_dir, inc_file)
           tryCatch({
             alt_path <- normalizePath(alt_path, mustWork = TRUE)
