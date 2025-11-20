@@ -122,6 +122,22 @@ The Stan code uses a modular architecture with `#include` directives. Modules ar
 - **When deprecating code:** Note deprecation in documentation and explain migration path
 - **Keep examples current:** Update code examples in documentation when APIs change
 
+### Markdown Formatting Guidelines
+
+- **Lists after text:** Always include a blank line before a list when it follows text or a heading. This ensures proper rendering.
+  ```markdown
+  Some introductory text:
+  
+  - First item
+  - Second item
+  ```
+  **Incorrect:**
+  ```markdown
+  Some introductory text:
+  - First item
+  - Second item
+  ```
+
 ## Testing and Validation
 
 ### Before Committing Changes
