@@ -1,11 +1,6 @@
 int<lower = 0, upper = 1> fit_tumor_data;
 int<lower = 0> sf_rep_T;
 int<lower = 0, upper = 1> debug;
-int<lower = 0, upper = 1> pop_growth_lag_param_only;
-int<lower = 0, upper = 1> pop_rho_param_only; 
-// Include patient-level fractional decrease covariate effects
-int<lower = 0, upper = 1> independ_long_process_noise;
-int<lower = 0, upper = 1> independ_cross_process_noise;
 int<lower = 1, upper = n_patients> n_shards;
 
 // Note: add_trial_level_baseline_hazard moved to modules/other_events/flags.stan as oe_enable_trial_baseline_hazard

@@ -1,86 +1,247 @@
-# GitHub Copilot Instructions for This Project
+# GitHub Copilot Instructions for Sclc Project
 
-## Code Style Preferences
+## Project Overview
 
-### Prefer Tidyverse Functions
-- Use `readr::read_lines()` instead of `readLines()`
-- Use `stringr::str_starts()` instead of `startsWith()`
-- Use `stringr::str_glue()` instead of `sprintf()` or `paste0()`
-- Use `stringr::str_c()` instead of `paste()`
-- Use `purrr::map()` family instead of `lapply()`, `sapply()`, etc.
-- Use pipes (`|>`) for sequential operations
-- Use modern lambda syntax `\(x)` for anonymous functions
+This is the **sclc** project within the broader Pioneer CDS-DSI codebase. Sclc is a Bayesian hierarchical model for analyzing tumor dynamics and progression-free survival in oncology trials, specifically focused on the HISTORICAL and HISTORICAL-2 trials.
 
-## Critical File Editing Safety Rules
+## Project-Specific Context
 
-### ⚠️ NEVER Truncate Files
-When editing files, especially large R or Python files with multiple functions:
+### What Sclc Uses
 
-1. **Always read the ENTIRE file first** before making edits
-2. **Verify the end of the file** is included in your context
-3. **Check line counts** - if a file appears to end abruptly, read more
-4. **Use `read_file` without limits** to see the complete file structure
-5. **Never assume** a file ends where your initial read stops
+**Stan Models:**
+- Primary model: `stan/ssls/sf-ssls-lfo.stan` and `stan/ssls/sf-ssm-log-space.stan`
+- Modular architecture with components in `stan/ssls/modules/`
+- Uses **n_causes = 1** (single combined competing risk for all non-target events)
 
-### When Making Bulk Formatting Changes
+**R Code Paths:**
+- Data preparation: `r/sclc/prepare_analysis_data.R` (uses `prepare_tumor_stan_data()`)
+- Initialization: `create_tumor_ssls_initializer()` in `r/initializers.R`
+- Targets workflow: `targets/sclc_targets.R`
+- Shared utilities: `r/priors.R`, `r/state_space.R`, `r/plot_functions.R`
 
-If performing operations like:
-- Reformatting function calls (multi-line → single-line)
-- Changing argument patterns across multiple functions
-- Updating code style/aesthetics
-- Any "search and replace" style operations
+**Key Design Decisions:**
+- No patient-level covariate effects in other events model (only population and trial levels)
+- Tumor covariates (`tumor_sum_covar`) are scaffolded but currently set to 0 (pending SSM integration)
+- Uses modular Stan code with feature flags (e.g., `oe_enable_*` flags for other events)
+- QR decomposition for numerical stability in covariate effects
 
-**REQUIRED STEPS:**
-1. Read the file from start to END using `read_file` (check the last line number)
-2. Note the total number of functions/sections in the file
-3. After editing, verify ALL functions are still present
-4. Check the line count hasn't decreased unexpectedly
-5. Use `grep_search` to verify critical functions still exist
+### What Sclc Does NOT Use
 
-### Example Safety Check
+**R Functions Not Used by Sclc:**
+- `base_prepare_pfs_stan_data()` in `r/prepare_analysis_data.R` (used by endometrial-to-lung)
+- `prepare_confirmed_resp_stan_data()` in `r/prepare_analysis_data.R` (used by other projects)
+- `create_crcr_initializer()` and `create_crcr_pfs_initializer()` in `r/initializers.R`
 
+**Stan Models Not Used:**
+- Competing risks models in `stan/crcr/` (sclc uses SSLS, not CRCR)
+- PFS-confirmed-response models in `stan/pfs-confirmed-response/`
+- Breast-breast specific models
+
+**Important:** When making changes to shared files like `r/prepare_analysis_data.R` or `r/priors.R`, ensure changes work for ALL projects (sclc, endometrial-to-lung, etc.), or make sclc-specific changes only in `r/sclc/` directory.
+
+## Code Architecture
+
+### Stan Module System
+
+The Stan code uses a modular architecture with `#include` directives. Modules are organized by feature:
+
+- **State Space Module** (`stan/ssls/modules/`):
+  - `tr/` - Tumor regression (decrease) dynamics
+  - `frac/` - Growth fraction dynamics
+  - `init/` - Initial state modeling
+  - `other_events/` - Competing risks for non-target events
+
+- **Module Structure Pattern:**
+  Each module has 7 standard files:
+  1. `flags.stan` - Feature switches (e.g., `enable_trial_intercept_tr`)
+  2. `data.stan` - Data declarations specific to module
+  3. `hyperparams.stan` - Prior hyperparameters
+  4. `transformed_data.stan` - Data preprocessing
+  5. `parameters.stan` - Parameter declarations
+  6. `transformed_parameters.stan` - Derived quantities
+  7. `priors.stan` - Prior distributions
+
+### Naming Conventions
+
+**Module Prefixes:**
+- Other events: `oe_*` for parameters/hyperparameters
+- Tumor regression: `tr_*` for parameters/hyperparameters
+- Growth fraction: `frac_*` for parameters/hyperparameters
+- Initial state: `init_*` for parameters/hyperparameters
+
+**Feature Flags:**
+- Use verb "enable": `<module>_enable_<feature>`
+- Examples: `oe_enable_trial_baseline_hazard`, `enable_trial_intercept_tr`
+
+**Hierarchical Parameters:**
+- Population level: `*_pop` (e.g., `tr_coef_qr_pop`)
+- Trial level SD: `*_sd_trial_*` (e.g., `tr_sd_trial_intercept`)
+- Trial level raw effects: `*_raw_trial_*` (e.g., `tr_raw_trial_intercept`)
+- Patient level SD: `*_sd_patient_*` (e.g., `tr_sd_patient_intercept`)
+- Patient level raw effects: `*_raw_patient_*` (e.g., `tr_raw_patient_intercept`)
+
+**For detailed naming conventions, see:** `docs/multi_level_hierarchy_design.md`
+
+### R Code Organization
+
+- **Base functions** (`r/*.R`): Shared across all projects
+- **Sclc-specific** (`r/sclc/*.R`): Only for sclc
+- **Project workflows** (`targets/*.R`): Project-specific pipelines
+
+## Documentation Maintenance Requirements
+
+### When to Update Documentation
+
+1. **Always check and update relevant documentation** when making code changes:
+   - Module changes → Update module-specific docs
+   - Naming changes → Update `docs/multi_level_hierarchy_design.md`
+   - Architecture changes → Update this file and `README.md`
+   - New features → Update relevant markdown files in `docs/`
+
+2. **README files to maintain:**
+   - `/mnt/code/README.md` - Main project overview
+   - `/mnt/code/targets/README.md` - Targets workflow documentation
+   - Module-specific README files (if they exist)
+
+3. **Technical documentation files:**
+   - `docs/ARCHITECTURE.md` - System architecture, naming conventions, and optimization techniques
+   - `docs/OTHER_EVENTS_MODEL.md` - Other events model design and implementation
+   - `docs/CHANGELOG.md` - Major changes and design decisions
+   - `docs/CODEOWNERS` - Code ownership and review requirements
+   - `sld_state_space_model.md` - State space model documentation
+
+4. **Quarto documentation:**
+   - Files in `quarto/` directory should be updated when analysis methods change
+   - HTML outputs may need regeneration after changes
+
+### Documentation Update Guidelines
+
+- **Before implementing changes:** Read relevant markdown files to understand current design
+- **After implementing changes:** Update affected documentation to reflect new behavior
+- **When adding features:** Document design decisions in appropriate markdown files
+- **When deprecating code:** Note deprecation in documentation and explain migration path
+- **Keep examples current:** Update code examples in documentation when APIs change
+
+## Testing and Validation
+
+### Before Committing Changes
+
+1. **Compilation check:** Ensure Stan models compile using `stanc` directly
+2. **Baseline regression:** Changes with all flags=FALSE should match previous behavior
+3. **Incremental testing:** Test new features with flags enabled one at a time
+4. **Documentation review:** Verify all relevant docs are updated
+
+### Stan Model Validation
+
+**Use `stanc` for syntax checking:**
 ```bash
-# Before editing: Count functions
-grep -c "^[a-zA-Z_].*<- function" r/plot_functions.R
-
-# After editing: Verify count matches
-grep -c "^[a-zA-Z_].*<- function" r/plot_functions.R
+~/.cmdstan/cmdstan-2.37.0/bin/stanc --include-paths=stan,stan/ssls stan/ssls/sf-ssm-log-space.stan
 ```
 
-### For R Function Files Specifically
+This is faster than full compilation and sufficient for checking syntax correctness. Only do full compilation with `cmdstanr::cmdstan_model()` when you need the executable.
 
-Files like `r/plot_functions.R`, `r/table_functions.R`, `r/util.R` often contain:
-- Many sequential function definitions
-- Functions at the END of the file that are easy to lose
-- Important utilities that aren't imported elsewhere
+### Key Files for Testing
 
-**Before committing changes to these files:**
-- Scan for function names at the end of the file
-- Verify the file ends with `# nolint end` or similar expected marker
-- Check git diff line counts: large deletions (-700 lines) are suspicious
+- Test definitions: `tests/testthat/`
+- Test runner: `tests/testthat.R`
+- Example workflows: Files in `targets/` directory
 
-## Recovery Procedure
+## Common Operations
 
-If functions are accidentally deleted:
-1. Use `git log -p -S "function_name"` to find when it was deleted
-2. Use `git show <commit>^:path/to/file.R` to see the file before deletion
-3. Extract and restore the missing functions
-4. Verify all related files still work
+### Adding a New Module Parameter
 
-## File-Specific Warnings
+1. Add feature flag in `modules/<module>/flags.stan`
+2. Add hyperparameters in `modules/<module>/hyperparams.stan` with `<module>_` prefix
+3. Add parameter declarations in `modules/<module>/parameters.stan`
+4. Implement transformed parameter logic in `modules/<module>/transformed_parameters.stan`
+5. Add priors in `modules/<module>/priors.stan`
+6. Update `r/priors.R` with default hyperparameter values
+7. Update relevant initializer in `r/initializers.R`
+8. Update `targets/sclc_targets.R` with default flag value
+9. **Update documentation** in `docs/ARCHITECTURE.md` and `docs/CHANGELOG.md`
 
-### `r/plot_functions.R`
-- Contains many plotting utilities
-- Functions like `plot_lfo_elpd_diff` are at the end
-- Always verify the last function after bulk edits
+### Adding Data to Stan Models
 
-### `r/sclc/plot_functions.R`
-- Project-specific plotting functions
-- Check both this AND parent `plot_functions.R`
+1. If module-specific: Add to `modules/<module>/data.stan`
+2. If shared: Add to appropriate base data file (`stan/base_data.stan`, `stan/tumor/base_data.stan`, etc.)
+3. Update R data preparation in `r/sclc/prepare_analysis_data.R`
+4. Ensure `stan_data` list in targets file includes new data
+5. **Update documentation** describing the new data and its purpose
 
-## Testing After Major Edits
+### Modifying Shared Code
 
-After reformatting or bulk changes:
-1. Source the file in R to check for syntax errors
-2. Run `grep "^[a-zA-Z_].*function" file.R | wc -l` before/after
-3. Check for any functions called in `.qmd` files that might now be missing
+When editing files used by multiple projects (`r/priors.R`, `r/prepare_analysis_data.R`, etc.):
+
+1. Check which projects use the function (search in `targets/` directory)
+2. Ensure changes are backwards compatible OR make project-specific versions
+3. For sclc-specific changes, use files in `r/sclc/` directory
+4. Test with other projects if making shared changes
+5. **Document breaking changes** in commit messages and relevant README files
+
+## Version Control
+
+- **Current branch:** Work is typically on `karim/non-target` or feature branches
+- **Repository:** azu-oncology-rd/cds-dsi-pioneer-sclc-01-2025
+- **Commit messages:** Should reference updated documentation files when applicable
+
+## Stan Coding Guidelines
+
+### Stan Best Practices
+
+**Use Built-in Zero Constructors:**
+- Use `zeros_vector()`, `zeros_row_vector()`, `zeros_int_array()`, `zeros_real_array()`, etc.
+- Never manually create arrays/vectors of zeros
+
+**Function Arguments:**
+- Don't pass array/vector sizes as arguments - use `size()` or `num_elements()` inside the function
+- For pos arrays, don't pass pos section sizes - infer them using appropriate pos functions
+
+**Code Organization:**
+- Stan code uses modular `#include` architecture
+- Code fragments may be included in different sections than where they're defined
+- Ignore linter warnings about code needing to be in specific sections (functions, transformed data, etc.)
+
+### Stan Module Structure
+
+Each module in `stan/ssls/modules/` follows this 7-file pattern:
+1. `flags.stan` - Feature switches
+2. `data.stan` - Module-specific data declarations
+3. `hyperparams.stan` - Prior hyperparameters
+4. `transformed_data.stan` - Data preprocessing
+5. `parameters.stan` - Parameter declarations
+6. `transformed_parameters.stan` - Derived quantities
+7. `priors.stan` - Prior distributions
+
+## R Coding Guidelines
+
+### Code Style
+
+- Follow tidyverse style guide
+- Use modern pipe operator `|>` (not `%>%`)
+- Prefer `purrr` and `dplyr` functions over base R loops
+- Use `rlang::list_assign()` for list modifications
+
+### Testing
+
+- Use `testthat` framework for unit tests
+- Tests located in `tests/testthat/`
+- Run with `tests/testthat.R`
+
+## References
+
+### Configuration Files
+- **Quarto config:** `_quarto.yml` for documentation generation settings
+- **Targets config:** `_targets.yaml` and project-specific yaml files for workflow configuration
+- **R environment:** `renv.lock` for package versions
+
+### Key Documentation
+- **Architecture & Design:** `docs/ARCHITECTURE.md`
+- **Other Events Model:** `docs/OTHER_EVENTS_MODEL.md`
+- **Change History:** `docs/CHANGELOG.md`
+- **State space model:** `sld_state_space_model.md`
+- **Code ownership:** `docs/CODEOWNERS`
+
+---
+
+**Last Updated:** November 14, 2025
+**Maintainer:** This file should be updated whenever significant architectural or process changes occur.

@@ -53,6 +53,7 @@ We predict outcomes using a Bayesian multilevel piece-wise constant proportional
 For detailed technical documentation:
 
 - **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** - System architecture, hierarchical parameter design, and Stan optimization
+- **[`docs/ar1_process_noise.md`](docs/ar1_process_noise.md)** - AR(1) time-varying process noise implementation (NEW)
 - **[`docs/OTHER_EVENTS_MODEL.md`](docs/OTHER_EVENTS_MODEL.md)** - Other events model (non-target PD, death) design and implementation
 - **[`docs/CHANGELOG.md`](docs/CHANGELOG.md)** - Major changes and design decisions
 - **[`docs/CODEOWNERS`](docs/CODEOWNERS)** - Code ownership and review requirements

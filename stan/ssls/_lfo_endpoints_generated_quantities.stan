@@ -2,9 +2,6 @@
 // This version uses cutoff-aware COMPACT data (only n_cutoff_observed_patients)
 
 // Latent states for cutoff-observed patients only
-matrix[n_cutoff_visits_m1, 2] cutoff_obs_patient_process_noise;
-matrix[n_cutoff_total_forecast_visits, 2] cutoff_forecast_patient_process_noise;
-
 matrix[n_cutoff_total_forecast_visits, 2] cutoff_forecast_patient_states;
 
 vector[n_cutoff_visits] cutoff_rep_mean_patient_log_sld, cutoff_rep_patient_log_sld;
@@ -25,14 +22,6 @@ array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_right_censore
 
 array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_target_km_est, spop_target_km_est, spop_target_obs_cens_km_est;
 array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_target_km_est, cond_spop_target_km_est, cond_spop_target_obs_cens_km_est;
-
-// Aggregate to trial-level metrics (using cutoff-observed patients only)
-array[n_trials] vector[max_all_t + 1] sample_other_events_km_est, spop_other_events_km_est;
-array[n_trials] vector[max_all_t + 1] sample_km_est, spop_km_est;
-
-// Aggregate to conditional group-level metrics (using cutoff-observed patients only)
-array[n_cond_group] vector[max_all_t + 1] cond_sample_other_events_km_est, cond_spop_other_events_km_est;
-array[n_cond_group] vector[max_all_t + 1] cond_sample_km_est, cond_spop_km_est;
 
 array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] sample_target_pfs_n, spop_target_pfs_n,
                                                                sample_other_events_pfs_n, spop_other_events_pfs_n,
@@ -90,38 +79,26 @@ vector<lower = 0>[n_cond_group] cond_sample_target_median_pfs = zeros_vector(n_c
 array[n_trials] int sample_target_median_pfs_exceeds_max = zeros_int_array(n_trials), spop_target_median_pfs_exceeds_max = zeros_int_array(n_trials);
 array[n_cond_group] int cond_sample_target_median_pfs_exceeds_max = zeros_int_array(n_cond_group), cond_spop_target_median_pfs_exceeds_max = zeros_int_array(n_cond_group);
 
-// Subset states and patient-level parameters using fancy indexing
-// Note: cutoff_state_indices extracts ALL visits (including first) for cutoff-observed patients
-matrix[n_cutoff_visits, 2] cutoff_states = states[cutoff_state_indices, ];
-vector[n_cutoff_observed_patients] cutoff_patient_log_decrease_rate = patient_log_decrease_rate[cutoff_observed_patients];
-vector[n_cutoff_observed_patients] cutoff_patient_log_growth_rate = patient_log_growth_rate[cutoff_observed_patients];
-
 profile("gen_quant") {
+  // Subset visit times and indices for cutoff-observed patients
+  // Note: cutoff_state_indices extracts ALL visits (including first) for cutoff-observed patients
   vector[n_cutoff_visits] cutoff_sum_tumor_size = sum_tumor_size[cutoff_state_indices];
+  array[n_cutoff_visits] int cutoff_t_patient_visit_idx = t_patient_visit_idx[cutoff_state_indices];
   
   // Generate states for cutoff-observed patients (including forecasts for censored patients)
   (cutoff_forecast_patient_states, cutoff_rep_patient_log_sld, cutoff_rep_mean_patient_log_sld,
-   cutoff_forecast_patient_log_sld, cutoff_forecast_mean_patient_log_sld,
-   cutoff_obs_patient_process_noise, cutoff_forecast_patient_process_noise) = 
+   cutoff_forecast_patient_log_sld, cutoff_forecast_mean_patient_log_sld) = 
     generate_all_patients_states_with_means_rng(
-      cutoff_states,
+      states_full_grid,
       cutoff_patient_visit_pos,
       cutoff_patient_visit_m1_pos,
       cutoff_forecast_visits_pos,
       cutoff_patient_last_obs_visit,
       max_all_t,  // Forecast up to max time
       cutoff_t_patient_visits,
-      cutoff_patient_log_decrease_rate,
-      cutoff_patient_log_growth_rate,
+      cutoff_t_patient_visit_idx,
       cutoff_sum_tumor_size,
-      0.0001, 0.0001, // forecast_growth_lag, forecast_growth_transition
       measure_sd,
-      independ_long_process_noise,
-      independ_cross_process_noise,
-      pop_process_sd,
-      L_process_corr,
-      log_pop_tumor_gp_rho,
-      delta,
       cutoff_n_patient_screening_visits
     );
   
@@ -165,6 +142,10 @@ profile("gen_quant") {
       cutoff_n_patient_screening_visits
     );
     
+  // Aggregate to trial-level metrics (using cutoff-observed patients only)
+  array[n_trials] vector[max_all_t + 1] sample_other_events_km_est, spop_other_events_km_est;
+  array[n_trials] vector[max_all_t + 1] sample_km_est, spop_km_est;
+  
   (sample_target_orr, spop_target_orr,
    sample_target_km_est, spop_target_km_est, spop_target_obs_cens_km_est,
    sample_other_events_km_est, spop_other_events_km_est,
@@ -201,6 +182,9 @@ profile("gen_quant") {
       pfs_timepoints
     );
   
+  // Aggregate to conditional group-level metrics (using cutoff-observed patients only)
+  array[n_cond_group] vector[max_all_t + 1] cond_sample_other_events_km_est, cond_spop_other_events_km_est;
+  array[n_cond_group] vector[max_all_t + 1] cond_sample_km_est, cond_spop_km_est;
   
   (cond_sample_target_orr, cond_spop_target_orr,
    cond_sample_target_km_est, cond_spop_target_km_est, cond_spop_target_obs_cens_km_est,

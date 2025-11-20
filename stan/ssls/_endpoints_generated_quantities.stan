@@ -1,8 +1,5 @@
 // Latent states //////////////////////////////////////////
 
-matrix[n_total_visits_m1, 2] obs_patient_process_noise;
-matrix[n_total_forecast_visits, 2] forecast_patient_process_noise;
-
 matrix[n_total_forecast_visits, 2] forecast_patient_states;
 
 vector[sum(n_patient_visits)] rep_mean_patient_log_sld, rep_patient_log_sld;
@@ -85,27 +82,18 @@ profile("gen_quant") {
   
   // Generate states for all patients at once
   (forecast_patient_states, rep_patient_log_sld, rep_mean_patient_log_sld,
-   forecast_patient_log_sld, forecast_mean_patient_log_sld,
-   obs_patient_process_noise, forecast_patient_process_noise) = 
+   forecast_patient_log_sld, forecast_mean_patient_log_sld) = 
     generate_all_patients_states_with_means_rng(
-      states,
+      states_full_grid,
       patient_visit_pos,
       patient_visit_m1_pos,
       forecast_visits_pos,
       patient_last_obs_visit,
       last_predict_visit,
       t_patient_visits,
-      patient_log_decrease_rate,
-      patient_log_growth_rate,
+      t_patient_visit_idx,
       sum_tumor_size,
-      0.0001, 0.0001, // forecast_growth_lag, forecast_growth_transition
       measure_sd,
-      independ_long_process_noise,
-      independ_cross_process_noise,
-      pop_process_sd,
-      L_process_corr,
-      log_pop_tumor_gp_rho,
-      delta,
       n_patient_screening_visits
     );
   
