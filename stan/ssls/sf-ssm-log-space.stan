@@ -63,25 +63,29 @@ model {
 
   profile("loglik") { 
     if (fit_tumor_data) {
-      for (i in 1:n_patients) {
-        int visit_start, visit_end;
-        (visit_start, visit_end) = get_pos(patient_visit_pos, i);
-        normalized_sld[visit_start:visit_end] ~ sf_log_space_obs(states[visit_start:visit_end], measure_sd, log_lod - log_baseline_sld[i]);
+      profile("tumor loglik") {
+        for (i in 1:n_patients) {
+          int visit_start, visit_end;
+          (visit_start, visit_end) = get_pos(patient_visit_pos, i);
+          normalized_sld[visit_start:visit_end] ~ sf_log_space_obs(states[visit_start:visit_end], measure_sd, log_lod - log_baseline_sld[i]);
+        }
       }
     }
 
     if (fit_other_events_data) {
-      // Other events likelihood contribution
-      matrix[n_patients, n_causes] patient_response_lp = rep_matrix(0, n_patients, n_causes); 
-      patient_response_lp[, 1] = calc_pch_loglik(
-        ic_other_events_pfs, 
-        other_events_right_censored, 
-        zeros_int_array(n_patients), // other_events_interval_censored
-        0, 
-        log_cond_prob_surv[1]
-      );
+      profile("other events loglik") {
+        // Other events likelihood contribution
+        matrix[n_patients, n_causes] patient_response_lp = rep_matrix(0, n_patients, n_causes); 
+        patient_response_lp[, 1] = calc_pch_loglik(
+          ic_other_events_pfs, 
+          other_events_right_censored, 
+          zeros_int_array(n_patients), // other_events_interval_censored
+          0, 
+          log_cond_prob_surv[1]
+        );
 
-      target += sum(patient_response_lp);
+        target += sum(patient_response_lp);
+      }
     }
   }
 }
