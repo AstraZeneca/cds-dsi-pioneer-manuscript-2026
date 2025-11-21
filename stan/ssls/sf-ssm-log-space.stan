@@ -99,11 +99,21 @@ generated quantities {
   vector[n_trials] trial_log_decrease_rate = trial_log_total_rate + pop_log_decrease_frac;
   vector[n_trials] trial_log_growth_rate   = trial_log_total_rate + pop_log_growth_frac;
   vector[n_trials] trial_log_growth_rate_residual = trial_log_growth_rate - pop_log_growth_rate;
-  matrix[n_patients, max_t_width] patient_log_growth_rate_residual = 
-    patient_log_growth_rate - rep_matrix(trial_log_growth_rate[patient_trial], max_t_width);
   vector[n_trials] trial_log_decrease_rate_residual = trial_log_decrease_rate - pop_log_decrease_rate;
-  matrix[n_patients, max_t_width] patient_log_decrease_rate_residual = 
-    patient_log_decrease_rate - rep_matrix(trial_log_decrease_rate[patient_trial], max_t_width);
+  
+  // Patient-level residuals: conditionally handle matrix sizing
+  matrix[n_patients, max_t_width] patient_log_growth_rate_residual;
+  matrix[n_patients, max_t_width] patient_log_decrease_rate_residual;
+  
+  if (enable_patient_process_noise_tr) {
+    // Time-varying rates: direct subtraction
+    patient_log_growth_rate_residual = patient_log_growth_rate - rep_matrix(trial_log_growth_rate[patient_trial], max_t_width);
+    patient_log_decrease_rate_residual = patient_log_decrease_rate - rep_matrix(trial_log_decrease_rate[patient_trial], max_t_width);
+  } else {
+    // Constant rates: broadcast single column across all time points
+    patient_log_growth_rate_residual = patient_log_growth_rate[, 1] * ones_row_vector(max_t_width) - rep_matrix(trial_log_growth_rate[patient_trial], max_t_width);
+    patient_log_decrease_rate_residual = patient_log_decrease_rate[, 1] * ones_row_vector(max_t_width) - rep_matrix(trial_log_decrease_rate[patient_trial], max_t_width);
+  }
 
   #include "_endpoints_generated_quantities.stan"  
   #include "_sf_accuracy_generated_quantities.stan"
