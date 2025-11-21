@@ -40,12 +40,29 @@ profile("states") {
   // ============================================================================
   
   profile("compute full states") {
-    // Integrate rates using cumulative sum via matrix multiplication
-    // When enable_patient_process_noise_tr=0: rates are constant, cumsum still works
-    // When enable_patient_process_noise_tr=1: rates are time-varying
-    // Both cases use same computation with precomputed cumsum_integration_matrix
-    states_full_grid[1] = init_log_decrease_patient * ones_row_vector(max_t_width) + (-patient_decrease_rate) * cumsum_integration_matrix;
-    states_full_grid[2] = init_log_growth_patient * ones_row_vector(max_t_width) + patient_growth_rate * cumsum_integration_matrix;
+    if (enable_patient_process_noise_tr) {
+      // Time-varying rates: use cumulative sum for numerical integration
+      // Computational cost: O(n_patients × max_t_width)
+      for (i in 1:n_patients) {
+        // Initial states (t=1): no rates applied yet
+        states_full_grid[1][i, 1] = init_log_decrease_patient[i];
+        states_full_grid[2][i, 1] = init_log_growth_patient[i];
+
+        if (max_t_width > 1) {
+          // Subsequent states (t>1): initial state + cumulative sum of rates
+          // state[t] = init + sum(rates[1:(t-1)])
+          states_full_grid[1][i, 2:] = to_row_vector(init_log_decrease_patient[i] + cumulative_sum(-patient_decrease_rate[i, :(max_t_width-1)]));
+          states_full_grid[2][i, 2:] = to_row_vector(init_log_growth_patient[i] + cumulative_sum(patient_growth_rate[i, :(max_t_width-1)]));
+        }
+      }
+    } else {
+      // Constant rates: simple vectorized computation (optimal for no process noise)
+      // Computational cost: O(n_patients) - just vector-scalar multiplications
+      // states[i,t] = init[i] + rate[i] * (t - 1)
+      // Note: time_since_first_visit starts at 1, so subtract 1 to get [0, 1, 2, ...]
+      states_full_grid[1] = init_log_decrease_patient * ones_row_vector(max_t_width) + -patient_decrease_rate[, 1] * (time_since_first_visit - 1);
+      states_full_grid[2] = init_log_growth_patient * ones_row_vector(max_t_width) + patient_growth_rate[, 1] * (time_since_first_visit - 1);
+    }
   }  
   // ============================================================================
   // Extract visit-time states for observation model (backward compatibility)
