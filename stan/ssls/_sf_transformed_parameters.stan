@@ -6,14 +6,18 @@
 // Combined patient-level rates from tumor regression and growth fraction modules
 // ============================================================================
 
-matrix[n_patients, max_t_width] patient_log_decrease_rate = (tr_loc_patient + frac_log_decrease_patient) * ones_row_vector(max_t_width);
-matrix[n_patients, max_t_width] patient_log_growth_rate   = (tr_loc_patient + frac_log_growth_patient) * ones_row_vector(max_t_width);
+matrix[n_patients, enable_patient_process_noise_tr ? max_t_width : 1] patient_log_decrease_rate; 
+matrix[n_patients, enable_patient_process_noise_tr ? max_t_width : 1] patient_log_growth_rate;
 
 if (enable_patient_process_noise_tr) {
   // Add AR(1) process noise (mean-reverting to baseline rate)
   // log_rate[i,t] = log_baseline_rate[i] + deviation[i,t]
-  patient_log_decrease_rate += tr_patient_process_noise;
-  patient_log_growth_rate   += tr_patient_process_noise;
+  patient_log_decrease_rate = (tr_loc_patient + frac_log_decrease_patient) * ones_row_vector(max_t_width) + tr_patient_process_noise;
+  patient_log_growth_rate   = (tr_loc_patient + frac_log_growth_patient) * ones_row_vector(max_t_width) + tr_patient_process_noise;
+} else {
+  // No process noise: constant rates (stored in single column)
+  patient_log_decrease_rate[, 1] = tr_loc_patient + frac_log_decrease_patient;
+  patient_log_growth_rate[, 1]   = tr_loc_patient + frac_log_growth_patient;
 }
 
 // ============================================================================
@@ -23,8 +27,12 @@ if (enable_patient_process_noise_tr) {
 // Backward compatibility: states at actual visit times for observation model
 matrix[n_total_visits, 2] states; 
 
-matrix[n_patients, max_t_width] patient_decrease_rate = exp(patient_log_decrease_rate);
-matrix[n_patients, max_t_width] patient_growth_rate = exp(patient_log_growth_rate);
+// Conditionally sized matrices for exponentiated rates
+matrix[n_patients, enable_patient_process_noise_tr ? max_t_width : 1] patient_decrease_rate;
+matrix[n_patients, enable_patient_process_noise_tr ? max_t_width : 1] patient_growth_rate;
+
+patient_decrease_rate = exp(patient_log_decrease_rate);
+patient_growth_rate = exp(patient_log_growth_rate);
 
 // Full grid: [n_patients × max_t_width]
 // Position 1 = each patient's first visit (different absolute weeks)
