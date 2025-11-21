@@ -63,8 +63,9 @@ profile("states") {
     // Each row is one patient, each column is one time point
     // This computes all states for all patients in two matrix operations
     // time_since_first_visit defined in base_transformed_data.stan
-    states_full_grid[1] = init_log_decrease_patient * ones_row_vector(max_t_width) + (-patient_decrease_rate) * time_since_first_visit;
-    states_full_grid[2] = init_log_growth_patient * ones_row_vector(max_t_width) + patient_growth_rate * time_since_first_visit;
+    // Note: (time_since_first_visit - 1) maps index 1 to 0 weeks elapsed (baseline)
+    states_full_grid[1] = init_log_decrease_patient * ones_row_vector(max_t_width) + (-patient_decrease_rate) * (time_since_first_visit - 1);
+    states_full_grid[2] = init_log_growth_patient * ones_row_vector(max_t_width) + patient_growth_rate * (time_since_first_visit - 1);
   }
   
   // ============================================================================
