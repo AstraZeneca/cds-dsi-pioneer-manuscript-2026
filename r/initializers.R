@@ -401,6 +401,8 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
 }
 
 create_tumor_ssls_initializer <- function(stan_data) {
+  max_all_t <- max(max(stan_data$t_patient_visits) + 1, stan_data$extend_max_all_t)
+  
   function(chain_id) {
     with(stan_data, {
       lst(
@@ -438,9 +440,18 @@ create_tumor_ssls_initializer <- function(stan_data) {
         init_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_init) abs(rnorm(n_covar, sd = init_sd_patient_slope_sd)),
         init_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_init) matrix(rnorm(n_patients * n_covar), nrow = n_patients, ncol = n_covar),
         
+        # Other events baseline hazard (population level)
+        log_lambda_gp_pop_alpha = if (n_causes > 0) invgamma::rinvgamma(n_causes, oe_log_lambda_gp_pop_alpha_alpha, oe_log_lambda_gp_pop_alpha_beta),
+        log_lambda_gp_pop_rho = if (n_causes > 0) invgamma::rinvgamma(n_causes, oe_log_lambda_gp_pop_rho_alpha, oe_log_lambda_gp_pop_rho_beta),
+        log_lambda_gp_pop_intercept = if (n_causes > 0) rnorm(n_causes, oe_log_lambda_gp_pop_intercept_mean, oe_log_lambda_gp_pop_intercept_sd),
+        log_lambda_gp_pop_eta = if (n_causes > 0) array(rnorm(n_causes * max_all_t), dim = c(n_causes, max_all_t)),
+        
         # Other events baseline hazard (trial level)
         log_lambda_gp_trial_intercept_sd = if (oe_enable_trial_baseline_hazard) abs(rnorm(n_causes, sd = oe_log_lambda_gp_trial_intercept_sd_sd)),
-        log_lambda_gp_trial_alpha = if (oe_enable_trial_baseline_hazard) abs(rnorm(n_causes, sd = oe_log_lambda_gp_trial_alpha_sd)),
+        log_lambda_gp_trial_alpha = if (oe_enable_trial_baseline_hazard) invgamma::rinvgamma(n_causes, oe_log_lambda_gp_trial_alpha_alpha, oe_log_lambda_gp_trial_alpha_beta),
+        log_lambda_gp_trial_rho = if (oe_enable_trial_baseline_hazard) invgamma::rinvgamma(n_causes, oe_log_lambda_gp_trial_rho_alpha, oe_log_lambda_gp_trial_rho_beta),
+        raw_log_lambda_gp_trial_intercept = if (oe_enable_trial_baseline_hazard) matrix(rnorm(n_causes * n_trials), n_causes, n_trials),
+        log_lambda_gp_trial_eta = if (oe_enable_trial_baseline_hazard) array(rnorm(n_causes * n_trials * max_all_t), dim = c(n_causes, n_trials, max_all_t)),
         
         # Other events covariate effects (tumor covariates)
         oe_tumor_coef_qr_pop = if (n_tumor_covar > 0 && oe_enable_pop_tumor_cov) {

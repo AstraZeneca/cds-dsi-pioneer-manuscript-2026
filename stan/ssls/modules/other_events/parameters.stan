@@ -9,8 +9,8 @@ vector<lower=0>[n_causes] log_lambda_gp_pop_rho;
 array[n_causes] row_vector[max_all_t] log_lambda_gp_pop_eta;
 
 // --- Baseline Hazard GP (Trial Level) ---
-vector<lower=0>[oe_enable_trial_baseline_hazard ? n_trials : 0] log_lambda_gp_trial_alpha;
-vector<lower=0>[oe_enable_trial_baseline_hazard ? n_trials : 0] log_lambda_gp_trial_rho;
+vector<lower=0>[oe_enable_trial_baseline_hazard ? n_causes : 0] log_lambda_gp_trial_alpha;
+vector<lower=0>[oe_enable_trial_baseline_hazard ? n_causes : 0] log_lambda_gp_trial_rho;
 array[n_causes] matrix[oe_enable_trial_baseline_hazard ? n_trials : 0, max_all_t] log_lambda_gp_trial_eta;
 array[n_causes] vector[oe_enable_trial_baseline_hazard ? n_trials : 0] raw_log_lambda_gp_trial_intercept;
 vector<lower=0>[oe_enable_trial_baseline_hazard ? n_causes : 0] log_lambda_gp_trial_intercept_sd;

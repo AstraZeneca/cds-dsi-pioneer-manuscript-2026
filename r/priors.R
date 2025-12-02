@@ -69,10 +69,14 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     # Other events baseline hazard GP hyperparameters
     oe_log_lambda_gp_pop_intercept_mean = array(-4.5, dim = c(stan_data$n_causes)),
     oe_log_lambda_gp_pop_intercept_sd   = array(0.5, dim = c(stan_data$n_causes)),
-    oe_log_lambda_gp_pop_alpha_sd       = array(0.4, dim = c(stan_data$n_causes)),
+    # inv_gamma(5, 1.3) matches half-normal(0, 0.4) but avoids values near 0
+    oe_log_lambda_gp_pop_alpha_alpha    = array(5.0, dim = c(stan_data$n_causes)),
+    oe_log_lambda_gp_pop_alpha_beta     = array(1.3, dim = c(stan_data$n_causes)),
     oe_log_lambda_gp_pop_rho_alpha      = array(8.0, dim = c(stan_data$n_causes)),
     oe_log_lambda_gp_pop_rho_beta       = array(12.0, dim = c(stan_data$n_causes)),
-    oe_log_lambda_gp_trial_alpha_sd     = array(0.25, dim = c(stan_data$n_causes)),
+    # inv_gamma(5, 0.8) matches half-normal(0, 0.25) but avoids values near 0
+    oe_log_lambda_gp_trial_alpha_alpha  = array(5.0, dim = c(stan_data$n_causes)),
+    oe_log_lambda_gp_trial_alpha_beta   = array(0.8, dim = c(stan_data$n_causes)),
     oe_log_lambda_gp_trial_rho_alpha    = array(5.0, dim = c(stan_data$n_causes)),
     oe_log_lambda_gp_trial_rho_beta     = array(7.0, dim = c(stan_data$n_causes)),
     oe_log_lambda_gp_trial_intercept_sd_sd = array(0.3, dim = c(stan_data$n_causes)),
