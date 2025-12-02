@@ -3,14 +3,16 @@
 // ============================================================================
 
 // --- Baseline Hazard GP: Population-level ---
-vector<lower=0>[n_causes] oe_log_lambda_gp_pop_alpha_sd;
+vector<lower=0>[n_causes] oe_log_lambda_gp_pop_alpha_alpha;
+vector<lower=0>[n_causes] oe_log_lambda_gp_pop_alpha_beta;
 vector<lower=0>[n_causes] oe_log_lambda_gp_pop_rho_alpha;
 vector<lower=0>[n_causes] oe_log_lambda_gp_pop_rho_beta;
 vector[n_causes] oe_log_lambda_gp_pop_intercept_mean;
 vector<lower=0>[n_causes] oe_log_lambda_gp_pop_intercept_sd;
 
 // --- Baseline Hazard GP: Trial-level ---
-vector<lower=0>[n_causes] oe_log_lambda_gp_trial_alpha_sd;
+vector<lower=0>[n_causes] oe_log_lambda_gp_trial_alpha_alpha;
+vector<lower=0>[n_causes] oe_log_lambda_gp_trial_alpha_beta;
 vector<lower=0>[n_causes] oe_log_lambda_gp_trial_rho_alpha;
 vector<lower=0>[n_causes] oe_log_lambda_gp_trial_rho_beta;
 vector<lower=0>[n_causes] oe_log_lambda_gp_trial_intercept_sd_sd;
