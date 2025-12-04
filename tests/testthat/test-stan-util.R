@@ -46,12 +46,31 @@ cases <- list(
 )
 
 N_CASES <- length(cases)
-MAX_LEN <- max(sapply(cases, function(x) max(length(x$t_measure), length(x$n_measures), length(x$n_patient_tumors), length(x$x), length(x$all), length(x$what))))
+MAX_LEN <- max(sapply(cases, function(x) {
+  max(
+    length(x$t_measure),
+    length(x$n_measures),
+    length(x$n_patient_tumors),
+    length(x$x),
+    length(x$all),
+    length(x$what)
+  )
+}))
 
 # Pad all arrays to MAX_LEN
 for (i in seq_along(cases)) {
-  for (nm in c("t_measure", "n_measures", "n_patient_tumors", "x", "all", "what")) {
-    cases[[i]][[nm]] <- c(cases[[i]][[nm]], rep(0, MAX_LEN - length(cases[[i]][[nm]])))
+  for (nm in c(
+    "t_measure",
+    "n_measures",
+    "n_patient_tumors",
+    "x",
+    "all",
+    "what"
+  )) {
+    cases[[i]][[nm]] <- c(
+      cases[[i]][[nm]],
+      rep(0, MAX_LEN - length(cases[[i]][[nm]]))
+    )
   }
 }
 
@@ -106,9 +125,13 @@ extract_scalar_nocase <- function(var) {
 
 first_draw <- list(
   max_t_out = lapply(1:N_CASES, function(i) extract_vec("max_t_out", i)),
-  num_unique_out = sapply(1:N_CASES, function(i) extract_scalar("num_unique_out", i)),
+  num_unique_out = sapply(1:N_CASES, function(i) {
+    extract_scalar("num_unique_out", i)
+  }),
   unique_out = lapply(1:N_CASES, function(i) extract_vec("unique_out", i)),
-  find_first_out = sapply(1:N_CASES, function(i) extract_scalar("find_first_out", i)),
+  find_first_out = sapply(1:N_CASES, function(i) {
+    extract_scalar("find_first_out", i)
+  }),
   min_eig = extract_scalar_nocase("min_eig"),
   max_eig = extract_scalar_nocase("max_eig"),
   cond_num = extract_scalar_nocase("cond_num"),
@@ -123,18 +146,25 @@ first_draw <- list(
   std_vals = extract_vec_nocase("std_vals", 3)
 )
 test_that("debug column names", {
-  draws_df <- fit$draws() %>% spread_draws(
-    max_t_out[N_CASES, MAX_LEN],
-    num_unique_out[N_CASES],
-    unique_out[N_CASES, MAX_LEN],
-    find_first_out[N_CASES],
-    min_eig, max_eig, cond_num,
-    n_missing_measures[2],
-    idx0[2], idx1[3],
-    uniq_vals[4], uniq_pos[3],
-    idx_dict[7],
-    mean_tumor, sd_tumor, std_vals[3]
-  )
+  draws_df <- fit$draws() %>%
+    spread_draws(
+      max_t_out[N_CASES, MAX_LEN],
+      num_unique_out[N_CASES],
+      unique_out[N_CASES, MAX_LEN],
+      find_first_out[N_CASES],
+      min_eig,
+      max_eig,
+      cond_num,
+      n_missing_measures[2],
+      idx0[2],
+      idx1[3],
+      uniq_vals[4],
+      uniq_pos[3],
+      idx_dict[7],
+      mean_tumor,
+      sd_tumor,
+      std_vals[3]
+    )
   first_draw <- draws_df[draws_df$.draw == 1, ]
   print(colnames(first_draw))
 })
