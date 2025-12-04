@@ -1,5 +1,5 @@
 # tests/testthat/helper-stan.R
-# 
+#
 # Helper functions for testing Stan functions, particularly estimate_kaplan_meier
 #
 # IMPORTANT NOTE about Stan's estimate_kaplan_meier output convention:
@@ -46,12 +46,16 @@ create_mock_km_data <- function(n_patients = 20, max_t = 100, pfs_offset = 0) {
   # Ensure non-monotonic PFS values by using sample without replacement first, then sampling
   # Use a mix of times including some early ones to ensure non-monotonic ordering
   pfs_times <- c(
-    sample(0:(max_t %/% 4), min(n_patients %/% 3, 5), replace = TRUE),  # Some early times
-    sample((max_t %/% 4):(3 * max_t %/% 4), n_patients - min(n_patients %/% 3, 5), replace = TRUE)  # Later times
+    sample(0:(max_t %/% 4), min(n_patients %/% 3, 5), replace = TRUE), # Some early times
+    sample(
+      (max_t %/% 4):(3 * max_t %/% 4),
+      n_patients - min(n_patients %/% 3, 5),
+      replace = TRUE
+    ) # Later times
   )
   # Shuffle to ensure non-monotonic ordering
   pfs_times <- sample(pfs_times)
-  
+
   list(
     n_patients = n_patients,
     event_time = pfs_times,

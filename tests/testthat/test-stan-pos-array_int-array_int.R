@@ -31,8 +31,14 @@ max_groups <- max(sapply(cases, function(x) length(x$group_sizes)))
 max_size <- max(sapply(cases, function(x) length(x$flat_data)))
 
 for (i in seq_along(cases)) {
-  cases[[i]]$group_sizes <- c(cases[[i]]$group_sizes, rep(0, max_groups - length(cases[[i]]$group_sizes)))
-  cases[[i]]$flat_data <- c(cases[[i]]$flat_data, rep(0, max_size - length(cases[[i]]$flat_data)))
+  cases[[i]]$group_sizes <- c(
+    cases[[i]]$group_sizes,
+    rep(0, max_groups - length(cases[[i]]$group_sizes))
+  )
+  cases[[i]]$flat_data <- c(
+    cases[[i]]$flat_data,
+    rep(0, max_size - length(cases[[i]]$flat_data))
+  )
 }
 
 data_list <- list(
@@ -61,7 +67,10 @@ res_df <- as_draws_df(fit$draws())
 extract_first_draw_mat <- function(df, var, idx1, idx2) {
   out <- spread_draws(df, !!as.name(var)[[idx1]], !!as.name(var)[[idx2]])
   # Get first draw for each [idx1, idx2] pair
-  mat <- with(out, tapply(.data[[var]], list(.data[[idx1]], .data[[idx2]]), function(x) x[1]))
+  mat <- with(
+    out,
+    tapply(.data[[var]], list(.data[[idx1]], .data[[idx2]]), function(x) x[1])
+  )
   return(mat)
 }
 
@@ -74,14 +83,22 @@ extract_first_draw_vec <- function(df, var, idx1) {
 
 # Extract all outputs as matrices/vectors for easy indexing
 res <- list(
-  pos_out = spread_draws(res_df, pos_out[case, group]) |> with(tapply(pos_out, list(case, group), function(x) x[1])),
-  pos_size_out = spread_draws(res_df, pos_size_out[case, group]) |> with(tapply(pos_size_out, list(case, group), function(x) x[1])),
-  max_out = spread_draws(res_df, max_out[case, group]) |> with(tapply(max_out, list(case, group), function(x) x[1])),
-  min_out = spread_draws(res_df, min_out[case, group]) |> with(tapply(min_out, list(case, group), function(x) x[1])),
-  max_idx_out = spread_draws(res_df, max_idx_out[case, group]) |> with(tapply(max_idx_out, list(case, group), function(x) x[1])),
-  min_pos_out = spread_draws(res_df, min_pos_out[case, group]) |> with(tapply(min_pos_out, list(case, group), function(x) x[1])),
-  max_pos_out = spread_draws(res_df, max_pos_out[case, group]) |> with(tapply(max_pos_out, list(case, group), function(x) x[1])),
-  last_int_out = spread_draws(res_df, last_int_out[case, group]) |> with(tapply(last_int_out, list(case, group), function(x) x[1]))
+  pos_out = spread_draws(res_df, pos_out[case, group]) |>
+    with(tapply(pos_out, list(case, group), function(x) x[1])),
+  pos_size_out = spread_draws(res_df, pos_size_out[case, group]) |>
+    with(tapply(pos_size_out, list(case, group), function(x) x[1])),
+  max_out = spread_draws(res_df, max_out[case, group]) |>
+    with(tapply(max_out, list(case, group), function(x) x[1])),
+  min_out = spread_draws(res_df, min_out[case, group]) |>
+    with(tapply(min_out, list(case, group), function(x) x[1])),
+  max_idx_out = spread_draws(res_df, max_idx_out[case, group]) |>
+    with(tapply(max_idx_out, list(case, group), function(x) x[1])),
+  min_pos_out = spread_draws(res_df, min_pos_out[case, group]) |>
+    with(tapply(min_pos_out, list(case, group), function(x) x[1])),
+  max_pos_out = spread_draws(res_df, max_pos_out[case, group]) |>
+    with(tapply(max_pos_out, list(case, group), function(x) x[1])),
+  last_int_out = spread_draws(res_df, last_int_out[case, group]) |>
+    with(tapply(last_int_out, list(case, group), function(x) x[1]))
 )
 
 # Check outputs for each case
@@ -98,13 +115,28 @@ for (i in seq_along(cases)) {
   # cat("max_pos:    actual=", toString(res$max_pos_out[i, 1:case$n_groups]), " expected=", toString(case$expect_max_pos), "\n")
   # cat("last_int:   actual=", toString(res$last_int_out[i, 1:case$n_groups]), " expected=", toString(case$expect_last_int), "\n")
   test_that(sprintf("pos.stan utilities: case %d", i), {
-    expect_equal(unname(res$pos_out[i, 1:(case$n_groups+1)]), case$expect_pos)
-    expect_equal(unname(res$pos_size_out[i, 1:case$n_groups]), case$expect_pos_size)
+    expect_equal(unname(res$pos_out[i, 1:(case$n_groups + 1)]), case$expect_pos)
+    expect_equal(
+      unname(res$pos_size_out[i, 1:case$n_groups]),
+      case$expect_pos_size
+    )
     expect_equal(unname(res$max_out[i, 1:case$n_groups]), case$expect_max)
     expect_equal(unname(res$min_out[i, 1:case$n_groups]), case$expect_min)
-    expect_equal(unname(res$max_idx_out[i, 1:case$n_groups]), case$expect_max_idx)
-    expect_equal(unname(res$min_pos_out[i, 1:case$n_groups]), case$expect_min_pos)
-    expect_equal(unname(res$max_pos_out[i, 1:case$n_groups]), case$expect_max_pos)
-    expect_equal(unname(res$last_int_out[i, 1:case$n_groups]), case$expect_last_int)
+    expect_equal(
+      unname(res$max_idx_out[i, 1:case$n_groups]),
+      case$expect_max_idx
+    )
+    expect_equal(
+      unname(res$min_pos_out[i, 1:case$n_groups]),
+      case$expect_min_pos
+    )
+    expect_equal(
+      unname(res$max_pos_out[i, 1:case$n_groups]),
+      case$expect_max_pos
+    )
+    expect_equal(
+      unname(res$last_int_out[i, 1:case$n_groups]),
+      case$expect_last_int
+    )
   })
 }
