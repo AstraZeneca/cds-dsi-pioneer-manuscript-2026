@@ -4,8 +4,8 @@ source("renv/activate.R")
 
 # if (is_domino) {
   data_path <- Sys.getenv("DOMINO_DATASETS_DIR") 
-  output_path <- file.path(data_path, "analysis-results", Sys.getenv("DOMINO_USER_NAME"))
-  artifacts_path <- file.path(Sys.getenv("DOMINO_ARTIFACTS_DIR"), Sys.getenv("DOMINO_USER_NAME"))
+  output_path <- file.path(data_path, "analysis-results", Sys.getenv("DOMINO_STARTING_USERNAME"))
+  artifacts_path <- file.path(Sys.getenv("DOMINO_ARTIFACTS_DIR"), Sys.getenv("DOMINO_STARTING_USERNAME"))
   fit_output_timestamp <- FALSE
 
 library(conflicted)
