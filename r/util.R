@@ -662,9 +662,13 @@ determine_pfs <- function(visit_data, pfs_confirm_visits = 1) {
   visit_data |> 
     summarize(
       det_pfs_idx = find_consecutive(det_response, "PD", pfs_confirm_visits), # |> coalesce(max(week)),
-      det_pfs = if_else(is.na(det_pfs_idx), max(week), pmax(1, week[det_pfs_idx])),
+      det_pfs = case_when(
+        is.na(det_pfs_idx) ~ max(week),
+        det_pfs_idx > 1 ~ max(1, week[det_pfs_idx - 1]),
+        TRUE ~ 1
+      ),
       det_right_censored = is.na(det_pfs_idx), 
-      det_interval_censored = coalesce(week[det_pfs_idx + 1] - det_pfs - 1, 0)
+      det_interval_censored = if_else(det_right_censored, 0, coalesce(week[det_pfs_idx] - det_pfs - 1, 0))
     )
 }
 
@@ -723,13 +727,12 @@ lite_gather_rvars <- function(fit, ..., ndraws = NULL, recover_data = NULL, calc
 }
 
 find_consecutive <- function(vec, x, n = 1) {
-  enframe(vec) |> 
-    count(value, name = "length") |> 
+  vctrs::vec_unrep(vec) |> 
     mutate(
-      end_index = cumsum(length),
-      start_index = end_index - length + 1
+      end_index = cumsum(times),
+      start_index = end_index - times + 1
     ) |> 
-    filter(value == x, length >= n) |> 
+    filter(key == x, times >= n) |> 
     pull(start_index) |>  
     first() %||% NA
 }
