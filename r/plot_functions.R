@@ -1162,14 +1162,15 @@ stat_distogram <- function(
 #' @param baseline_label_text Character string for the baseline label text (optional, auto-derived from model_labels if available)
 #' @param caption Character string for the plot caption
 #' @return A ggplot object
-plot_lfo_elpd_diff <- function(lfo_data,
-                                baseline_model,
-                                model_labels = NULL,
-                                add_vline = TRUE,
-                                add_baseline_label = TRUE,
-                                baseline_label_text = NULL,
-                                caption = "The cross bars indicate the standard errors and twice the standard errors of the mean elpd difference.") {
-  
+plot_lfo_elpd_diff <- function(
+  lfo_data,
+  baseline_model,
+  model_labels = NULL,
+  add_vline = TRUE,
+  add_baseline_label = TRUE,
+  baseline_label_text = NULL,
+  caption = "The cross bars indicate the standard errors and twice the standard errors of the mean elpd difference."
+) {
   # Prepare the data
   plot_data <- lfo_data |>
     mutate(baseline_model = baseline_model) |>
@@ -1177,9 +1178,12 @@ plot_lfo_elpd_diff <- function(lfo_data,
     filter(model != baseline_model) |>
     mutate(E_log_lik_w_diff = E_log_lik_w - E_log_lik_w_base) |>
     group_by(model) |>
-    summarize(across(c(E_log_lik_w_diff), lst(mean = \(ll) mean(ll, na.rm = TRUE), se = \(ll) sd(ll, na.rm = TRUE) / sqrt(n()))), .groups = "drop") |>
+    summarize(
+      across(c(E_log_lik_w_diff), lst(mean = \(ll) mean(ll, na.rm = TRUE), se = \(ll) sd(ll, na.rm = TRUE) / sqrt(n()))),
+      .groups = "drop"
+    ) |>
     pivot_longer(!model, names_to = c("metric", ".value"), names_pattern = "(.+)_(mean|se)$")
-  
+
   # Calculate the maximum label width for dynamic margin adjustment
   if (!is.null(model_labels)) {
     label_texts <- model_labels[plot_data$model]
@@ -1187,12 +1191,12 @@ plot_lfo_elpd_diff <- function(lfo_data,
   } else {
     label_texts <- plot_data$model
   }
-  
+
   # Calculate max characters and adjust left margin accordingly
   max_chars <- max(nchar(label_texts))
   # Estimate margin in lines: roughly 1 line per 10 characters, with minimum of 8
   left_margin_lines <- max(8, ceiling(max_chars / 10))
-  
+
   # Calculate baseline label text and its width for right margin adjustment
   baseline_text_chars <- 0
   if (add_baseline_label) {
@@ -1215,47 +1219,46 @@ plot_lfo_elpd_diff <- function(lfo_data,
     baseline_lines <- strsplit(baseline_label_text, "\n")[[1]]
     baseline_text_chars <- max(nchar(baseline_lines))
   }
-  
+
   # Calculate right margin based on baseline text width
   # Estimate roughly 1 line per 8 characters for right margin (more generous), with minimum of 5.5
   right_margin_lines <- max(5.5, ceiling(baseline_text_chars / 8))
-  
+
   # Start building the plot
   p <- ggplot(plot_data, aes(mean, model))
-  
+
   # Add vertical line if requested
   if (add_vline) {
     p <- p + geom_vline(xintercept = 0, linetype = "dashed", color = "gray50")
   }
-  
+
   # Add baseline label if requested
   if (add_baseline_label) {
-    p <- p + annotate("text", x = 0, y = Inf, label = baseline_label_text, 
-                     hjust = -0.1, vjust = 1.5, size = 3.5, color = "gray30")
+    p <- p + annotate("text", x = 0, y = Inf, label = baseline_label_text, hjust = -0.1, vjust = 1.5, size = 3.5, color = "gray30")
   }
-  
+
   # Add crossbars
   p <- p +
     geom_crossbar(aes(xmin = mean - se, xmax = mean + se), fill = AZ_gold, alpha = 0.5, width = 0.25) +
     geom_crossbar(aes(xmin = mean - 2 * se, xmax = mean + 2 * se), fill = AZ_gold, alpha = 0.5, width = 0.25)
-  
+
   # Calculate x-axis limits with extra space on the right for the baseline text
   x_min <- min(plot_data$mean - 2 * plot_data$se, na.rm = TRUE)
   x_max <- max(plot_data$mean + 2 * plot_data$se, na.rm = TRUE)
   x_range <- x_max - x_min
-  
+
   # Add extra space on the right: proportional to baseline text length
   # Use at least 20% of the range, or more if baseline text is long
   extra_right_space <- max(0.2 * x_range, baseline_text_chars * 0.01 * x_range)
   xlim <- c(x_min - 0.05 * x_range, x_max + extra_right_space)
-  
+
   # Add scales
   if (!is.null(model_labels)) {
     p <- p + scale_y_discrete("", labels = model_labels)
   } else {
     p <- p + scale_y_discrete("")
   }
-  
+
   p <- p +
     scale_x_continuous("Expected Log Predictive Density Difference") +
     labs(caption = caption) +
@@ -1263,7 +1266,7 @@ plot_lfo_elpd_diff <- function(lfo_data,
     theme(
       plot.margin = margin(t = 5.5, r = right_margin_lines * 5.5, b = 5.5, l = left_margin_lines * 5.5, unit = "pt")
     )
-  
+
   return(p)
 }
 
