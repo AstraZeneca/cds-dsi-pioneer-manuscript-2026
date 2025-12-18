@@ -45,7 +45,7 @@ get_obs_var <- function(
       ungroup()
   }
 
-  rvar_data <- lite_spread_rvars(res, {{ var }})
+  rvar_data <- spread_rvars(res, {{ var }})
 
   if (!is_null(patient_states_data)) {
     rvar_data <- right_join(
@@ -182,7 +182,7 @@ get_forecast_var <- function(
     forecast_extent
   )
 
-  lite_spread_rvars(res, {{ var }}, ndraws = ndraws) |>
+  spread_rvars(res, {{ var }}, ndraws = ndraws) |>
     right_join(subsample_forecast_data, by = "n", relationship = relationship)
 }
 
@@ -270,7 +270,7 @@ get_forecast_recist <- function(
     forecast_extent = forecast_extent
   )
 
-  lite_spread_rvars(res, forecast_recist[n], ndraws = ndraws) |>
+  spread_rvars(res, forecast_recist[n], ndraws = ndraws) |>
     right_join(
       subsample_forecast_data,
       by = "n",
