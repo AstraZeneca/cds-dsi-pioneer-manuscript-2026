@@ -71,6 +71,7 @@ init_project <- function(output_path = output_path, artifacts_path = artifacts_p
   source(here("r", "accuracy.R"))
   source(here("r", "state_space.R"))
   source(here("r", "plot_functions.R"))
+  source(here("r", "parquet_draws.R"))
 
   source(here("r", "sclc", "priors.R"))
   source(here("r", "sclc", "prepare_analysis_data.R"))
