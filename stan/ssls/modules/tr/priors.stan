@@ -24,7 +24,7 @@ if (n_covar > 0 && enable_patient_cov_tr) {
 }
 
 to_vector(tr_raw_patient_process_noise) ~ std_normal();
-tr_log_sd_pop_process_noise ~ normal(0, tr_log_sd_pop_process_noise_sd);
+tr_log_sd_pop_process_noise ~ normal(tr_log_sd_pop_process_noise_mean, tr_log_sd_pop_process_noise_sd);
 tr_logit_phi_pop_process_noise ~ normal(tr_logit_phi_pop_process_noise_mean, tr_logit_phi_pop_process_noise_sd);
 tr_raw_patient_log_sd_process_noise ~ std_normal();
 tr_raw_patient_phi_process_noise ~ std_normal();
