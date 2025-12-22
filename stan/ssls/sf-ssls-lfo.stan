@@ -127,18 +127,40 @@ generated quantities {
       
       // Extract observed visit indices for this patient
       array[visit_size] int visit_indices = t_patient_visit_idx[visit_start:cutoff_idx];
-      
-      // Extract observed states from full grid
+
+      // Extract observed states and compute forecast states
       matrix[visit_size, 2] patient_states;
-      patient_states[, 1] = to_vector(states_full_grid[1][i, visit_indices]);
-      patient_states[, 2] = to_vector(states_full_grid[2][i, visit_indices]);
-      
-      // Extract forecast states from full grid
-      // forecast_time[2:] are absolute weeks which directly index the grid
       matrix[n_oos_visits, 2] forecast_patient_states;
-      if (n_oos_visits > 0) {
-        forecast_patient_states[, 1] = to_vector(states_full_grid[1][i, forecast_time[2:]]);
-        forecast_patient_states[, 2] = to_vector(states_full_grid[2][i, forecast_time[2:]]);
+
+      if (enable_patient_process_noise_tr) {
+        // Process noise ON: Extract from dense grid computed in transformed_parameters
+        patient_states[, 1] = to_vector(states_full_grid[1][i, visit_indices]);
+        patient_states[, 2] = to_vector(states_full_grid[2][i, visit_indices]);
+
+        if (n_oos_visits > 0) {
+          forecast_patient_states[, 1] = to_vector(states_full_grid[1][i, forecast_time[2:]]);
+          forecast_patient_states[, 2] = to_vector(states_full_grid[2][i, forecast_time[2:]]);
+        }
+      } else {
+        // Process noise OFF: Use states directly and compute forecast on-the-fly
+        patient_states = states[visit_start:cutoff_idx];
+
+        if (n_oos_visits > 0) {
+          // Compute forecast states using constant rates
+          matrix[n_oos_visits + 1, 2] full_forecast_expected;  // Unused but required by tuple return
+          matrix[n_oos_visits + 1, 2] full_forecast;
+          (full_forecast_expected, full_forecast) = sf_log_space_trajectory_ncp(
+            patient_states[visit_size],  // Last observed state as initial
+            forecast_time,
+            exp(patient_log_decrease_rate[i, 1]),
+            exp(patient_log_growth_rate[i, 1]),
+            negative_infinity(),  // growth lag disabled
+            1.0,  // growth transition
+            rep_matrix(0.0, n_oos_visits, 2),  // No process noise
+            0  // No debug
+          );
+          forecast_patient_states = full_forecast[2:];  // Skip anchor
+        }
       }
       
       // Calculate replicated SLD for observed visits

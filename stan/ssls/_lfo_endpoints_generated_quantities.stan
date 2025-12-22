@@ -84,23 +84,83 @@ profile("gen_quant") {
   // Note: cutoff_state_indices extracts ALL visits (including first) for cutoff-observed patients
   vector[n_cutoff_visits] cutoff_sum_tumor_size = sum_tumor_size[cutoff_state_indices];
   array[n_cutoff_visits] int cutoff_t_patient_visit_idx = t_patient_visit_idx[cutoff_state_indices];
-  
+
   // Generate states for cutoff-observed patients (including forecasts for censored patients)
-  (cutoff_forecast_patient_states, cutoff_rep_patient_log_sld, cutoff_rep_mean_patient_log_sld,
-   cutoff_forecast_patient_log_sld, cutoff_forecast_mean_patient_log_sld) = 
-    generate_all_patients_states_with_means_rng(
-      states_full_grid,
-      cutoff_patient_visit_pos,
-      cutoff_patient_visit_m1_pos,
-      cutoff_forecast_visits_pos,
-      cutoff_patient_last_obs_visit,
-      max_all_t,  // Forecast up to max time
-      cutoff_t_patient_visits,
-      cutoff_t_patient_visit_idx,
-      cutoff_sum_tumor_size,
-      measure_sd,
-      cutoff_n_patient_screening_visits
-    );
+  if (enable_patient_process_noise_tr) {
+    // Process noise ON: Use states_full_grid (dense grid computed in transformed_parameters)
+    (cutoff_forecast_patient_states, cutoff_rep_patient_log_sld, cutoff_rep_mean_patient_log_sld,
+     cutoff_forecast_patient_log_sld, cutoff_forecast_mean_patient_log_sld) =
+      generate_all_patients_states_with_means_rng(
+        states_full_grid,
+        cutoff_patient_visit_pos,
+        cutoff_patient_visit_m1_pos,
+        cutoff_forecast_visits_pos,
+        cutoff_patient_last_obs_visit,
+        max_all_t,  // Forecast up to max time
+        cutoff_t_patient_visits,
+        cutoff_t_patient_visit_idx,
+        cutoff_sum_tumor_size,
+        measure_sd,
+        cutoff_n_patient_screening_visits
+      );
+  } else {
+    // Process noise OFF: Compute states on-the-fly using constant rates (original approach)
+    for (i in 1:n_cutoff_observed_patients) {
+      // Get the original patient index to access rates
+      int orig_patient_idx = cutoff_observed_patients[i];
+
+      int visit_start, visit_end;
+      (visit_start, visit_end) = get_pos(cutoff_patient_visit_pos, i);
+      int visit_size = get_pos_size(cutoff_patient_visit_pos, i);
+
+      int forecast_visit_start, forecast_visit_end;
+      (forecast_visit_start, forecast_visit_end) = get_pos(cutoff_forecast_visits_pos, i);
+      int forecast_size = get_pos_size(cutoff_forecast_visits_pos, i);
+
+      // Build forecast time WITH anchor
+      array[forecast_size + 1] real forecast_time = linspaced_array(
+        forecast_size + 1,
+        cutoff_patient_last_obs_visit[i],
+        max_all_t);
+
+      // Extract this patient's states from the global states matrix
+      // Get original visit positions to index into states
+      int orig_visit_start, orig_visit_end;
+      (orig_visit_start, orig_visit_end) = get_pos(patient_visit_pos, orig_patient_idx);
+
+      // Get the cutoff visits (first n visits up to cutoff)
+      matrix[visit_size, 2] cutoff_patient_states = states[orig_visit_start:(orig_visit_start + visit_size - 1)];
+
+      // Generate states using constant rates
+      matrix[forecast_size, 2] temp_forecast_patient_states;
+      vector[visit_size] temp_rep_patient_log_sld;
+      vector[visit_size] temp_rep_mean_patient_log_sld;
+      vector[forecast_size] temp_forecast_patient_log_sld;
+      vector[forecast_size] temp_forecast_mean_patient_log_sld;
+      matrix[visit_size - 1, 2] temp_obs_process_noise;
+
+      (temp_forecast_patient_states, temp_rep_patient_log_sld, temp_rep_mean_patient_log_sld,
+       temp_forecast_patient_log_sld, temp_forecast_mean_patient_log_sld, temp_obs_process_noise) =
+        generate_patient_states_with_means_rng(
+          cutoff_patient_states,
+          forecast_time,
+          patient_log_decrease_rate[orig_patient_idx, 1],
+          patient_log_growth_rate[orig_patient_idx, 1],
+          cutoff_sum_tumor_size[visit_start],
+          negative_infinity(),
+          1.0,
+          rep_matrix(0.0, forecast_size, 2),
+          measure_sd
+        );
+
+      // Store results
+      cutoff_forecast_patient_states[forecast_visit_start:forecast_visit_end] = temp_forecast_patient_states;
+      cutoff_rep_patient_log_sld[visit_start:visit_end] = temp_rep_patient_log_sld;
+      cutoff_rep_mean_patient_log_sld[visit_start:visit_end] = temp_rep_mean_patient_log_sld;
+      cutoff_forecast_patient_log_sld[forecast_visit_start:forecast_visit_end] = temp_forecast_patient_log_sld;
+      cutoff_forecast_mean_patient_log_sld[forecast_visit_start:forecast_visit_end] = temp_forecast_mean_patient_log_sld;
+    }
+  }
   
   // Calculate RECIST classifications for cutoff-observed patients (including forecasts)
   (cutoff_rep_recist, cutoff_forecast_recist) = calculate_all_patients_recist(
