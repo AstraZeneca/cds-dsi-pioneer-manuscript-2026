@@ -41,7 +41,8 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     # Total rate process noise (AR(1) time-varying rates)
     # Note: These are deviations in log-rates (decrease/growth), which integrate over time
     # Even small rate deviations accumulate into substantial tumor trajectory effects
-    tr_log_sd_pop_process_noise_sd        = 0.5,   # allows σ ~[0.4, 2.7] (95% CI), median ≈ 1.0
+    tr_log_sd_pop_process_noise_mean      = -3,    # log(0.05) ≈ -3, median σ ≈ 0.05 (5% deviations)
+    tr_log_sd_pop_process_noise_sd        = 0.5,   # allows σ ~[0.02, 0.13] (95% CI)
     tr_logit_phi_pop_process_noise_mean   = 1.4,   # logit(0.8) ≈ 1.39, favors high correlation
     tr_logit_phi_pop_process_noise_sd     = 0.5,   # allows φ ~[0.6, 0.9] (95% CI)
     tr_log_sd_patient_process_noise_sd    = 0.3,   # patient-level variation in log(σ)

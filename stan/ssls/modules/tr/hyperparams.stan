@@ -27,6 +27,7 @@ row_vector<lower=0>[n_covar] tr_sd_patient_slope_sd;  // prior SD for each patie
 
 // Process noise hyperparameters (for AR(1) process on measurements)
 // Process noise prior hyperparameters
+real tr_log_sd_pop_process_noise_mean;         // Prior mean for log(σ) at population level
 real tr_log_sd_pop_process_noise_sd;           // Prior SD for log(σ) at population level
 real tr_logit_phi_pop_process_noise_mean;      // Prior mean for logit(φ) at population level
 real tr_logit_phi_pop_process_noise_sd;        // Prior SD for logit(φ) at population level
