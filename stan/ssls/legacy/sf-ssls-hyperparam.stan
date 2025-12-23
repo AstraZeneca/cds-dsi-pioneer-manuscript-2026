@@ -27,14 +27,5 @@ real<lower = 0> rate_corr_param;
 
 real<lower = 0> log_lod_sd;
 
-int<lower = 1> n_causes; // Death and non-target PD
-
-vector<lower = 0>[n_causes] log_lambda_gp_pop_alpha_sd;
-vector<lower = 0>[n_causes] log_lambda_gp_pop_rho_alpha, log_lambda_gp_pop_rho_beta;
-vector[n_causes] log_lambda_gp_pop_intercept_mean;
-vector<lower = 0>[n_causes] log_lambda_gp_pop_intercept_sd;
-
-vector<lower = 0>[n_causes] log_lambda_gp_trial_alpha_sd;
-vector<lower = 0>[n_causes] log_lambda_gp_trial_rho_alpha, log_lambda_gp_trial_rho_beta;
-vector<lower = 0>[n_causes] log_lambda_gp_trial_intercept_sd_sd;
+// Note: Other events hyperparameters moved to modules/other_events/hyperparams.stan
 

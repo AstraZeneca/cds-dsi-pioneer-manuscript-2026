@@ -76,3 +76,5 @@ quarto/*.rmarkdown
 
 **/*.quarto_ipynb
 quarto/.posit/
+
+*_files/

@@ -1,3 +1,7 @@
+// Quantiles to estimate (e.g., 0.25, 0.5, 0.75 for Q1, median, Q3)
+int<lower = 0> n_pfs_quantiles;
+vector<lower = 0, upper = 1>[n_pfs_quantiles] pfs_quantiles;
+
 int<lower = 0> n_pfs_timepoints;
 array[n_pfs_timepoints] int<lower = 0> pfs_timepoints; // In months
 
