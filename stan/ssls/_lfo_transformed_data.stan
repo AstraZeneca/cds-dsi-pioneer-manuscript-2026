@@ -88,37 +88,36 @@ print(n,": ", m_size);
 array[n_patients + 1] int<lower = 1> testing_visit_pos = zeros_int_array(n_patients + 1); 
 array[n_patients] int n_patient_testing_visits;
 
-for (i in 1:n_patients) {
-int visit_start, visit_end;
-(visit_start, visit_end) = get_pos(patient_visit_pos, i); 
-
-int start_idx = testing_start_idx[1, i];
-// Only allocate OOS visits for patients who actually have a post-cutoff start.
-// If start_idx == 0, the patient is not included at the first cutoff (no OOS window yet).
-n_patient_testing_visits[i] = start_idx > 0 ? (visit_end - start_idx + 1) : 0;
-}
-
-testing_visit_pos = create_pos(n_patient_testing_visits);
-
-// --- Cutoff-censored observed data for endpoints ---
-// Create versions of observed data that only include information available at the cutoff
-// This is used for sample_target_* metrics in LFO to avoid data leakage
-
 // First, identify which patients have any observations at the cutoff
 // (cutoff_last_visit_idx[i] > 0 means patient i has at least one visit before/at cutoff)
 array[n_patients] int cutoff_observed_mask;
 int n_cutoff_observed_patients = 0;
 
 for (i in 1:n_patients) {
+  int visit_start, visit_end;
+  (visit_start, visit_end) = get_pos(patient_visit_pos, i); 
+  
+  int start_idx = testing_start_idx[1, i];
+  
+  // Identify patients observed at cutoff
   if (cutoff_last_visit_idx[i] > 0) {
     cutoff_observed_mask[i] = 1;
     n_cutoff_observed_patients += 1;
   } else {
     cutoff_observed_mask[i] = 0;
   }
+  
+  // Only allocate OOS visits for patients who:
+  // 1) Have post-cutoff visits (start_idx > 0), AND
+  // 2) Were observed before/at the cutoff (cutoff_observed_mask[i] == 1)
+  // This matches the condition in sf-ssls-lfo.stan where predictions are generated
+  n_patient_testing_visits[i] = (start_idx > 0 && cutoff_observed_mask[i] == 1) ? (visit_end - start_idx + 1) : 0;
 }
 
 print("n_cutoff_observed_patients = ", n_cutoff_observed_patients);
+
+testing_visit_pos = create_pos(n_patient_testing_visits);
+
 
 // Create a compact array of patient IDs who were observed at cutoff
 // and a mapping from original patient ID to compact index
@@ -150,7 +149,43 @@ for (obs_idx in 1:n_cutoff_observed_patients) {
   }
 }
 
-// Create compact visit-level data for cutoff-observed patients
+// Create cutoff-censored other events data
+array[n_cutoff_observed_patients] int cutoff_ic_other_events_pfs;
+array[n_cutoff_observed_patients] int cutoff_other_events_right_censored;
+
+for (obs_idx in 1:n_cutoff_observed_patients) {
+  int i = cutoff_observed_patients[obs_idx];  // Original patient ID
+  
+  // If patient's other events PFS is after the cutoff, censor them at cutoff
+  if (other_events_pfs[i] > cutoff_last_visit_week[i]) {
+    cutoff_ic_other_events_pfs[obs_idx] = cutoff_last_visit_week[i] + other_events_interval_censored[i];
+    cutoff_other_events_right_censored[obs_idx] = 1;  // Censored at cutoff
+  } else {
+    // Event occurred before cutoff, use actual observed data
+    cutoff_ic_other_events_pfs[obs_idx] = ic_other_events_pfs[i];
+    cutoff_other_events_right_censored[obs_idx] = other_events_right_censored[i];
+  }
+}
+
+// Create cutoff-censored target lesion PFS data
+array[n_cutoff_observed_patients] int cutoff_target_pfs;
+array[n_cutoff_observed_patients] int cutoff_target_right_censored;
+
+for (obs_idx in 1:n_cutoff_observed_patients) {
+  int i = cutoff_observed_patients[obs_idx];  // Original patient ID
+  
+  // If patient's target PFS is after the cutoff, censor them at cutoff
+  if (target_pfs[i] > cutoff_last_visit_week[i]) {
+    cutoff_target_pfs[obs_idx] = cutoff_last_visit_week[i];
+    cutoff_target_right_censored[obs_idx] = 1;  // Censored at cutoff
+  } else {
+    // Event occurred before cutoff, use actual observed data
+    cutoff_target_pfs[obs_idx] = target_pfs[i];
+    cutoff_target_right_censored[obs_idx] = target_right_censored[i];
+  }
+}
+
+// Create compact patient state data for cutoff-observed patients
 // First, count total visits for observed patients at cutoff
 int n_cutoff_visits = 0;
 array[n_cutoff_observed_patients] int cutoff_n_patient_visits;

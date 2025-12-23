@@ -1,22 +1,22 @@
 # nolint start: object_usage_linter
 
-#' Calculate progression-free survival from clinical data for each patient 
+#' Calculate progression-free survival from clinical data for each patient
 #'
-#' @param progress_week Progress week 
-#' @param death_week Death week 
-#' @param right_censored Right censored 
-#' @param patient_tumors of all the patient's tumors 
+#' @param progress_week Progress week
+#' @param death_week Death week
+#' @param right_censored Right censored
+#' @param patient_tumors of all the patient's tumors
 #'
 #' @return The last observed/measured week before progression was detected
 calc_pfs <- function(progress_week, right_censored, patient_tumors) {
   event_week <- progress_week
-  
-  # Get all the assessment weeks that happened before progression (if not censored). 
+
+  # Get all the assessment weeks that happened before progression (if not censored).
   pre_progress_weeks <- unnest(patient_tumors, tumor_history) |>
     distinct(week) |>
     filter(right_censored | week < event_week) |>
     pull(week)
-  
+
   # There are a few patients who just have a single post treatment visit
   if (length(pre_progress_weeks) > 0) max(pre_progress_weeks) else NA_integer_
 }
@@ -26,7 +26,7 @@ calc_pfs <- function(progress_week, right_censored, patient_tumors) {
 #' This function processes a data frame of response assessments over time and determines
 #' the confirmed response status, timing, and associated censoring information.
 #'
-#' @param response A data frame containing response assessment data. 
+#' @param response A data frame containing response assessment data.
 #'   Expected columns: week, day, objective_response
 #'
 #' @return A list containing:
@@ -37,36 +37,66 @@ calc_pfs <- function(progress_week, right_censored, patient_tumors) {
 #'   \item{confirmed_response_week}{Integer. Week of confirmed response or last assessment if censored}
 #'
 calc_confirmed_response <- function(response) {
-  conf_resp_data <- response |> 
+  conf_resp_data <- response |>
     mutate(
       confirmed_response = case_when(
         !objective_response ~ FALSE,
-        objective_response & lag(objective_response, default = NA) ~ TRUE 
-      ), 
+        objective_response & lag(objective_response, default = NA) ~ TRUE
+      ),
       # "confirmed response" needs two consecutive CR/PR so we need to lag by 1
-      confirmed_response_week = if_else(confirmed_response, lag(week, default = NA), week),
-      confirmed_response_day = if_else(confirmed_response, lag(day, default = NA), day),
-      confirmed_response_interval_censored = # Here lag by 2 
-        confirmed_response_week - (if_else(confirmed_response, lag(week, n = 2L, default = 0), lag(week, default = 0)) + 1)
-    ) 
-  
-  first_conf_week <- conf_resp_data |> 
-    drop_na(confirmed_response) |> 
-    filter(rank(week, ties.method = "first") == 1) 
-  
-  lst( 
-    confirmed_response = if (nrow(first_conf_week) > 0) pull(first_conf_week, confirmed_response) else NA,
+      confirmed_response_week = if_else(
+        confirmed_response,
+        lag(week, default = NA),
+        week
+      ),
+      confirmed_response_day = if_else(
+        confirmed_response,
+        lag(day, default = NA),
+        day
+      ),
+      # Here lag by 2
+      confirmed_response_interval_censored = confirmed_response_week -
+        (if_else(
+          confirmed_response,
+          lag(week, n = 2L, default = 0),
+          lag(week, default = 0)
+        ) +
+          1)
+    )
+
+  first_conf_week <- conf_resp_data |>
+    drop_na(confirmed_response) |>
+    filter(rank(week, ties.method = "first") == 1)
+
+  lst(
+    confirmed_response = if (nrow(first_conf_week) > 0) {
+      pull(first_conf_week, confirmed_response)
+    } else {
+      NA
+    },
     confirmed_response_censored = is.na(confirmed_response),
-    confirmed_response_interval_censored = if (confirmed_response_censored) 0 else pull(first_conf_week, confirmed_response_interval_censored), 
-    confirmed_response_day = if (confirmed_response_censored) max(response$day, na.rm = TRUE) else pull(first_conf_week, confirmed_response_day),
-    confirmed_response_week = if (confirmed_response_censored) max(response$week, na.rm = TRUE) else pull(first_conf_week, confirmed_response_week)
+    confirmed_response_interval_censored = if (confirmed_response_censored) {
+      0
+    } else {
+      pull(first_conf_week, confirmed_response_interval_censored)
+    },
+    confirmed_response_day = if (confirmed_response_censored) {
+      max(response$day, na.rm = TRUE)
+    } else {
+      pull(first_conf_week, confirmed_response_day)
+    },
+    confirmed_response_week = if (confirmed_response_censored) {
+      max(response$week, na.rm = TRUE)
+    } else {
+      pull(first_conf_week, confirmed_response_week)
+    }
   )
 }
 
-#' Convert analysis data into Stan list format data 
+#' Convert analysis data into Stan list format data
 #'
-#' @param analysis_data Analysis data frame. 
-#' 
+#' @param analysis_data Analysis data frame.
+#'
 #' This is used to pass to a model the tumor specific data.
 #'
 #' @return Stan list data.
@@ -74,17 +104,34 @@ prepare_tumor_stan_data <- function(analysis_data) {
   lst(
     n_patients = nrow(analysis_data),
     n_trials = n_distinct(analysis_data$trial),
-    tumor_location = unnest(analysis_data, patient_tumors) |> pull(tuloc) |> factor(),
-    n_tumor_locations = nlevels(tumor_location), 
+    tumor_location = unnest(analysis_data, patient_tumors) |>
+      pull(tuloc) |>
+      factor(),
+    n_tumor_locations = nlevels(tumor_location),
     patient_trial = factor(analysis_data$trial),
     n_patient_tumors = analysis_data$n_tumors,
     n_measures = analysis_data$n_measures |> unlist(),
-    n_patient_visits = map_int(analysis_data$n_measures, max), 
-    t_measure = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$week) |> unlist(),
-    t_day_measure = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$day) |> unlist(),
-    t_patient_visits = map(analysis_data$t_measure, \(t) sort(unique(unlist(t)))) |> unlist(),
-    tumor_size = unnest(analysis_data, patient_tumors) |> pull(tumor_history) |> map(\(h) h$mmdiam / 10) |> unlist(),
-    sum_tumor_size = map(analysis_data$tumor_sum_size, \(ts) ts$mmsumdiam / 10) |> unlist(),
+    n_patient_visits = map_int(analysis_data$n_measures, max),
+    t_measure = unnest(analysis_data, patient_tumors) |>
+      pull(tumor_history) |>
+      map(\(h) h$week) |>
+      unlist(),
+    t_day_measure = unnest(analysis_data, patient_tumors) |>
+      pull(tumor_history) |>
+      map(\(h) h$day) |>
+      unlist(),
+    t_patient_visits = map(analysis_data$t_measure, \(t) {
+      sort(unique(unlist(t)))
+    }) |>
+      unlist(),
+    tumor_size = unnest(analysis_data, patient_tumors) |>
+      pull(tumor_history) |>
+      map(\(h) h$mmdiam / 10) |>
+      unlist(),
+    sum_tumor_size = map(analysis_data$tumor_sum_size, \(ts) {
+      ts$mmsumdiam / 10
+    }) |>
+      unlist(),
     patient_t_width = analysis_data$patient_t_width,
   )
 }
@@ -107,14 +154,21 @@ prepare_tumor_stan_data <- function(analysis_data) {
 base_prepare_pfs_stan_data <- function(analysis_data, ..., pfs_var = pfs) {
   tumor_stan_data <- prepare_tumor_stan_data(analysis_data)
   pfs_data <- select(
-      analysis_data, 
-      pfs = {{ pfs_var }}, death_week, calendar_week, calendar_day, right_censored, any_of("admin_right_censored_week"), interval_censored, patient = usubjid
-    ) |> 
+    analysis_data,
+    pfs = {{ pfs_var }},
+    death_week,
+    calendar_week,
+    calendar_day,
+    right_censored,
+    any_of("admin_right_censored_week"),
+    interval_censored,
+    patient = usubjid
+  ) |>
     mutate(
       death_week = if_else(right_censored, 0, death_week), # Death week is irrelevant if the data is censored
-      patient = factor(patient) 
-    ) 
-  
+      patient = factor(patient)
+    )
+
   stan_data <- lst(
     fit_data = TRUE,
     use_tumor_model = FALSE,
@@ -132,16 +186,16 @@ base_prepare_pfs_stan_data <- function(analysis_data, ..., pfs_var = pfs) {
     no_prop_hazard = FALSE,
     no_tumor_effects = FALSE,
     log_lik_trial = 0,
-    
+
     fit_tumor_data = FALSE,
     gen_tumor_sizes = FALSE,
-    predict_missing_sizes = FALSE, 
+    predict_missing_sizes = FALSE,
     multilevel_patient = FALSE,
     multilevel_tumor = FALSE,
-    
+
     !!!tumor_stan_data,
     !!!pfs_data,
-  ) |> 
+  ) |>
     list_assign(...)
 }
 
@@ -177,11 +231,11 @@ identify_incomplete_cases <- function(analysis_data, covar_formula) {
   if (is_null(covar_formula)) {
     return(integer(0))
   }
-  
-  select(analysis_data, all_of(all.vars(covar_formula))) |> 
-    map_if(is.ordered, \(f) factor(f, ordered = FALSE)) |> 
-    complete.cases() |> 
-    not() |> 
+
+  select(analysis_data, all_of(all.vars(covar_formula))) |>
+    map_if(is.ordered, \(f) factor(f, ordered = FALSE)) |>
+    complete.cases() |>
+    not() |>
     which()
 }
 
@@ -204,53 +258,77 @@ identify_incomplete_cases <- function(analysis_data, covar_formula) {
 #' It includes options for handling missing data and scaling numeric covariates.
 #'
 prepare_confirmed_resp_stan_data <- function(
-    covar_formula, analysis_data, ..., include_covar = TRUE, scale_numeric = TRUE, handle_missing_covar = c("drop", "mean_impute")
+  covar_formula,
+  analysis_data,
+  ...,
+  include_covar = TRUE,
+  scale_numeric = TRUE,
+  handle_missing_covar = c("drop", "mean_impute")
 ) {
   handle_missing_covar <- arg_match(handle_missing_covar)
   covar_design_matrix <- array(NA, dim = c(nrow(analysis_data), 0))
   imputed_patients <- NULL
-  
+
   if (include_covar) {
-    incomplete_patients <- identify_incomplete_cases(analysis_data, covar_formula) 
-    
+    incomplete_patients <- identify_incomplete_cases(
+      analysis_data,
+      covar_formula
+    )
+
     covar_design_matrix <- withr::with_options(
-      c(na.action = if (handle_missing_covar == "drop") na.omit else na.pass), 
+      c(na.action = if (handle_missing_covar == "drop") na.omit else na.pass),
       modelr::model_matrix(analysis_data, covar_formula)
-    ) |> 
-      select(!any_of("(Intercept)")) |> 
-      mutate(across(everything(), \(col) scale(col, center = FALSE, scale = is.numeric(col) & scale_numeric)))
-    
+    ) |>
+      select(!any_of("(Intercept)")) |>
+      mutate(across(everything(), \(col) {
+        scale(col, center = FALSE, scale = is.numeric(col) & scale_numeric)
+      }))
+
     if (!is_empty(incomplete_patients)) {
       if (handle_missing_covar == "drop") {
-        warning(length(incomplete_patients), " patients have incompelete cases and have been removed.")
-        
+        warning(
+          length(incomplete_patients),
+          " patients have incompelete cases and have been removed."
+        )
+
         analysis_data <- slice(analysis_data, -incomplete_patients)
       } else {
-        warning(length(incomplete_patients), " patients have incompelete cases. Missing covariates will be imputed.")
+        warning(
+          length(incomplete_patients),
+          " patients have incompelete cases. Missing covariates will be imputed."
+        )
         stopifnot(scale_numeric)
         imputed_patients <- incomplete_patients
       }
     }
-    
-    covar_design_matrix <- bind_cols(covar_design_matrix, select(analysis_data, trial)) |> 
-      group_by(trial) |> 
-      mutate(across(everything(), \(col) scale(col, scale = FALSE) |> coalesce(0))) |> 
-      ungroup() |> 
+
+    covar_design_matrix <- bind_cols(
+      covar_design_matrix,
+      select(analysis_data, trial)
+    ) |>
+      group_by(trial) |>
+      mutate(across(everything(), \(col) {
+        scale(col, scale = FALSE) |> coalesce(0)
+      })) |>
+      ungroup() |>
       select(!trial)
-    
+
     if (!is_empty(incomplete_patients) && handle_missing_covar != "drop") {
-      warning(length(incomplete_patients), " patients have incompelete cases. Missing covariates will be imputed.")
+      warning(
+        length(incomplete_patients),
+        " patients have incompelete cases. Missing covariates will be imputed."
+      )
       stopifnot(scale_numeric)
     }
-  } 
-  
+  }
+
   pfs_stan_data <- base_prepare_pfs_stan_data(analysis_data)
   stopifnot(pfs_stan_data$n_patients == nrow(analysis_data))
   stopifnot(pfs_stan_data$n_patients == nrow(covar_design_matrix))
-  
+
   n_covar <- ncol(covar_design_matrix)
-  
-  pfs_stan_data |>  
+
+  pfs_stan_data |>
     list_assign(
       add_trial_level = TRUE,
       covar_design_matrix = covar_design_matrix,
@@ -262,7 +340,7 @@ prepare_confirmed_resp_stan_data <- function(
       gen_log_lik = FALSE,
       prior_sense = FALSE,
       train_beyond_cutoff = FALSE,
-      
+
       log_lik_trial = 0,
       leave_out_trial = 0,
       n_bootstrap_sample = 0,
@@ -270,25 +348,25 @@ prepare_confirmed_resp_stan_data <- function(
       bootstrap_cr_maturity_rates = array(dim = 0),
       n_bootstrap_pfs_maturity_rates = 0,
       bootstrap_pfs_maturity_rates = array(dim = 0),
-      n_fixed_bootstrap_samples = 0, 
-      
-      recruit_lambda = array(dim = 0), 
-      recruit_phi = 0, 
-      
+      n_fixed_bootstrap_samples = 0,
+
+      recruit_lambda = array(dim = 0),
+      recruit_phi = 0,
+
       objective_response = analysis_data$objective_response,
       confirmed_response = coalesce(analysis_data$confirmed_response, FALSE),
       confirmed_response_censored = analysis_data$confirmed_response_censored,
       confirmed_response_interval_censored = analysis_data$confirmed_response_interval_censored,
       confirmed_response_day = analysis_data$confirmed_response_day,
       confirmed_response_week = analysis_data$confirmed_response_week,
-      
+
       orr_pop = analysis_data$orr_pop,
-      
+
       extend_max_confresp_week = 1,
       extend_max_all_t = 1,
-      
+
       imputed_patients = imputed_patients %||% array(dim = 0),
-    ) |>  
+    ) |>
     list_assign(...)
 }
 
@@ -320,18 +398,46 @@ prepare_confirmed_resp_stan_data <- function(
 #' calendar time (weeks from study start).
 #'
 prepare_confirmed_resp_km <- function(stan_data) {
-  stan_data |> 
+  stan_data |>
     rowwise() |>
     mutate(
-      conf_resp_km = list(broom::tidy(survfit2(
-        Surv(confirmed_response_week, 1 - confirmed_response_censored) ~ 1, 
-        data = as_tibble(stan_data[c("confirmed_response_week", "confirmed_response_censored")])
-      )) |> transmute(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event)),
-      
-      conf_resp_km_calendar = list(broom::tidy(survfit2(
-        Surv(confirmed_response_week + calendar_week - 1, 1 - confirmed_response_censored) ~ 1, 
-        data = as_tibble(stan_data[c("confirmed_response_week", "calendar_week", "confirmed_response_censored")])
-      )) |> transmute(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event)),
+      conf_resp_km = list(
+        broom::tidy(survfit2(
+          Surv(confirmed_response_week, 1 - confirmed_response_censored) ~ 1,
+          data = as_tibble(stan_data[c(
+            "confirmed_response_week",
+            "confirmed_response_censored"
+          )])
+        )) |>
+          transmute(
+            t = time,
+            s = estimate,
+            n = n.risk,
+            c = n.censor,
+            e = n.event
+          )
+      ),
+
+      conf_resp_km_calendar = list(
+        broom::tidy(survfit2(
+          Surv(
+            confirmed_response_week + calendar_week - 1,
+            1 - confirmed_response_censored
+          ) ~ 1,
+          data = as_tibble(stan_data[c(
+            "confirmed_response_week",
+            "calendar_week",
+            "confirmed_response_censored"
+          )])
+        )) |>
+          transmute(
+            t = time,
+            s = estimate,
+            n = n.risk,
+            c = n.censor,
+            e = n.event
+          )
+      ),
     )
 }
 

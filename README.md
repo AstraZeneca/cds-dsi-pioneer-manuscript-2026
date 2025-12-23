@@ -32,13 +32,11 @@ We predict outcomes using a Bayesian multilevel piece-wise constant proportional
 │   └── util.R                                                        # Common utilities
 └── stan/                                                             # Stan statistical models
     ├── ssls/                                                         # State-space longitudinal survival (SSLS) models
-    │   ├── README.md                                                 # SSLS overview and conventions
-    │   ├── MODULE_DESIGN.md                                          # Detailed module design documentation
-    │   ├── NAMING_CONVENTION.md                                      # Naming convention compliance
     │   ├── modules/                                                  # Modular parameter organization
     │   │   ├── tr/                                                   # Total rate module
     │   │   ├── frac/                                                 # Fraction mix module
-    │   │   └── init/                                                 # Initial proportions module
+    │   │   ├── init/                                                 # Initial proportions module
+    │   │   └── other_events/                                         # Other events (non-target PD, death)
     │   ├── sf-ssm-log-space.stan                                     # Main SSLS model
     │   ├── sf-ssls-lfo.stan                                          # Leave-future-out cross-validation
     │   └── legacy/                                                   # Legacy monolithic implementations
@@ -49,9 +47,16 @@ We predict outcomes using a Bayesian multilevel piece-wise constant proportional
     ├── recruit/                                                      # Recruitment modeling
     ├── breast/                                               # Breast-specific files
     └── util.stan                                                     # General utility functions
-```
 
-See `stan/ssls/README.md` for detailed information about the modular SSLS model architecture.
+# Documentation
+
+For detailed technical documentation:
+
+- **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** - System architecture, hierarchical parameter design, and Stan optimization
+- **[`docs/OTHER_EVENTS_MODEL.md`](docs/OTHER_EVENTS_MODEL.md)** - Other events model (non-target PD, death) design and implementation
+- **[`docs/CHANGELOG.md`](docs/CHANGELOG.md)** - Major changes and design decisions
+- **[`docs/CODEOWNERS`](docs/CODEOWNERS)** - Code ownership and review requirements
+- **`sld_state_space_model.md`** - State space model documentation
 
 # Workflow
 

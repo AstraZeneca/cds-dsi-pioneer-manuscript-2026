@@ -15,7 +15,7 @@ tar_format_parquet_draws <- tar_format(
   read = function(path) {
     new_parquet_draws(path)
   },
-  
+
   write = function(object, path) {
     arrow::write_parquet(object, path)
     path
@@ -23,42 +23,46 @@ tar_format_parquet_draws <- tar_format(
 )
 
 tar_parquet_draws <- function(name, fit, ...) {
-  tar_target(name, fit$draws(format = "draws_df"), format = tar_format_parquet_draws, ...)
+  tar_target(
+    name,
+    fit$draws(format = "draws_df"),
+    format = tar_format_parquet_draws,
+    ...
+  )
 }
 
 # Utility and overridden functions
 
 .get_draws <- function(data, ...) {
-  
   # Parse the ... to figure out which columns we need
   dots <- rlang::enquos(...)
-  
+
   # Get all column names from the dataset
   ds <- arrow::open_dataset(data$path)
- 
-  if (length(dots) > 0) { 
+
+  if (length(dots) > 0) {
     all_cols <- names(ds)
     param_names <- get_param_names_from_dots(dots, all_cols)
-  
+
     # Read only the needed parameters
-    ds |>  
-      select(all_of(param_names), .chain, .iteration, .draw) |>  
-      collect() |>  
-      as_draws_df() 
+    ds |>
+      select(all_of(param_names), .chain, .iteration, .draw) |>
+      collect() |>
+      as_draws_df()
   } else {
     as_draws_df(data)
   }
-} 
+}
 
 # Add method for spread_rvars (already a generic in tidybayes)
 spread_rvars.parquet_draws <- function(data, ...) {
-  .get_draws(data, ...) |> 
+  .get_draws(data, ...) |>
     tidybayes::spread_rvars(...)
 }
 
 # Add method for gather_rvars (already a generic in tidybayes)
 gather_rvars.parquet_draws <- function(data, ...) {
-  .get_draws(data, ...) |> 
+  .get_draws(data, ...) |>
     tidybayes::gather_rvars(draws_subset, ...)
 }
 
@@ -67,13 +71,13 @@ print.parquet_draws <- function(x, ...) {
   ds <- arrow::open_dataset(x$path)
   n_draws <- ds |> count() |> collect() |> pull(n)
   params <- setdiff(names(ds), c(".chain", ".iteration", ".draw"))
-  
+
   cat("Parquet-backed draws object\n")
   cat("Path:", x$path, "\n")
   cat("Parameters:", length(params), "\n")
   cat("Total draws:", n_draws, "\n")
   cat("\nAvailable parameters: ")
-  if(length(params) <= 20) {
+  if (length(params) <= 20) {
     cat(paste(params, collapse = ", "))
   } else {
     cat(paste(head(params, 20), collapse = ", "), ", ...")
@@ -119,17 +123,17 @@ summarise_draws.parquet_draws <- function(x, ...) {
 
 # Add methods for posterior diagnostics
 rhat.parquet_draws <- function(x, ...) {
-  .get_draws(x, ...) |> 
+  .get_draws(x, ...) |>
     posterior::rhat(...)
 }
 
 ess_bulk.parquet_draws <- function(x, ...) {
-  .get_draws(x, ...) |> 
+  .get_draws(x, ...) |>
     posterior::ess_bulk(...)
 }
 
 ess_tail.parquet_draws <- function(x, ...) {
-  .get_draws(x, ...) |> 
+  .get_draws(x, ...) |>
     posterior::ess_tail()
 }
 
