@@ -1,18 +1,22 @@
-if (file.exists("~/.Rprofile")) source("~/.Rprofile")
+if (file.exists("~/.Rprofile")) {
+  source("~/.Rprofile")
+}
 
 source("renv/activate.R")
 
 # if (is_domino) {
-  data_path <- Sys.getenv("DOMINO_DATASETS_DIR") 
-  output_path <- file.path(data_path, "analysis-results", Sys.getenv("DOMINO_STARTING_USERNAME"))
-  artifacts_path <- file.path(Sys.getenv("DOMINO_ARTIFACTS_DIR"), Sys.getenv("DOMINO_STARTING_USERNAME"))
-  fit_output_timestamp <- FALSE
+data_path <- Sys.getenv("DOMINO_DATASETS_DIR")
+output_path <- file.path(data_path, "analysis-results", Sys.getenv("DOMINO_STARTING_USERNAME"))
+artifacts_path <- file.path(Sys.getenv("DOMINO_ARTIFACTS_DIR"), Sys.getenv("DOMINO_STARTING_USERNAME"))
+fit_output_timestamp <- FALSE
 
 library(conflicted)
 
 conflicts_prefer(
-  dplyr::filter, dplyr::lag,
-  posterior::sd, posterior::mad,
+  dplyr::filter,
+  dplyr::lag,
+  posterior::sd,
+  posterior::mad,
   rlang::set_names,
   purrr::flatten_dbl,
 )
@@ -67,6 +71,7 @@ init_project <- function(output_path = output_path, artifacts_path = artifacts_p
   source(here("r", "accuracy.R"))
   source(here("r", "state_space.R"))
   source(here("r", "plot_functions.R"))
+  source(here("r", "parquet_draws.R"))
 
   source(here("r", "sclc", "priors.R"))
   source(here("r", "sclc", "prepare_analysis_data.R"))

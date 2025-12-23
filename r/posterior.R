@@ -746,7 +746,7 @@ get_tumor_ssls_level_param <- function(
   res,
   level = c("patient", "trial"),
   param,
-  rvar_extractor = lite_spread_rvars
+  rvar_extractor = spread_rvars
 ) {
   level <- rlang::arg_match(level)
 
@@ -767,7 +767,7 @@ get_tumor_ssls_level_param_binned <- function(
   inv_link = exp,
   inv_link_breaks = exp(seq(-1, 1, 0.1))
 ) {
-  get_tumor_ssls_level_param(res, level, param, lite_gather_rvars) |>
+  get_tumor_ssls_level_param(res, level, param, gather_rvars) |>
     mutate(.rs_value = inv_link(.value), fit_type = type) |> # response scale
     group_by(.variable, fit_type) |>
     group_modify(\(d, g) {
