@@ -50,6 +50,12 @@ sample_and_save <- function(
 
   fs::dir_create(output_dir, recurse = TRUE)
 
+  # Ensure the compiled Stan executable has execute permissions
+  exe_file <- model$exe_file()
+  if (fs::file_exists(exe_file)) {
+    fs::file_chmod(exe_file, "u+x")
+  }
+
   if (!no_save && !timestamp) {
     # fit <- model$sample(..., output_dir = output_dir, output_basename = output_basename)
     fit <- exec(
