@@ -81,56 +81,36 @@ if (n_causes > 0 && oe_enable_pop_tumor_cov) {
       int states_start_col = 2 - first_visit;  // Column for absolute time 1
       int states_end_col = states_start_col + max_all_t - 1;  // Column for absolute time max_all_t
       
-      row_vector[max_all_t] log_sld_normalized;
-      row_vector[max_all_t] log_sld_absolute;
-      row_vector[max_all_t] log_sld_standardized;
-      
-      if (enable_patient_process_noise_tr) {
-        // Time-varying case: extract contiguous slice from states_full_grid
-        log_sld_normalized = log_sum_exp(states_full_grid[1][i, states_start_col:states_end_col], 
-                                          states_full_grid[2][i, states_start_col:states_end_col]);
-      } else {
-        // Constant rates: compute SLD trajectory analytically
-        // elapsed_time[t] = t - first_visit for absolute times [1, max_all_t]
-        // Since first_visit <= 0, elapsed_time >= 1 for all t >= 1
-        row_vector[max_all_t] elapsed_time = linspaced_row_vector(max_all_t, 1 - first_visit, max_all_t - first_visit);
-        
-        // Compute log states: log_decrease_component and log_growth_component
-        row_vector[max_all_t] log_decrease_comp = init_log_decrease_patient[i] - patient_decrease_rate[i, 1] * elapsed_time;
-        row_vector[max_all_t] log_growth_comp = init_log_growth_patient[i] + patient_growth_rate[i, 1] * elapsed_time;
-        
-        // log(SLD) = log(decrease + growth) = log_sum_exp(log_decrease, log_growth)
-        log_sld_normalized = log_sum_exp(log_decrease_comp, log_growth_comp);
-      }
-      
+      // Extract log(SLD) for absolute times [1, max_all_t] from this patient's states grid
+      // states_full_grid gives log(normalized_SLD) where normalized = ratio to baseline
+      row_vector[max_all_t] log_sld_normalized = log_sum_exp(
+        states_full_grid[1][i, states_start_col:states_end_col],
+        states_full_grid[2][i, states_start_col:states_end_col]
+      );
+
       // Add baseline to get absolute SLD in cm
-      log_sld_absolute = log_baseline_sld[i] + log_sld_normalized;
+      row_vector[max_all_t] log_sld_absolute = log_baseline_sld[i] + log_sld_normalized;
       
       // Median-center and IQR-scale using constants from observed data (computed in transformed_data)
-      log_sld_standardized = (log_sld_absolute - median_log_sld_obs) / iqr_log_sld_obs;
+      row_vector[max_all_t] log_sld_standardized = (log_sld_absolute - median_log_sld_obs) / iqr_log_sld_obs;
 
       // Initialize with log(SLD) effect
       oe_time_varying_log_hazard_ratio[k, i] = oe_tumor_coef_pop[k][1] * log_sld_standardized;
       
       // Add patient-level rate effects if coefficients are provided
       if (n_tumor_covar >= 3) {
-        // Build rate vectors for absolute times [1, max_all_t]
-        row_vector[max_all_t] patient_log_decrease_rate_abs;
-        row_vector[max_all_t] patient_log_growth_rate_abs;
-        
         if (enable_patient_process_noise_tr) {
           // Time-varying rates: extract contiguous slice using same indexing as states
-          patient_log_decrease_rate_abs = patient_log_decrease_rate[i, states_start_col:states_end_col];
-          patient_log_growth_rate_abs = patient_log_growth_rate[i, states_start_col:states_end_col];
+          row_vector[max_all_t] patient_log_decrease_rate_abs = patient_log_decrease_rate[i, states_start_col:states_end_col];
+          row_vector[max_all_t] patient_log_growth_rate_abs = patient_log_growth_rate[i, states_start_col:states_end_col];
+          oe_time_varying_log_hazard_ratio[k, i] += oe_tumor_coef_pop[k][2] * patient_log_decrease_rate_abs;
+          oe_time_varying_log_hazard_ratio[k, i] += oe_tumor_coef_pop[k][3] * patient_log_growth_rate_abs;
         } else {
-          // Constant rates: broadcast single value to all time points
-          patient_log_decrease_rate_abs = rep_row_vector(patient_log_decrease_rate[i, 1], max_all_t);
-          patient_log_growth_rate_abs = rep_row_vector(patient_log_growth_rate[i, 1], max_all_t);
+          // Constant rates: use scalar broadcasting (same as main branch behavior)
+          // scalar * row_vector broadcasts efficiently without extra allocation
+          oe_time_varying_log_hazard_ratio[k, i] += oe_tumor_coef_pop[k][2] * patient_log_decrease_rate[i, 1];
+          oe_time_varying_log_hazard_ratio[k, i] += oe_tumor_coef_pop[k][3] * patient_log_growth_rate[i, 1];
         }
-
-        // Add rate effects to hazard ratio
-        oe_time_varying_log_hazard_ratio[k, i] += oe_tumor_coef_pop[k][2] * patient_log_decrease_rate_abs;
-        oe_time_varying_log_hazard_ratio[k, i] += oe_tumor_coef_pop[k][3] * patient_log_growth_rate_abs;
       }
 
       // Add SLD velocity (time-varying first derivative)
