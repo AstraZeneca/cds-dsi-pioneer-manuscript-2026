@@ -81,3 +81,6 @@ quarto/.posit/
 
 *.html
 *.hpp
+generate-aws-credential_file.py
+run-aws-credentials.sh
+.env
