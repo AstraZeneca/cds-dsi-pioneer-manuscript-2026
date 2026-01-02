@@ -185,7 +185,8 @@ create_tumor_ss_initializer <- function(stan_data) {
       abs(rnorm(1, 0, stan_data$pop_decrease_process_sd_sd)),
       abs(rnorm(1, 0, stan_data$pop_growth_process_sd_sd))
     )
-    measure_sd <- abs(rnorm(1, 0, stan_data$measure_sd_sd))
+    # Use positive mean to avoid near-zero inits that cause lp__ = -Inf
+    measure_sd <- abs(rnorm(1, 0.1, stan_data$measure_sd_sd))
 
     # Hierarchical SDs (new naming convention)
     tr_sd_patient_intercept <- abs(rnorm(1, 0, stan_data$tr_sd_patient_intercept_sd))
@@ -456,8 +457,8 @@ create_tumor_ssls_initializer <- function(stan_data) {
         tr_sd_patient_phi_process_noise = abs(rnorm(1, sd = 0.1)),
         tr_raw_patient_phi_process_noise = if (enable_patient_process_noise_phi_tr) rnorm(n_patients),
         
-        # Measurement error
-        measure_sd = abs(rnorm(1, sd = measure_sd_sd)),
+        # Measurement error - use positive mean to avoid near-zero inits that cause lp__ = -Inf
+        measure_sd = abs(rnorm(1, mean = 0.1, sd = measure_sd_sd)),
         
         # Other events baseline hazard (population level)
         log_lambda_gp_pop_intercept = rnorm(n_causes, oe_log_lambda_gp_pop_intercept_mean, oe_log_lambda_gp_pop_intercept_sd),
