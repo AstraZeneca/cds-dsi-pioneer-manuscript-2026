@@ -25,10 +25,11 @@ matrix[enable_trial_cov_tr ? n_trials : 0, enable_trial_cov_tr ? n_covar : 0] tr
 vector<lower=0>[enable_patient_cov_tr ? n_covar : 0] tr_sd_patient_slope;
 matrix[enable_patient_cov_tr ? n_patients : 0, enable_patient_cov_tr ? n_covar : 0] tr_raw_patient_slope;
 
+// Process noise parameters - only declared when feature is enabled
 matrix[enable_patient_process_noise_tr ? n_patients : 0, max_t_width] tr_raw_patient_process_noise;
-real tr_log_sd_pop_process_noise;
-real<lower=0> tr_sd_patient_log_sd_process_noise;
+array[enable_patient_process_noise_tr ? 1 : 0] real tr_log_sd_pop_process_noise;
+array[enable_patient_process_noise_tr ? 1 : 0] real<lower=0> tr_sd_patient_log_sd_process_noise;
 vector[enable_patient_process_noise_sd_tr ? n_patients : 0] tr_raw_patient_log_sd_process_noise;
-real tr_logit_phi_pop_process_noise;  // Unconstrained, mapped to [0,1] via inv_logit
-real<lower=0> tr_sd_patient_phi_process_noise;
+array[enable_patient_process_noise_tr ? 1 : 0] real tr_logit_phi_pop_process_noise;
+array[enable_patient_process_noise_tr ? 1 : 0] real<lower=0> tr_sd_patient_phi_process_noise;
 vector[enable_patient_process_noise_phi_tr ? n_patients : 0] tr_raw_patient_phi_process_noise;

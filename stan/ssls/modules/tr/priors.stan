@@ -23,10 +23,13 @@ if (n_covar > 0 && enable_patient_cov_tr) {
 	to_vector(tr_raw_patient_slope) ~ std_normal();
 }
 
-to_vector(tr_raw_patient_process_noise) ~ std_normal();
-tr_log_sd_pop_process_noise ~ normal(tr_log_sd_pop_process_noise_mean, tr_log_sd_pop_process_noise_sd);
-tr_logit_phi_pop_process_noise ~ normal(tr_logit_phi_pop_process_noise_mean, tr_logit_phi_pop_process_noise_sd);
-tr_raw_patient_log_sd_process_noise ~ std_normal();
-tr_raw_patient_phi_process_noise ~ std_normal();
-tr_sd_patient_log_sd_process_noise ~ normal(0, tr_log_sd_patient_process_noise_sd);
-tr_sd_patient_phi_process_noise ~ normal(0, tr_phi_patient_process_noise_sd);
+// Process noise priors - only when feature is enabled
+if (enable_patient_process_noise_tr) {
+	to_vector(tr_raw_patient_process_noise) ~ std_normal();
+	tr_log_sd_pop_process_noise[1] ~ normal(tr_log_sd_pop_process_noise_mean, tr_log_sd_pop_process_noise_sd);
+	tr_logit_phi_pop_process_noise[1] ~ normal(tr_logit_phi_pop_process_noise_mean, tr_logit_phi_pop_process_noise_sd);
+	tr_sd_patient_log_sd_process_noise[1] ~ normal(0, tr_log_sd_patient_process_noise_sd);
+	tr_sd_patient_phi_process_noise[1] ~ normal(0, tr_phi_patient_process_noise_sd);
+	tr_raw_patient_log_sd_process_noise ~ std_normal();
+	tr_raw_patient_phi_process_noise ~ std_normal();
+}
