@@ -189,15 +189,16 @@ create_tumor_ss_initializer <- function(stan_data) {
     measure_sd <- abs(rnorm(1, 0.1, stan_data$measure_sd_sd))
 
     # Hierarchical SDs (new naming convention)
-    tr_sd_patient_intercept <- abs(rnorm(1, 0, stan_data$tr_sd_patient_intercept_sd))
-    frac_sd_patient_intercept <- abs(rnorm(1, 0, stan_data$frac_sd_patient_intercept_sd))
+    # Truncate at 0.05 to avoid near-zero inits that cause numerical issues
+    tr_sd_patient_intercept <- pmax(0.05, abs(rnorm(1, 0, stan_data$tr_sd_patient_intercept_sd)))
+    frac_sd_patient_intercept <- pmax(0.05, abs(rnorm(1, 0, stan_data$frac_sd_patient_intercept_sd)))
 
     # Existing initial state proportion parameters (new names)
     init_logit_loc_pop <- rnorm(1,
       stan_data$init_logit_loc_pop_mean,
       stan_data$init_logit_loc_pop_sd
     )
-    init_sd_patient_intercept <- abs(rnorm(1, 0, stan_data$init_sd_patient_intercept_sd))
+    init_sd_patient_intercept <- pmax(0.05, abs(rnorm(1, 0, stan_data$init_sd_patient_intercept_sd)))
 
     use_cross_process_corr <- !stan_data$independ_cross_process_noise
     L_process_corr <- if (use_cross_process_corr) diag(2) else matrix(numeric(0), 0, 0)
@@ -412,19 +413,20 @@ create_tumor_ssls_initializer <- function(stan_data) {
     
     with(stan_data, {
       lst(
-        tr_sd_trial_intercept = abs(rnorm(1, sd = tr_sd_trial_intercept_sd)),
+        # Truncate SDs at 0.05 to avoid near-zero inits that cause numerical issues
+        tr_sd_trial_intercept = pmax(0.05, abs(rnorm(1, sd = tr_sd_trial_intercept_sd))),
         tr_raw_trial_intercept = if (enable_trial_intercept_tr) rnorm(n_trials),
-        frac_sd_trial_intercept = abs(rnorm(1, sd = init_sd_trial_intercept_sd)),
+        frac_sd_trial_intercept = pmax(0.05, abs(rnorm(1, sd = init_sd_trial_intercept_sd))),
         frac_raw_trial_intercept = if (enable_trial_intercept_frac) rnorm(n_trials),
-        init_sd_trial_intercept = abs(rnorm(1, sd = init_sd_trial_intercept_sd)),
+        init_sd_trial_intercept = pmax(0.05, abs(rnorm(1, sd = init_sd_trial_intercept_sd))),
         init_raw_trial_intercept = if (enable_trial_intercept_init) rnorm(n_trials),
 
         # Patient-level hierarchical standard deviations (new naming)
-        tr_sd_patient_intercept = abs(rnorm(1, sd = tr_sd_patient_intercept_sd)),
+        tr_sd_patient_intercept = pmax(0.05, abs(rnorm(1, sd = tr_sd_patient_intercept_sd))),
         tr_raw_patient_intercept = if (enable_patient_intercept_tr) rnorm(n_patients),
-        frac_sd_patient_intercept = abs(rnorm(1, sd = frac_sd_patient_intercept_sd)),
+        frac_sd_patient_intercept = pmax(0.05, abs(rnorm(1, sd = frac_sd_patient_intercept_sd))),
         frac_raw_patient_intercept = if (enable_patient_intercept_frac) rnorm(n_patients),
-        init_sd_patient_intercept = abs(rnorm(1, sd = init_sd_patient_intercept_sd)),
+        init_sd_patient_intercept = pmax(0.05, abs(rnorm(1, sd = init_sd_patient_intercept_sd))),
         init_raw_patient_intercept = if (enable_patient_intercept_init) rnorm(n_patients),
 
         tr_coef_qr_pop = if (n_covar > 0 && enable_trial_cov_tr) rnorm(n_covar, tr_coef_qr_pop_mean, tr_coef_qr_pop_sd),
@@ -447,14 +449,15 @@ create_tumor_ssls_initializer <- function(stan_data) {
         init_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_init) matrix(rnorm(n_patients * n_covar), nrow = n_patients, ncol = n_covar),
         
         # Total rate process noise (AR(1) time-varying deviations)
+        # Only provide init values when process noise is enabled (parameters are conditional arrays)
         tr_raw_patient_process_noise = if (enable_patient_process_noise_tr) {
           matrix(rnorm(n_patients * max_t_width), nrow = n_patients, ncol = max_t_width)
         },
-        tr_log_sd_pop_process_noise = rnorm(1, mean = log(0.05), sd = 0.5),  # log SD around 0.05
-        tr_sd_patient_log_sd_process_noise = abs(rnorm(1, sd = 0.3)),
+        tr_log_sd_pop_process_noise = if (enable_patient_process_noise_tr) array(rnorm(1, mean = log(0.05), sd = 0.5)),
+        tr_sd_patient_log_sd_process_noise = if (enable_patient_process_noise_tr) array(abs(rnorm(1, sd = 0.3))),
         tr_raw_patient_log_sd_process_noise = if (enable_patient_process_noise_sd_tr) rnorm(n_patients),
-        tr_logit_phi_pop_process_noise = rnorm(1, mean = 2, sd = 1),  # AR(1) coef around 0.88 on logit scale
-        tr_sd_patient_phi_process_noise = abs(rnorm(1, sd = 0.1)),
+        tr_logit_phi_pop_process_noise = if (enable_patient_process_noise_tr) array(rnorm(1, mean = 2, sd = 1)),
+        tr_sd_patient_phi_process_noise = if (enable_patient_process_noise_tr) array(abs(rnorm(1, sd = 0.1))),
         tr_raw_patient_phi_process_noise = if (enable_patient_process_noise_phi_tr) rnorm(n_patients),
         
         # Measurement error - use positive mean to avoid near-zero inits that cause lp__ = -Inf
