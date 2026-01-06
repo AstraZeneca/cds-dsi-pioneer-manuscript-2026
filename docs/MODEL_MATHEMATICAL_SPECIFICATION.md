@@ -84,12 +84,14 @@ The initial state at baseline ($t=1$) is parameterized as:
 
 $$
 \begin{aligned}
-x_{i,\text{dec}}(1) &= \log\left(\alpha_i\right) \\
-x_{i,\text{gro}}(1) &= \log\left(1 - \alpha_i\right)
+x_{i,\text{dec}}(1) &= \log(\text{logit}^{-1}(f_{\alpha,i})) \\
+x_{i,\text{gro}}(1) &= \log(1 - \text{logit}^{-1}(f_{\alpha,i}))
 \end{aligned}
 $$
 
-where $\alpha_i \in (0, 1)$ represents the initial proportion of tumor burden in the decreasing component.
+where $f_{\alpha,i} = \text{logit}(\alpha_i)$ is the logit of the initial proportion $\alpha_i \in (0, 1)$ representing the initial fraction of tumor burden in the decreasing component.
+
+**Implementation note:** Stan uses `log_inv_logit()` and `log1m_inv_logit()` for numerical stability, identical to the fraction module (Section 2.4.2).
 
 #### 2.3.1 Hierarchical Model for Initial Proportion
 
@@ -137,14 +139,25 @@ $$
 
 #### 2.4.3 Instantaneous Rates (Time-Invariant Case)
 
-When process noise is disabled, rates are constant:
+When process noise is disabled, rates are constant and computed in log-space:
 
 $$
 \begin{aligned}
-d_i(t) &= r_i \cdot \phi_i \\
-g_i(t) &= r_i \cdot (1 - \phi_i)
+\log(d_i) &= \log(r_i) + \log(\phi_i) \\
+\log(g_i) &= \log(r_i) + \log(1 - \phi_i)
 \end{aligned}
 $$
+
+Equivalently using the log-odds parameterization where $f_i = \text{logit}(\phi_i)$:
+
+$$
+\begin{aligned}
+\log(d_i) &= \log(r_i) + \log(\text{logit}^{-1}(f_i)) \\
+\log(g_i) &= \log(r_i) + \log(1 - \text{logit}^{-1}(f_i))
+\end{aligned}
+$$
+
+**Implementation note:** Stan uses `log_inv_logit()` and `log1m_inv_logit()` for numerical stability.
 
 #### 2.4.4 Time-Varying Rates (AR(1) Process Noise)
 
@@ -172,16 +185,16 @@ $$
 \end{aligned}
 $$
 
-The instantaneous rates are then:
+The instantaneous rates are then (in log-space):
 
 $$
 \begin{aligned}
-d_i(t) &= r_i(t) \cdot \phi_i \\
-g_i(t) &= r_i(t) \cdot (1 - \phi_i)
+\log(d_i(t)) &= \log(r_i(t)) + \log(\phi_i) \\
+\log(g_i(t)) &= \log(r_i(t)) + \log(1 - \phi_i)
 \end{aligned}
 $$
 
-**Note:** The AR(1) deviations $\delta_{r,i}(t)$ are mean-reverting to zero, so rates fluctuate around their baseline values $r_i \cdot \phi_i$ and $r_i \cdot (1-\phi_i)$.
+**Note:** The AR(1) deviations $\delta_{r,i}(t)$ are mean-reverting to zero, so rates fluctuate around their baseline values. The **same** AR(1) deviation applies to both decrease and growth rates, preserving the fraction relationship while allowing overall rate variation.
 
 ### 2.5 Observation Model
 
@@ -271,11 +284,13 @@ $$
 \mathbf{W}_i(t) = \begin{bmatrix} 
 w_1(t) \\ 
 w_2(t) \\ 
-w_3(t)
+w_3(t) \\
+w_4(t)
 \end{bmatrix} = \begin{bmatrix}
 \frac{\log(\widehat{\text{SLD}}_i(t)) - \text{median}(\log(\text{SLD}_{\text{obs}}))}{\text{IQR}(\log(\text{SLD}_{\text{obs}}))} \\[0.5em]
 \log(d_i(t)) \\[0.5em]
-\log(g_i(t))
+\log(g_i(t)) \\[0.5em]
+\frac{d}{dt}\log(\widehat{\text{SLD}}_i(t)) \text{ (z-scored)}
 \end{bmatrix}
 $$
 
@@ -286,7 +301,21 @@ where $\widehat{\text{SLD}}_i(t) = \text{SLD}_{i,\text{baseline}} \cdot (e^{x_{i
 - $w_1(t)$: Standardized log **predicted** tumor burden (time-varying, from state-space model)
 - $w_2(t)$: Log decrease rate (time-invariant or time-varying with AR(1))
 - $w_3(t)$: Log growth rate (time-invariant or time-varying with AR(1))
-- Standardization constants (median and IQR) are computed from **observed** SLD data and fixed across MCMC iterations
+- $w_4(t)$: SLD velocity computed as the **backward** discrete difference of log(SLD), then z-scored within each patient:
+
+$$
+\Delta_t = \log(\widehat{\text{SLD}}_i(t)) - \log(\widehat{\text{SLD}}_i(t-1)) \quad \text{for } t \geq 2
+$$
+
+with $\Delta_1 = 0$ (no prior measurement). Then z-scored:
+
+$$
+w_4(t) = \frac{\Delta_t - \bar{\Delta}_i}{\text{sd}(\Delta_i)}
+$$
+
+where $\bar{\Delta}_i$ and $\text{sd}(\Delta_i)$ are computed from the patient's velocity values at $t \geq 2$ only (excluding the zero at $t=1$). Since time is in weeks, $\Delta_t$ represents the weekly change in log(SLD).
+
+- Standardization constants (median and IQR) for $w_1$ are computed from **observed** SLD data and fixed across MCMC iterations
 - Using predicted SLD (not observed) ensures covariates are smooth and measurement-error-free
 
 ### 3.5 Survival Function
@@ -309,16 +338,24 @@ $$
 
 ### 4.1 RECIST Response Classification
 
-Response is determined from normalized SLD $y_i(t) = \text{SLD}_i(t) / \text{SLD}_{i,\text{baseline}}$:
+Response is determined from SLD trajectories using standard RECIST 1.1 criteria for **target lesions only**:
 
 $$
 \text{RECIST}_i(t) = \begin{cases}
-\text{CR} & \text{if } y_i(t) < 0.1 \text{ (complete response)} \\
-\text{PR} & \text{if } 0.1 \leq y_i(t) < 0.7 \text{ (partial response)} \\
-\text{SD} & \text{if } 0.7 \leq y_i(t) < 1.2 \text{ (stable disease)} \\
-\text{PD} & \text{if } y_i(t) \geq 1.2 \text{ (progressive disease)}
+\text{CR} & \text{if } \text{SLD}_i(t) = 0 \\
+\text{PD} & \text{if } \frac{\text{SLD}_i(t) - \text{nadir}_i(t)}{\text{nadir}_i(t)} \geq 0.2 \text{ AND } \text{SLD}_i(t) - \text{nadir}_i(t) \geq 5\text{mm} \\
+\text{PR} & \text{if } \frac{\text{SLD}_i(t) - \text{baseline}_i}{\text{baseline}_i} \leq -0.3 \\
+\text{SD} & \text{otherwise}
 \end{cases}
 $$
+
+where $\text{nadir}_i(t) = \min_{u \leq t} \text{SLD}_i(u)$ is the minimum SLD observed up to time $t$.
+
+**Key differences from simplified thresholds:**
+
+- **PD requires both** ≥20% increase from nadir AND ≥5mm absolute increase
+- **PR is relative to baseline**, not nadir
+- **Nadir tracking** is maintained throughout treatment
 
 ### 4.2 Objective Response Rate (ORR)
 
@@ -602,7 +639,9 @@ The model uses feature flags to enable/disable components:
 - Population-level covariates: `enable_pop_cov_tr`, `enable_pop_cov_frac`, `enable_pop_cov_init`
 - Trial-level random effects: `enable_trial_intercept_*`, `enable_trial_cov_*`
 - Patient-level random effects: `enable_patient_intercept_*`, `enable_patient_cov_*`
-- AR(1) process noise: `enable_patient_process_noise_tr`
+- AR(1) process noise on total rate: `enable_patient_process_noise_tr`
+- AR(1) patient-level SD hierarchy: `enable_patient_process_noise_sd_tr`
+- AR(1) patient-level phi hierarchy: `enable_patient_process_noise_phi_tr`
 
 **Other events:**
 
@@ -612,10 +651,15 @@ The model uses feature flags to enable/disable components:
 
 ### 7.2 Computational Efficiency
 
-**State computation:**
+**State computation strategies:**
 
-- **Without AR(1):** $O(n_{\text{patients}})$ via vectorized operations
-- **With AR(1):** $O(n_{\text{patients}} \times \max(T_i))$ via cumulative sums
+The model uses three different state computation methods depending on configuration:
+
+1. **With AR(1) process noise:** $O(n_{\text{patients}} \times \max(T_i))$ via cumulative sums over time-varying rates
+
+2. **Without AR(1), with tumor covariates for other events:** $O(n_{\text{patients}} \times \max(T_i))$ via vectorized outer product (`init + rate * time`)
+
+3. **Without AR(1), without tumor covariates:** $O(n_{\text{patients}} \times n_{\text{unique visits}})$ via sparse matrix multiplication using precomputed `visit_cumsum_mat`
 
 **Parallelization:**
 
@@ -760,8 +804,8 @@ The model enforces several constraints for identifiability:
 
 ## Document Maintenance
 
-**Version:** 1.0  
-**Last Updated:** November 2025  
+**Version:** 1.1  
+**Last Updated:** January 2026  
 **Corresponding Stan Model:** `stan/ssls/sf-ssm-log-space.stan`
 
 **Update Protocol:**
@@ -771,5 +815,9 @@ When the Stan model changes, this document should be updated to reflect:
 2. Changed likelihood contributions
 3. Modified hierarchical structures
 4. Additional endpoints or features
+
+**Changelog:**
+
+- **v1.1 (January 2026):** Updated rate formulas to show log-space addition (not multiplication), added 4th tumor covariate (SLD velocity), fixed RECIST thresholds to include nadir tracking and 5mm rule, added missing feature flags for AR(1) patient hierarchies, documented sparse matrix state computation method.
 
 **Reference:** For implementation details and naming conventions, see `docs/ARCHITECTURE.md` and `.github/copilot-instructions.md`.
