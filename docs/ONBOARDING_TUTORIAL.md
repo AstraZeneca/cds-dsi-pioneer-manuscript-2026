@@ -1,0 +1,507 @@
+# Sclc Onboarding Tutorial
+
+This tutorial provides a structured path for new team members to understand the Sclc tumor dynamics modeling system.
+
+## Prerequisites
+
+- Familiarity with Bayesian statistics and hierarchical models
+- Basic understanding of Stan probabilistic programming
+- R programming experience (tidyverse style)
+- Clinical oncology context helpful but not required
+
+## Learning Path Overview
+
+| Module | Duration | Focus |
+|--------|----------|-------|
+| 1. Clinical & Conceptual Foundations | Day 1 | What problem are we solving? |
+| 2. Bi-Exponential Tumor Dynamics | Days 2-3 | Core state-space model |
+| 3. Hierarchical Structure | Day 4 | Borrowing information across trials/patients |
+| 4. Other Events Model | Day 5 | Non-target progression and survival |
+| 5. Code Architecture | Days 6-7 | Navigating the codebase |
+| 6. Running & Interpreting Results | Days 8-10 | Practical usage |
+
+---
+
+## Module 1: Clinical & Conceptual Foundations
+
+**Goal:** Understand *what* the model does before *how* it works.
+
+### 1.1 Clinical Context
+
+**RECIST 1.1 Criteria:**
+
+- **SLD (Sum of Longest Diameters):** Primary tumor measurement
+- **Complete Response (CR):** All target lesions disappear
+- **Partial Response (PR):** ≥30% decrease in SLD from baseline
+- **Progressive Disease (PD):** ≥20% increase in SLD from nadir + 5mm absolute increase
+- **Stable Disease (SD):** Neither PR nor PD criteria met
+
+**Key Clinical Endpoints:**
+
+- **ORR (Objective Response Rate):** Proportion achieving CR or PR
+- **PFS (Progression-Free Survival):** Time until progression or death
+- **OS (Overall Survival):** Time until death
+
+### 1.2 Core Model Intuition
+
+The model captures two fundamental biological processes:
+
+1. **Treatment Effect (Shrinkage):** Tumor cells killed by therapy → exponential decay
+2. **Resistance/Regrowth:** Surviving cells proliferate → exponential growth
+
+We observe **noisy SLD measurements** at discrete clinic visits. The model infers the **latent true tumor state** and its dynamics.
+
+**Key insight:** Progression can come from:
+
+- **Target lesions** growing (modeled by tumor dynamics)
+- **Other events** (new lesions, non-target progression, death) — modeled separately
+
+### 1.3 Reading Assignment
+
+**Read:** `MODEL_MATHEMATICAL_SPECIFICATION.md` Sections 1-2.1
+
+- Section 1: Model overview and hierarchy
+- Section 2.1: State representation (what the decrease and growth components mean)
+
+---
+
+## Module 2: The Bi-Exponential State-Space Model
+
+**Goal:** Understand tumor dynamics modeling in detail.
+
+### 2.1 State Decomposition
+
+The latent tumor state has two components:
+
+```
+SLD(t) = x_dec(t) + x_gro(t)
+```
+
+Where:
+
+- `x_dec(t) = x_dec(0) * exp(-d * t)` — shrinking component (treatment effect)
+- `x_gro(t) = x_gro(0) * exp(g * t)` — growing component (resistance)
+
+### 2.2 Initial State Parameterization
+
+At baseline (t=0), total SLD is observed. We parameterize the split using alpha:
+
+```
+alpha = x_dec(0) / (x_dec(0) + x_gro(0))
+```
+
+- alpha ≈ 1: Most tumor is treatment-sensitive (expect good response)
+- alpha ≈ 0: Most tumor is resistant (expect poor response)
+
+### 2.3 Rate Parameterization
+
+Rather than model d and g directly, we use:
+
+- **Total rate:** r = d + g (overall dynamics speed)
+- **Fraction:** phi = d / (d + g) (balance between shrinkage and growth)
+
+This parameterization:
+
+- Keeps rates positive (log-space modeling)
+- Separates "how fast" from "in which direction"
+- Improves sampling geometry
+
+### 2.4 Observation Model
+
+We don't observe true SLD — we observe noisy measurements:
+
+```
+y_ij ~ Normal(SLD_i(t_ij), sigma)
+```
+
+The state-space formulation allows us to:
+
+- Handle irregular visit times
+- Incorporate measurement error
+- Forecast future trajectories
+
+### 2.5 Hands-On Exercise
+
+Plot example trajectories with different parameter combinations:
+
+```r
+library(tidyverse)
+
+# Simulate bi-exponential trajectories
+simulate_sld <- function(t, baseline, alpha, d_rate, g_rate) {
+  x_dec_0 <- baseline * alpha
+  x_gro_0 <- baseline * (1 - alpha)
+  x_dec_0 * exp(-d_rate * t) + x_gro_0 * exp(g_rate * t)
+}
+
+times <- seq(0, 52, by = 1)  # weeks
+
+scenarios <- tribble(
+  ~scenario, ~alpha, ~d_rate, ~g_rate,
+  "Responder",        0.9,    0.08,    0.02,
+  "Non-responder",    0.3,    0.02,    0.05,
+  "Mixed",            0.6,    0.05,    0.04
+)
+
+scenarios |>
+  rowwise() |>
+  mutate(
+    trajectory = list(tibble(
+      week = times,
+      sld = simulate_sld(times, baseline = 100, alpha, d_rate, g_rate)
+    ))
+  ) |>
+  unnest(trajectory) |>
+  ggplot(aes(x = week, y = sld, color = scenario)) +
+  geom_line(linewidth = 1) +
+  geom_hline(yintercept = 70, linetype = "dashed", alpha = 0.5) +
+  annotate("text", x = 52, y = 72, label = "PR threshold (-30%)", hjust = 1, size = 3) +
+  labs(
+    title = "Bi-Exponential Tumor Dynamics",
+    subtitle = "Different parameter combinations yield different response patterns",
+    x = "Weeks from Baseline",
+    y = "SLD (mm)",
+    color = "Scenario"
+  ) +
+  theme_minimal()
+```
+
+### 2.6 Reading Assignment
+
+**Read:** `MODEL_MATHEMATICAL_SPECIFICATION.md` Sections 2.2-2.4
+
+- Section 2.2: Temporal dynamics equations
+- Section 2.3: Hierarchical parameter structure
+- Section 2.4: Observation model details
+
+---
+
+## Module 3: Hierarchical Structure
+
+**Goal:** Understand how information is borrowed across trials and patients.
+
+### 3.1 Three-Level Hierarchy
+
+Parameters flow through three levels:
+
+```
+Population (shared across all trials)
+    ↓
+Trial (trial-specific deviations)
+    ↓
+Patient (individual deviations)
+```
+
+**Example for the decrease rate intercept:**
+
+```
+theta_patient = theta_pop + theta_trial[t[i]] + theta_patient[i]
+```
+
+Where:
+
+- `theta_pop` — population mean
+- `theta_trial ~ Normal(0, sd_trial)` — trial random effect
+- `theta_patient ~ Normal(0, sd_patient)` — patient random effect
+
+### 3.2 Non-Centered Parameterization
+
+For efficient sampling, we use **non-centered parameterization (NCP)**:
+
+```stan
+// Instead of:
+// theta_trial ~ normal(0, sd_trial);
+
+// We use:
+theta_raw_trial ~ std_normal();
+theta_trial = sd_trial * theta_raw_trial;
+```
+
+This breaks the funnel geometry that causes sampling problems.
+
+### 3.3 Covariate Effects
+
+Covariates (e.g., PD-L1 status, smoking history) can modify parameters:
+
+```
+theta_i = theta_intercept + X_i * beta
+```
+
+Where:
+
+- `X_i` — patient covariate vector
+- `beta` — population-level slopes
+
+Covariate effects can also have trial-level and patient-level random slopes.
+
+### 3.4 Reading Assignment
+
+**Read:** `MODEL_MATHEMATICAL_SPECIFICATION.md` Section 2.3.1
+
+**Read:** `docs/multi_level_hierarchy_design.md` — Stan implementation patterns
+
+---
+
+## Module 4: Other Events Model
+
+**Goal:** Understand how non-target progression and death are modeled.
+
+### 4.1 Independence Assumption
+
+We model two types of progression separately:
+
+1. **Target lesion progression:** From tumor dynamics (SLD growth)
+2. **Other events:** New lesions, non-target progression, clinical progression, death
+
+**Key assumption:** These are modeled as **independent** processes. Combined PFS is:
+
+```
+PFS = min(Time to target progression, Time to other event)
+```
+
+### 4.2 Hazard Model for Other Events
+
+Other events follow a proportional hazards model:
+
+```
+lambda_i(t) = lambda_0(t) * exp(eta_i)
+```
+
+Where:
+
+- `lambda_0(t)` — baseline hazard (GP-smoothed)
+- `eta_i` — linear predictor from covariates
+
+### 4.3 Tumor-Derived Covariates
+
+The other events hazard can depend on tumor state:
+
+| Covariate | Description | Interpretation |
+|-----------|-------------|----------------|
+| Current SLD | SLD(t) | Larger tumors → higher hazard |
+| SLD velocity | d/dt SLD(t) | Growing tumors → higher hazard |
+| Best response | min SLD(s) for s ≤ t | Depth of response matters |
+| Time at best | Time of nadir | How long ago was best response |
+
+### 4.4 Reading Assignment
+
+**Read:** `MODEL_MATHEMATICAL_SPECIFICATION.md` Section 3
+
+- Section 3.1: Independence assumption
+- Section 3.2: Hazard model structure
+- Section 3.4: Tumor covariates
+
+---
+
+## Module 5: Code Architecture
+
+**Goal:** Navigate the codebase confidently.
+
+### 5.1 Directory Structure
+
+```
+sclc/
+├── stan/
+│   └── ssls/
+│       ├── sf-ssm-log-space.stan    # Main model
+│       ├── sf-ssls-lfo.stan         # Leave-future-out variant
+│       └── modules/                  # Modular components
+│           ├── tr/                   # Tumor regression
+│           ├── frac/                 # Growth fraction
+│           ├── init/                 # Initial state
+│           ├── other_events/         # Non-target events
+│           └── measurement/          # Observation model
+├── r/
+│   ├── sclc/                     # Project-specific R code
+│   │   └── prepare_analysis_data.R
+│   ├── priors.R                      # Prior specifications (shared)
+│   ├── initializers.R                # Stan initializers (shared)
+│   └── state_space.R                 # State-space utilities
+├── targets/
+│   └── sclc_targets.R            # Pipeline definition
+└── docs/
+    ├── ARCHITECTURE.md               # System architecture
+    ├── MODEL_MATHEMATICAL_SPECIFICATION.md
+    └── ...
+```
+
+### 5.2 Stan Module System
+
+Each module follows a **7-file pattern**:
+
+| File | Purpose |
+|------|---------|
+| `flags.stan` | Feature switches (e.g., `enable_trial_intercept_tr`) |
+| `data.stan` | Module-specific data declarations |
+| `hyperparams.stan` | Prior hyperparameters |
+| `transformed_data.stan` | Data preprocessing |
+| `parameters.stan` | Parameter declarations |
+| `transformed_parameters.stan` | Derived quantities |
+| `priors.stan` | Prior distributions |
+
+### 5.3 Naming Conventions
+
+**Module Prefixes:**
+
+| Prefix | Module |
+|--------|--------|
+| `tr_*` | Tumor regression (decrease rate) |
+| `frac_*` | Growth fraction |
+| `init_*` | Initial state |
+| `oe_*` | Other events |
+
+**Hierarchical Suffixes:**
+
+| Suffix | Level |
+|--------|-------|
+| `*_pop` | Population |
+| `*_sd_trial_*` | Trial-level SD |
+| `*_raw_trial_*` | Trial-level raw (NCP) |
+| `*_sd_patient_*` | Patient-level SD |
+| `*_raw_patient_*` | Patient-level raw (NCP) |
+
+### 5.4 Hands-On Exercise: Trace a Parameter
+
+Trace `tr_intercept_pop` through the codebase:
+
+1. **Stan declaration:** `stan/ssls/modules/tr/parameters.stan`
+2. **Prior:** `stan/ssls/modules/tr/priors.stan`
+3. **Hyperparameters:** `stan/ssls/modules/tr/hyperparams.stan`
+4. **R prior defaults:** `r/priors.R` → `get_tumor_priors()`
+5. **R extraction:** Post-processing functions in `r/state_space.R`
+
+### 5.5 Reading Assignment
+
+**Read:** `docs/ARCHITECTURE.md`
+
+- Naming conventions
+- Module structure
+- Optimization techniques
+
+**Read:** `CLAUDE.md` — Development guidelines and common operations
+
+---
+
+## Module 6: Running & Interpreting Results
+
+**Goal:** Practical model usage.
+
+### 6.1 Running the Pipeline
+
+The analysis uses the `targets` workflow system:
+
+```r
+library(targets)
+
+# Check pipeline status
+tar_visnetwork()
+
+# Run specific targets
+tar_make(matches("tumor_ssls"))
+
+# Load results
+fit <- tar_read(tumor_ssls_res_posterior)
+```
+
+### 6.2 Key Targets
+
+| Target Pattern | Description |
+|----------------|-------------|
+| `*_analysis_data` | Prepared data for Stan |
+| `*_stan_data` | Stan data list |
+| `tumor_ssls_model` | Compiled Stan model |
+| `tumor_ssls_res_prior` | Prior predictive samples |
+| `tumor_ssls_res_posterior` | Posterior samples |
+
+### 6.3 Diagnostics
+
+**Always check:**
+
+1. **Divergences:** Should be 0
+2. **R-hat:** Should be < 1.01 for all parameters
+3. **ESS:** Effective sample size should be reasonable (>400 for tail-ESS)
+
+```r
+fit$diagnostic_summary()
+```
+
+### 6.4 Key Outputs
+
+**Patient-level trajectories:**
+
+```r
+# Extract predicted SLD trajectories
+get_forecast_sld(fit, stan_data, analysis_data)
+```
+
+**Trial-level summaries:**
+
+```r
+# ORR by trial
+get_orr(fit, stan_data)
+
+# Median PFS by trial
+get_median_pfs_conf_resp(fit, stan_data)
+```
+
+### 6.5 Posterior Predictive Checks
+
+Compare model predictions to observed data:
+
+```r
+# Plot observed vs predicted SLD
+plot_dynamics(fit, stan_data, analysis_data)
+
+# PFS Kaplan-Meier overlay
+plot_pfs_ppc(fit, stan_data, analysis_data)
+```
+
+---
+
+## Quick Reference
+
+### Key Documents
+
+| Document | Purpose |
+|----------|---------|
+| `MODEL_MATHEMATICAL_SPECIFICATION.md` | **Primary reference** — complete model specification |
+| `docs/ARCHITECTURE.md` | Code organization, naming conventions |
+| `docs/ar1_process_noise.md` | AR(1) implementation (if enabled) |
+| `docs/multi_level_hierarchy_design.md` | Stan hierarchy patterns |
+| `docs/stan_state_space_optimization.md` | Computational optimizations |
+| `CLAUDE.md` | Development guidelines |
+
+### Key Functions
+
+| Function | Location | Purpose |
+|----------|----------|---------|
+| `prepare_tumor_stan_data()` | `r/sclc/prepare_analysis_data.R` | Build Stan data list |
+| `get_tumor_priors()` | `r/priors.R` | Prior hyperparameters |
+| `create_tumor_ssls_initializer()` | `r/initializers.R` | Stan initialization |
+| `get_forecast_sld()` | `r/state_space.R` | Extract SLD trajectories |
+| `plot_dynamics()` | `r/plot_functions.R` | Visualize tumor dynamics |
+
+### Glossary
+
+| Term | Definition |
+|------|------------|
+| SLD | Sum of Longest Diameters (tumor measurement) |
+| NCP | Non-Centered Parameterization |
+| PFS | Progression-Free Survival |
+| ORR | Objective Response Rate |
+| RECIST | Response Evaluation Criteria In Solid Tumors |
+| GP | Gaussian Process |
+| LFO | Leave-Future-Out (cross-validation) |
+
+---
+
+## Next Steps After Onboarding
+
+1. **Run a prior predictive check** to understand model behavior before seeing data
+2. **Trace a single patient** through the entire pipeline (data → Stan → results)
+3. **Modify a hyperparameter** and observe effects on posterior
+4. **Read a Stan module** end-to-end to understand the code structure
+
+---
+
+*Last Updated: January 2025*

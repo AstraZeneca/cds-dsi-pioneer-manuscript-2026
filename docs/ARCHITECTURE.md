@@ -450,7 +450,7 @@ The Stan code uses a modular architecture with `#include` directives. Modules ar
 - **`frac/`** - Growth fraction dynamics  
 - **`init/`** - Initial state modeling
 - **`other_events/`** - Non-target progression and death events
-  - Uses mechanistic tumor rates as covariates (see [`docs/other_events_mechanistic_rates.md`](other_events_mechanistic_rates.md))
+  - Uses mechanistic tumor rates as covariates (see `MODEL_MATHEMATICAL_SPECIFICATION.md` Section 3.4)
 
 ### Module File Pattern
 
@@ -489,8 +489,7 @@ This standardization makes modules:
 
 - **Archived detailed design:** [`docs/multi_level_hierarchy_design.md`](multi_level_hierarchy_design.md)
 - **Archived optimization:** [`docs/stan_state_space_optimization.md`](stan_state_space_optimization.md)
-- **Other events model:** [`docs/OTHER_EVENTS_MODEL.md`](OTHER_EVENTS_MODEL.md)
-- **Mechanistic covariates:** [`docs/other_events_mechanistic_rates.md`](other_events_mechanistic_rates.md)
+- **Other events model:** `MODEL_MATHEMATICAL_SPECIFICATION.md` Section 3
 - **State space model:** `sld_state_space_model.md`
 - **Code ownership:** [`docs/CODEOWNERS`](CODEOWNERS)
 
