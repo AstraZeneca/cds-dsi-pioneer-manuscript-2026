@@ -26,9 +26,6 @@ data {
   #include "modules/init/flags.stan"
 
   #include "_sf-ssls-lfo-data.stan"
-  
-  // --- LFO CV specific ---
-  int<lower = 0, upper = 1> train_beyond_cutoff;
 } 
 
 transformed data {
@@ -85,13 +82,13 @@ model {
 
       // Use cutoff-censored data and enforce time window to prevent data leakage
       patient_response_lp[, 1] = calc_pch_loglik(
-        cutoff_ic_other_events_pfs, 
-        cutoff_other_events_right_censored, 
+        cutoff_ic_other_events_pfs,
+        cutoff_other_events_right_censored,
         zeros_int_array(n_cutoff_observed_patients), // interval_censored
-        0, 
+        0,
         log_cond_prob_surv[1, cutoff_observed_patients],
         ones_int_array(n_cutoff_observed_patients), // start_from
-        train_beyond_cutoff ? rep_array(max_all_t, n_cutoff_observed_patients) : cutoff_last_visit_week // end_at
+        cutoff_last_visit_week // end_at - strictly bounded by cutoff
       );
 
       target += sum(patient_response_lp);
@@ -289,28 +286,28 @@ generated quantities {
             
             patient_log_lik_tumor[n, m, patient_idx] = tumor_ll;
             
-            // Component 2: Other events model log-likelihood using OBSERVED other events PFS
+            // Component 2: Other events model log-likelihood using ACTUAL observed PFS
+            // (not cutoff-censored - we want true OOS evaluation against real outcomes)
             real oe_ll = 0;
-            int cutoff_patient_idx = patient_to_cutoff_idx[i];
 
-            if (n_causes > 0 && cutoff_patient_idx > 0) {
+            if (n_causes > 0) {
               // Get test window boundaries in weeks
               int test_start_week = t_patient_visits[start_idx];
               int test_end_week = t_patient_visits[end_idx];
-              
-              // Use OBSERVED other events PFS from cutoff-censored data
-              array[1] int obs_oe_pfs = {cutoff_ic_other_events_pfs[cutoff_patient_idx]};
-              array[1] int obs_oe_censored = {cutoff_other_events_right_censored[cutoff_patient_idx]};
-              array[1] int obs_oe_ic = {0}; // not interval censored
+
+              // Use ACTUAL observed other events PFS (not cutoff-censored)
+              // This ensures proper OOS evaluation against real outcomes
+              array[1] int obs_oe_pfs = {ic_other_events_pfs[i]};
+              array[1] int obs_oe_censored = {other_events_right_censored[i]};
+              array[1] int obs_oe_ic = {other_events_interval_censored[i]};
               array[1] int test_start = {test_start_week};
               array[1] int test_end = {test_end_week};
-              
+
               // Extract single patient's survival probabilities as a 1-row matrix
               // log_cond_prob_surv is array[n_causes] matrix[n_patients, max_all_t]
               // We need matrix[1, max_all_t] for this single patient
-              int patient_row = cutoff_observed_patients[cutoff_patient_idx];
-              matrix[1, max_all_t] patient_log_surv = log_cond_prob_surv[1, patient_row:patient_row];
-              
+              matrix[1, max_all_t] patient_log_surv = log_cond_prob_surv[1, i:i];
+
               // Calculate log-likelihood using the same function as in model block
               oe_ll = calc_pch_loglik(
                 obs_oe_pfs,
