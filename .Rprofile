@@ -4,6 +4,11 @@ if (file.exists("~/.Rprofile")) {
 
 source("renv/activate.R")
 
+options(
+  renv.config.auto.install = TRUE,
+  renv.config.synchronized.check = FALSE
+)
+
 # if (is_domino) {
 data_path <- Sys.getenv("DOMINO_DATASETS_DIR")
 output_path <- file.path(data_path, "analysis-results", Sys.getenv("DOMINO_STARTING_USERNAME"))
