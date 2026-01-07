@@ -241,6 +241,176 @@ register_arrow_draws_methods <- function() {
 # Auto-register methods when this file is sourced
 register_arrow_draws_methods()
 
+# Column-selective spread_rvars and gather_rvars for Arrow Datasets ==========
+#
+# These methods solve the memory problem where as_draws_df.Dataset would load
+# the entire parquet file into memory. Instead, we:
+# 1. Parse the variable specifications to determine which columns are needed
+# 2. Use Arrow's column projection to select only those columns
+# 3. Collect the filtered data (much smaller)
+# 4. Then call the standard tidybayes methods
+
+#' Extract base variable names from tidybayes variable specifications
+#'
+#' Given quosures like `spop_target_pfs[i]` or `states[n, p]`, extracts
+#' the base variable name (e.g., "spop_target_pfs", "states").
+#'
+#' @param quos List of quosures from enquos(...)
+#' @return Character vector of base variable names
+#' @keywords internal
+extract_variable_names <- function(quos) {
+
+  purrr::map_chr(quos, function(q) {
+    spec <- tidybayes:::parse_variable_spec(q)
+    spec[[1]] # First element is always the variable name
+  })
+}
+
+#' Build column selection regex for Arrow dataset
+#'
+#' Given base variable names, builds regex patterns that match the Stan CSV
+#' column format (e.g., "var.1.2" for arrays).
+#'
+#' @param var_names Character vector of base variable names
+#' @return Character regex pattern
+#' @keywords internal
+build_column_regex <- function(var_names) {
+
+  # Match either exact name or name followed by dot and indices
+
+  # e.g., "states" matches "states" and "states.1.2"
+  patterns <- paste0("^", var_names, "(\\.[0-9.]+)?$")
+  paste(patterns, collapse = "|")
+}
+
+#' Select columns from Arrow Dataset matching variable specs
+#'
+#' @param dataset An Arrow Dataset
+#' @param var_names Character vector of base variable names
+#' @return Arrow Dataset with only matching columns (plus metadata columns)
+#' @keywords internal
+select_matching_columns <- function(dataset, var_names) {
+  all_cols <- names(dataset)
+
+
+  # Always keep chain_id and diagnostic columns
+  keep_cols <- c("chain_id", "lp__", "accept_stat__", "stepsize__",
+                 "treedepth__", "n_leapfrog__", "divergent__", "energy__")
+  keep_cols <- intersect(keep_cols, all_cols)
+
+
+  # Build regex and find matching columns
+
+  pattern <- build_column_regex(var_names)
+  matching_cols <- all_cols[grepl(pattern, all_cols)]
+
+  # Combine and select
+  cols_to_select <- unique(c(keep_cols, matching_cols))
+  dplyr::select(dataset, dplyr::all_of(cols_to_select))
+}
+
+#' spread_rvars method for Arrow Datasets with lazy column selection
+#'
+#' This method intercepts spread_rvars calls on Arrow Datasets and only loads
+#' the columns that are actually needed, dramatically reducing memory usage.
+#'
+#' @param model An Arrow Dataset containing MCMC draws
+#' @param ... Variable specifications (e.g., `beta[i]`, `sigma`)
+#' @param ndraws Optional number of draws to subsample
+#' @return A tibble with rvars
+#' @export
+spread_rvars.Dataset <- function(model, ..., ndraws = NULL) {
+  quos <- rlang::enquos(...)
+
+  # Extract variable names from specs
+
+  var_names <- extract_variable_names(quos)
+
+  # Select only needed columns from Arrow dataset
+  filtered_dataset <- select_matching_columns(model, var_names)
+
+  # Collect the filtered data (now much smaller)
+  df <- dplyr::collect(filtered_dataset)
+
+  # Convert column names from Stan CSV format to bracket notation
+  names(df) <- cmdstanr:::repair_variable_names(names(df))
+
+  # Build draws_df
+  if ("chain_id" %in% names(df)) {
+    chain_ids <- df$chain_id
+    df$chain_id <- NULL
+  } else {
+    chain_ids <- rep(1L, nrow(df))
+  }
+
+  df$.chain <- chain_ids
+  df$.iteration <- ave(seq_len(nrow(df)), chain_ids, FUN = seq_along)
+  df$.draw <- seq_len(nrow(df))
+  df <- dplyr::select(df, .chain, .iteration, .draw, dplyr::everything())
+
+  draws <- posterior::as_draws_df(df)
+
+  # Preserve tidybayes_constructors if present (for recover_types)
+  constructors <- attr(model, "tidybayes_constructors")
+  if (!is.null(constructors)) {
+    attr(draws, "tidybayes_constructors") <- constructors
+  }
+
+  # Call tidybayes spread_rvars on the draws_df
+
+  tidybayes::spread_rvars(draws, !!!quos, ndraws = ndraws)
+}
+
+#' gather_rvars method for Arrow Datasets with lazy column selection
+#'
+#' This method intercepts gather_rvars calls on Arrow Datasets and only loads
+#' the columns that are actually needed, dramatically reducing memory usage.
+#'
+#' @param model An Arrow Dataset containing MCMC draws
+#' @param ... Variable specifications (e.g., `beta[i]`, `sigma`)
+#' @param ndraws Optional number of draws to subsample
+#' @return A tibble with rvars in long format
+#' @export
+gather_rvars.Dataset <- function(model, ..., ndraws = NULL) {
+  quos <- rlang::enquos(...)
+
+  # Extract variable names from specs
+  var_names <- extract_variable_names(quos)
+
+  # Select only needed columns from Arrow dataset
+  filtered_dataset <- select_matching_columns(model, var_names)
+
+  # Collect the filtered data (now much smaller)
+  df <- dplyr::collect(filtered_dataset)
+
+  # Convert column names from Stan CSV format to bracket notation
+  names(df) <- cmdstanr:::repair_variable_names(names(df))
+
+  # Build draws_df
+  if ("chain_id" %in% names(df)) {
+    chain_ids <- df$chain_id
+    df$chain_id <- NULL
+  } else {
+    chain_ids <- rep(1L, nrow(df))
+  }
+
+  df$.chain <- chain_ids
+  df$.iteration <- ave(seq_len(nrow(df)), chain_ids, FUN = seq_along)
+  df$.draw <- seq_len(nrow(df))
+  df <- dplyr::select(df, .chain, .iteration, .draw, dplyr::everything())
+
+  draws <- posterior::as_draws_df(df)
+
+  # Preserve tidybayes_constructors if present (for recover_types)
+  constructors <- attr(model, "tidybayes_constructors")
+  if (!is.null(constructors)) {
+    attr(draws, "tidybayes_constructors") <- constructors
+  }
+
+  # Call tidybayes gather_rvars on the draws_df
+  tidybayes::gather_rvars(draws, !!!quos, ndraws = ndraws)
+}
+
 #' Decorate Arrow Dataset with type recovery information
 #'
 #' This allows using recover_types() with Arrow datasets so that
@@ -265,5 +435,15 @@ register_recover_types_methods <- function() {
 }
 
 register_recover_types_methods()
+
+# Register spread_rvars and gather_rvars methods for Arrow Datasets
+register_rvars_methods <- function() {
+  if (requireNamespace("tidybayes", quietly = TRUE)) {
+    registerS3method("spread_rvars", "Dataset", spread_rvars.Dataset, envir = asNamespace("tidybayes"))
+    registerS3method("gather_rvars", "Dataset", gather_rvars.Dataset, envir = asNamespace("tidybayes"))
+  }
+}
+
+register_rvars_methods()
 
 # nolint end: object_usage_linter
