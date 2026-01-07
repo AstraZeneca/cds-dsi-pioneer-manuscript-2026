@@ -2,70 +2,7 @@ if (file.exists("~/.Rprofile")) {
   source("~/.Rprofile")
 }
 
-options(
-  renv.config.synchronized.check = FALSE
-)
-
 source("renv/activate.R")
-
-# Lazy install: installs from lockfile if missing, then loads
-lazy_lib <- function(pkg) {
-  pkg <- deparse(substitute(pkg))
-  if (!requireNamespace(pkg, quietly = TRUE)) {
-    lockfile <- renv::lockfile_read()
-    if (!pkg %in% names(lockfile$Packages)) {
-      stop(sprintf("Package '%s' is not in renv.lock", pkg))
-    }
-    renv::install(pkg, prompt = FALSE)
-  }
-  library(pkg, character.only = TRUE)
-}
-
-# Hook into base functions to auto-install from lockfile
-local({
-  install_if_in_lockfile <- function(pkg_name) {
-    if (!nzchar(system.file(package = pkg_name))) {
-      lockfile <- renv::lockfile_read()
-      if (pkg_name %in% names(lockfile$Packages)) {
-        renv::install(pkg_name, prompt = FALSE)
-      }
-    }
-  }
-
-  # Hook loadNamespace (used by pkg::func())
-  orig_loadNamespace <- base::loadNamespace
-  new_loadNamespace <- function(package, ...) {
-    pkg_name <- as.character(package)
-    if (!isNamespaceLoaded(pkg_name)) install_if_in_lockfile(pkg_name)
-    orig_loadNamespace(package, ...)
-  }
-  unlockBinding("loadNamespace", baseenv())
-  assign("loadNamespace", new_loadNamespace, baseenv())
-  lockBinding("loadNamespace", baseenv())
-
-  # Hook requireNamespace (used to check package availability)
-  orig_requireNamespace <- base::requireNamespace
-  new_requireNamespace <- function(package, ...) {
-    pkg_name <- as.character(package)
-    if (!isNamespaceLoaded(pkg_name)) install_if_in_lockfile(pkg_name)
-    orig_requireNamespace(package, ...)
-  }
-  unlockBinding("requireNamespace", baseenv())
-  assign("requireNamespace", new_requireNamespace, baseenv())
-  lockBinding("requireNamespace", baseenv())
-
-  # Hook find.package (used by targets and other packages)
-  orig_find.package <- base::find.package
-  new_find.package <- function(package, ...) {
-    for (pkg_name in package) {
-      install_if_in_lockfile(pkg_name)
-    }
-    orig_find.package(package, ...)
-  }
-  unlockBinding("find.package", baseenv())
-  assign("find.package", new_find.package, baseenv())
-  lockBinding("find.package", baseenv())
-})
 
 # if (is_domino) {
 data_path <- Sys.getenv("DOMINO_DATASETS_DIR")
@@ -73,7 +10,7 @@ output_path <- file.path(data_path, "analysis-results", Sys.getenv("DOMINO_START
 artifacts_path <- file.path(Sys.getenv("DOMINO_ARTIFACTS_DIR"), Sys.getenv("DOMINO_STARTING_USERNAME"))
 fit_output_timestamp <- FALSE
 
-lazy_lib(conflicted)
+library(conflicted)
 
 conflicts_prefer(
   dplyr::filter,
@@ -111,20 +48,20 @@ AZ_palette <- c(
 )
 
 init_project <- function(output_path = output_path, artifacts_path = artifacts_path) {
-  lazy_lib(magrittr)
-  lazy_lib(tidyverse)
-  lazy_lib(rlang)
-  lazy_lib(targets)
-  lazy_lib(tarchetypes)
-  lazy_lib(stantargets)
-  lazy_lib(crew)
-  lazy_lib(autometric)
-  lazy_lib(here)
-  lazy_lib(cmdstanr)
-  lazy_lib(posterior)
-  lazy_lib(tidybayes)
-  lazy_lib(qs2)
-  lazy_lib(recipes)
+  library(magrittr)
+  library(tidyverse)
+  library(rlang)
+  library(targets)
+  library(tarchetypes)
+  library(stantargets)
+  library(crew)
+  library(autometric)
+  library(here)
+  library(cmdstanr)
+  library(posterior)
+  library(tidybayes)
+  library(qs2)
+  library(recipes)
 
   source(here("r", "util.R"))
   source(here("r", "priors.R"))
