@@ -21,22 +21,38 @@ lazy_lib <- function(pkg) {
   library(pkg, character.only = TRUE)
 }
 
-# Hook into loadNamespace to auto-install when using pkg::func()
+# Hook into loadNamespace and requireNamespace to auto-install from lockfile
 local({
-  original <- base::loadNamespace
-  wrapper <- function(package, ...) {
-    pkg_name <- as.character(package)
-    if (!isNamespaceLoaded(pkg_name) && !nzchar(system.file(package = pkg_name))) {
+  install_if_in_lockfile <- function(pkg_name) {
+    if (!nzchar(system.file(package = pkg_name))) {
       lockfile <- renv::lockfile_read()
       if (pkg_name %in% names(lockfile$Packages)) {
         renv::install(pkg_name, prompt = FALSE)
       }
     }
-    original(package, ...)
+  }
+
+  # Hook loadNamespace (used by pkg::func())
+  orig_loadNamespace <- base::loadNamespace
+  new_loadNamespace <- function(package, ...) {
+    pkg_name <- as.character(package)
+    if (!isNamespaceLoaded(pkg_name)) install_if_in_lockfile(pkg_name)
+    orig_loadNamespace(package, ...)
   }
   unlockBinding("loadNamespace", baseenv())
-  assign("loadNamespace", wrapper, baseenv())
+  assign("loadNamespace", new_loadNamespace, baseenv())
   lockBinding("loadNamespace", baseenv())
+
+  # Hook requireNamespace (used to check package availability)
+  orig_requireNamespace <- base::requireNamespace
+  new_requireNamespace <- function(package, ...) {
+    pkg_name <- as.character(package)
+    if (!isNamespaceLoaded(pkg_name)) install_if_in_lockfile(pkg_name)
+    orig_requireNamespace(package, ...)
+  }
+  unlockBinding("requireNamespace", baseenv())
+  assign("requireNamespace", new_requireNamespace, baseenv())
+  lockBinding("requireNamespace", baseenv())
 })
 
 # if (is_domino) {
