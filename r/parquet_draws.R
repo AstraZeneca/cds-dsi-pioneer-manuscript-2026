@@ -34,7 +34,7 @@ csv_to_parquet_duckdb <- function(csv_files, output_parquet, ..., max_threads = 
     config = list(
       "memory_limit" = max_memory,
       "temp_directory" = "/tmp/duckdb_temp",
-      "threads" = as.character(min(max_threads, n_chains))
+      "threads" = if (is.finite(max_threads)) as.character(max_threads)
     ) |>
       purrr::compact()
   )
