@@ -21,7 +21,7 @@ lazy_lib <- function(pkg) {
   library(pkg, character.only = TRUE)
 }
 
-# Hook into loadNamespace and requireNamespace to auto-install from lockfile
+# Hook into base functions to auto-install from lockfile
 local({
   install_if_in_lockfile <- function(pkg_name) {
     if (!nzchar(system.file(package = pkg_name))) {
@@ -53,6 +53,18 @@ local({
   unlockBinding("requireNamespace", baseenv())
   assign("requireNamespace", new_requireNamespace, baseenv())
   lockBinding("requireNamespace", baseenv())
+
+  # Hook find.package (used by targets and other packages)
+  orig_find.package <- base::find.package
+  new_find.package <- function(package, ...) {
+    for (pkg_name in package) {
+      install_if_in_lockfile(pkg_name)
+    }
+    orig_find.package(package, ...)
+  }
+  unlockBinding("find.package", baseenv())
+  assign("find.package", new_find.package, baseenv())
+  lockBinding("find.package", baseenv())
 })
 
 # if (is_domino) {
