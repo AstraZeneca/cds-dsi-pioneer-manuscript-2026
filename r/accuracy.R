@@ -283,6 +283,12 @@ lfo <- function(
   remaining_cutoffs <- cutoffs |> filter(n >= refit_n)
   remaining_all_cutoffs <- all_cutoffs |> filter(n >= refit_n)
 
+  fit_output_dir <- file.path(
+    output_path,
+    "fit",
+    str_glue("{basename}-{refit_n}")
+  )
+
   fit <- stan_data |>
     list_assign(
       cutoff_calendar_day = remaining_all_cutoffs$cutoff_calendar_day,
@@ -296,17 +302,23 @@ lfo <- function(
       parallel_chains = parallel_chains,
       adapt_delta = adapt_delta,
       init = initializer,
-      output_dir = file.path(
-        output_path,
-        "fit",
-        str_glue("{basename}-{refit_n}")
-      ),
+      output_dir = fit_output_dir,
       save_profiles = FALSE,
       timestamp = output_timestamp,
       ...
     )
 
-  psis_results <- fit |>
+  # Convert CSV to parquet with only needed columns for memory efficiency
+  # This avoids loading all 1.8M columns via cmdstanr's $draws() method
+  parquet_path <- file.path(fit_output_dir, "lfo_log_lik.parquet")
+  csv_to_parquet_duckdb(
+    fit$output_files(),
+    parquet_path,
+    matches("^patient.*log_lik")
+  )
+  draws_dataset <- arrow::open_dataset(parquet_path)
+
+  psis_results <- draws_dataset |>
     lfo_log_lik(future_window = future_window) |>
     mutate(across(c(n, m), \(x) x + refit_n - 1)) |>
     left_join(
