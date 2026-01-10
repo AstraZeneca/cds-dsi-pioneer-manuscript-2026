@@ -3,11 +3,13 @@
 get_tumor_priors <- function(stan_data, coef_elicited_priors) {
   # Directly specified priors (simplified)
   # Choose log-total rate prior similar to historical center; adjust if needed.
-  tr_loc_pop_mean <- -1.0 # simplified fixed value (formerly pop_log_total_rate_mean)
+  # Updated: shifted mean from -1.0 to -2.0 to reduce prior-posterior conflict
+  tr_loc_pop_mean <- -2.0 # centered closer to typical posterior (~-2.6)
   tr_loc_pop_sd <- 0.8 # tightened from 1.2 to reduce total variance with hierarchies
-  # Fraction (logit) prior keeps strong shrinkage bias (>0.5 fraction)
-  frac_logit_loc_pop_mean <- -1.0 # formerly pop_decrease_frac_logit_mean
-  frac_logit_loc_pop_sd <- 0.8 # tightened from 1.2 (critical for logit scale)
+  # Fraction (logit) prior - updated to reduce severe prior-posterior conflict
+  # Old prior at -1.0 (~27% fraction) conflicted with posterior at +2.4 (~92%)
+  frac_logit_loc_pop_mean <- 1.5 # shifted from -1.0 to reduce 4+ SD conflict
+  frac_logit_loc_pop_sd <- 1.0 # slightly wider to allow data to inform
   # Initial proportion logit
   init_logit_loc_pop_mean <- 0.0 # formerly pop_decrease_prop_logis_mean
   init_logit_loc_pop_sd <- 0.8 # tightened from 1.5 (was extremely wide!)
@@ -20,7 +22,10 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     pop_decrease_process_sd_sd = 0.1,
     pop_growth_process_sd_sd = 0.1,
     process_corr_param = 2.0,
-    measure_sd_sd = 0.2,
+    # inv_gamma prior for measure_sd keeps mass away from zero
+    # mode = beta/(alpha+1) = 0.75/6 = 0.125 (at typical posterior)
+    measure_sd_alpha = 5,
+    measure_sd_beta = 0.75,
 
     # Process parameters
     decrease_process_alpha = 9.7,
