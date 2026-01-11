@@ -410,24 +410,30 @@ create_tumor_ssls_initializer <- function(stan_data) {
     min_all_t <- min(stan_data$t_patient_visits)
     max_all_t <- max(max(stan_data$t_patient_visits) + 1, stan_data$extend_max_all_t %||% 0)
     max_t_width <- max_all_t - min_all_t + 1
-    
+
+    # Helper to generate truncated normal draws (avoid extreme values that cause state explosion)
+    # With 700+ patients, untruncated rnorm gives ~2 patients with |z|>3, causing numerical issues
+    rtruncnorm <- function(n, mean = 0, sd = 1, lower = -2.5, upper = 2.5) {
+      pmax(lower, pmin(upper, rnorm(n, mean, sd)))
+    }
+
     with(stan_data, {
       lst(
         # Truncate SDs at 0.05 to avoid near-zero inits that cause numerical issues
         tr_sd_trial_intercept = pmax(0.05, abs(rnorm(1, sd = tr_sd_trial_intercept_sd))),
-        tr_raw_trial_intercept = if (enable_trial_intercept_tr) rnorm(n_trials),
+        tr_raw_trial_intercept = if (enable_trial_intercept_tr) rtruncnorm(n_trials),
         frac_sd_trial_intercept = pmax(0.05, abs(rnorm(1, sd = init_sd_trial_intercept_sd))),
-        frac_raw_trial_intercept = if (enable_trial_intercept_frac) rnorm(n_trials),
+        frac_raw_trial_intercept = if (enable_trial_intercept_frac) rtruncnorm(n_trials),
         init_sd_trial_intercept = pmax(0.05, abs(rnorm(1, sd = init_sd_trial_intercept_sd))),
-        init_raw_trial_intercept = if (enable_trial_intercept_init) rnorm(n_trials),
+        init_raw_trial_intercept = if (enable_trial_intercept_init) rtruncnorm(n_trials),
 
         # Patient-level hierarchical standard deviations (new naming)
         tr_sd_patient_intercept = pmax(0.05, abs(rnorm(1, sd = tr_sd_patient_intercept_sd))),
-        tr_raw_patient_intercept = if (enable_patient_intercept_tr) rnorm(n_patients),
+        tr_raw_patient_intercept = if (enable_patient_intercept_tr) rtruncnorm(n_patients),
         frac_sd_patient_intercept = pmax(0.05, abs(rnorm(1, sd = frac_sd_patient_intercept_sd))),
-        frac_raw_patient_intercept = if (enable_patient_intercept_frac) rnorm(n_patients),
+        frac_raw_patient_intercept = if (enable_patient_intercept_frac) rtruncnorm(n_patients),
         init_sd_patient_intercept = pmax(0.05, abs(rnorm(1, sd = init_sd_patient_intercept_sd))),
-        init_raw_patient_intercept = if (enable_patient_intercept_init) rnorm(n_patients),
+        init_raw_patient_intercept = if (enable_patient_intercept_init) rtruncnorm(n_patients),
 
         tr_coef_qr_pop = if (n_covar > 0 && enable_trial_cov_tr) rnorm(n_covar, tr_coef_qr_pop_mean, tr_coef_qr_pop_sd),
         frac_coef_qr_pop = if (n_covar > 0 && enable_trial_cov_frac) rnorm(n_covar, frac_coef_qr_pop_mean, frac_coef_qr_pop_sd),
@@ -441,24 +447,26 @@ create_tumor_ssls_initializer <- function(stan_data) {
         init_raw_trial_slope = if (n_covar > 0 && enable_trial_cov_init) matrix(rnorm(n_covar * n_trials), n_trials, n_covar),
 
         # Patient-level slope SDs and raw effects for tr, frac, and init modules
+        # Truncate raw effects to avoid extreme initializations
         tr_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_tr) abs(rnorm(n_covar, sd = tr_sd_patient_slope_sd)),
-        tr_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_tr) matrix(rnorm(n_patients * n_covar), nrow = n_patients, ncol = n_covar),
+        tr_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_tr) matrix(rtruncnorm(n_patients * n_covar), nrow = n_patients, ncol = n_covar),
         frac_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_frac) abs(rnorm(n_covar, sd = frac_sd_patient_slope_sd)),
-        frac_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_frac) matrix(rnorm(n_patients * n_covar), nrow = n_patients, ncol = n_covar),
+        frac_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_frac) matrix(rtruncnorm(n_patients * n_covar), nrow = n_patients, ncol = n_covar),
         init_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_init) abs(rnorm(n_covar, sd = init_sd_patient_slope_sd)),
-        init_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_init) matrix(rnorm(n_patients * n_covar), nrow = n_patients, ncol = n_covar),
-        
+        init_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_init) matrix(rtruncnorm(n_patients * n_covar), nrow = n_patients, ncol = n_covar),
+
         # Total rate process noise (AR(1) time-varying deviations)
         # Only provide init values when process noise is enabled (parameters are conditional arrays)
+        # Truncate to avoid extreme process noise that causes state explosion
         tr_raw_patient_process_noise = if (enable_patient_process_noise_tr) {
-          matrix(rnorm(n_patients * max_t_width), nrow = n_patients, ncol = max_t_width)
+          matrix(rtruncnorm(n_patients * max_t_width), nrow = n_patients, ncol = max_t_width)
         },
         tr_log_sd_pop_process_noise = if (enable_patient_process_noise_tr) array(rnorm(1, mean = log(0.05), sd = 0.5)),
         tr_sd_patient_log_sd_process_noise = if (enable_patient_process_noise_tr) array(abs(rnorm(1, sd = 0.3))),
-        tr_raw_patient_log_sd_process_noise = if (enable_patient_process_noise_sd_tr) rnorm(n_patients),
+        tr_raw_patient_log_sd_process_noise = if (enable_patient_process_noise_sd_tr) rtruncnorm(n_patients),
         tr_logit_phi_pop_process_noise = if (enable_patient_process_noise_tr) array(rnorm(1, mean = 2, sd = 1)),
         tr_sd_patient_phi_process_noise = if (enable_patient_process_noise_tr) array(abs(rnorm(1, sd = 0.1))),
-        tr_raw_patient_phi_process_noise = if (enable_patient_process_noise_phi_tr) rnorm(n_patients),
+        tr_raw_patient_phi_process_noise = if (enable_patient_process_noise_phi_tr) rtruncnorm(n_patients),
         
         # Measurement error - draw from inv_gamma prior (keeps mass away from zero)
         measure_sd = invgamma::rinvgamma(1, measure_sd_alpha, measure_sd_beta),
