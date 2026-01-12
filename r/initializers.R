@@ -411,29 +411,53 @@ create_tumor_ssls_initializer <- function(stan_data) {
     max_all_t <- max(max(stan_data$t_patient_visits) + 1, stan_data$extend_max_all_t %||% 0)
     max_t_width <- max_all_t - min_all_t + 1
 
-    # Helper to generate truncated normal draws (avoid extreme values that cause state explosion)
-    # With 700+ patients, untruncated rnorm gives ~2 patients with |z|>3, causing numerical issues
-    rtruncnorm <- function(n, mean = 0, sd = 1, lower = -2.5, upper = 2.5) {
-      pmax(lower, pmin(upper, rnorm(n, mean, sd)))
-    }
+    # Initialize on TRANSFORMED scale, then back-calculate raw values
+    # This gives direct control over actual parameter values and prevents state explosion
+    # Formula: actual = mean + sd * raw  =>  raw = (actual - mean) / sd
 
     with(stan_data, {
-      lst(
-        # Truncate SDs at 0.05 to avoid near-zero inits that cause numerical issues
-        tr_sd_trial_intercept = pmax(0.05, abs(rnorm(1, sd = tr_sd_trial_intercept_sd))),
-        tr_raw_trial_intercept = if (enable_trial_intercept_tr) rtruncnorm(n_trials),
-        frac_sd_trial_intercept = pmax(0.05, abs(rnorm(1, sd = init_sd_trial_intercept_sd))),
-        frac_raw_trial_intercept = if (enable_trial_intercept_frac) rtruncnorm(n_trials),
-        init_sd_trial_intercept = pmax(0.05, abs(rnorm(1, sd = init_sd_trial_intercept_sd))),
-        init_raw_trial_intercept = if (enable_trial_intercept_init) rtruncnorm(n_trials),
+      # First, draw the hierarchical SDs (truncate at 0.05 to avoid numerical issues)
+      tr_sd_trial <- pmax(0.05, abs(rnorm(1, sd = tr_sd_trial_intercept_sd)))
+      frac_sd_trial <- pmax(0.05, abs(rnorm(1, sd = init_sd_trial_intercept_sd)))
+      init_sd_trial <- pmax(0.05, abs(rnorm(1, sd = init_sd_trial_intercept_sd)))
+      tr_sd_patient <- pmax(0.05, abs(rnorm(1, sd = tr_sd_patient_intercept_sd)))
+      frac_sd_patient <- pmax(0.05, abs(rnorm(1, sd = frac_sd_patient_intercept_sd)))
+      init_sd_patient <- pmax(0.05, abs(rnorm(1, sd = init_sd_patient_intercept_sd)))
 
-        # Patient-level hierarchical standard deviations (new naming)
-        tr_sd_patient_intercept = pmax(0.05, abs(rnorm(1, sd = tr_sd_patient_intercept_sd))),
-        tr_raw_patient_intercept = if (enable_patient_intercept_tr) rtruncnorm(n_patients),
-        frac_sd_patient_intercept = pmax(0.05, abs(rnorm(1, sd = frac_sd_patient_intercept_sd))),
-        frac_raw_patient_intercept = if (enable_patient_intercept_frac) rtruncnorm(n_patients),
-        init_sd_patient_intercept = pmax(0.05, abs(rnorm(1, sd = init_sd_patient_intercept_sd))),
-        init_raw_patient_intercept = if (enable_patient_intercept_init) rtruncnorm(n_patients),
+      # Draw ACTUAL trial-level deviations (bounded to ±1.5 SD from pop mean)
+      # Then back-calculate raw values
+      tr_trial_dev <- rnorm(n_trials, sd = tr_sd_trial * 0.6)  # actual deviations
+      frac_trial_dev <- rnorm(n_trials, sd = frac_sd_trial * 0.6)
+      init_trial_dev <- rnorm(n_trials, sd = init_sd_trial * 0.6)
+
+      # Draw ACTUAL patient-level deviations with tighter bounds
+      # Use truncated normal on the ACTUAL scale to prevent extreme values
+      rtruncnorm_actual <- function(n, sd, max_dev = 1.5) {
+        # Draw actual deviations, truncated at max_dev * sd
+        raw <- rnorm(n, sd = sd * 0.6)  # Start with narrower distribution
+        pmax(-max_dev * sd, pmin(max_dev * sd, raw))
+      }
+
+      tr_patient_dev <- rtruncnorm_actual(n_patients, tr_sd_patient)
+      frac_patient_dev <- rtruncnorm_actual(n_patients, frac_sd_patient)
+      init_patient_dev <- rtruncnorm_actual(n_patients, init_sd_patient)
+
+      lst(
+        # Trial-level SDs and back-calculated raw values
+        tr_sd_trial_intercept = tr_sd_trial,
+        tr_raw_trial_intercept = if (enable_trial_intercept_tr) tr_trial_dev / tr_sd_trial,
+        frac_sd_trial_intercept = frac_sd_trial,
+        frac_raw_trial_intercept = if (enable_trial_intercept_frac) frac_trial_dev / frac_sd_trial,
+        init_sd_trial_intercept = init_sd_trial,
+        init_raw_trial_intercept = if (enable_trial_intercept_init) init_trial_dev / init_sd_trial,
+
+        # Patient-level SDs and back-calculated raw values
+        tr_sd_patient_intercept = tr_sd_patient,
+        tr_raw_patient_intercept = if (enable_patient_intercept_tr) tr_patient_dev / tr_sd_patient,
+        frac_sd_patient_intercept = frac_sd_patient,
+        frac_raw_patient_intercept = if (enable_patient_intercept_frac) frac_patient_dev / frac_sd_patient,
+        init_sd_patient_intercept = init_sd_patient,
+        init_raw_patient_intercept = if (enable_patient_intercept_init) init_patient_dev / init_sd_patient,
 
         tr_coef_qr_pop = if (n_covar > 0 && enable_trial_cov_tr) rnorm(n_covar, tr_coef_qr_pop_mean, tr_coef_qr_pop_sd),
         frac_coef_qr_pop = if (n_covar > 0 && enable_trial_cov_frac) rnorm(n_covar, frac_coef_qr_pop_mean, frac_coef_qr_pop_sd),
@@ -447,26 +471,26 @@ create_tumor_ssls_initializer <- function(stan_data) {
         init_raw_trial_slope = if (n_covar > 0 && enable_trial_cov_init) matrix(rnorm(n_covar * n_trials), n_trials, n_covar),
 
         # Patient-level slope SDs and raw effects for tr, frac, and init modules
-        # Truncate raw effects to avoid extreme initializations
+        # Use narrow distribution (sd=0.5) to avoid extreme initializations
         tr_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_tr) abs(rnorm(n_covar, sd = tr_sd_patient_slope_sd)),
-        tr_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_tr) matrix(rtruncnorm(n_patients * n_covar), nrow = n_patients, ncol = n_covar),
+        tr_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_tr) matrix(rnorm(n_patients * n_covar, sd = 0.5), nrow = n_patients, ncol = n_covar),
         frac_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_frac) abs(rnorm(n_covar, sd = frac_sd_patient_slope_sd)),
-        frac_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_frac) matrix(rtruncnorm(n_patients * n_covar), nrow = n_patients, ncol = n_covar),
+        frac_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_frac) matrix(rnorm(n_patients * n_covar, sd = 0.5), nrow = n_patients, ncol = n_covar),
         init_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_init) abs(rnorm(n_covar, sd = init_sd_patient_slope_sd)),
-        init_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_init) matrix(rtruncnorm(n_patients * n_covar), nrow = n_patients, ncol = n_covar),
+        init_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_init) matrix(rnorm(n_patients * n_covar, sd = 0.5), nrow = n_patients, ncol = n_covar),
 
         # Total rate process noise (AR(1) time-varying deviations)
-        # Only provide init values when process noise is enabled (parameters are conditional arrays)
-        # Truncate to avoid extreme process noise that causes state explosion
+        # Initialize at ZERO - safest starting point for process noise
+        # The sampler will find the right values during warmup
         tr_raw_patient_process_noise = if (enable_patient_process_noise_tr) {
-          matrix(rtruncnorm(n_patients * max_t_width), nrow = n_patients, ncol = max_t_width)
+          matrix(0, nrow = n_patients, ncol = max_t_width)
         },
         tr_log_sd_pop_process_noise = if (enable_patient_process_noise_tr) array(rnorm(1, mean = log(0.05), sd = 0.5)),
         tr_sd_patient_log_sd_process_noise = if (enable_patient_process_noise_tr) array(abs(rnorm(1, sd = 0.3))),
-        tr_raw_patient_log_sd_process_noise = if (enable_patient_process_noise_sd_tr) rtruncnorm(n_patients),
+        tr_raw_patient_log_sd_process_noise = if (enable_patient_process_noise_sd_tr) rep(0, n_patients),
         tr_logit_phi_pop_process_noise = if (enable_patient_process_noise_tr) array(rnorm(1, mean = 2, sd = 1)),
         tr_sd_patient_phi_process_noise = if (enable_patient_process_noise_tr) array(abs(rnorm(1, sd = 0.1))),
-        tr_raw_patient_phi_process_noise = if (enable_patient_process_noise_phi_tr) rtruncnorm(n_patients),
+        tr_raw_patient_phi_process_noise = if (enable_patient_process_noise_phi_tr) rep(0, n_patients),
         
         # Measurement error - draw from inv_gamma prior (keeps mass away from zero)
         measure_sd = invgamma::rinvgamma(1, measure_sd_alpha, measure_sd_beta),
