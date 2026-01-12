@@ -219,8 +219,34 @@ build_model <- function(
   compile_cores = parallel::detectCores(),
   ...
 ) {
-  # Force dependency on include files
-  include_files
+  # Compute hash of all source file contents to detect changes
+  all_source_files <- c(model_file, include_files)
+  source_hash <- all_source_files |>
+    sort() |>
+    map(read_lines) |>
+    digest::digest(algo = "md5")
+
+  # Determine expected executable path
+  model_name <- tools::file_path_sans_ext(fs::path_file(model_file))
+  exe_dir <- dir %||% fs::path_dir(model_file)
+  exe_path <- fs::path(exe_dir, model_name)
+  hash_file <- str_c(exe_path, ".source_hash")
+
+  # Compare with stored hash - delete binary if sources changed
+  if (fs::file_exists(exe_path)) {
+    if (fs::file_exists(hash_file)) {
+      stored_hash <- read_lines(hash_file, n_max = 1)
+      if (!identical(stored_hash, source_hash)) {
+        message("Source hash changed - forcing recompilation")
+        fs::file_delete(exe_path)
+      } else {
+        message("Source hash matches - skipping recompilation")
+      }
+    } else {
+      message("Hash file not found - forcing recompilation")
+      fs::file_delete(exe_path)
+    }
+  }
 
   # Set MAKEFLAGS for parallel compilation
   withr::local_envvar(MAKEFLAGS = str_c("-j", compile_cores))
@@ -236,6 +262,9 @@ build_model <- function(
     dir = dir,
     ...
   )
+
+  # Save source hash for future comparisons
+  write_lines(source_hash, hash_file)
 
   # Track the executable by including its hash in the return value
   exe_path <- model$exe_file()
