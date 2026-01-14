@@ -212,6 +212,16 @@ export_stan_functions <- function(stan_file, includes = NULL) {
   return(model)
 }
 
+# Compute hash of Stan model source files
+# Returns a hash string that changes when any source file content changes
+compute_stan_source_hash <- function(model_file, include_files = NULL) {
+  all_source_files <- c(model_file, include_files)
+  all_source_files |>
+    sort() |>
+    map(read_lines) |>
+    digest::digest(algo = "md5")
+}
+
 build_model <- function(
   model_file,
   include_files = NULL,
@@ -220,11 +230,7 @@ build_model <- function(
   ...
 ) {
   # Compute hash of all source file contents to detect changes
-  all_source_files <- c(model_file, include_files)
-  source_hash <- all_source_files |>
-    sort() |>
-    map(read_lines) |>
-    digest::digest(algo = "md5")
+  source_hash <- compute_stan_source_hash(model_file, include_files)
 
   # Determine expected executable path
   model_name <- tools::file_path_sans_ext(fs::path_file(model_file))
