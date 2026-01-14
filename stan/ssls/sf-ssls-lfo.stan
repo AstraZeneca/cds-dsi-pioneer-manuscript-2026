@@ -240,123 +240,131 @@ generated quantities {
   }
 
   // Separate tracking for interpretability
-  array[n_cutoffs, n_cutoffs] vector[n_all_testing_patients] patient_log_lik_tumor;   // P(SLD | tumor model)
-  array[n_cutoffs, n_cutoffs] vector[n_all_testing_patients] patient_log_lik_oe;      // P(OE PFS | OE model)  
-  array[n_cutoffs, n_cutoffs] vector[n_all_testing_patients] patient_log_lik;         // P(SLD, OE PFS | joint model)
+  // Array dimensions are configurable:
+  //   - Exact LFO: max_n_rows=1, max_forecast_horizon=2 → [1, 2] arrays (minimal memory)
+  //   - PSIS LFO: max_n_rows=n_cutoffs, max_forecast_horizon=n_cutoffs → [n, n] arrays (for approximation)
+  array[max_n_rows, max_forecast_horizon] vector[n_all_testing_patients] patient_log_lik_tumor;   // P(SLD | tumor model)
+  array[max_n_rows, max_forecast_horizon] vector[n_all_testing_patients] patient_log_lik_oe;      // P(OE PFS | OE model)
+  array[max_n_rows, max_forecast_horizon] vector[n_all_testing_patients] patient_log_lik;         // P(SLD, OE PFS | joint model)
 
-  array[n_cutoffs, n_cutoffs] matrix<lower = 0>[PD, PD] oos_recist_confusion_matrix; // rows = observed, cols = predicted
+  array[max_n_rows, max_forecast_horizon] matrix<lower = 0>[PD, PD] oos_recist_confusion_matrix; // rows = observed, cols = predicted
 
   // Index usage notes:
   //   start_idx = testing_start_idx[n, i] is first post-cutoff-n visit (0 if none yet)
-  //   end_idx   = testing_end_idx[n, m+1, i] (inclusive) for horizon ending at cutoff m (< n_cutoffs), else patient's last visit
+  //   end_idx   = testing_end_idx[n, m_abs+1, i] (inclusive) for horizon ending at cutoff m_abs (< n_cutoffs), else patient's last visit
   //   first_start_idx = testing_start_idx[1, i] anchor for contiguous per-patient OOS slice
   //   test_start_offset = start_idx - first_start_idx (>=0) positions current window inside that slice
-  for (n in 1:n_cutoffs) {
+  //
+  // Loop bounds explanation:
+  //   - max_n_rows controls how many training cutoffs to compute (1 for exact LFO, n_cutoffs for PSIS)
+  //   - max_forecast_horizon controls the forecast window size (2 for exact LFO, n_cutoffs for PSIS)
+  //   - m_rel is the relative column index for array storage (1, 2, ...)
+  //   - m_abs is the absolute cutoff index for data access (n, n+1, ...)
+  for (n in 1:max_n_rows) {
     int n_curr_patients = n_patients - testing_patient_idx[n] + 1; // How many patients after the current patient index
-    int curr_first_testing_patient_idx = n_all_testing_patients - n_curr_patients + 1; 
+    int curr_first_testing_patient_idx = n_all_testing_patients - n_curr_patients + 1;
     array[n_curr_patients] int curr_patients = last_visit_calendar_day_sort_idx[testing_patient_idx[n]:]; // Who are these patients
-    
-    for (m in 1:n_cutoffs) {
-      patient_log_lik_tumor[n, m] = zeros_vector(n_all_testing_patients);
-      patient_log_lik_oe[n, m] = zeros_vector(n_all_testing_patients);
-      patient_log_lik[n, m] = zeros_vector(n_all_testing_patients);
-      oos_recist_confusion_matrix[n, m] = rep_matrix(0, PD, PD);
-    
-      if (m >= n) {
-        for (i_idx in 1:n_curr_patients) {
-          // Note: i is the original patient ID (1-based index from input data), not a sort position.
-          // curr_patients contains original patient IDs that were reordered by sorting on last_visit_calendar_day
-          int i = curr_patients[i_idx];
 
-          int visit_start, visit_end, first_start_idx = testing_start_idx[1, i];
-          (visit_start, visit_end) = get_pos(patient_visit_pos, i); 
+    // Only compute for forecast window: m_abs in [n, min(n + max_forecast_horizon - 1, n_cutoffs)]
+    int m_end = min(n + max_forecast_horizon - 1, n_cutoffs);
+    for (m_abs in n:m_end) {
+      // m_rel is the relative column index for array storage (1-based: 1, 2, ...)
+      int m_rel = m_abs - n + 1;
 
-          int start_idx = testing_start_idx[n, i];
-          int end_idx = m < n_cutoffs ? testing_end_idx[n, m + 1, i] : visit_end;
+      patient_log_lik_tumor[n, m_rel] = zeros_vector(n_all_testing_patients);
+      patient_log_lik_oe[n, m_rel] = zeros_vector(n_all_testing_patients);
+      patient_log_lik[n, m_rel] = zeros_vector(n_all_testing_patients);
+      oos_recist_confusion_matrix[n, m_rel] = rep_matrix(0, PD, PD);
 
-          // Only evaluate patients who were observed at cutoff (exclude newly enrolled patients)
-          // cutoff_observed_mask[i] == 1 means patient had at least one visit before/at cutoff
-          if (start_idx > 0 && end_idx >= start_idx && cutoff_observed_mask[i] == 1) {
-            int patient_idx = curr_first_testing_patient_idx + i_idx - 1;
-            
-            // Component 1: Tumor model log-likelihood using observed SLD
-            real tumor_ll = sf_log_space_obs_lpdf(
-                normalized_sld[start_idx:end_idx] | states[start_idx:end_idx], 
-                measure_sd, log_lod - log_baseline_sld[i]);
-            
-            patient_log_lik_tumor[n, m, patient_idx] = tumor_ll;
-            
-            // Component 2: Other events model log-likelihood using ACTUAL observed PFS
-            // (not cutoff-censored - we want true OOS evaluation against real outcomes)
-            real oe_ll = 0;
+      for (i_idx in 1:n_curr_patients) {
+        // Note: i is the original patient ID (1-based index from input data), not a sort position.
+        // curr_patients contains original patient IDs that were reordered by sorting on last_visit_calendar_day
+        int i = curr_patients[i_idx];
 
-            if (n_causes > 0) {
-              // Get test window boundaries in weeks
-              int test_start_week = t_patient_visits[start_idx];
-              int test_end_week = t_patient_visits[end_idx];
+        int visit_start, visit_end, first_start_idx = testing_start_idx[1, i];
+        (visit_start, visit_end) = get_pos(patient_visit_pos, i);
 
-              // Use ACTUAL observed other events PFS (not cutoff-censored)
-              // This ensures proper OOS evaluation against real outcomes
-              array[1] int obs_oe_pfs = {ic_other_events_pfs[i]};
-              array[1] int obs_oe_censored = {other_events_right_censored[i]};
-              array[1] int obs_oe_ic = {other_events_interval_censored[i]};
-              array[1] int test_start = {test_start_week};
-              array[1] int test_end = {test_end_week};
+        int start_idx = testing_start_idx[n, i];
+        int end_idx = m_abs < n_cutoffs ? testing_end_idx[n, m_abs + 1, i] : visit_end;
 
-              // Extract single patient's survival probabilities as a 1-row matrix
-              // log_cond_prob_surv is array[n_causes] matrix[n_patients, max_all_t]
-              // We need matrix[1, max_all_t] for this single patient
-              matrix[1, max_all_t] patient_log_surv = log_cond_prob_surv[1, i:i];
+        // Only evaluate patients who were observed at cutoff (exclude newly enrolled patients)
+        // cutoff_observed_mask[i] == 1 means patient had at least one visit before/at cutoff
+        if (start_idx > 0 && end_idx >= start_idx && cutoff_observed_mask[i] == 1) {
+          int patient_idx = curr_first_testing_patient_idx + i_idx - 1;
 
-              // Calculate log-likelihood using the same function as in model block
-              oe_ll = calc_pch_loglik(
-                obs_oe_pfs,
-                obs_oe_censored,
-                obs_oe_ic,
-                0, // ignore_interval_censoring
-                patient_log_surv,
-                test_start,
-                test_end
-              )[1]; // Extract single element from returned vector
-            }
-            
-            patient_log_lik_oe[n, m, patient_idx] = oe_ll;
-            
-            // Joint log-likelihood: log P(SLD, OE PFS | θ) = log P(SLD | θ) + log P(OE PFS | θ)
-            patient_log_lik[n, m, patient_idx] = tumor_ll + oe_ll;
+          // Component 1: Tumor model log-likelihood using observed SLD
+          real tumor_ll = sf_log_space_obs_lpdf(
+              normalized_sld[start_idx:end_idx] | states[start_idx:end_idx],
+              measure_sd, log_lod - log_baseline_sld[i]);
 
-            // Below part is for OOS RECIST confusion matrix calculation
+          patient_log_lik_tumor[n, m_rel, patient_idx] = tumor_ll;
 
-            int oos_recist_start, oos_recist_end;
-            (oos_recist_start, oos_recist_end) = get_pos(testing_visit_pos, i);
+          // Component 2: Other events model log-likelihood using ACTUAL observed PFS
+          // (not cutoff-censored - we want true OOS evaluation against real outcomes)
+          real oe_ll = 0;
 
-            int n_curr_testing_visits = end_idx - start_idx + 1;
-            int test_start_offset = start_idx - first_start_idx;
-            assert_greater_than_or_equal(test_start_offset, 0);
+          if (n_causes > 0) {
+            // Get test window boundaries in weeks
+            int test_start_week = t_patient_visits[start_idx];
+            int test_end_week = t_patient_visits[end_idx];
 
-            // The patient slice in oos_recist spans all OOS visits from the first cutoff:
-            assert_equal(oos_recist_start + n_patient_testing_visits[i] - 1, oos_recist_end);
-            // For current (n, m) window, ensure we don't step past the end of that slice:
-            assert_greater_than_or_equal(oos_recist_end, oos_recist_start + test_start_offset + n_curr_testing_visits - 1);
+            // Use ACTUAL observed other events PFS (not cutoff-censored)
+            // This ensures proper OOS evaluation against real outcomes
+            array[1] int obs_oe_pfs = {ic_other_events_pfs[i]};
+            array[1] int obs_oe_censored = {other_events_right_censored[i]};
+            array[1] int obs_oe_ic = {other_events_interval_censored[i]};
+            array[1] int test_start = {test_start_week};
+            array[1] int test_end = {test_end_week};
 
-            for (t_idx in 1:n_curr_testing_visits) {
-              // Predicted RECIST must be within 1..PD
-              assert_less_or_equal(oos_recist[oos_recist_start + test_start_offset + t_idx - 1], PD);
+            // Extract single patient's survival probabilities as a 1-row matrix
+            // log_cond_prob_surv is array[n_causes] matrix[n_patients, max_all_t]
+            // We need matrix[1, max_all_t] for this single patient
+            matrix[1, max_all_t] patient_log_surv = log_cond_prob_surv[1, i:i];
 
-              int obs_val = recist[start_idx + t_idx - 1];
-              int pred_val = oos_recist[oos_recist_start + test_start_offset + t_idx - 1];
+            // Calculate log-likelihood using the same function as in model block
+            oe_ll = calc_pch_loglik(
+              obs_oe_pfs,
+              obs_oe_censored,
+              obs_oe_ic,
+              0, // ignore_interval_censoring
+              patient_log_surv,
+              test_start,
+              test_end
+            )[1]; // Extract single element from returned vector
+          }
 
-              if (obs_val <= PD) { // Ignore first pre-screening visits that don't have a response yet 
-                oos_recist_confusion_matrix[n, m][obs_val, pred_val] += 1;
-              }
+          patient_log_lik_oe[n, m_rel, patient_idx] = oe_ll;
+
+          // Joint log-likelihood: log P(SLD, OE PFS | θ) = log P(SLD | θ) + log P(OE PFS | θ)
+          patient_log_lik[n, m_rel, patient_idx] = tumor_ll + oe_ll;
+
+          // Below part is for OOS RECIST confusion matrix calculation
+
+          int oos_recist_start, oos_recist_end;
+          (oos_recist_start, oos_recist_end) = get_pos(testing_visit_pos, i);
+
+          int n_curr_testing_visits = end_idx - start_idx + 1;
+          int test_start_offset = start_idx - first_start_idx;
+          assert_greater_than_or_equal(test_start_offset, 0);
+
+          // The patient slice in oos_recist spans all OOS visits from the first cutoff:
+          assert_equal(oos_recist_start + n_patient_testing_visits[i] - 1, oos_recist_end);
+          // For current (n, m_abs) window, ensure we don't step past the end of that slice:
+          assert_greater_than_or_equal(oos_recist_end, oos_recist_start + test_start_offset + n_curr_testing_visits - 1);
+
+          for (t_idx in 1:n_curr_testing_visits) {
+            // Predicted RECIST must be within 1..PD
+            assert_less_or_equal(oos_recist[oos_recist_start + test_start_offset + t_idx - 1], PD);
+
+            int obs_val = recist[start_idx + t_idx - 1];
+            int pred_val = oos_recist[oos_recist_start + test_start_offset + t_idx - 1];
+
+            if (obs_val <= PD) { // Ignore first pre-screening visits that don't have a response yet
+              oos_recist_confusion_matrix[n, m_rel][obs_val, pred_val] += 1;
             }
           }
         }
-      } else {
-        patient_log_lik_tumor[n, m] = rep_vector(negative_infinity(), n_all_testing_patients); 
-        patient_log_lik_oe[n, m] = rep_vector(negative_infinity(), n_all_testing_patients);
-        patient_log_lik[n, m] = rep_vector(negative_infinity(), n_all_testing_patients);
       }
     }
-  } 
+  }
 }
