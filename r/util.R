@@ -233,6 +233,7 @@ build_model <- function(
   hash_file <- str_c(exe_path, ".source_hash")
 
   # Compare with stored hash - delete binary if sources changed
+  skip_compile <- FALSE
   if (fs::file_exists(exe_path)) {
     if (fs::file_exists(hash_file)) {
       stored_hash <- read_lines(hash_file, n_max = 1)
@@ -241,6 +242,7 @@ build_model <- function(
         fs::file_delete(exe_path)
       } else {
         message("Source hash matches - skipping recompilation")
+        skip_compile <- TRUE
       }
     } else {
       message("Hash file not found - forcing recompilation")
@@ -260,6 +262,7 @@ build_model <- function(
     ),
     # stanc_options = list("O1"),      # Stan compiler optimizations
     dir = dir,
+    force_recompile = !skip_compile,
     ...
   )
 

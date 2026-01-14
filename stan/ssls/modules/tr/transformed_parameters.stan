@@ -58,3 +58,21 @@ if (enable_patient_process_noise_tr) {
       + tr_raw_patient_process_noise[, t] .* tr_sd_patient_process_noise;
   }
 }
+
+// Population-level time-varying process noise (shared AR(1) across all patients)
+row_vector[enable_pop_process_noise_tr ? max_t_width : 0] tr_pop_process_noise;
+
+if (enable_pop_process_noise_tr) {
+  real sigma_pop = exp(tr_log_sd_pop_process_noise_pop[1]);
+  // log(inv_logit(x)) = x - log1p_exp(x), more stable than log(inv_logit(x))
+  real log_phi_pop = tr_logit_phi_pop_process_noise_pop[1] - log1p_exp(tr_logit_phi_pop_process_noise_pop[1]);
+
+  // Compute φ^t for t = 1..max_t_width (vectorized via exp/log)
+  row_vector[max_t_width] phi_powers = exp(log_phi_pop * linspaced_row_vector(max_t_width, 1, max_t_width));
+
+  // Scale raw innovations
+  row_vector[max_t_width] z_pop = sigma_pop * tr_raw_pop_process_noise;
+
+  // Vectorized AR(1): y[t] = Σ_{k=1}^{t} φ^(t-k) * z[k] = φ^t * cumsum(z/φ^k)
+  tr_pop_process_noise = cumulative_sum(z_pop ./ phi_powers) .* phi_powers;
+}

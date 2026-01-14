@@ -80,3 +80,6 @@ for (t in 2:max_t_width) {
   cumsum_integration_matrix[1:(t-1), t] = rep_vector(1, t-1);
 }
 
+// Combined flag: any process noise enabled (pop-level or patient-level)
+int enable_any_process_noise_tr = enable_pop_process_noise_tr || enable_patient_process_noise_tr;
+
