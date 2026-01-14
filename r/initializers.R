@@ -503,9 +503,9 @@ create_tumor_ssls_initializer <- function(stan_data) {
         measure_sd = invgamma::rinvgamma(1, measure_sd_alpha, measure_sd_beta),
         
         # Other events baseline hazard (population level)
-        log_lambda_gp_pop_intercept = rnorm(n_causes, oe_log_lambda_gp_pop_intercept_mean, oe_log_lambda_gp_pop_intercept_sd),
-        log_lambda_gp_pop_alpha = rep(1.0, n_causes),  # Initialize to 1.0 to avoid boundary at zero
-        log_lambda_gp_pop_rho = invgamma::rinvgamma(n_causes, oe_log_lambda_gp_pop_rho_alpha, oe_log_lambda_gp_pop_rho_beta),
+        log_lambda_gp_pop_intercept = array(rnorm(n_causes, oe_log_lambda_gp_pop_intercept_mean, oe_log_lambda_gp_pop_intercept_sd), dim = n_causes),
+        log_lambda_gp_pop_alpha = array(rep(1.0, n_causes), dim = n_causes),  # Initialize to 1.0 to avoid boundary at zero
+        log_lambda_gp_pop_rho = array(invgamma::rinvgamma(n_causes, oe_log_lambda_gp_pop_rho_alpha, oe_log_lambda_gp_pop_rho_beta), dim = n_causes),
         # log_lambda_gp_pop_eta is array[n_causes] row_vector[max_all_t]
         # In R, this becomes a list of n_causes row vectors (each of length max_all_t)
         log_lambda_gp_pop_eta = replicate(n_causes, rnorm(max_all_t), simplify = FALSE),
