@@ -89,9 +89,9 @@ create_tumor_ssls_initializer_fixed <- function(stan_data) {
         measure_sd = 0.15,
 
         # Other events baseline hazard - realistic values
-        log_lambda_gp_pop_intercept = rep(-4.5, n_causes),
-        log_lambda_gp_pop_alpha = rep(1.0, n_causes),
-        log_lambda_gp_pop_rho = rep(1.4, n_causes),
+        log_lambda_gp_pop_intercept = array(rep(-4.5, n_causes), dim = n_causes),
+        log_lambda_gp_pop_alpha = array(rep(1.0, n_causes), dim = n_causes),
+        log_lambda_gp_pop_rho = array(rep(1.4, n_causes), dim = n_causes),
         # GP eta (time effects) - small heterogeneity for smoother start
         log_lambda_gp_pop_eta = replicate(n_causes, rnorm(max_all_t, sd = 0.1), simplify = FALSE),
 
