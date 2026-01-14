@@ -289,10 +289,24 @@ lfo <- function(
     str_glue("{basename}-{refit_n}")
   )
 
+  # Determine array dimensions based on LFO mode
+  # exact = TRUE: Only need n=1 and m ∈ {1, 2} (minimal memory)
+  # exact = FALSE: Need full matrix for PSIS approximation
+  n_cutoffs <- nrow(remaining_all_cutoffs)
+  if (exact) {
+    max_n_rows <- 1L
+    max_forecast_horizon <- future_window
+  } else {
+    max_n_rows <- n_cutoffs
+    max_forecast_horizon <- n_cutoffs
+  }
+
   fit <- stan_data |>
     list_assign(
       cutoff_calendar_day = remaining_all_cutoffs$cutoff_calendar_day,
-      n_cutoffs = nrow(remaining_all_cutoffs)
+      n_cutoffs = n_cutoffs,
+      max_n_rows = max_n_rows,
+      max_forecast_horizon = max_forecast_horizon
     ) %>%
     sample_and_save(
       model,
@@ -335,7 +349,13 @@ lfo <- function(
     psis_results <- psis_results |>
       select(n, m, contains("E_"))
   } else {
+    # Drop heavy draw matrix columns but keep fit and summary statistics
+    # This prevents memory from accumulating through recursive calls
     psis_results <- psis_results |>
+      select(
+        n, m, refit_n, tar_group, cutoff_date, cutoff_calendar_day,
+        contains("E_"), k
+      ) |>
       mutate(fit = if_else(n == refit_n, list(fit), list(NULL)))
   }
 
@@ -399,11 +419,10 @@ log_mean_exp <- function(x) {
 
 lfo_log_lik <- function(res, max_n = Inf, future_window = 1) {
   res |>
-    spread_rvars(
-      patient_log_lik[n, m, i],
-      patient_pfs_log_lik[n, m, i],
-      patient_crcr_log_lik[n, m, i]
-    ) |>
+    spread_rvars(patient_log_lik[n, m, i]) |>
+    # Convert m from relative (array index) to absolute (cutoff index)
+    # Stan stores arrays as [n, m_rel] where m_rel = m_abs - n + 1
+    mutate(m = n + m - 1) |>
     lfo_log_lik_rvar(max_n, future_window)
 }
 
