@@ -479,7 +479,7 @@ create_tumor_ssls_initializer <- function(stan_data) {
         init_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_init) abs(rnorm(n_covar, sd = init_sd_patient_slope_sd)),
         init_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_init) matrix(rnorm(n_patients * n_covar, sd = 0.5), nrow = n_patients, ncol = n_covar),
 
-        # Total rate process noise (AR(1) time-varying deviations)
+        # Patient-level process noise (AR(1) time-varying deviations per patient)
         # Initialize at ZERO - safest starting point for process noise
         # The sampler will find the right values during warmup
         tr_raw_patient_process_noise = if (enable_patient_process_noise_tr) {
@@ -491,7 +491,14 @@ create_tumor_ssls_initializer <- function(stan_data) {
         tr_logit_phi_pop_process_noise = if (enable_patient_process_noise_tr) array(rnorm(1, mean = 2, sd = 1)),
         tr_sd_patient_phi_process_noise = if (enable_patient_process_noise_tr) array(abs(rnorm(1, sd = 0.1))),
         tr_raw_patient_phi_process_noise = if (enable_patient_process_noise_phi_tr) rep(0, n_patients),
-        
+
+        # Population-level process noise (shared AR(1) temporal trend)
+        tr_raw_pop_process_noise = if (enable_pop_process_noise_tr) {
+          rep(0, max_t_width)
+        },
+        tr_log_sd_pop_process_noise_pop = if (enable_pop_process_noise_tr) array(rnorm(1, mean = log(0.05), sd = 0.5)),
+        tr_logit_phi_pop_process_noise_pop = if (enable_pop_process_noise_tr) array(rnorm(1, mean = 2, sd = 1)),
+
         # Measurement error - draw from inv_gamma prior (keeps mass away from zero)
         measure_sd = invgamma::rinvgamma(1, measure_sd_alpha, measure_sd_beta),
         
@@ -523,7 +530,8 @@ create_tumor_ssls_initializer <- function(stan_data) {
         },
         
         # Other events covariate effects (tumor covariates)
-        oe_tumor_coef_qr_pop = if (n_tumor_covar > 0 && oe_enable_pop_tumor_cov) {
+        # Note: tumor coefficients are NOT QR-transformed (unlike oe_covar_coef_qr_pop)
+        oe_tumor_coef_pop = if (n_tumor_covar > 0 && oe_enable_pop_tumor_cov) {
           array(replicate(n_causes, rnorm(n_tumor_covar, 0, 1)), dim = c(n_causes, n_tumor_covar))
         },
         oe_sd_trial_tumor_slope = if (n_tumor_covar > 0 && oe_enable_trial_tumor_cov) {

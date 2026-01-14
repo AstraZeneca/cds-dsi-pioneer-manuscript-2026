@@ -6,18 +6,36 @@
 // Combined patient-level rates from tumor regression and growth fraction modules
 // ============================================================================
 
-matrix[n_patients, enable_patient_process_noise_tr ? max_t_width : 1] patient_log_decrease_rate; 
-matrix[n_patients, enable_patient_process_noise_tr ? max_t_width : 1] patient_log_growth_rate;
+// Time-varying rates if either pop or patient process noise is enabled
+// Note: enable_any_process_noise_tr is computed in transformed data
+matrix[n_patients, enable_any_process_noise_tr ? max_t_width : 1] patient_log_decrease_rate;
+matrix[n_patients, enable_any_process_noise_tr ? max_t_width : 1] patient_log_growth_rate;
 
-if (enable_patient_process_noise_tr) {
-  // Add AR(1) process noise (mean-reverting to baseline rate)
-  // log_rate[i,t] = log_baseline_rate[i] + deviation[i,t]
+if (enable_pop_process_noise_tr && enable_patient_process_noise_tr) {
+  // Both levels: pop + patient (additive)
+  // log_rate[i,t] = log_baseline_rate[i] + pop_deviation[t] + patient_deviation[i,t]
+  patient_log_decrease_rate = (tr_loc_patient + frac_log_decrease_patient) * ones_row_vector(max_t_width)
+    + rep_matrix(tr_pop_process_noise, n_patients)
+    + tr_patient_process_noise;
+  patient_log_growth_rate = (tr_loc_patient + frac_log_growth_patient) * ones_row_vector(max_t_width)
+    + rep_matrix(tr_pop_process_noise, n_patients)
+    + tr_patient_process_noise;
+} else if (enable_pop_process_noise_tr) {
+  // Pop-level only: shared temporal trend
+  // log_rate[i,t] = log_baseline_rate[i] + pop_deviation[t]
+  patient_log_decrease_rate = (tr_loc_patient + frac_log_decrease_patient) * ones_row_vector(max_t_width)
+    + rep_matrix(tr_pop_process_noise, n_patients);
+  patient_log_growth_rate = (tr_loc_patient + frac_log_growth_patient) * ones_row_vector(max_t_width)
+    + rep_matrix(tr_pop_process_noise, n_patients);
+} else if (enable_patient_process_noise_tr) {
+  // Patient-level only (existing behavior)
+  // log_rate[i,t] = log_baseline_rate[i] + patient_deviation[i,t]
   patient_log_decrease_rate = (tr_loc_patient + frac_log_decrease_patient) * ones_row_vector(max_t_width) + tr_patient_process_noise;
-  patient_log_growth_rate   = (tr_loc_patient + frac_log_growth_patient) * ones_row_vector(max_t_width) + tr_patient_process_noise;
+  patient_log_growth_rate = (tr_loc_patient + frac_log_growth_patient) * ones_row_vector(max_t_width) + tr_patient_process_noise;
 } else {
   // No process noise: constant rates (stored in single column)
   patient_log_decrease_rate[, 1] = tr_loc_patient + frac_log_decrease_patient;
-  patient_log_growth_rate[, 1]   = tr_loc_patient + frac_log_growth_patient;
+  patient_log_growth_rate[, 1] = tr_loc_patient + frac_log_growth_patient;
 }
 
 // ============================================================================
@@ -28,8 +46,8 @@ if (enable_patient_process_noise_tr) {
 matrix[n_total_visits, 2] states; 
 
 // Conditionally sized matrices for exponentiated rates
-matrix[n_patients, enable_patient_process_noise_tr ? max_t_width : 1] patient_decrease_rate;
-matrix[n_patients, enable_patient_process_noise_tr ? max_t_width : 1] patient_growth_rate;
+matrix[n_patients, enable_any_process_noise_tr ? max_t_width : 1] patient_decrease_rate;
+matrix[n_patients, enable_any_process_noise_tr ? max_t_width : 1] patient_growth_rate;
 
 patient_decrease_rate = exp(patient_log_decrease_rate);
 patient_growth_rate = exp(patient_log_growth_rate);
@@ -38,10 +56,10 @@ patient_growth_rate = exp(patient_log_growth_rate);
 // Position 1 = each patient's first visit (different absolute weeks)
 // Position t = t weeks after first visit for that patient
 // Needed when: process noise is ON, or other_events uses time-varying tumor covariates
-array[2] matrix[n_patients, (enable_patient_process_noise_tr || oe_enable_pop_tumor_cov) ? max_t_width : 0] states_full_grid;
+array[2] matrix[n_patients, (enable_any_process_noise_tr || oe_enable_pop_tumor_cov) ? max_t_width : 0] states_full_grid;
 
 profile("states") {
-  if (enable_patient_process_noise_tr) {
+  if (enable_any_process_noise_tr) {
     // ============================================================================
     // PROCESS NOISE ON: Compute states using cumulative sum (time-varying rates)
     // ============================================================================
