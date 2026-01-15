@@ -88,46 +88,29 @@ csv_to_parquet_duckdb <- function(csv_files, output_parquet, ..., max_threads = 
   # Build file list for DuckDB (needs to be SQL array syntax)
   file_list <- paste(shQuote(csv_files, type = "sh"), collapse = ", ")
 
-  # Profile CSV reading operation
-  # DBI::dbExecute(con, "SET profiling_output = 'profile_read.json'")
-
-  query_read <- stringr::str_glue(
+  # Use streaming COPY to avoid materializing all data in memory
+  # This streams directly from CSV reader to parquet writer
+  query <- stringr::str_glue(
     "
-    CREATE OR REPLACE TABLE temp_data AS 
-    SELECT 
-      CAST(regexp_extract(filename, '-(\\d+)-[a-f0-9]+\\.csv', 1) AS INTEGER) as chain_id,
-      {select_clause}
-    FROM read_csv([{file_list}], 
-                  filename = true,
-                  comment = '#',
-                  header = true,
-                  max_line_size = 104857600,
-                  auto_detect = false,
-                  all_varchar = false,
-                  {types_clause}
-                  union_by_name = true,
-                  parallel = true)
-    "
-  )
-
-  # browser()
-
-  DBI::dbExecute(con, query_read)
-
-  # Profile Parquet writing operation
-  # DBI::dbExecute(con, "SET profiling_output = 'profile_write.json'")
-
-  query_write <- stringr::str_glue(
-    "
-    COPY temp_data TO '{output_parquet}' 
-    (FORMAT PARQUET, COMPRESSION UNCOMPRESSED)
+    COPY (
+      SELECT
+        CAST(regexp_extract(filename, '-(\\d+)-[a-f0-9]+\\.csv', 1) AS INTEGER) as chain_id,
+        {select_clause}
+      FROM read_csv([{file_list}],
+                    filename = true,
+                    comment = '#',
+                    header = true,
+                    max_line_size = 104857600,
+                    auto_detect = false,
+                    all_varchar = false,
+                    {types_clause}
+                    union_by_name = true,
+                    parallel = true)
+    ) TO '{output_parquet}' (FORMAT PARQUET, COMPRESSION UNCOMPRESSED)
     "
   )
 
-  DBI::dbExecute(con, query_write)
-
-  # Clean up temporary table
-  DBI::dbExecute(con, "DROP TABLE temp_data")
+  DBI::dbExecute(con, query)
 
   return(output_parquet)
 }
