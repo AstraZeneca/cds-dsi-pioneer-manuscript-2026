@@ -101,6 +101,46 @@ sample_and_save <- function(
   return(fit)
 }
 
+#' Select draws from CmdStanR fit using tidyselect patterns
+#'
+#' Uses cmdstanr::read_cmdstan_csv with variable selection to read only the
+#' needed variables directly from CSV files. This bypasses any caching in
+#' the fit object and ensures minimal memory usage.
+#'
+#' @param fit A CmdStanMCMC fit object
+#' @param ... Tidyselect expressions to filter variables (e.g., ends_with("_pop"))
+#' @return A draws_array object with selected variables
+#' @export
+select_draws <- function(fit, ...) {
+  dots <- rlang::enquos(...)
+
+  # Get all variable names from the fit (base names without indices)
+  all_vars <- fit$metadata()$stan_variables()
+
+  if (length(dots) == 0) {
+    # No selection - read all variables
+    selected_vars <- NULL
+  } else {
+    # Apply tidyselect to filter variable names
+    selected_idx <- tidyselect::eval_select(
+      rlang::expr(c(!!!dots)),
+      data = rlang::set_names(all_vars, all_vars)
+    )
+    selected_vars <- all_vars[selected_idx]
+
+    if (length(selected_vars) == 0) {
+      stop("No variables matched the selection criteria")
+    }
+  }
+
+  # Read directly from CSV files with variable selection
+  # This bypasses fit object caching for better memory efficiency
+  cmdstanr::read_cmdstan_csv(
+    files = fit$output_files(),
+    variables = selected_vars
+  )$post_warmup_draws
+}
+
 #' Extract and compile decorated Stan functions
 #'
 #' @param stan_file Path to .stan file with decorated functions
