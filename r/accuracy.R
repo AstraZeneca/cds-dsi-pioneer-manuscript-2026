@@ -322,17 +322,10 @@ lfo <- function(
       ...
     )
 
-  # Convert CSV to parquet with only needed columns for memory efficiency
-  # This avoids loading all 1.8M columns via cmdstanr's $draws() method
-  parquet_path <- file.path(fit_output_dir, "lfo_log_lik.parquet")
-  csv_to_parquet_duckdb(
-    fit$output_files(),
-    parquet_path,
-    matches("^patient.*log_lik")
-  )
-  draws_dataset <- arrow::open_dataset(parquet_path)
+  # Select only the needed log_lik variables for memory efficiency
+  draws <- select_draws(fit, matches("^patient.*log_lik"))
 
-  psis_results <- draws_dataset |>
+  psis_results <- draws |>
     lfo_log_lik(future_window = future_window) |>
     mutate(across(c(n, m), \(x) x + refit_n - 1)) |>
     left_join(
