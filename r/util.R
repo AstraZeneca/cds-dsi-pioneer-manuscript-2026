@@ -37,7 +37,7 @@
 #'
 #' @return A fitted Stan model object
 sample_and_save <- function(
-  model,
+  exe_file,
   ...,
   output_dir,
   output_basename = NULL,
@@ -50,8 +50,10 @@ sample_and_save <- function(
 
   fs::dir_create(output_dir, recurse = TRUE)
 
+  # Load the compiled model from exe_file
+  model <- cmdstan_model(exe_file = exe_file)
+
   # Ensure the compiled Stan executable has execute permissions
-  exe_file <- model$exe_file()
   if (fs::file_exists(exe_file)) {
     fs::file_chmod(exe_file, "u+x")
   }

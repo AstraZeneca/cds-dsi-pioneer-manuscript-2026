@@ -254,7 +254,7 @@ get_lfo_cutoff_days <- function(
 #'
 lfo <- function(
   stan_data,
-  model,
+  exe_file,
   cutoffs,
   all_cutoffs,
   output_path,
@@ -309,7 +309,7 @@ lfo <- function(
       max_forecast_horizon = max_forecast_horizon
     ) %>%
     sample_and_save(
-      model,
+      exe_file,
       .,
       iter_warmup = iter_warmup,
       iter_sampling = iter_sampling,
@@ -372,7 +372,7 @@ lfo <- function(
   if (nrow(next_cutoffs) > 0) {
     next_results <- lfo(
       stan_data,
-      model,
+      exe_file,
       cutoffs,
       all_cutoffs,
       output_path,
