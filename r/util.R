@@ -112,18 +112,18 @@ sample_and_save <- function(
 #' @return A draws_array object with selected variables
 #' @export
 select_draws <- function(fit, ...) {
-  dots <- rlang::enquos(...)
-
   # Get all variable names from the fit (base names without indices)
-  all_vars <- fit$metadata()$stan_variables()
+  all_vars <- fit$metadata()$stan_variables
 
-  if (length(dots) == 0) {
+  if (...length() == 0) {
     # No selection - read all variables
     selected_vars <- NULL
   } else {
-    # Apply tidyselect to filter variable names
+    # Use substitute to capture the unevaluated selection expression
+    # This ensures tidyselect helpers are found in eval_select's environment
+    selection <- substitute(c(...))
     selected_idx <- tidyselect::eval_select(
-      rlang::expr(c(!!!dots)),
+      selection,
       data = rlang::set_names(all_vars, all_vars)
     )
     selected_vars <- all_vars[selected_idx]
