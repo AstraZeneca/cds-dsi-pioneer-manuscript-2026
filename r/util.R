@@ -377,10 +377,13 @@ km_to_tibble <- function(
       km_data <- broom::tidy(fit) |>
         select(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event)
 
-      # Get quantiles directly from survfit object
+      # Get quantiles with confidence intervals from survfit object
+      quant_result <- quantile(fit, probs = probs)
       quantiles <- tibble(
         quantile = probs,
-        pfs = quantile(fit, probs = probs)$quantile
+        pfs = quant_result$quantile,
+        pfs_lower = quant_result$lower,
+        pfs_upper = quant_result$upper
       )
 
       tibble(
