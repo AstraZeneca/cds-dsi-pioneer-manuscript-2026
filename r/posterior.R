@@ -746,13 +746,34 @@ get_tumor_ssls_level_param <- function(
   res,
   level = c("patient", "trial"),
   param,
-  rvar_extractor = spread_rvars
+  rvar_extractor = spread_rvars,
+  time_index = 1  # Extract first time point for time-varying parameters
 ) {
   level <- rlang::arg_match(level)
 
   # Create dynamic parameter names using the level prefix
   param <- map_chr(param, \(p) str_glue(p, level = level))
-  params <- rlang::parse_exprs(str_c(param, "[n]"))
+
+  # List of known time-varying parameters (2D matrices when process noise is enabled)
+  # These have dimensions [n_patients, max_t_width] instead of just [n_patients]
+  time_varying_params <- c(
+    "patient_log_decrease_rate",
+    "patient_log_growth_rate",
+    "patient_log_decrease_rate_residual",
+    "patient_log_growth_rate_residual"
+  )
+
+  # Check if any of the params match time-varying patterns
+  is_time_varying <- any(str_detect(param, str_c(time_varying_params, collapse = "|")))
+
+  if (is_time_varying) {
+    # For time-varying parameters, extract specific time point
+    # Use [n, time_index] to get the rate at a specific time for each patient
+    params <- rlang::parse_exprs(str_c(param, "[n, ", time_index, "]"))
+  } else {
+    # For time-invariant parameters, use 1D indexing
+    params <- rlang::parse_exprs(str_c(param, "[n]"))
+  }
 
   res |>
     rvar_extractor(!!!params)
