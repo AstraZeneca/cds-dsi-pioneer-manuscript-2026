@@ -53,9 +53,10 @@ create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_
         init_raw_patient_intercept = if (enable_patient_intercept_init) init_patient_dev / init_sd_patient,
 
         # Covariate effects - all zero
-        tr_coef_qr_pop = if (n_covar > 0 && enable_trial_cov_tr) rep(0, n_covar),
-        frac_coef_qr_pop = if (n_covar > 0 && enable_trial_cov_frac) rep(0, n_covar),
-        init_coef_qr_pop = if (n_covar > 0 && enable_trial_cov_init) rep(0, n_covar),
+        # Note: use enable_pop_cov_* flags (not enable_trial_cov_*) for population-level coefficients
+        tr_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_tr) rep(0, n_covar),
+        frac_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_frac) rep(0, n_covar),
+        init_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_init) rep(0, n_covar),
 
         tr_sd_trial_slope = if (n_covar > 0 && enable_trial_cov_tr) rep(0.1, n_covar),
         tr_raw_trial_slope = if (n_covar > 0 && enable_trial_cov_tr) matrix(0, n_trials, n_covar),
