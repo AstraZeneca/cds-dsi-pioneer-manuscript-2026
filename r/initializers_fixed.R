@@ -30,7 +30,12 @@ create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_
       frac_patient_dev <- rnorm(n_patients, sd = 0.3)
       init_patient_dev <- rnorm(n_patients, sd = 0.3)
 
-      lst(
+      tibble::lst(
+        # Population-level parameters - initialize at prior means to avoid catastrophic random inits
+        tr_intercept_pop = -2.0,  # Total rate on log scale (prior mean)
+        frac_log_decrease_pop = 1.5,  # Fraction log decrease (prior mean on logit scale)
+        init_logit_frac_pop = 0.0,  # Initial fraction logit (prior mean)
+
         # Trial-level SDs and raw values (with heterogeneity)
         tr_sd_trial_intercept = tr_sd_trial,
         tr_raw_trial_intercept = if (enable_trial_intercept_tr) tr_trial_dev / tr_sd_trial,
