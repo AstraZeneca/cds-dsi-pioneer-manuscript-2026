@@ -1,7 +1,7 @@
 # Temporary fixed initializer for testing chain stability
 # Uses reproducible per-chain values with realistic heterogeneity
 
-create_tumor_ssls_initializer_fixed <- function(stan_data) {
+create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_id = NULL) {
   function(chain_id) {
     # Note: targets already sets a deterministic seed per target, so we don't need set.seed() here
     # The chain_id parameter is kept for interface compatibility but not used for seeding
@@ -132,6 +132,22 @@ create_tumor_ssls_initializer_fixed <- function(stan_data) {
           array(replicate(n_causes, matrix(0, n_trials, n_covar), simplify = FALSE), dim = c(n_causes, n_trials, n_covar))
         },
       )
-    }) |> purrr::compact()
+    }) |> purrr::compact() |>
+      (\(init_vals) {
+        # Save init values to disk if save_dir is provided
+        if (!is.null(save_dir)) {
+          dir.create(save_dir, recursive = TRUE, showWarnings = FALSE)
+          # Include run_id in filename to avoid collisions between runs
+          filename <- if (!is.null(run_id)) {
+            sprintf("init-%s-chain-%d.json", run_id, chain_id)
+          } else {
+            sprintf("init-chain-%d.json", chain_id)
+          }
+          init_file <- file.path(save_dir, filename)
+          jsonlite::write_json(init_vals, init_file, auto_unbox = TRUE, pretty = TRUE)
+          message("Saved init values for chain ", chain_id, " to ", init_file)
+        }
+        init_vals
+      })()
   }
 }

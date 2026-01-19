@@ -272,6 +272,7 @@ lfo <- function(
   parallel_chains = 4,
   adapt_delta = 0.9,
   future_window = 1,
+  initializer_factory = NULL,
   ...
 ) {
   if (verbose) {
@@ -288,6 +289,16 @@ lfo <- function(
     "fit",
     str_glue("{basename}-{refit_n}")
   )
+
+  # If initializer_factory is provided, create a new initializer for this cutoff
+  # with the correct save directory. Otherwise use the provided initializer.
+  if (!is.null(initializer_factory)) {
+    initializer <- initializer_factory(
+      stan_data = stan_data,
+      save_dir = fit_output_dir,
+      run_id = output_timestamp
+    )
+  }
 
   # Determine array dimensions based on LFO mode
   # exact = TRUE: Only need n=1 and m ∈ {1, 2} (minimal memory)
@@ -353,7 +364,7 @@ lfo <- function(
   }
 
   next_cutoffs <- psis_results |>
-    filter(!is.na(k), k > k_threshold | exact, n > refit_n) %>%
+    filter(exact | (!is.na(k) & k > k_threshold), n > refit_n) %>%
     semi_join(remaining_cutoffs, ., by = "n")
 
   if (verbose) {
@@ -383,6 +394,7 @@ lfo <- function(
       parallel_chains,
       adapt_delta,
       future_window,
+      initializer_factory = initializer_factory,
       ...
     )
 
