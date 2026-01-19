@@ -291,6 +291,9 @@ build_model <- function(
       } else {
         message("Source hash matches - skipping recompilation")
         skip_compile <- TRUE
+        # Ensure executable has proper permissions when reusing from shared storage
+        # Fixes "Permission denied" errors across Domino jobs/workspaces
+        Sys.chmod(exe_path, mode = "0755")
       }
     } else {
       message("Hash file not found - forcing recompilation")
@@ -319,6 +322,11 @@ build_model <- function(
 
   # Track the executable by including its hash in the return value
   exe_path <- model$exe_file()
+
+  # Ensure executable has proper permissions for shared storage (Domino)
+  # Fixes "Permission denied" errors across jobs/workspaces
+  Sys.chmod(exe_path, mode = "0755")
+
   exe_hash <- digest::digest(file = exe_path, algo = "md5")
 
   # Store the hash as an attribute so targets tracks it
