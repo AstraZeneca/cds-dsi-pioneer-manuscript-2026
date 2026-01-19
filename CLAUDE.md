@@ -90,6 +90,12 @@ Parameters follow a population → trial → patient hierarchy:
 - `renv.lock` - Package versions
 - `_quarto.yml` - Documentation settings
 
+## Analysis Results Storage
+
+Analysis results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/`:
+- **Targets store**: `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/_targets`
+- **Fit CSVs**: `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/fit`
+
 ## Coding Guidelines
 
 ### Stan
@@ -103,6 +109,11 @@ Parameters follow a population → trial → patient hierarchy:
 - Follow tidyverse style guide
 - Prefer `purrr` and `dplyr` over base R loops
 - Use `testthat` for unit tests
+
+### Targets
+- **NEVER use `tar_config_set(store = ...)`** - it changes global state and causes conflicts
+- Always use explicit `store` argument: `tar_read(name, store = "path/_targets")`
+- Same applies to all targets functions: `tar_meta()`, `tar_load()`, etc.
 
 ### Adding Module Parameters
 1. Add feature flag in `modules/<module>/flags.stan`
