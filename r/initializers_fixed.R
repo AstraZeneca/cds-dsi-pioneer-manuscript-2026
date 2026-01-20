@@ -54,23 +54,23 @@ create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_
 
         # Covariate effects - all zero
         # Note: use enable_pop_cov_* flags (not enable_trial_cov_*) for population-level coefficients
-        tr_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_tr) rep(0, n_covar),
-        frac_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_frac) rep(0, n_covar),
-        init_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_init) rep(0, n_covar),
+        tr_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_tr) array(rep(0, n_covar), dim = n_covar),
+        frac_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_frac) array(rep(0, n_covar), dim = n_covar),
+        init_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_init) array(rep(0, n_covar), dim = n_covar),
 
-        tr_sd_trial_slope = if (n_covar > 0 && enable_trial_cov_tr) rep(0.1, n_covar),
+        tr_sd_trial_slope = if (n_covar > 0 && enable_trial_cov_tr) array(rep(0.1, n_covar), dim = n_covar),
         tr_raw_trial_slope = if (n_covar > 0 && enable_trial_cov_tr) matrix(0, n_trials, n_covar),
-        frac_sd_trial_slope = if (n_covar > 0 && enable_trial_cov_frac) rep(0.1, n_covar),
+        frac_sd_trial_slope = if (n_covar > 0 && enable_trial_cov_frac) array(rep(0.1, n_covar), dim = n_covar),
         frac_raw_trial_slope = if (n_covar > 0 && enable_trial_cov_frac) matrix(0, n_trials, n_covar),
-        init_sd_trial_slope = if (n_covar > 0 && enable_trial_cov_init) rep(0.1, n_covar),
+        init_sd_trial_slope = if (n_covar > 0 && enable_trial_cov_init) array(rep(0.1, n_covar), dim = n_covar),
         init_raw_trial_slope = if (n_covar > 0 && enable_trial_cov_init) matrix(0, n_trials, n_covar),
 
         # Patient-level covariate SDs and raw effects (with small heterogeneity)
-        tr_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_tr) rep(0.2, n_covar),
+        tr_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_tr) array(rep(0.2, n_covar), dim = n_covar),
         tr_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_tr) matrix(rnorm(n_patients * n_covar, sd = 0.3), n_patients, n_covar),
-        frac_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_frac) rep(0.2, n_covar),
+        frac_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_frac) array(rep(0.2, n_covar), dim = n_covar),
         frac_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_frac) matrix(rnorm(n_patients * n_covar, sd = 0.3), n_patients, n_covar),
-        init_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_init) rep(0.2, n_covar),
+        init_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_init) array(rep(0.2, n_covar), dim = n_covar),
         init_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_init) matrix(rnorm(n_patients * n_covar, sd = 0.3), n_patients, n_covar),
 
         # Patient-level process noise (all disabled for now)
