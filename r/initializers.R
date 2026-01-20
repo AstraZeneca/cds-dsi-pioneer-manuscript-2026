@@ -459,24 +459,24 @@ create_tumor_ssls_initializer <- function(stan_data) {
         init_sd_patient_intercept = init_sd_patient,
         init_raw_patient_intercept = if (enable_patient_intercept_init) init_patient_dev / init_sd_patient,
 
-        tr_coef_qr_pop = if (n_covar > 0 && enable_trial_cov_tr) rnorm(n_covar, tr_coef_qr_pop_mean, tr_coef_qr_pop_sd),
-        frac_coef_qr_pop = if (n_covar > 0 && enable_trial_cov_frac) rnorm(n_covar, frac_coef_qr_pop_mean, frac_coef_qr_pop_sd),
-        init_coef_qr_pop = if (n_covar > 0 && enable_trial_cov_init) rnorm(n_covar, init_coef_qr_pop_mean, init_coef_qr_pop_sd),
+        tr_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_tr) array(rnorm(n_covar, tr_coef_qr_pop_mean, tr_coef_qr_pop_sd), dim = n_covar),
+        frac_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_frac) array(rnorm(n_covar, frac_coef_qr_pop_mean, frac_coef_qr_pop_sd), dim = n_covar),
+        init_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_init) array(rnorm(n_covar, init_coef_qr_pop_mean, init_coef_qr_pop_sd), dim = n_covar),
 
-        tr_sd_trial_slope = if (n_covar > 0 && enable_trial_cov_tr) abs(rnorm(n_covar, sd = tr_sd_trial_slope_sd)),
+        tr_sd_trial_slope = if (n_covar > 0 && enable_trial_cov_tr) array(abs(rnorm(n_covar, sd = tr_sd_trial_slope_sd)), dim = n_covar),
         tr_raw_trial_slope = if (n_covar > 0 && enable_trial_cov_tr) matrix(rnorm(n_covar * n_trials), n_trials, n_covar),
-        frac_sd_trial_slope = if (n_covar > 0 && enable_trial_cov_frac) abs(rnorm(n_covar, sd = frac_sd_trial_slope_sd)),
+        frac_sd_trial_slope = if (n_covar > 0 && enable_trial_cov_frac) array(abs(rnorm(n_covar, sd = frac_sd_trial_slope_sd)), dim = n_covar),
         frac_raw_trial_slope = if (n_covar > 0 && enable_trial_cov_frac) matrix(rnorm(n_covar * n_trials), n_trials, n_covar),
-        init_sd_trial_slope = if (n_covar > 0 && enable_trial_cov_init) abs(rnorm(n_covar, sd = init_sd_trial_slope_sd)),
+        init_sd_trial_slope = if (n_covar > 0 && enable_trial_cov_init) array(abs(rnorm(n_covar, sd = init_sd_trial_slope_sd)), dim = n_covar),
         init_raw_trial_slope = if (n_covar > 0 && enable_trial_cov_init) matrix(rnorm(n_covar * n_trials), n_trials, n_covar),
 
         # Patient-level slope SDs and raw effects for tr, frac, and init modules
         # Use narrow distribution (sd=0.5) to avoid extreme initializations
-        tr_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_tr) abs(rnorm(n_covar, sd = tr_sd_patient_slope_sd)),
+        tr_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_tr) array(abs(rnorm(n_covar, sd = tr_sd_patient_slope_sd)), dim = n_covar),
         tr_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_tr) matrix(rnorm(n_patients * n_covar, sd = 0.5), nrow = n_patients, ncol = n_covar),
-        frac_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_frac) abs(rnorm(n_covar, sd = frac_sd_patient_slope_sd)),
+        frac_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_frac) array(abs(rnorm(n_covar, sd = frac_sd_patient_slope_sd)), dim = n_covar),
         frac_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_frac) matrix(rnorm(n_patients * n_covar, sd = 0.5), nrow = n_patients, ncol = n_covar),
-        init_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_init) abs(rnorm(n_covar, sd = init_sd_patient_slope_sd)),
+        init_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_init) array(abs(rnorm(n_covar, sd = init_sd_patient_slope_sd)), dim = n_covar),
         init_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_init) matrix(rnorm(n_patients * n_covar, sd = 0.5), nrow = n_patients, ncol = n_covar),
 
         # Patient-level process noise (AR(1) time-varying deviations per patient)
