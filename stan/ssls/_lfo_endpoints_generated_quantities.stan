@@ -23,6 +23,11 @@ array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_right_censore
 array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_target_km_est, spop_target_km_est, spop_target_obs_cens_km_est;
 array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_target_km_est, cond_spop_target_km_est, cond_spop_target_obs_cens_km_est;
 
+array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_other_events_km_est, spop_other_events_km_est;
+array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_km_est, spop_km_est;
+array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_other_events_km_est, cond_spop_other_events_km_est;
+array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_km_est, cond_spop_km_est;
+
 array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] sample_target_pfs_n, spop_target_pfs_n,
                                                                sample_other_events_pfs_n, spop_other_events_pfs_n,
                                                                sample_pfs_n, spop_pfs_n;
@@ -201,11 +206,8 @@ profile("gen_quant") {
       max_all_t,
       cutoff_n_patient_screening_visits
     );
-    
+
   // Aggregate to trial-level metrics (using cutoff-observed patients only)
-  array[n_trials] vector[max_all_t + 1] sample_other_events_km_est, spop_other_events_km_est;
-  array[n_trials] vector[max_all_t + 1] sample_km_est, spop_km_est;
-  
   (sample_target_orr, spop_target_orr,
    sample_target_km_est, spop_target_km_est, spop_target_obs_cens_km_est,
    sample_other_events_km_est, spop_other_events_km_est,
@@ -241,11 +243,8 @@ profile("gen_quant") {
       pfs_quantiles,
       pfs_timepoints
     );
-  
+
   // Aggregate to conditional group-level metrics (using cutoff-observed patients only)
-  array[n_cond_group] vector[max_all_t + 1] cond_sample_other_events_km_est, cond_spop_other_events_km_est;
-  array[n_cond_group] vector[max_all_t + 1] cond_sample_km_est, cond_spop_km_est;
-  
   (cond_sample_target_orr, cond_spop_target_orr,
    cond_sample_target_km_est, cond_spop_target_km_est, cond_spop_target_obs_cens_km_est,
    cond_sample_other_events_km_est, cond_spop_other_events_km_est,
