@@ -1,4 +1,8 @@
-# Sclc Onboarding Tutorial
+---
+title: "Onboarding Tutorial"
+subtitle: "A structured learning path for new team members"
+number-sections: false
+---
 
 This tutorial provides a structured path for new team members to understand the Sclc tumor dynamics modeling system.
 
@@ -58,10 +62,13 @@ We observe **noisy SLD measurements** at discrete clinic visits. The model infer
 
 ### 1.3 Reading Assignment
 
-**Read:** `MODEL_MATHEMATICAL_SPECIFICATION.md` Sections 1-2.1
+::: {.callout-note}
+## Reading
+**Read:** [Model Specification](model-specification.qmd) Sections 1-2.1
 
 - Section 1: Model overview and hierarchy
 - Section 2.1: State representation (what the decrease and growth components mean)
+:::
 
 ---
 
@@ -73,32 +80,32 @@ We observe **noisy SLD measurements** at discrete clinic visits. The model infer
 
 The latent tumor state has two components:
 
-```
-SLD(t) = x_dec(t) + x_gro(t)
-```
+$$
+\text{SLD}(t) = x_{\text{dec}}(t) + x_{\text{gro}}(t)
+$$
 
 Where:
 
-- `x_dec(t) = x_dec(0) * exp(-d * t)` — shrinking component (treatment effect)
-- `x_gro(t) = x_gro(0) * exp(g * t)` — growing component (resistance)
+- $x_{\text{dec}}(t) = x_{\text{dec}}(0) \cdot \exp(-d \cdot t)$ — shrinking component (treatment effect)
+- $x_{\text{gro}}(t) = x_{\text{gro}}(0) \cdot \exp(g \cdot t)$ — growing component (resistance)
 
 ### 2.2 Initial State Parameterization
 
-At baseline (t=0), total SLD is observed. We parameterize the split using alpha:
+At baseline ($t=0$), total SLD is observed. We parameterize the split using $\alpha$:
 
-```
-alpha = x_dec(0) / (x_dec(0) + x_gro(0))
-```
+$$
+\alpha = \frac{x_{\text{dec}}(0)}{x_{\text{dec}}(0) + x_{\text{gro}}(0)}
+$$
 
-- alpha ≈ 1: Most tumor is treatment-sensitive (expect good response)
-- alpha ≈ 0: Most tumor is resistant (expect poor response)
+- $\alpha \approx 1$: Most tumor is treatment-sensitive (expect good response)
+- $\alpha \approx 0$: Most tumor is resistant (expect poor response)
 
 ### 2.3 Rate Parameterization
 
-Rather than model d and g directly, we use:
+Rather than model $d$ and $g$ directly, we use:
 
-- **Total rate:** r = d + g (overall dynamics speed)
-- **Fraction:** phi = d / (d + g) (balance between shrinkage and growth)
+- **Total rate:** $r = d + g$ (overall dynamics speed)
+- **Fraction:** $\phi = d / (d + g)$ (balance between shrinkage and growth)
 
 This parameterization:
 
@@ -110,9 +117,9 @@ This parameterization:
 
 We don't observe true SLD — we observe noisy measurements:
 
-```
-y_ij ~ Normal(SLD_i(t_ij), sigma)
-```
+$$
+y_{ij} \sim \mathcal{N}(\text{SLD}_i(t_{ij}), \sigma^2)
+$$
 
 The state-space formulation allows us to:
 
@@ -124,7 +131,8 @@ The state-space formulation allows us to:
 
 Plot example trajectories with different parameter combinations:
 
-```r
+```{r}
+#| eval: false
 library(tidyverse)
 
 # Simulate bi-exponential trajectories
@@ -168,11 +176,14 @@ scenarios |>
 
 ### 2.6 Reading Assignment
 
-**Read:** `MODEL_MATHEMATICAL_SPECIFICATION.md` Sections 2.2-2.4
+::: {.callout-note}
+## Reading
+**Read:** [Model Specification](model-specification.qmd) Sections 2.2-2.4
 
 - Section 2.2: Temporal dynamics equations
 - Section 2.3: Hierarchical parameter structure
 - Section 2.4: Observation model details
+:::
 
 ---
 
@@ -184,25 +195,27 @@ scenarios |>
 
 Parameters flow through three levels:
 
-```
-Population (shared across all trials)
-    ↓
-Trial (trial-specific deviations)
-    ↓
-Patient (individual deviations)
-```
+$$
+\begin{aligned}
+&\text{Population (shared across all trials)} \\
+&\qquad \downarrow \\
+&\text{Trial (trial-specific deviations)} \\
+&\qquad \downarrow \\
+&\text{Patient (individual deviations)}
+\end{aligned}
+$$
 
 **Example for the decrease rate intercept:**
 
-```
-theta_patient = theta_pop + theta_trial[t[i]] + theta_patient[i]
-```
+$$
+\theta_{\text{patient},i} = \theta_{\text{pop}} + \theta_{\text{trial},s(i)} + \theta_{\text{patient},i}
+$$
 
 Where:
 
-- `theta_pop` — population mean
-- `theta_trial ~ Normal(0, sd_trial)` — trial random effect
-- `theta_patient ~ Normal(0, sd_patient)` — patient random effect
+- $\theta_{\text{pop}}$ — population mean
+- $\theta_{\text{trial},s} \sim \mathcal{N}(0, \sigma_{\text{trial}}^2)$ — trial random effect
+- $\theta_{\text{patient},i} \sim \mathcal{N}(0, \sigma_{\text{patient}}^2)$ — patient random effect
 
 ### 3.2 Non-Centered Parameterization
 
@@ -223,22 +236,25 @@ This breaks the funnel geometry that causes sampling problems.
 
 Covariates (e.g., PD-L1 status, smoking history) can modify parameters:
 
-```
-theta_i = theta_intercept + X_i * beta
-```
+$$
+\theta_i = \theta_{\text{intercept}} + \mathbf{X}_i^T \boldsymbol{\beta}
+$$
 
 Where:
 
-- `X_i` — patient covariate vector
-- `beta` — population-level slopes
+- $\mathbf{X}_i$ — patient covariate vector
+- $\boldsymbol{\beta}$ — population-level slopes
 
 Covariate effects can also have trial-level and patient-level random slopes.
 
 ### 3.4 Reading Assignment
 
-**Read:** `MODEL_MATHEMATICAL_SPECIFICATION.md` Section 2.3.1
+::: {.callout-note}
+## Reading
+**Read:** [Model Specification](model-specification.qmd) Section 2.3.1
 
-**Read:** `docs/multi_level_hierarchy_design.md` — Stan implementation patterns
+**Read:** [Architecture](architecture.qmd) — Stan implementation patterns
+:::
 
 ---
 
@@ -255,22 +271,22 @@ We model two types of progression separately:
 
 **Key assumption:** These are modeled as **independent** processes. Combined PFS is:
 
-```
-PFS = min(Time to target progression, Time to other event)
-```
+$$
+\text{PFS} = \min(\text{Time to target progression}, \text{Time to other event})
+$$
 
 ### 4.2 Hazard Model for Other Events
 
 Other events follow a proportional hazards model:
 
-```
-lambda_i(t) = lambda_0(t) * exp(eta_i)
-```
+$$
+\lambda_i(t) = \lambda_0(t) \cdot \exp(\eta_i)
+$$
 
 Where:
 
-- `lambda_0(t)` — baseline hazard (GP-smoothed)
-- `eta_i` — linear predictor from covariates
+- $\lambda_0(t)$ — baseline hazard (GP-smoothed)
+- $\eta_i$ — linear predictor from covariates
 
 ### 4.3 Tumor-Derived Covariates
 
@@ -278,18 +294,21 @@ The other events hazard can depend on tumor state:
 
 | Covariate | Description | Interpretation |
 |-----------|-------------|----------------|
-| Current SLD | SLD(t) | Larger tumors → higher hazard |
-| SLD velocity | d/dt SLD(t) | Growing tumors → higher hazard |
-| Best response | min SLD(s) for s ≤ t | Depth of response matters |
+| Current SLD | $\text{SLD}(t)$ | Larger tumors → higher hazard |
+| SLD velocity | $\frac{d}{dt}\text{SLD}(t)$ | Growing tumors → higher hazard |
+| Best response | $\min_{s \leq t} \text{SLD}(s)$ | Depth of response matters |
 | Time at best | Time of nadir | How long ago was best response |
 
 ### 4.4 Reading Assignment
 
-**Read:** `MODEL_MATHEMATICAL_SPECIFICATION.md` Section 3
+::: {.callout-note}
+## Reading
+**Read:** [Model Specification](model-specification.qmd) Section 3
 
 - Section 3.1: Independence assumption
 - Section 3.2: Hazard model structure
 - Section 3.4: Tumor covariates
+:::
 
 ---
 
@@ -372,13 +391,16 @@ Trace `tr_intercept_pop` through the codebase:
 
 ### 5.5 Reading Assignment
 
-**Read:** `docs/ARCHITECTURE.md`
+::: {.callout-note}
+## Reading
+**Read:** [Architecture](architecture.qmd)
 
 - Naming conventions
 - Module structure
 - Optimization techniques
 
 **Read:** `CLAUDE.md` — Development guidelines and common operations
+:::
 
 ---
 
@@ -425,6 +447,11 @@ fit <- tar_read(tumor_ssls_res_posterior)
 fit$diagnostic_summary()
 ```
 
+::: {.callout-tip}
+## See Analysis Results
+For actual diagnostics from the current analysis, see [Diagnostics](../analysis/diagnostics.qmd).
+:::
+
 ### 6.4 Key Outputs
 
 **Patient-level trajectories:**
@@ -456,6 +483,13 @@ plot_dynamics(fit, stan_data, analysis_data)
 plot_pfs_ppc(fit, stan_data, analysis_data)
 ```
 
+::: {.callout-tip}
+## See Analysis Results
+- For patient trajectories, see [Patient Dynamics](../analysis/patient-dynamics.qmd)
+- For clinical endpoints, see [Clinical Endpoints](../analysis/clinical-endpoints.qmd)
+- For survival curves, see [Survival Analysis](../analysis/survival-analysis.qmd)
+:::
+
 ---
 
 ## Quick Reference
@@ -464,11 +498,9 @@ plot_pfs_ppc(fit, stan_data, analysis_data)
 
 | Document | Purpose |
 |----------|---------|
-| `MODEL_MATHEMATICAL_SPECIFICATION.md` | **Primary reference** — complete model specification |
-| `docs/ARCHITECTURE.md` | Code organization, naming conventions |
-| `docs/ar1_process_noise.md` | AR(1) implementation (if enabled) |
-| `docs/multi_level_hierarchy_design.md` | Stan hierarchy patterns |
-| `docs/stan_state_space_optimization.md` | Computational optimizations |
+| [Model Specification](model-specification.qmd) | **Primary reference** — complete model specification |
+| [Architecture](architecture.qmd) | Code organization, naming conventions |
+| [AR(1) Process Noise](ar1-process-noise.qmd) | AR(1) implementation (if enabled) |
 | `CLAUDE.md` | Development guidelines |
 
 ### Key Functions
@@ -505,3 +537,12 @@ plot_pfs_ppc(fit, stan_data, analysis_data)
 ---
 
 *Last Updated: January 2025*
+
+::: {.related-pages}
+## Related Pages
+
+- [Model Specification](model-specification.qmd) - Complete mathematical specification
+- [Architecture](architecture.qmd) - Code organization and naming conventions
+- [Data Exploration](../analysis/data-exploration.qmd) - Explore the data
+- [Clinical Endpoints](../analysis/clinical-endpoints.qmd) - See actual results
+:::

@@ -1,0 +1,115 @@
+project:
+  type: website
+  output-dir: _site
+  execute-dir: project
+
+website:
+  title: "PIONEER: SCLC-01 Forecasting"
+  description: "Bayesian hierarchical modeling for tumor dynamics and progression-free survival"
+  favicon: images/favicon.ico
+  navbar:
+    background: primary
+    left:
+      - text: Home
+        href: index.qmd
+      - text: Documentation
+        menu:
+          - text: Model Specification
+            href: documentation/model-specification.qmd
+          - text: Onboarding Tutorial
+            href: documentation/onboarding-tutorial.qmd
+          - text: "---"
+          - text: Technical Reference
+          - text: Architecture
+            href: documentation/architecture.qmd
+          - text: AR(1) Process Noise
+            href: documentation/ar1-process-noise.qmd
+      - text: Analysis
+        menu:
+          - text: Data Exploration
+            href: analysis/data-exploration.qmd
+          - text: "---"
+          - text: Results
+          - text: Clinical Endpoints
+            href: analysis/clinical-endpoints.qmd
+          - text: Survival Analysis
+            href: analysis/survival-analysis.qmd
+          - text: "---"
+          - text: Model Details
+          - text: Parameter Inference
+            href: analysis/parameter-inference.qmd
+          - text: Patient Dynamics
+            href: analysis/patient-dynamics.qmd
+          - text: "---"
+          - text: Validation
+          - text: Model Validation
+            href: analysis/model-validation.qmd
+          - text: Diagnostics
+            href: analysis/diagnostics.qmd
+      - text: DCO Comparisons
+        href: comparisons/dco-comparisons.qmd
+    right:
+      - icon: github
+        href: https://github.com/your-org/sclc
+  sidebar:
+    - title: "Documentation"
+      style: docked
+      contents:
+        - section: "Getting Started"
+          contents:
+            - documentation/onboarding-tutorial.qmd
+            - documentation/model-specification.qmd
+        - section: "Technical Reference"
+          contents:
+            - documentation/architecture.qmd
+            - documentation/ar1-process-noise.qmd
+    - title: "Analysis"
+      style: docked
+      contents:
+        - section: "Data"
+          contents:
+            - analysis/data-exploration.qmd
+        - section: "Results"
+          contents:
+            - analysis/clinical-endpoints.qmd
+            - analysis/survival-analysis.qmd
+        - section: "Model Details"
+          contents:
+            - analysis/parameter-inference.qmd
+            - analysis/patient-dynamics.qmd
+        - section: "Validation"
+          contents:
+            - analysis/model-validation.qmd
+            - analysis/diagnostics.qmd
+    - title: "Comparisons"
+      style: docked
+      contents:
+        - comparisons/dco-comparisons.qmd
+  page-navigation: true
+  search:
+    location: navbar
+    type: overlay
+
+format:
+  html:
+    theme:
+      light: [cosmo, az-theme.scss]
+      dark: darkly
+    css: styles.css
+    toc: true
+    toc-depth: 3
+    toc-expand: 2
+    code-fold: true
+    code-tools: true
+    code-copy: true
+    lightbox: true
+    number-sections: true
+    fig-cap-location: bottom
+    fig-align: center
+    reference-location: margin
+
+bibliography: ../../bib/pioneer.bib
+
+execute:
+  freeze: auto
+  warning: false

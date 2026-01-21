@@ -743,13 +743,13 @@ plot_lfo_elpd_diff <- function(
         # Look up the baseline model in the named vector
         temp_baseline_label <- model_labels[baseline_model]
         if (!is.na(temp_baseline_label)) {
-          baseline_label_text <- paste("Baseline:\n", temp_baseline_label)
+          baseline_label_text <- paste("Baseline:", temp_baseline_label)
         } else {
           baseline_label_text <- paste("Baseline:\n", baseline_model)
         }
       } else {
         # Otherwise just use the baseline model name
-        baseline_label_text <- paste("Baseline:\n", baseline_model)
+        baseline_label_text <- paste("Baseline:", baseline_model)
       }
     }
     # Calculate the max line width in the baseline label text
