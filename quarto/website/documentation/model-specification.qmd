@@ -1,6 +1,10 @@
-# Mathematical Specification of the Tumor Dynamics and Survival Model
+---
+title: "Mathematical Specification"
+subtitle: "Complete mathematical specification of the tumor dynamics and survival model"
+number-sections: false
+---
 
-## Overview
+## Overview {#sec-model-overview}
 
 This document provides a complete mathematical specification of the Bayesian hierarchical model for analyzing tumor dynamics and survival outcomes in oncology clinical trials. The model integrates:
 
@@ -8,9 +12,16 @@ This document provides a complete mathematical specification of the Bayesian hie
 2. **Independent competing events** for other (non-target) progression events
 3. **Clinical endpoints** including progression-free survival (PFS) and objective response rate (ORR)
 
+::: {.callout-tip}
+## Related Pages
+- See [Parameter Inference](../analysis/parameter-inference.qmd) for posterior estimates of model parameters
+- See [Patient Dynamics](../analysis/patient-dynamics.qmd) for individual tumor trajectory predictions
+- See [Clinical Endpoints](../analysis/clinical-endpoints.qmd) for ORR and PFS results
+:::
+
 ---
 
-## 1. Model Structure and Hierarchy
+## 1. Model Structure and Hierarchy {#sec-model-structure}
 
 ### 1.1 Data Organization
 
@@ -23,7 +34,7 @@ $$
 **Notation:**
 
 - $S \in \{1, \ldots, n_{\text{trials}}\}$: trial index
-- $i \in \{1, \ldots, n_{\text{patients}}\}$: patient index  
+- $i \in \{1, \ldots, n_{\text{patients}}\}$: patient index
 - $t \in \{1, \ldots, T_i\}$: visit index for patient $i$
 - $s(i)$: trial assignment for patient $i$
 
@@ -37,7 +48,7 @@ The model uses a three-level hierarchy for most parameters:
 
 ---
 
-## 2. Tumor Dynamics: State-Space Model
+## 2. Tumor Dynamics: State-Space Model {#sec-tumor-dynamics}
 
 ### 2.1 State Representation
 
@@ -58,7 +69,7 @@ $$
 \mathbb{E}[\log(\text{SLD}_i(t))] = \log(\text{SLD}_{i,\text{baseline}}) + \log\left(e^{x_{i,\text{dec}}(t)} + e^{x_{i,\text{gro}}(t)}\right)
 $$
 
-The **observation model** with measurement error is specified in Section 2.5.
+The **observation model** with measurement error is specified in @sec-observation-model.
 
 ### 2.2 State Evolution
 
@@ -76,9 +87,9 @@ where:
 - $d_i(t)$: instantaneous decrease rate (positive)
 - $g_i(t)$: instantaneous growth rate (positive)
 
-**State transitions are deterministic** given the rates. Time-varying behavior (when enabled) comes from AR(1) process noise on the rates themselves (Section 2.4.4), not from stochastic state transitions.
+**State transitions are deterministic** given the rates. Time-varying behavior (when enabled) comes from AR(1) process noise on the rates themselves (@sec-ar1-process-noise), not from stochastic state transitions.
 
-### 2.3 Initial State Model
+### 2.3 Initial State Model {#sec-initial-state}
 
 The initial state at baseline ($t=1$) is parameterized as:
 
@@ -91,7 +102,10 @@ $$
 
 where $f_{\alpha,i} = \text{logit}(\alpha_i)$ is the logit of the initial proportion $\alpha_i \in (0, 1)$ representing the initial fraction of tumor burden in the decreasing component.
 
-**Implementation note:** Stan uses `log_inv_logit()` and `log1m_inv_logit()` for numerical stability, identical to the fraction module (Section 2.4.2).
+::: {.callout-note}
+## Implementation note
+Stan uses `log_inv_logit()` and `log1m_inv_logit()` for numerical stability, identical to the fraction module (@sec-fraction-model).
+:::
 
 #### 2.3.1 Hierarchical Model for Initial Proportion
 
@@ -111,7 +125,7 @@ $$
 - $\boldsymbol{\gamma}_{\alpha,s}^{\text{trial}} \sim \mathcal{N}(\mathbf{0}, \text{diag}(\boldsymbol{\tau}_{\alpha,\text{trial},\text{slope}}^2))$: trial random slopes
 - $\boldsymbol{\gamma}_{\alpha,i}^{\text{patient}} \sim \mathcal{N}(\mathbf{0}, \text{diag}(\boldsymbol{\tau}_{\alpha,\text{patient},\text{slope}}^2))$: patient random slopes
 
-### 2.4 Rate Parameters
+### 2.4 Rate Parameters {#sec-rate-parameters}
 
 #### 2.4.1 Total Rate Model
 
@@ -126,7 +140,7 @@ $$
 
 with the same hierarchical structure as the initial proportion model.
 
-#### 2.4.2 Fraction Model
+#### 2.4.2 Fraction Model {#sec-fraction-model}
 
 The fraction $\phi_i \in (0, 1)$ allocates the total rate between decrease and growth:
 
@@ -157,46 +171,111 @@ $$
 \end{aligned}
 $$
 
-**Implementation note:** Stan uses `log_inv_logit()` and `log1m_inv_logit()` for numerical stability.
+::: {.callout-note}
+## Implementation note
+Stan uses `log_inv_logit()` and `log1m_inv_logit()` for numerical stability.
+:::
 
-#### 2.4.4 Time-Varying Rates (AR(1) Process Noise)
+#### 2.4.4 Time-Varying Rates (AR(1) Process Noise) {#sec-ar1-process-noise}
 
-When process noise is enabled, rates vary over time via an AR(1) process:
+When process noise is enabled, rates vary over time via an **autoregressive order 1 (AR(1))** process. This allows the model to capture smooth temporal trends in tumor dynamics beyond what measurement error alone can explain.
 
-$$
-\begin{aligned}
-\log(r_i(t)) &= \log(r_i) + \delta_{r,i}(t) \\
-\delta_{r,i}(t) &\sim \mathcal{N}\left(\rho_{r,i} \cdot \delta_{r,i}(t-1), \sigma_{r,i}^2\right)
-\end{aligned}
-$$
+##### AR(1) Process Definition
 
-with:
-
-- $\delta_{r,i}(1) \sim \mathcal{N}(0, \sigma_{r,i}^2)$: initial deviation
-- $\rho_{r,i} \in (0, 1)$: autocorrelation (persistence of deviations)
-- $\sigma_{r,i} > 0$: innovation standard deviation
-
-Patient-level parameters have hierarchical structure:
+The time-varying total rate is defined as:
 
 $$
 \begin{aligned}
-\sigma_{r,i} &\sim \text{LogNormal}(\log(\sigma_{r,\text{pop}}), \tau_{\sigma_r,\text{patient}}^2) \\
-\rho_{r,i} &\sim \text{Logit-Normal}(\text{logit}(\rho_{r,\text{pop}}), \tau_{\rho_r,\text{patient}}^2)
+\log(r_i(t)) &= \log(r_i) + \delta_{r,i}(t)
 \end{aligned}
 $$
 
-The instantaneous rates are then (in log-space):
+where $\delta_{r,i}(t)$ follows an AR(1) process:
 
 $$
 \begin{aligned}
-\log(d_i(t)) &= \log(r_i(t)) + \log(\phi_i) \\
-\log(g_i(t)) &= \log(r_i(t)) + \log(1 - \phi_i)
+\delta_{r,i}(1) &\sim \mathcal{N}(0, \sigma_{r,i}^2) \\
+\delta_{r,i}(t) &\sim \mathcal{N}\left(\rho_{r,i} \cdot \delta_{r,i}(t-1), \sigma_{r,i}^2 \cdot (1 - \rho_{r,i}^2)\right) \quad \text{for } t > 1
 \end{aligned}
 $$
 
-**Note:** The AR(1) deviations $\delta_{r,i}(t)$ are mean-reverting to zero, so rates fluctuate around their baseline values. The **same** AR(1) deviation applies to both decrease and growth rates, preserving the fraction relationship while allowing overall rate variation.
+**AR(1) Parameters:**
 
-### 2.5 Observation Model
+- $\sigma_{r,i} > 0$: **Innovation standard deviation** controlling the magnitude of deviations
+- $\rho_{r,i} \in (0, 1)$: **Autocorrelation coefficient** controlling temporal persistence
+  - Higher $\rho$ → slower mean-reversion, smoother trajectories
+  - Lower $\rho$ → faster mean-reversion, more rapid fluctuations
+
+**Key Properties:**
+
+- **Stationary variance**: $\text{Var}(\delta_{r,i}(t)) = \sigma_{r,i}^2$
+- **Autocorrelation at lag $k$**: $\text{Corr}(\delta_{r,i}(t), \delta_{r,i}(t+k)) = \rho_{r,i}^k$
+- **Mean-reverting**: Deviations fluctuate around zero, so rates vary around baseline $r_i$
+- **Half-life**: $-\log(0.5) / \log(\rho_{r,i})$ time units (≈ 3.5 timepoints when $\rho = 0.8$)
+
+##### Hierarchical Structure
+
+The AR(1) parameters have a **two-level hierarchical structure**:
+
+**Level 1: Population Parameters**
+
+$$
+\begin{aligned}
+\sigma_{r,\text{pop}} &> 0 \quad \text{(population innovation SD)} \\
+\rho_{r,\text{pop}} &\in (0, 1) \quad \text{(population autocorrelation)}
+\end{aligned}
+$$
+
+These represent the typical magnitude and persistence of process noise across all patients.
+
+**Level 2: Patient-Level Variation**
+
+Each patient has their own AR(1) parameters that deviate from population means:
+
+$$
+\begin{aligned}
+\log(\sigma_{r,i}) &\sim \mathcal{N}\left(\log(\sigma_{r,\text{pop}}), \tau_{\sigma_r,\text{patient}}^2\right) \\
+\text{logit}(\rho_{r,i}) &\sim \mathcal{N}\left(\text{logit}(\rho_{r,\text{pop}}), \tau_{\rho_r,\text{patient}}^2\right)
+\end{aligned}
+$$
+
+**Between-patient variation parameters:**
+
+- $\tau_{\sigma_r,\text{patient}} > 0$: SD of log-innovation SD across patients
+- $\tau_{\rho_r,\text{patient}} > 0$: SD of logit-autocorrelation across patients
+
+This allows some patients to have larger/smaller process noise and faster/slower mean-reversion than others.
+
+##### Time-Varying Instantaneous Rates
+
+The AR(1) deviation applies to the **total rate** in log-space, and then the instantaneous decrease and growth rates are computed:
+
+$$
+\begin{aligned}
+\log(d_i(t)) &= \log(r_i(t)) + \log(\phi_i) = \log(r_i) + \delta_{r,i}(t) + \log(\phi_i) \\
+\log(g_i(t)) &= \log(r_i(t)) + \log(1 - \phi_i) = \log(r_i) + \delta_{r,i}(t) + \log(1 - \phi_i)
+\end{aligned}
+$$
+
+**Important:** The **same** AR(1) deviation $\delta_{r,i}(t)$ applies to both decrease and growth rates. This preserves the fraction relationship ($d_i(t)/g_i(t) = \phi_i/(1-\phi_i)$) while allowing the overall speed of dynamics to vary smoothly over time.
+
+::: {.callout-tip}
+## See Also
+For implementation details, Stan code structure, and default prior hyperparameters, see [AR(1) Process Noise](ar1-process-noise.qmd).
+:::
+
+::: {.callout-note}
+## Why AR(1) in Log-Space?
+The multiplicative structure ($r_i(t) = r_i \cdot \exp(\delta_{r,i}(t))$) ensures:
+
+1. **Positivity**: Rates remain positive for all realizations
+2. **Scale invariance**: Percent deviations are the same regardless of baseline rate magnitude
+3. **Better sampling**: Log-scale has improved posterior geometry for HMC
+:::
+
+
+
+### 2.5 Observation Model {#sec-observation-model}
 
 Observed SLD measurements include measurement error:
 
@@ -216,7 +295,7 @@ where $\Phi(\cdot)$ is the standard normal CDF.
 
 ---
 
-## 3. Other Events Model (Independent Competing Risks)
+## 3. Other Events Model (Independent Competing Risks) {#sec-other-events}
 
 ### 3.1 Independent Events Framework
 
@@ -281,9 +360,9 @@ $$
 The model extracts tumor-derived covariates from the state-space model predictions:
 
 $$
-\mathbf{W}_i(t) = \begin{bmatrix} 
-w_1(t) \\ 
-w_2(t) \\ 
+\mathbf{W}_i(t) = \begin{bmatrix}
+w_1(t) \\
+w_2(t) \\
 w_3(t) \\
 w_4(t)
 \end{bmatrix} = \begin{bmatrix}
@@ -334,9 +413,14 @@ $$
 
 ---
 
-## 4. Clinical Endpoints
+## 4. Clinical Endpoints {#sec-clinical-endpoints}
 
-### 4.1 RECIST Response Classification
+::: {.callout-tip}
+## See Analysis Results
+For actual estimates of these endpoints, see [Clinical Endpoints](../analysis/clinical-endpoints.qmd).
+:::
+
+### 4.1 RECIST Response Classification {#sec-recist}
 
 Response is determined from SLD trajectories using standard RECIST 1.1 criteria for **target lesions only**:
 
@@ -365,7 +449,7 @@ $$
 \text{ORR}_s = \frac{1}{n_s} \sum_{i: s(i) = s} \mathbb{I}\left(\exists t: \text{RECIST}_i(t), \text{RECIST}_i(t+1) \in \{\text{CR}, \text{PR}\}\right)
 $$
 
-### 4.3 Progression-Free Survival (PFS)
+### 4.3 Progression-Free Survival (PFS) {#sec-pfs}
 
 The observed PFS data $T_i^{\text{PFS,obs}}$ combines progression from target lesions and other events (non-target progression, new lesions, death, etc.). The model decomposes this into two independent components that are inferred from the data:
 
@@ -377,7 +461,7 @@ $$
 T_i^{\text{target}} = \min\{t: \text{RECIST}_i(t) = \text{PD}\}
 $$
 
-where $\text{RECIST}_i(t)$ is computed from the posterior predictive SLD trajectory (Section 4.1).
+where $\text{RECIST}_i(t)$ is computed from the posterior predictive SLD trajectory (@sec-recist).
 
 **Relationship to observed data:**
 
@@ -402,7 +486,7 @@ T_i^{\text{PFS,obs}} & \text{if } T_i^{\text{PFS,obs}} < T_i^{\text{target}} \te
 \end{cases}
 $$
 
-The model learns the hazard function $\lambda_i(t)$ (Section 3.2) such that the predicted survival function matches the inferred other events data:
+The model learns the hazard function $\lambda_i(t)$ (@sec-other-events) such that the predicted survival function matches the inferred other events data:
 
 $$
 \mathbb{P}(T_i^{\text{other}} > t \mid \text{no other event by } t) = S_i(t) = \exp\left(-\int_0^t \lambda_i(u) \, du\right)
@@ -474,7 +558,7 @@ This decomposition allows the model to:
 - Learn other event hazards from the complement of target-explained PFS events
 - Predict future PFS by combining both independent processes
 
-### 4.4 Kaplan-Meier Estimation
+### 4.4 Kaplan-Meier Estimation {#sec-kaplan-meier}
 
 For trial $s$, the Kaplan-Meier survival curve is:
 
@@ -487,6 +571,11 @@ where:
 - $t_j$: distinct event times
 - $d_j$: number of events at $t_j$
 - $n_j$: number at risk just before $t_j$
+
+::: {.callout-tip}
+## See Analysis Results
+For Kaplan-Meier survival curves, see [Survival Analysis](../analysis/survival-analysis.qmd).
+:::
 
 ### 4.5 Median PFS and Quantiles
 
@@ -512,7 +601,7 @@ $$
 
 ---
 
-## 5. Prior Distributions
+## 5. Prior Distributions {#sec-priors}
 
 ### 5.1 Measurement Error
 
@@ -577,7 +666,7 @@ $$
 
 ---
 
-## 6. Posterior Inference
+## 6. Posterior Inference {#sec-posterior}
 
 ### 6.1 Joint Posterior
 
@@ -606,11 +695,17 @@ The model is fit using Hamiltonian Monte Carlo (HMC) via Stan's No-U-Turn Sample
 3. **Cholesky decomposition** for correlation matrices
 4. **Vectorization** for state computation across patients
 
+::: {.callout-tip}
+## See Analysis Results
+For MCMC diagnostics, see [Diagnostics](../analysis/diagnostics.qmd).
+:::
+
 ### 6.3 Generated Quantities
 
 For each posterior sample, the following quantities are computed:
 
 **Patient-level:**
+
 - Posterior predictive SLD trajectories
 - Forecasted states beyond observed data
 - RECIST classifications at each timepoint
@@ -618,17 +713,19 @@ For each posterior sample, the following quantities are computed:
 - Response indicators (confirmed, unconfirmed)
 
 **Trial-level:**
+
 - Objective response rate (ORR)
 - Kaplan-Meier survival curves
 - Median PFS and quantiles
 - PFS at fixed timepoints (PFS-6, PFS-12, etc.)
 
 **Conditional groups:**
+
 - Same metrics stratified by covariates (e.g., PD-L1 status, trial)
 
 ---
 
-## 7. Model Features and Flexibility
+## 7. Model Features and Flexibility {#sec-features}
 
 ### 7.1 Modular Design
 
@@ -648,6 +745,11 @@ The model uses feature flags to enable/disable components:
 - Trial-level baseline hazard: `oe_enable_trial_baseline_hazard`
 - Population covariates: `oe_enable_pop_cov`, `oe_enable_pop_tumor_cov`
 - Trial-level covariates: `oe_enable_trial_cov`
+
+::: {.callout-tip}
+## See Architecture
+For details on the modular Stan architecture, see [Architecture](architecture.qmd).
+:::
 
 ### 7.2 Computational Efficiency
 
@@ -677,7 +779,7 @@ The model enforces several constraints for identifiability:
 
 ---
 
-## 8. Notation Summary
+## 8. Notation Summary {#sec-notation}
 
 ### 8.1 Indices and Dimensions
 
@@ -750,7 +852,7 @@ The model enforces several constraints for identifiability:
 
 ---
 
-## 9. Key Model Properties
+## 9. Key Model Properties {#sec-properties}
 
 ### 9.1 Independence Assumptions
 
@@ -804,8 +906,8 @@ The model enforces several constraints for identifiability:
 
 ## Document Maintenance
 
-**Version:** 1.1  
-**Last Updated:** January 2026  
+**Version:** 1.1
+**Last Updated:** January 2026
 **Corresponding Stan Model:** `stan/ssls/sf-ssm-log-space.stan`
 
 **Update Protocol:**
@@ -820,4 +922,15 @@ When the Stan model changes, this document should be updated to reflect:
 
 - **v1.1 (January 2026):** Updated rate formulas to show log-space addition (not multiplication), added 4th tumor covariate (SLD velocity), fixed RECIST thresholds to include nadir tracking and 5mm rule, added missing feature flags for AR(1) patient hierarchies, documented sparse matrix state computation method.
 
-**Reference:** For implementation details and naming conventions, see `docs/ARCHITECTURE.md` and `.github/copilot-instructions.md`.
+**Reference:** For implementation details and naming conventions, see [Architecture](architecture.qmd).
+
+::: {.related-pages}
+## Related Pages
+
+- [Onboarding Tutorial](onboarding-tutorial.qmd) - Step-by-step introduction to the model
+- [Architecture](architecture.qmd) - Code organization and naming conventions
+- [AR(1) Process Noise](ar1-process-noise.qmd) - Time-varying rate implementation
+- [Parameter Inference](../analysis/parameter-inference.qmd) - Posterior estimates
+- [Clinical Endpoints](../analysis/clinical-endpoints.qmd) - ORR and PFS results
+- [Patient Dynamics](../analysis/patient-dynamics.qmd) - Individual trajectories
+:::

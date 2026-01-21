@@ -1,0 +1,144 @@
+---
+title: "Parameter Inference"
+subtitle: "Population and patient-level parameter estimates"
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+source("_setup.R")
+```
+
+This page presents the inferred parameter estimates from the Bayesian hierarchical model, comparing prior predictions with posterior estimates.
+
+::: {.callout-tip}
+## Related Pages
+- See [Model Specification](../documentation/model-specification.qmd#sec-tumor-dynamics) for mathematical details on the tumor dynamics model
+- See [Architecture](../documentation/architecture.qmd#sec-hierarchical) for the hierarchical parameter structure
+:::
+
+## Population-Level Rates {#sec-pop-rates}
+
+The model estimates population-level tumor regression and growth rates. These represent the central tendency of rates across all trials and patients.
+
+```{r}
+#| label: fig-pop-rates
+#| fig-cap: Population level log growth/regression rates comparing prior and posterior distributions.
+
+bind_rows(
+  prior = tar_read(tumor_ssls_rates_rvar_prior_ctdna_aug),
+  posterior = tar_read(tumor_ssls_rates_rvar_posterior_ctdna_aug),
+  .id = "stage"
+) |>
+  plot_prior_post_dens(.value, normalize = "groups") +
+  labs(x = "") +
+  facet_wrap(vars(.variable), scales = "free", labeller = labeller(.variable = \(l) str_remove(l, "log_"))) +
+  NULL
+```
+
+::: {.callout-note}
+## Interpretation
+- **Regression rate**: Controls how quickly responding tumor cells decrease
+- **Growth rate**: Controls how quickly resistant tumor cells grow
+- The posterior concentrates around values consistent with observed tumor dynamics
+:::
+
+## Patient-Level Rates {#sec-patient-rates}
+
+Individual patients have their own rates that deviate from the population mean. This plot shows the distribution of patient-level rates across all patients.
+
+```{r}
+#| label: fig-patient-rates-distogram
+#| fig-cap: Distribution of patient-level posterior rate histograms showing the spread of individual patient rates.
+
+tar_read(all_tumor_ssls_patient_rates_bpi_ctdna_aug) |>
+  filter(fct_match(.variable, c("patient_log_decrease_rate_residual", "patient_log_growth_rate_residual")),  !is.na(.value)) |>
+  plot_level_rates()
+```
+
+## Measurement Noise {#sec-noise}
+
+The observation model includes measurement error representing variability in SLD measurements not explained by the underlying tumor dynamics.
+
+```{r}
+#| label: fig-noise-sd
+#| fig-cap: "Measurement noise SD (observation error) comparing prior and posterior distributions."
+
+# Note: Process noise parameters (pop_process_sd) were removed in AR(1) refactor
+# When process noise is enabled, add AR(1) parameters:
+# - tr_log_sd_pop_process_noise[1], tr_logit_phi_pop_process_noise[1] (patient-level)
+# - tr_log_sd_pop_process_noise_pop[1], tr_logit_phi_pop_process_noise_pop[1] (pop-level)
+
+tar_read(all_tumor_ssls_noise_sd_rvar_ctdna_aug) |>
+  plot_prior_post_hist(normalize = "groups") +
+  labs(x = "Measurement SD") +
+  NULL
+```
+
+## Initial State {#sec-initial-state}
+
+The initial proportion of responsive vs resistant tumor cells varies across patients and is a key determinant of tumor dynamics.
+
+```{r}
+#| label: fig-initial-state
+#| fig-cap: Distribution of prior and posterior histograms of patient-level initial proportion of responsive tumors.
+
+tar_read(all_tumor_ssls_patient_decrease_prop_bpi_ctdna_aug) |>
+  filter(fct_match(.variable, "init_log_decrease_patient"), !is.na(.rs_value)) |>
+  plot_level_decrease_prop() +
+  coord_cartesian(xlim = c(0, 1)) +
+  labs(subtitle = "Dispersion of patient-level proportion of tumors that are responsive to treatment.") +
+  NULL
+```
+
+## Covariate Effects {#sec-covariates}
+
+The model includes covariate effects on multiple model components. These coefficients show how baseline characteristics influence tumor dynamics.
+
+```{r}
+#| label: fig-pop-covar-coef
+#| fig-cap: Prior predicted and posterior linear models for covariates.
+#| fig-height: 6
+
+tar_read(all_tumor_ssls_coef_ctdna_aug) |>
+  filter(!fct_match(.variable, "oe_tumor_coef_pop")) |>
+  left_join(all_stan_data |> pluck("covar_design_matrix") |> colnames() |> enframe(), by = c("n" = "name")) |>
+  plot_ssls_coef(value, color = fit_type) +
+  scale_color_discrete("", type = AZ_palette, label = str_to_title) +
+  labs(x = "", y = "Covariate") +
+  facet_wrap(vars(.variable),
+             scales = "free_x",
+             labeller = labeller(.variable = c("init_coef_qr_pop" = "Proportion of responsive tumors",
+                                               "frac_coef_qr_pop" = "Proportion of rates total that is decreasing",
+                                               "oe_covar_coef_qr_pop" = "Residual events hazard rate"))) +
+  theme(legend.position = "bottom")
+```
+
+## Tumor Effects on Residual Events {#sec-tumor-effects}
+
+The residual events model (non-target progression and death) includes effects of tumor state variables.
+
+```{r}
+#| label: fig-pop-tumor-coef
+#| fig-cap: Prior predicted and posterior linear models for tumor size effects on the residual events model.
+#| fig-height: 6
+
+tar_read(all_tumor_ssls_coef_ctdna_aug) |>
+  filter(fct_match(.variable, "oe_tumor_coef_pop")) |>
+  mutate(n = factor(n, levels = 1:3, labels = c("SLD", "Decrease Rate", "Growth Rate"))) |>
+  plot_ssls_coef(color = fit_type) +
+  scale_y_discrete() +
+  scale_color_discrete("", type = AZ_palette, label = str_to_title) +
+  labs(x = "", y = "Tumor Covariate") +
+  theme(legend.position = "bottom")
+```
+
+::: {.related-pages}
+## Related Pages
+
+- [Model Specification](../documentation/model-specification.qmd) - Mathematical details
+- [Architecture](../documentation/architecture.qmd#sec-hierarchical) - Hierarchical structure
+- [Patient Dynamics](patient-dynamics.qmd) - Individual patient trajectories
+- [Clinical Endpoints](clinical-endpoints.qmd) - ORR and PFS results
+:::
