@@ -6,6 +6,13 @@ toc: false
 number-sections: false
 ---
 
+```{r}
+#| label: setup
+#| include: false
+
+source("_setup.R")
+```
+
 <style>
 .quarto-title-block {
   display: none;
@@ -24,6 +31,25 @@ A comprehensive Bayesian hierarchical modeling system for analyzing tumor dynami
 ![](images/pioneer_helmet_gold_visor_reflection_0_original_1024x1024_20251004T151238.png)
 :::
 :::
+:::
+
+::: {.grid}
+
+::: {.g-col-6}
+<!-- Placeholder for future plot -->
+:::
+
+::: {.g-col-6}
+```{r}
+#| label: home-confusion-matrix
+#| fig-width: 6
+#| echo: false
+
+plot_oos_confusion_matrix(lfo_store2) +
+  labs(title = "Out-of-Sample Prediction Accuracy", subtitle = "Confusion Matrix")
+```
+:::
+
 :::
 
 ## Quick Navigation

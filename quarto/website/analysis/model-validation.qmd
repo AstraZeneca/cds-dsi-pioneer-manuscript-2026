@@ -119,11 +119,7 @@ Out-of-sample confusion matrix comparing observed RECIST classifications with mo
 #| fig-cap: Out-of-sample (leave-future-out) confusion matrix for the RECIST categories as observed in the data and as estimated using only the target tumor SLD.
 #| fig-width: 6
 
-tar_read(oos_confusion_matrix_ctdna_aug, store = lfo_store2) |>
-  mutate(mp = median(mean_pred)) |>
-  plot_confusion_matrix(response, pred_response, mp) +
-  labs(x = "Recorded Response", y = "Median Posterior Response", caption = "Cell proportions are the medians of the column-wise probabilities (conditional on recorded response)") +
-  NULL
+plot_oos_confusion_matrix(lfo_store2)
 ```
 
 ### Progressive Disease Prediction Over Time

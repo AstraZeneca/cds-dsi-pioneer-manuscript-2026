@@ -499,6 +499,18 @@ plot_confusion_matrix <- function(data, recorded, calculated, p, n = NULL) {
     NULL
 }
 
+# Reusable function for OOS confusion matrix plot
+plot_oos_confusion_matrix <- function(store) {
+  tar_read(oos_confusion_matrix_ctdna_aug, store = store) |>
+    mutate(mp = median(mean_pred)) |>
+    plot_confusion_matrix(response, pred_response, mp) +
+    labs(
+      x = "Recorded Response",
+      y = "Median Posterior Response",
+      caption = "Cell proportions are the medians of the column-wise probabilities\n(conditional on recorded response)"
+    )
+}
+
 plot_ssls_coef <- function(res_data, name_var = n, ...) {
   res_data |>
     ggplot(aes(y = {{ name_var }})) +
