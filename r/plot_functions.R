@@ -492,7 +492,10 @@ plot_confusion_matrix <- function(data, recorded, calculated, p, n = NULL) {
     scale_y_discrete(drop = FALSE) +
     coord_fixed() +
     theme_minimal() +
-    theme(panel.grid.major = element_blank()) +
+    theme(
+      panel.grid.major = element_blank(),
+      plot.margin = margin(5, 5, 15, 5, "pt")
+    ) +
     NULL
 }
 
