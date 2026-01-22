@@ -37,7 +37,7 @@ The outermost `tar_map()` creates targets for different data cut-offs:
 ```r
 tar_map(
   tibble(
-    dco_name = c("apr", "aug"),
+    dco_name = c("apr25", "aug25"),
     ...
   ),
   names = "dco_name",
@@ -175,7 +175,7 @@ Breaking this down:
 - `patient` - Level 4a: analysis level (from first sibling tar_map)
 - `posterior` - Level 3: type (posterior fit)
 - `no_ctdna` - Level 2: covariate group
-- `aug` - Level 1: DCO name
+- `aug25` - Level 1: DCO name
 
 ### Example 2: Level 4b branch (event type states)
 
@@ -188,7 +188,7 @@ Breaking this down:
 - `right_censored` - Level 4b: event type (from second sibling tar_map)
 - `posterior` - Level 3: type (posterior fit)
 - `no_hist` - Level 2: covariate group
-- `apr` - Level 1: DCO name
+- `apr25` - Level 1: DCO name
 
 ## Aggregated Targets
 
