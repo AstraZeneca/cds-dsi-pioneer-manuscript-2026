@@ -144,26 +144,97 @@ pre {
 }
 
 // Dark mode ggplot adjustments
-// Invert colors and adjust for better visibility on dark background
-[data-bs-theme="dark"] .quarto-figure img,
-[data-bs-theme="dark"] #quarto-content img {
-  filter: brightness(0.9) contrast(1.1);
-  background-color: white;
+// Invert plots to work on dark background while preserving colors
+.quarto-figure img,
+#quarto-content img,
+.cell-output-display img {
+  filter: invert(1) hue-rotate(180deg);
   border-radius: 4px;
-  padding: 10px;
+  border: 1px solid #3d3d3d;
 }
 
-// Don't apply filters to logos/icons
-[data-bs-theme="dark"] .navbar img,
-[data-bs-theme="dark"] .hero-image img,
-[data-bs-theme="dark"] img[src*="favicon"],
-[data-bs-theme="dark"] img[src*="logo"] {
-  filter: none;
-  background-color: transparent;
-  padding: 0;
+// Don't apply filter to logos/icons
+.navbar img,
+.hero-image img,
+img[src*="favicon"],
+img[src*="logo"],
+img[src*="icon"] {
+  filter: none !important;
+  border: none !important;
 }
 
 // Add gold border to hero logo in dark mode
-[data-bs-theme="dark"] .hero-image img {
-  border: 3px solid $az-gold;
+.hero-image img {
+  border: 3px solid $az-gold !important;
+}
+
+// Dark mode table styling - comprehensive
+table,
+.table,
+.gt_table {
+  background-color: $table-bg !important;
+  color: $body-color !important;
+}
+
+// Table headers - dark background with light text
+table thead,
+table thead th,
+.table thead,
+.table thead th,
+.gt_heading,
+.gt_subtitle,
+.gt_col_headings,
+.gt_col_heading,
+.gt_column_spanner,
+.gt_sourcenote {
+  background-color: #1f2937 !important;
+  color: $body-color !important;
+  border-bottom: 2px solid $az-gold !important;
+  border-color: $table-border-color !important;
+}
+
+// Stubhead (row group headers) in gt tables
+.gt_stubhead {
+  background-color: #1f2937 !important;
+  color: $body-color !important;
+}
+
+// Row group names
+.gt_group_heading {
+  background-color: darken($table-bg, 3%) !important;
+  color: $body-color !important;
+  font-weight: bold;
+}
+
+// Table body rows
+table tbody,
+table tbody tr,
+table tbody td,
+.table tbody,
+.table tbody tr,
+.table tbody td,
+.gt_table tbody,
+.gt_row {
+  background-color: $table-bg !important;
+  color: $body-color !important;
+  border-color: $table-border-color !important;
+}
+
+// All table cells
+td, th {
+  border-color: $table-border-color !important;
+  color: $body-color !important;
+}
+
+// Hover effects
+table tbody tr:hover,
+.table tbody tr:hover,
+.gt_row:hover {
+  background-color: lighten($table-bg, 5%) !important;
+}
+
+// Striped tables
+.table-striped tbody tr:nth-of-type(odd),
+.gt_table tbody tr:nth-of-type(odd) {
+  background-color: lighten($table-bg, 3%) !important;
 }
