@@ -771,7 +771,7 @@ plot_lfo_elpd_diff <- function(
 
   # Add baseline label if requested
   if (add_baseline_label) {
-    p <- p + annotate("text", x = 0, y = Inf, label = baseline_label_text, hjust = -0.1, vjust = 1.5, size = 3.5, color = "gray30")
+    p <- p + annotate("text", x = 0, y = Inf, label = baseline_label_text, hjust = 0.5, vjust = 1.5, size = 3.5, color = "gray30")
   }
 
   # Add crossbars
