@@ -142,3 +142,23 @@ pre {
 .page-navigation a:hover {
   color: $az-gold;
 }
+
+// Dark mode ggplot adjustments
+// Invert colors and adjust for better visibility on dark background
+[data-bs-theme="dark"] .quarto-figure img,
+[data-bs-theme="dark"] #quarto-content img {
+  filter: brightness(0.9) contrast(1.1);
+  background-color: white;
+  border-radius: 4px;
+  padding: 10px;
+}
+
+// Don't apply filters to logos/icons
+[data-bs-theme="dark"] .navbar img,
+[data-bs-theme="dark"] .hero-image img,
+[data-bs-theme="dark"] img[src*="favicon"],
+[data-bs-theme="dark"] img[src*="logo"] {
+  filter: none;
+  background-color: transparent;
+  padding: 0;
+}
