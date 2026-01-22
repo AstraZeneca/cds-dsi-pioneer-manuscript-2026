@@ -24,11 +24,10 @@ website:
             href: documentation/architecture.qmd
           - text: AR(1) Process Noise
             href: documentation/ar1-process-noise.qmd
+      - text: Data
+        href: analysis/data-exploration.qmd
       - text: Analysis
         menu:
-          - text: Data Exploration
-            href: analysis/data-exploration.qmd
-          - text: "---"
           - text: Results
           - text: Clinical Endpoints
             href: analysis/clinical-endpoints.qmd
@@ -46,8 +45,10 @@ website:
             href: analysis/model-validation.qmd
           - text: Diagnostics
             href: analysis/diagnostics.qmd
-      - text: DCO Comparisons
-        href: comparisons/dco-comparisons.qmd
+          - text: "---"
+          - text: Comparisons
+          - text: DCO Comparisons
+            href: comparisons/dco-comparisons.qmd
     right:
       - icon: github
         href: https://github.com/azu-oncology-rd/cds-dsi-pioneer-sclc-01-2025
@@ -63,12 +64,13 @@ website:
           contents:
             - documentation/architecture.qmd
             - documentation/ar1-process-noise.qmd
+    - title: "Data"
+      style: docked
+      contents:
+        - analysis/data-exploration.qmd
     - title: "Analysis"
       style: docked
       contents:
-        - section: "Data"
-          contents:
-            - analysis/data-exploration.qmd
         - section: "Results"
           contents:
             - analysis/clinical-endpoints.qmd
@@ -81,10 +83,9 @@ website:
           contents:
             - analysis/model-validation.qmd
             - analysis/diagnostics.qmd
-    - title: "Comparisons"
-      style: docked
-      contents:
-        - comparisons/dco-comparisons.qmd
+        - section: "Comparisons"
+          contents:
+            - comparisons/dco-comparisons.qmd
   page-navigation: true
   search:
     location: navbar
