@@ -162,3 +162,8 @@ pre {
   background-color: transparent;
   padding: 0;
 }
+
+// Add gold border to hero logo in dark mode
+[data-bs-theme="dark"] .hero-image img {
+  border: 3px solid $az-gold;
+}
