@@ -1,0 +1,144 @@
+/*-- scss:defaults --*/
+
+// AZ Color Palette (adjusted for dark mode visibility)
+$az-plum: #a34076;
+$az-gold: #F0AB00;
+$az-turquoise: #68D2DF;
+$az-navy: #0055a5;
+$az-platinum: #9DB0AC;
+$az-pink: #D0006F;
+
+// Dark mode base colors
+$body-bg: #1a1a2e;
+$body-color: #e9ecef;
+
+// Bootstrap theme variables for dark mode
+$primary: $az-turquoise;  // More visible on dark background
+$secondary: $az-platinum;
+$info: $az-turquoise;
+$warning: $az-gold;
+$danger: $az-pink;
+$success: #28a745;
+
+// Link colors
+$link-color: $az-turquoise;
+$link-hover-color: lighten($az-turquoise, 10%);
+
+// Navbar
+$navbar-bg: #003865;  // Keep AZ Navy for navbar
+$navbar-fg: #ffffff;
+
+// Sidebar
+$sidebar-bg: #16213e;
+$sidebar-fg: #e9ecef;
+
+// Code blocks
+$code-bg: #0f1419;
+$code-color: #e9ecef;
+
+// Tables
+$table-bg: #16213e;
+$table-border-color: #2d3748;
+
+/*-- scss:rules --*/
+
+// Navbar styling
+.navbar {
+  background-color: $navbar-bg !important;
+  border-bottom: 2px solid $az-gold;
+}
+
+.navbar-dark .navbar-nav .nav-link {
+  color: $navbar-fg;
+}
+
+.navbar-dark .navbar-nav .nav-link:hover {
+  color: $az-turquoise;
+}
+
+// Sidebar styling
+.sidebar-navigation {
+  background-color: $sidebar-bg;
+  border-right: 1px solid #2d3748;
+}
+
+.sidebar-navigation .sidebar-item a {
+  color: $sidebar-fg;
+}
+
+.sidebar-navigation .sidebar-item a:hover {
+  color: $az-turquoise;
+  background-color: rgba(104, 210, 223, 0.1);
+}
+
+// Hero section (home page)
+.hero-section {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border-bottom: 3px solid $az-gold;
+}
+
+// Card styling
+.card {
+  background-color: #16213e;
+  border: 1px solid #2d3748;
+}
+
+// Code blocks
+pre {
+  background-color: $code-bg;
+  border: 1px solid #2d3748;
+}
+
+// Tables
+.table {
+  color: $body-color;
+  background-color: $table-bg;
+}
+
+.table thead th {
+  border-bottom: 2px solid $az-gold;
+}
+
+// Callout boxes
+.callout {
+  border-left-width: 5px;
+}
+
+.callout.callout-tip {
+  border-left-color: $az-turquoise;
+  background-color: rgba(104, 210, 223, 0.1);
+}
+
+.callout.callout-note {
+  border-left-color: $az-navy;
+  background-color: rgba(0, 85, 165, 0.1);
+}
+
+.callout.callout-warning {
+  border-left-color: $az-gold;
+  background-color: rgba(240, 171, 0, 0.1);
+}
+
+.callout.callout-important {
+  border-left-color: $az-pink;
+  background-color: rgba(208, 0, 111, 0.1);
+}
+
+// Search box
+#quarto-search {
+  background-color: #16213e;
+  border: 1px solid #2d3748;
+}
+
+// Pagination
+.page-navigation {
+  border-top: 1px solid #2d3748;
+}
+
+.page-navigation a {
+  color: $az-turquoise;
+}
+
+.page-navigation a:hover {
+  color: $az-gold;
+}
