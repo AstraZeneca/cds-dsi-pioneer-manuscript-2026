@@ -135,7 +135,6 @@ Tracking how well the model predicts progressive disease (PD) at different point
 #| fig-cap: Probability of predicting PD conditional on observed RECIST being PD, over time.
 #| fig-width: 6
 #| fig-height: 5
-#| eval: false
 
 tar_read(full_oos_confusion_matrix_ctdna_aug, store = lfo_store2) |>
   filter(response == "PD") |>
