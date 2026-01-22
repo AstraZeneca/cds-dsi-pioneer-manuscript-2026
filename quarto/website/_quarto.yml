@@ -50,7 +50,7 @@ website:
         href: comparisons/dco-comparisons.qmd
     right:
       - icon: github
-        href: https://github.com/your-org/sclc
+        href: https://github.com/azu-oncology-rd/cds-dsi-pioneer-sclc-01-2025
   sidebar:
     - title: "Documentation"
       style: docked
@@ -106,6 +106,9 @@ format:
     number-sections: true
     fig-cap-location: bottom
     fig-align: center
+    fig-responsive: true
+    fig-width: 8
+    fig-height: 6
     reference-location: margin
 
 bibliography: ../../bib/pioneer.bib
