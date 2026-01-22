@@ -51,8 +51,14 @@ lfo_store_no_hist <- file.path(output_path, "sclc", "lfo_no_hist", "_targets")
 # This line is kept for backward compatibility but should be migrated to explicit stores
 tar_config_set(store = analysis_store)
 
-# Set default ggplot theme
-ggplot2::theme_set(theme_minimal(base_family = "Arial"))
+# Set default ggplot theme with proper margins to prevent caption cutoff
+ggplot2::theme_set(
+  theme_minimal(base_family = "Arial") +
+  ggplot2::theme(
+    plot.margin = ggplot2::margin(5, 10, 20, 20, "pt"),
+    plot.caption = ggplot2::element_text(hjust = 0, margin = ggplot2::margin(15, 0, 0, 0, "pt"))
+  )
+)
 
 # Load common data used across multiple pages
 all_analysis_data <- tar_read(all_analysis_data_ctdna_aug)
