@@ -85,4 +85,4 @@ generate-aws-credential_file.py
 run-aws-credentials.sh
 .env
 node_modules
-aws/_publish.yml
+aws/
