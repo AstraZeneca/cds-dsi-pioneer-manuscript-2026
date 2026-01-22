@@ -46,9 +46,10 @@ $navbar-fg: white;
   --az-lightpurple: #{$az-lightpurple};
 }
 
-// Navbar styling with AZ navy
+// Navbar styling with AZ navy and gold border
 .navbar {
   background-color: $az-navy !important;
+  border-bottom: 2px solid $az-gold;
 }
 
 .navbar-brand, .navbar-nav .nav-link {
@@ -88,4 +89,24 @@ $navbar-fg: white;
 // Feature card hover with AZ colors
 .feature-card:hover {
   border-color: $az-navy;
+}
+
+// Hero section and logo styling with gold border
+.hero-section {
+  border-bottom: 3px solid $az-gold;
+}
+
+.hero-image img {
+  border: 3px solid $az-gold;
+}
+
+// Add gold accents to section dividers and horizontal rules
+hr {
+  border-color: $az-gold;
+  opacity: 0.5;
+}
+
+// Table header with gold accent
+.table thead th {
+  border-bottom: 2px solid $az-gold;
 }
