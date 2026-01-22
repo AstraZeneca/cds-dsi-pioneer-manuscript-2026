@@ -107,8 +107,9 @@ format:
     fig-cap-location: bottom
     fig-align: center
     fig-responsive: true
-    fig-width: 8
-    fig-height: 6
+    fig-width: 6
+    fig-height: 4.5
+    out-width: "100%"
     reference-location: margin
 
 bibliography: ../../bib/pioneer.bib

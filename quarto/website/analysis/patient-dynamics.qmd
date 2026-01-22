@@ -26,7 +26,7 @@ Sum of lesion diameters (SLD) forecasts for SCLC-01 patients who are right censo
 #| label: fig-forecast-sld
 #| fig-cap: Forecast measured SLD, for SCLC-01 patients that are right censored.
 #| column: body-outset
-#| fig-width: 9
+#| fig-width: 7
 #| fig-height: 12
 #| warning: false
 
@@ -50,7 +50,7 @@ Posterior checking plots for patients with observed progression events, comparin
 #| label: fig-forecast-sld-uncensored-historical
 #| fig-cap: Forecast measured SLD, for HISTORICAL patients that are uncensored (posterior checking).
 #| column: body-outset
-#| fig-width: 9
+#| fig-width: 7
 #| fig-height: 12
 #| warning: false
 
@@ -72,7 +72,7 @@ tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_aug) |>
 #| label: fig-forecast-sld-uncensored-sclc
 #| fig-cap: Forecast measured SLD, for SCLC patients that are uncensored (posterior checking).
 #| column: body-outset
-#| fig-width: 9
+#| fig-width: 7
 #| fig-height: 12
 #| warning: false
 
