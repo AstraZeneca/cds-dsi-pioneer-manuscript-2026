@@ -76,23 +76,34 @@
   width: 100%;
 }
 
-/* Figure captions */
-.figure-caption {
+/* Figure captions - constrain to content area */
+.figure-caption,
+figcaption {
   font-style: italic;
   color: var(--bs-secondary);
+  max-width: 100%;
+  width: 100%;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0 auto;
 }
 
-/* Fix plot overflow into sidebar */
-.quarto-figure {
+/* Fix plot overflow - constrain to content column */
+.quarto-figure,
+figure,
+.cell-output-display {
   max-width: 100%;
   overflow: hidden;
   margin-left: auto;
   margin-right: auto;
-  text-align: center;
 }
 
 .quarto-figure img,
-.quarto-figure figure {
+figure img,
+.cell-output-display img {
   max-width: 100%;
   height: auto;
   display: block;
@@ -100,36 +111,63 @@
   margin-right: auto;
 }
 
-/* Ensure plots don't extend beyond content area */
-#quarto-content img,
-#quarto-content figure {
+/* Critical: prevent figures in column-body from exceeding bounds */
+.column-body .quarto-figure,
+.column-body figure,
+.column-body .cell-output-display {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.column-body img {
   max-width: 100%;
   height: auto;
-  margin-left: auto;
-  margin-right: auto;
-  display: block;
+}
+
+/* Additional caption constraints */
+.column-body figcaption,
+.column-body .figure-caption {
+  max-width: 100%;
+  width: 100%;
+  text-align: center;
 }
 
 /* Constrain plotly and other interactive plots */
 .plotly,
 .html-widget {
   max-width: 100%;
+  width: 100%;
   overflow-x: auto;
-  margin-left: auto;
-  margin-right: auto;
 }
 
-/* Ensure main content doesn't overflow sidebar */
-#quarto-document-content,
-.page-columns {
+/* Prevent content from overflowing into sidebars */
+.column-body,
+.column-page {
   max-width: 100%;
   overflow-x: hidden;
 }
 
-/* Make sure column-page and column-body respect boundaries */
-.column-page,
-.column-body {
-  max-width: 100%;
+/* Critical: ensure plots cannot escape their containers */
+.quarto-figure,
+.cell-output-display,
+figure {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+}
+
+/* Force ALL images to scale down within content area */
+img {
+  max-width: 100% !important;
+  height: auto !important;
+}
+
+/* Override any inline width styles from R plots */
+.quarto-figure img[style*="width"],
+figure img[style*="width"],
+.cell-output-display img[style*="width"] {
+  width: auto !important;
+  max-width: 100% !important;
 }
 
 /* Code block improvements */

@@ -26,7 +26,7 @@ Kaplan-Meier curves for the historical trials (excluding SCLC) used to inform th
 #| label: fig-kaplan-meier-historical
 #| fig-cap: Kaplan-Meier plots for the historical trials. The full forecasting row predicts PFS beyond the observed right censoring while the observed censoring row censors predictions that exceed the observed right censoring.
 #| column: body-outset
-#| fig-width: 10
+#| fig-width: 7
 
 plot_km(
   tar_read(all_tumor_ssls_km_rvar_ctdna_aug) |> filter(!fct_match(trial, "sclc")),
@@ -50,7 +50,7 @@ Kaplan-Meier curves for the SCLC trial, comparing model predictions with observe
 #| label: fig-kaplan-meier-sclc-forecast
 #| fig-cap: Forecast Kaplan-Meier plots for SCLC trial. The full forecasting row predicts PFS beyond the observed right censoring while the observed censoring row censors predictions that exceed the observed right censoring.
 #| column: body-outset
-#| fig-width: 10
+#| fig-width: 7
 #| fig-height: 6
 
 plot_sclc_km <- partial(
@@ -86,7 +86,7 @@ Superpopulation KM estimates represent the expected survival for the underlying 
 #| label: fig-kaplan-meier-sclc-superpopulation
 #| fig-cap: Superpopulation Kaplan-Meier plots for SCLC trial. The full forecasting row predicts PFS beyond the observed right censoring while the observed censoring row censors predictions that exceed the observed right censoring.
 #| column: body-outset
-#| fig-width: 10
+#| fig-width: 7
 #| fig-height: 6
 
 plot_sclc_km(km_est_var = spop_km_est)
@@ -100,7 +100,7 @@ plot_sclc_km(km_est_var = spop_km_est)
 #| label: fig-kaplan-meier-pdl1-forecast
 #| fig-cap: Forecast Kaplan-Meier plots. The full forecasting row predicts PFS beyond the observed right censoring while the observed censoring row censors predictions that exceed the observed right censoring.
 #| column: body-outset
-#| fig-width: 10
+#| fig-width: 7
 #| fig-height: 7
 
 plot_sclc_pdl1_km <- partial(
@@ -139,7 +139,7 @@ plot_sclc_pdl1_km(km_est_var = cond_sample_km_est)
 #| label: fig-kaplan-meier-pdl1-superpopulation
 #| fig-cap: Superpopulation Kaplan-Meier plots. The full forecasting row predicts PFS beyond the observed right censoring while the observed censoring row censors predictions that exceed the observed right censoring.
 #| column: body-outset
-#| fig-width: 10
+#| fig-width: 7
 #| fig-height: 7
 
 plot_sclc_pdl1_km(km_est_var = cond_spop_km_est)
