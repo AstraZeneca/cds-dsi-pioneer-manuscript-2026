@@ -395,11 +395,24 @@ When comparing models:
 
 ### Confusion Matrix Metrics
 
-From the RECIST confusion matrix, compute:
+From the RECIST confusion matrix, we compute the following metrics (see [Model Validation](../analysis/model-validation.qmd#sec-accuracy)):
 
-- **Accuracy**: Overall correct predictions / total predictions
-- **Sensitivity (PD)**: True PD / (True PD + False non-PD)
-- **Specificity (PD)**: True non-PD / (True non-PD + False PD)
+- **Overall Accuracy**: Weighted average of per-class sensitivities, weighted by class prevalence in the test set
+- **Per-class Sensitivity**: $P(\text{Predicted } X \mid \text{Observed } X)$ for each RECIST category (CR, PR, SD, PD)
+- **Per-class Specificity**: $P(\text{Predicted } \neq X \mid \text{Observed } \neq X)$ for each RECIST category
+
+::: {.callout-note}
+## How Metrics Are Computed
+
+- **Sensitivity** comes from the row-normalized confusion matrix (diagonal elements)
+- **Specificity** is computed from aggregated raw counts across all cutoffs:
+
+$$
+\text{Specificity}(X) = \frac{\sum_{i \neq X, j \neq X} C_{ij}}{\sum_{i \neq X, j} C_{ij}}
+$$
+
+where $C_{ij}$ is the count of observations with true class $i$ predicted as class $j$.
+:::
 
 ::: {.callout-tip}
 ## Clinical Relevance
