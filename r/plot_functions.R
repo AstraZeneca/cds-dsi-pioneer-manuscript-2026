@@ -511,6 +511,94 @@ plot_oos_confusion_matrix <- function(store) {
     )
 }
 
+# Reusable function for OOS confusion matrix Sankey diagram
+plot_oos_confusion_sankey <- function(store) {
+  # Load and prepare data
+  data <- tar_read(oos_confusion_matrix_ctdna_aug, store = store) |>
+    mutate(
+      mp = median(mean_pred),
+      # Create a flag for correct predictions
+      correct = response == pred_response,
+      pct_label = if_else(correct, paste0(round(mp * 100, 1), "%"), NA_character_)
+    ) |>
+    # Ensure RECIST factor levels are in order
+    mutate(
+      response = factor(response, levels = c("CR", "PR", "SD", "PD")),
+      pred_response = factor(pred_response, levels = c("CR", "PR", "SD", "PD"))
+    )
+
+  # Create base Sankey plot
+  p <- ggplot(data,
+         aes(y = mp, axis1 = response, axis2 = pred_response)) +
+    geom_alluvium(aes(fill = response, alpha = correct), width = 1/12) +
+    geom_stratum(width = 1/12, fill = "white", color = "grey30", linewidth = 0.5) +
+    geom_text(stat = "stratum", aes(label = after_stat(stratum)), size = 3.5)
+
+  # Extract actual alluvium positions from the plot
+  plot_build <- ggplot_build(p)
+  alluvium_data <- plot_build$data[[1]]  # First layer is geom_alluvium
+
+  # Filter for correct predictions (alpha = 1.0 after scale transformation)
+  # and get positions at x=1 and x=2 to calculate center
+  label_data <- alluvium_data |>
+    filter(alpha == 1) |>  # Correct predictions have alpha = 1.0
+    group_by(group, x) |>
+    summarize(
+      y_mid = mean((ymin + ymax) / 2),
+      fill = first(fill),
+      .groups = "drop"
+    ) |>
+    pivot_wider(names_from = x, values_from = y_mid, names_prefix = "y_x") |>
+    mutate(
+      y_center = 0.25 * y_x1 + 0.75 * y_x2,  # 3/4 of the way to the right
+      x = 1.75  # 3/4 of the way between 1 and 2
+    )
+
+  # Get the percentage labels from original data
+  correct_data <- data |>
+    filter(correct) |>
+    arrange(response) |>
+    mutate(pct_label = paste0(round(mp * 100, 1), "%"))
+
+  # Match by order (both should be in same order after filtering)
+  label_data <- label_data |>
+    arrange(desc(y_center)) |>  # Order by y position (top to bottom)
+    mutate(pct_label = correct_data$pct_label)
+
+  # Add labels to the plot
+  p +
+    geom_text(
+      data = label_data,
+      aes(x = x, y = y_center, label = pct_label),
+      inherit.aes = FALSE,
+      size = 5,
+      fontface = "bold",
+      color = "white"
+    ) +
+    scale_x_discrete(limits = c("Recorded\nResponse", "Predicted\nResponse"), expand = c(0.15, 0.05)) +
+    scale_fill_manual(
+      values = c("CR" = AZ_green, "PR" = AZ_turquoise, "SD" = AZ_gold, "PD" = AZ_plum),
+      name = "RECIST Category"
+    ) +
+    scale_alpha_manual(
+      values = c("TRUE" = 0.8, "FALSE" = 0.4),
+      guide = "none"
+    ) +
+    labs(
+      caption = "Flow width represents prediction proportions; percentages show correct prediction rates"
+    ) +
+    theme_minimal() +
+    theme(
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      legend.position = "bottom"
+    )
+}
+
 plot_ssls_coef <- function(res_data, name_var = n, ...) {
   res_data |>
     ggplot(aes(y = {{ name_var }})) +
