@@ -50,11 +50,12 @@ Comparison of models with different historical data configurations to understand
 #| fig-height: 2
 
 all_lfo_clean <- bind_rows(
-    ctdna = tar_read(tumor_ssls_lfo_clean_lite_ctdna_aug, store = lfo_store2),
+    ctdna = tar_read(tumor_ssls_lfo_clean_lite_ctdna_aug, store = lfo_store),
     no_ctdna = tar_read(tumor_ssls_lfo_clean_lite_no_ctdna_aug, store = lfo_store),
     ctdna_only = tar_read(tumor_ssls_lfo_clean_lite_ctdna_only_aug, store = lfo_store_ctdna_only),
     no_hist = tar_read(tumor_ssls_lfo_clean_lite_no_hist_aug, store = lfo_store_no_hist),
     no_pl = tar_read(tumor_ssls_lfo_clean_lite_no_pl_aug, store = lfo_store_no_pl),
+    ctdna_pn = tar_read(tumor_ssls_lfo_clean_lite_ctdna_pn_aug, store = lfo_store_ctdna_pn),
   .id = "model"
 ) |>
   filter(n > 3)
@@ -68,13 +69,14 @@ lfo_model_labels <- list(
   all_trials = "All Historical Trials",
   no_hist = "Without Any Historical Data",
   no_covar = "Covariates: None",
+  ctdna_pn = "With Population-Level Process Noise",
   with_artic = "HISTORICAL + ARTIC",
   with_atlantic = "HISTORICAL + ATLANTIC",
   with_pearl = "HISTORICAL + PEARL"
 )
 
 all_lfo_clean |>
-  filter(fct_match(model, c("ctdna", "no_pl", "no_hist"))) |>
+  filter(fct_match(model, c("ctdna", "ctdna_pn", "no_pl", "no_hist"))) |>
   plot_lfo_elpd_diff(
     baseline_model = "no_hist",
     model_labels = lfo_model_labels |>
@@ -102,7 +104,7 @@ Evaluating the impact of different covariate specifications, particularly the ro
 #| fig-height: 2
 
 all_lfo_clean |>
-  filter(fct_match(model, c("ctdna_only", "ctdna", "no_ctdna"))) |>
+  filter(fct_match(model, c("ctdna_only", "ctdna", "ctdna_pn", "no_ctdna"))) |>
   plot_lfo_elpd_diff(
     baseline_model = "ctdna_only",
     model_labels = lfo_model_labels
@@ -120,7 +122,7 @@ Out-of-sample confusion matrix comparing observed RECIST classifications with mo
 #| fig-cap: Out-of-sample (leave-future-out) confusion matrix for the RECIST categories as observed in the data and as estimated using only the target tumor SLD.
 #| fig-width: 6
 
-plot_oos_confusion_matrix(lfo_store2)
+plot_oos_confusion_matrix(lfo_store)
 ```
 
 ```{r}
@@ -129,7 +131,7 @@ plot_oos_confusion_matrix(lfo_store2)
 #| fig-width: 7
 #| fig-height: 5
 
-plot_oos_confusion_sankey(lfo_store2)
+plot_oos_confusion_sankey(lfo_store)
 ```
 
 ### Summary Metrics
@@ -138,7 +140,7 @@ plot_oos_confusion_sankey(lfo_store2)
 #| label: tbl-accuracy-metrics
 #| tbl-cap: "Out-of-sample accuracy, sensitivity, and specificity with 90% credible intervals."
 
-compute_oos_accuracy_metrics(lfo_store2) |>
+compute_oos_accuracy_metrics(lfo_store) |>
   gt() |>
   tab_header(
     title = "RECIST Prediction Performance"
@@ -177,7 +179,7 @@ Tracking how well the model predicts progressive disease (PD) at different point
 #| fig-width: 6
 #| fig-height: 5
 
-pd_data <- tar_read(full_oos_confusion_matrix_ctdna_aug, store = lfo_store2) |>
+pd_data <- tar_read(full_oos_confusion_matrix_ctdna_aug, store = lfo_store) |>
   filter(response == "PD") |>
   group_by(n, m, cutoff_date, response) |>
   mutate(
