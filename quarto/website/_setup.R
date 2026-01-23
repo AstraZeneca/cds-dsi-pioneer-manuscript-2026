@@ -28,6 +28,7 @@ library(ggrepel)
 library(tidycmprsk)
 library(gt)
 library(patchwork)
+library(ggalluvial)
 
 # Source utility functions using here() which now works after init_project()
 source(here("r", "plot_functions.R"))

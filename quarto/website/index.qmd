@@ -33,23 +33,17 @@ A comprehensive Bayesian hierarchical modeling system for analyzing tumor dynami
 :::
 :::
 
-::: {.grid}
-
-::: {.g-col-6}
-<!-- Placeholder for future plot -->
-:::
-
-::: {.g-col-6}
+::: {style="display: flex; justify-content: center;"}
 ```{r}
-#| label: home-confusion-matrix
-#| fig-width: 6
+#| label: home-confusion-sankey
+#| fig-width: 7
+#| fig-height: 5
 #| echo: false
+#| fig-align: center
 
-plot_oos_confusion_matrix(lfo_store2) +
-  labs(title = "Out-of-Sample Prediction Accuracy", subtitle = "Confusion Matrix")
+plot_oos_confusion_sankey(lfo_store2) +
+  labs(title = "Out-of-Sample Prediction Accuracy", subtitle = "Response Classification Flow")
 ```
-:::
-
 :::
 
 ## Quick Navigation

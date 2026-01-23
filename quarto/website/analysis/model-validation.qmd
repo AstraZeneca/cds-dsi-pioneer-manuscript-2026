@@ -14,6 +14,7 @@ This page presents model validation results using leave-future-out (LFO) cross-v
 
 ::: {.callout-tip}
 ## Related Pages
+- See [Leave-Future-Out Cross-Validation](../documentation/leave-future-out-cross-validation.qmd) for LFO methodology details
 - See [Model Specification](../documentation/model-specification.qmd) for model details
 - See [Architecture](../documentation/architecture.qmd) for computational optimization strategies
 :::
@@ -122,6 +123,15 @@ Out-of-sample confusion matrix comparing observed RECIST classifications with mo
 plot_oos_confusion_matrix(lfo_store2)
 ```
 
+```{r}
+#| label: fig-data-vs-posterior-sankey
+#| fig-cap: Sankey diagram showing the flow from recorded to predicted RECIST responses. Flow width represents prediction proportions; percentages indicate correct prediction rates.
+#| fig-width: 7
+#| fig-height: 5
+
+plot_oos_confusion_sankey(lfo_store2)
+```
+
 ### Progressive Disease Prediction Over Time
 
 Tracking how well the model predicts progressive disease (PD) at different points during the trial.
@@ -132,7 +142,7 @@ Tracking how well the model predicts progressive disease (PD) at different point
 #| fig-width: 6
 #| fig-height: 5
 
-tar_read(full_oos_confusion_matrix_ctdna_aug, store = lfo_store2) |>
+pd_data <- tar_read(full_oos_confusion_matrix_ctdna_aug, store = lfo_store2) |>
   filter(response == "PD") |>
   group_by(n, m, cutoff_date, response) |>
   mutate(
@@ -141,15 +151,26 @@ tar_read(full_oos_confusion_matrix_ctdna_aug, store = lfo_store2) |>
   ) |>
   ungroup() |>
   filter(pred_response == "PD") |>
-  mutate(prop_median = median(prop)) |>
+  arrange(cutoff_date)
+
+# Compute cumulative mean using accumulate (rvar addition preserves draws)
+cumsum_prop <- accumulate(pd_data$prop, `+`)
+running_prop <- map2(cumsum_prop, seq_along(cumsum_prop), ~ .x / .y)
+
+pd_data |>
+  mutate(
+    running_prop = running_prop,
+    running_median = map_dbl(running_prop, median),
+    running_q10 = map_dbl(running_prop, ~ quantile(.x, 0.1)),
+    running_q90 = map_dbl(running_prop, ~ quantile(.x, 0.9))
+  ) |>
   ggplot(aes(x = cutoff_date)) +
-  stat_lineribbon(aes(ydist = prop), alpha = 0.4, .width = 0.8, linewidth = 0) +
-  geom_smooth(aes(y = prop_median), method = "loess", span = 0.3, se = FALSE, color = "darkblue", linewidth = 1) +
-  scale_fill_manual("80% CI", values = AZ_turquoise) +
+  geom_ribbon(aes(ymin = running_q10, ymax = running_q90), fill = AZ_turquoise, alpha = 0.4) +
+  geom_line(aes(y = running_median), color = "darkblue", linewidth = 1) +
   scale_y_continuous("P(Predicted PD | Observed PD)", breaks = seq(0, 1, 0.1), labels = scales::percent_format(), limits = c(0, NA)) +
   labs(
     x = "Cutoff Date",
-    caption = "Ribbon shows 80% credible interval; line shows LOESS-smoothed median"
+    caption = "Ribbon shows 80% credible interval of cumulative mean; line shows cumulative median"
   ) +
   theme(legend.position = "bottom")
 ```
@@ -157,6 +178,7 @@ tar_read(full_oos_confusion_matrix_ctdna_aug, store = lfo_store2) |>
 ::: {.related-pages}
 ## Related Pages
 
+- [Leave-Future-Out Cross-Validation](../documentation/leave-future-out-cross-validation.qmd) - LFO methodology
 - [Survival Analysis](survival-analysis.qmd#sec-cutoff-km) - Cutoff KM comparisons
 - [DCO Comparisons](../comparisons/dco-comparisons.qmd) - Data cutoff analyses
 - [Diagnostics](diagnostics.qmd) - Sampling diagnostics
