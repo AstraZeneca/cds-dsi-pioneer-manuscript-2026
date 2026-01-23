@@ -23,6 +23,11 @@ array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_right_censore
 array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_target_km_est, spop_target_km_est, spop_target_obs_cens_km_est;
 array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_target_km_est, cond_spop_target_km_est, cond_spop_target_obs_cens_km_est;
 
+array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_other_events_km_est, spop_other_events_km_est;
+array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_km_est, spop_km_est;
+array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_other_events_km_est, cond_spop_other_events_km_est;
+array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_km_est, cond_spop_km_est;
+
 array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] sample_target_pfs_n, spop_target_pfs_n,
                                                                sample_other_events_pfs_n, spop_other_events_pfs_n,
                                                                sample_pfs_n, spop_pfs_n;
@@ -201,11 +206,49 @@ profile("gen_quant") {
       max_all_t,
       cutoff_n_patient_screening_visits
     );
-    
-  // Aggregate to trial-level metrics (using cutoff-observed patients only)
-  array[n_trials] vector[max_all_t + 1] sample_other_events_km_est, spop_other_events_km_est;
-  array[n_trials] vector[max_all_t + 1] sample_km_est, spop_km_est;
-  
+
+  // Expand patient-level endpoints to include ALL enrolled patients (not just cutoff-observed)
+  // Non-observed patients are treated as censored at t=0 for KM calculation
+  // This matches the pre-Oct-2025 behavior where KM used full enrolled population
+  array[n_patients] int all_sample_target_pfs = zeros_int_array(n_patients);
+  array[n_patients] int all_sample_target_right_censored = rep_array(1, n_patients);
+  array[n_patients] int all_spop_target_pfs = zeros_int_array(n_patients);
+  array[n_patients] int all_spop_target_right_censored = rep_array(1, n_patients);
+  array[n_patients] int all_spop_target_obs_cens_pfs = zeros_int_array(n_patients);
+  array[n_patients] int all_spop_target_obs_cens_right_censored = rep_array(1, n_patients);
+  array[n_patients] int all_sample_other_events_pfs = zeros_int_array(n_patients);
+  array[n_patients] int all_sample_other_events_right_censored = rep_array(1, n_patients);
+  array[n_patients] int all_spop_other_events_pfs = zeros_int_array(n_patients);
+  array[n_patients] int all_spop_other_events_right_censored = rep_array(1, n_patients);
+  array[n_patients] int all_sample_pfs = zeros_int_array(n_patients);
+  array[n_patients] int all_sample_right_censored = rep_array(1, n_patients);
+  array[n_patients] int all_spop_pfs = zeros_int_array(n_patients);
+  array[n_patients] int all_spop_right_censored = rep_array(1, n_patients);
+  array[n_patients] int all_sample_target_confirmed_response = zeros_int_array(n_patients);
+  array[n_patients] int all_spop_target_confirmed_response = zeros_int_array(n_patients);
+
+  // Fill in values for cutoff-observed patients
+  for (obs_idx in 1:n_cutoff_observed_patients) {
+    int i = cutoff_observed_patients[obs_idx];
+    all_sample_target_pfs[i] = sample_target_pfs[obs_idx];
+    all_sample_target_right_censored[i] = sample_target_right_censored[obs_idx];
+    all_spop_target_pfs[i] = spop_target_pfs[obs_idx];
+    all_spop_target_right_censored[i] = spop_target_right_censored[obs_idx];
+    all_spop_target_obs_cens_pfs[i] = spop_target_obs_cens_pfs[obs_idx];
+    all_spop_target_obs_cens_right_censored[i] = spop_target_obs_cens_right_censored[obs_idx];
+    all_sample_other_events_pfs[i] = sample_other_events_pfs[obs_idx];
+    all_sample_other_events_right_censored[i] = sample_other_events_right_censored[obs_idx];
+    all_spop_other_events_pfs[i] = spop_other_events_pfs[obs_idx];
+    all_spop_other_events_right_censored[i] = spop_other_events_right_censored[obs_idx];
+    all_sample_pfs[i] = sample_pfs[obs_idx];
+    all_sample_right_censored[i] = sample_right_censored[obs_idx];
+    all_spop_pfs[i] = spop_pfs[obs_idx];
+    all_spop_right_censored[i] = spop_right_censored[obs_idx];
+    all_sample_target_confirmed_response[i] = sample_target_confirmed_response[obs_idx];
+    all_spop_target_confirmed_response[i] = spop_target_confirmed_response[obs_idx];
+  }
+
+  // Aggregate to trial-level metrics (using ALL enrolled patients for proper KM estimation)
   (sample_target_orr, spop_target_orr,
    sample_target_km_est, spop_target_km_est, spop_target_obs_cens_km_est,
    sample_other_events_km_est, spop_other_events_km_est,
@@ -220,32 +263,29 @@ profile("gen_quant") {
    sample_other_events_pfs_n, spop_other_events_pfs_n,
    sample_pfs_n, spop_pfs_n) =
     aggregate_trial_metrics(
-      sample_target_confirmed_response,
-      spop_target_confirmed_response,
-      sample_target_pfs,
-      sample_target_right_censored,
-      spop_target_pfs,
-      spop_target_right_censored,
-      spop_target_obs_cens_pfs,
-      spop_target_obs_cens_right_censored,
-      sample_other_events_pfs,
-      sample_other_events_right_censored,
-      spop_other_events_pfs,
-      spop_other_events_right_censored,
-      sample_pfs,
-      sample_right_censored,
-      spop_pfs,
-      spop_right_censored,
-      cutoff_trial_patient_pos,
+      all_sample_target_confirmed_response,
+      all_spop_target_confirmed_response,
+      all_sample_target_pfs,
+      all_sample_target_right_censored,
+      all_spop_target_pfs,
+      all_spop_target_right_censored,
+      all_spop_target_obs_cens_pfs,
+      all_spop_target_obs_cens_right_censored,
+      all_sample_other_events_pfs,
+      all_sample_other_events_right_censored,
+      all_spop_other_events_pfs,
+      all_spop_other_events_right_censored,
+      all_sample_pfs,
+      all_sample_right_censored,
+      all_spop_pfs,
+      all_spop_right_censored,
+      trial_patient_pos,
       max_all_t,
       pfs_quantiles,
       pfs_timepoints
     );
-  
+
   // Aggregate to conditional group-level metrics (using cutoff-observed patients only)
-  array[n_cond_group] vector[max_all_t + 1] cond_sample_other_events_km_est, cond_spop_other_events_km_est;
-  array[n_cond_group] vector[max_all_t + 1] cond_sample_km_est, cond_spop_km_est;
-  
   (cond_sample_target_orr, cond_spop_target_orr,
    cond_sample_target_km_est, cond_spop_target_km_est, cond_spop_target_obs_cens_km_est,
    cond_sample_other_events_km_est, cond_spop_other_events_km_est,
