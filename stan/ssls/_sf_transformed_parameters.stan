@@ -59,9 +59,9 @@ patient_growth_rate = exp(patient_log_growth_rate);
 array[2] matrix[n_patients, (enable_any_process_noise_tr || oe_enable_pop_tumor_cov) ? max_t_width : 0] states_full_grid;
 
 profile("states") {
-  if (enable_any_process_noise_tr) {
+  if (enable_patient_process_noise_tr) {
     // ============================================================================
-    // PROCESS NOISE ON: Compute states using cumulative sum (time-varying rates)
+    // PATIENT-LEVEL PROCESS NOISE: Per-patient loop required (each patient has unique temporal pattern)
     // ============================================================================
 
     profile("compute full states") {
@@ -73,6 +73,48 @@ profile("states") {
           states_full_grid[1][i, 2:] = to_row_vector(init_log_decrease_patient[i] + cumulative_sum(-patient_decrease_rate[i, :(max_t_width-1)]));
           states_full_grid[2][i, 2:] = to_row_vector(init_log_growth_patient[i] + cumulative_sum(patient_growth_rate[i, :(max_t_width-1)]));
         }
+      }
+    }
+
+    profile("extract states") {
+      for (i in 1:n_patients) {
+        int visit_start, visit_end;
+        (visit_start, visit_end) = get_pos(patient_visit_pos, i);
+        array[get_pos_size(patient_visit_pos, i)] int visit_indices = t_patient_visit_idx[visit_start:visit_end];
+        states[visit_start:visit_end, 1] = to_vector(states_full_grid[1][i, visit_indices]);
+        states[visit_start:visit_end, 2] = to_vector(states_full_grid[2][i, visit_indices]);
+      }
+    }
+  } else if (enable_pop_process_noise_tr) {
+    // ============================================================================
+    // POP-ONLY PROCESS NOISE: Vectorized computation exploiting shared temporal structure
+    // ============================================================================
+    // Key insight: rate[i,t] = baseline_rate[i] * exp(pop_noise[t])
+    // Therefore: cumsum(rate[i,1:t-1]) = baseline_rate[i] * cumsum(exp(pop_noise[1:t-1]))
+    // The cumsum of exp(pop_noise) is identical for all patients, so compute once and use outer product
+
+    profile("compute full states") {
+      // Baseline rates without process noise (patient-specific, time-invariant)
+      vector[n_patients] baseline_decrease_rate = exp(tr_loc_patient + frac_log_decrease_patient);
+      vector[n_patients] baseline_growth_rate = exp(tr_loc_patient + frac_log_growth_patient);
+
+      // Shared temporal cumulative sum: same for all patients
+      // pop_cumsum_exp[t] = sum_{k=1}^{t} exp(pop_noise[k])
+      row_vector[max_t_width] pop_exp = exp(tr_pop_process_noise);
+      row_vector[max_t_width] pop_cumsum_exp = cumulative_sum(pop_exp);
+
+      // First timepoint: just the initial state
+      states_full_grid[1][, 1] = init_log_decrease_patient;
+      states_full_grid[2][, 1] = init_log_growth_patient;
+
+      if (max_t_width > 1) {
+        // Vectorized outer product: states[i,t] = init[i] +/- baseline_rate[i] * pop_cumsum_exp[t-1]
+        // For decrease: state decreases, so subtract
+        // For growth: state increases, so add
+        states_full_grid[1][, 2:] = rep_matrix(init_log_decrease_patient, max_t_width - 1)
+          - baseline_decrease_rate * pop_cumsum_exp[:(max_t_width - 1)];
+        states_full_grid[2][, 2:] = rep_matrix(init_log_growth_patient, max_t_width - 1)
+          + baseline_growth_rate * pop_cumsum_exp[:(max_t_width - 1)];
       }
     }
 
