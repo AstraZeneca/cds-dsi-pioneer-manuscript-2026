@@ -20,6 +20,8 @@ website:
             href: documentation/onboarding-tutorial.qmd
           - text: "---"
           - text: Technical Reference
+          - text: Targets Pipeline
+            href: documentation/targets-pipeline.qmd
           - text: Architecture
             href: documentation/architecture.qmd
           - text: AR(1) Process Noise
@@ -64,6 +66,7 @@ website:
             - documentation/model-specification.qmd
         - section: "Technical Reference"
           contents:
+            - documentation/targets-pipeline.qmd
             - documentation/architecture.qmd
             - documentation/ar1-process-noise.qmd
             - documentation/leave-future-out-cross-validation.qmd
