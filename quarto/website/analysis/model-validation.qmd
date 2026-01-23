@@ -132,6 +132,41 @@ plot_oos_confusion_matrix(lfo_store2)
 plot_oos_confusion_sankey(lfo_store2)
 ```
 
+### Summary Metrics
+
+```{r}
+#| label: tbl-accuracy-metrics
+#| tbl-cap: "Out-of-sample accuracy, sensitivity, and specificity with 90% credible intervals."
+
+compute_oos_accuracy_metrics(lfo_store2) |>
+  gt() |>
+  tab_header(
+    title = "RECIST Prediction Performance"
+  ) |>
+  cols_label(
+    metric = "Metric",
+    class = "Class",
+    median = "Median",
+    q5 = "5%",
+    q95 = "95%"
+  ) |>
+  tab_spanner(
+    label = "Percentiles",
+    columns = c("q5", "q95")
+  ) |>
+  fmt_percent(
+    columns = c(median, q5, q95),
+    decimals = 1
+  )
+```
+
+::: {.callout-note}
+## Interpreting Metrics
+- **Overall Accuracy**: Weighted average of per-class sensitivities, weighted by class prevalence
+- **Sensitivity**: P(Predicted X | Observed X) - probability of correctly predicting class X given true class is X
+- **Specificity**: P(Predicted not X | Observed not X) - probability of correctly predicting NOT class X when true class is not X
+:::
+
 ### Progressive Disease Prediction Over Time
 
 Tracking how well the model predicts progressive disease (PD) at different points during the trial.
