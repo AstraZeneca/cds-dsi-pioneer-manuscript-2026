@@ -765,7 +765,7 @@ compute_oos_accuracy_metrics <- function(store) {
   # Check if count column exists - if not, we can't compute specificity
   has_counts <- "count" %in% names(data)
 
-  if (!has_counts && tar_exists(oos_confusion_matrix_counts_ctdna_aug, store = store)) {
+  if (!has_counts && tar_exist_objects("oos_confusion_matrix_counts_ctdna_aug", store = store)) {
     # Try to read from the counts-only target and merge
     counts_data <- tar_read(oos_confusion_matrix_counts_ctdna_aug, store = store)
     data <- data |>
@@ -799,7 +799,7 @@ compute_oos_accuracy_metrics <- function(store) {
 
   # Specificity: requires raw counts
   if (has_counts) {
-    classes <- unique(data$response)
+    classes <- levels(data$response)
 
     # Specificity(X) = P(Predicted != X | Observed != X)
     # = (correctly predicted non-X) / (all non-X observed)
@@ -825,9 +825,7 @@ compute_oos_accuracy_metrics <- function(store) {
       ))
     }
 
-    non_x_total <- non_x_data |>
-      summarize(total = sum(count)) |>
-      pull(total)
+    non_x_total <- rvar_sum(non_x_data$count)
 
     # Correctly predicted non-X (predicted != X when observed != X)
     non_x_correct_data <- data |>
@@ -837,9 +835,7 @@ compute_oos_accuracy_metrics <- function(store) {
     if (nrow(non_x_correct_data) == 0) {
       non_x_correct <- rvar(0)
     } else {
-      non_x_correct <- non_x_correct_data |>
-        summarize(correct = sum(count)) |>
-        pull(correct)
+      non_x_correct <- rvar_sum(non_x_correct_data$count)
     }
 
     tibble(
@@ -854,11 +850,9 @@ compute_oos_accuracy_metrics <- function(store) {
   }
 
   bind_rows(accuracy, sensitivity, specificity) |>
-    mutate(
-      median = median(value),
-      q5 = quantile(value, 0.05),
-      q95 = quantile(value, 0.95)
-    ) |>
+    distinct(metric, class, value, .keep_all = TRUE) |>
+    tidybayes::point_interval(value, .width = 0.9, .point = median, .interval = qi) |>
+    rename(median = value, q5 = .lower, q95 = .upper) |>
     select(metric, class, median, q5, q95) |>
     arrange(metric, class)
 }

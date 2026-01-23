@@ -31,10 +31,12 @@ library(patchwork)
 library(ggalluvial)
 
 # Source utility functions using here() which now works after init_project()
+source(here("r", "util.R"))
 source(here("r", "plot_functions.R"))
 source(here("r", "table_functions.R"))
 source(here("r", "targets_tidyselect.R"))
 source(here("r", "sclc", "plot_functions.R"))
+source(here("r", "sclc", "accuracy.R"))
 
 # Define target stores
 data_store <- file.path(output_path, "sclc", Sys.getenv("TAR_BRANCH"), "_targets")
@@ -46,6 +48,7 @@ lfo_store2 <- file.path(output_path, "sclc", "lfo2", "_targets")
 lfo_store_ctdna_only <- file.path(output_path, "sclc", "lfo_ctdna_only", "_targets")
 lfo_store_no_pl <- file.path(output_path, "sclc", "lfo_no_pl", "_targets")
 lfo_store_no_hist <- file.path(output_path, "sclc", "lfo_no_hist", "_targets")
+lfo_store_ctdna_pn <- file.path(output_path, "sclc", "lfo_ctdna_pn", "_targets")
 
 # Set default targets store (note: per CLAUDE.md, avoid tar_config_set for global state)
 # Instead, use explicit store arguments in tar_read/tar_load calls
