@@ -18,7 +18,7 @@ The pipeline architecture enables:
 
 ## Pipeline Structure
 
-The pipeline uses a three-level nested `tar_map()` structure:
+The pipeline uses a three-level nested `tar_map()` structure (see [dynamic branching](https://books.ropensci.org/targets/dynamic.html)):
 
 ```
 sclc_targets
@@ -70,7 +70,7 @@ controller_lfo              # 24 workers - LFO cross-validation (configurable)
 controller_lfo_endpoints    # 10 workers - endpoint generation
 ```
 
-Controllers are configured with the `crew` package and assigned to targets via `tar_resources(crew = tar_resources_crew(controller = "name"))`.
+Controllers are configured with the [`crew` package](https://wlandau.github.io/crew/) and assigned to targets via [`tar_resources()`](https://docs.ropensci.org/targets/reference/tar_resources.html) (see [crew integration guide](https://books.ropensci.org/targets/crew.html)).
 
 The `controller_lfo` has special configuration:
 
@@ -80,14 +80,140 @@ The `controller_lfo` has special configuration:
 
 ### Global Options
 
-Pipeline-wide settings are configured via `tar_option_set()`:
+Pipeline-wide settings are configured via [`tar_option_set()`](https://docs.ropensci.org/targets/reference/tar_option_set.html):
 
 - **Packages**: Core dependencies loaded automatically (tidyverse, cmdstanr, tidybayes, etc.)
 - **Default controller**: `controller_default` unless overridden
-- **Memory**: `"transient"` - targets are unloaded from memory after use
-- **Format**: `rvar_safe_qs2_format` - custom format for posterior::rvar objects
+- **Memory**: `"transient"` - targets are unloaded from memory after use (see [memory management](https://books.ropensci.org/targets/data.html#memory))
+- **Format**: `rvar_safe_qs2_format` - custom format for posterior::rvar objects (see [storage formats](https://books.ropensci.org/targets/data.html#formats) and [Custom Formats](#sec-custom-formats) below)
 - **Error handling**: `"continue"` - pipeline continues despite individual target failures
 - **Seed**: `26091468` - ensures reproducibility of stochastic operations
+
+## Custom Implementations {#sec-custom-implementations}
+
+The pipeline uses several custom implementations to handle project-specific challenges with Stan models and posterior storage.
+
+### Custom Format: rvar_safe_qs2 {#sec-custom-formats}
+
+**Problem**: Tibbles containing [`posterior::rvar`](https://mc-stan.org/posterior/reference/rvar.html) objects can fail during serialization because rvar objects cache internal computations as attributes. These cache attributes can cause issues with targets' serialization.
+
+**Solution**: `rvar_safe_qs2_format` is a custom [targets format](https://books.ropensci.org/targets/data.html#formats) that:
+
+1. Detects tibbles with rvar columns
+2. Removes the `"cache"` attribute from rvar objects before saving
+3. Uses [`qs2`](https://cran.r-project.org/package=qs2) for efficient serialization
+4. Ensures objects are returned as tibbles on read
+
+**Implementation** (defined in `r/util.R`):
+
+```r
+rvar_safe_qs2_format <- tar_format(
+  write = function(object, path) {
+    if (tibble::is_tibble(object) &&
+        any(purrr::map_lgl(object, posterior::is_rvar))) {
+      object <- as.data.frame(object) |>
+        dplyr::mutate(across(where(posterior::is_rvar), \(r) {
+          attr(r, "cache") <- NULL
+          r
+        }))
+    }
+    qs2::qs_save(object, path)
+  },
+  read = function(path) {
+    object <- qs2::qs_read(path)
+    if (is.data.frame(object) && !tibble::is_tibble(object)) {
+      object <- tibble::as_tibble(object)
+    }
+    return(object)
+  }
+)
+```
+
+**Performance**: Uses qs2 for fast serialization with minimal overhead for non-rvar objects.
+
+### Stan Model Compilation Tracking {#sec-stan-compilation}
+
+**Problem**: Stan models are expensive to compile (5-15 minutes). By default, targets tracks the compiled binary file, which changes every time the model is recompiled even if the source code hasn't changed. This causes all downstream targets (fits, posteriors, summaries) to invalidate unnecessarily.
+
+**Solution**: Track the source code hash instead of the binary. The pipeline uses two custom functions:
+
+#### 1. `compute_stan_source_hash()`
+
+Computes an MD5 hash of all Stan source files (including `#include` files):
+
+```r
+compute_stan_source_hash <- function(model_file, include_files = NULL) {
+  all_source_files <- c(model_file, include_files)
+  all_source_files |>
+    sort() |>
+    map(read_lines) |>
+    digest::digest(algo = "md5")
+}
+```
+
+This hash changes **only** when source code changes, not when binaries are recompiled.
+
+#### 2. `build_model()`
+
+Compiles Stan models with smart caching:
+
+```r
+build_model <- function(model_file, include_files = NULL, dir = NULL, ...) {
+  # Compute hash of all source file contents
+  source_hash <- compute_stan_source_hash(model_file, include_files)
+
+  # Check if stored hash matches
+  exe_path <- fs::path(dir, model_name)
+  hash_file <- str_c(exe_path, ".source_hash")
+
+  if (fs::file_exists(hash_file)) {
+    stored_hash <- read_lines(hash_file, n_max = 1)
+    if (identical(stored_hash, source_hash)) {
+      message("Source hash matches - skipping recompilation")
+      skip_compile <- TRUE
+    }
+  }
+
+  # Compile model (or skip)
+  model <- cmdstan_model(model_file, force_recompile = !skip_compile, ...)
+
+  # Save hash for future comparisons
+  write_lines(source_hash, hash_file)
+
+  return(model)
+}
+```
+
+#### Pipeline Integration
+
+Model compilation targets return both the hash and the executable path:
+
+```r
+tar_target(
+  tumor_ssls_exe_hash,
+  {
+    model <- build_model(
+      "stan/ssls/sf-ssm-log-space.stan",
+      include_files = find_stan_includes("stan/ssls/sf-ssm-log-space.stan"),
+      dir = file.path(sclc_artifacts_path, "models")
+    )
+    list(
+      source_hash = compute_stan_source_hash(...),  # This is tracked by targets
+      exe_file = model$exe_file()                    # This is used for sampling
+    )
+  },
+  cue = tar_cue("always")  # Always check, but hash prevents invalidation
+)
+```
+
+**Benefits**:
+
+- Downstream targets only re-run when Stan **source code** changes
+- Recompiling for optimization, portability, or different machines doesn't trigger re-runs
+- Avoids wasting hours of compute time on unnecessary MCMC sampling
+- Hash files (`.source_hash`) persist across Domino jobs/workspaces for cache reuse
+
+**Related**: See [`find_stan_includes()`](r/util.R:1013) for automatically discovering all `#include` dependencies.
 
 ## Covariate Specifications {#sec-covariates}
 
@@ -145,9 +271,9 @@ list(
 )
 ```
 
-The `source_hash` ensures downstream targets only invalidate when Stan source code changes, not on every recompilation. This is critical for avoiding unnecessary re-runs of expensive MCMC sampling.
+The `source_hash` ensures downstream targets only invalidate when Stan source code changes, not on every recompilation. This is critical for avoiding unnecessary re-runs of expensive MCMC sampling. See [Stan Model Compilation Tracking](#sec-stan-compilation) for implementation details.
 
-The `cue = tar_cue("always")` setting forces compilation checks on every pipeline run.
+The [`cue = tar_cue("always")`](https://docs.ropensci.org/targets/reference/tar_cue.html) setting forces compilation checks on every pipeline run (see [cue-based invalidation](https://books.ropensci.org/targets/targets.html#cue)).
 
 ## Data Loading {#sec-data}
 
@@ -174,7 +300,7 @@ trial_data_id          # Data version identifier
 └── trial_analysis_data       # Combine into analysis-ready format
 ```
 
-Using `format = "file"` for CSV file paths ensures targets re-run when files change on disk.
+Using [`format = "file"`](https://books.ropensci.org/targets/data.html#external-files) for CSV file paths ensures targets re-run when files change on disk.
 
 ### Data Preparation
 
@@ -186,7 +312,7 @@ The `prepare_analysis_data()` function combines patient and visit data into a ne
 
 ## Data Cut-Off Targets (`dco_targets`) {#sec-dco}
 
-The first level of `tar_map()` creates parallel pipelines for different data cut-offs:
+The first level of [`tar_map()`](https://docs.ropensci.org/targets/reference/tar_map.html) creates parallel pipelines for different data cut-offs (see [map guide](https://books.ropensci.org/targets/dynamic.html#map)):
 
 ```r
 dco_targets = tar_map(
@@ -324,7 +450,7 @@ This creates cutoffs every 30 days throughout the study calendar, typically resu
 
 ### LFO Grouping
 
-For parallel processing, cutoffs are grouped into chunks:
+For parallel processing, cutoffs are grouped into chunks using [`tar_group_count()`](https://docs.ropensci.org/tarchetypes/reference/tar_group.html) (see [grouped data frames](https://books.ropensci.org/targets/dynamic.html#grouped-data-frames)):
 
 ```r
 tar_group_count(grouped_lfo_cutoffs, lfo_cutoffs, lfo_groups)
@@ -361,7 +487,7 @@ tumor_ssls_lfo <- lfo(
 
 **Key parameters**:
 
-- `pattern = map(grouped_lfo_cutoffs)`: Creates one target per group
+- [`pattern = map(grouped_lfo_cutoffs)`](https://books.ropensci.org/targets/dynamic.html#patterns): Creates one target per group using dynamic branching
 - `exact = TRUE`: No PSIS-LOO approximation, always refit
 - `future_window = 2`: Number of consecutive cutoffs that reuse the same fit
 - `initializer_factory`: Dynamic initialization based on cutoff data
@@ -697,7 +823,7 @@ Targets within the prior/posterior `tar_map()` are suffixed:
 
 ### Reading Targets
 
-From R, use `tar_read()` or `tar_load()`:
+From R, use [`tar_read()`](https://docs.ropensci.org/targets/reference/tar_read.html) or [`tar_load()`](https://docs.ropensci.org/targets/reference/tar_load.html):
 
 ```r
 # Set the correct store path
@@ -710,19 +836,19 @@ orr <- tar_read(all_tumor_ssls_orr_rvar_ctdna_aug, store = store_path)
 tar_load(all_tumor_ssls_orr_rvar_ctdna_aug, store = store_path)
 ```
 
-**Important**: Always use explicit `store` argument. Never use `tar_config_set(store = ...)` as it changes global state.
+**Important**: Always use explicit `store` argument. Never use [`tar_config_set(store = ...)`](https://docs.ropensci.org/targets/reference/tar_config_set.html) as it changes global state.
 
 ### Listing Targets
 
 ```r
 # All targets in pipeline
-tar_manifest(store = store_path)
+tar_manifest()  # See reference: https://docs.ropensci.org/targets/reference/tar_manifest.html
 
 # Target dependency graph
-tar_glimpse(store = store_path)
+tar_glimpse(store = store_path)   # See reference: https://docs.ropensci.org/targets/reference/tar_glimpse.html
 
 # Target metadata (status, time, size, etc.)
-tar_meta(store = store_path)
+tar_meta(store = store_path)      # See reference: https://docs.ropensci.org/targets/reference/tar_meta.html
 
 # Filter to specific pattern
 tar_meta(store = store_path) |>
@@ -733,7 +859,7 @@ tar_meta(store = store_path) |>
 
 ```r
 # Full dependency graph (warning: very large!)
-tar_visnetwork(store = store_path)
+tar_visnetwork(store = store_path)  # See reference: https://docs.ropensci.org/targets/reference/tar_visnetwork.html
 
 # Focus on specific targets
 tar_visnetwork(
@@ -742,6 +868,8 @@ tar_visnetwork(
   store = store_path
 )
 ```
+
+See the [visualization guide](https://books.ropensci.org/targets/visualization.html) for more options.
 
 ## Running the Pipeline {#sec-running}
 
@@ -752,6 +880,8 @@ tar_visnetwork(
 export TAR_PROJECT=sclc
 Rscript -e 'targets::tar_make()'
 ```
+
+See [`tar_make()`](https://docs.ropensci.org/targets/reference/tar_make.html) reference and [execution guide](https://books.ropensci.org/targets/practice.html#execution).
 
 ### Running Specific Targets
 
@@ -771,7 +901,7 @@ tar_make(
 
 ```r
 # See what targets are outdated
-tar_outdated(store = store_path)
+tar_outdated(store = store_path)  # See reference: https://docs.ropensci.org/targets/reference/tar_outdated.html
 
 # See why a target is outdated
 tar_meta(store = store_path) |>
@@ -779,24 +909,26 @@ tar_meta(store = store_path) |>
   select(name, time, seconds, error, warnings)
 ```
 
+See the [debugging guide](https://books.ropensci.org/targets/debugging.html) for troubleshooting strategies.
+
 ### Pruning Old Results
 
 ```r
 # Remove targets no longer in pipeline
-tar_prune(store = store_path)
+tar_prune(store = store_path)  # See reference: https://docs.ropensci.org/targets/reference/tar_prune.html
 
 # Remove specific targets to force re-run
 tar_invalidate(
   starts_with("tumor_ssls_lfo"),
   store = store_path
-)
+)  # See reference: https://docs.ropensci.org/targets/reference/tar_invalidate.html
 ```
 
 ## Performance Considerations {#sec-performance}
 
 ### Parallelization
 
-The pipeline is heavily parallelized via crew controllers:
+The pipeline is heavily parallelized via crew controllers (see [high-performance computing guide](https://books.ropensci.org/targets/hpc.html)):
 
 - **Dynamic branching**: `pattern = map(lfo_cutoffs)` creates many parallel targets
 - **Multiple controllers**: Different task types use different worker pools
@@ -813,8 +945,8 @@ Several strategies reduce memory pressure:
 
 ### Storage Optimization
 
-- **CSV storage**: MCMC samples remain on disk, loaded on demand
-- **qs2 format**: Efficient serialization for R objects with `rvar_safe_qs2_format`
+- **CSV storage**: MCMC samples remain on disk, loaded on demand via [`cmdstanr`](https://mc-stan.org/cmdstanr/)
+- **Custom qs2 format**: Efficient serialization for R objects with `rvar_safe_qs2_format` (see [Custom Formats](#sec-custom-formats))
 - **Selective caching**: Some trajectory targets have `cue = tar_cue("never")` to prevent caching
 
 ### Computational Costs
@@ -829,6 +961,8 @@ Approximate runtimes with 8 fit workers + 24 LFO workers:
 | Full pipeline (8 models, 2 DCOs) | 2-5 days | Full combinatorial expansion |
 
 ## Common Patterns {#sec-patterns}
+
+See the [walkthrough chapter](https://books.ropensci.org/targets/walkthrough.html) for general patterns and best practices.
 
 ### Adding a New Model Variant
 
@@ -847,7 +981,7 @@ tribble(
 
 ### Adding a New Posterior Summary
 
-1. Add a target within the prior/posterior `tar_map()` (after line ~1308):
+1. Add a target within the prior/posterior `tar_map()` (after line ~1308) using [`tar_target()`](https://docs.ropensci.org/targets/reference/tar_target.html):
 
 ```r
 tar_target(
@@ -928,7 +1062,15 @@ The result is approximately 800 targets organized into a reproducible, transpare
 
 ## See Also
 
+### Project Documentation
+
 - [Onboarding Tutorial](onboarding-tutorial.qmd) - Getting started with the codebase
 - [Architecture](architecture.qmd) - System architecture and optimization details
 - [Leave-Future-Out Cross-Validation](leave-future-out-cross-validation.qmd) - LFO methodology
-- [targets package documentation](https://books.ropensci.org/targets/)
+
+### Targets Package Resources
+
+- **[Targets user manual](https://books.ropensci.org/targets/)** - Comprehensive guide to the workflow system
+- **[Function reference](https://docs.ropensci.org/targets/reference/index.html)** - Documentation for all targets functions
+- **[tarchetypes package](https://docs.ropensci.org/tarchetypes/)** - Specialized target archetypes (including `tar_map()`, `tar_group_count()`)
+- **[crew package](https://wlandau.github.io/crew/)** - Distributed computing backend
