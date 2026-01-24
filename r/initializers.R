@@ -494,10 +494,10 @@ create_tumor_ssls_initializer <- function(stan_data) {
 
         # Population-level process noise (shared AR(1) temporal trend)
         tr_raw_pop_process_noise = if (enable_pop_process_noise_tr) {
-          rep(0, max_t_width)
+          rnorm(max_t_width, 0, 0.1)  # Small random starts instead of zeros
         },
         tr_log_sd_pop_process_noise_pop = if (enable_pop_process_noise_tr) array(rnorm(1, mean = log(0.05), sd = 0.5)),
-        tr_logit_phi_pop_process_noise_pop = if (enable_pop_process_noise_tr) array(rnorm(1, mean = 2, sd = 1)),
+        tr_logit_phi_pop_process_noise_pop = if (enable_pop_process_noise_tr) array(rnorm(1, mean = 1.4, sd = 0.3)),  # Match prior mean
 
         # Measurement error - draw from inv_gamma prior (keeps mass away from zero)
         measure_sd = invgamma::rinvgamma(1, measure_sd_alpha, measure_sd_beta),
