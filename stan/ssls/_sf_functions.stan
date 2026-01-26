@@ -811,6 +811,21 @@ vector calc_log_sld_mean(matrix patient_states, real sum_tumor_size_baseline) {
 
 /**
  * Generate patient states including process noise, SLD trajectories, and forecast states
+ * 
+ * NOTE: This function assumes TIME-INVARIANT (scalar) rates.
+ * When AR(1) process noise is enabled, rates become time-varying matrices [n_patients × max_t_width].
+ * In that case, use generate_all_patients_states_with_means_rng() instead, which works
+ * with pre-computed states_full_grid that already incorporates time-varying rates.
+ * 
+ * @param patient_states States for this patient's visits
+ * @param forecast_time Forecast time points (should be real, not int)
+ * @param patient_log_decrease_rate Scalar log decrease rate (TIME-INVARIANT)
+ * @param patient_log_growth_rate Scalar log growth rate (TIME-INVARIANT)
+ * @param sum_tumor_size_baseline Baseline tumor size
+ * @param forecast_growth_lag Growth lag for forecast
+ * @param forecast_growth_transition Growth transition for forecast
+ * @param forecast_process_noise Process noise matrix for forecast
+ * @param measure_sd Measurement error SD
  */
 tuple(
   matrix,  // forecast_patient_states for this patient
@@ -819,8 +834,8 @@ tuple(
 ) generate_patient_states_rng(
   matrix patient_states,              // states for this patient's visits
   array[] real forecast_time,         // forecast time points (should be real, not int)
-  real patient_log_decrease_rate,     // patient_log_decrease_rate
-  real patient_log_growth_rate,       // patient_log_growth_rate
+  real patient_log_decrease_rate,     // patient_log_decrease_rate (TIME-INVARIANT)
+  real patient_log_growth_rate,       // patient_log_growth_rate (TIME-INVARIANT)
   real sum_tumor_size_baseline,       // baseline tumor size
   // Forecast configuration parameters
   real forecast_growth_lag,           // growth lag for forecast (was hardcoded to negative_infinity())
@@ -943,10 +958,15 @@ void assert_matching_states(
  * This is a higher-level wrapper around generate_patient_states_rng that also computes
  * mean log SLD for both observed and forecast periods.
  * 
+ * NOTE: This function assumes TIME-INVARIANT (scalar) rates.
+ * When AR(1) process noise is enabled, rates become time-varying matrices [n_patients × max_t_width].
+ * In that case, use generate_all_patients_states_with_means_rng() instead, which works
+ * with pre-computed states_full_grid that already incorporates time-varying rates.
+ * 
  * @param patient_states States for this patient's visits
  * @param forecast_time Forecast time points (with anchor at position 1)
- * @param patient_log_decrease_rate Patient-specific log decrease rate
- * @param patient_log_growth_rate Patient-specific log growth rate
+ * @param patient_log_decrease_rate Scalar patient-specific log decrease rate (TIME-INVARIANT)
+ * @param patient_log_growth_rate Scalar patient-specific log growth rate (TIME-INVARIANT)
  * @param sum_tumor_size_baseline Baseline sum of tumor sizes
  * @param forecast_growth_lag Growth lag for forecast
  * @param forecast_growth_transition Growth transition rate for forecast
@@ -1026,29 +1046,20 @@ tuple(
 /**
  * Generate states for all patients with internalized loop
  * This function processes all patients at once, reducing code in generated quantities.
+ * States are extracted from pre-computed states_full_grid which already incorporates
+ * time-varying rates (including AR(1) process noise in the tr module).
  * 
- * @param states Full states matrix for all patients
+ * @param states_full_grid Full states grid for all patients [2][n_patients, max_t_width]
  * @param patient_visit_pos Position array for patient visits
  * @param patient_visit_m1_pos Position array for patient visits minus 1
  * @param forecast_visits_pos Position array for forecast visits
- * @param n_patient_visits Number of visits per patient
- * @param n_patient_screening_visits Number of screening visits per patient
- * @param n_patient_forecast_visits Number of forecast visits per patient
  * @param patient_last_obs_visit Last observed visit week per patient
  * @param last_predict_visit Last prediction visit week (scalar)
  * @param t_patient_visits All patient visit times (flat array)
- * @param patient_log_decrease_rate Patient-specific log decrease rates
- * @param patient_log_growth_rate Patient-specific log growth rates
+ * @param t_patient_visit_idx Patient visit indices relative to first visit
  * @param sum_tumor_size Baseline tumor sizes (flat array)
- * @param forecast_growth_lag Growth lag for forecast
- * @param forecast_growth_transition Growth transition rate for forecast
  * @param measure_sd Measurement standard deviation
- * @param independ_long_process_noise Whether process noise is independent over time
- * @param independ_cross_process_noise Whether process noise is independent across dimensions
- * @param pop_process_sd Process noise standard deviation
- * @param L_process_corr Process noise correlation matrix (Cholesky factor)
- * @param log_pop_tumor_gp_rho Log GP length scale for tumor process
- * @param delta GP nugget parameter
+ * @param n_patient_screening_visits Number of screening visits per patient
  * 
  * @return Tuple containing:
  *   - forecast_patient_states: All forecasted states
@@ -1056,44 +1067,30 @@ tuple(
  *   - rep_mean_patient_log_sld: All mean log SLD for observed visits
  *   - forecast_patient_log_sld: All forecasted log SLD
  *   - forecast_mean_patient_log_sld: All mean log SLD for forecast
- *   - obs_patient_process_noise: All observed process noise
- *   - forecast_patient_process_noise: All forecast process noise (diagnostic only, not used in dynamics)
  */
 tuple(
   matrix,  // forecast_patient_states [n_total_forecast_visits, 2]
   vector,  // rep_patient_log_sld [sum(n_patient_visits)]
   vector,  // rep_mean_patient_log_sld [sum(n_patient_visits)]
   vector,  // forecast_patient_log_sld [n_total_forecast_visits]
-  vector,  // forecast_mean_patient_log_sld [n_total_forecast_visits]
-  matrix,  // obs_patient_process_noise [n_total_visits_m1, 2]
-  matrix   // forecast_patient_process_noise [n_total_forecast_visits, 2]
+  vector   // forecast_mean_patient_log_sld [n_total_forecast_visits]
 ) generate_all_patients_states_with_means_rng(
-  matrix states,
+  array[] matrix states_full_grid,
   array[] int patient_visit_pos,
   array[] int patient_visit_m1_pos,
   array[] int forecast_visits_pos,
   array[] int patient_last_obs_visit,
   int last_predict_visit,
   array[] int t_patient_visits,
-  vector patient_log_decrease_rate,
-  vector patient_log_growth_rate,
+  array[] int t_patient_visit_idx,
   vector sum_tumor_size,
-  real forecast_growth_lag,
-  real forecast_growth_transition,
   real measure_sd,
-  int independ_long_process_noise,
-  int independ_cross_process_noise,
-  vector pop_process_sd,
-  matrix L_process_corr,
-  real log_pop_tumor_gp_rho,
-  real delta,
   array[] int n_patient_screening_visits  // Number of screening visits per patient
 ) {
   // Calculate sizes from position arrays
   int n_patients = size(patient_visit_pos) - 1;
   int n_total_visits = get_pos_total_size(patient_visit_pos);
   int n_total_forecast_visits = get_pos_total_size(forecast_visits_pos);
-  int n_total_visits_m1 = n_total_visits - n_patients;
   
   // Initialize output arrays
   matrix[n_total_forecast_visits, 2] forecast_patient_states;
@@ -1101,8 +1098,6 @@ tuple(
   vector[n_total_visits] rep_mean_patient_log_sld;
   vector[n_total_forecast_visits] forecast_patient_log_sld;
   vector[n_total_forecast_visits] forecast_mean_patient_log_sld;
-  matrix[n_total_visits_m1, 2] obs_patient_process_noise;
-  matrix[n_total_forecast_visits, 2] forecast_patient_process_noise;
   
   // Process each patient: generate noise then states
   for (i in 1:n_patients) {
@@ -1120,51 +1115,53 @@ tuple(
     int forecast_visit_start, forecast_visit_end;
     (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
     
-    // Build forecast time WITH anchor
-    array[forecast_size + 1] int forecast_time = linspaced_int_array(
+    // Get visit indices for this patient (relative to their first visit)
+    array[visit_size] int visit_indices = t_patient_visit_idx[visit_start:visit_end];
+    
+    // Extract observed states from full grid
+    matrix[visit_size, 2] patient_states;
+    patient_states[, 1] = to_vector(states_full_grid[1][i, visit_indices]);
+    patient_states[, 2] = to_vector(states_full_grid[2][i, visit_indices]);
+    
+    // Build forecast time (absolute weeks)
+    array[forecast_size + 1] int forecast_time_abs = linspaced_int_array(
       forecast_size + 1,
       patient_last_obs_visit[i],
       last_predict_visit);
     
-    // Generate patient states first
+    // Extract forecast states from full grid
+    // forecast_time_abs[2:] are absolute weeks, which directly index the treatment period
+    // (after dropping screening visits, position 1 = week 1, position w = week w)
     matrix[forecast_size, 2] temp_forecast_patient_states;
-    vector[visit_size] temp_rep_patient_log_sld;
-    vector[visit_size] temp_rep_mean_patient_log_sld;
-    vector[forecast_size] temp_forecast_patient_log_sld;
-    vector[forecast_size] temp_forecast_mean_patient_log_sld;
-    matrix[visit_size - 1, 2] temp_obs_patient_process_noise;
+    if (forecast_size > 0) {
+      temp_forecast_patient_states[, 1] = to_vector(states_full_grid[1][i, forecast_time_abs[2:]]);
+      temp_forecast_patient_states[, 2] = to_vector(states_full_grid[2][i, forecast_time_abs[2:]]);
+    }
     
-    (temp_forecast_patient_states, temp_rep_patient_log_sld, temp_rep_mean_patient_log_sld,
-     temp_forecast_patient_log_sld, temp_forecast_mean_patient_log_sld,
-     temp_obs_patient_process_noise) = 
-      generate_patient_states_with_means_rng(
-        states[visit_start:visit_end],
-        forecast_time,
-        patient_log_decrease_rate[i],
-        patient_log_growth_rate[i],
-        sum_tumor_size[visit_start],
-        forecast_growth_lag,
-        forecast_growth_transition,
-        rep_matrix(0.0, forecast_size, 2),
-        measure_sd
-      );
+    // Calculate replicated SLD for observed visits
+    vector[visit_size] temp_rep_patient_log_sld = zeros_vector(visit_size);
+    temp_rep_patient_log_sld[1] = log(sum_tumor_size[visit_start]);
+    if (visit_size > 1) {
+      temp_rep_patient_log_sld[2:] = to_vector(normal_rng(
+        calc_log_sld_mean(patient_states[2:], sum_tumor_size[visit_start]),
+        rep_vector(measure_sd, visit_size - 1)
+      ));
+    }
     
-    // Now generate forecast process noise (diagnostic output, using observed noise if needed)
-    matrix[forecast_size, 2] temp_forecast_patient_process_noise;
-    if (independ_long_process_noise) {
-      temp_forecast_patient_process_noise = multi_normal_rng(
-        forecast_size, pop_process_sd, independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr
-      );
-    } else {
-      temp_forecast_patient_process_noise = multi_normal_rng(
-        temp_obs_patient_process_noise,
-        get_int_sub_array(t_patient_visits, patient_visit_pos, i)[2:],
-        forecast_time[2:],
-        exp(log_pop_tumor_gp_rho),
-        pop_process_sd,
-        independ_cross_process_noise ? diag_matrix(ones_vector(2)) : L_process_corr,
-        delta
-      );
+    // Calculate mean log SLD (deterministic, no measurement noise)
+    vector[visit_size] temp_rep_mean_patient_log_sld = 
+      calc_log_sld_mean(patient_states, sum_tumor_size[visit_start]);
+    
+    // Calculate forecast SLD with measurement noise
+    vector[forecast_size] temp_forecast_patient_log_sld = zeros_vector(forecast_size);
+    vector[forecast_size] temp_forecast_mean_patient_log_sld = zeros_vector(forecast_size);
+    if (forecast_size > 0) {
+      temp_forecast_mean_patient_log_sld = 
+        calc_log_sld_mean(temp_forecast_patient_states, sum_tumor_size[visit_start]);
+      temp_forecast_patient_log_sld = to_vector(normal_rng(
+        temp_forecast_mean_patient_log_sld,
+        rep_vector(measure_sd, forecast_size)
+      ));
     }
     
     // Assign to output arrays
@@ -1172,12 +1169,10 @@ tuple(
       forecast_patient_states[forecast_visit_start:forecast_visit_end] = temp_forecast_patient_states;
       forecast_patient_log_sld[forecast_visit_start:forecast_visit_end] = temp_forecast_patient_log_sld;
       forecast_mean_patient_log_sld[forecast_visit_start:forecast_visit_end] = temp_forecast_mean_patient_log_sld;
-      forecast_patient_process_noise[forecast_visit_start:forecast_visit_end] = temp_forecast_patient_process_noise;
     }
     
     rep_patient_log_sld[visit_start:visit_end] = temp_rep_patient_log_sld;
     rep_mean_patient_log_sld[visit_start:visit_end] = temp_rep_mean_patient_log_sld;
-    obs_patient_process_noise[visit_m1_start:visit_m1_end] = temp_obs_patient_process_noise;
   }
   
   return (
@@ -1185,9 +1180,7 @@ tuple(
     rep_patient_log_sld,
     rep_mean_patient_log_sld,
     forecast_patient_log_sld,
-    forecast_mean_patient_log_sld,
-    obs_patient_process_noise,
-    forecast_patient_process_noise
+    forecast_mean_patient_log_sld
   );
 }
 

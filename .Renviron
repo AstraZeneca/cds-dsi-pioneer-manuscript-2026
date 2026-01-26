@@ -5,3 +5,5 @@ RENV_PATHS_CACHE=/home/ubuntu/.cache/R/renv
 
 TAR_PROJECT=sclc
 TAR_BRANCH=main
+
+LFO_SAVE_WARMUP=true

@@ -254,7 +254,7 @@ get_lfo_cutoff_days <- function(
 #'
 lfo <- function(
   stan_data,
-  model,
+  exe_file,
   cutoffs,
   all_cutoffs,
   output_path,
@@ -269,9 +269,11 @@ lfo <- function(
   fit_only = FALSE,
   iter_warmup = 300,
   iter_sampling = 500,
+  save_warmup = FALSE,
   parallel_chains = 4,
   adapt_delta = 0.9,
   future_window = 1,
+  initializer_factory = NULL,
   ...
 ) {
   if (verbose) {
@@ -283,30 +285,60 @@ lfo <- function(
   remaining_cutoffs <- cutoffs |> filter(n >= refit_n)
   remaining_all_cutoffs <- all_cutoffs |> filter(n >= refit_n)
 
+  fit_output_dir <- file.path(
+    output_path,
+    "fit",
+    str_glue("{basename}-{refit_n}")
+  )
+
+  # If initializer_factory is provided, create a new initializer for this cutoff
+  # with the correct save directory. Otherwise use the provided initializer.
+  if (!is.null(initializer_factory)) {
+    initializer <- initializer_factory(
+      stan_data = stan_data,
+      save_dir = fit_output_dir,
+      run_id = output_timestamp
+    )
+  }
+
+  # Determine array dimensions based on LFO mode
+  # exact = TRUE: Only need n=1 and m ∈ {1, 2} (minimal memory)
+  # exact = FALSE: Need full matrix for PSIS approximation
+  n_cutoffs <- nrow(remaining_all_cutoffs)
+  if (exact) {
+    max_n_rows <- 1L
+    max_forecast_horizon <- future_window
+  } else {
+    max_n_rows <- n_cutoffs
+    max_forecast_horizon <- n_cutoffs
+  }
+
   fit <- stan_data |>
     list_assign(
       cutoff_calendar_day = remaining_all_cutoffs$cutoff_calendar_day,
-      n_cutoffs = nrow(remaining_all_cutoffs)
+      n_cutoffs = n_cutoffs,
+      max_n_rows = max_n_rows,
+      max_forecast_horizon = max_forecast_horizon
     ) %>%
     sample_and_save(
-      model,
+      exe_file,
       .,
       iter_warmup = iter_warmup,
       iter_sampling = iter_sampling,
+      save_warmup = save_warmup,
       parallel_chains = parallel_chains,
       adapt_delta = adapt_delta,
       init = initializer,
-      output_dir = file.path(
-        output_path,
-        "fit",
-        str_glue("{basename}-{refit_n}")
-      ),
+      output_dir = fit_output_dir,
       save_profiles = FALSE,
       timestamp = output_timestamp,
       ...
     )
 
-  psis_results <- fit |>
+  # Select only the needed log_lik variables for memory efficiency
+  draws <- select_draws(fit, matches("^patient.*log_lik"))
+
+  psis_results <- draws |>
     lfo_log_lik(future_window = future_window) |>
     mutate(across(c(n, m), \(x) x + refit_n - 1)) |>
     left_join(
@@ -323,12 +355,18 @@ lfo <- function(
     psis_results <- psis_results |>
       select(n, m, contains("E_"))
   } else {
+    # Drop heavy draw matrix columns but keep fit and summary statistics
+    # This prevents memory from accumulating through recursive calls
     psis_results <- psis_results |>
+      select(
+        n, m, refit_n, tar_group, cutoff_date, cutoff_calendar_day,
+        contains("E_"), k
+      ) |>
       mutate(fit = if_else(n == refit_n, list(fit), list(NULL)))
   }
 
   next_cutoffs <- psis_results |>
-    filter(!is.na(k), k > k_threshold | exact, n > refit_n) %>%
+    filter(exact | (!is.na(k) & k > k_threshold), n > refit_n) %>%
     semi_join(remaining_cutoffs, ., by = "n")
 
   if (verbose) {
@@ -340,7 +378,7 @@ lfo <- function(
   if (nrow(next_cutoffs) > 0) {
     next_results <- lfo(
       stan_data,
-      model,
+      exe_file,
       cutoffs,
       all_cutoffs,
       output_path,
@@ -355,9 +393,11 @@ lfo <- function(
       fit_only,
       iter_warmup,
       iter_sampling,
+      save_warmup,
       parallel_chains,
       adapt_delta,
       future_window,
+      initializer_factory = initializer_factory,
       ...
     )
 
@@ -387,11 +427,10 @@ log_mean_exp <- function(x) {
 
 lfo_log_lik <- function(res, max_n = Inf, future_window = 1) {
   res |>
-    spread_rvars(
-      patient_log_lik[n, m, i],
-      patient_pfs_log_lik[n, m, i],
-      patient_crcr_log_lik[n, m, i]
-    ) |>
+    spread_rvars(patient_log_lik[n, m, i]) |>
+    # Convert m from relative (array index) to absolute (cutoff index)
+    # Stan stores arrays as [n, m_rel] where m_rel = m_abs - n + 1
+    mutate(m = n + m - 1) |>
     lfo_log_lik_rvar(max_n, future_window)
 }
 

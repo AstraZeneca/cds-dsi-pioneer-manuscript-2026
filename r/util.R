@@ -37,7 +37,7 @@
 #'
 #' @return A fitted Stan model object
 sample_and_save <- function(
-  model,
+  exe_file,
   ...,
   output_dir,
   output_basename = NULL,
@@ -49,6 +49,14 @@ sample_and_save <- function(
   sampler_fun <- arg_match(sampler_fun)
 
   fs::dir_create(output_dir, recurse = TRUE)
+
+  # Load the compiled model from exe_file
+  model <- cmdstan_model(exe_file = exe_file)
+
+  # Ensure the compiled Stan executable has execute permissions
+  if (fs::file_exists(exe_file)) {
+    fs::file_chmod(exe_file, "u+x")
+  }
 
   if (!no_save && !timestamp) {
     # fit <- model$sample(..., output_dir = output_dir, output_basename = output_basename)
@@ -91,6 +99,46 @@ sample_and_save <- function(
   }
 
   return(fit)
+}
+
+#' Select draws from CmdStanR fit using tidyselect patterns
+#'
+#' Uses cmdstanr::read_cmdstan_csv with variable selection to read only the
+#' needed variables directly from CSV files. This bypasses any caching in
+#' the fit object and ensures minimal memory usage.
+#'
+#' @param fit A CmdStanMCMC fit object
+#' @param ... Tidyselect expressions to filter variables (e.g., ends_with("_pop"))
+#' @return A draws_array object with selected variables
+#' @export
+select_draws <- function(fit, ...) {
+  # Get all variable names from the fit (base names without indices)
+  all_vars <- fit$metadata()$stan_variables
+
+  if (...length() == 0) {
+    # No selection - read all variables
+    selected_vars <- NULL
+  } else {
+    # Use substitute to capture the unevaluated selection expression
+    # This ensures tidyselect helpers are found in eval_select's environment
+    selection <- substitute(c(...))
+    selected_idx <- tidyselect::eval_select(
+      selection,
+      data = rlang::set_names(all_vars, all_vars)
+    )
+    selected_vars <- all_vars[selected_idx]
+
+    if (length(selected_vars) == 0) {
+      stop("No variables matched the selection criteria")
+    }
+  }
+
+  # Read directly from CSV files with variable selection
+  # This bypasses fit object caching for better memory efficiency
+  cmdstanr::read_cmdstan_csv(
+    files = fit$output_files(),
+    variables = selected_vars
+  )$post_warmup_draws
 }
 
 #' Extract and compile decorated Stan functions
@@ -206,6 +254,16 @@ export_stan_functions <- function(stan_file, includes = NULL) {
   return(model)
 }
 
+# Compute hash of Stan model source files
+# Returns a hash string that changes when any source file content changes
+compute_stan_source_hash <- function(model_file, include_files = NULL) {
+  all_source_files <- c(model_file, include_files)
+  all_source_files |>
+    sort() |>
+    map(read_lines) |>
+    digest::digest(algo = "md5")
+}
+
 build_model <- function(
   model_file,
   include_files = NULL,
@@ -213,8 +271,35 @@ build_model <- function(
   compile_cores = parallel::detectCores(),
   ...
 ) {
-  # Force dependency on include files
-  include_files
+  # Compute hash of all source file contents to detect changes
+  source_hash <- compute_stan_source_hash(model_file, include_files)
+
+  # Determine expected executable path
+  model_name <- tools::file_path_sans_ext(fs::path_file(model_file))
+  exe_dir <- dir %||% fs::path_dir(model_file)
+  exe_path <- fs::path(exe_dir, model_name)
+  hash_file <- str_c(exe_path, ".source_hash")
+
+  # Compare with stored hash - delete binary if sources changed
+  skip_compile <- FALSE
+  if (fs::file_exists(exe_path)) {
+    if (fs::file_exists(hash_file)) {
+      stored_hash <- read_lines(hash_file, n_max = 1)
+      if (!identical(stored_hash, source_hash)) {
+        message("Source hash changed - forcing recompilation")
+        fs::file_delete(exe_path)
+      } else {
+        message("Source hash matches - skipping recompilation")
+        skip_compile <- TRUE
+        # Ensure executable has proper permissions when reusing from shared storage
+        # Fixes "Permission denied" errors across Domino jobs/workspaces
+        Sys.chmod(exe_path, mode = "0755")
+      }
+    } else {
+      message("Hash file not found - forcing recompilation")
+      fs::file_delete(exe_path)
+    }
+  }
 
   # Set MAKEFLAGS for parallel compilation
   withr::local_envvar(MAKEFLAGS = str_c("-j", compile_cores))
@@ -228,11 +313,20 @@ build_model <- function(
     ),
     # stanc_options = list("O1"),      # Stan compiler optimizations
     dir = dir,
+    force_recompile = !skip_compile,
     ...
   )
 
+  # Save source hash for future comparisons
+  write_lines(source_hash, hash_file)
+
   # Track the executable by including its hash in the return value
   exe_path <- model$exe_file()
+
+  # Ensure executable has proper permissions for shared storage (Domino)
+  # Fixes "Permission denied" errors across jobs/workspaces
+  Sys.chmod(exe_path, mode = "0755")
+
   exe_hash <- digest::digest(file = exe_path, algo = "md5")
 
   # Store the hash as an attribute so targets tracks it
@@ -291,10 +385,13 @@ km_to_tibble <- function(
       km_data <- broom::tidy(fit) |>
         select(t = time, s = estimate, n = n.risk, c = n.censor, e = n.event)
 
-      # Get quantiles directly from survfit object
+      # Get quantiles with confidence intervals from survfit object
+      quant_result <- quantile(fit, probs = probs)
       quantiles <- tibble(
         quantile = probs,
-        pfs = quantile(fit, probs = probs)$quantile
+        pfs = quant_result$quantile,
+        pfs_lower = quant_result$lower,
+        pfs_upper = quant_result$upper
       )
 
       tibble(

@@ -24,3 +24,18 @@ vector<lower=0>[n_covar] tr_coef_qr_pop_sd;            // sd for QR coefficients
 // Hierarchical slope SD hyperpriors (per covariate)
 row_vector<lower=0>[n_covar] tr_sd_trial_slope_sd;    // prior SD for each trial-level slope SD
 row_vector<lower=0>[n_covar] tr_sd_patient_slope_sd;  // prior SD for each patient-level slope SD
+
+// Process noise hyperparameters (for AR(1) process on measurements)
+// Patient-level process noise prior hyperparameters
+real tr_log_sd_pop_process_noise_mean;         // Prior mean for log(σ) at population level (for patient process)
+real tr_log_sd_pop_process_noise_sd;           // Prior SD for log(σ) at population level (for patient process)
+real tr_logit_phi_pop_process_noise_mean;      // Prior mean for logit(φ) at population level (for patient process)
+real tr_logit_phi_pop_process_noise_sd;        // Prior SD for logit(φ) at population level (for patient process)
+real<lower=0> tr_log_sd_patient_process_noise_sd;  // Patient variation in log(σ)
+real<lower=0> tr_phi_patient_process_noise_sd;     // Patient variation in logit(φ)
+
+// Population-level time-varying process noise hyperparameters (shared across all patients)
+real tr_log_sd_pop_process_noise_pop_mean;     // Prior mean for pop-level log(σ)
+real tr_log_sd_pop_process_noise_pop_sd;       // Prior SD for pop-level log(σ)
+real tr_logit_phi_pop_process_noise_pop_mean;  // Prior mean for pop-level logit(φ)
+real tr_logit_phi_pop_process_noise_pop_sd;    // Prior SD for pop-level logit(φ)

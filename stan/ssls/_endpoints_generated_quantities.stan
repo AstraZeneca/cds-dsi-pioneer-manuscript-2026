@@ -1,8 +1,5 @@
 // Latent states //////////////////////////////////////////
 
-matrix[n_total_visits_m1, 2] obs_patient_process_noise;
-matrix[n_total_forecast_visits, 2] forecast_patient_process_noise;
-
 matrix[n_total_forecast_visits, 2] forecast_patient_states;
 
 vector[sum(n_patient_visits)] rep_mean_patient_log_sld, rep_patient_log_sld;
@@ -82,32 +79,73 @@ array[n_cond_group, n_pfs_quantiles] int cond_spop_quant_pfs_exceeds_max = rep_a
 
 profile("gen_quant") {
   int right_censored_idx = 1;
-  
-  // Generate states for all patients at once
-  (forecast_patient_states, rep_patient_log_sld, rep_mean_patient_log_sld,
-   forecast_patient_log_sld, forecast_mean_patient_log_sld,
-   obs_patient_process_noise, forecast_patient_process_noise) = 
-    generate_all_patients_states_with_means_rng(
-      states,
-      patient_visit_pos,
-      patient_visit_m1_pos,
-      forecast_visits_pos,
-      patient_last_obs_visit,
-      last_predict_visit,
-      t_patient_visits,
-      patient_log_decrease_rate,
-      patient_log_growth_rate,
-      sum_tumor_size,
-      0.0001, 0.0001, // forecast_growth_lag, forecast_growth_transition
-      measure_sd,
-      independ_long_process_noise,
-      independ_cross_process_noise,
-      pop_process_sd,
-      L_process_corr,
-      log_pop_tumor_gp_rho,
-      delta,
-      n_patient_screening_visits
-    );
+
+  // Generate states for all patients
+  if (enable_patient_process_noise_tr) {
+    // Process noise ON: Use states_full_grid (dense grid computed in transformed_parameters)
+    (forecast_patient_states, rep_patient_log_sld, rep_mean_patient_log_sld,
+     forecast_patient_log_sld, forecast_mean_patient_log_sld) =
+      generate_all_patients_states_with_means_rng(
+        states_full_grid,
+        patient_visit_pos,
+        patient_visit_m1_pos,
+        forecast_visits_pos,
+        patient_last_obs_visit,
+        last_predict_visit,
+        t_patient_visits,
+        t_patient_visit_idx,
+        sum_tumor_size,
+        measure_sd,
+        n_patient_screening_visits
+      );
+  } else {
+    // Process noise OFF: Compute states on-the-fly using constant rates (original approach)
+    // This avoids needing states_full_grid which is not computed when process noise is off
+    for (i in 1:n_patients) {
+      int visit_start, visit_end;
+      (visit_start, visit_end) = get_pos(patient_visit_pos, i);
+      int visit_size = get_pos_size(patient_visit_pos, i);
+
+      int forecast_visit_start, forecast_visit_end;
+      (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
+      int forecast_size = get_pos_size(forecast_visits_pos, i);
+
+      // Build forecast time WITH anchor (duplicate last observed week as element 1)
+      array[forecast_size + 1] real forecast_time = linspaced_array(
+        forecast_size + 1,
+        patient_last_obs_visit[i],
+        last_predict_visit);
+
+      // Generate states using constant rates (computed on-the-fly, not from grid)
+      matrix[forecast_size, 2] temp_forecast_patient_states;
+      vector[visit_size] temp_rep_patient_log_sld;
+      vector[visit_size] temp_rep_mean_patient_log_sld;
+      vector[forecast_size] temp_forecast_patient_log_sld;
+      vector[forecast_size] temp_forecast_mean_patient_log_sld;
+      matrix[visit_size - 1, 2] temp_obs_process_noise;  // Unused but required by function
+
+      (temp_forecast_patient_states, temp_rep_patient_log_sld, temp_rep_mean_patient_log_sld,
+       temp_forecast_patient_log_sld, temp_forecast_mean_patient_log_sld, temp_obs_process_noise) =
+        generate_patient_states_with_means_rng(
+          states[visit_start:visit_end],  // Use states computed in transformed_parameters
+          forecast_time,
+          patient_log_decrease_rate[i, 1],  // Scalar rate (constant)
+          patient_log_growth_rate[i, 1],    // Scalar rate (constant)
+          sum_tumor_size[visit_start],
+          negative_infinity(),  // growth lag (disabled)
+          1.0,                  // growth transition
+          rep_matrix(0.0, forecast_size, 2),  // No forecast process noise
+          measure_sd
+        );
+
+      // Store results
+      forecast_patient_states[forecast_visit_start:forecast_visit_end] = temp_forecast_patient_states;
+      rep_patient_log_sld[visit_start:visit_end] = temp_rep_patient_log_sld;
+      rep_mean_patient_log_sld[visit_start:visit_end] = temp_rep_mean_patient_log_sld;
+      forecast_patient_log_sld[forecast_visit_start:forecast_visit_end] = temp_forecast_patient_log_sld;
+      forecast_mean_patient_log_sld[forecast_visit_start:forecast_visit_end] = temp_forecast_mean_patient_log_sld;
+    }
+  }
   
   // Calculate RECIST classifications for all patients at once
   (rep_recist, forecast_recist) = calculate_all_patients_recist(
