@@ -86,3 +86,4 @@ run-aws-credentials.sh
 .env
 node_modules
 aws/
+core.*
