@@ -1,0 +1,223 @@
+---
+title: "Model Validation"
+subtitle: "Leave-future-out cross-validation and accuracy assessment"
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+source("_setup.R")
+```
+
+This page presents model validation results using leave-future-out (LFO) cross-validation and accuracy assessments.
+
+::: {.callout-tip}
+## Related Pages
+- See [Leave-Future-Out Cross-Validation](../documentation/leave-future-out-cross-validation.qmd) for LFO methodology details
+- See [Model Specification](../documentation/model-specification.qmd) for model details
+- See [Architecture](../documentation/architecture.qmd) for computational optimization strategies
+:::
+
+## Leave-Future-Out Cross-Validation {#sec-lfo}
+
+Leave-future-out (LFO) cross-validation is used to evaluate the model's predictive performance. Unlike leave-one-out (LOO), LFO respects the temporal structure of the data.
+
+### LFO vs LOO Comparison
+
+```{r}
+#| label: fig-lfo-vs-loo-diagram
+#| fig-cap: Comparison between LFO and LOO cross-validation showing how observations are held out in each approach.
+#| fig-width: 10
+#| fig-height: 4
+
+source(here("r/plot_lfo_diagram.R"))
+```
+
+::: {.callout-note}
+## Why LFO over LOO?
+- **LOO** holds out individual observations regardless of time, which can lead to information leakage when predicting earlier time points using models trained on later data
+- **LFO** holds out all future observations from a cutoff point, maintaining the causal structure of the prediction task
+:::
+
+### Model Comparison: Historical Data Impact
+
+Comparison of models with different historical data configurations to understand the value of information borrowing.
+
+```{r}
+#| label: fig-lfo-elpd
+#| fig-cap: Difference in leave-future-out expected log predictive density (ELPD) comparing models with different historical data configurations.
+#| fig-height: 2
+
+all_lfo_clean <- bind_rows(
+    ctdna = tar_read(tumor_ssls_lfo_clean_lite_ctdna_aug, store = lfo_store),
+    no_ctdna = tar_read(tumor_ssls_lfo_clean_lite_no_ctdna_aug, store = lfo_store),
+    ctdna_only = tar_read(tumor_ssls_lfo_clean_lite_ctdna_only_aug, store = lfo_store_ctdna_only),
+    no_hist = tar_read(tumor_ssls_lfo_clean_lite_no_hist_aug, store = lfo_store_no_hist),
+    no_pl = tar_read(tumor_ssls_lfo_clean_lite_no_pl_aug, store = lfo_store_no_pl),
+    ctdna_pn = tar_read(tumor_ssls_lfo_clean_lite_ctdna_pn_aug, store = lfo_store_ctdna_pn),
+  .id = "model"
+) |>
+  filter(n > 3)
+
+# Define model labels for LFO plots
+lfo_model_labels <- list(
+  ctdna = "Covariates: All",
+  no_ctdna = "Covariates: Without Baseline ctDNA",
+  ctdna_only = "Covariates: Baseline ctDNA Only",
+  no_pl = "Without Patient-level Hierarchy",
+  all_trials = "All Historical Trials",
+  no_hist = "Without Any Historical Data",
+  no_covar = "Covariates: None",
+  ctdna_pn = "With Population-Level Process Noise",
+  with_artic = "HISTORICAL + ARTIC",
+  with_atlantic = "HISTORICAL + ATLANTIC",
+  with_pearl = "HISTORICAL + PEARL"
+)
+
+all_lfo_clean |>
+  filter(fct_match(model, c("ctdna", "ctdna_pn", "no_pl", "no_hist"))) |>
+  plot_lfo_elpd_diff(
+    baseline_model = "no_hist",
+    model_labels = lfo_model_labels |>
+      list_assign(
+        ctdna = "SCLC + HISTORICAL",
+        all_trials = "SCLC + All Historical Trials",
+      )
+  )
+```
+
+::: {.callout-note}
+## Interpreting ELPD Differences
+- **Positive ELPD difference**: Better predictive performance than baseline
+- **Error bars**: Standard error of the ELPD difference
+- Models with historical data borrowing show improved predictive accuracy
+:::
+
+### Model Comparison: Covariate Specifications
+
+Evaluating the impact of different covariate specifications, particularly the role of baseline ctDNA.
+
+```{r}
+#| label: fig-lfo-elpd-ctdna
+#| fig-cap: Difference in leave-future-out expected log predictive density (ELPD) for models with different ctDNA covariate specifications.
+#| fig-height: 2
+
+all_lfo_clean |>
+  filter(fct_match(model, c("ctdna_only", "ctdna", "ctdna_pn", "no_ctdna"))) |>
+  plot_lfo_elpd_diff(
+    baseline_model = "ctdna_only",
+    model_labels = lfo_model_labels
+  )
+```
+
+## Accuracy Assessment {#sec-accuracy}
+
+### RECIST Prediction Accuracy
+
+Out-of-sample confusion matrix comparing observed RECIST classifications with model predictions.
+
+```{r}
+#| label: fig-data-vs-posterior-confusion-matrix
+#| fig-cap: Out-of-sample (leave-future-out) confusion matrix for the RECIST categories as observed in the data and as estimated using only the target tumor SLD.
+#| fig-width: 6
+
+plot_oos_confusion_matrix(lfo_store)
+```
+
+```{r}
+#| label: fig-data-vs-posterior-sankey
+#| fig-cap: Sankey diagram showing the flow from recorded to predicted RECIST responses. Flow width represents prediction proportions; percentages indicate correct prediction rates.
+#| fig-width: 7
+#| fig-height: 5
+
+plot_oos_confusion_sankey(lfo_store)
+```
+
+### Summary Metrics
+
+```{r}
+#| label: tbl-accuracy-metrics
+#| tbl-cap: "Out-of-sample accuracy, sensitivity, and specificity with 90% credible intervals."
+
+compute_oos_accuracy_metrics(lfo_store) |>
+  gt() |>
+  tab_header(
+    title = "RECIST Prediction Performance"
+  ) |>
+  cols_label(
+    metric = "Metric",
+    class = "Class",
+    median = "Median",
+    q5 = "5%",
+    q95 = "95%"
+  ) |>
+  tab_spanner(
+    label = "Percentiles",
+    columns = c("q5", "q95")
+  ) |>
+  fmt_percent(
+    columns = c(median, q5, q95),
+    decimals = 1
+  )
+```
+
+::: {.callout-note}
+## Interpreting Metrics
+- **Overall Accuracy**: Weighted average of per-class sensitivities, weighted by class prevalence
+- **Sensitivity**: P(Predicted X | Observed X) - probability of correctly predicting class X given true class is X
+- **Specificity**: P(Predicted not X | Observed not X) - probability of correctly predicting NOT class X when true class is not X
+:::
+
+### Progressive Disease Prediction Over Time
+
+Tracking how well the model predicts progressive disease (PD) at different points during the trial.
+
+```{r}
+#| label: fig-pd-probability-over-time
+#| fig-cap: Probability of predicting PD conditional on observed RECIST being PD, over time.
+#| fig-width: 6
+#| fig-height: 5
+
+pd_data <- tar_read(full_oos_confusion_matrix_ctdna_aug, store = lfo_store) |>
+  filter(response == "PD") |>
+  group_by(n, m, cutoff_date, response) |>
+  mutate(
+    total = rvar_sum(oos_recist_confusion_matrix),
+    prop = oos_recist_confusion_matrix / total
+  ) |>
+  ungroup() |>
+  filter(pred_response == "PD") |>
+  arrange(cutoff_date)
+
+# Compute cumulative mean using accumulate (rvar addition preserves draws)
+cumsum_prop <- accumulate(pd_data$prop, `+`)
+running_prop <- map2(cumsum_prop, seq_along(cumsum_prop), ~ .x / .y)
+
+pd_data |>
+  mutate(
+    running_prop = running_prop,
+    running_median = map_dbl(running_prop, median),
+    running_q10 = map_dbl(running_prop, ~ quantile(.x, 0.1)),
+    running_q90 = map_dbl(running_prop, ~ quantile(.x, 0.9))
+  ) |>
+  ggplot(aes(x = cutoff_date)) +
+  geom_ribbon(aes(ymin = running_q10, ymax = running_q90), fill = AZ_turquoise, alpha = 0.4) +
+  geom_line(aes(y = running_median), color = "darkblue", linewidth = 1) +
+  scale_y_continuous("P(Predicted PD | Observed PD)", breaks = seq(0, 1, 0.1), labels = scales::percent_format(), limits = c(0, NA)) +
+  labs(
+    x = "Cutoff Date",
+    caption = "Ribbon shows 80% credible interval of cumulative mean; line shows cumulative median"
+  ) +
+  theme(legend.position = "bottom")
+```
+
+::: {.related-pages}
+## Related Pages
+
+- [Leave-Future-Out Cross-Validation](../documentation/leave-future-out-cross-validation.qmd) - LFO methodology
+- [Survival Analysis](survival-analysis.qmd#sec-cutoff-km) - Cutoff KM comparisons
+- [DCO Comparisons](../comparisons/dco-comparisons.qmd) - Data cutoff analyses
+- [Diagnostics](diagnostics.qmd) - Sampling diagnostics
+- [Model Specification](../documentation/model-specification.qmd) - Model details
+:::

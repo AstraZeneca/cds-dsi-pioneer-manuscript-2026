@@ -729,4 +729,132 @@ get_oos_confusion_marix <- function(lfo_res, recover_data) {
     unnest(oos_confusion_matrix)
 }
 
+#' Compute Accuracy Metrics from Out-of-Sample Confusion Matrix
+#'
+#' Calculates classification accuracy metrics (sensitivity, specificity, and overall accuracy)
+#' from out-of-sample confusion matrix predictions.
+#'
+#' @param store Character string. Path to the targets store containing the confusion matrix data.
+#'
+#' @return A data frame with columns:
+#'   \item{metric}{Character. The metric type: "Accuracy", "Sensitivity", or "Specificity"}
+#'   \item{class}{Character. The class label, or "Overall" for accuracy}
+#'   \item{median}{Numeric. The median of the posterior distribution}
+#'   \item{q5}{Numeric. The 5th percentile}
+#'   \item{q95}{Numeric. The 95th percentile}
+#'
+#' @details
+#' The function computes three types of metrics:
+#' - **Sensitivity** (per-class): The true positive rate for each RECIST category
+#' - **Accuracy** (overall): The weighted average of correct predictions across all classes
+#' - **Specificity** (per-class): The true negative rate for each RECIST category
+#'
+#' The function reads the `oos_confusion_matrix_ctdna_aug` target which contains both
+#' row-normalized proportions (for sensitivity/accuracy) and raw counts (for specificity).
+#'
+compute_oos_accuracy_metrics <- function(store) {
+  # Try to read the main confusion matrix with all columns
+  # If it doesn't have count, fall back to the counts-only target
+  data <- tar_read(oos_confusion_matrix_ctdna_aug, store = store)
+
+  # Validate data structure
+  if (nrow(data) == 0) {
+    stop("oos_confusion_matrix_ctdna_aug has no rows")
+  }
+
+  # Check if count column exists - if not, we can't compute specificity
+  has_counts <- "count" %in% names(data)
+
+  if (!has_counts && tar_exist_objects("oos_confusion_matrix_counts_ctdna_aug", store = store)) {
+    # Try to read from the counts-only target and merge
+    counts_data <- tar_read(oos_confusion_matrix_counts_ctdna_aug, store = store)
+    data <- data |>
+      left_join(counts_data, by = c("response", "pred_response"))
+    has_counts <- TRUE
+  }
+
+  # Per-class sensitivity (diagonal elements, as data is row-normalized)
+  sensitivity <- data |>
+    filter(response == pred_response) |>
+    transmute(
+      class = response,
+      metric = "Sensitivity",
+      value = mean_pred
+    )
+
+  # Overall accuracy: need to weight by class prevalence
+  # Since mean_pred is P(Predicted | Observed), we need class weights
+  class_totals <- data |>
+    group_by(response) |>
+    summarize(n = first(cell_size), .groups = "drop") |>
+    mutate(weight = n / sum(n))
+
+  accuracy <- sensitivity |>
+    left_join(class_totals, by = c("class" = "response")) |>
+    summarize(
+      class = "Overall",
+      metric = "Accuracy",
+      value = rvar_weighted_mean(value, weight)
+    )
+
+  # Specificity: requires raw counts
+  if (has_counts) {
+    classes <- levels(data$response)
+
+    # Specificity(X) = P(Predicted != X | Observed != X)
+    # = (correctly predicted non-X) / (all non-X observed)
+    specificity <- map_dfr(classes, function(cls) {
+    # Non-X observations
+    non_x_data <- data |> filter(response != cls)
+
+    # Return NA if no non-X observations (e.g., only one class)
+    if (nrow(non_x_data) == 0 || !("count" %in% names(non_x_data))) {
+      return(tibble(
+        class = cls,
+        metric = "Specificity",
+        value = rvar(NA_real_)
+      ))
+    }
+
+    # Ensure count column exists and has valid values
+    if (all(is.na(non_x_data$count))) {
+      return(tibble(
+        class = cls,
+        metric = "Specificity",
+        value = rvar(NA_real_)
+      ))
+    }
+
+    non_x_total <- rvar_sum(non_x_data$count)
+
+    # Correctly predicted non-X (predicted != X when observed != X)
+    non_x_correct_data <- data |>
+      filter(response != cls, pred_response != cls)
+
+    # If no correct non-X predictions, specificity is 0
+    if (nrow(non_x_correct_data) == 0) {
+      non_x_correct <- rvar(0)
+    } else {
+      non_x_correct <- rvar_sum(non_x_correct_data$count)
+    }
+
+    tibble(
+      class = cls,
+      metric = "Specificity",
+      value = non_x_correct / non_x_total
+    )
+    })
+  } else {
+    # If no counts available, return empty specificity
+    specificity <- tibble()
+  }
+
+  bind_rows(accuracy, sensitivity, specificity) |>
+    distinct(metric, class, value, .keep_all = TRUE) |>
+    tidybayes::point_interval(value, .width = 0.9, .point = median, .interval = qi) |>
+    rename(median = value, q5 = .lower, q95 = .upper) |>
+    select(metric, class, median, q5, q95) |>
+    arrange(metric, class)
+}
+
 # nolint end: object_usage_linter
