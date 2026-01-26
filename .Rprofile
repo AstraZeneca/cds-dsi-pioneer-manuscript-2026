@@ -77,4 +77,6 @@ init_project <- function(output_path = output_path, artifacts_path = artifacts_p
   source(here("r", "sclc", "prepare_analysis_data.R"))
   source(here("r", "sclc", "accuracy.R"))
   source(here("r", "sclc", "plot_functions.R"))
+
+  source(here("r", "targets_tidyselect.R"))
 }

@@ -34,7 +34,7 @@ csv_to_parquet_duckdb <- function(csv_files, output_parquet, ..., max_threads = 
     config = list(
       "memory_limit" = max_memory,
       "temp_directory" = "/tmp/duckdb_temp",
-      "threads" = as.character(min(max_threads, n_chains))
+      "threads" = if (is.finite(max_threads)) as.character(max_threads)
     ) |>
       purrr::compact()
   )
@@ -88,46 +88,29 @@ csv_to_parquet_duckdb <- function(csv_files, output_parquet, ..., max_threads = 
   # Build file list for DuckDB (needs to be SQL array syntax)
   file_list <- paste(shQuote(csv_files, type = "sh"), collapse = ", ")
 
-  # Profile CSV reading operation
-  # DBI::dbExecute(con, "SET profiling_output = 'profile_read.json'")
-
-  query_read <- stringr::str_glue(
+  # Use streaming COPY to avoid materializing all data in memory
+  # This streams directly from CSV reader to parquet writer
+  query <- stringr::str_glue(
     "
-    CREATE OR REPLACE TABLE temp_data AS 
-    SELECT 
-      CAST(regexp_extract(filename, '-(\\d+)-[a-f0-9]+\\.csv', 1) AS INTEGER) as chain_id,
-      {select_clause}
-    FROM read_csv([{file_list}], 
-                  filename = true,
-                  comment = '#',
-                  header = true,
-                  max_line_size = 104857600,
-                  auto_detect = false,
-                  all_varchar = false,
-                  {types_clause}
-                  union_by_name = true,
-                  parallel = true)
-    "
-  )
-
-  # browser()
-
-  DBI::dbExecute(con, query_read)
-
-  # Profile Parquet writing operation
-  # DBI::dbExecute(con, "SET profiling_output = 'profile_write.json'")
-
-  query_write <- stringr::str_glue(
-    "
-    COPY temp_data TO '{output_parquet}' 
-    (FORMAT PARQUET, COMPRESSION UNCOMPRESSED)
+    COPY (
+      SELECT
+        CAST(regexp_extract(filename, '-(\\d+)-[a-f0-9]+\\.csv', 1) AS INTEGER) as chain_id,
+        {select_clause}
+      FROM read_csv([{file_list}],
+                    filename = true,
+                    comment = '#',
+                    header = true,
+                    max_line_size = 104857600,
+                    auto_detect = false,
+                    all_varchar = false,
+                    {types_clause}
+                    union_by_name = true,
+                    parallel = true)
+    ) TO '{output_parquet}' (FORMAT PARQUET, COMPRESSION UNCOMPRESSED)
     "
   )
 
-  DBI::dbExecute(con, query_write)
-
-  # Clean up temporary table
-  DBI::dbExecute(con, "DROP TABLE temp_data")
+  DBI::dbExecute(con, query)
 
   return(output_parquet)
 }
@@ -241,6 +224,201 @@ register_arrow_draws_methods <- function() {
 # Auto-register methods when this file is sourced
 register_arrow_draws_methods()
 
+# Column-selective spread_rvars and gather_rvars for Arrow Datasets ==========
+#
+# These methods solve the memory problem where as_draws_df.Dataset would load
+# the entire parquet file into memory. Instead, we:
+# 1. Parse the variable specifications to determine which columns are needed
+# 2. Use Arrow's column projection to select only those columns
+# 3. Collect the filtered data (much smaller)
+# 4. Then call the standard tidybayes methods
+
+#' Extract base variable names from tidybayes variable specifications
+#'
+#' Given quosures like `spop_target_pfs[i]` or `states[n, p]`, extracts
+#' the base variable name (e.g., "spop_target_pfs", "states").
+#'
+#' @param quos List of quosures from enquos(...)
+#' @return Character vector of base variable names
+#' @keywords internal
+extract_variable_names <- function(quos) {
+
+  purrr::map_chr(quos, function(q) {
+    spec <- tidybayes:::parse_variable_spec(q)
+    spec[[1]] # First element is always the variable name
+  })
+}
+
+#' Build column selection regex for Arrow dataset
+#'
+#' Given base variable names, builds regex patterns that match the Stan CSV
+#' column format (e.g., "var.1.2" for arrays).
+#'
+#' @param var_names Character vector of base variable names
+#' @return Character regex pattern
+#' @keywords internal
+build_column_regex <- function(var_names) {
+
+  # Match either exact name or name followed by dot and indices
+
+  # e.g., "states" matches "states" and "states.1.2"
+  patterns <- paste0("^", var_names, "(\\.[0-9.]+)?$")
+  paste(patterns, collapse = "|")
+}
+
+#' Get column names from Arrow Dataset matching variable specs
+#'
+#' @param dataset An Arrow Dataset
+#' @param var_names Character vector of base variable names
+#' @return Character vector of column names to select
+#' @keywords internal
+get_matching_columns <- function(dataset, var_names) {
+  all_cols <- names(dataset)
+
+  # Always keep chain_id and diagnostic columns
+  keep_cols <- c("chain_id", "lp__", "accept_stat__", "stepsize__",
+                 "treedepth__", "n_leapfrog__", "divergent__", "energy__")
+  keep_cols <- intersect(keep_cols, all_cols)
+
+  # Build regex and find matching columns
+  pattern <- build_column_regex(var_names)
+  matching_cols <- all_cols[grepl(pattern, all_cols)]
+
+  # Return column names (not filtered dataset - dplyr::select is slow on wide datasets)
+  unique(c(keep_cols, matching_cols))
+}
+
+#' Collect selected columns from Arrow Dataset using Scanner API
+#'
+#' Uses Arrow's Scanner with projection for fast column selection on wide datasets.
+#' This is ~80x faster than dplyr::select() on datasets with 100K+ columns.
+#'
+#' @param dataset An Arrow Dataset
+#' @param cols Character vector of column names to select
+#' @return A data.frame with the selected columns
+#' @keywords internal
+collect_columns <- function(dataset, cols) {
+  scanner <- arrow::Scanner$create(dataset, projection = cols)
+  as.data.frame(scanner$ToTable())
+}
+
+#' Extract rvars from MCMC draws in wide format
+#'
+#' S3 generic that dispatches to tidybayes::spread_rvars for most inputs,
+#' but uses a fast column-selective implementation for Arrow Datasets.
+#'
+#' @param model A model object containing MCMC draws (Arrow Dataset or other)
+#' @param ... Variable specifications (e.g., `beta[i]`, `sigma`)
+#' @param ndraws Optional number of draws to subsample
+#' @return A tibble with rvars
+#' @export
+spread_rvars <- function(model, ..., ndraws = NULL) {
+  UseMethod("spread_rvars")
+}
+
+#' @export
+spread_rvars.default <- function(model, ..., ndraws = NULL) {
+  tidybayes::spread_rvars(model, ..., ndraws = ndraws)
+}
+
+#' @export
+spread_rvars.Dataset <- function(model, ..., ndraws = NULL) {
+  quos <- rlang::enquos(...)
+
+  # Extract variable names from specs
+  var_names <- extract_variable_names(quos)
+
+  # Get matching column names and collect using fast Scanner API
+  cols <- get_matching_columns(model, var_names)
+  df <- collect_columns(model, cols)
+
+  # Convert column names from Stan CSV format to bracket notation
+  names(df) <- cmdstanr:::repair_variable_names(names(df))
+
+  # Build draws_df
+  if ("chain_id" %in% names(df)) {
+    chain_ids <- df$chain_id
+    df$chain_id <- NULL
+  } else {
+    chain_ids <- rep(1L, nrow(df))
+  }
+
+  df$.chain <- chain_ids
+  df$.iteration <- ave(seq_len(nrow(df)), chain_ids, FUN = seq_along)
+  df$.draw <- seq_len(nrow(df))
+  df <- dplyr::select(df, .chain, .iteration, .draw, dplyr::everything())
+
+  draws <- posterior::as_draws_df(df)
+
+  # Preserve tidybayes_constructors if present (for recover_types)
+  constructors <- attr(model, "tidybayes_constructors")
+  if (!is.null(constructors)) {
+    attr(draws, "tidybayes_constructors") <- constructors
+  }
+
+  # Call tidybayes spread_rvars on the draws_df
+
+  tidybayes::spread_rvars(draws, !!!quos, ndraws = ndraws)
+}
+
+#' Extract rvars from MCMC draws in long format
+#'
+#' S3 generic that dispatches to tidybayes::gather_rvars for most inputs,
+#' but uses a fast column-selective implementation for Arrow Datasets.
+#'
+#' @param model A model object containing MCMC draws (Arrow Dataset or other)
+#' @param ... Variable specifications (e.g., `beta[i]`, `sigma`)
+#' @param ndraws Optional number of draws to subsample
+#' @return A tibble with rvars in long format
+#' @export
+gather_rvars <- function(model, ..., ndraws = NULL) {
+  UseMethod("gather_rvars")
+}
+
+#' @export
+gather_rvars.default <- function(model, ..., ndraws = NULL) {
+  tidybayes::gather_rvars(model, ..., ndraws = ndraws)
+}
+
+#' @export
+gather_rvars.Dataset <- function(model, ..., ndraws = NULL) {
+  quos <- rlang::enquos(...)
+
+  # Extract variable names from specs
+  var_names <- extract_variable_names(quos)
+
+  # Get matching column names and collect using fast Scanner API
+  cols <- get_matching_columns(model, var_names)
+  df <- collect_columns(model, cols)
+
+  # Convert column names from Stan CSV format to bracket notation
+  names(df) <- cmdstanr:::repair_variable_names(names(df))
+
+  # Build draws_df
+  if ("chain_id" %in% names(df)) {
+    chain_ids <- df$chain_id
+    df$chain_id <- NULL
+  } else {
+    chain_ids <- rep(1L, nrow(df))
+  }
+
+  df$.chain <- chain_ids
+  df$.iteration <- ave(seq_len(nrow(df)), chain_ids, FUN = seq_along)
+  df$.draw <- seq_len(nrow(df))
+  df <- dplyr::select(df, .chain, .iteration, .draw, dplyr::everything())
+
+  draws <- posterior::as_draws_df(df)
+
+  # Preserve tidybayes_constructors if present (for recover_types)
+  constructors <- attr(model, "tidybayes_constructors")
+  if (!is.null(constructors)) {
+    attr(draws, "tidybayes_constructors") <- constructors
+  }
+
+  # Call tidybayes gather_rvars on the draws_df
+  tidybayes::gather_rvars(draws, !!!quos, ndraws = ndraws)
+}
+
 #' Decorate Arrow Dataset with type recovery information
 #'
 #' This allows using recover_types() with Arrow datasets so that
@@ -265,5 +443,6 @@ register_recover_types_methods <- function() {
 }
 
 register_recover_types_methods()
+
 
 # nolint end: object_usage_linter

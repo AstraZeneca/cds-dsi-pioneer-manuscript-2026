@@ -1,0 +1,823 @@
+# Mathematical Specification of the Tumor Dynamics and Survival Model
+
+## Overview
+
+This document provides a complete mathematical specification of the Bayesian hierarchical model for analyzing tumor dynamics and survival outcomes in oncology clinical trials. The model integrates:
+
+1. **Tumor growth dynamics** via a state-space model in log-space
+2. **Independent competing events** for other (non-target) progression events
+3. **Clinical endpoints** including progression-free survival (PFS) and objective response rate (ORR)
+
+---
+
+## 1. Model Structure and Hierarchy
+
+### 1.1 Data Organization
+
+The model operates on a hierarchical structure:
+
+$$
+\text{Trials} \to \text{Patients} \to \text{Visits} \to \text{Measurements}
+$$
+
+**Notation:**
+
+- $S \in \{1, \ldots, n_{\text{trials}}\}$: trial index
+- $i \in \{1, \ldots, n_{\text{patients}}\}$: patient index  
+- $t \in \{1, \ldots, T_i\}$: visit index for patient $i$
+- $s(i)$: trial assignment for patient $i$
+
+### 1.2 Hierarchical Levels
+
+The model uses a three-level hierarchy for most parameters:
+
+1. **Population level**: Global parameters across all trials
+2. **Trial level**: Trial-specific deviations from population
+3. **Patient level**: Patient-specific deviations within trials
+
+---
+
+## 2. Tumor Dynamics: State-Space Model
+
+### 2.1 State Representation
+
+Tumor burden is decomposed into two latent components in log-space:
+
+$$
+\mathbf{x}_i(t) = \begin{bmatrix} x_{i,\text{dec}}(t) \\ x_{i,\text{gro}}(t) \end{bmatrix}
+$$
+
+where:
+
+- $x_{i,\text{dec}}(t) = \log(\text{decreasing component})$
+- $x_{i,\text{gro}}(t) = \log(\text{growing component})$
+
+The **expected** sum of lesion diameters (SLD) relates to the latent states via:
+
+$$
+\mathbb{E}[\log(\text{SLD}_i(t))] = \log(\text{SLD}_{i,\text{baseline}}) + \log\left(e^{x_{i,\text{dec}}(t)} + e^{x_{i,\text{gro}}(t)}\right)
+$$
+
+The **observation model** with measurement error is specified in Section 2.5.
+
+### 2.2 State Evolution
+
+#### 2.2.1 Deterministic Dynamics
+
+Between consecutive visits at times $t$ and $t+1$, the expected state evolves as:
+
+$$
+\mathbb{E}[\mathbf{x}_i(t+1) \mid \mathbf{x}_i(t)] = \mathbf{x}_i(t) + \Delta t_{i,t} \begin{bmatrix} -d_i(t) \\ g_i(t) \end{bmatrix}
+$$
+
+where:
+
+- $\Delta t_{i,t} = \text{time}_{i,t+1} - \text{time}_{i,t}$ is the time interval (weeks)
+- $d_i(t)$: instantaneous decrease rate (positive)
+- $g_i(t)$: instantaneous growth rate (positive)
+
+**State transitions are deterministic** given the rates. Time-varying behavior (when enabled) comes from AR(1) process noise on the rates themselves (Section 2.4.4), not from stochastic state transitions.
+
+### 2.3 Initial State Model
+
+The initial state at baseline ($t=1$) is parameterized as:
+
+$$
+\begin{aligned}
+x_{i,\text{dec}}(1) &= \log(\text{logit}^{-1}(f_{\alpha,i})) \\
+x_{i,\text{gro}}(1) &= \log(1 - \text{logit}^{-1}(f_{\alpha,i}))
+\end{aligned}
+$$
+
+where $f_{\alpha,i} = \text{logit}(\alpha_i)$ is the logit of the initial proportion $\alpha_i \in (0, 1)$ representing the initial fraction of tumor burden in the decreasing component.
+
+**Implementation note:** Stan uses `log_inv_logit()` and `log1m_inv_logit()` for numerical stability, identical to the fraction module (Section 2.4.2).
+
+#### 2.3.1 Hierarchical Model for Initial Proportion
+
+$$
+\begin{aligned}
+\text{logit}(\alpha_i) &= \mu_{\alpha,\text{pop}} + \mathbf{X}_i^T \boldsymbol{\beta}_{\alpha,\text{pop}} + \eta_{\alpha,s(i)}^{\text{trial}} + \eta_{\alpha,i}^{\text{patient}} \\
+&\quad + \mathbf{X}_i^T (\boldsymbol{\gamma}_{\alpha,s(i)}^{\text{trial}} + \boldsymbol{\gamma}_{\alpha,i}^{\text{patient}})
+\end{aligned}
+$$
+
+**Components:**
+
+- $\mu_{\alpha,\text{pop}}$: population-level intercept
+- $\boldsymbol{\beta}_{\alpha,\text{pop}}$: population-level covariate effects
+- $\eta_{\alpha,s}^{\text{trial}} \sim \mathcal{N}(0, \tau_{\alpha,\text{trial}}^2)$: trial random intercept
+- $\eta_{\alpha,i}^{\text{patient}} \sim \mathcal{N}(0, \tau_{\alpha,\text{patient}}^2)$: patient random intercept
+- $\boldsymbol{\gamma}_{\alpha,s}^{\text{trial}} \sim \mathcal{N}(\mathbf{0}, \text{diag}(\boldsymbol{\tau}_{\alpha,\text{trial},\text{slope}}^2))$: trial random slopes
+- $\boldsymbol{\gamma}_{\alpha,i}^{\text{patient}} \sim \mathcal{N}(\mathbf{0}, \text{diag}(\boldsymbol{\tau}_{\alpha,\text{patient},\text{slope}}^2))$: patient random slopes
+
+### 2.4 Rate Parameters
+
+#### 2.4.1 Total Rate Model
+
+The total rate $r_i$ controls the overall speed of tumor dynamics:
+
+$$
+\begin{aligned}
+\log(r_i) &= \mu_{r,\text{pop}} + \mathbf{X}_i^T \boldsymbol{\beta}_{r,\text{pop}} + \eta_{r,s(i)}^{\text{trial}} + \eta_{r,i}^{\text{patient}} \\
+&\quad + \mathbf{X}_i^T (\boldsymbol{\gamma}_{r,s(i)}^{\text{trial}} + \boldsymbol{\gamma}_{r,i}^{\text{patient}})
+\end{aligned}
+$$
+
+with the same hierarchical structure as the initial proportion model.
+
+#### 2.4.2 Fraction Model
+
+The fraction $\phi_i \in (0, 1)$ allocates the total rate between decrease and growth:
+
+$$
+\begin{aligned}
+\text{logit}(\phi_i) &= \mu_{\phi,\text{pop}} + \mathbf{X}_i^T \boldsymbol{\beta}_{\phi,\text{pop}} + \eta_{\phi,s(i)}^{\text{trial}} + \eta_{\phi,i}^{\text{patient}} \\
+&\quad + \mathbf{X}_i^T (\boldsymbol{\gamma}_{\phi,s(i)}^{\text{trial}} + \boldsymbol{\gamma}_{\phi,i}^{\text{patient}})
+\end{aligned}
+$$
+
+#### 2.4.3 Instantaneous Rates (Time-Invariant Case)
+
+When process noise is disabled, rates are constant and computed in log-space:
+
+$$
+\begin{aligned}
+\log(d_i) &= \log(r_i) + \log(\phi_i) \\
+\log(g_i) &= \log(r_i) + \log(1 - \phi_i)
+\end{aligned}
+$$
+
+Equivalently using the log-odds parameterization where $f_i = \text{logit}(\phi_i)$:
+
+$$
+\begin{aligned}
+\log(d_i) &= \log(r_i) + \log(\text{logit}^{-1}(f_i)) \\
+\log(g_i) &= \log(r_i) + \log(1 - \text{logit}^{-1}(f_i))
+\end{aligned}
+$$
+
+**Implementation note:** Stan uses `log_inv_logit()` and `log1m_inv_logit()` for numerical stability.
+
+#### 2.4.4 Time-Varying Rates (AR(1) Process Noise)
+
+When process noise is enabled, rates vary over time via an AR(1) process:
+
+$$
+\begin{aligned}
+\log(r_i(t)) &= \log(r_i) + \delta_{r,i}(t) \\
+\delta_{r,i}(t) &\sim \mathcal{N}\left(\rho_{r,i} \cdot \delta_{r,i}(t-1), \sigma_{r,i}^2\right)
+\end{aligned}
+$$
+
+with:
+
+- $\delta_{r,i}(1) \sim \mathcal{N}(0, \sigma_{r,i}^2)$: initial deviation
+- $\rho_{r,i} \in (0, 1)$: autocorrelation (persistence of deviations)
+- $\sigma_{r,i} > 0$: innovation standard deviation
+
+Patient-level parameters have hierarchical structure:
+
+$$
+\begin{aligned}
+\sigma_{r,i} &\sim \text{LogNormal}(\log(\sigma_{r,\text{pop}}), \tau_{\sigma_r,\text{patient}}^2) \\
+\rho_{r,i} &\sim \text{Logit-Normal}(\text{logit}(\rho_{r,\text{pop}}), \tau_{\rho_r,\text{patient}}^2)
+\end{aligned}
+$$
+
+The instantaneous rates are then (in log-space):
+
+$$
+\begin{aligned}
+\log(d_i(t)) &= \log(r_i(t)) + \log(\phi_i) \\
+\log(g_i(t)) &= \log(r_i(t)) + \log(1 - \phi_i)
+\end{aligned}
+$$
+
+**Note:** The AR(1) deviations $\delta_{r,i}(t)$ are mean-reverting to zero, so rates fluctuate around their baseline values. The **same** AR(1) deviation applies to both decrease and growth rates, preserving the fraction relationship while allowing overall rate variation.
+
+### 2.5 Observation Model
+
+Observed SLD measurements include measurement error:
+
+$$
+\log\left(\frac{\text{SLD}_{i,\text{obs}}(t)}{\text{SLD}_{i,\text{baseline}}}\right) \sim \mathcal{N}\left(\log\left(e^{x_{i,\text{dec}}(t)} + e^{x_{i,\text{gro}}(t)}\right), \sigma_{\text{meas}}^2\right)
+$$
+
+**Left-censoring for measurements below limit of detection (LOD):**
+
+For $\text{SLD}_{i,\text{obs}}(t) = 0$ (below detection):
+
+$$
+\mathbb{P}\left(\text{SLD}_{i,\text{obs}}(t) = 0\right) = \Phi\left(\frac{\log(\text{LOD}/\text{SLD}_{i,\text{baseline}}) - \log(e^{x_{i,\text{dec}}(t)} + e^{x_{i,\text{gro}}(t)})}{\sigma_{\text{meas}}}\right)
+$$
+
+where $\Phi(\cdot)$ is the standard normal CDF.
+
+---
+
+## 3. Other Events Model (Independent Competing Risks)
+
+### 3.1 Independent Events Framework
+
+The model treats **other events** (non-target progression, new lesions, death, etc.) as **independent** from target lesion progression. Both types of events can be observed for the same patient.
+
+**Key variables:**
+
+- $T_i^{\text{target}}$: time to target lesion progression
+- $T_i^{\text{other}}$: time to other event
+- Both are modeled independently
+
+### 3.2 Hazard Function
+
+The hazard for other events follows a proportional hazards model with time-varying covariates:
+
+$$
+\lambda_i(t) = \lambda_{0,s(i)}(t) \cdot \exp\left(\mathbf{Z}_i^T \boldsymbol{\theta}_{\text{pop}} + \mathbf{Z}_i^T \boldsymbol{\psi}_{s(i)}^{\text{trial}} + \mathbf{W}_i(t)^T \boldsymbol{\kappa}_{\text{pop}}\right)
+$$
+
+**Components:**
+
+- $\lambda_{0,s}(t)$: trial-specific baseline hazard (Gaussian process)
+- $\mathbf{Z}_i$: time-invariant covariates (demographics, baseline characteristics)
+- $\mathbf{W}_i(t)$: time-varying tumor-derived covariates
+- $\boldsymbol{\theta}_{\text{pop}}$: population covariate effects
+- $\boldsymbol{\psi}_s^{\text{trial}} \sim \mathcal{N}(\mathbf{0}, \text{diag}(\boldsymbol{\tau}_{\text{trial}}^2))$: trial random slopes
+
+### 3.3 Baseline Hazard (Gaussian Process)
+
+#### 3.3.1 Population-Level Baseline
+
+$$
+\log(\lambda_{0,\text{pop}}(t)) \sim \text{GP}(\mu_{\lambda,\text{pop}}, k_{\text{pop}}(t, t'))
+$$
+
+with squared exponential kernel:
+
+$$
+k_{\text{pop}}(t, t') = \alpha_{\text{pop}}^2 \exp\left(-\frac{(t - t')^2}{2\rho_{\text{pop}}^2}\right)
+$$
+
+**Parameters:**
+
+- $\mu_{\lambda,\text{pop}}$: mean log-hazard
+- $\alpha_{\text{pop}}^2$: marginal variance (controls vertical scale)
+- $\rho_{\text{pop}}$: length scale (controls smoothness)
+
+#### 3.3.2 Trial-Level Deviations
+
+$$
+\log(\lambda_{0,s}(t)) = \log(\lambda_{0,\text{pop}}(t)) + f_s(t)
+$$
+
+where $f_s(t) \sim \text{GP}(\mu_{\lambda,s}, k_s(t, t'))$ with:
+
+$$
+k_s(t, t') = \alpha_s^2 \exp\left(-\frac{(t - t')^2}{2\rho_s^2}\right)
+$$
+
+### 3.4 Time-Varying Tumor Covariates
+
+The model extracts tumor-derived covariates from the state-space model predictions:
+
+$$
+\mathbf{W}_i(t) = \begin{bmatrix} 
+w_1(t) \\ 
+w_2(t) \\ 
+w_3(t) \\
+w_4(t)
+\end{bmatrix} = \begin{bmatrix}
+\frac{\log(\widehat{\text{SLD}}_i(t)) - \text{median}(\log(\text{SLD}_{\text{obs}}))}{\text{IQR}(\log(\text{SLD}_{\text{obs}}))} \\[0.5em]
+\log(d_i(t)) \\[0.5em]
+\log(g_i(t)) \\[0.5em]
+\frac{d}{dt}\log(\widehat{\text{SLD}}_i(t)) \text{ (z-scored)}
+\end{bmatrix}
+$$
+
+where $\widehat{\text{SLD}}_i(t) = \text{SLD}_{i,\text{baseline}} \cdot (e^{x_{i,\text{dec}}(t)} + e^{x_{i,\text{gro}}(t)})$ is the **model-predicted** SLD from latent states.
+
+**Notes:**
+
+- $w_1(t)$: Standardized log **predicted** tumor burden (time-varying, from state-space model)
+- $w_2(t)$: Log decrease rate (time-invariant or time-varying with AR(1))
+- $w_3(t)$: Log growth rate (time-invariant or time-varying with AR(1))
+- $w_4(t)$: SLD velocity computed as the **backward** discrete difference of log(SLD), then z-scored within each patient:
+
+$$
+\Delta_t = \log(\widehat{\text{SLD}}_i(t)) - \log(\widehat{\text{SLD}}_i(t-1)) \quad \text{for } t \geq 2
+$$
+
+with $\Delta_1 = 0$ (no prior measurement). Then z-scored:
+
+$$
+w_4(t) = \frac{\Delta_t - \bar{\Delta}_i}{\text{sd}(\Delta_i)}
+$$
+
+where $\bar{\Delta}_i$ and $\text{sd}(\Delta_i)$ are computed from the patient's velocity values at $t \geq 2$ only (excluding the zero at $t=1$). Since time is in weeks, $\Delta_t$ represents the weekly change in log(SLD).
+
+- Standardization constants (median and IQR) for $w_1$ are computed from **observed** SLD data and fixed across MCMC iterations
+- Using predicted SLD (not observed) ensures covariates are smooth and measurement-error-free
+
+### 3.5 Survival Function
+
+The conditional survival probability is:
+
+$$
+S_i(t) = \exp\left(-\int_0^t \lambda_i(u) \, du\right)
+$$
+
+For discrete time steps:
+
+$$
+S_i(t) = \exp\left(-\sum_{u=1}^t \lambda_i(u)\right)
+$$
+
+---
+
+## 4. Clinical Endpoints
+
+### 4.1 RECIST Response Classification
+
+Response is determined from SLD trajectories using standard RECIST 1.1 criteria for **target lesions only**:
+
+$$
+\text{RECIST}_i(t) = \begin{cases}
+\text{CR} & \text{if } \text{SLD}_i(t) = 0 \\
+\text{PD} & \text{if } \frac{\text{SLD}_i(t) - \text{nadir}_i(t)}{\text{nadir}_i(t)} \geq 0.2 \text{ AND } \text{SLD}_i(t) - \text{nadir}_i(t) \geq 5\text{mm} \\
+\text{PR} & \text{if } \frac{\text{SLD}_i(t) - \text{baseline}_i}{\text{baseline}_i} \leq -0.3 \\
+\text{SD} & \text{otherwise}
+\end{cases}
+$$
+
+where $\text{nadir}_i(t) = \min_{u \leq t} \text{SLD}_i(u)$ is the minimum SLD observed up to time $t$.
+
+**Key differences from simplified thresholds:**
+
+- **PD requires both** ≥20% increase from nadir AND ≥5mm absolute increase
+- **PR is relative to baseline**, not nadir
+- **Nadir tracking** is maintained throughout treatment
+
+### 4.2 Objective Response Rate (ORR)
+
+**Confirmed response:** PR or CR at two consecutive visits
+
+$$
+\text{ORR}_s = \frac{1}{n_s} \sum_{i: s(i) = s} \mathbb{I}\left(\exists t: \text{RECIST}_i(t), \text{RECIST}_i(t+1) \in \{\text{CR}, \text{PR}\}\right)
+$$
+
+### 4.3 Progression-Free Survival (PFS)
+
+The observed PFS data $T_i^{\text{PFS,obs}}$ combines progression from target lesions and other events (non-target progression, new lesions, death, etc.). The model decomposes this into two independent components that are inferred from the data:
+
+#### 4.3.1 Target Lesion PFS
+
+Target lesion progression time is determined from the state-space model predictions:
+
+$$
+T_i^{\text{target}} = \min\{t: \text{RECIST}_i(t) = \text{PD}\}
+$$
+
+where $\text{RECIST}_i(t)$ is computed from the posterior predictive SLD trajectory (Section 4.1).
+
+**Relationship to observed data:**
+
+- If patient has **recorded target progression** in the clinical data: $T_i^{\text{target}}$ is set to the recorded time
+- If patient has **no recorded target progression**: $T_i^{\text{target}}$ is right-censored at the last observed visit $T_i$
+- The model uses **model-predicted RECIST** from SLD trajectories to estimate when target progression would occur beyond observed visits
+
+**Note:** Model-predicted RECIST may differ from recorded clinical RECIST assessments because:
+
+1. Clinical assessments include non-target lesions and new lesions
+2. Model predictions are based solely on target lesion SLD dynamics
+3. Measurement error and visit timing create uncertainty in exact progression time
+
+#### 4.3.2 Other Events PFS
+
+Other events time is inferred as the complement of target progression:
+
+$$
+T_i^{\text{other}} = \begin{cases}
+T_i^{\text{PFS,obs}} & \text{if } T_i^{\text{PFS,obs}} < T_i^{\text{target}} \text{ (other event occurred first)} \\
+\text{right-censored at } T_i & \text{if } T_i^{\text{PFS,obs}} \geq T_i^{\text{target}} \text{ (target occurred first or both censored)}
+\end{cases}
+$$
+
+The model learns the hazard function $\lambda_i(t)$ (Section 3.2) such that the predicted survival function matches the inferred other events data:
+
+$$
+\mathbb{P}(T_i^{\text{other}} > t \mid \text{no other event by } t) = S_i(t) = \exp\left(-\int_0^t \lambda_i(u) \, du\right)
+$$
+
+**Relationship to observed data:**
+
+- If patient has **PFS event before target progression**: The event is attributed to other causes, so $T_i^{\text{other}} = T_i^{\text{PFS,obs}}$
+- If patient has **target progression first**: Other events are right-censored at target progression time
+- If patient is **censored with no events**: Both target and other are right-censored at last visit
+
+**Training the other events model:**
+
+The model observes:
+
+1. **Observed PFS** $T_i^{\text{PFS,obs}}$ and censoring indicator $\delta_i^{\text{PFS,obs}}$ from clinical data
+2. **Inferred target progression time** $T_i^{\text{target}}$ from model-predicted RECIST
+
+It learns the hazard $\lambda_i(t)$ by fitting to the complement: patients who had PFS events that cannot be explained by target progression alone must have experienced other events.
+
+#### 4.3.3 Combined PFS
+
+The combined PFS from independent competing risks is:
+
+$$
+T_i^{\text{PFS}} = \min(T_i^{\text{target}}, T_i^{\text{other}})
+$$
+
+**Censoring logic:**
+
+Let $\delta_i^{\text{target}}$ and $\delta_i^{\text{other}}$ be event indicators (1 = event, 0 = censored). Then:
+
+$$
+\begin{aligned}
+T_i^{\text{PFS}} &= \min(T_i^{\text{target}}, T_i^{\text{other}}) \\
+\delta_i^{\text{PFS}} &= \max(\delta_i^{\text{target}}, \delta_i^{\text{other}}) = \begin{cases}
+1 & \text{if either event occurred} \\
+0 & \text{if both censored}
+\end{cases}
+\end{aligned}
+$$
+
+**Key insight:** Because events are modeled independently, a patient can experience:
+
+- Target progression only ($T_i^{\text{target}} < T_i^{\text{other}}$)
+- Other event only ($T_i^{\text{other}} < T_i^{\text{target}}$)
+- Either could be right-censored
+
+The model reconstructs the joint PFS distribution by combining predictions from both components, allowing it to separate the contributions of tumor dynamics versus other clinical events to overall survival outcomes.
+
+#### 4.3.4 Data Reconciliation
+
+**Observed vs. Predicted:**
+
+- **Input to model:** $T_i^{\text{PFS,obs}}$, $\delta_i^{\text{PFS,obs}}$ (from clinical trial data)
+- **Model decomposes into:** $T_i^{\text{target}}$ (from tumor model) and $T_i^{\text{other}}$ (from survival model)
+- **Model output:** $T_i^{\text{PFS}}$ (reconstructed from both components)
+
+**Right-censoring scenarios:**
+
+1. **No events observed:** Both $T_i^{\text{target}}$ and $T_i^{\text{other}}$ are right-censored at last visit $T_i$
+2. **Target progression recorded:** $T_i^{\text{target}}$ is observed, $T_i^{\text{other}}$ is right-censored at $T_i^{\text{target}}$
+3. **Other event inferred:** $T_i^{\text{other}}$ is observed (because $T_i^{\text{PFS,obs}} < T_i^{\text{target}}$), $T_i^{\text{target}}$ continues beyond observation
+4. **Both may have occurred:** Model uses the minimum for $T_i^{\text{PFS}}$
+
+This decomposition allows the model to:
+
+- Learn tumor progression dynamics from SLD trajectories
+- Learn other event hazards from the complement of target-explained PFS events
+- Predict future PFS by combining both independent processes
+
+### 4.4 Kaplan-Meier Estimation
+
+For trial $s$, the Kaplan-Meier survival curve is:
+
+$$
+\hat{S}_s(t) = \prod_{t_j \leq t} \left(1 - \frac{d_j}{n_j}\right)
+$$
+
+where:
+
+- $t_j$: distinct event times
+- $d_j$: number of events at $t_j$
+- $n_j$: number at risk just before $t_j$
+
+### 4.5 Median PFS and Quantiles
+
+The median PFS is:
+
+$$
+\text{mPFS}_s = \inf\{t: \hat{S}_s(t) \leq 0.5\}
+$$
+
+More generally, the $q$-th quantile is:
+
+$$
+\text{PFS}_s^{(q)} = \inf\{t: \hat{S}_s(t) \leq 1-q\}
+$$
+
+### 4.6 PFS at Fixed Timepoints (PFS-n)
+
+Survival probability at fixed timepoint $t^*$ (e.g., 6 months, 12 months):
+
+$$
+\text{PFS-}t^* = \hat{S}_s(t^*)
+$$
+
+---
+
+## 5. Prior Distributions
+
+### 5.1 Measurement Error
+
+$$
+\sigma_{\text{meas}} \sim \mathcal{N}^+(0, \sigma_{\text{meas},0})
+$$
+
+### 5.2 Initial Proportion Module
+
+$$
+\begin{aligned}
+\mu_{\alpha,\text{pop}} &\sim \mathcal{N}(m_{\alpha,\text{pop}}, s_{\alpha,\text{pop}}) \\
+\boldsymbol{\beta}_{\alpha,\text{pop}} &\sim \mathcal{N}(\mathbf{m}_{\alpha,\beta}, \text{diag}(\mathbf{s}_{\alpha,\beta}^2)) \\
+\tau_{\alpha,\text{trial}} &\sim \mathcal{N}^+(0, s_{\alpha,\text{trial}}) \\
+\tau_{\alpha,\text{patient}} &\sim \mathcal{N}^+(0, s_{\alpha,\text{patient}}) \\
+\boldsymbol{\tau}_{\alpha,\text{trial},\text{slope}} &\sim \mathcal{N}^+(\mathbf{0}, \mathbf{s}_{\alpha,\text{trial},\text{slope}}) \\
+\boldsymbol{\tau}_{\alpha,\text{patient},\text{slope}} &\sim \mathcal{N}^+(\mathbf{0}, \mathbf{s}_{\alpha,\text{patient},\text{slope}})
+\end{aligned}
+$$
+
+### 5.3 Total Rate Module
+
+Same structure as initial proportion module, with hyperparameters $m_{r,*}$, $s_{r,*}$.
+
+### 5.4 Fraction Module
+
+Same structure as initial proportion module, with hyperparameters $m_{\phi,*}$, $s_{\phi,*}$.
+
+### 5.5 AR(1) Process Noise (when enabled)
+
+$$
+\begin{aligned}
+\log(\sigma_{r,\text{pop}}) &\sim \mathcal{N}(0, s_{\sigma_r,\text{pop}}) \\
+\text{logit}(\rho_{r,\text{pop}}) &\sim \mathcal{N}(m_{\rho_r,\text{pop}}, s_{\rho_r,\text{pop}}) \\
+\tau_{\sigma_r,\text{patient}} &\sim \mathcal{N}^+(0, s_{\sigma_r,\text{patient}}) \\
+\tau_{\rho_r,\text{patient}} &\sim \mathcal{N}^+(0, s_{\rho_r,\text{patient}})
+\end{aligned}
+$$
+
+### 5.6 Other Events Baseline Hazard
+
+$$
+\begin{aligned}
+\mu_{\lambda,\text{pop}} &\sim \mathcal{N}(m_{\lambda,\text{pop}}, s_{\lambda,\text{pop}}) \\
+\alpha_{\text{pop}} &\sim \mathcal{N}^+(0, s_{\alpha,\text{pop}}) \\
+\rho_{\text{pop}} &\sim \text{Inv-Gamma}(a_{\rho,\text{pop}}, b_{\rho,\text{pop}}) \\
+\mu_{\lambda,s} &\sim \mathcal{N}(0, s_{\lambda,\text{trial}}) \\
+\alpha_s &\sim \mathcal{N}^+(0, s_{\alpha,\text{trial}}) \\
+\rho_s &\sim \text{Inv-Gamma}(a_{\rho,\text{trial}}, b_{\rho,\text{trial}})
+\end{aligned}
+$$
+
+### 5.7 Other Events Covariate Effects
+
+$$
+\begin{aligned}
+\boldsymbol{\kappa}_{\text{pop}} &\sim \mathcal{N}(\mathbf{m}_{\kappa}, \text{diag}(\mathbf{s}_{\kappa}^2)) \\
+\boldsymbol{\theta}_{\text{pop}} &\sim \mathcal{N}(\mathbf{m}_{\theta}, \text{diag}(\mathbf{s}_{\theta}^2)) \\
+\boldsymbol{\tau}_{\text{trial}} &\sim \mathcal{N}^+(\mathbf{0}, \mathbf{s}_{\text{trial}})
+\end{aligned}
+$$
+
+---
+
+## 6. Posterior Inference
+
+### 6.1 Joint Posterior
+
+The joint posterior distribution is:
+
+$$
+\begin{aligned}
+p(\boldsymbol{\Theta}, \{\mathbf{x}_i\}_{i=1}^{n_{\text{patients}}} \mid \mathcal{D}) \propto &\, p(\boldsymbol{\Theta}) \\
+&\times \prod_{i=1}^{n_{\text{patients}}} \left[ p(\mathbf{x}_i(1) \mid \alpha_i) \prod_{t=2}^{T_i} p(\mathbf{x}_i(t) \mid \mathbf{x}_i(t-1), d_i(t-1), g_i(t-1)) \right] \\
+&\times \prod_{i=1}^{n_{\text{patients}}} \prod_{t=1}^{T_i} p(\text{SLD}_{i,\text{obs}}(t) \mid \mathbf{x}_i(t), \sigma_{\text{meas}}) \\
+&\times \prod_{i=1}^{n_{\text{patients}}} p(T_i^{\text{other}} \mid \lambda_i(\cdot))
+\end{aligned}
+$$
+
+where:
+
+- $\boldsymbol{\Theta}$: all model parameters
+- $\mathcal{D}$: observed data (SLD measurements, event times, censoring indicators)
+
+### 6.2 Sampling Algorithm
+
+The model is fit using Hamiltonian Monte Carlo (HMC) via Stan's No-U-Turn Sampler (NUTS):
+
+1. **Non-centered parameterization** for hierarchical effects
+2. **QR decomposition** for numerical stability in covariate effects
+3. **Cholesky decomposition** for correlation matrices
+4. **Vectorization** for state computation across patients
+
+### 6.3 Generated Quantities
+
+For each posterior sample, the following quantities are computed:
+
+**Patient-level:**
+- Posterior predictive SLD trajectories
+- Forecasted states beyond observed data
+- RECIST classifications at each timepoint
+- PFS times (target, other events, combined)
+- Response indicators (confirmed, unconfirmed)
+
+**Trial-level:**
+- Objective response rate (ORR)
+- Kaplan-Meier survival curves
+- Median PFS and quantiles
+- PFS at fixed timepoints (PFS-6, PFS-12, etc.)
+
+**Conditional groups:**
+- Same metrics stratified by covariates (e.g., PD-L1 status, trial)
+
+---
+
+## 7. Model Features and Flexibility
+
+### 7.1 Modular Design
+
+The model uses feature flags to enable/disable components:
+
+**Tumor dynamics:**
+
+- Population-level covariates: `enable_pop_cov_tr`, `enable_pop_cov_frac`, `enable_pop_cov_init`
+- Trial-level random effects: `enable_trial_intercept_*`, `enable_trial_cov_*`
+- Patient-level random effects: `enable_patient_intercept_*`, `enable_patient_cov_*`
+- AR(1) process noise on total rate: `enable_patient_process_noise_tr`
+- AR(1) patient-level SD hierarchy: `enable_patient_process_noise_sd_tr`
+- AR(1) patient-level phi hierarchy: `enable_patient_process_noise_phi_tr`
+
+**Other events:**
+
+- Trial-level baseline hazard: `oe_enable_trial_baseline_hazard`
+- Population covariates: `oe_enable_pop_cov`, `oe_enable_pop_tumor_cov`
+- Trial-level covariates: `oe_enable_trial_cov`
+
+### 7.2 Computational Efficiency
+
+**State computation strategies:**
+
+The model uses three different state computation methods depending on configuration:
+
+1. **With AR(1) process noise:** $O(n_{\text{patients}} \times \max(T_i))$ via cumulative sums over time-varying rates
+
+2. **Without AR(1), with tumor covariates for other events:** $O(n_{\text{patients}} \times \max(T_i))$ via vectorized outer product (`init + rate * time`)
+
+3. **Without AR(1), without tumor covariates:** $O(n_{\text{patients}} \times n_{\text{unique visits}})$ via sparse matrix multiplication using precomputed `visit_cumsum_mat`
+
+**Parallelization:**
+
+- Map-reduce framework for patient-level computations
+- Configurable number of shards for parallel processing
+
+### 7.3 Identifiability Constraints
+
+The model enforces several constraints for identifiability:
+
+1. **QR decomposition** for covariate design matrix
+2. **Non-centered parameterization** for random effects
+3. **Proper priors** on all variance components
+4. **Fixed normalization** for time-varying covariates (median/IQR from observed data)
+
+---
+
+## 8. Notation Summary
+
+### 8.1 Indices and Dimensions
+
+| Symbol | Description |
+|--------|-------------|
+| $S, s$ | Trial index |
+| $i$ | Patient index |
+| $t$ | Time/visit index |
+| $n_{\text{trials}}$ | Number of trials |
+| $n_{\text{patients}}$ | Number of patients |
+| $T_i$ | Number of visits for patient $i$ |
+
+### 8.2 Latent States
+
+| Symbol | Description |
+|--------|-------------|
+| $\mathbf{x}_i(t)$ | Latent tumor state vector |
+| $x_{i,\text{dec}}(t)$ | Log decreasing component |
+| $x_{i,\text{gro}}(t)$ | Log growing component |
+| $\alpha_i$ | Initial proportion (decreasing) |
+
+### 8.3 Rate Parameters
+
+| Symbol | Description |
+|--------|-------------|
+| $r_i$ | Total rate (baseline) |
+| $r_i(t)$ | Total rate (time-varying) |
+| $\phi_i$ | Fraction (decrease allocation) |
+| $d_i(t)$ | Instantaneous decrease rate |
+| $g_i(t)$ | Instantaneous growth rate |
+
+### 8.4 Observations
+
+| Symbol | Description |
+|--------|-------------|
+| $\text{SLD}_i(t)$ | Sum of lesion diameters |
+| $\sigma_{\text{meas}}$ | Measurement error SD |
+| $\text{LOD}$ | Limit of detection |
+
+### 8.5 Other Events
+
+| Symbol | Description |
+|--------|-------------|
+| $\lambda_i(t)$ | Hazard function |
+| $\lambda_{0,s}(t)$ | Baseline hazard (trial $s$) |
+| $S_i(t)$ | Survival function |
+| $T_i^{\text{other}}$ | Time to other event |
+
+### 8.6 Clinical Endpoints
+
+| Symbol | Description |
+|--------|-------------|
+| $\text{RECIST}_i(t)$ | RECIST category |
+| $T_i^{\text{target}}$ | Time to target progression |
+| $T_i^{\text{PFS}}$ | Progression-free survival |
+| $\text{ORR}_s$ | Objective response rate (trial $s$) |
+| $\text{mPFS}_s$ | Median PFS (trial $s$) |
+
+### 8.7 Hierarchical Parameters
+
+| Symbol | Description |
+|--------|-------------|
+| $\mu_{\cdot,\text{pop}}$ | Population-level intercept |
+| $\boldsymbol{\beta}_{\cdot,\text{pop}}$ | Population-level slopes |
+| $\eta_{\cdot,s}^{\text{trial}}$ | Trial random intercept |
+| $\eta_{\cdot,i}^{\text{patient}}$ | Patient random intercept |
+| $\boldsymbol{\gamma}_{\cdot,s}^{\text{trial}}$ | Trial random slopes |
+| $\boldsymbol{\gamma}_{\cdot,i}^{\text{patient}}$ | Patient random slopes |
+| $\tau_{\cdot}$ | Standard deviation (random effects) |
+
+---
+
+## 9. Key Model Properties
+
+### 9.1 Independence Assumptions
+
+**Target lesions vs. Other events:**
+
+- Modeled as **independent** processes
+- Both can occur for the same patient
+- Combined PFS = minimum of both
+
+**Within tumor dynamics:**
+
+- AR(1) deviations are mean-reverting (when enabled)
+- Same AR(1) process affects both decrease and growth rates proportionally
+- Measurement errors are independent across visits
+
+### 9.2 Time-Varying vs. Time-Invariant
+
+**Time-invariant (default):**
+
+- Patient rates $d_i$, $g_i$ are constant
+- Efficient $O(n)$ computation
+- Suitable for smooth trajectories
+
+**Time-varying (with AR(1)):**
+
+- Rates fluctuate around baseline
+- $O(n \times T)$ computation
+- Captures visit-to-visit variability beyond measurement error
+
+### 9.3 Interpretability
+
+**Log-space advantages:**
+
+- Positivity constraints naturally satisfied
+- Multiplicative effects become additive
+- Gaussian assumptions more plausible
+
+**Hierarchical structure:**
+
+- Borrows strength across patients/trials
+- Shrinkage toward population mean
+- Stable estimates for small sample sizes
+
+**Covariate effects:**
+
+- QR-space coefficients for numerical stability
+- Original-space interpretation via back-transformation
+- Hierarchical random slopes capture heterogeneity
+
+---
+
+## Document Maintenance
+
+**Version:** 1.1  
+**Last Updated:** January 2026  
+**Corresponding Stan Model:** `stan/ssls/sf-ssm-log-space.stan`
+
+**Update Protocol:**
+When the Stan model changes, this document should be updated to reflect:
+
+1. New parameters or modules
+2. Changed likelihood contributions
+3. Modified hierarchical structures
+4. Additional endpoints or features
+
+**Changelog:**
+
+- **v1.1 (January 2026):** Updated rate formulas to show log-space addition (not multiplication), added 4th tumor covariate (SLD velocity), fixed RECIST thresholds to include nadir tracking and 5mm rule, added missing feature flags for AR(1) patient hierarchies, documented sparse matrix state computation method.
+
+**Reference:** For implementation details and naming conventions, see `docs/ARCHITECTURE.md` and `.github/copilot-instructions.md`.

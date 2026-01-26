@@ -77,6 +77,12 @@ quarto/*.rmarkdown
 **/*.quarto_ipynb
 quarto/.posit/
 
-*_files/ 
+*_files/
 
 *.html
+*.hpp
+generate-aws-credential_file.py
+run-aws-credentials.sh
+.env
+node_modules
+aws/
