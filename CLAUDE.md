@@ -267,6 +267,7 @@ Analysis results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<ru
 - Don't pass array/vector sizes as arguments; use `size()` internally
 - Ignore linter warnings about code sections (modular `#include` architecture places code fragments across sections)
 - Use non-centered parameterization (NCP) for hierarchical parameters
+- Use `fatal_error()` instead of `reject()` for data validation errors in transformed data
 
 ### R
 - Use modern pipe operator `|>` (not `%>%`)
