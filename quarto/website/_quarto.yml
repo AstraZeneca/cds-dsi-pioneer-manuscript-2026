@@ -2,6 +2,9 @@ project:
   type: website
   output-dir: _site
   execute-dir: project
+  render:
+    - "*.qmd"
+    - "**/*.qmd"
 
 website:
   title: "PIONEER: SCLC-01 Forecasting"
@@ -37,6 +40,8 @@ website:
             href: analysis/clinical-endpoints.qmd
           - text: Survival Analysis
             href: analysis/survival-analysis.qmd
+          - text: DCO Comparisons
+            href: comparisons/dco-comparisons.qmd
           - text: "---"
           - text: Model Details
           - text: Parameter Inference
@@ -49,10 +54,6 @@ website:
             href: analysis/model-validation.qmd
           - text: Diagnostics
             href: analysis/diagnostics.qmd
-          - text: "---"
-          - text: Comparisons
-          - text: DCO Comparisons
-            href: comparisons/dco-comparisons.qmd
     right:
       - icon: github
         href: https://github.com/azu-oncology-rd/cds-dsi-pioneer-sclc-01-2025
@@ -81,6 +82,7 @@ website:
           contents:
             - analysis/clinical-endpoints.qmd
             - analysis/survival-analysis.qmd
+            - comparisons/dco-comparisons.qmd
         - section: "Model Details"
           contents:
             - analysis/parameter-inference.qmd
@@ -89,9 +91,6 @@ website:
           contents:
             - analysis/model-validation.qmd
             - analysis/diagnostics.qmd
-        - section: "Comparisons"
-          contents:
-            - comparisons/dco-comparisons.qmd
   page-navigation: true
   search:
     location: navbar

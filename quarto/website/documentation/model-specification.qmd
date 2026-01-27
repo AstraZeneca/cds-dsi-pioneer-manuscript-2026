@@ -723,6 +723,97 @@ For each posterior sample, the following quantities are computed:
 
 - Same metrics stratified by covariates (e.g., PD-L1 status, trial)
 
+### 6.4 Sample-Based vs. Posterior Predictive Estimates {#sec-sample-vs-spop}
+
+When making predictions for a trial, we generate two types of estimates that differ in how they handle observed data:
+
+#### Sample-Based Estimates
+
+**Sample-based estimates** (`sample_*`) condition on observed outcomes whenever available. These predictions:
+
+- Use observed target PFS when progression has been recorded
+- Use observed other event times when events have occurred
+- Only forecast for right-censored patients (no observed event yet)
+- Reflect what actually happened to the enrolled patients
+- Answer: *"What outcomes did we observe, and what do we predict for censored patients?"*
+
+**Implementation:**
+
+For patient $i$ with observed outcome at time $t_i^{\text{obs}}$:
+
+$$
+y_i^{\text{sample}} = \begin{cases}
+t_i^{\text{obs}} & \text{if event observed} \\
+\text{forecast from model} \mid t > t_i^{\text{obs}} & \text{if right-censored}
+\end{cases}
+$$
+
+#### Posterior Predictive Estimates
+
+**Posterior predictive estimates** (`spop_*`) ignore observed outcomes and always use model predictions. These predictions:
+
+- Always use model-predicted RECIST for target PFS (never observed progression times)
+- Always sample from the survival model for other events
+- Generate unconditional predictions as if no outcomes were observed
+- Still condition on the **same patient-level parameters** from the posterior (including patient random effects $\eta_i^{\text{patient}}$ and covariates $\mathbf{X}_i$)
+- Answer: *"What would the model predict for these patients if we hadn't seen their outcomes?"*
+
+**Implementation:**
+
+For patient $i$:
+
+$$
+y_i^{\text{spop}} \sim p(y \mid \boldsymbol{\beta}_{\text{pop}}, \eta_{s(i)}^{\text{trial}}, \eta_{i}^{\text{patient}}, \mathbf{X}_i)
+$$
+
+where all parameters are the **same** posterior draws used for sample-based estimates.
+
+::: {.callout-important}
+## Not True Superpopulation Estimates
+The `spop_*` quantities are **not** true superpopulation estimates that integrate over patient-level variation. A true superpopulation prediction would require drawing **new** patient random effects from $\mathcal{N}(0, \tau_{\text{patient}}^2)$ and potentially new covariate values from their population distributions.
+
+Instead, `spop_*` represents the **posterior predictive distribution** for the enrolled patients, using their learned parameters but ignoring their observed outcomes. This is useful for model validation (comparing predictions to observations) but does not provide population-level inferences that marginalize over patient heterogeneity.
+:::
+
+#### When to Use Each
+
+**Sample-based estimates:**
+
+- Validating model fit against observed trial results
+- Posterior predictive checks (comparing replicated data to observed)
+- Understanding what the model learned from observed events
+- Forecasting only for patients without observed events
+
+**Posterior predictive estimates:**
+
+- Model checking: comparing unconditional predictions to observations
+- Assessing calibration: does the model's prior belief match observed outcomes?
+- Quantifying what the model expected before seeing the data
+- Evaluating surprise: large differences indicate the model didn't anticipate the observed pattern
+
+#### Interpretation Example
+
+For a patient who progressed at week 24:
+
+- **Sample-based PFS**: 24 weeks (uses observed progression)
+- **Posterior predictive PFS**: Sampled from model (e.g., 32 weeks, ignoring the observed event)
+
+For trial-level Kaplan-Meier curves:
+
+- **Sample-based**: Mixes observed events with forecasts for censored patients (best estimate of trial outcomes)
+- **Posterior predictive**: Pure model prediction for all patients as if no outcomes were observed (useful for validation)
+
+::: {.callout-note}
+## When Estimates Differ
+Large differences between sample-based and posterior predictive estimates indicate:
+
+- **If spop is better**: The observed data show worse outcomes than the model predicted (unexpected events, earlier progressions)
+- **If sample is better**: The observed data show better outcomes than the model predicted (fewer events, later progressions)
+- **If similar**: The model's predictions align well with observed outcomes (good calibration)
+
+This comparison is a key model validation diagnostic, not a population vs. sample inference.
+:::
+
 ---
 
 ## 7. Model Features and Flexibility {#sec-features}
@@ -906,7 +997,7 @@ The model enforces several constraints for identifiability:
 
 ## Document Maintenance
 
-**Version:** 1.1
+**Version:** 1.3
 **Last Updated:** January 2026
 **Corresponding Stan Model:** `stan/ssls/sf-ssm-log-space.stan`
 
@@ -920,6 +1011,8 @@ When the Stan model changes, this document should be updated to reflect:
 
 **Changelog:**
 
+- **v1.3 (January 2026):** Corrected section 6.4 (renamed from "Sample-Based vs. Superpopulation Estimates" to "Sample-Based vs. Posterior Predictive Estimates"). The `spop_*` quantities are **not** true superpopulation estimates that integrate over patient-level variation; they are posterior predictive estimates that condition on the same patient parameters but ignore observed outcomes. Clarified that true superpopulation inference would require drawing new patient random effects and potentially new covariates.
+- **v1.2 (January 2026):** Added section 6.4 explaining the difference between sample-based and superpopulation estimates, including mathematical definitions, use cases, and interpretation guidance.
 - **v1.1 (January 2026):** Updated rate formulas to show log-space addition (not multiplication), added 4th tumor covariate (SLD velocity), fixed RECIST thresholds to include nadir tracking and 5mm rule, added missing feature flags for AR(1) patient hierarchies, documented sparse matrix state computation method.
 
 **Reference:** For implementation details and naming conventions, see [Architecture](architecture.qmd).

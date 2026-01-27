@@ -12,6 +12,11 @@ source("_setup.R")
 
 This page presents the key clinical endpoint results from the SCLC-01 analysis.
 
+::: {.callout-note}
+## Data Cutoff
+Results on this page are based on **DCO3 (January 2026)**. For comparisons across data cutoffs, see [DCO Comparisons](../comparisons/dco-comparisons.qmd).
+:::
+
 ::: {.callout-tip}
 ## Related Pages
 - See [Model Specification](../documentation/model-specification.qmd#sec-clinical-endpoints) for endpoint definitions
@@ -22,196 +27,145 @@ This page presents the key clinical endpoint results from the SCLC-01 analysis.
 
 Overall response rate represents the proportion of patients achieving complete response (CR) or partial response (PR), confirmed at two consecutive visits.
 
-```{r}
-#| label: fig-orr
-#| fig-cap: Overall response rate (ORR), split by PDL1 status and treatment line for the SCLC trial.
+::: {.panel-tabset}
 
-bind_rows(
-  tar_read(all_tumor_ssls_orr_rvar_ctdna_aug) |> rename(orr = sample_target_orr),
-  tar_read(all_tumor_ssls_cond_orr_rvar_ctdna_aug) |> rename(orr = cond_sample_target_orr)
-) |>
-  filter(fct_match(dco, "aug")) |>
-  plot_outcome_by_pdl1_and_trial(orr) +
-  labs(x = "Overall Response Rate (ORR)", y = "Density")
-```
+### Sample-Based
 
 ```{r}
-#| label: tbl-orr-summary
-#| tbl-cap: "Tabular summary of Overall Response Rate (ORR) by PDL1 status."
+#| label: fig-orr-sample
+#| fig-cap: Sample-based overall response rate (ORR), split by PDL1 status and treatment line for the SCLC trial.
 
-orr_data_tb <- bind_rows(
-  tar_read(all_tumor_ssls_orr_rvar_ctdna_aug) |> rename(orr = sample_target_orr),
-  tar_read(all_tumor_ssls_cond_orr_rvar_ctdna_aug) |> rename(orr = cond_sample_target_orr)
-) |>
-  filter(fct_match(dco, "aug")) |>
-  prepare_pdl1_and_trial_info() |>
-  filter(fct_match(variable, c("all", "pdl1_naive")), fct_match(trial, "sclc"), fct_match(fit_type, "posterior")) |>
-  point_interval(orr, .width = c(0.9))
-
-orr_data_tb |>
-  mutate(
-    variable = recode(variable, all = "All Patients", pdl1_naive = "First Line Patients"),
-  ) |>
-  select(variable, cond_group_name, orr, .lower, .upper) |>
-  group_by(variable) |>
-  gt(rowname_col = NULL) |>
-  tab_header(
-    title = "Overall Response Rate (ORR) Posterior Summary",
-  ) |>
-  cols_label(
-    orr = "Median ORR",
-    .lower = "5%",
-    .upper = "95%",
-    cond_group_name = ""
-  ) |>
-  cols_hide(columns = variable) |>
-  tab_style(
-    style = cell_text(align = "center"),
-    locations = cells_row_groups()
-  ) |>
-  tab_spanner(
-    label = "Percentiles",
-    columns = c(".lower", ".upper")
-  ) |>
-  fmt_percent(
-    columns = c(orr, .lower, .upper),
-    decimals = 2
-  )
+plot_orr_by_estimate_type("sample")
 ```
+
+### Superpopulation
+
+```{r}
+#| label: fig-orr-spop
+#| fig-cap: Superpopulation overall response rate (ORR), split by PDL1 status and treatment line for the SCLC trial.
+
+plot_orr_by_estimate_type("spop")
+```
+
+:::
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+```{r}
+#| label: tbl-orr-summary-sample
+#| tbl-cap: "Sample-based ORR summary by PDL1 status."
+
+create_orr_table("sample")
+```
+
+### Superpopulation
+
+```{r}
+#| label: tbl-orr-summary-spop
+#| tbl-cap: "Superpopulation ORR summary by PDL1 status."
+
+create_orr_table("spop")
+```
+
+:::
 
 ## Median Progression-Free Survival {#sec-median-pfs}
 
 Median PFS represents the time at which 50% of patients have experienced progression or death.
 
-```{r}
-#| label: fig-median-pfs
-#| fig-cap: Median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial.
+::: {.panel-tabset}
 
-bind_rows(
-  tar_read(all_tumor_ssls_trial_quant_pfs_ctdna_aug) |> rename(median_pfs = sample_quant_pfs),
-  tar_read(all_tumor_ssls_cond_quant_pfs_ctdna_aug) |> rename(median_pfs = cond_sample_quant_pfs)
-) |>
-  filter(quantile == 0.5, fct_match(dco, "aug")) |>
-  plot_outcome_by_pdl1_and_trial(median_pfs) +
-  scale_x_continuous("Median PFS [Months]", breaks = months_to_weeks(seq(0, 48, 2)), label = label_weeks_to_months) +
-  labs(y = "") +
-  coord_cartesian(xlim = c(0, months_to_weeks(26))) +
-  NULL
-```
+### Sample-Based
 
 ```{r}
-#| label: tbl-median-pfs-summary
-#| tbl-cap: "Tabular summary of median PFS by PDL1 status."
+#| label: fig-median-pfs-sample
+#| fig-cap: Sample-based median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial.
 
-median_pfs_data_tb <- bind_rows(
-  tar_read(all_tumor_ssls_trial_quant_pfs_ctdna_aug) |> rename(median_pfs = sample_quant_pfs),
-  tar_read(all_tumor_ssls_cond_quant_pfs_ctdna_aug) |> rename(median_pfs = cond_sample_quant_pfs)
-) |>
-  filter(quantile == 0.5, fct_match(dco, "aug")) |>
-  prepare_pdl1_and_trial_info() |>
-  filter(fct_match(variable, c("all", "pdl1_naive")), fct_match(trial, "sclc"), fct_match(fit_type, "posterior")) |>
-  point_interval(median_pfs, .width = c(0.9))
-
-median_pfs_table <- median_pfs_data_tb |>
-  mutate(
-    variable = recode(variable, all = "All Patients", pdl1_naive = "First Line Patients"),
-  ) |>
-  select(variable, cond_group_name, median_pfs, .lower, .upper) |>
-  group_by(variable) |>
-  gt(rowname_col = NULL) |>
-  tab_header(
-    title = "Median PFS Posterior Summary",
-  ) |>
-  cols_label(
-    median_pfs = "Median PFS (months)",
-    .lower = "5%",
-    .upper = "95%",
-    cond_group_name = ""
-  ) |>
-  cols_hide(columns = variable) |>
-  tab_style(
-    style = cell_text(align = "center"),
-    locations = cells_row_groups()
-  ) |>
-  tab_spanner(
-    label = "Percentiles",
-    columns = c(".lower", ".upper")
-  ) |>
-  fmt(
-    columns = c(median_pfs, .lower, .upper),
-    fns = \(x) sprintf("%.2f", weeks_to_months(x))
-  )
-
-median_pfs_table
+plot_median_pfs_by_estimate_type("sample")
 ```
+
+### Superpopulation
+
+```{r}
+#| label: fig-median-pfs-spop
+#| fig-cap: Superpopulation median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial.
+
+plot_median_pfs_by_estimate_type("spop")
+```
+
+:::
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+```{r}
+#| label: tbl-median-pfs-summary-sample
+#| tbl-cap: "Sample-based median PFS summary by PDL1 status."
+
+create_median_pfs_table("sample")
+```
+
+### Superpopulation
+
+```{r}
+#| label: tbl-median-pfs-summary-spop
+#| tbl-cap: "Superpopulation median PFS summary by PDL1 status."
+
+create_median_pfs_table("spop")
+```
+
+:::
 
 ## PFS at Fixed Timepoints (PFS-n) {#sec-pfs-n}
 
 PFS-n represents the probability of being progression-free at specific timepoints (e.g., 6, 9, 12, 18 months).
 
-```{r}
-#| label: fig-pfs-n
-#| fig-cap: Progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC trial.
+::: {.panel-tabset}
 
-bind_rows(
-  tar_read(all_tumor_ssls_forecast_target_pfs_n_rvar_ctdna_aug) |> rename(pfs_n = sample_pfs_n),
-  tar_read(all_tumor_ssls_cond_forecast_target_pfs_n_rvar_ctdna_aug) |> rename(pfs_n = cond_sample_pfs_n)
-) |>
-  filter(fct_match(dco, "aug")) |>
-  prepare_pdl1_and_trial_info() |>
-  filter(fct_match(trial, "sclc"), fct_match(variable, c("all", "pdl1_naive"))) |>
-  ggplot() +
-  stat_pointinterval(aes(ydist = pfs_n, x = timepoint, color = fit_type, group = interaction(fit_type, timepoint)),
-                     position = "dodge", .width = c(0.5, 0.8)) +
-  scale_x_continuous("Timepoint", breaks = tar_read(pfs_timepoints) |> pluck("timepoint")) +
-  scale_color_discrete("", type = AZ_palette, label = str_to_title) +
-  facet_grid(vars(variable), vars(cond_group_name), scales = "free", space = "free",
-             labeller = labeller(trial = str_to_upper, variable = c("all" = "All", "pdl1_naive" = "First Line"))) +
-  NULL
-```
+### Sample-Based
 
 ```{r}
-#| label: tbl-pfs-n-summary
-#| tbl-cap: "Tabular summary of PFSn by PDL1 status."
+#| label: fig-pfs-n-sample
+#| fig-cap: Sample-based progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC trial.
 
-pfs_n_data_tb <- bind_rows(
-  tar_read(all_tumor_ssls_forecast_target_pfs_n_rvar_ctdna_aug) |> rename(pfs_n = sample_pfs_n),
-  tar_read(all_tumor_ssls_cond_forecast_target_pfs_n_rvar_ctdna_aug) |> rename(pfs_n = cond_sample_pfs_n)
-) |>
-  filter(fct_match(dco, "aug")) |>
-  prepare_pdl1_and_trial_info() |>
-  filter(fct_match(variable, c("all", "pdl1_naive")), fct_match(trial, "sclc"), fct_match(fit_type, "posterior"), timepoint %in% c(6, 9, 12, 18)) |>
-  point_interval(pfs_n, .width = c(0.9))
-
-pfs_n_table <- pfs_n_data_tb |>
-  mutate(
-    variable = recode(variable, all = "All Patients", pdl1_naive = "First Line Patients"),
-    timepoint_label = paste(timepoint, "Months")
-  ) |>
-  select(variable, timepoint_label, cond_group_name, pfs_n, .lower, .upper) |>
-  group_by(timepoint_label, variable) |>
-  gt() |>
-  tab_header(
-    title = "PFSn Posterior Summary",
-  ) |>
-  cols_label(
-    pfs_n = "Median PFSn",
-    .lower = "5%",
-    .upper = "95%",
-    cond_group_name = ""
-  ) |>
-  tab_style(
-    style = cell_text(align = "center"),
-    locations = cells_row_groups()
-  ) |>
-  tab_spanner(
-    label = "Percentiles",
-    columns = c(".lower", ".upper")
-  ) |>
-  fmt_percent(columns = c("pfs_n", ".lower", ".upper"), decimals = 2)
-
-pfs_n_table
+plot_pfs_n_by_estimate_type("sample")
 ```
+
+### Superpopulation
+
+```{r}
+#| label: fig-pfs-n-spop
+#| fig-cap: Superpopulation progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC trial.
+
+plot_pfs_n_by_estimate_type("spop")
+```
+
+:::
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+```{r}
+#| label: tbl-pfs-n-summary-sample
+#| tbl-cap: "Sample-based PFS-n summary by PDL1 status."
+
+create_pfs_n_table("sample")
+```
+
+### Superpopulation
+
+```{r}
+#| label: tbl-pfs-n-summary-spop
+#| tbl-cap: "Superpopulation PFS-n summary by PDL1 status."
+
+create_pfs_n_table("spop")
+```
+
+:::
 
 ::: {.related-pages}
 ## Related Pages

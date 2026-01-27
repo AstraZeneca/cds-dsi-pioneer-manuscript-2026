@@ -15,124 +15,66 @@ This page compares clinical endpoint estimates across different data cutoff (DCO
 ::: {.callout-tip}
 ## Related Pages
 - See [Clinical Endpoints](../analysis/clinical-endpoints.qmd) for endpoint definitions
-- See [Survival Analysis](../analysis/survival-analysis.qmd#sec-cutoff-km) for cutoff KM curves
+- See [Survival Analysis](../analysis/survival-analysis.qmd) for latest KM curves
 :::
 
 ## Overall Response Rate by DCO {#sec-orr-dco}
 
 Comparing ORR estimates across data cutoffs shows how response rate predictions stabilize with additional follow-up.
 
-```{r}
-#| label: fig-orr-dco
-#| fig-cap: Overall response rate (ORR), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
+::: {.panel-tabset}
 
-bind_rows(
-  aug = bind_rows(
-    tar_read(all_tumor_ssls_orr_rvar_ctdna_aug) |> rename(orr = sample_target_orr),
-    tar_read(all_tumor_ssls_cond_orr_rvar_ctdna_aug) |> rename(orr = cond_sample_target_orr),
-  ),
-  apr = bind_rows(
-    tar_read(all_tumor_ssls_orr_rvar_ctdna_apr) |> rename(orr = sample_target_orr),
-    tar_read(all_tumor_ssls_cond_orr_rvar_ctdna_apr) |> rename(orr = cond_sample_target_orr),
-  ),
-  .id = "dco"
-) |>
-  prepare_pdl1_and_trial_info() |>
-  filter(fct_match(variable, c("all", "pdl1_naive")), fct_match(trial, "sclc")) |>
-  ggplot() +
-  stat_pointinterval(aes(xdist = orr, y = cond_group_name, color = dco, alpha = fit_type), position = "dodge", .width = c(0.9)) +
-  scale_color_discrete("DCO", type = AZ_palette, label = str_to_title) +
-  scale_alpha_manual("", values = c(prior = 0.125, posterior = 1), label = str_to_title) +
-  facet_grid(vars(variable), vars(trial), scales = "free", space = "free",
-             labeller = labeller(trial = str_to_upper, variable = c("all" = "All", "pdl1_naive" = "First Line"))) +
-  labs(x = "Overall Response Rate (ORR)", y = "Density") +
-  NULL
+### Sample-Based
+
+```{r}
+#| label: fig-orr-dco-sample
+#| fig-cap: Sample-based overall response rate (ORR), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
+#| fig-height: 5
+
+plot_orr_by_dco("sample")
 ```
+
+### Superpopulation
+
+```{r}
+#| label: fig-orr-dco-spop
+#| fig-cap: Superpopulation overall response rate (ORR), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
+#| fig-height: 5
+
+plot_orr_by_dco("spop")
+```
+
+:::
 
 ## Median PFS by DCO {#sec-median-pfs-dco}
 
 Tracking median PFS estimates across data cutoffs, comparing model forecasts with observed Kaplan-Meier estimates.
 
+::: {.panel-tabset}
+
+### Sample-Based
+
 ```{r}
-#| label: fig-median-pfs-dco
-#| fig-cap: Median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
+#| label: fig-median-pfs-dco-sample
+#| fig-cap: Sample-based median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
 #| fig-width: 6
 #| fig-height: 6
 
-obs_km <- bind_rows(
-  aug = bind_rows(
-    all = tar_read(km_trial_pfs_ctdna_aug),
-    pdl1_naive = tar_read(km_trial_pfs_pdl1_naive_ctdna_aug),
-    pdl1 = tar_read(km_trial_pfs_pdl1_ctdna_aug),
-    naive = tar_read(km_trial_pfs_naive_ctdna_aug),
-    .id = "src"
-  ),
-  apr = bind_rows(
-    all = tar_read(km_trial_pfs_ctdna_apr),
-    pdl1_naive = tar_read(km_trial_pfs_pdl1_naive_ctdna_apr),
-    pdl1 = tar_read(km_trial_pfs_pdl1_ctdna_apr),
-    naive = tar_read(km_trial_pfs_naive_ctdna_apr),
-    .id = "src"
-  ),
-  .id = "dco"
-  ) |>
-  filter(fct_match(btype, "ub"), !fct_match(src, "naive") | first_line) |>
-  unnest(quantiles) |>
-  filter(quantile == 0.5) |>
-  rename(median_pfs = pfs, median_pfs_lower = pfs_lower, median_pfs_upper = pfs_upper) |>
-  mutate(
-    variable = case_when(
-      is.na(first_line) & fct_match(src, "pdl1_naive") ~ "pdl1_naive",
-      fct_match(src, "naive") & first_line ~ "pdl1_naive",
-      TRUE ~ "all",
-    ),
-    cond_group_name = case_when(
-      is.na(pdl1_hi) ~ "All",
-      pdl1_hi ~ "PDL1 High",
-      !pdl1_hi ~ "PDL1 Low"
-    )
-  ) |>
-  select(trial, dco, variable, cond_group_name, median_pfs, median_pfs_lower, median_pfs_upper) |>
-  distinct() |>
-  mutate(cond_group_name = factor(cond_group_name))
-
-bind_rows(
-  aug = bind_rows(
-    tar_read(all_tumor_ssls_trial_quant_pfs_ctdna_aug) |> rename(median_pfs = sample_quant_pfs),
-    tar_read(all_tumor_ssls_cond_quant_pfs_ctdna_aug) |> rename(median_pfs = cond_sample_quant_pfs)
-  ),
-  apr = bind_rows(
-    tar_read(all_tumor_ssls_trial_quant_pfs_ctdna_apr) |> rename(median_pfs = sample_quant_pfs),
-    tar_read(all_tumor_ssls_cond_quant_pfs_ctdna_apr) |> rename(median_pfs = cond_sample_quant_pfs)
-  ),
-  .id = "dco"
-) |>
-  filter(quantile == 0.5) |>
-  prepare_pdl1_and_trial_info() |>
-  filter(fct_match(variable, c("all", "pdl1_naive")), fct_match(trial, "sclc"), fct_match(fit_type, "posterior")) |>
-  filter(fct_match(variable, "all") | !fct_match(cond_group_name, "PDL1 High")) |>
-  mutate(cond_group_name = factor(cond_group_name)) |>
-  ggplot(aes(y = cond_group_name, color = dco)) +
-  stat_pointinterval(aes(xdist = median_pfs, color = dco, shape = "model"), point_size = 3, position = position_dodge(width = 0.5), .width = c(0.9)) +
-  geom_errorbar(aes(x = median_pfs, xmin = median_pfs_lower, xmax = median_pfs_upper),
-    width = 0.25, position = position_dodge(width = 1),
-    data = \(d) semi_join(obs_km, d, by = "trial")) +
-  geom_segment(aes(x = median_pfs_lower, xend = 100, yend = dodged_cond_group_name),
-               position = position_dodge(width = 1),
-               arrow = arrow(length = unit(0.1, "inches")),
-               data = \(d) semi_join(obs_km, d, by = "trial") |>
-                 filter(is.na(median_pfs_upper)) |>
-                 mutate(dodged_cond_group_name = as.numeric(cond_group_name) + if_else(fct_match(dco, "aug"), 0.25, - 0.25))) +
-  geom_point(aes(x = median_pfs, shape = "data"), fill = "white", size = 2, position = position_dodge(width = 1), data = \(d) semi_join(obs_km, d, by = "trial")) +
-  scale_color_discrete("DCO", type = AZ_palette, label = str_to_title) +
-  scale_x_continuous("Median PFS [Months]", breaks = months_to_weeks(seq(0, 60, 4)), label = label_weeks_to_months) +
-  scale_y_discrete("", drop = FALSE) +
-  scale_shape_manual("Method", labels = c(model = "Model Forecast", data = "Observed KM"), values = c(model = 18, data = 21)) +
-  facet_grid(vars(variable), vars(trial), scales = "free", space = "free",
-             labeller = labeller(trial = str_to_upper, variable = c("all" = "All", "pdl1_naive" = "First Line"))) +
-  theme(legend.position = "inside", legend.position.inside = c(0.7, 0.9), legend.direction = "horizontal") +
-  NULL
+plot_median_pfs_by_dco("sample")
 ```
+
+### Superpopulation
+
+```{r}
+#| label: fig-median-pfs-dco-spop
+#| fig-cap: Superpopulation median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
+#| fig-width: 6
+#| fig-height: 6
+
+plot_median_pfs_by_dco("spop")
+```
+
+:::
 
 ::: {.callout-note}
 ## Interpreting the Plot
@@ -145,34 +87,195 @@ bind_rows(
 
 Comparing PFS at fixed timepoints across data cutoffs.
 
+::: {.panel-tabset}
+
+### Sample-Based
+
 ```{r}
-#| label: fig-pfs-n-dco
-#| fig-cap: Progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
+#| label: fig-pfs-n-dco-sample
+#| fig-cap: Sample-based progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
 #| fig-width: 10
 
-bind_rows(
-  aug = bind_rows(
-    tar_read(all_tumor_ssls_forecast_target_pfs_n_rvar_ctdna_aug) |> rename(pfs_n = sample_target_pfs_n),
-    tar_read(all_tumor_ssls_cond_forecast_target_pfs_n_rvar_ctdna_aug) |> rename(pfs_n = cond_sample_target_pfs_n)
-  ),
-  apr = bind_rows(
-    tar_read(all_tumor_ssls_forecast_target_pfs_n_rvar_ctdna_apr) |> rename(pfs_n = sample_target_pfs_n),
-    tar_read(all_tumor_ssls_cond_forecast_target_pfs_n_rvar_ctdna_apr) |> rename(pfs_n = cond_sample_target_pfs_n)
-  ),
-  .id = "dco"
-) |>
-  prepare_pdl1_and_trial_info() |>
-  filter(fct_match(trial, "sclc"), fct_match(variable, c("all", "pdl1_naive"))) |>
-  ggplot() +
-  stat_pointinterval(aes(ydist = pfs_n, x = timepoint, group = interaction(fit_type, timepoint, dco), color = dco, alpha = fit_type),
-                     position = "dodge", .width = c(0.5, 0.8)) +
-  scale_x_continuous("Timepoint", breaks = tar_read(pfs_timepoints) |> pluck("timepoint")) +
-  scale_color_discrete("DCO", type = AZ_palette, label = str_to_title) +
-  scale_alpha_manual("", values = c(prior = 0.125, posterior = 1), label = str_to_title) +
-  facet_grid(vars(variable), vars(cond_group_name), scales = "free", space = "free",
-             labeller = labeller(trial = str_to_upper, variable = c("all" = "All", "pdl1_naive" = "First Line"))) +
-  NULL
+plot_pfs_n_by_dco("sample")
 ```
+
+### Superpopulation
+
+```{r}
+#| label: fig-pfs-n-dco-spop
+#| fig-cap: Superpopulation progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
+#| fig-width: 10
+
+plot_pfs_n_by_dco("spop")
+```
+
+:::
+
+## Kaplan-Meier Curves by DCO {#sec-km-dco}
+
+Comparing Kaplan-Meier survival curves across data cutoffs.
+
+### Overall SCLC
+
+::: {.panel-tabset}
+
+#### Sample-Based
+
+```{r}
+#| label: fig-km-dco-sample
+#| fig-cap: Sample-based Kaplan-Meier forecasts for SCLC trial across data cutoffs.
+#| column: body-outset
+#| fig-width: 7
+#| fig-height: 3
+
+plot_km(
+  bind_rows(
+    apr25 = tar_read(all_tumor_ssls_km_rvar_ctdna_apr25) |> filter(fct_match(trial, "sclc")),
+    aug25 = tar_read(all_tumor_ssls_km_rvar_ctdna_aug25) |> filter(fct_match(trial, "sclc")),
+    jan26 = tar_read(all_tumor_ssls_km_rvar_ctdna_jan26) |> filter(fct_match(trial, "sclc")),
+    .id = "dco"
+  ),
+  km_est_var = sample_km_est,
+  obs_km_data = bind_rows(
+    apr25 = tar_read(km_trial_pfs_ctdna_apr25) |> filter(fct_match(btype, "ub"), fct_match(trial, "sclc")),
+    aug25 = tar_read(km_trial_pfs_ctdna_aug25) |> filter(fct_match(btype, "ub"), fct_match(trial, "sclc")),
+    jan26 = tar_read(km_trial_pfs_ctdna_jan26) |> filter(fct_match(btype, "ub"), fct_match(trial, "sclc")),
+    .id = "dco"
+  ) |>
+    select(!quantiles) |>
+    unnest(km_data),
+  analysis_data = bind_rows(
+    apr25 = tar_read(all_analysis_data_ctdna_apr25) |> filter(fct_match(trial, "sclc")),
+    aug25 = tar_read(all_analysis_data_ctdna_aug25) |> filter(fct_match(trial, "sclc")),
+    jan26 = tar_read(all_analysis_data_ctdna_jan26) |> filter(fct_match(trial, "sclc")),
+    .id = "dco"
+  ),
+  facet_col = dco
+)
+```
+
+#### Superpopulation
+
+```{r}
+#| label: fig-km-dco-spop
+#| fig-cap: Superpopulation Kaplan-Meier forecasts for SCLC trial across data cutoffs.
+#| column: body-outset
+#| fig-width: 7
+#| fig-height: 3
+
+plot_km(
+  bind_rows(
+    apr25 = tar_read(all_tumor_ssls_km_rvar_ctdna_apr25) |> filter(fct_match(trial, "sclc")),
+    aug25 = tar_read(all_tumor_ssls_km_rvar_ctdna_aug25) |> filter(fct_match(trial, "sclc")),
+    jan26 = tar_read(all_tumor_ssls_km_rvar_ctdna_jan26) |> filter(fct_match(trial, "sclc")),
+    .id = "dco"
+  ),
+  km_est_var = spop_km_est,
+  obs_km_data = bind_rows(
+    apr25 = tar_read(km_trial_pfs_ctdna_apr25) |> filter(fct_match(btype, "ub"), fct_match(trial, "sclc")),
+    aug25 = tar_read(km_trial_pfs_ctdna_aug25) |> filter(fct_match(btype, "ub"), fct_match(trial, "sclc")),
+    jan26 = tar_read(km_trial_pfs_ctdna_jan26) |> filter(fct_match(btype, "ub"), fct_match(trial, "sclc")),
+    .id = "dco"
+  ) |>
+    select(!quantiles) |>
+    unnest(km_data),
+  analysis_data = bind_rows(
+    apr25 = tar_read(all_analysis_data_ctdna_apr25) |> filter(fct_match(trial, "sclc")),
+    aug25 = tar_read(all_analysis_data_ctdna_aug25) |> filter(fct_match(trial, "sclc")),
+    jan26 = tar_read(all_analysis_data_ctdna_jan26) |> filter(fct_match(trial, "sclc")),
+    .id = "dco"
+  ),
+  facet_col = dco
+)
+```
+
+:::
+
+### PDL1-Stratified
+
+::: {.panel-tabset}
+
+#### Sample-Based
+
+```{r}
+#| label: fig-km-dco-sample-pdl1
+#| fig-cap: Sample-based PDL1-stratified Kaplan-Meier forecasts for SCLC across data cutoffs.
+#| column: body-outset
+#| fig-width: 7
+#| fig-height: 5
+
+plot_pdl1_km(
+  cond_km_data = bind_rows(
+    apr25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_apr25),
+    aug25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_aug25),
+    jan26 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26),
+    .id = "dco"
+  ),
+  km_est_var = cond_sample_km_est,
+  obs_km_data = bind_rows(
+    pdl1 = bind_rows(
+      apr25 = tar_read(km_trial_pfs_pdl1_ctdna_apr25),
+      aug25 = tar_read(km_trial_pfs_pdl1_ctdna_aug25),
+      jan26 = tar_read(km_trial_pfs_pdl1_ctdna_jan26),
+      .id = "dco"
+    ) |>
+      filter(fct_match(trial, "sclc")) |>
+      select(!quantiles) |>
+      unnest(km_data),
+    pdl1_naive = bind_rows(
+      apr25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_apr25),
+      aug25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_aug25),
+      jan26 = tar_read(km_trial_pfs_pdl1_naive_ctdna_jan26),
+      .id = "dco"
+    ) |>
+      select(!quantiles) |>
+      unnest(km_data),
+    .id = "variable"
+  )
+)
+```
+
+#### Superpopulation
+
+```{r}
+#| label: fig-km-dco-spop-pdl1
+#| fig-cap: Superpopulation PDL1-stratified Kaplan-Meier forecasts for SCLC across data cutoffs.
+#| column: body-outset
+#| fig-width: 7
+#| fig-height: 5
+
+plot_pdl1_km(
+  cond_km_data = bind_rows(
+    apr25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_apr25),
+    aug25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_aug25),
+    jan26 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26),
+    .id = "dco"
+  ),
+  km_est_var = cond_spop_km_est,
+  obs_km_data = bind_rows(
+    pdl1 = bind_rows(
+      apr25 = tar_read(km_trial_pfs_pdl1_ctdna_apr25),
+      aug25 = tar_read(km_trial_pfs_pdl1_ctdna_aug25),
+      jan26 = tar_read(km_trial_pfs_pdl1_ctdna_jan26),
+      .id = "dco"
+    ) |>
+      filter(fct_match(trial, "sclc")) |>
+      select(!quantiles) |>
+      unnest(km_data),
+    pdl1_naive = bind_rows(
+      apr25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_apr25),
+      aug25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_aug25),
+      jan26 = tar_read(km_trial_pfs_pdl1_naive_ctdna_jan26),
+      .id = "dco"
+    ) |>
+      select(!quantiles) |>
+      unnest(km_data),
+    .id = "variable"
+  )
+)
+```
+
+:::
 
 ::: {.related-pages}
 ## Related Pages
