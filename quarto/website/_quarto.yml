@@ -19,6 +19,8 @@ website:
         menu:
           - text: Model Specification
             href: documentation/model-specification.qmd
+          - text: Analysis Subgroups
+            href: documentation/analysis-subgroups.qmd
           - text: Onboarding Tutorial
             href: documentation/onboarding-tutorial.qmd
           - text: "---"
@@ -65,6 +67,7 @@ website:
           contents:
             - documentation/onboarding-tutorial.qmd
             - documentation/model-specification.qmd
+            - documentation/analysis-subgroups.qmd
         - section: "Technical Reference"
           contents:
             - documentation/targets-pipeline.qmd
