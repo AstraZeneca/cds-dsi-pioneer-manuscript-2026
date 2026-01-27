@@ -72,7 +72,7 @@ _targets/
 .vscode/coder.json
 .vscode/Machine/
 .vscode/settings.json
-quarto/*.rmarkdown
+quarto/**/*.rmarkdown
 
 **/*.quarto_ipynb
 quarto/.posit/
