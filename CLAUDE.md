@@ -38,6 +38,170 @@ Rscript -e 'targets::tar_make()'
 Rscript -e 'testthat::test_dir("tests/testthat")'
 ```
 
+## Quarto Website
+
+### Location and Purpose
+The SCLC-01 analysis results are published as a Quarto website located in `quarto/website/`. The site is titled **"PIONEER: SCLC-01 Forecasting"** and includes:
+- Documentation (onboarding tutorial, model specification)
+- Analysis results (descriptive stats, model validation, outcome predictions)
+- Interactive visualizations using R plots
+
+### Building the Website Locally
+
+**IMPORTANT**: Always render from the project root directory (`/mnt/code`), not from inside `quarto/website`. This is because the `_quarto.yml` sets `execute-dir: project`, which means R code needs access to the project-level renv and data.
+
+```bash
+# From project root
+quarto render quarto/website
+```
+
+The rendered site is output to `quarto/website/_site/`. To preview:
+```bash
+quarto preview quarto/website
+```
+
+### Publishing to RStudio Connect
+
+**Server URL**: `https://rstudio-connect.seml.scp.astrazeneca.net/connect/`
+**Account**: `kmjq089`
+
+#### Step-by-Step Publishing Instructions
+
+**IMPORTANT**: Always render the site locally first to ensure everything works. Run from the project root:
+```bash
+# From /mnt/code (project root)
+quarto render quarto/website
+```
+
+#### Method 1: Using R rsconnect (Recommended)
+
+This is the most reliable method. Follow these steps:
+
+**Step 1: Get your API key**
+1. Go to `https://rstudio-connect.seml.scp.astrazeneca.net/connect/` in your browser
+2. Sign in with SSO
+3. Click your name (top right) → "API Keys"
+4. Click "New API Key" and copy it
+
+**Step 2: Configure credentials (one-time setup)**
+```r
+library(rsconnect)
+
+# Add the server
+rsconnect::addConnectServer(
+  url = "https://rstudio-connect.seml.scp.astrazeneca.net",
+  name = "az-connect"
+)
+
+# Add your API key (paste your actual key here)
+rsconnect::connectApiUser(
+  account = "kmjq089",
+  server = "az-connect",
+  apiKey = "YOUR_API_KEY_HERE"
+)
+```
+
+This stores credentials in `~/.rsconnect/` (outside the git repo).
+
+**Step 3: Deploy the website**
+
+**IMPORTANT**: Always run from the project root directory (where renv is configured), not from inside the website directory.
+
+```r
+# From /mnt/code directory
+library(rsconnect)
+rsconnect::deploySite(
+  siteDir = "quarto/website",
+  server = "az-connect",
+  account = "kmjq089"
+)
+```
+
+**Step 4: Find your published site**
+After deployment completes, look for the URL in the output or go to:
+`https://rstudio-connect.seml.scp.astrazeneca.net/connect/#/content/listing?q=owner:kmjq089`
+
+#### Method 2: Using Quarto CLI
+
+This requires browser authentication (SSO) and may not work in remote CLI environments.
+
+```bash
+# From /mnt/code (project root)
+quarto publish connect quarto/website --server https://rstudio-connect.seml.scp.astrazeneca.net/connect/
+```
+
+This will open your browser for SSO authentication.
+
+#### Updating an Existing Deployment
+
+Once you've published the first time, subsequent deployments are simple:
+
+```r
+# From /mnt/code directory
+library(rsconnect)
+rsconnect::deploySite(
+  siteDir = "quarto/website",
+  server = "az-connect",
+  account = "kmjq089"
+)
+```
+
+Or from bash:
+```bash
+# From /mnt/code (project root)
+quarto publish connect quarto/website
+```
+
+#### Troubleshooting
+
+- **API key expired**: Generate a new one and re-run `rsconnect::connectApiUser()`
+- **Publishing fails**: Make sure `quarto render quarto/website` (from project root) completes successfully first
+- **Missing plots**: Delete `_freeze/` cache and re-render from project root
+- **IMPORTANT**: Always run quarto commands from `/mnt/code` (project root), not from inside `quarto/website/`
+- **Git tracking warnings**: Confirm `rsconnect/` and `_publish.yml` are in `.gitignore`
+- **Can't find account/server**: Make sure you're using the correct server name (`az-connect`). Run `rsconnect::accounts()` to check configured accounts.
+- **Package not found errors**: Always run deployment from `/mnt/code` (project root) where renv is configured
+
+**SECURITY**: API keys should NEVER be committed to git. The `rsconnect/` directory and `_publish.yml` are already in `.gitignore`.
+
+### Key Configuration Files
+- `_quarto.yml` - Site configuration, navigation, theme settings
+- `az-theme.scss` - AstraZeneca color scheme (navy, gold, turquoise, etc.)
+- `styles.css` - Custom CSS for hero section and layout
+- `_freeze/` - Cache directory for executed R code (speeds up rebuilds)
+- `images/` - PIONEER helmet logo and favicon
+
+### Theme and Styling
+The site uses **AZ corporate colors** defined in `az-theme.scss`:
+- Primary (navy): `#003865`
+- Gold: `#F0AB00`
+- Turquoise: `#68D2DF`
+- Plum: `#830051`
+- Pink: `#D0006F`
+- Platinum: `#9DB0AC`
+
+Home page features a 2/3 text + 1/3 image layout with the PIONEER helmet logo. Favicon is a white "P" on navy circle background.
+
+### Site Structure
+```
+├── index.qmd                           # Home page
+├── documentation/
+│   ├── onboarding-tutorial.qmd         # Getting started guide
+│   └── model-specification.qmd         # Full model specification
+└── analysis/
+    ├── descriptive-statistics.qmd      # Data exploration
+    ├── model-validation.qmd            # Posterior checks, LFO results
+    └── outcome-predictions.qmd         # PFS predictions
+```
+
+### Rebuilding After Changes
+If you update plot functions in `r/plot_functions.R`, you may need to clear the freeze cache:
+```bash
+rm -rf quarto/website/_freeze/analysis/
+```
+
+Then re-render the affected pages.
+
 ## Architecture
 
 ### Stan Module System

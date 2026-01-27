@@ -1,0 +1,481 @@
+---
+title: "Leave-Future-Out Cross-Validation"
+subtitle: "Temporal cross-validation for longitudinal survival data"
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+source("_setup.R")
+```
+
+**Created:** January 2026
+**Status:** Production-ready
+**Module:** `stan/ssls/sf-ssls-lfo.stan`
+
+::: {.callout-tip}
+## Related Pages
+- See [Model Validation](../analysis/model-validation.qmd) for LFO results and ELPD comparisons
+- See [Model Specification](model-specification.qmd) for the underlying tumor dynamics model
+- See [Architecture](architecture.qmd) for code organization
+:::
+
+---
+
+## Overview {#sec-lfo-overview}
+
+### What is Leave-Future-Out Cross-Validation?
+
+Leave-future-out (LFO) cross-validation is a method for evaluating predictive performance of time-series and longitudinal models. Unlike traditional cross-validation methods, LFO respects the **temporal structure** of the data by only using past observations to predict future ones.
+
+**Key Principle:** At each time point $t$, the model is trained on data up to $t$ and evaluated on its ability to predict observations after $t$.
+
+### Why LFO for Oncology Trials?
+
+In clinical trials with longitudinal tumor measurements:
+
+1. **Staggered patient enrollment**: Patients enter the study at different calendar times
+2. **Variable follow-up**: Patients have different observation periods
+3. **Temporal dependence**: Future tumor measurements depend on past dynamics
+4. **Clinical relevance**: We want to know how well we can predict future outcomes given current data
+
+LFO provides a realistic assessment of predictive accuracy because it mimics the actual clinical decision-making scenario: using available data at a data cutoff to forecast future outcomes.
+
+---
+
+## LFO vs LOO: Key Differences {#sec-lfo-vs-loo}
+
+### Leave-One-Out (LOO) Cross-Validation
+
+**Approach:** Hold out one observation (or patient) at a time, train on all remaining data, and evaluate on the held-out observation.
+
+**Problem for longitudinal data:**
+
+- LOO ignores temporal structure
+- A model trained on "future" observations can predict "past" ones
+- This creates **information leakage** that inflates predictive accuracy estimates
+- Does not reflect real-world forecasting scenarios
+
+### Leave-Future-Out (LFO) Cross-Validation
+
+**Approach:** Define a calendar time cutoff, train only on data before the cutoff, and evaluate on data after the cutoff.
+
+**Benefits:**
+
+- **No information leakage**: Model never sees future data during training
+- **Realistic evaluation**: Mimics actual clinical data cutoff scenarios
+- **Temporal integrity**: Respects causal structure of longitudinal data
+- **Clinically relevant**: Answers "how well can we predict future outcomes?"
+
+### Visual Comparison
+
+```{r}
+#| label: fig-lfo-vs-loo-comparison
+#| fig-cap: Comparison between LFO and LOO cross-validation approaches for longitudinal clinical trial data.
+#| fig-width: 12
+#| fig-height: 5
+
+source(here::here("r/plot_lfo_diagram.R"))
+```
+
+::: {.callout-note}
+## Key Observations from the Diagram
+
+**LFO (Left Panel):**
+
+- Multiple time-based cutoffs divide the study into training (navy) and test (gold) periods
+- All patients contribute to both training and testing at different cutoffs
+- Test window starts at cutoff and extends forward in time
+
+**LOO (Right Panel):**
+
+- Patient-based folds: each patient (pink) held out once
+- Training data includes observations from all time points of non-held-out patients
+- Can use "future" patient data to predict "past" patient outcomes
+:::
+
+---
+
+## Mathematical Framework {#sec-lfo-math}
+
+### Expected Log Predictive Density (ELPD)
+
+The primary metric for comparing models using LFO is the **expected log predictive density (ELPD)**:
+
+$$
+\text{ELPD}_{\text{LFO}} = \sum_{c=1}^{C} \sum_{i \in \mathcal{T}_c} \sum_{t > t_c} \log p(y_{i,t} \mid y_{1:t_c}, \theta)
+$$
+
+where:
+
+- $C$: number of cutoffs
+- $\mathcal{T}_c$: set of patients with observations after cutoff $c$
+- $t_c$: time index of cutoff $c$
+- $y_{i,t}$: observation for patient $i$ at time $t$
+- $y_{1:t_c}$: all observations up to cutoff time $t_c$
+- $\theta$: model parameters
+
+### Posterior Predictive Distribution
+
+For each cutoff, we compute the posterior predictive distribution:
+
+$$
+p(y_{i,t} \mid y_{1:t_c}) = \int p(y_{i,t} \mid \theta) \, p(\theta \mid y_{1:t_c}) \, d\theta
+$$
+
+This integral is approximated using MCMC samples from the posterior $p(\theta \mid y_{1:t_c})$.
+
+### Log-Likelihood Components
+
+In our joint tumor-survival model, the log-likelihood decomposes into:
+
+$$
+\log p(y \mid \theta) = \underbrace{\log p(\text{SLD} \mid \theta)}_{\text{Tumor component}} + \underbrace{\log p(\text{PFS}_{\text{other}} \mid \theta)}_{\text{Other events component}}
+$$
+
+This allows us to separately evaluate:
+
+1. **Tumor model accuracy**: How well do we predict future SLD measurements?
+2. **Other events accuracy**: How well do we predict non-target progression and death?
+3. **Joint accuracy**: Combined predictive performance
+
+### Comparing Models via ELPD Difference
+
+To compare two models, we compute:
+
+$$
+\Delta \text{ELPD} = \text{ELPD}_{\text{model A}} - \text{ELPD}_{\text{model B}}
+$$
+
+**Interpretation:**
+
+- $\Delta \text{ELPD} > 0$: Model A has better predictive performance
+- $\Delta \text{ELPD} < 0$: Model B has better predictive performance
+- Standard error quantifies uncertainty in the comparison
+
+::: {.callout-note}
+## ELPD Scale
+
+ELPD values are on the log probability scale. A difference of 1 ELPD unit corresponds to a factor of $e \approx 2.7$ in probability ratio.
+:::
+
+---
+
+## Implementation Details {#sec-lfo-implementation}
+
+### Cutoff Definition
+
+LFO cutoffs are defined by **calendar time**, not visit number:
+
+```stan
+// From _sf-ssls-lfo-data.stan
+int cutoff_calendar_day;  // The calendar day defining the cutoff
+```
+
+For each patient $i$, we determine:
+
+1. **Last observed visit before cutoff**: `cutoff_last_visit_idx[i]`
+2. **Test visits after cutoff**: All visits with `visit_calendar_day > cutoff_calendar_day`
+3. **Whether patient was enrolled**: `cutoff_observed_mask[i] == 1` if patient had visits before cutoff
+
+### Training Phase
+
+The model is fit using only pre-cutoff data:
+
+```stan
+// Tumor likelihood (only up to cutoff)
+for (i in 1:n_patients) {
+  if (cutoff_last_visit_idx[i] > 0) {
+    int cutoff_idx = cutoff_last_visit_idx[i];
+    normalized_sld[visit_start:cutoff_idx] ~
+      sf_log_space_obs(states[visit_start:cutoff_idx], measure_sd, ...);
+  }
+}
+
+// Other events likelihood (cutoff-aware)
+patient_response_lp[, 1] = calc_pch_loglik(
+  cutoff_ic_other_events_pfs,      // Censored at cutoff
+  cutoff_other_events_right_censored,
+  ...,
+  cutoff_last_visit_week           // Bounded by cutoff time
+);
+```
+
+### Out-of-Sample Prediction
+
+For each patient with post-cutoff observations, we generate predictions:
+
+1. **State forecasting**: Propagate latent tumor states forward from last observed state
+
+```stan
+// Compute forecast states using constant rates
+(full_forecast_expected, full_forecast) = sf_log_space_trajectory_ncp(
+  patient_states[visit_size],  // Last observed state as initial
+  forecast_time,
+  exp(patient_log_decrease_rate[i, 1]),
+  exp(patient_log_growth_rate[i, 1]),
+  ...
+);
+```
+
+2. **SLD prediction**: Generate predicted SLD with measurement noise
+
+```stan
+forecast_patient_log_sld = to_vector(normal_rng(
+  forecast_mean_patient_log_sld,
+  rep_vector(measure_sd, n_oos_visits)
+));
+```
+
+3. **RECIST classification**: Apply RECIST criteria to predicted trajectories
+
+```stan
+array[treat_visit_size + n_oos_visits] int full_predict_overall_recist =
+  calculate_target_recist(
+    exp(append_row(rep_mean_patient_log_sld, forecast_mean_patient_log_sld)) * 10,
+    n_patient_screening_visits[i]
+  );
+```
+
+### Log-Likelihood Computation
+
+For each test observation, we compute the log-likelihood:
+
+```stan
+// Tumor component
+real tumor_ll = sf_log_space_obs_lpdf(
+  normalized_sld[start_idx:end_idx] | states[start_idx:end_idx],
+  measure_sd, log_lod - log_baseline_sld[i]
+);
+
+// Other events component
+real oe_ll = calc_pch_loglik(
+  obs_oe_pfs, obs_oe_censored, obs_oe_ic, 0,
+  patient_log_surv, test_start, test_end
+)[1];
+
+// Joint log-likelihood
+patient_log_lik[n, m_rel, patient_idx] = tumor_ll + oe_ll;
+```
+
+### Confusion Matrix Generation
+
+We track RECIST prediction accuracy via a confusion matrix:
+
+```stan
+// rows = observed RECIST, cols = predicted RECIST
+for (t_idx in 1:n_curr_testing_visits) {
+  int obs_val = recist[start_idx + t_idx - 1];
+  int pred_val = oos_recist[oos_recist_start + test_start_offset + t_idx - 1];
+
+  if (obs_val <= PD) {
+    oos_recist_confusion_matrix[n, m_rel][obs_val, pred_val] += 1;
+  }
+}
+```
+
+---
+
+## Special Considerations {#sec-lfo-considerations}
+
+### Handling Newly Enrolled Patients
+
+Patients who enrolled **after** the cutoff are excluded from LFO evaluation:
+
+```stan
+// Only evaluate patients who were observed at cutoff
+if (start_idx > 0 && end_idx >= start_idx && cutoff_observed_mask[i] == 1) {
+  // ... compute log-likelihood
+}
+```
+
+**Rationale:** We cannot evaluate predictive performance for patients the model has never seen. These patients would require a different evaluation approach (e.g., leave-one-trial-out).
+
+### Progressive Disease Handling
+
+Once a patient reaches PD (progressive disease), they remain PD:
+
+```stan
+// Check if there was already a PD in the in-sample period
+int had_insample_pd = treat_visit_size > 0 &&
+  full_predict_overall_recist[treat_visit_size] == PD;
+
+if (had_insample_pd == 1) {
+  // All forecast visits are PD since patient already had PD before cutoff
+  full_predict_overall_recist[(treat_visit_size + 1):] = rep_array(PD, n_oos_visits);
+}
+```
+
+### Other Events Integration
+
+The model integrates other events (non-target progression, death) with target RECIST:
+
+```stan
+// If other events cause PD before target lesion PD
+if (!forecast_other_events_censored) {
+  // Find first forecast visit at or after other events PFS
+  // Mark all subsequent visits as PD
+  if (forecast_other_events_visit_idx <= n_oos_visits) {
+    full_predict_overall_recist[(treat_visit_size + forecast_other_events_visit_idx):] =
+      rep_array(PD, n_oos_visits - forecast_other_events_visit_idx + 1);
+  }
+}
+```
+
+---
+
+## Practical Usage {#sec-lfo-usage}
+
+### Running LFO Cross-Validation
+
+LFO is implemented as a separate Stan model (`sf-ssls-lfo.stan`) that takes additional data:
+
+```r
+# Prepare LFO-specific data
+lfo_data <- prepare_lfo_data(
+  stan_data,
+  cutoff_calendar_day = as.Date("2024-06-01")
+)
+
+# Compile LFO model
+lfo_model <- cmdstan_model("stan/ssls/sf-ssls-lfo.stan")
+
+# Run LFO
+lfo_fit <- lfo_model$sample(
+  data = lfo_data,
+  iter_warmup = 1000,
+  iter_sampling = 1000,
+  chains = 4
+)
+```
+
+### Extracting Results
+
+```r
+# Extract ELPD components
+tumor_elpd <- lfo_fit$draws("patient_log_lik_tumor")
+oe_elpd <- lfo_fit$draws("patient_log_lik_oe")
+joint_elpd <- lfo_fit$draws("patient_log_lik")
+
+# Extract confusion matrix
+confusion <- lfo_fit$draws("oos_recist_confusion_matrix")
+```
+
+### Multiple Cutoffs
+
+For robust evaluation, run LFO at multiple cutoffs:
+
+```r
+cutoff_dates <- seq(
+  as.Date("2024-01-01"),
+  as.Date("2024-12-01"),
+  by = "2 months"
+)
+
+lfo_results <- map(cutoff_dates, function(cutoff) {
+  lfo_data <- prepare_lfo_data(stan_data, cutoff_calendar_day = cutoff)
+  lfo_model$sample(data = lfo_data, ...)
+})
+```
+
+---
+
+## Interpretation Guidelines {#sec-lfo-interpretation}
+
+### ELPD Differences
+
+When comparing models:
+
+| ELPD Difference (SE) | Interpretation |
+|---------------------|----------------|
+| $> 4$ SE | Strong evidence for better model |
+| $2-4$ SE | Moderate evidence |
+| $< 2$ SE | Inconclusive / models similar |
+
+### Confusion Matrix Metrics
+
+From the RECIST confusion matrix, we compute the following metrics (see [Model Validation](../analysis/model-validation.qmd#sec-accuracy)):
+
+- **Overall Accuracy**: Weighted average of per-class sensitivities, weighted by class prevalence in the test set
+- **Per-class Sensitivity**: $P(\text{Predicted } X \mid \text{Observed } X)$ for each RECIST category (CR, PR, SD, PD)
+- **Per-class Specificity**: $P(\text{Predicted } \neq X \mid \text{Observed } \neq X)$ for each RECIST category
+
+::: {.callout-note}
+## How Metrics Are Computed
+
+- **Sensitivity** comes from the row-normalized confusion matrix (diagonal elements)
+- **Specificity** is computed from aggregated raw counts across all cutoffs:
+
+$$
+\text{Specificity}(X) = \frac{\sum_{i \neq X, j \neq X} C_{ij}}{\sum_{i \neq X, j} C_{ij}}
+$$
+
+where $C_{ij}$ is the count of observations with true class $i$ predicted as class $j$.
+:::
+
+::: {.callout-tip}
+## Clinical Relevance
+
+For treatment decisions, **sensitivity for PD** is particularly important - we want to correctly identify patients who will progress so appropriate interventions can be planned.
+:::
+
+### Time-Dependent Performance
+
+Prediction accuracy typically:
+
+- **Decreases** with forecast horizon (predicting further into the future is harder)
+- **Improves** with more training data (later cutoffs have more historical observations)
+- **Varies** by patient characteristics (some trajectories are more predictable)
+
+---
+
+## Comparison with Alternative Methods {#sec-lfo-alternatives}
+
+### LOO (Leave-One-Out)
+
+| Aspect | LFO | LOO |
+|--------|-----|-----|
+| Temporal integrity | Preserved | Violated |
+| Information leakage | None | Possible |
+| Clinical relevance | High | Low |
+| Computational cost | Multiple fits | Single fit + PSIS |
+| Implementation | More complex | Standard |
+
+### K-Fold CV
+
+| Aspect | LFO | K-Fold |
+|--------|-----|--------|
+| Fold definition | Time-based | Random |
+| Within-patient correlation | Respected | Broken |
+| Staggered enrollment | Handled naturally | Problematic |
+
+### Prequential (Rolling Origin)
+
+LFO is a form of prequential validation:
+
+- **Prequential**: Expand training set one observation at a time
+- **LFO**: Expand training set by calendar time cutoffs
+
+LFO is more practical for clinical data where observations are naturally grouped by calendar time (data cutoffs).
+
+---
+
+## References {#sec-lfo-references}
+
+1. Bürkner, P.-C., Gabry, J., & Vehtari, A. (2020). Approximate leave-future-out cross-validation for Bayesian time series models. *Journal of Statistical Computation and Simulation*, 90(14), 2499-2523.
+
+2. Vehtari, A., Gelman, A., & Gabry, J. (2017). Practical Bayesian model evaluation using leave-one-out cross-validation and WAIC. *Statistics and Computing*, 27(5), 1413-1432.
+
+3. Gneiting, T., & Raftery, A. E. (2007). Strictly proper scoring rules, prediction, and estimation. *Journal of the American Statistical Association*, 102(477), 359-378.
+
+---
+
+::: {.related-pages}
+## Related Pages
+
+- [Model Validation](../analysis/model-validation.qmd) - LFO results and ELPD comparisons
+- [Model Specification](model-specification.qmd) - Underlying model details
+- [Architecture](architecture.qmd) - Code organization
+- [Diagnostics](../analysis/diagnostics.qmd) - MCMC convergence checks
+:::
