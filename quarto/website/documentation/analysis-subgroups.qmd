@@ -29,9 +29,19 @@ Subgroups are constructed from the following baseline patient characteristics, w
 
 | Variable | Description | Source | Calculation |
 |----------|-------------|--------|-------------|
-| `pdl1` | PD-L1 tumor proportion score (%) | ADSL | Numeric value (0-100%) |
-| `pdl1_hi` | High PD-L1 expression (≥50%) | Derived | `pdl1 >= 50` → `TRUE/FALSE` |
+| `pdl1` | PD-L1 tumor proportion score (%) | ADSL:`PDL1BL` | Character string (see note below) |
+| `pdl1_hi` | High PD-L1 expression (≥50%) | Derived | `discretize_pdl1(pdl1) == "High"` → `TRUE/FALSE` |
 | `baseline_ctdna` | Baseline circulating tumor DNA level | ADSL/Labs | Numeric (copies/mL plasma) |
+
+**Note on PD-L1 Data Format**: The `pdl1` variable contains mixed format character strings as reported by testing laboratories, **not continuous numeric values**:
+
+- **Numeric-like values (~76% of patients)**: `"1"`, `"5"`, `"10"`, `"50"`, `"80"`, `"90"`, `"100"`, or with % symbol (`"10%"`, `"70%"`)
+- **Categorical bins (~24% of patients)**:
+  - Inequalities: `">50"`, `">=75"`, `">=90"`, `">95%"`
+  - Ranges: `"1-49%"`, `"25-49%"`, `"10-20"`, `"1%-10%"`
+  - Qualitative: `"NEGATIVE"`, `"<1"`
+
+The `discretize_pdl1()` function handles all these formats and applies a 50% threshold to create the binary `pdl1_hi` classifier. See `r/sclc/prepare_analysis_data.R:188-243` for the parsing logic.
 
 ### Treatment History
 
@@ -220,12 +230,14 @@ The subgroup filtering process follows these steps:
    - Converts treatment history flags to logical: `first_line`, `cpi_naive`, `chemo_naive`
    - Computes derived variables (e.g., PFS, censoring indicators)
 
-2. **PD-L1 Discretization** (`targets/sclc_targets.R:321-322`)
+2. **PD-L1 Discretization** (`targets/sclc_targets.R:608-610`)
    ```r
    mutate(pdl1_hi = fct_match(discretize_pdl1(pdl1), "High"))
    ```
-   - Uses 50% cutoff to classify PD-L1 expression
-   - See `discretize_pdl1()` in `r/sclc/prepare_analysis_data.R:188-243`
+   - Parses mixed-format character strings (numbers, ranges, inequalities, percentages)
+   - Applies 50% threshold: values ≥50% → "High", <50% → "Low"
+   - Handles special cases: `">50"` → "High", `"1-49%"` → "Low", `"NEGATIVE"` → "Low"
+   - See `discretize_pdl1()` in `r/sclc/prepare_analysis_data.R:188-243` for full parsing logic
 
 3. **Subgroup Expression Evaluation** (`targets/sclc_targets.R:682-687`)
    ```r
@@ -305,9 +317,20 @@ The data preparation pipeline transforms raw ADAM datasets into analysis-ready f
 - Clinical interpretation should account for subgroup membership and overlap
 - Subgroups are predefined (not data-driven) to avoid multiplicity issues
 
-### PD-L1 Cutoff
+### PD-L1 Data Quality and Cutoff
 
-The 50% cutoff for `pdl1_hi` aligns with regulatory definitions for PD-L1 "high" expression in NSCLC. See `discretize_pdl1()` for handling of special cases (e.g., "≥1%" values).
+**Cutoff Rationale**: The 50% threshold for `pdl1_hi` aligns with regulatory definitions for PD-L1 "high" expression in NSCLC and clinical decision-making for immunotherapy eligibility.
+
+**Data Format Limitations**: PD-L1 values were recorded as character strings by clinical testing laboratories using various reporting conventions. In the SCLC cohort (118 forecast patients):
+
+- **76% have numeric-like values**: Can be parsed as single numbers (e.g., `"80"`, `"90"`, `"10%"`)
+- **24% have categorical bins**: Represent ranges or thresholds rather than exact measurements (e.g., `">=75"`, `"1-49%"`)
+
+This mixed format reflects real-world clinical practice where PD-L1 testing protocols vary across sites and time periods. The binary `pdl1_hi` classifier enables analysis across all patients regardless of reporting format.
+
+**Most Common Values** (SCLC forecast cohort):
+- `"90"` (11 patients), `"1"` (9), `"100"` (9), `"80"` (8), `"60"` (7), `"10"` (6), `"95"` (6)
+- Categorical: `">=75"` (3), `">50%"` (1), `"1-49%"` (1), `"25-49%"` (1)
 
 ### Histology Categories
 
