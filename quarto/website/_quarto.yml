@@ -15,24 +15,6 @@ website:
     left:
       - text: Home
         href: index.qmd
-      - text: Documentation
-        menu:
-          - text: Model Specification
-            href: documentation/model-specification.qmd
-          - text: Analysis Subgroups
-            href: documentation/analysis-subgroups.qmd
-          - text: Onboarding Tutorial
-            href: documentation/onboarding-tutorial.qmd
-          - text: "---"
-          - text: Technical Reference
-          - text: Targets Pipeline
-            href: documentation/targets-pipeline.qmd
-          - text: Architecture
-            href: documentation/architecture.qmd
-          - text: AR(1) Process Noise
-            href: documentation/ar1-process-noise.qmd
-          - text: Leave-Future-Out Cross-Validation
-            href: documentation/leave-future-out-cross-validation.qmd
       - text: Data
         href: analysis/data-exploration.qmd
       - text: Analysis
@@ -56,6 +38,24 @@ website:
             href: analysis/model-validation.qmd
           - text: Diagnostics
             href: analysis/diagnostics.qmd
+      - text: Documentation
+        menu:
+          - text: Model Specification
+            href: documentation/model-specification.qmd
+          - text: Analysis Subgroups
+            href: documentation/analysis-subgroups.qmd
+          - text: Onboarding Tutorial
+            href: documentation/onboarding-tutorial.qmd
+          - text: "---"
+          - text: Technical Reference
+          - text: Targets Pipeline
+            href: documentation/targets-pipeline.qmd
+          - text: Architecture
+            href: documentation/architecture.qmd
+          - text: AR(1) Process Noise
+            href: documentation/ar1-process-noise.qmd
+          - text: Leave-Future-Out Cross-Validation
+            href: documentation/leave-future-out-cross-validation.qmd
     right:
       - icon: github
         href: https://github.com/azu-oncology-rd/cds-dsi-pioneer-sclc-01-2025
