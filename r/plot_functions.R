@@ -2,12 +2,19 @@
 
 prepare_pdl1_and_trial_info <- function(res_data) {
   res_data |>
-    filter(!fct_match(variable, "first_liners") | !fct_match(cond_group_name, "no")) |>
+    filter(
+      (!fct_match(variable, "first_liners") | !fct_match(cond_group_name, "no")) &
+      (!fct_match(variable, "parts") | fct_match(cond_group_name, "part_e"))
+    ) |>
     mutate(
-      trial = coalesce(trial, "sclc"),
+      trial = if ("trial" %in% names(res_data)) coalesce(trial, "sclc") else "sclc",
       across(c(cond_group_name, variable), \(l) coalesce(l, "all")),
-      variable = fct_collapse(variable, "all" = c("all", "pdl1"), "pdl1_naive" = c("pdl1_naive", "first_liners")),
-      cond_group_name = fct_collapse(cond_group_name, "All" = c("all", "yes"), "PDL1 Low" = "low", "PDL1 High" = "hi")
+      variable = fct_collapse(variable,
+        "all" = c("all", "pdl1"),
+        "pdl1_naive" = c("pdl1_naive", "first_liners"),
+        "part_e_pdl1" = c("part_e_pdl1", "parts")
+      ),
+      cond_group_name = fct_collapse(cond_group_name, "All" = c("all", "yes", "part_e"), "PDL1 Low" = "low", "PDL1 High" = "hi")
     )
 }
 
@@ -20,7 +27,7 @@ prepare_pdl1_and_trial_info <- function(res_data) {
 plot_outcome_by_pdl1_and_trial <- function(res_data, outcome, .width = c(0.5, 0.9), ...) {
   res_data |>
     prepare_pdl1_and_trial_info() |>
-    filter(fct_match(variable, c("all", "pdl1_naive")), fct_match(trial, "sclc")) |>
+    filter(fct_match(variable, c("all", "pdl1_naive", "part_e_pdl1")), fct_match(trial, "sclc")) |>
     ggplot() +
     stat_pointinterval(aes(xdist = {{ outcome }}, y = cond_group_name, color = fit_type), position = "dodge", .width = .width, ...) +
     scale_color_discrete("", type = AZ_palette, label = str_to_title) +
@@ -29,7 +36,7 @@ plot_outcome_by_pdl1_and_trial <- function(res_data, outcome, .width = c(0.5, 0.
       vars(trial),
       scales = "free",
       space = "free",
-      labeller = labeller(trial = str_to_upper, variable = c("all" = "All", "pdl1_naive" = "First Line"))
+      labeller = labeller(trial = str_to_upper, variable = c("all" = "All", "pdl1_naive" = "First Line", "part_e_pdl1" = "Part E"))
     ) +
     NULL
 }

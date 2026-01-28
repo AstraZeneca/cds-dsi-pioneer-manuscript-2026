@@ -53,20 +53,60 @@ plot_orr_by_estimate_type("spop")
 
 ### Sample-Based
 
-```{r}
-#| label: tbl-orr-summary-sample
-#| tbl-cap: "Sample-based ORR summary by PDL1 status."
+#### All Patients
 
-create_orr_table("sample")
+```{r}
+#| label: tbl-orr-summary-sample-all
+#| tbl-cap: "Sample-based ORR summary for all patients."
+
+create_orr_table("sample", "all")
+```
+
+#### First Line Patients
+
+```{r}
+#| label: tbl-orr-summary-sample-first-line
+#| tbl-cap: "Sample-based ORR summary for first line patients."
+
+create_orr_table("sample", "first_line")
+```
+
+#### Part E
+
+```{r}
+#| label: tbl-orr-summary-sample-part-e
+#| tbl-cap: "Sample-based ORR summary for Part E patients."
+
+create_orr_table("sample", "part_e")
 ```
 
 ### Superpopulation
 
-```{r}
-#| label: tbl-orr-summary-spop
-#| tbl-cap: "Superpopulation ORR summary by PDL1 status."
+#### All Patients
 
-create_orr_table("spop")
+```{r}
+#| label: tbl-orr-summary-spop-all
+#| tbl-cap: "Superpopulation ORR summary for all patients."
+
+create_orr_table("spop", "all")
+```
+
+#### First Line Patients
+
+```{r}
+#| label: tbl-orr-summary-spop-first-line
+#| tbl-cap: "Superpopulation ORR summary for first line patients."
+
+create_orr_table("spop", "first_line")
+```
+
+#### Part E
+
+```{r}
+#| label: tbl-orr-summary-spop-part-e
+#| tbl-cap: "Superpopulation ORR summary for Part E patients."
+
+create_orr_table("spop", "part_e")
 ```
 
 :::
@@ -101,20 +141,60 @@ plot_median_pfs_by_estimate_type("spop")
 
 ### Sample-Based
 
-```{r}
-#| label: tbl-median-pfs-summary-sample
-#| tbl-cap: "Sample-based median PFS summary by PDL1 status."
+#### All Patients
 
-create_median_pfs_table("sample")
+```{r}
+#| label: tbl-median-pfs-summary-sample-all
+#| tbl-cap: "Sample-based median PFS summary for all patients."
+
+create_median_pfs_table("sample", "all")
+```
+
+#### First Line Patients
+
+```{r}
+#| label: tbl-median-pfs-summary-sample-first-line
+#| tbl-cap: "Sample-based median PFS summary for first line patients."
+
+create_median_pfs_table("sample", "first_line")
+```
+
+#### Part E
+
+```{r}
+#| label: tbl-median-pfs-summary-sample-part-e
+#| tbl-cap: "Sample-based median PFS summary for Part E patients."
+
+create_median_pfs_table("sample", "part_e")
 ```
 
 ### Superpopulation
 
-```{r}
-#| label: tbl-median-pfs-summary-spop
-#| tbl-cap: "Superpopulation median PFS summary by PDL1 status."
+#### All Patients
 
-create_median_pfs_table("spop")
+```{r}
+#| label: tbl-median-pfs-summary-spop-all
+#| tbl-cap: "Superpopulation median PFS summary for all patients."
+
+create_median_pfs_table("spop", "all")
+```
+
+#### First Line Patients
+
+```{r}
+#| label: tbl-median-pfs-summary-spop-first-line
+#| tbl-cap: "Superpopulation median PFS summary for first line patients."
+
+create_median_pfs_table("spop", "first_line")
+```
+
+#### Part E
+
+```{r}
+#| label: tbl-median-pfs-summary-spop-part-e
+#| tbl-cap: "Superpopulation median PFS summary for Part E patients."
+
+create_median_pfs_table("spop", "part_e")
 ```
 
 :::
@@ -149,20 +229,60 @@ plot_pfs_n_by_estimate_type("spop")
 
 ### Sample-Based
 
-```{r}
-#| label: tbl-pfs-n-summary-sample
-#| tbl-cap: "Sample-based PFS-n summary by PDL1 status."
+#### All Patients
 
-create_pfs_n_table("sample")
+```{r}
+#| label: tbl-pfs-n-summary-sample-all
+#| tbl-cap: "Sample-based PFS-n summary for all patients."
+
+create_pfs_n_table("sample", "all")
+```
+
+#### First Line Patients
+
+```{r}
+#| label: tbl-pfs-n-summary-sample-first-line
+#| tbl-cap: "Sample-based PFS-n summary for first line patients."
+
+create_pfs_n_table("sample", "first_line")
+```
+
+#### Part E
+
+```{r}
+#| label: tbl-pfs-n-summary-sample-part-e
+#| tbl-cap: "Sample-based PFS-n summary for Part E patients."
+
+create_pfs_n_table("sample", "part_e")
 ```
 
 ### Superpopulation
 
-```{r}
-#| label: tbl-pfs-n-summary-spop
-#| tbl-cap: "Superpopulation PFS-n summary by PDL1 status."
+#### All Patients
 
-create_pfs_n_table("spop")
+```{r}
+#| label: tbl-pfs-n-summary-spop-all
+#| tbl-cap: "Superpopulation PFS-n summary for all patients."
+
+create_pfs_n_table("spop", "all")
+```
+
+#### First Line Patients
+
+```{r}
+#| label: tbl-pfs-n-summary-spop-first-line
+#| tbl-cap: "Superpopulation PFS-n summary for first line patients."
+
+create_pfs_n_table("spop", "first_line")
+```
+
+#### Part E
+
+```{r}
+#| label: tbl-pfs-n-summary-spop-part-e
+#| tbl-cap: "Superpopulation PFS-n summary for Part E patients."
+
+create_pfs_n_table("spop", "part_e")
 ```
 
 :::
