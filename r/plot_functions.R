@@ -500,8 +500,8 @@ plot_confusion_matrix <- function(data, recorded, calculated, p, n = NULL) {
 }
 
 # Reusable function for OOS confusion matrix plot
-plot_oos_confusion_matrix <- function(store) {
-  tar_read(oos_confusion_matrix_ctdna_aug, store = store) |>
+plot_oos_confusion_matrix <- function(confusion_matrix_data) {
+  confusion_matrix_data |>
     mutate(mp = median(mean_pred)) |>
     plot_confusion_matrix(response, pred_response, mp) +
     labs(
@@ -512,9 +512,9 @@ plot_oos_confusion_matrix <- function(store) {
 }
 
 # Reusable function for OOS confusion matrix Sankey diagram
-plot_oos_confusion_sankey <- function(store) {
+plot_oos_confusion_sankey <- function(confusion_matrix_data) {
   # Load and prepare data
-  data <- tar_read(oos_confusion_matrix_ctdna_aug, store = store) |>
+  data <- confusion_matrix_data |>
     mutate(
       mp = median(mean_pred),
       # Create a flag for correct predictions
