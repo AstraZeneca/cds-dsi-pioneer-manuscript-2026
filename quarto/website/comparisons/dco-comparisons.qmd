@@ -57,7 +57,7 @@ Tracking median PFS estimates across data cutoffs, comparing model forecasts wit
 ```{r}
 #| label: fig-median-pfs-dco-sample
 #| fig-cap: Sample-based median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
-#| fig-width: 6
+#| fig-width: 10
 #| fig-height: 6
 
 plot_median_pfs_by_dco("sample")
@@ -68,7 +68,7 @@ plot_median_pfs_by_dco("sample")
 ```{r}
 #| label: fig-median-pfs-dco-spop
 #| fig-cap: Superpopulation median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
-#| fig-width: 6
+#| fig-width: 10
 #| fig-height: 6
 
 plot_median_pfs_by_dco("spop")
