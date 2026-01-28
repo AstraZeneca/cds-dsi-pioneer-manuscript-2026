@@ -150,19 +150,19 @@ for (p in 1:n_patients) {
   for (lv in 1:n_levels) {
     if (patient_level_groups[p, lv] < 1 || 
         patient_level_groups[p, lv] > n_groups_per_level[lv]) {
-      reject("Patient ", p, " has invalid group assignment at level ", lv);
+      fatal_error("Patient ", p, " has invalid group assignment at level ", lv);
     }
   }
   
   // Verify patient level is identity mapping
   if (patient_level_groups[p, n_levels] != p) {
-    reject("Patient ", p, " must have identity mapping at patient level (level ", n_levels, ")");
+    fatal_error("Patient ", p, " must have identity mapping at patient level (level ", n_levels, ")");
   }
 }
 
 // Check that patient level has n_patients groups
 if (n_groups_per_level[n_levels] != n_patients) {
-  reject("Patient level must have n_groups = n_patients");
+  fatal_error("Patient level must have n_groups = n_patients");
 }
 
 print("Multi-level hierarchy validated:");

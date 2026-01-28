@@ -8,6 +8,14 @@ subtitle: "Leave-future-out cross-validation and accuracy assessment"
 #| include: false
 
 source("_setup.R")
+
+# Load SLD data for posterior predictive checks
+sld_data_historical_apr25 <- tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_apr25)
+sld_data_historical_aug25 <- tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_aug25)
+sld_data_historical_jan26 <- tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_jan26)
+sld_data_sclc_apr25 <- tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_apr25)
+sld_data_sclc_aug25 <- tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_aug25)
+sld_data_sclc_jan26 <- tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_jan26)
 ```
 
 This page presents model validation results using leave-future-out (LFO) cross-validation and accuracy assessments.
@@ -41,7 +49,7 @@ Posterior checking plots for patients with observed progression events, comparin
 #| fig-height: 12
 #| warning: false
 
-plot_sld_ppc_by_trial_dco("historical", "apr25")
+plot_sld_ppc_by_trial_dco("historical", sld_data_historical_apr25)
 ```
 
 #### August 2025
@@ -53,7 +61,7 @@ plot_sld_ppc_by_trial_dco("historical", "apr25")
 #| fig-height: 12
 #| warning: false
 
-plot_sld_ppc_by_trial_dco("historical", "aug25")
+plot_sld_ppc_by_trial_dco("historical", sld_data_historical_aug25)
 ```
 
 #### January 2026 {.active}
@@ -65,7 +73,7 @@ plot_sld_ppc_by_trial_dco("historical", "aug25")
 #| fig-height: 12
 #| warning: false
 
-plot_sld_ppc_by_trial_dco("historical", "jan26")
+plot_sld_ppc_by_trial_dco("historical", sld_data_historical_jan26)
 ```
 
 :::
@@ -83,7 +91,7 @@ plot_sld_ppc_by_trial_dco("historical", "jan26")
 #| fig-height: 12
 #| warning: false
 
-plot_sld_ppc_by_trial_dco("sclc", "apr25")
+plot_sld_ppc_by_trial_dco("sclc", sld_data_sclc_apr25)
 ```
 
 #### August 2025
@@ -95,7 +103,7 @@ plot_sld_ppc_by_trial_dco("sclc", "apr25")
 #| fig-height: 12
 #| warning: false
 
-plot_sld_ppc_by_trial_dco("sclc", "aug25")
+plot_sld_ppc_by_trial_dco("sclc", sld_data_sclc_aug25)
 ```
 
 #### January 2026 {.active}
@@ -107,7 +115,7 @@ plot_sld_ppc_by_trial_dco("sclc", "aug25")
 #| fig-height: 12
 #| warning: false
 
-plot_sld_ppc_by_trial_dco("sclc", "jan26")
+plot_sld_ppc_by_trial_dco("sclc", sld_data_sclc_jan26)
 ```
 
 :::

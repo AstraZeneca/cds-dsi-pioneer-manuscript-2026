@@ -35,7 +35,7 @@ Overall response rate represents the proportion of patients achieving complete r
 #| label: fig-orr-sample
 #| fig-cap: Sample-based overall response rate (ORR), split by PDL1 status and treatment line for the SCLC trial.
 
-plot_orr_by_estimate_type("sample")
+plot_orr_by_estimate_type("sample", jan26_orr_data, jan26_cond_orr_data)
 ```
 
 ### Superpopulation
@@ -44,7 +44,7 @@ plot_orr_by_estimate_type("sample")
 #| label: fig-orr-spop
 #| fig-cap: Superpopulation overall response rate (ORR), split by PDL1 status and treatment line for the SCLC trial.
 
-plot_orr_by_estimate_type("spop")
+plot_orr_by_estimate_type("spop", jan26_orr_data, jan26_cond_orr_data)
 ```
 
 :::
@@ -59,7 +59,7 @@ plot_orr_by_estimate_type("spop")
 #| label: tbl-orr-summary-sample-all
 #| tbl-cap: "Sample-based ORR summary for all patients."
 
-create_orr_table("sample", "all")
+create_orr_table("sample", "all", jan26_orr_data, jan26_cond_orr_data)
 ```
 
 #### First Line Patients
@@ -68,7 +68,7 @@ create_orr_table("sample", "all")
 #| label: tbl-orr-summary-sample-first-line
 #| tbl-cap: "Sample-based ORR summary for first line patients."
 
-create_orr_table("sample", "first_line")
+create_orr_table("sample", "first_line", jan26_orr_data, jan26_cond_orr_data)
 ```
 
 #### Part E
@@ -77,7 +77,7 @@ create_orr_table("sample", "first_line")
 #| label: tbl-orr-summary-sample-part-e
 #| tbl-cap: "Sample-based ORR summary for Part E patients."
 
-create_orr_table("sample", "part_e")
+create_orr_table("sample", "part_e", jan26_orr_data, jan26_cond_orr_data)
 ```
 
 ### Superpopulation
@@ -88,7 +88,7 @@ create_orr_table("sample", "part_e")
 #| label: tbl-orr-summary-spop-all
 #| tbl-cap: "Superpopulation ORR summary for all patients."
 
-create_orr_table("spop", "all")
+create_orr_table("spop", "all", jan26_orr_data, jan26_cond_orr_data)
 ```
 
 #### First Line Patients
@@ -97,7 +97,7 @@ create_orr_table("spop", "all")
 #| label: tbl-orr-summary-spop-first-line
 #| tbl-cap: "Superpopulation ORR summary for first line patients."
 
-create_orr_table("spop", "first_line")
+create_orr_table("spop", "first_line", jan26_orr_data, jan26_cond_orr_data)
 ```
 
 #### Part E
@@ -106,7 +106,7 @@ create_orr_table("spop", "first_line")
 #| label: tbl-orr-summary-spop-part-e
 #| tbl-cap: "Superpopulation ORR summary for Part E patients."
 
-create_orr_table("spop", "part_e")
+create_orr_table("spop", "part_e", jan26_orr_data, jan26_cond_orr_data)
 ```
 
 :::
@@ -123,7 +123,7 @@ Median PFS represents the time at which 50% of patients have experienced progres
 #| label: fig-median-pfs-sample
 #| fig-cap: Sample-based median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial.
 
-plot_median_pfs_by_estimate_type("sample")
+plot_median_pfs_by_estimate_type("sample", jan26_quant_pfs_data, jan26_cond_quant_pfs_data)
 ```
 
 ### Superpopulation
@@ -132,7 +132,7 @@ plot_median_pfs_by_estimate_type("sample")
 #| label: fig-median-pfs-spop
 #| fig-cap: Superpopulation median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial.
 
-plot_median_pfs_by_estimate_type("spop")
+plot_median_pfs_by_estimate_type("spop", jan26_quant_pfs_data, jan26_cond_quant_pfs_data)
 ```
 
 :::
@@ -147,7 +147,7 @@ plot_median_pfs_by_estimate_type("spop")
 #| label: tbl-median-pfs-summary-sample-all
 #| tbl-cap: "Sample-based median PFS summary for all patients."
 
-create_median_pfs_table("sample", "all")
+create_median_pfs_table("sample", "all", jan26_quant_pfs_data, jan26_cond_quant_pfs_data)
 ```
 
 #### First Line Patients
@@ -156,7 +156,7 @@ create_median_pfs_table("sample", "all")
 #| label: tbl-median-pfs-summary-sample-first-line
 #| tbl-cap: "Sample-based median PFS summary for first line patients."
 
-create_median_pfs_table("sample", "first_line")
+create_median_pfs_table("sample", "first_line", jan26_quant_pfs_data, jan26_cond_quant_pfs_data)
 ```
 
 #### Part E
@@ -165,7 +165,7 @@ create_median_pfs_table("sample", "first_line")
 #| label: tbl-median-pfs-summary-sample-part-e
 #| tbl-cap: "Sample-based median PFS summary for Part E patients."
 
-create_median_pfs_table("sample", "part_e")
+create_median_pfs_table("sample", "part_e", jan26_quant_pfs_data, jan26_cond_quant_pfs_data)
 ```
 
 ### Superpopulation
@@ -176,7 +176,7 @@ create_median_pfs_table("sample", "part_e")
 #| label: tbl-median-pfs-summary-spop-all
 #| tbl-cap: "Superpopulation median PFS summary for all patients."
 
-create_median_pfs_table("spop", "all")
+create_median_pfs_table("spop", "all", jan26_quant_pfs_data, jan26_cond_quant_pfs_data)
 ```
 
 #### First Line Patients
@@ -185,7 +185,7 @@ create_median_pfs_table("spop", "all")
 #| label: tbl-median-pfs-summary-spop-first-line
 #| tbl-cap: "Superpopulation median PFS summary for first line patients."
 
-create_median_pfs_table("spop", "first_line")
+create_median_pfs_table("spop", "first_line", jan26_quant_pfs_data, jan26_cond_quant_pfs_data)
 ```
 
 #### Part E
@@ -194,7 +194,7 @@ create_median_pfs_table("spop", "first_line")
 #| label: tbl-median-pfs-summary-spop-part-e
 #| tbl-cap: "Superpopulation median PFS summary for Part E patients."
 
-create_median_pfs_table("spop", "part_e")
+create_median_pfs_table("spop", "part_e", jan26_quant_pfs_data, jan26_cond_quant_pfs_data)
 ```
 
 :::
@@ -211,7 +211,7 @@ PFS-n represents the probability of being progression-free at specific timepoint
 #| label: fig-pfs-n-sample
 #| fig-cap: Sample-based progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC trial.
 
-plot_pfs_n_by_estimate_type("sample")
+plot_pfs_n_by_estimate_type("sample", jan26_pfs_n_data, jan26_cond_pfs_n_data, pfs_timepoints)
 ```
 
 ### Superpopulation
@@ -220,7 +220,7 @@ plot_pfs_n_by_estimate_type("sample")
 #| label: fig-pfs-n-spop
 #| fig-cap: Superpopulation progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC trial.
 
-plot_pfs_n_by_estimate_type("spop")
+plot_pfs_n_by_estimate_type("spop", jan26_pfs_n_data, jan26_cond_pfs_n_data, pfs_timepoints)
 ```
 
 :::
@@ -235,7 +235,7 @@ plot_pfs_n_by_estimate_type("spop")
 #| label: tbl-pfs-n-summary-sample-all
 #| tbl-cap: "Sample-based PFS-n summary for all patients."
 
-create_pfs_n_table("sample", "all")
+create_pfs_n_table("sample", "all", jan26_pfs_n_data, jan26_cond_pfs_n_data)
 ```
 
 #### First Line Patients
@@ -244,7 +244,7 @@ create_pfs_n_table("sample", "all")
 #| label: tbl-pfs-n-summary-sample-first-line
 #| tbl-cap: "Sample-based PFS-n summary for first line patients."
 
-create_pfs_n_table("sample", "first_line")
+create_pfs_n_table("sample", "first_line", jan26_pfs_n_data, jan26_cond_pfs_n_data)
 ```
 
 #### Part E
@@ -253,7 +253,7 @@ create_pfs_n_table("sample", "first_line")
 #| label: tbl-pfs-n-summary-sample-part-e
 #| tbl-cap: "Sample-based PFS-n summary for Part E patients."
 
-create_pfs_n_table("sample", "part_e")
+create_pfs_n_table("sample", "part_e", jan26_pfs_n_data, jan26_cond_pfs_n_data)
 ```
 
 ### Superpopulation
@@ -264,7 +264,7 @@ create_pfs_n_table("sample", "part_e")
 #| label: tbl-pfs-n-summary-spop-all
 #| tbl-cap: "Superpopulation PFS-n summary for all patients."
 
-create_pfs_n_table("spop", "all")
+create_pfs_n_table("spop", "all", jan26_pfs_n_data, jan26_cond_pfs_n_data)
 ```
 
 #### First Line Patients
@@ -273,7 +273,7 @@ create_pfs_n_table("spop", "all")
 #| label: tbl-pfs-n-summary-spop-first-line
 #| tbl-cap: "Superpopulation PFS-n summary for first line patients."
 
-create_pfs_n_table("spop", "first_line")
+create_pfs_n_table("spop", "first_line", jan26_pfs_n_data, jan26_cond_pfs_n_data)
 ```
 
 #### Part E
@@ -282,7 +282,7 @@ create_pfs_n_table("spop", "first_line")
 #| label: tbl-pfs-n-summary-spop-part-e
 #| tbl-cap: "Superpopulation PFS-n summary for Part E patients."
 
-create_pfs_n_table("spop", "part_e")
+create_pfs_n_table("spop", "part_e", jan26_pfs_n_data, jan26_cond_pfs_n_data)
 ```
 
 :::

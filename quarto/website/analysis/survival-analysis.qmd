@@ -58,7 +58,14 @@ Kaplan-Meier curves for the SCLC trial, comparing model predictions with observe
 #| fig-cap: Sample-based Kaplan-Meier forecast for SCLC trial.
 #| fig-width: 7
 
-plot_sclc_km_by_estimate_type("sample")
+plot_sclc_km_by_estimate_type(
+  "sample",
+  jan26_km_data,
+  jan26_cond_km_data,
+  jan26_obs_km_all,
+  jan26_obs_km_first_line,
+  all_analysis_data
+)
 ```
 
 ### Superpopulation
@@ -70,7 +77,14 @@ Kaplan-Meier curves for the SCLC trial, comparing model predictions with observe
 #| fig-cap: Superpopulation Kaplan-Meier forecast for SCLC trial. Superpopulation KM estimates represent the expected survival for the underlying population, not just the specific patients in the trial.
 #| fig-width: 7
 
-plot_sclc_km_by_estimate_type("spop")
+plot_sclc_km_by_estimate_type(
+  "spop",
+  jan26_km_data,
+  jan26_cond_km_data,
+  jan26_obs_km_all,
+  jan26_obs_km_first_line,
+  all_analysis_data
+)
 ```
 
 :::
@@ -91,10 +105,10 @@ Kaplan-Meier curves stratified by PDL1 status and treatment line. The full forec
 
 plot_pdl1_km_by_estimate_type(
   "sample",
-  cond_km_data = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26),
-  obs_km_all = tar_read(km_trial_pfs_pdl1_ctdna_jan26),
-  obs_km_first_line = tar_read(km_trial_pfs_pdl1_naive_ctdna_jan26),
-  obs_km_part_e = tar_read(km_trial_pfs_part_e_pdl1_ctdna_jan26)
+  cond_km_data = jan26_cond_km_data,
+  obs_km_all = jan26_obs_km_pdl1,
+  obs_km_first_line = jan26_obs_km_pdl1_naive,
+  obs_km_part_e = jan26_obs_km_part_e_pdl1
 )
 ```
 
@@ -110,10 +124,10 @@ Kaplan-Meier curves stratified by PDL1 status and treatment line. The full forec
 
 plot_pdl1_km_by_estimate_type(
   "spop",
-  cond_km_data = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26),
-  obs_km_all = tar_read(km_trial_pfs_pdl1_ctdna_jan26),
-  obs_km_first_line = tar_read(km_trial_pfs_pdl1_naive_ctdna_jan26),
-  obs_km_part_e = tar_read(km_trial_pfs_part_e_pdl1_ctdna_jan26)
+  cond_km_data = jan26_cond_km_data,
+  obs_km_all = jan26_obs_km_pdl1,
+  obs_km_first_line = jan26_obs_km_pdl1_naive,
+  obs_km_part_e = jan26_obs_km_part_e_pdl1
 )
 ```
 
