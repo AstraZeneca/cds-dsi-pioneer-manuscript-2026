@@ -85,5 +85,7 @@ generate-aws-credential_file.py
 run-aws-credentials.sh
 .env
 node_modules
+package.json
+package-lock.json
 aws/
 core.*
