@@ -29,7 +29,7 @@ Comparing ORR estimates across data cutoffs shows how response rate predictions 
 ```{r}
 #| label: fig-orr-dco-sample
 #| fig-cap: Sample-based overall response rate (ORR), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
-#| fig-height: 5
+#| fig-height: 10
 
 plot_orr_by_dco("sample")
 ```
@@ -39,7 +39,7 @@ plot_orr_by_dco("sample")
 ```{r}
 #| label: fig-orr-dco-spop
 #| fig-cap: Superpopulation overall response rate (ORR), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
-#| fig-height: 5
+#| fig-height: 10
 
 plot_orr_by_dco("spop")
 ```
@@ -115,7 +115,9 @@ plot_pfs_n_by_dco("spop")
 
 Comparing Kaplan-Meier survival curves across data cutoffs.
 
-### Overall SCLC
+### By Cohort
+
+Kaplan-Meier curves for SCLC showing All patients, First Line patients, and Part E patients across data cutoffs.
 
 ::: {.panel-tabset}
 
@@ -123,34 +125,38 @@ Comparing Kaplan-Meier survival curves across data cutoffs.
 
 ```{r}
 #| label: fig-km-dco-sample
-#| fig-cap: Sample-based Kaplan-Meier forecasts for SCLC trial across data cutoffs.
+#| fig-cap: Sample-based Kaplan-Meier forecasts for SCLC across cohorts and data cutoffs.
 #| column: body-outset
-#| fig-width: 7
-#| fig-height: 3
+#| fig-width: 9
+#| fig-height: 7
 
-plot_km(
-  bind_rows(
-    apr25 = tar_read(all_tumor_ssls_km_rvar_ctdna_apr25) |> filter(fct_match(trial, "sclc")),
-    aug25 = tar_read(all_tumor_ssls_km_rvar_ctdna_aug25) |> filter(fct_match(trial, "sclc")),
-    jan26 = tar_read(all_tumor_ssls_km_rvar_ctdna_jan26) |> filter(fct_match(trial, "sclc")),
-    .id = "dco"
+plot_sclc_km_by_dco(
+  estimate_type = "sample",
+  all_km_list = list(
+    apr25 = tar_read(all_tumor_ssls_km_rvar_ctdna_apr25),
+    aug25 = tar_read(all_tumor_ssls_km_rvar_ctdna_aug25),
+    jan26 = tar_read(all_tumor_ssls_km_rvar_ctdna_jan26)
   ),
-  km_est_var = sample_km_est,
-  obs_km_data = bind_rows(
-    apr25 = tar_read(km_trial_pfs_ctdna_apr25) |> filter(fct_match(btype, "ub"), fct_match(trial, "sclc")),
-    aug25 = tar_read(km_trial_pfs_ctdna_aug25) |> filter(fct_match(btype, "ub"), fct_match(trial, "sclc")),
-    jan26 = tar_read(km_trial_pfs_ctdna_jan26) |> filter(fct_match(btype, "ub"), fct_match(trial, "sclc")),
-    .id = "dco"
-  ) |>
-    select(!quantiles) |>
-    unnest(km_data),
-  analysis_data = bind_rows(
-    apr25 = tar_read(all_analysis_data_ctdna_apr25) |> filter(fct_match(trial, "sclc")),
-    aug25 = tar_read(all_analysis_data_ctdna_aug25) |> filter(fct_match(trial, "sclc")),
-    jan26 = tar_read(all_analysis_data_ctdna_jan26) |> filter(fct_match(trial, "sclc")),
-    .id = "dco"
+  cond_km_list = list(
+    apr25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_apr25),
+    aug25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_aug25),
+    jan26 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26)
   ),
-  facet_col = dco
+  obs_km_all_list = list(
+    apr25 = tar_read(km_trial_pfs_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_ctdna_jan26)
+  ),
+  obs_km_first_line_list = list(
+    apr25 = tar_read(km_trial_pfs_naive_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_naive_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_naive_ctdna_jan26)
+  ),
+  analysis_data_list = list(
+    apr25 = tar_read(all_analysis_data_ctdna_apr25),
+    aug25 = tar_read(all_analysis_data_ctdna_aug25),
+    jan26 = tar_read(all_analysis_data_ctdna_jan26)
+  )
 )
 ```
 
@@ -158,34 +164,38 @@ plot_km(
 
 ```{r}
 #| label: fig-km-dco-spop
-#| fig-cap: Superpopulation Kaplan-Meier forecasts for SCLC trial across data cutoffs.
+#| fig-cap: Superpopulation Kaplan-Meier forecasts for SCLC across cohorts and data cutoffs.
 #| column: body-outset
-#| fig-width: 7
-#| fig-height: 3
+#| fig-width: 9
+#| fig-height: 7
 
-plot_km(
-  bind_rows(
-    apr25 = tar_read(all_tumor_ssls_km_rvar_ctdna_apr25) |> filter(fct_match(trial, "sclc")),
-    aug25 = tar_read(all_tumor_ssls_km_rvar_ctdna_aug25) |> filter(fct_match(trial, "sclc")),
-    jan26 = tar_read(all_tumor_ssls_km_rvar_ctdna_jan26) |> filter(fct_match(trial, "sclc")),
-    .id = "dco"
+plot_sclc_km_by_dco(
+  estimate_type = "spop",
+  all_km_list = list(
+    apr25 = tar_read(all_tumor_ssls_km_rvar_ctdna_apr25),
+    aug25 = tar_read(all_tumor_ssls_km_rvar_ctdna_aug25),
+    jan26 = tar_read(all_tumor_ssls_km_rvar_ctdna_jan26)
   ),
-  km_est_var = spop_km_est,
-  obs_km_data = bind_rows(
-    apr25 = tar_read(km_trial_pfs_ctdna_apr25) |> filter(fct_match(btype, "ub"), fct_match(trial, "sclc")),
-    aug25 = tar_read(km_trial_pfs_ctdna_aug25) |> filter(fct_match(btype, "ub"), fct_match(trial, "sclc")),
-    jan26 = tar_read(km_trial_pfs_ctdna_jan26) |> filter(fct_match(btype, "ub"), fct_match(trial, "sclc")),
-    .id = "dco"
-  ) |>
-    select(!quantiles) |>
-    unnest(km_data),
-  analysis_data = bind_rows(
-    apr25 = tar_read(all_analysis_data_ctdna_apr25) |> filter(fct_match(trial, "sclc")),
-    aug25 = tar_read(all_analysis_data_ctdna_aug25) |> filter(fct_match(trial, "sclc")),
-    jan26 = tar_read(all_analysis_data_ctdna_jan26) |> filter(fct_match(trial, "sclc")),
-    .id = "dco"
+  cond_km_list = list(
+    apr25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_apr25),
+    aug25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_aug25),
+    jan26 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26)
   ),
-  facet_col = dco
+  obs_km_all_list = list(
+    apr25 = tar_read(km_trial_pfs_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_ctdna_jan26)
+  ),
+  obs_km_first_line_list = list(
+    apr25 = tar_read(km_trial_pfs_naive_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_naive_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_naive_ctdna_jan26)
+  ),
+  analysis_data_list = list(
+    apr25 = tar_read(all_analysis_data_ctdna_apr25),
+    aug25 = tar_read(all_analysis_data_ctdna_aug25),
+    jan26 = tar_read(all_analysis_data_ctdna_jan26)
+  )
 )
 ```
 
@@ -193,45 +203,41 @@ plot_km(
 
 ### PDL1-Stratified
 
+Kaplan-Meier curves stratified by PDL1 status (High vs Low) for All patients, First Line patients, and Part E patients across data cutoffs.
+
 ::: {.panel-tabset}
 
 #### Sample-Based
 
 ```{r}
 #| label: fig-km-dco-sample-pdl1
-#| fig-cap: Sample-based PDL1-stratified Kaplan-Meier forecasts for SCLC across data cutoffs.
+#| fig-cap: Sample-based PDL1-stratified Kaplan-Meier forecasts for SCLC across cohorts and data cutoffs.
 #| column: body-outset
-#| fig-width: 7
-#| fig-height: 5
+#| fig-width: 9
+#| fig-height: 7
 
-plot_pdl1_km(
-  cond_km_data = bind_rows(
+plot_km_pdl1_by_dco(
+  cond_km_data_list = list(
     apr25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_apr25),
     aug25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_aug25),
-    jan26 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26),
-    .id = "dco"
+    jan26 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26)
   ),
-  km_est_var = cond_sample_km_est,
-  obs_km_data = bind_rows(
-    pdl1 = bind_rows(
-      apr25 = tar_read(km_trial_pfs_pdl1_ctdna_apr25),
-      aug25 = tar_read(km_trial_pfs_pdl1_ctdna_aug25),
-      jan26 = tar_read(km_trial_pfs_pdl1_ctdna_jan26),
-      .id = "dco"
-    ) |>
-      filter(fct_match(trial, "sclc")) |>
-      select(!quantiles) |>
-      unnest(km_data),
-    pdl1_naive = bind_rows(
-      apr25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_apr25),
-      aug25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_aug25),
-      jan26 = tar_read(km_trial_pfs_pdl1_naive_ctdna_jan26),
-      .id = "dco"
-    ) |>
-      select(!quantiles) |>
-      unnest(km_data),
-    .id = "variable"
-  )
+  obs_km_all_list = list(
+    apr25 = tar_read(km_trial_pfs_pdl1_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_pdl1_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_pdl1_ctdna_jan26)
+  ),
+  obs_km_first_line_list = list(
+    apr25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_pdl1_naive_ctdna_jan26)
+  ),
+  obs_km_part_e_list = list(
+    apr25 = tar_read(km_trial_pfs_part_e_pdl1_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_part_e_pdl1_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_part_e_pdl1_ctdna_jan26)
+  ),
+  estimate_type = "sample"
 )
 ```
 
@@ -239,39 +245,33 @@ plot_pdl1_km(
 
 ```{r}
 #| label: fig-km-dco-spop-pdl1
-#| fig-cap: Superpopulation PDL1-stratified Kaplan-Meier forecasts for SCLC across data cutoffs.
+#| fig-cap: Superpopulation PDL1-stratified Kaplan-Meier forecasts for SCLC across cohorts and data cutoffs.
 #| column: body-outset
-#| fig-width: 7
-#| fig-height: 5
+#| fig-width: 9
+#| fig-height: 7
 
-plot_pdl1_km(
-  cond_km_data = bind_rows(
+plot_km_pdl1_by_dco(
+  cond_km_data_list = list(
     apr25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_apr25),
     aug25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_aug25),
-    jan26 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26),
-    .id = "dco"
+    jan26 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26)
   ),
-  km_est_var = cond_spop_km_est,
-  obs_km_data = bind_rows(
-    pdl1 = bind_rows(
-      apr25 = tar_read(km_trial_pfs_pdl1_ctdna_apr25),
-      aug25 = tar_read(km_trial_pfs_pdl1_ctdna_aug25),
-      jan26 = tar_read(km_trial_pfs_pdl1_ctdna_jan26),
-      .id = "dco"
-    ) |>
-      filter(fct_match(trial, "sclc")) |>
-      select(!quantiles) |>
-      unnest(km_data),
-    pdl1_naive = bind_rows(
-      apr25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_apr25),
-      aug25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_aug25),
-      jan26 = tar_read(km_trial_pfs_pdl1_naive_ctdna_jan26),
-      .id = "dco"
-    ) |>
-      select(!quantiles) |>
-      unnest(km_data),
-    .id = "variable"
-  )
+  obs_km_all_list = list(
+    apr25 = tar_read(km_trial_pfs_pdl1_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_pdl1_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_pdl1_ctdna_jan26)
+  ),
+  obs_km_first_line_list = list(
+    apr25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_pdl1_naive_ctdna_jan26)
+  ),
+  obs_km_part_e_list = list(
+    apr25 = tar_read(km_trial_pfs_part_e_pdl1_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_part_e_pdl1_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_part_e_pdl1_ctdna_jan26)
+  ),
+  estimate_type = "spop"
 )
 ```
 
