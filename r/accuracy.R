@@ -734,7 +734,8 @@ get_oos_confusion_marix <- function(lfo_res, recover_data) {
 #' Calculates classification accuracy metrics (sensitivity, specificity, and overall accuracy)
 #' from out-of-sample confusion matrix predictions.
 #'
-#' @param store Character string. Path to the targets store containing the confusion matrix data.
+#' @param confusion_matrix_data Data frame containing the confusion matrix with columns:
+#'   response, pred_response, mean_pred, cell_size, and optionally count.
 #'
 #' @return A data frame with columns:
 #'   \item{metric}{Character. The metric type: "Accuracy", "Sensitivity", or "Specificity"}
@@ -749,29 +750,19 @@ get_oos_confusion_marix <- function(lfo_res, recover_data) {
 #' - **Accuracy** (overall): The weighted average of correct predictions across all classes
 #' - **Specificity** (per-class): The true negative rate for each RECIST category
 #'
-#' The function reads the `oos_confusion_matrix_ctdna_aug` target which contains both
-#' row-normalized proportions (for sensitivity/accuracy) and raw counts (for specificity).
+#' The confusion matrix data should contain both row-normalized proportions
+#' (for sensitivity/accuracy) and raw counts (for specificity).
 #'
-compute_oos_accuracy_metrics <- function(store) {
-  # Try to read the main confusion matrix with all columns
-  # If it doesn't have count, fall back to the counts-only target
-  data <- tar_read(oos_confusion_matrix_ctdna_aug, store = store)
+compute_oos_accuracy_metrics <- function(confusion_matrix_data) {
+  data <- confusion_matrix_data
 
   # Validate data structure
   if (nrow(data) == 0) {
-    stop("oos_confusion_matrix_ctdna_aug has no rows")
+    stop("confusion_matrix_data has no rows")
   }
 
   # Check if count column exists - if not, we can't compute specificity
   has_counts <- "count" %in% names(data)
-
-  if (!has_counts && tar_exist_objects("oos_confusion_matrix_counts_ctdna_aug", store = store)) {
-    # Try to read from the counts-only target and merge
-    counts_data <- tar_read(oos_confusion_matrix_counts_ctdna_aug, store = store)
-    data <- data |>
-      left_join(counts_data, by = c("response", "pred_response"))
-    has_counts <- TRUE
-  }
 
   # Per-class sensitivity (diagonal elements, as data is row-normalized)
   sensitivity <- data |>
