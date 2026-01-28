@@ -237,7 +237,8 @@ Out-of-sample confusion matrix comparing observed RECIST classifications with mo
 #| fig-cap: Out-of-sample (leave-future-out) confusion matrix for the RECIST categories as observed in the data and as estimated using only the target tumor SLD.
 #| fig-width: 6
 
-plot_oos_confusion_matrix(lfo_store)
+oos_confusion_matrix <- tar_read(oos_confusion_matrix_ctdna_jan26, store = lfo_store)
+plot_oos_confusion_matrix(oos_confusion_matrix)
 ```
 
 ```{r}
@@ -246,7 +247,7 @@ plot_oos_confusion_matrix(lfo_store)
 #| fig-width: 7
 #| fig-height: 5
 
-plot_oos_confusion_sankey(lfo_store)
+plot_oos_confusion_sankey(oos_confusion_matrix)
 ```
 
 ### Summary Metrics
@@ -255,7 +256,7 @@ plot_oos_confusion_sankey(lfo_store)
 #| label: tbl-accuracy-metrics
 #| tbl-cap: "Out-of-sample accuracy, sensitivity, and specificity with 90% credible intervals."
 
-compute_oos_accuracy_metrics(lfo_store) |>
+compute_oos_accuracy_metrics(oos_confusion_matrix) |>
   gt() |>
   tab_header(
     title = "RECIST Prediction Performance"
@@ -295,7 +296,7 @@ Tracking how well the model predicts each RECIST category at different points du
 #| fig-height: 6
 
 # Compute running proportions for all RECIST categories
-recist_data <- tar_read(full_oos_confusion_matrix_ctdna_aug, store = lfo_store) |>
+recist_data <- tar_read(full_oos_confusion_matrix_ctdna_jan26, store = lfo_store) |>
   group_by(n, m, cutoff_date, response) |>
   mutate(
     total = rvar_sum(oos_recist_confusion_matrix),
