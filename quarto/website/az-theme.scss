@@ -1,16 +1,10 @@
+// Import shared AZ color palette
+@import "../_shared/az-colors";
+
 /*-- scss:defaults --*/
 
-// AZ Color Palette (from .Rprofile)
-$az-plum: #830051;
-$az-gold: #F0AB00;
-$az-turquoise: #68D2DF;
-$az-darkpurple: #3C1053;
-$az-green: #C4D600;
-$az-navy: #003865;
-$az-platinum: #9DB0AC;
-$az-darkgrey: #3F4444;
-$az-pink: #D0006F;
-$az-lightpurple: #AE53DE;
+// Typography
+$font-family-sans-serif: Arial, "Helvetica Neue", Helvetica, sans-serif;
 
 // Bootstrap variable overrides
 $primary: $az-navy;
