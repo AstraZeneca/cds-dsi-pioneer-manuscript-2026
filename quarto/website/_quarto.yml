@@ -98,6 +98,13 @@ website:
   search:
     location: navbar
     type: overlay
+  page-footer:
+    left: "Last updated: {{< meta date-modified >}}"
+    center: "PIONEER: SCLC-01 Forecasting"
+    right: "Analysis v1.0.0 | DCO3 (Sept 2024)"
+
+metadata-files:
+  - _metadata.yml
 
 format:
   html:
@@ -120,6 +127,7 @@ format:
     fig-height: 4.5
     out-width: "100%"
     reference-location: margin
+    date-format: "MMMM D, YYYY"
 
 bibliography: ../../bib/pioneer.bib
 
