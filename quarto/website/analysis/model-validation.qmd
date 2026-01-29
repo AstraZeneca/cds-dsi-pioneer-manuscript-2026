@@ -303,68 +303,9 @@ Tracking how well the model predicts each RECIST category at different points du
 #| fig-width: 10
 #| fig-height: 6
 
-# Compute running proportions for all RECIST categories
-recist_data <- tar_read(full_oos_confusion_matrix_ctdna_jan26, store = lfo_store) |>
-  group_by(n, m, cutoff_date, response) |>
-  mutate(
-    total = rvar_sum(oos_recist_confusion_matrix),
-    prop = oos_recist_confusion_matrix / total
-  ) |>
-  ungroup() |>
-  filter(response == pred_response) |>  # Only diagonal (correct predictions)
-  arrange(response, cutoff_date)
-
-# Compute running proportions for each RECIST category
-recist_running <- recist_data |>
-  group_by(response) |>
-  group_modify(~ {
-    cumsum_prop <- accumulate(.x$prop, `+`)
-    running_prop <- map2(cumsum_prop, seq_along(cumsum_prop), ~ .x / .y)
-
-    .x |>
-      mutate(
-        running_prop = running_prop,
-        running_median = map_dbl(running_prop, median),
-        running_q10 = map_dbl(running_prop, ~ quantile(.x, 0.1)),
-        running_q90 = map_dbl(running_prop, ~ quantile(.x, 0.9))
-      )
-  }) |>
-  ungroup()
-
-# Define colors for each RECIST category
-recist_colors <- c(
-  "CR" = AZ_navy,
-  "PR" = AZ_turquoise,
-  "SD" = AZ_gold,
-  "PD" = AZ_pink
-)
-
-recist_running |>
-  ggplot(aes(x = cutoff_date, color = response, fill = response)) +
-  geom_vline(xintercept = as.Date("2025-04-30"), linetype = "dashed", color = "gray40", alpha = 0.6) +
-  geom_vline(xintercept = as.Date("2025-08-31"), linetype = "dashed", color = "gray40", alpha = 0.6) +
-  geom_vline(xintercept = as.Date("2026-01-31"), linetype = "dashed", color = "gray40", alpha = 0.6) +
-  geom_text(aes(x = as.Date("2025-04-30"), y = Inf, label = "DCO1"),
-            vjust = 1.5, hjust = -0.1, color = "gray40", size = 3, inherit.aes = FALSE) +
-  geom_text(aes(x = as.Date("2025-08-31"), y = Inf, label = "DCO2"),
-            vjust = 1.5, hjust = -0.1, color = "gray40", size = 3, inherit.aes = FALSE) +
-  geom_text(aes(x = as.Date("2026-01-31"), y = Inf, label = "DCO3"),
-            vjust = 1.5, hjust = -0.1, color = "gray40", size = 3, inherit.aes = FALSE) +
-  geom_ribbon(aes(ymin = running_q10, ymax = running_q90), alpha = 0.3, color = NA) +
-  geom_line(aes(y = running_median), linewidth = 1) +
-  scale_color_manual(values = recist_colors, name = "RECIST Category") +
-  scale_fill_manual(values = recist_colors, name = "RECIST Category") +
-  scale_y_continuous(
-    "Sensitivity",
-    breaks = seq(0, 1, 0.1),
-    labels = scales::percent_format(),
-    limits = c(0, NA)
-  ) +
-  labs(
-    x = "Cutoff Date",
-    caption = "Ribbon shows 80% credible interval of cumulative mean; line shows cumulative median.\nDashed lines indicate data cutoff dates (DCO1: Apr 2025, DCO2: Aug 2025, DCO3: Jan 2026)."
-  ) +
-  theme(legend.position = "bottom")
+tar_read(full_oos_confusion_matrix_ctdna_jan26, store = lfo_store) |>
+  plot_recist_sensitivity_over_time() +
+  labs(caption = "Ribbon shows 80% credible interval of cumulative mean; line shows cumulative median.\nDashed lines indicate data cutoff dates (DCO1: Apr 2025, DCO2: Aug 2025, DCO3: Jan 2026).")
 ```
 
 ::: {.related-pages}
