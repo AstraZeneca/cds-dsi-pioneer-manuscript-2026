@@ -1,0 +1,9 @@
+# Global metadata for all pages
+# This file sets defaults that can be overridden in individual .qmd files
+
+# Automatically track when each page was last modified
+# Options: "last-modified" (uses file timestamp) or "today" (uses build date)
+date-modified: last-modified
+
+# Optional: Add creation date metadata (uncomment if needed)
+# date: last-modified
