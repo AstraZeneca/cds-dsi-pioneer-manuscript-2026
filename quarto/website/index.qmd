@@ -19,6 +19,7 @@ source("_setup.R")
 }
 </style>
 
+::: {.column-page}
 ::: {.hero-section}
 ::: {.hero-content}
 ::: {.hero-text}
@@ -32,6 +33,15 @@ A comprehensive Bayesian hierarchical modeling system for analyzing tumor dynami
 :::
 :::
 :::
+:::
+
+## Model Architecture
+
+::: {.column-page}
+![Model Data Flow Diagram](images/model-diagram-tikz.svg){fig-align="center" width="100%"}
+:::
+
+## Model Performance
 
 ::: {style="display: flex; justify-content: center;"}
 ```{r}
@@ -47,6 +57,7 @@ plot_oos_confusion_sankey(oos_confusion_matrix_home) +
 ```
 :::
 
+::: {.column-page}
 ## Quick Navigation
 
 ::: {.card-grid}
@@ -82,7 +93,9 @@ Leave-future-out cross-validation, predictive accuracy assessment, and model com
 :::
 
 :::
+:::
 
+::: {.column-page}
 ## About This Analysis
 
 This website presents results from the SCLC-01 longitudinal tumor analysis using a state-space model that captures:
@@ -118,3 +131,4 @@ This website presents results from the SCLC-01 longitudinal tumor analysis using
 
 - Stein, W. D., et al. (2008). "Tumor Growth Rates Derived from Data for Patients in a Clinical Trial Correlate Strongly with Patient Survival: A Novel Strategy for Evaluation of Clinical Trial Data." *The Oncologist*.
 - RECIST 1.1 guidelines for tumor response assessment
+:::
