@@ -1,5 +1,6 @@
 // tr/transformed_parameters.stan — active linear predictor assembly for total rate module
 // Multi-level hierarchy: loop over all levels to accumulate effects
+// Uses enabled position arrays for efficient indexing into compacted parameter arrays
 
 // Population covariate effects
 vector[n_patients] tr_linpred_pop = enable_pop_cov_tr ?
@@ -11,8 +12,9 @@ vector[n_patients] tr_linpred_level_intercepts = rep_vector(0, n_patients);
 
 for (lv in 1:n_levels) {
   if (enable_level_intercept_tr[lv]) {
-    int lv_start = level_pos[lv];
-    int lv_end = level_pos[lv + 1] - 1;
+    // Use enabled position array (skips disabled levels in parameter indexing)
+    int lv_start = enabled_level_pos_tr_intercept[lv];
+    int lv_end = enabled_level_pos_tr_intercept[lv + 1] - 1;
 
     // Scale raw effects by SD
     vector[n_groups_per_level[lv]] level_effects =
@@ -28,8 +30,9 @@ vector[n_patients] tr_linpred_level_slopes = rep_vector(0, n_patients);
 
 for (lv in 1:n_levels) {
   if (enable_level_cov_tr[lv] && n_covar > 0) {
-    int lv_start = level_pos[lv];
-    int lv_end = level_pos[lv + 1] - 1;
+    // Use enabled position array (skips disabled levels in parameter indexing)
+    int lv_start = enabled_level_pos_tr_slope[lv];
+    int lv_end = enabled_level_pos_tr_slope[lv + 1] - 1;
 
     // Scale raw slopes for this level
     matrix[n_groups_per_level[lv], n_covar] level_slopes_qr =

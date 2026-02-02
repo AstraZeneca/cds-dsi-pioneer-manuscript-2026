@@ -501,12 +501,73 @@ int get_last_int(array[] int x, array[] int pos, int p) {
 array[] int validate_pos(array[] int pos) {
   int n = size(pos) - 1;
   array[n + 1] int sort_idx = sort_indices_asc(pos);
-  
+
   for (i in 1:(n + 1)) {
     if (sort_idx[i] != i) {
       fatal_error("Invalid pos: ", pos);
     }
   }
-  
+
   return pos;
+}
+
+/**
+ * Get the global group index from level and local group ID
+ *
+ * For a flattened array containing all groups across all levels,
+ * converts (level, local_group_id) to the global index.
+ *
+ * Example: With level_pos = [1, 6, 16, 166] (5 trials, 10 regions, 150 patients):
+ *   get_global_group_idx(level_pos, 2, 3) = 6 + 3 - 1 = 8 (region 3)
+ *
+ * @param level_pos Position array for levels (from create_pos(n_groups_per_level))
+ * @param level Level index (1-based)
+ * @param group_id Local group ID within level (1-based)
+ * @return Global group index in flattened group array
+ */
+int get_global_group_idx(array[] int level_pos, int level, int group_id) {
+  return level_pos[level] + group_id - 1;
+}
+
+/**
+ * Create position array for enabled levels only
+ *
+ * Creates a cumulative position array where disabled levels contribute 0 to the
+ * positions. This allows parameters to be sized exactly for enabled levels only,
+ * avoiding wasted memory and sampling for disabled levels.
+ *
+ * Example: With n_groups = [2, 732] and enabled = [1, 0]:
+ *   Returns [1, 3, 3] - only level 1 contributes, level 2 contributes 0
+ *
+ * @param n_groups Array of group counts per level (e.g., [n_trials, n_patients])
+ * @param enabled Array of 0/1 flags indicating which levels are enabled
+ * @return Position array where pos[i] is the starting index for level i in the
+ *         compacted (enabled-only) parameter array
+ */
+array[] int create_enabled_pos(array[] int n_groups, array[] int enabled) {
+  int n = size(n_groups);
+  array[n + 1] int pos;
+  pos[1] = 1;
+  for (i in 1:n) {
+    pos[i + 1] = pos[i] + (enabled[i] ? n_groups[i] : 0);
+  }
+  return pos;
+}
+
+/**
+ * Compute total number of enabled groups across all levels
+ *
+ * @param n_groups Array of group counts per level
+ * @param enabled Array of 0/1 flags indicating which levels are enabled
+ * @return Sum of group counts for enabled levels only
+ */
+int compute_n_enabled_groups(array[] int n_groups, array[] int enabled) {
+  int n = size(n_groups);
+  int total = 0;
+  for (i in 1:n) {
+    if (enabled[i]) {
+      total += n_groups[i];
+    }
+  }
+  return total;
 }

@@ -26,7 +26,7 @@ array[n_causes] vector[oe_enable_pop_cov ? n_covar : 0] oe_covar_coef_qr_pop;
 
 // --- Proportional Hazard: Multi-level Random Slopes (non-centered) ---
 // Non-tumor covariate random slopes - unified level structure
-// SD hyperparameters: one vector per cause per level
+// SD hyperparameters: one vector per cause per level (always n_levels for simplicity)
 array[n_causes, n_levels] vector<lower=0>[n_covar] oe_sd_level_slope;
-// Raw effects: flattened across all levels (n_total_groups rows)
-array[n_causes] matrix[n_total_groups, n_covar] oe_raw_level_slope;
+// Raw effects: sized by ENABLED groups only (n_enabled_groups_oe_slope rows)
+array[n_causes] matrix[n_enabled_groups_oe_slope, n_covar] oe_raw_level_slope;

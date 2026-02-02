@@ -2,6 +2,17 @@
 // Other Events Model Transformed Data
 // ============================================================================
 
+// --- Module-Specific Enabled Group Counts ---
+// Compute enabled group count for oe slopes (no intercepts in this module)
+int n_enabled_groups_oe_slope = compute_n_enabled_groups(
+  n_groups_per_level, oe_enable_level_cov
+);
+
+// Position array for enabled slope levels only
+array[n_levels + 1] int enabled_level_pos_oe_slope = create_enabled_pos(
+  n_groups_per_level, oe_enable_level_cov
+);
+
 // --- Independent Events Framework ---
 // INDEPENDENT EVENTS MODEL:
 // Target progression (from tumor dynamics) and other-events (from this model)

@@ -37,17 +37,18 @@ if (n_causes > 0) {
     }
 
     // Multi-level hierarchical priors (non-tumor covariates)
-    // ALWAYS apply priors to SD and raw effects to keep parameters bounded
+    // Uses enabled position arrays for efficient indexing into compacted parameter arrays
     for (lv in 1:n_levels) {
-      int lv_start = level_pos[lv];
-      int lv_end = level_pos[lv + 1] - 1;
-
-      // Slope SD hyperprior - ALWAYS apply to keep parameter bounded
+      // SD hyperpriors are always applied (arrays are always n_levels)
       if (n_covar > 0) {
         oe_sd_level_slope[k, lv] ~ normal(0, oe_sd_level_slope_sd[k, lv]);
       }
-      // Slope raw effects - ALWAYS apply prior
-      if (n_covar > 0) {
+
+      // Slope raw effects - only apply prior to enabled levels
+      // (parameter array is sized by enabled groups only)
+      if (oe_enable_level_cov[lv] && n_covar > 0) {
+        int lv_start = enabled_level_pos_oe_slope[lv];
+        int lv_end = enabled_level_pos_oe_slope[lv + 1] - 1;
         to_vector(oe_raw_level_slope[k, lv_start:lv_end, :]) ~ std_normal();
       }
     }

@@ -32,6 +32,9 @@ transformed data {
   #include "../base_transformed_data.stan"
   #include "../tumor/tumor_transformed_data.stan"
   #include "modules/measurement/transformed_data.stan"
+  #include "modules/tr/transformed_data.stan"
+  #include "modules/frac/transformed_data.stan"
+  #include "modules/init/transformed_data.stan"
   #include "_sf_transformed_data.stan"
   #include "modules/other_events/transformed_data.stan"
   #include "_sf-checks.stan"
@@ -97,13 +100,22 @@ generated quantities {
   real pop_log_growth_rate   = tr_loc_pop + pop_log_growth_frac;
 
   // Compute scaled intercept effects for all levels (flattened structure)
+  // Note: tr_raw_level_intercept is sized by enabled groups only, so we use
+  // enabled_level_pos_tr_intercept for indexing into it
   vector[n_total_groups] tr_effect_level_intercept;
   for (lv in 1:n_levels) {
-    int lv_start = level_pos[lv];
-    int lv_end = level_pos[lv + 1] - 1;
-    tr_effect_level_intercept[lv_start:lv_end] = enable_level_intercept_tr[lv] ?
-      tr_sd_level_intercept[lv] * tr_raw_level_intercept[lv_start:lv_end] :
-      rep_vector(0, n_groups_per_level[lv]);
+    int lv_start_output = level_pos[lv];
+    int lv_end_output = level_pos[lv + 1] - 1;
+    if (enable_level_intercept_tr[lv]) {
+      // Index into compacted parameter array using enabled position array
+      int lv_start_param = enabled_level_pos_tr_intercept[lv];
+      int lv_end_param = enabled_level_pos_tr_intercept[lv + 1] - 1;
+      tr_effect_level_intercept[lv_start_output:lv_end_output] =
+        tr_sd_level_intercept[lv] * tr_raw_level_intercept[lv_start_param:lv_end_param];
+    } else {
+      tr_effect_level_intercept[lv_start_output:lv_end_output] =
+        rep_vector(0, n_groups_per_level[lv]);
+    }
   }
 
   // Log rates for all groups at all levels (flattened structure)

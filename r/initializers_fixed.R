@@ -13,7 +13,14 @@ create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_
 
     with(stan_data, {
       # Multi-level hierarchy: n_levels, n_groups_per_level
-      n_total_groups <- sum(n_groups_per_level)
+      # Compute enabled group counts for each module (matches Stan transformed_data)
+      n_enabled_groups_tr_intercept <- sum(n_groups_per_level[enable_level_intercept_tr == 1])
+      n_enabled_groups_tr_slope <- sum(n_groups_per_level[enable_level_cov_tr == 1])
+      n_enabled_groups_frac_intercept <- sum(n_groups_per_level[enable_level_intercept_frac == 1])
+      n_enabled_groups_frac_slope <- sum(n_groups_per_level[enable_level_cov_frac == 1])
+      n_enabled_groups_init_intercept <- sum(n_groups_per_level[enable_level_intercept_init == 1])
+      n_enabled_groups_init_slope <- sum(n_groups_per_level[enable_level_cov_init == 1])
+      n_enabled_groups_oe_slope <- sum(n_groups_per_level[oe_enable_level_cov == 1])
 
       # Level positions for indexing flattened arrays
       level_pos <- c(1L, cumsum(n_groups_per_level) + 1L)
@@ -23,28 +30,36 @@ create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_
       frac_sd_level <- c(0.35, 0.40)
       init_sd_level <- c(0.35, 0.50)
 
-      # Generate deviations for all groups at all levels (flattened)
+      # Generate deviations for ENABLED levels only (flattened)
       tr_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
-        rnorm(n_groups_per_level[lv], sd = if (lv == n_levels) 0.3 else 0.2)
+        if (enable_level_intercept_tr[lv]) rnorm(n_groups_per_level[lv], sd = if (lv == n_levels) 0.3 else 0.2) else NULL
       }))
       frac_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
-        rnorm(n_groups_per_level[lv], sd = if (lv == n_levels) 0.3 else 0.2)
+        if (enable_level_intercept_frac[lv]) rnorm(n_groups_per_level[lv], sd = if (lv == n_levels) 0.3 else 0.2) else NULL
       }))
       init_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
-        rnorm(n_groups_per_level[lv], sd = if (lv == n_levels) 0.3 else 0.2)
+        if (enable_level_intercept_init[lv]) rnorm(n_groups_per_level[lv], sd = if (lv == n_levels) 0.3 else 0.2) else NULL
       }))
 
-      # Back-calculate raw values
+      # Back-calculate raw values using enabled level positions
+      enabled_level_pos_tr <- c(1L, cumsum(n_groups_per_level * enable_level_intercept_tr) + 1L)
       tr_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
-        idx <- level_pos[lv]:(level_pos[lv + 1] - 1)
+        if (!enable_level_intercept_tr[lv]) return(NULL)
+        idx <- enabled_level_pos_tr[lv]:(enabled_level_pos_tr[lv + 1] - 1)
         tr_level_dev[idx] / tr_sd_level[lv]
       }))
+
+      enabled_level_pos_frac <- c(1L, cumsum(n_groups_per_level * enable_level_intercept_frac) + 1L)
       frac_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
-        idx <- level_pos[lv]:(level_pos[lv + 1] - 1)
+        if (!enable_level_intercept_frac[lv]) return(NULL)
+        idx <- enabled_level_pos_frac[lv]:(enabled_level_pos_frac[lv + 1] - 1)
         frac_level_dev[idx] / frac_sd_level[lv]
       }))
+
+      enabled_level_pos_init <- c(1L, cumsum(n_groups_per_level * enable_level_intercept_init) + 1L)
       init_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
-        idx <- level_pos[lv]:(level_pos[lv + 1] - 1)
+        if (!enable_level_intercept_init[lv]) return(NULL)
+        idx <- enabled_level_pos_init[lv]:(enabled_level_pos_init[lv + 1] - 1)
         init_level_dev[idx] / init_sd_level[lv]
       }))
 
@@ -68,18 +83,19 @@ create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_
         init_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_init) array(rep(0, n_covar), dim = n_covar),
 
         # Level-indexed slope SDs and raw effects
+        # Slope SDs are always n_levels, but raw effects are sized by enabled groups only
         tr_sd_level_slope = if (n_covar > 0) lapply(seq_len(n_levels), function(lv) {
           rep(if (lv == n_levels) 0.2 else 0.1, n_covar)
         }),
-        tr_raw_level_slope = if (n_covar > 0) matrix(0, n_total_groups, n_covar),
+        tr_raw_level_slope = if (n_covar > 0) matrix(0, n_enabled_groups_tr_slope, n_covar),
         frac_sd_level_slope = if (n_covar > 0) lapply(seq_len(n_levels), function(lv) {
           rep(if (lv == n_levels) 0.2 else 0.1, n_covar)
         }),
-        frac_raw_level_slope = if (n_covar > 0) matrix(0, n_total_groups, n_covar),
+        frac_raw_level_slope = if (n_covar > 0) matrix(0, n_enabled_groups_frac_slope, n_covar),
         init_sd_level_slope = if (n_covar > 0) lapply(seq_len(n_levels), function(lv) {
           rep(if (lv == n_levels) 0.2 else 0.1, n_covar)
         }),
-        init_raw_level_slope = if (n_covar > 0) matrix(0, n_total_groups, n_covar),
+        init_raw_level_slope = if (n_covar > 0) matrix(0, n_enabled_groups_init_slope, n_covar),
 
         # Patient-level process noise (all disabled for now)
         tr_raw_patient_process_noise = if (enable_patient_process_noise_tr) {
@@ -140,9 +156,10 @@ create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_
         oe_sd_level_slope = if (n_covar > 0) {
           array(0.1, dim = c(n_causes, n_levels, n_covar))
         },
-        # oe_raw_level_slope: array[n_causes] matrix[n_total_groups, n_covar] -> 3D array
+        # oe_raw_level_slope: array[n_causes] matrix[n_enabled_groups_oe_slope, n_covar] -> 3D array
+        # Sized by ENABLED groups only
         oe_raw_level_slope = if (n_covar > 0) {
-          array(0, dim = c(n_causes, n_total_groups, n_covar))
+          array(0, dim = c(n_causes, n_enabled_groups_oe_slope, n_covar))
         },
       )
     }) |> purrr::compact() |>
