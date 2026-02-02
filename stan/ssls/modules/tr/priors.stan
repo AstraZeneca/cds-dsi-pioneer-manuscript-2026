@@ -1,5 +1,6 @@
 // tr/priors.stan — active priors for total rate module
 // Multi-level hierarchy: loop over all levels for unified prior structure
+// Uses enabled position arrays for efficient indexing into compacted parameter arrays
 
 // Population intercept
 tr_loc_pop ~ normal(tr_loc_pop_mean, tr_loc_pop_sd);
@@ -11,23 +12,24 @@ if (enable_pop_cov_tr) {
 
 // ===== UNIFIED LOOP OVER ALL LEVELS =====
 for (lv in 1:n_levels) {
-  int lv_start = level_pos[lv];
-  int lv_end = level_pos[lv + 1] - 1;
-
-  // Intercept SD hyperprior (always specified)
+  // SD hyperpriors are always applied (arrays are always n_levels)
   tr_sd_level_intercept[lv] ~ normal(0, tr_sd_level_intercept_sd[lv]);
-
-  // Intercept raw effects - ALWAYS apply prior to keep parameters bounded
-  // Even when level is disabled, raw effects exist and need priors to stay identified
-  tr_raw_level_intercept[lv_start:lv_end] ~ std_normal();
-
-  // Slope SD hyperprior - ALWAYS apply to keep parameter bounded
-  // Even when level is disabled, SD parameter exists and needs prior
   if (n_covar > 0) {
     tr_sd_level_slope[lv] ~ normal(0, tr_sd_level_slope_sd[lv]);
   }
-  // Slope raw effects - ALWAYS apply prior
-  if (n_covar > 0) {
+
+  // Intercept raw effects - only apply prior to enabled levels
+  // (parameter array is sized by enabled groups only)
+  if (enable_level_intercept_tr[lv]) {
+    int lv_start = enabled_level_pos_tr_intercept[lv];
+    int lv_end = enabled_level_pos_tr_intercept[lv + 1] - 1;
+    tr_raw_level_intercept[lv_start:lv_end] ~ std_normal();
+  }
+
+  // Slope raw effects - only apply prior to enabled levels
+  if (enable_level_cov_tr[lv] && n_covar > 0) {
+    int lv_start = enabled_level_pos_tr_slope[lv];
+    int lv_end = enabled_level_pos_tr_slope[lv + 1] - 1;
     to_vector(tr_raw_level_slope[lv_start:lv_end, :]) ~ std_normal();
   }
 }

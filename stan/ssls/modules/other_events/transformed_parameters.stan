@@ -148,10 +148,12 @@ if (n_causes > 0 && (oe_enable_pop_cov || sum(oe_enable_level_cov) > 0)) {
     }
 
     // Multi-level random non-tumor slopes (additive across levels)
+    // Uses enabled position arrays for efficient indexing into compacted parameter arrays
     for (lv in 1:n_levels) {
       if (oe_enable_level_cov[lv] && n_covar > 0) {
-        int lv_start = level_pos[lv];
-        int lv_end = level_pos[lv + 1] - 1;
+        // Use enabled position array (skips disabled levels in parameter indexing)
+        int lv_start = enabled_level_pos_oe_slope[lv];
+        int lv_end = enabled_level_pos_oe_slope[lv + 1] - 1;
 
         // Scale raw slopes for this level
         matrix[n_groups_per_level[lv], n_covar] level_slopes_qr =

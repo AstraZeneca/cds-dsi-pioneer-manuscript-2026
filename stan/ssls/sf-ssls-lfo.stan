@@ -30,10 +30,13 @@ data {
 
 transformed data {
   print("cutoff_calendar_day = ", cutoff_calendar_day);
-  
+
   #include "../base_transformed_data.stan"
   #include "../tumor/tumor_transformed_data.stan"
   #include "modules/measurement/transformed_data.stan"
+  #include "modules/tr/transformed_data.stan"
+  #include "modules/frac/transformed_data.stan"
+  #include "modules/init/transformed_data.stan"
   #include "_sf_transformed_data.stan"
   #include "modules/other_events/transformed_data.stan"
   #include "_lfo_transformed_data.stan"

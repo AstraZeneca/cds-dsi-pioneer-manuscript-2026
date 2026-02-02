@@ -416,8 +416,15 @@ create_tumor_ssls_initializer <- function(stan_data) {
     # Formula: actual = mean + sd * raw  =>  raw = (actual - mean) / sd
 
     with(stan_data, {
-      # Multi-level hierarchy: n_levels, n_groups_per_level, n_total_groups
-      n_total_groups <- sum(n_groups_per_level)
+      # Multi-level hierarchy: n_levels, n_groups_per_level
+      # Compute enabled group counts for each module (matches Stan transformed_data)
+      n_enabled_groups_tr_intercept <- sum(n_groups_per_level[enable_level_intercept_tr == 1])
+      n_enabled_groups_tr_slope <- sum(n_groups_per_level[enable_level_cov_tr == 1])
+      n_enabled_groups_frac_intercept <- sum(n_groups_per_level[enable_level_intercept_frac == 1])
+      n_enabled_groups_frac_slope <- sum(n_groups_per_level[enable_level_cov_frac == 1])
+      n_enabled_groups_init_intercept <- sum(n_groups_per_level[enable_level_intercept_init == 1])
+      n_enabled_groups_init_slope <- sum(n_groups_per_level[enable_level_cov_init == 1])
+      n_enabled_groups_oe_slope <- sum(n_groups_per_level[oe_enable_level_cov == 1])
 
       # Helper to draw truncated normal on actual scale
       rtruncnorm_actual <- function(n, sd, max_dev = 1.5) {
@@ -431,31 +438,38 @@ create_tumor_ssls_initializer <- function(stan_data) {
       frac_sd_level <- pmax(0.05, abs(rnorm(n_levels, sd = frac_sd_level_intercept_sd)))
       init_sd_level <- pmax(0.05, abs(rnorm(n_levels, sd = init_sd_level_intercept_sd)))
 
-      # Draw actual deviations for each group at each level, then back-calculate raw
-      # These are flattened: groups from level 1, then level 2, etc.
+      # Draw actual deviations for ENABLED levels only, then back-calculate raw
+      # These are flattened: groups from enabled level 1, then enabled level 2, etc.
       tr_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
-        rtruncnorm_actual(n_groups_per_level[lv], tr_sd_level[lv])
+        if (enable_level_intercept_tr[lv]) rtruncnorm_actual(n_groups_per_level[lv], tr_sd_level[lv]) else NULL
       }))
       frac_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
-        rtruncnorm_actual(n_groups_per_level[lv], frac_sd_level[lv])
+        if (enable_level_intercept_frac[lv]) rtruncnorm_actual(n_groups_per_level[lv], frac_sd_level[lv]) else NULL
       }))
       init_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
-        rtruncnorm_actual(n_groups_per_level[lv], init_sd_level[lv])
+        if (enable_level_intercept_init[lv]) rtruncnorm_actual(n_groups_per_level[lv], init_sd_level[lv]) else NULL
       }))
 
       # Back-calculate raw values (raw = dev / sd for each group's level)
-      # Build level_pos for indexing (1-based start positions)
-      level_pos <- c(1L, cumsum(n_groups_per_level) + 1L)
+      # Build enabled_level_pos for indexing (1-based start positions, only enabled levels)
+      enabled_level_pos_tr <- c(1L, cumsum(n_groups_per_level * enable_level_intercept_tr) + 1L)
       tr_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
-        idx <- level_pos[lv]:(level_pos[lv + 1] - 1)
+        if (!enable_level_intercept_tr[lv]) return(NULL)
+        idx <- enabled_level_pos_tr[lv]:(enabled_level_pos_tr[lv + 1] - 1)
         tr_level_dev[idx] / tr_sd_level[lv]
       }))
+
+      enabled_level_pos_frac <- c(1L, cumsum(n_groups_per_level * enable_level_intercept_frac) + 1L)
       frac_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
-        idx <- level_pos[lv]:(level_pos[lv + 1] - 1)
+        if (!enable_level_intercept_frac[lv]) return(NULL)
+        idx <- enabled_level_pos_frac[lv]:(enabled_level_pos_frac[lv + 1] - 1)
         frac_level_dev[idx] / frac_sd_level[lv]
       }))
+
+      enabled_level_pos_init <- c(1L, cumsum(n_groups_per_level * enable_level_intercept_init) + 1L)
       init_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
-        idx <- level_pos[lv]:(level_pos[lv + 1] - 1)
+        if (!enable_level_intercept_init[lv]) return(NULL)
+        idx <- enabled_level_pos_init[lv]:(enabled_level_pos_init[lv + 1] - 1)
         init_level_dev[idx] / init_sd_level[lv]
       }))
 
@@ -471,14 +485,15 @@ create_tumor_ssls_initializer <- function(stan_data) {
         pmax(0.01, abs(rnorm(n_covar, sd = init_sd_level_slope_sd[[lv]])))
       })
 
-      # Raw slope effects: matrix[n_total_groups, n_covar]
+      # Raw slope effects: matrix[n_enabled_groups_*, n_covar]
       # Use narrow distribution (sd=0.5) to avoid extreme initializations
-      tr_raw_level_slope <- matrix(rnorm(n_total_groups * n_covar, sd = 0.5),
-                                    nrow = n_total_groups, ncol = n_covar)
-      frac_raw_level_slope <- matrix(rnorm(n_total_groups * n_covar, sd = 0.5),
-                                      nrow = n_total_groups, ncol = n_covar)
-      init_raw_level_slope <- matrix(rnorm(n_total_groups * n_covar, sd = 0.5),
-                                      nrow = n_total_groups, ncol = n_covar)
+      # Sized by ENABLED groups only
+      tr_raw_level_slope <- matrix(rnorm(n_enabled_groups_tr_slope * n_covar, sd = 0.5),
+                                    nrow = n_enabled_groups_tr_slope, ncol = n_covar)
+      frac_raw_level_slope <- matrix(rnorm(n_enabled_groups_frac_slope * n_covar, sd = 0.5),
+                                      nrow = n_enabled_groups_frac_slope, ncol = n_covar)
+      init_raw_level_slope <- matrix(rnorm(n_enabled_groups_init_slope * n_covar, sd = 0.5),
+                                      nrow = n_enabled_groups_init_slope, ncol = n_covar)
 
       lst(
         # Population intercepts (unconditional - always required)
@@ -576,10 +591,11 @@ create_tumor_ssls_initializer <- function(stan_data) {
           array(abs(rnorm(n_causes * n_levels * n_covar, sd = 0.15)),
                 dim = c(n_causes, n_levels, n_covar))
         },
-        # oe_raw_level_slope: array[n_causes] matrix[n_total_groups, n_covar] -> 3D array
+        # oe_raw_level_slope: array[n_causes] matrix[n_enabled_groups_oe_slope, n_covar] -> 3D array
+        # Sized by ENABLED groups only
         oe_raw_level_slope = if (n_covar > 0) {
-          array(rnorm(n_causes * n_total_groups * n_covar),
-                dim = c(n_causes, n_total_groups, n_covar))
+          array(rnorm(n_causes * n_enabled_groups_oe_slope * n_covar),
+                dim = c(n_causes, n_enabled_groups_oe_slope, n_covar))
         },
       )
     }) |> compact()
