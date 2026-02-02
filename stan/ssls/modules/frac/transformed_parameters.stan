@@ -1,28 +1,49 @@
 // frac/transformed_parameters.stan — active fraction module transformed parameters
-vector[n_trials] frac_effect_trial_intercept = enable_trial_intercept_frac ? frac_sd_trial_intercept * frac_raw_trial_intercept : rep_vector(0, n_trials);
-vector[n_patients] frac_effect_patient_intercept = enable_patient_intercept_frac ? frac_sd_patient_intercept * frac_raw_patient_intercept : rep_vector(0, n_patients);
-vector[n_patients] frac_linpred_pop = enable_pop_cov_frac ? (Q_covar_design_matrix * frac_coef_qr_pop) : rep_vector(0, n_patients);
+// Multi-level hierarchy: loop over all levels to accumulate effects
 
-// Trial slope deviations: construct QR-space linear predictor contributions per patient
-vector[n_patients] frac_linpred_trial = rep_vector(0, n_patients);
+// Population covariate effects
+vector[n_patients] frac_linpred_pop = enable_pop_cov_frac ?
+  (Q_covar_design_matrix * frac_coef_qr_pop) : rep_vector(0, n_patients);
 
-if (enable_trial_cov_frac) {
-  matrix[n_trials, n_covar] frac_trial_slope_qr = frac_raw_trial_slope .* rep_matrix(frac_sd_trial_slope', n_trials);
-  frac_linpred_trial = rows_dot_product(Q_covar_design_matrix, frac_trial_slope_qr[patient_trial]);
+// ===== INTERCEPT EFFECTS =====
+vector[n_patients] frac_linpred_level_intercepts = rep_vector(0, n_patients);
+
+for (lv in 1:n_levels) {
+  if (enable_level_intercept_frac[lv]) {
+    int lv_start = level_pos[lv];
+    int lv_end = level_pos[lv + 1] - 1;
+
+    vector[n_groups_per_level[lv]] level_effects =
+      frac_sd_level_intercept[lv] * frac_raw_level_intercept[lv_start:lv_end];
+
+    frac_linpred_level_intercepts += level_effects[patient_level_groups[, lv]];
+  }
 }
 
-// Patient slope deviations
-vector[n_patients] frac_linpred_patient = rep_vector(0, n_patients);
+// ===== COVARIATE SLOPE EFFECTS =====
+vector[n_patients] frac_linpred_level_slopes = rep_vector(0, n_patients);
 
-if (enable_patient_cov_frac) {
-  matrix[n_patients, n_covar] frac_patient_slope_qr = frac_raw_patient_slope .* rep_matrix(frac_sd_patient_slope', n_patients);
-  frac_linpred_patient = rows_dot_product(Q_covar_design_matrix, frac_patient_slope_qr);
+for (lv in 1:n_levels) {
+  if (enable_level_cov_frac[lv] && n_covar > 0) {
+    int lv_start = level_pos[lv];
+    int lv_end = level_pos[lv + 1] - 1;
+
+    matrix[n_groups_per_level[lv], n_covar] level_slopes_qr =
+      frac_raw_level_slope[lv_start:lv_end, :] .*
+      rep_matrix(frac_sd_level_slope[lv]', n_groups_per_level[lv]);
+
+    frac_linpred_level_slopes += rows_dot_product(
+      Q_covar_design_matrix,
+      level_slopes_qr[patient_level_groups[, lv], :]
+    );
+  }
 }
 
+// ===== FINAL LINEAR PREDICTOR =====
 vector[n_patients] frac_logit_loc_patient = frac_logit_loc_pop
-  + frac_linpred_pop + frac_linpred_trial + frac_linpred_patient
-  + frac_effect_trial_intercept[patient_trial] 
-  + frac_effect_patient_intercept;
+  + frac_linpred_pop
+  + frac_linpred_level_intercepts
+  + frac_linpred_level_slopes;
 
 vector[n_patients] frac_log_decrease_patient = log_inv_logit(frac_logit_loc_patient);
 vector[n_patients] frac_log_growth_patient   = log1m_inv_logit(frac_logit_loc_patient);

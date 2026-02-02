@@ -23,24 +23,32 @@ if (n_causes > 0) {
   }
 
   // --- Proportional Hazard: Covariate Effects ---
-  if (oe_enable_pop_cov || oe_enable_pop_tumor_cov || oe_enable_trial_cov) {
-    for (k in 1:n_causes) {
-      // Population-level time-varying tumor coefficients (vector)
-      if (oe_enable_pop_tumor_cov) {
-        oe_tumor_coef_pop[k] ~ normal(oe_tumor_coef_pop_mean[k], 
-                                       oe_tumor_coef_pop_sd[k]);
+  for (k in 1:n_causes) {
+    // Population-level time-varying tumor coefficients (vector)
+    if (oe_enable_pop_tumor_cov) {
+      oe_tumor_coef_pop[k] ~ normal(oe_tumor_coef_pop_mean[k],
+                                     oe_tumor_coef_pop_sd[k]);
+    }
+
+    // Population-level non-tumor covariates (QR space, vector)
+    if (oe_enable_pop_cov) {
+      oe_covar_coef_qr_pop[k] ~ normal(oe_covar_coef_qr_pop_mean[k],
+                                        oe_covar_coef_qr_pop_sd[k]);
+    }
+
+    // Multi-level hierarchical priors (non-tumor covariates)
+    // ALWAYS apply priors to SD and raw effects to keep parameters bounded
+    for (lv in 1:n_levels) {
+      int lv_start = level_pos[lv];
+      int lv_end = level_pos[lv + 1] - 1;
+
+      // Slope SD hyperprior - ALWAYS apply to keep parameter bounded
+      if (n_covar > 0) {
+        oe_sd_level_slope[k, lv] ~ normal(0, oe_sd_level_slope_sd[k, lv]);
       }
-      
-      // Population-level non-tumor covariates (QR space, vector)
-      if (oe_enable_pop_cov) {
-        oe_covar_coef_qr_pop[k] ~ normal(oe_covar_coef_qr_pop_mean[k], 
-                                          oe_covar_coef_qr_pop_sd[k]);
-      }
-      
-      // Trial-level hierarchical priors (non-tumor covariates only)
-      if (oe_enable_trial_cov) {
-        oe_sd_trial_slope[k] ~ normal(0, oe_sd_trial_slope_sd[k]);
-        to_vector(oe_raw_trial_slope[k]) ~ std_normal();
+      // Slope raw effects - ALWAYS apply prior
+      if (n_covar > 0) {
+        to_vector(oe_raw_level_slope[k, lv_start:lv_end, :]) ~ std_normal();
       }
     }
   }

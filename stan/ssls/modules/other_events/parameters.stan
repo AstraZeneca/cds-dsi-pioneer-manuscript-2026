@@ -24,7 +24,9 @@ array[n_causes] vector[oe_enable_pop_tumor_cov ? n_tumor_covar : 0] oe_tumor_coe
 // Non-tumor covariate coefficients (QR space)
 array[n_causes] vector[oe_enable_pop_cov ? n_covar : 0] oe_covar_coef_qr_pop;
 
-// --- Proportional Hazard: Trial-level Random Slopes (non-centered) ---
-// Non-tumor covariate random slopes
-array[n_causes] vector<lower=0>[oe_enable_trial_cov ? n_covar : 0] oe_sd_trial_slope;
-array[n_causes] matrix[oe_enable_trial_cov ? n_trials : 0, oe_enable_trial_cov ? n_covar : 0] oe_raw_trial_slope;
+// --- Proportional Hazard: Multi-level Random Slopes (non-centered) ---
+// Non-tumor covariate random slopes - unified level structure
+// SD hyperparameters: one vector per cause per level
+array[n_causes, n_levels] vector<lower=0>[n_covar] oe_sd_level_slope;
+// Raw effects: flattened across all levels (n_total_groups rows)
+array[n_causes] matrix[n_total_groups, n_covar] oe_raw_level_slope;

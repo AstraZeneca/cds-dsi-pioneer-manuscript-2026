@@ -1,28 +1,49 @@
 // init/transformed_parameters.stan — active initial proportion module
-vector[n_trials] init_effect_trial_intercept = enable_trial_intercept_init ? init_sd_trial_intercept * init_raw_trial_intercept : rep_vector(0, n_trials);
-vector[n_patients] init_effect_patient_intercept = enable_patient_intercept_init ? init_sd_patient_intercept * init_raw_patient_intercept : rep_vector(0, n_patients);
-vector[n_patients] init_linpred_pop = enable_pop_cov_init ? (Q_covar_design_matrix * init_coef_qr_pop) : rep_vector(0, n_patients);
+// Multi-level hierarchy: loop over all levels to accumulate effects
 
-// Trial slope deviations: construct QR-space linear predictor contributions per patient
-vector[n_patients] init_linpred_trial = rep_vector(0, n_patients);
+// Population covariate effects
+vector[n_patients] init_linpred_pop = enable_pop_cov_init ?
+  (Q_covar_design_matrix * init_coef_qr_pop) : rep_vector(0, n_patients);
 
-if (enable_trial_cov_init) {
-  matrix[n_trials, n_covar] init_trial_slope_qr = (init_raw_trial_slope .* rep_matrix(init_sd_trial_slope', n_trials));
-  init_linpred_trial = rows_dot_product(Q_covar_design_matrix, init_trial_slope_qr[patient_trial]);
+// ===== INTERCEPT EFFECTS =====
+vector[n_patients] init_linpred_level_intercepts = rep_vector(0, n_patients);
+
+for (lv in 1:n_levels) {
+  if (enable_level_intercept_init[lv]) {
+    int lv_start = level_pos[lv];
+    int lv_end = level_pos[lv + 1] - 1;
+
+    vector[n_groups_per_level[lv]] level_effects =
+      init_sd_level_intercept[lv] * init_raw_level_intercept[lv_start:lv_end];
+
+    init_linpred_level_intercepts += level_effects[patient_level_groups[, lv]];
+  }
 }
 
-// Patient slope deviations
-vector[n_patients] init_linpred_patient = rep_vector(0, n_patients);
+// ===== COVARIATE SLOPE EFFECTS =====
+vector[n_patients] init_linpred_level_slopes = rep_vector(0, n_patients);
 
-if (enable_patient_cov_init) {
-  matrix[n_patients, n_covar] init_patient_slope_qr = (init_raw_patient_slope .* rep_matrix(init_sd_patient_slope', n_patients));
-  init_linpred_patient = rows_dot_product(Q_covar_design_matrix, init_patient_slope_qr);
+for (lv in 1:n_levels) {
+  if (enable_level_cov_init[lv] && n_covar > 0) {
+    int lv_start = level_pos[lv];
+    int lv_end = level_pos[lv + 1] - 1;
+
+    matrix[n_groups_per_level[lv], n_covar] level_slopes_qr =
+      init_raw_level_slope[lv_start:lv_end, :] .*
+      rep_matrix(init_sd_level_slope[lv]', n_groups_per_level[lv]);
+
+    init_linpred_level_slopes += rows_dot_product(
+      Q_covar_design_matrix,
+      level_slopes_qr[patient_level_groups[, lv], :]
+    );
+  }
 }
 
+// ===== FINAL LINEAR PREDICTOR =====
 vector[n_patients] init_logit_loc_patient = init_logit_loc_pop
-  + init_linpred_pop + init_linpred_trial + init_linpred_patient
-  + init_effect_trial_intercept[patient_trial]
-  + init_effect_patient_intercept;
+  + init_linpred_pop
+  + init_linpred_level_intercepts
+  + init_linpred_level_slopes;
 
 vector[n_patients] init_log_decrease_patient = log_inv_logit(init_logit_loc_patient);
 vector[n_patients] init_log_growth_patient   = log1m_inv_logit(init_logit_loc_patient);

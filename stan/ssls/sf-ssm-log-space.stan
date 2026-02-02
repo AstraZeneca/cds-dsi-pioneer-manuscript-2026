@@ -95,24 +95,62 @@ generated quantities {
   real pop_log_growth_frac   = log1m_inv_logit(frac_logit_loc_pop);
   real pop_log_decrease_rate = tr_loc_pop + pop_log_decrease_frac;
   real pop_log_growth_rate   = tr_loc_pop + pop_log_growth_frac;
-  vector[n_trials] trial_log_total_rate = tr_loc_pop + tr_effect_trial_intercept;
-  vector[n_trials] trial_log_decrease_rate = trial_log_total_rate + pop_log_decrease_frac;
-  vector[n_trials] trial_log_growth_rate   = trial_log_total_rate + pop_log_growth_frac;
-  vector[n_trials] trial_log_growth_rate_residual = trial_log_growth_rate - pop_log_growth_rate;
-  vector[n_trials] trial_log_decrease_rate_residual = trial_log_decrease_rate - pop_log_decrease_rate;
-  
-  // Patient-level residuals: conditionally handle matrix sizing
+
+  // Compute scaled intercept effects for all levels (flattened structure)
+  vector[n_total_groups] tr_effect_level_intercept;
+  for (lv in 1:n_levels) {
+    int lv_start = level_pos[lv];
+    int lv_end = level_pos[lv + 1] - 1;
+    tr_effect_level_intercept[lv_start:lv_end] = enable_level_intercept_tr[lv] ?
+      tr_sd_level_intercept[lv] * tr_raw_level_intercept[lv_start:lv_end] :
+      rep_vector(0, n_groups_per_level[lv]);
+  }
+
+  // Log rates for all groups at all levels (flattened structure)
+  // Each group's rate = population rate + that group's intercept effect
+  vector[n_total_groups] level_log_total_rate = tr_loc_pop + tr_effect_level_intercept;
+  vector[n_total_groups] level_log_decrease_rate = level_log_total_rate + pop_log_decrease_frac;
+  vector[n_total_groups] level_log_growth_rate = level_log_total_rate + pop_log_growth_frac;
+
+  // Residuals for all groups at all levels (vs population)
+  vector[n_total_groups] level_log_growth_rate_residual = level_log_growth_rate - pop_log_growth_rate;
+  vector[n_total_groups] level_log_decrease_rate_residual = level_log_decrease_rate - pop_log_decrease_rate;
+
+  // Patient-level residuals: compare to parent level (level n_levels - 1, or population if n_levels == 1)
   matrix[n_patients, max_t_width] patient_log_growth_rate_residual;
   matrix[n_patients, max_t_width] patient_log_decrease_rate_residual;
-  
-  if (enable_patient_process_noise_tr) {
-    // Time-varying rates: direct subtraction
-    patient_log_growth_rate_residual = patient_log_growth_rate - rep_matrix(trial_log_growth_rate[patient_trial], max_t_width);
-    patient_log_decrease_rate_residual = patient_log_decrease_rate - rep_matrix(trial_log_decrease_rate[patient_trial], max_t_width);
-  } else {
-    // Constant rates: broadcast single column across all time points
-    patient_log_growth_rate_residual = patient_log_growth_rate[, 1] * ones_row_vector(max_t_width) - rep_matrix(trial_log_growth_rate[patient_trial], max_t_width);
-    patient_log_decrease_rate_residual = patient_log_decrease_rate[, 1] * ones_row_vector(max_t_width) - rep_matrix(trial_log_decrease_rate[patient_trial], max_t_width);
+
+  {
+    // Get parent level rates for each patient
+    vector[n_patients] parent_log_growth_rate;
+    vector[n_patients] parent_log_decrease_rate;
+
+    if (n_levels > 1) {
+      // Parent is level n_levels - 1
+      int parent_lv = n_levels - 1;
+      int parent_lv_start, parent_lv_end;
+      (parent_lv_start, parent_lv_end) = get_pos(level_pos, parent_lv);
+
+      // Extract parent level rates, then index by patient's group membership
+      vector[n_groups_per_level[parent_lv]] parent_level_growth = level_log_growth_rate[parent_lv_start:parent_lv_end];
+      vector[n_groups_per_level[parent_lv]] parent_level_decrease = level_log_decrease_rate[parent_lv_start:parent_lv_end];
+      parent_log_growth_rate = parent_level_growth[patient_level_groups[, parent_lv]];
+      parent_log_decrease_rate = parent_level_decrease[patient_level_groups[, parent_lv]];
+    } else {
+      // No intermediate levels, compare to population
+      parent_log_growth_rate = rep_vector(pop_log_growth_rate, n_patients);
+      parent_log_decrease_rate = rep_vector(pop_log_decrease_rate, n_patients);
+    }
+
+    if (enable_patient_process_noise_tr) {
+      // Time-varying rates: direct subtraction
+      patient_log_growth_rate_residual = patient_log_growth_rate - rep_matrix(parent_log_growth_rate, max_t_width);
+      patient_log_decrease_rate_residual = patient_log_decrease_rate - rep_matrix(parent_log_decrease_rate, max_t_width);
+    } else {
+      // Constant rates: broadcast single column across all time points
+      patient_log_growth_rate_residual = patient_log_growth_rate[, 1] * ones_row_vector(max_t_width) - rep_matrix(parent_log_growth_rate, max_t_width);
+      patient_log_decrease_rate_residual = patient_log_decrease_rate[, 1] * ones_row_vector(max_t_width) - rep_matrix(parent_log_decrease_rate, max_t_width);
+    }
   }
 
   #include "_endpoints_generated_quantities.stan"  

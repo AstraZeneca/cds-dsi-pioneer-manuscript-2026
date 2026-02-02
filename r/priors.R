@@ -1,5 +1,7 @@
 # nolint start: object_usage_linter
 
+source("r/multi_level_hierarchy.R")
+
 get_tumor_priors <- function(stan_data, coef_elicited_priors) {
   # Directly specified priors (simplified)
   # Choose log-total rate prior similar to historical center; adjust if needed.
@@ -13,6 +15,10 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
   # Initial proportion logit
   init_logit_loc_pop_mean <- 0.0 # formerly pop_decrease_prop_logis_mean
   init_logit_loc_pop_sd <- 0.8 # tightened from 1.5 (was extremely wide!)
+
+  # Get n_levels from stan_data (default 2 for backward compat)
+  n_levels <- stan_data$n_levels %||% 2L
+  n_covar <- stan_data$n_covar
 
   lst(
     # GP hyperparameters
@@ -33,16 +39,17 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     growth_process_alpha = 9.7,
     growth_process_beta = 38.4,
 
-    # Total rate module hyperparams
+    # Total rate module hyperparams (multi-level): c(trial, patient)
     tr_loc_pop_mean = tr_loc_pop_mean,
     tr_loc_pop_sd = tr_loc_pop_sd,
-    tr_sd_trial_intercept_sd = 0.35, # tightened from 0.6
-    tr_sd_patient_intercept_sd = 0.35, # tightened from 0.5
-    tr_coef_qr_pop_mean = as.array(rep(0, stan_data$n_covar)),
-    tr_coef_qr_pop_sd = as.array(rep(1, stan_data$n_covar)),
-    tr_sd_trial_slope_sd = as.array(rep(0.15, stan_data$n_covar)),
-    tr_sd_patient_slope_sd = as.array(rep(0.10, stan_data$n_covar)),
-    
+    tr_sd_level_intercept_sd = c(0.35, 0.35),
+    tr_coef_qr_pop_mean = as.array(rep(0, n_covar)),
+    tr_coef_qr_pop_sd = as.array(rep(1, n_covar)),
+    tr_sd_level_slope_sd = list(
+      trial = rep(0.15, n_covar),
+      patient = rep(0.10, n_covar)
+    ),
+
     # Patient-level process noise (AR(1) time-varying rates per patient)
     # Note: These are deviations in log-rates (decrease/growth), which integrate over time
     # Even small rate deviations accumulate into substantial tumor trajectory effects
@@ -59,25 +66,27 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     tr_logit_phi_pop_process_noise_pop_mean = 1.4, # favors high correlation
     tr_logit_phi_pop_process_noise_pop_sd = 0.5,   # allows φ ~[0.6, 0.9]
 
-    # Fraction module hyperparams
+    # Fraction module hyperparams (multi-level): c(trial, patient)
     frac_logit_loc_pop_mean = frac_logit_loc_pop_mean,
     frac_logit_loc_pop_sd = frac_logit_loc_pop_sd,
-    frac_sd_trial_intercept_sd = 0.25, # tightened from 0.3 (critical for logit)
-    frac_sd_patient_intercept_sd = 0.25, # tightened from 0.3 (critical for logit)
+    frac_sd_level_intercept_sd = c(0.25, 0.25),
     frac_coef_qr_pop_mean = as.array(coef_elicited_priors$coef_mean),
     frac_coef_qr_pop_sd = as.array(coef_elicited_priors$coef_sd),
-    frac_sd_trial_slope_sd = as.array(rep(0.05, stan_data$n_covar)),
-    frac_sd_patient_slope_sd = as.array(rep(0.03, stan_data$n_covar)),
+    frac_sd_level_slope_sd = list(
+      trial = rep(0.05, n_covar),
+      patient = rep(0.03, n_covar)
+    ),
 
-    # Initial state proportion module hyperparams
+    # Initial state proportion module hyperparams (multi-level): c(trial, patient)
     init_logit_loc_pop_mean = init_logit_loc_pop_mean,
     init_logit_loc_pop_sd = init_logit_loc_pop_sd,
-    init_sd_trial_intercept_sd = 0.6, # tightened from 1.5 (was way too wide!)
-    init_sd_patient_intercept_sd = 0.5, # tightened from 1.0
+    init_sd_level_intercept_sd = c(0.6, 0.5),
     init_coef_qr_pop_mean = as.array(coef_elicited_priors$coef_mean),
     init_coef_qr_pop_sd = as.array(coef_elicited_priors$coef_sd),
-    init_sd_trial_slope_sd = as.array(rep(0.10, stan_data$n_covar)),
-    init_sd_patient_slope_sd = as.array(rep(0.08, stan_data$n_covar)),
+    init_sd_level_slope_sd = list(
+      trial = rep(0.10, n_covar),
+      patient = rep(0.08, n_covar)
+    ),
 
     # Growth lag
     growth_lag_mean = 2.7,
@@ -128,9 +137,11 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
       coef_elicited_priors$coef_sd,
       dim = c(stan_data$n_causes, stan_data$n_covar)
     ),
-    oe_sd_trial_slope_sd = array(
-      rep(0.15, stan_data$n_covar),
-      dim = c(stan_data$n_causes, stan_data$n_covar)
+    # Multi-level random slope SD hyperpriors for non-tumor covariates
+    # Dimensions: [n_causes, n_levels, n_covar]
+    oe_sd_level_slope_sd = array(
+      rep(0.15, stan_data$n_causes * n_levels * stan_data$n_covar),
+      dim = c(stan_data$n_causes, n_levels, stan_data$n_covar)
     ),
 
     log_lod_sd = 0.2

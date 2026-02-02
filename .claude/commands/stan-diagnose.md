@@ -5,30 +5,156 @@ Use this skill to diagnose Stan MCMC sampling issues, particularly for complex h
 ## Usage
 
 Invoke with `/stan-diagnose` followed by optional arguments:
-- `/stan-diagnose` or `/stan-diagnose status` - Quick health check of all chains
-- `/stan-diagnose chain <N>` - Deep dive on specific chain
-- `/stan-diagnose warmup` - Analyze warmup trajectories for problematic geometry
-- `/stan-diagnose inits` - Compare initialization values across chains
-- `/stan-diagnose stuck` - Find iterations where chains hit bad regions
+- `/stan-diagnose` - Re-run last command (uses cached directory)
+- `/stan-diagnose help` - Show available commands
+- `/stan-diagnose <target> [on <store>]` - Quick health check of all chains
+- `/stan-diagnose <pattern> [on <store>]` - Multi-target status (use wildcards like `*prior*ctdna*`)
+- `/stan-diagnose <target> chain <N>` - Deep dive on specific chain (1-4)
+- `/stan-diagnose <target> warmup` - Analyze warmup trajectories
+- `/stan-diagnose <target> inits` - Compare initialization values across chains
+- `/stan-diagnose <target> stuck` - Find iterations with extreme lp__
+- `/stan-diagnose cache list` - Show cached diagnostics
+- `/stan-diagnose cache clear` - Clear all cached data
+
+Arguments:
+- `<target>` - Name of the fit directory (e.g., `prior_tumor_ssls_ctdna_aug`)
+- `<pattern>` - Glob pattern matching multiple targets (e.g., `*prior*ctdna_aug`, `tumor_ssls_*`)
+- `on <store>` - Optional store name (e.g., `on main`, `on main3`). Defaults to `main`.
+
+Flags:
+- `-f`, `--force`, `--no-cache` - Bypass cache and force fresh read from CSV files
+
+## Helper Script
+
+The skill uses a bash helper script at `.claude/commands/stan-diagnose-helper.sh` for efficient file operations. The script handles:
+- Dynamic header line counting (different Stan versions have different header sizes)
+- Completed CSV files with footer comments
+- Caching to avoid re-reading unchanged multi-GB files
+- Large file handling via tail-based operations (no full file scans)
+
+**To run diagnostics**, invoke the helper script via bash:
+```bash
+bash .claude/commands/stan-diagnose-helper.sh <output_dir> [command] [args]
+```
+
+## Multi-Target Pattern Support
+
+When the user provides a pattern with wildcards (`*` or `?`), diagnose multiple targets:
+
+1. Construct the glob path: `/mnt/data/analysis-results/karim_naguib/sclc/<store>/fit/<pattern>`
+2. Find all matching directories
+3. **Run status checks in PARALLEL** using multiple Bash calls in a single message
+4. Present results with **run ID per target** (each target may have a different latest run)
+
+**Parallel execution example** - When user asks for `*tumor*ctdna_aug on main`:
+```
+# In a SINGLE message, invoke multiple parallel bash calls:
+bash .claude/commands/stan-diagnose-helper.sh "/mnt/data/.../prior_tumor_ssls_ctdna_aug" status
+bash .claude/commands/stan-diagnose-helper.sh "/mnt/data/.../tumor_ssls_ctdna_aug" status
+```
+
+Example patterns:
+- `*prior*ctdna*` - matches `prior_tumor_ssls_ctdna_aug`, `prior_tumor_ssls_no_ctdna_aug`, etc.
+- `tumor_ssls_*_aug` - matches all aug variants
+- `{prior_,}tumor_ssls_ctdna_aug` - matches exactly two targets (brace expansion)
+
+## Caching System
+
+The skill caches diagnostic output to avoid re-reading unchanged large CSV files (10-15GB each).
+
+**Cache structure:**
+```
+.claude/.stan-diagnose-cache/
+  <store>/
+    <target>/
+      <run_id>.cache
+```
+
+**Cache invalidation:** Uses file fingerprinting (mtime + size) for all 4 chain files. If any file changes, cache is invalidated.
+
+**Cache commands:**
+- `cache list` - Show all cached store/target/run combinations
+- `cache clear` - Delete all cached data
+
+**Force refresh:** Use `-f` flag to bypass cache: `/stan-diagnose prior_tumor_ssls_ctdna_aug -f`
+
+## State Persistence
+
+The last used output directory is cached in `.claude/.stan-diagnose-last-dir`. When `/stan-diagnose` is called with no arguments (or just a subcommand like `chain 2`), reuse the cached directory.
+
+## Help Command
+
+If the user runs `/stan-diagnose help`, display this summary:
+
+```
+Stan Chain Diagnostics - Available Commands:
+
+  /stan-diagnose                           Re-run on last used directory
+  /stan-diagnose help                      Show this help
+  /stan-diagnose <target> [on <store>]     Quick status of all chains
+  /stan-diagnose <pattern> [on <store>]    Multi-target status (parallel)
+  /stan-diagnose <target> chain <N>        Deep dive on chain N (1-4)
+  /stan-diagnose <target> warmup           Warmup progression analysis
+  /stan-diagnose <target> inits            Compare initializations
+  /stan-diagnose <target> stuck            Find iterations with lp__ < -100000
+  /stan-diagnose cache list                Show cached diagnostics
+  /stan-diagnose cache clear               Clear cache
+
+Flags:
+  -f, --force, --no-cache                  Bypass cache, force fresh read
+
+Multi-target patterns (runs in parallel):
+  /stan-diagnose *prior*ctdna* on main     All prior ctdna targets
+  /stan-diagnose tumor_ssls_*_aug on main  All aug tumor_ssls variants
+
+After first use, you can run subcommands without specifying the target:
+  /stan-diagnose chain 2                   Deep dive on chain 2 (uses last dir)
+  /stan-diagnose inits                     Compare inits (uses last dir)
+
+Examples:
+  /stan-diagnose prior_tumor_ssls_ctdna_aug on main
+  /stan-diagnose tumor_ssls_aug chain 2
+  /stan-diagnose -f                        (force refresh on last directory)
+```
+
+## Output Format
+
+**Always present status as a markdown table with run ID per target:**
+
+### target_name (Run: 202602022140)
+
+| Chain | Progress | lp | stepsize | energy | divs (recent) | maxtree | Status |
+|-------|----------|-----|----------|--------|---------------|---------|--------|
+| 1 | 92% warmup | -82.1 | 0.032 | 1179 | 2 | 0 | ✓ healthy |
+| 2 | 84% warmup | -56.2 | 0.025 | 1347 | 2 | 1 | ✓ healthy |
+| 3 | 61% warmup | -66.7 | **0.007** | 1323 | **58** | 118 | ⚠️ adapting |
+| 4 | 60% warmup | -122.2 | **0.004** | 1346 | **61** | 128 | ⚠️ adapting |
+
+**Bold concerning values:**
+- **stepsize < 0.01**: Small stepsize indicates difficult geometry
+- **divs > 10**: High divergence count (especially during sampling)
+- **maxtree > 50**: Frequent max treedepth hits in recent iterations
+- **lp < -1e6**: Extreme negative log probability
 
 ## Implementation Notes
 
-**Keep it simple:**
-- Use basic bash arithmetic `$((x * 100 / y))` - NO bc required
-- Collect raw numbers first, format in markdown table manually
-- Don't try to automate bold text or status emoji in bash
-- Use `grep -c`, `wc -l`, `cut`, `tail` - all standard tools
-- Present numbers, let human interpret against thresholds
+**Use the helper script** at `.claude/commands/stan-diagnose-helper.sh` for all file operations.
+
+**Keep output formatting simple:**
+- Collect raw numbers from script output
+- Format in markdown table manually
+- Bold concerning values based on thresholds above
+- Present numbers, let human interpret
 
 ## Finding the Latest Run
 
-First, identify the output directory and latest run:
+The helper script automatically finds the latest run by:
+1. Globbing `sf-ssm-log-space-2*.csv` (excludes profile files)
+2. Extracting the 12-digit timestamp from filenames: `sf-ssm-log-space-YYYYMMDDHHMI-<chain>-<hash>.csv`
 
+To manually find runs:
 ```bash
-# Find most recent CSV files
-ls -lt <output_dir>/sf-ssm-log-space-*.csv | head -8
-
-# Extract run timestamp from filename pattern: sf-ssm-log-space-YYYYMMDDHHMI-<chain>-<hash>.csv
+ls -t <output_dir>/sf-ssm-log-space-2*.csv | head -4
 ```
 
 ## Key Diagnostic Columns in Stan CSV Output
@@ -70,59 +196,19 @@ ls -lt <output_dir>/sf-ssm-log-space-*.csv | head -8
 
 ## Quick Health Check
 
-**Simple diagnostic script (no dependencies):**
+**Use the helper script:**
 
 ```bash
-# Navigate to fit directory
-cd <output_dir>
-
-# Quick status for all chains
-for i in 1 2 3 4; do
-  f=$(ls sf-ssm-log-space-<RUN_ID>-${i}-*.csv 2>/dev/null | head -1)
-  if [ -f "$f" ]; then
-    lines=$(wc -l < "$f")
-    data_lines=$((lines - 49))
-
-    # Get last sample values
-    last=$(tail -1 "$f")
-    lp=$(echo "$last" | cut -d',' -f1)
-    step=$(echo "$last" | cut -d',' -f3)
-    energy=$(echo "$last" | cut -d',' -f7)
-
-    # Count diagnostics
-    divs=$(tail -n +49 "$f" | cut -d',' -f6 | grep -c "^1" 2>/dev/null || echo "0")
-    divs_recent=$(tail -50 "$f" | cut -d',' -f6 | grep -c "^1" 2>/dev/null || echo "0")
-    maxtree=$(tail -n +49 "$f" | cut -d',' -f4 | grep -c "^10" 2>/dev/null || echo "0")
-
-    # Check if adapted
-    if grep -q "Adaptation terminated" "$f"; then
-      pct=$((data_lines * 100 / 1000))
-      stage="${pct}% sampling"
-    else
-      pct=$((data_lines * 100 / 500))
-      stage="${pct}% warmup"
-    fi
-
-    printf "Chain %d: %s | lp=%.1f | step=%.4f | energy=%.0f | divs=%d (+%d) | maxtree=%d\n" \
-      $i "$stage" "$lp" "$step" "$energy" $divs $divs_recent $maxtree
-  fi
-done
+bash .claude/commands/stan-diagnose-helper.sh <output_dir> status
 ```
 
-**Present as markdown table:**
+The script outputs one line per chain with key diagnostics. Format this as a markdown table.
 
-| Chain | Progress | lp | stepsize | energy | divs (recent) | maxtree | Status |
-|-------|----------|-----|----------|--------|---------------|---------|--------|
-| 1 | 97% warmup | 115.1 | 0.021 | 1127 | 68 (+9) | 131 | ⚠️ adapting |
-| 2 | 99% warmup | 125.1 | 0.0089 | 1083 | 66 (+9) | 130 | ⚠️ adapting |
-| 3 | 93% warmup | 53.5 | 0.029 | 1299 | 69 (+6) | 142 | ⚠️ adapting |
-| 4 | 95% warmup | -142.8 | 0.0077 | 1436 | 68 (+8) | 136 | ⚠️ adapting |
-
-**Manual interpretation (don't automate):**
-- Compare values to thresholds in "Bold concerning values" section above
-- Assess energy convergence (all chains within ~500 of each other = good)
-- Check if warmup divergences stabilize during sampling
-- Note: Avoid using `bc` or complex conditionals - just present numbers
+**Interpretation guidance:**
+- Warmup divergences are less concerning than sampling divergences
+- Chains recovering from bad inits will have high divs but should stabilize
+- Energy should be similar across chains (within ~500)
+- Stepsize should stabilize around 0.02-0.05 for most models
 
 ## Detecting Stuck Chains
 
@@ -276,47 +362,39 @@ done
 
 ## Background Monitoring
 
-**Option 1: Simple periodic check**
+The skill does NOT provide continuous monitoring. Each `/stan-diagnose` invocation is a one-shot status check.
 
+**Options for monitoring:**
+
+1. **Manual re-checks**: Ask for `/stan-diagnose` again when you want an update
+
+2. **Parallel multi-target checks**: For multiple targets, multiple bash calls run in parallel and complete independently
+
+3. **Background monitoring loop** (advanced): Start a bash loop that logs periodically:
 ```bash
-# Check every 60 seconds
-while sleep 60; do
-  echo "=== $(date '+%H:%M:%S') ==="
-  cd <output_dir>
-  for i in 1 2 3 4; do
-    f=$(ls sf-ssm-log-space-<RUN_ID>-${i}-*.csv 2>/dev/null | head -1)
-    [ ! -f "$f" ] && continue
-
-    lines=$(wc -l < "$f")
-    last=$(tail -1 "$f")
-    lp=$(echo "$last" | cut -d',' -f1)
-    step=$(echo "$last" | cut -d',' -f3)
-
-    # Simple progress
-    data=$((lines - 49))
-    pct=$((data * 100 / 500))
-
-    printf "Chain %d: %3d%% | lp=%8.1f | step=%.4f\n" $i $pct "$lp" "$step"
-  done
-  echo ""
+while sleep 300; do
+  echo "=== $(date '+%H:%M:%S') ===" >> /tmp/stan-monitor.log
+  bash .claude/commands/stan-diagnose-helper.sh <output_dir> status >> /tmp/stan-monitor.log
 done
 ```
 
-**Option 2: Run diagnostics script in background**
-
-Use `run_in_background=true` for bash commands to monitor while working on other tasks.
+The caching system ensures repeated checks are fast when files haven't changed.
 
 ## Efficient File Reading
 
-Stan CSV files can be huge (multi-GB). Avoid `cat`, `head -n`, or loading entire file:
+Stan CSV files can be huge (10-15GB with ~850 lines, each line ~15MB). The helper script handles this efficiently:
 
+- **Dynamic header counting**: `grep -c "^#"` to handle different Stan versions
+- **Tail-based last line**: `tail -10 | grep -v "^#" | tail -1` to skip footer comments
+- **Recent divergence counting**: `tail -55 | grep -v "^#" | tail -50` for last 50 data rows
+
+**Never use** `cat`, `head -n <large>`, or full-file `grep` on these files.
+
+For manual queries on completed files:
 ```bash
-# Use awk for filtered extraction
-awk -F',' 'NR>48 && NR<100 {print $1,$3,$4,$6,$7}' file.csv
+# Last data line (skip footer comments)
+tail -10 file.csv | grep -v "^#" | tail -1 | cut -d',' -f1,3,6,7
 
-# Use cut for specific columns from last line
-tail -1 file.csv | cut -d',' -f1,3,4,6,7
-
-# Use duckdb for complex queries (set max_line_size for wide files)
-duckdb -c "SELECT \"lp__\", \"stepsize__\", \"divergent__\", \"energy__\" FROM read_csv('file.csv', skip=47, header=true, max_line_size=100000000) LIMIT 10"
+# Use duckdb for complex queries
+duckdb -c "SELECT \"lp__\", \"stepsize__\", \"divergent__\" FROM read_csv('file.csv', skip=51, header=true, max_line_size=100000000) LIMIT 10"
 ```
