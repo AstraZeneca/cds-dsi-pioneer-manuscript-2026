@@ -106,36 +106,131 @@ plot_orr_by_dco("spop", orr_list, cond_orr_list)
 
 Tracking median PFS estimates across data cutoffs, comparing model forecasts with observed Kaplan-Meier estimates.
 
+```{=html}
+<style>
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 24px;
+  margin-right: 0.75rem;
+}
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: .4s;
+  border-radius: 24px;
+}
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+input:checked + .toggle-slider {
+  background-color: #003865;
+}
+input:checked + .toggle-slider:before {
+  transform: translateX(26px);
+}
+#median-pfs-sample-with-obs, #median-pfs-spop-with-obs {
+  display: none;
+}
+</style>
+
+<div style="margin-bottom: 1rem;">
+  <label style="display: inline-flex; align-items: center; cursor: pointer; font-weight: 500;">
+    <span class="toggle-switch">
+      <input type="checkbox" id="show-observed-toggle" onchange="toggleObservedKM(this.checked)">
+      <span class="toggle-slider"></span>
+    </span>
+    Show Observed KM Estimates
+  </label>
+</div>
+```
+
 ::: {.panel-tabset}
 
 ### Sample-Based
 
+::: {#median-pfs-sample-with-obs}
 ```{r}
-#| label: fig-median-pfs-dco-sample
+#| label: fig-median-pfs-dco-sample-with-obs
 #| fig-cap: Sample-based median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
 #| fig-width: 10
 #| fig-height: 6
 
-plot_median_pfs_by_dco("sample", quant_pfs_list, cond_quant_pfs_list, obs_km_list)
+plot_median_pfs_by_dco("sample", quant_pfs_list, cond_quant_pfs_list, obs_km_list, show_observed = TRUE)
 ```
+:::
+
+::: {#median-pfs-sample-without-obs}
+```{r}
+#| label: fig-median-pfs-dco-sample-without-obs
+#| fig-cap: Sample-based median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs. Model forecasts only.
+#| fig-width: 10
+#| fig-height: 6
+
+plot_median_pfs_by_dco("sample", quant_pfs_list, cond_quant_pfs_list, obs_km_list, show_observed = FALSE)
+```
+:::
 
 ### Superpopulation
 
+::: {#median-pfs-spop-with-obs}
 ```{r}
-#| label: fig-median-pfs-dco-spop
+#| label: fig-median-pfs-dco-spop-with-obs
 #| fig-cap: Superpopulation median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
 #| fig-width: 10
 #| fig-height: 6
 
-plot_median_pfs_by_dco("spop", quant_pfs_list, cond_quant_pfs_list, obs_km_list)
+plot_median_pfs_by_dco("spop", quant_pfs_list, cond_quant_pfs_list, obs_km_list, show_observed = TRUE)
 ```
+:::
+
+::: {#median-pfs-spop-without-obs}
+```{r}
+#| label: fig-median-pfs-dco-spop-without-obs
+#| fig-cap: Superpopulation median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs. Model forecasts only.
+#| fig-width: 10
+#| fig-height: 6
+
+plot_median_pfs_by_dco("spop", quant_pfs_list, cond_quant_pfs_list, obs_km_list, show_observed = FALSE)
+```
+:::
 
 :::
+
+```{=html}
+<script>
+function toggleObservedKM(show) {
+  document.getElementById('median-pfs-sample-with-obs').style.display = show ? 'block' : 'none';
+  document.getElementById('median-pfs-sample-without-obs').style.display = show ? 'none' : 'block';
+  document.getElementById('median-pfs-spop-with-obs').style.display = show ? 'block' : 'none';
+  document.getElementById('median-pfs-spop-without-obs').style.display = show ? 'none' : 'block';
+}
+</script>
+```
 
 ::: {.callout-note}
 ## Interpreting the Plot
 - **Diamond markers**: Model forecast with 90% credible interval
-- **Circle markers**: Observed KM median with confidence interval
+- **Circle markers**: Observed KM median with confidence interval (toggle above)
 - **Arrows**: Indicate median PFS not yet reached (right-censored)
 :::
 
