@@ -40,6 +40,8 @@ website:
             href: analysis/diagnostics.qmd
       - text: Documentation
         menu:
+          - text: Model Architecture
+            href: documentation/model-architecture.qmd
           - text: Model Specification
             href: documentation/model-specification.qmd
           - text: Analysis Subgroups
@@ -66,6 +68,7 @@ website:
         - section: "Getting Started"
           contents:
             - documentation/onboarding-tutorial.qmd
+            - documentation/model-architecture.qmd
             - documentation/model-specification.qmd
             - documentation/analysis-subgroups.qmd
         - section: "Technical Reference"
