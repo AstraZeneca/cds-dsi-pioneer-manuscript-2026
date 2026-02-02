@@ -14,19 +14,23 @@ endometrial_to_lung_retro_dco1:
   inherits: endometrial_to_lung
   script: endometrial_to_lung_targets_retro_dco1.R
   store: /mnt/data/analysis-results/karim_naguib/_targets/endometrial_to_lung/retro_dco1
+  as_job: yes
 endometrial_to_lung_retro_dco2:
   inherits: endometrial_to_lung
   script: endometrial_to_lung_targets_retro_dco2.R
   store: /mnt/data/analysis-results/karim_naguib/_targets/endometrial_to_lung/retro_dco2
+  as_job: yes
 endometrial_to_lung_impute:
   inherits: endometrial_to_lung
   script: endometrial_to_lung_targets_impute.R
   store: /mnt/data/analysis-results/karim_naguib/_targets/endometrial_to_lung/impute
+  as_job: yes
 endometrial_to_lung_june_impute:
   inherits: endometrial_to_lung
   script: endometrial_to_lung_targets_june_impute.R
   store: /mnt/data/analysis-results/karim_naguib/_targets/endometrial_to_lung/june_impute
+  as_job: yes
 sclc:
   script: targets/sclc_targets.R
-  store: /mnt/data/analysis-results/karim_naguib/sclc/main/_targets
+  store: /mnt/data/analysis-results/karim_naguib/sclc/dco3/_targets
   as_job: no

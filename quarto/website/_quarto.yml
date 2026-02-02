@@ -2,6 +2,9 @@ project:
   type: website
   output-dir: _site
   execute-dir: project
+  render:
+    - "*.qmd"
+    - "**/*.qmd"
 
 website:
   title: "PIONEER: SCLC-01 Forecasting"
@@ -12,22 +15,6 @@ website:
     left:
       - text: Home
         href: index.qmd
-      - text: Documentation
-        menu:
-          - text: Model Specification
-            href: documentation/model-specification.qmd
-          - text: Onboarding Tutorial
-            href: documentation/onboarding-tutorial.qmd
-          - text: "---"
-          - text: Technical Reference
-          - text: Targets Pipeline
-            href: documentation/targets-pipeline.qmd
-          - text: Architecture
-            href: documentation/architecture.qmd
-          - text: AR(1) Process Noise
-            href: documentation/ar1-process-noise.qmd
-          - text: Leave-Future-Out Cross-Validation
-            href: documentation/leave-future-out-cross-validation.qmd
       - text: Data
         href: analysis/data-exploration.qmd
       - text: Analysis
@@ -37,6 +24,8 @@ website:
             href: analysis/clinical-endpoints.qmd
           - text: Survival Analysis
             href: analysis/survival-analysis.qmd
+          - text: DCO Comparisons
+            href: comparisons/dco-comparisons.qmd
           - text: "---"
           - text: Model Details
           - text: Parameter Inference
@@ -49,10 +38,26 @@ website:
             href: analysis/model-validation.qmd
           - text: Diagnostics
             href: analysis/diagnostics.qmd
+      - text: Documentation
+        menu:
+          - text: Model Architecture
+            href: documentation/model-architecture.qmd
+          - text: Model Specification
+            href: documentation/model-specification.qmd
+          - text: Analysis Subgroups
+            href: documentation/analysis-subgroups.qmd
+          - text: Onboarding Tutorial
+            href: documentation/onboarding-tutorial.qmd
           - text: "---"
-          - text: Comparisons
-          - text: DCO Comparisons
-            href: comparisons/dco-comparisons.qmd
+          - text: Technical Reference
+          - text: Targets Pipeline
+            href: documentation/targets-pipeline.qmd
+          - text: Architecture
+            href: documentation/architecture.qmd
+          - text: AR(1) Process Noise
+            href: documentation/ar1-process-noise.qmd
+          - text: Leave-Future-Out Cross-Validation
+            href: documentation/leave-future-out-cross-validation.qmd
     right:
       - icon: github
         href: https://github.com/azu-oncology-rd/cds-dsi-pioneer-sclc-01-2025
@@ -63,7 +68,9 @@ website:
         - section: "Getting Started"
           contents:
             - documentation/onboarding-tutorial.qmd
+            - documentation/model-architecture.qmd
             - documentation/model-specification.qmd
+            - documentation/analysis-subgroups.qmd
         - section: "Technical Reference"
           contents:
             - documentation/targets-pipeline.qmd
@@ -81,6 +88,7 @@ website:
           contents:
             - analysis/clinical-endpoints.qmd
             - analysis/survival-analysis.qmd
+            - comparisons/dco-comparisons.qmd
         - section: "Model Details"
           contents:
             - analysis/parameter-inference.qmd
@@ -89,13 +97,17 @@ website:
           contents:
             - analysis/model-validation.qmd
             - analysis/diagnostics.qmd
-        - section: "Comparisons"
-          contents:
-            - comparisons/dco-comparisons.qmd
   page-navigation: true
   search:
     location: navbar
     type: overlay
+  page-footer:
+    left: "Last updated: {{< meta date-modified >}}"
+    center: "PIONEER: SCLC-01 Forecasting"
+    right: "Analysis v1.0.0 | DCO3 (Sept 2024)"
+
+metadata-files:
+  - _metadata.yml
 
 format:
   html:
@@ -118,6 +130,7 @@ format:
     fig-height: 4.5
     out-width: "100%"
     reference-location: margin
+    date-format: "MMMM D, YYYY"
 
 bibliography: ../../bib/pioneer.bib
 
