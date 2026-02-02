@@ -274,6 +274,7 @@ Analysis results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<ru
 - Follow tidyverse style guide
 - Prefer `purrr` and `dplyr` over base R loops
 - Use `testthat` for unit tests
+- **NEVER hardcode subject IDs** (usubjid, patient_id, etc.) - always use dynamic selection or filtering
 
 ### Targets
 - **NEVER use `tar_config_set(store = ...)`** - it changes global state and causes conflicts
