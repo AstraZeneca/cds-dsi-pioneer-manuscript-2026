@@ -137,22 +137,35 @@ if (n_causes > 0 && oe_enable_pop_tumor_cov) {
 }
 
 // Compute time-INVARIANT non-tumor covariate effects if enabled
-if (n_causes > 0 && (oe_enable_pop_cov || oe_enable_trial_cov)) {
+// sum(oe_enable_level_cov) > 0 means at least one level has covariates enabled
+if (n_causes > 0 && (oe_enable_pop_cov || sum(oe_enable_level_cov) > 0)) {
   for (k in 1:n_causes) {
     vector[n_patients] covar_linpred = rep_vector(0, n_patients);
-    
+
     // Population-level non-tumor covariate effects (QR space)
     if (oe_enable_pop_cov) {
       covar_linpred = Q_covar_design_matrix * oe_covar_coef_qr_pop[k];
     }
-    
-    // Trial-level random non-tumor slopes (additive)
-    if (oe_enable_trial_cov) {
-      matrix[n_trials, n_covar] trial_slope_qr = oe_raw_trial_slope[k] .* rep_matrix(oe_sd_trial_slope[k], n_trials);
-      covar_linpred += rows_dot_product(Q_covar_design_matrix, 
-                                        trial_slope_qr[patient_trial]);
+
+    // Multi-level random non-tumor slopes (additive across levels)
+    for (lv in 1:n_levels) {
+      if (oe_enable_level_cov[lv] && n_covar > 0) {
+        int lv_start = level_pos[lv];
+        int lv_end = level_pos[lv + 1] - 1;
+
+        // Scale raw slopes for this level
+        matrix[n_groups_per_level[lv], n_covar] level_slopes_qr =
+          oe_raw_level_slope[k, lv_start:lv_end, :] .*
+          rep_matrix(oe_sd_level_slope[k, lv]', n_groups_per_level[lv]);
+
+        // Add slope contributions via group membership
+        covar_linpred += rows_dot_product(
+          Q_covar_design_matrix,
+          level_slopes_qr[patient_level_groups[, lv], :]
+        );
+      }
     }
-    
+
     // Total log hazard ratio (only non-tumor covariates, no tumor effects here)
     oe_time_invariant_log_hazard_ratio[k] = covar_linpred;
   }
