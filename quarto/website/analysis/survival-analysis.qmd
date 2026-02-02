@@ -10,7 +10,12 @@ subtitle: "Kaplan-Meier survival curves and PFS forecasts"
 source("_setup.R")
 ```
 
-This page presents Kaplan-Meier survival analysis results including historical trial comparisons and SCLC forecasts.
+This page presents Kaplan-Meier survival analysis results including historical trial comparisons and SCLC forecasts using **DCO3 (January 2026)** data.
+
+::: {.callout-tip}
+## DCO Comparisons
+To see how results evolve across data cutoff dates, visit [DCO Comparisons](../comparisons/dco-comparisons.qmd).
+:::
 
 ::: {.callout-tip}
 ## Related Pages
@@ -29,9 +34,9 @@ Kaplan-Meier curves for the historical trials (excluding SCLC) used to inform th
 #| fig-width: 7
 
 plot_km(
-  tar_read(all_tumor_ssls_km_rvar_ctdna_aug) |> filter(!fct_match(trial, "sclc")),
+  tar_read(all_tumor_ssls_km_rvar_ctdna_jan26) |> filter(!fct_match(trial, "sclc")),
   km_est_var = sample_km_est,
-  obs_km_data = tar_read(km_trial_pfs_ctdna_aug) |>
+  obs_km_data = tar_read(km_trial_pfs_ctdna_jan26) |>
     filter(fct_match(btype, "ub"), !fct_match(trial, "sclc")) |>
     select(!quantiles) |>
     unnest(km_data),
@@ -42,227 +47,91 @@ plot_km(
 
 ## SCLC Forecasts {#sec-sclc-km}
 
-### Sample-Based Forecast
+::: {.panel-tabset}
 
-Kaplan-Meier curves for the SCLC trial, comparing model predictions with observed data.
+### Sample-Based
+
+Kaplan-Meier curves for the SCLC trial, comparing model predictions with observed data. The full forecasting row predicts PFS beyond the observed right censoring while the observed censoring row censors predictions that exceed the observed right censoring.
 
 ```{r}
 #| label: fig-kaplan-meier-sclc-forecast
-#| fig-cap: Forecast Kaplan-Meier plots for SCLC trial. The full forecasting row predicts PFS beyond the observed right censoring while the observed censoring row censors predictions that exceed the observed right censoring.
-#| column: body-outset
+#| fig-cap: Sample-based Kaplan-Meier forecast for SCLC trial.
 #| fig-width: 7
-#| fig-height: 6
 
-plot_sclc_km <- partial(
-  plot_km,
-  bind_rows(
-    apr = tar_read(all_tumor_ssls_km_rvar_ctdna_apr) |> filter(fct_match(trial, "sclc")),
-    aug = tar_read(all_tumor_ssls_km_rvar_ctdna_aug) |> filter(fct_match(trial, "sclc")),
-    .id = "dco"
-  ),
-  obs_km_data = bind_rows(
-    apr = tar_read(km_trial_pfs_ctdna_apr) |> filter(fct_match(btype, "ub"), fct_match(trial, "sclc")),
-    aug = tar_read(km_trial_pfs_ctdna_aug) |> filter(fct_match(btype, "ub"), fct_match(trial, "sclc")),
-    .id = "dco"
-  ) |>
-    select(!quantiles) |>
-    unnest(km_data),
-  analysis_data = bind_rows(
-    apr = tar_read(all_analysis_data_ctdna_apr) |> filter(fct_match(trial, "sclc")),
-    aug = all_analysis_data |> filter(fct_match(trial, "sclc")),
-    .id = "dco"
-  ),
-  facet_col = dco
+plot_sclc_km_by_estimate_type(
+  "sample",
+  jan26_km_data,
+  jan26_cond_km_data,
+  jan26_obs_km_all,
+  jan26_obs_km_first_line,
+  all_analysis_data
 )
-
-plot_sclc_km(km_est_var = sample_km_est)
 ```
 
-### Superpopulation Forecast
+### Superpopulation
 
-Superpopulation KM estimates represent the expected survival for the underlying population, not just the specific patients in the trial.
+Kaplan-Meier curves for the SCLC trial, comparing model predictions with observed data. The full forecasting row predicts PFS beyond the observed right censoring while the observed censoring row censors predictions that exceed the observed right censoring.
 
 ```{r}
 #| label: fig-kaplan-meier-sclc-superpopulation
-#| fig-cap: Superpopulation Kaplan-Meier plots for SCLC trial. The full forecasting row predicts PFS beyond the observed right censoring while the observed censoring row censors predictions that exceed the observed right censoring.
-#| column: body-outset
+#| fig-cap: Superpopulation Kaplan-Meier forecast for SCLC trial. Superpopulation KM estimates represent the expected survival for the underlying population, not just the specific patients in the trial.
 #| fig-width: 7
-#| fig-height: 6
 
-plot_sclc_km(km_est_var = spop_km_est)
+plot_sclc_km_by_estimate_type(
+  "spop",
+  jan26_km_data,
+  jan26_cond_km_data,
+  jan26_obs_km_all,
+  jan26_obs_km_first_line,
+  all_analysis_data
+)
 ```
+
+:::
 
 ## PDL1-Stratified Analysis {#sec-pdl1-km}
 
-### Sample-Based Forecast by PDL1 Status
+::: {.panel-tabset}
+
+### Sample-Based
+
+Kaplan-Meier curves stratified by PDL1 status and treatment line. The full forecasting row predicts PFS beyond the observed right censoring while the observed censoring row censors predictions that exceed the observed right censoring.
 
 ```{r}
 #| label: fig-kaplan-meier-pdl1-forecast
-#| fig-cap: Forecast Kaplan-Meier plots. The full forecasting row predicts PFS beyond the observed right censoring while the observed censoring row censors predictions that exceed the observed right censoring.
-#| column: body-outset
+#| fig-cap: Sample-based PDL1-stratified Kaplan-Meier forecast.
 #| fig-width: 7
-#| fig-height: 7
+#| fig-height: 5
 
-plot_sclc_pdl1_km <- partial(
-  plot_pdl1_km,
-  cond_km_data = bind_rows(
-    apr = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_apr),
-    aug = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_aug),
-    .id = "dco"
-  ),
-  obs_km_data = bind_rows(
-    pdl1 = bind_rows(
-      apr = tar_read(km_trial_pfs_pdl1_ctdna_apr),
-      aug = tar_read(km_trial_pfs_pdl1_ctdna_aug),
-      .id = "dco"
-    ) |>
-      filter(fct_match(trial, "sclc")) |>
-      select(!quantiles) |>
-      unnest(km_data),
-    pdl1_naive = bind_rows(
-      apr = tar_read(km_trial_pfs_pdl1_naive_ctdna_apr),
-      aug = tar_read(km_trial_pfs_pdl1_naive_ctdna_aug),
-      .id = "dco"
-    ) |>
-      select(!quantiles) |>
-      unnest(km_data),
-    .id = "variable"
-  )
+plot_pdl1_km_by_estimate_type(
+  "sample",
+  cond_km_data = jan26_cond_km_data,
+  obs_km_all = jan26_obs_km_pdl1,
+  obs_km_first_line = jan26_obs_km_pdl1_naive,
+  obs_km_part_e = jan26_obs_km_part_e_pdl1
 )
-
-plot_sclc_pdl1_km(km_est_var = cond_sample_km_est)
 ```
 
-### Superpopulation Forecast by PDL1 Status
+### Superpopulation
+
+Kaplan-Meier curves stratified by PDL1 status and treatment line. The full forecasting row predicts PFS beyond the observed right censoring while the observed censoring row censors predictions that exceed the observed right censoring.
 
 ```{r}
 #| label: fig-kaplan-meier-pdl1-superpopulation
-#| fig-cap: Superpopulation Kaplan-Meier plots. The full forecasting row predicts PFS beyond the observed right censoring while the observed censoring row censors predictions that exceed the observed right censoring.
-#| column: body-outset
+#| fig-cap: Superpopulation PDL1-stratified Kaplan-Meier forecast.
 #| fig-width: 7
-#| fig-height: 7
+#| fig-height: 5
 
-plot_sclc_pdl1_km(km_est_var = cond_spop_km_est)
-```
-
-## Cutoff Comparison {#sec-cutoff-km}
-
-Comparison of observed and model-predicted Kaplan-Meier curves at different data cutoff dates.
-
-```{r}
-#| label: fig-cutoff-km-est
-#| fig-cap: Comparing observed and model Kaplan-Meier curves for different data cutoffs
-#| eval: false
-
-cutoff_plot_dates <- c("2023-04-17", "2024-02-11", "2024-10-08", "2025-06-05")
-
-# Create enrollment timeline plot
-timeline_plot <- tar_read(all_analysis_data_ctdna_aug, store = lfo_store2) |>
-  filter(fct_match(trial, "sclc")) |>
-  distinct(usubjid, trial, trtsdt) |>
-  arrange(trtsdt) |>
-  mutate(patient_number = row_number()) |>
-  ggplot(aes(x = trtsdt)) +
-  geom_vline(aes(xintercept = as_date(value)), color = AZ_pink, data = enframe(cutoff_plot_dates)) +
-  geom_histogram(binwidth = 30, fill = AZ_navy, alpha = 0.75, color = "white") +
-  geom_label(
-    aes(x = as_date(value), label = name),
-    y = 12,
-    data = enframe(cutoff_plot_dates),
-    size = 4,
-    color = "white",
-    fill = AZ_pink,
-    fontface = "bold",
-    label.padding = unit(0.35, "lines"),
-    label.r = unit(0.5, "lines")
-  ) +
-  geom_label(
-    aes(x = as_date(value), label = format(as_date(value), "%Y-%m-%d")),
-    y = 10.5,
-    data = enframe(cutoff_plot_dates),
-    angle = 90,
-    hjust = 1,
-    size = 3,
-    color = AZ_pink,
-    fontface = "bold"
-  ) +
-  scale_x_date("") +
-  scale_y_continuous("Number of Patients Enrolled", breaks = seq(0, 12, 2)) +
-  theme_minimal() +
-  theme(legend.position = "top", panel.grid.minor = element_blank())
-
-predicted_data <- tar_read(tumor_ssls_cutoff_km_est_ctdna_aug, store = lfo_store2) |>
-  mutate(trial = factor(trial, levels = 1:2, labels = c("historical", "sclc"))) |>
-  filter(fct_match(trial, "sclc"), cutoff_date %in% cutoff_plot_dates) |>
-  mutate(
-    trial = factor("sclc"),
-    cutoff_number = base::match(cutoff_date, cutoff_plot_dates),
-    facet_group = cutoff_date
-  )
-
-observed_data <- tar_read(cutoff_km_trial_pfs_ctdna_aug, store = lfo_store2) |>
-  filter(fct_match(trial, "sclc"), fct_match(btype, "ub")) |>
-  select(!c(quantiles, cutoff_date)) |>
-  unnest(km_data) |>
-  mutate(trial = factor("sclc")) |>
-  right_join(select(predicted_data, t, cutoff_date, cutoff_calendar_day, trial, cutoff_number), by = c("trial", "t", "cutoff_calendar_day")) |>
-  mutate(facet_group = cutoff_date)
-
-observed_data <- observed_data |>
-  nest(data = !facet_group) |>
-  transmute(
-    data = map2(data, facet_group, \(d, fg) bind_rows(d, filter(observed_data, cutoff_date < first(d$cutoff_date))) |> mutate(facet_group = fg))) |>
-  unnest(data) |>
-  mutate(primary = facet_group == cutoff_date)
-
-predicted_data <- predicted_data |>
-  nest(data = !facet_group) |>
-  transmute(
-    data = map2(data, facet_group, \(d, fg) bind_rows(d, filter(predicted_data, cutoff_date < first(d$cutoff_date))) |> mutate(facet_group = fg))) |>
-  unnest(data) |>
-  mutate(primary = facet_group == cutoff_date)
-
-label_data <- tibble(
-  facet_group = cutoff_plot_dates,
-  cutoff_number = seq_along(cutoff_plot_dates)
+plot_pdl1_km_by_estimate_type(
+  "spop",
+  cond_km_data = jan26_cond_km_data,
+  obs_km_all = jan26_obs_km_pdl1,
+  obs_km_first_line = jan26_obs_km_pdl1_naive,
+  obs_km_part_e = jan26_obs_km_part_e_pdl1
 )
-
-pred_vs_obs_km_plot <- predicted_data |>
-  ggplot(aes(x = t - 1)) +
-  stat_lineribbon(
-    aes(ydist = sample_km_est, group = factor(cutoff_date), fill = "Predicted"),
-    alpha = 0.25, linewidth = 0.0, .width = 0.8) +
-  geom_step(aes(y = s, group = factor(cutoff_date), color = "Observed", alpha = primary, size = primary), data = observed_data) +
-  geom_label(
-    aes(label = cutoff_number),
-    x = months_to_weeks(13),
-    y = 1,
-    data = label_data,
-    size = 4,
-    color = "white",
-    fill = AZ_pink,
-    fontface = "bold",
-    label.padding = unit(0.35, "lines"),
-    label.r = unit(0.5, "lines")
-  ) +
-  scale_x_continuous("Months", breaks = months_to_weeks(seq(0, 60, 5)), label = label_weeks_to_months) +
-  scale_y_continuous("Progression-Free Survival", breaks = seq(0, 1, 0.1)) +
-  scale_color_manual(
-    "", values = c(Observed = AZ_navy, Predicted = AZ_pink), labels = c(Predicted = "Forecast 80% CI"), aesthetics = c("color", "fill")) +
-  scale_alpha_manual("", values = c(`TRUE` = 1, `FALSE` = 0.25), guide = "none") +
-  scale_size_manual("", values = c(`TRUE` = 1.0, `FALSE` = 0.5), guide = "none") +
-  facet_wrap(vars(facet_group), ncol = 4) +
-  coord_cartesian(xlim = c(0, months_to_weeks(30)), ylim = c(0, 1)) +
-  theme(
-    legend.position = "top",
-    legend.text = element_text(size = 12),
-    strip.text = element_blank()
-  ) +
-  NULL
-
-pred_vs_obs_km_plot / timeline_plot +
-  plot_layout(heights = c(0.7, 0.3))
 ```
+
+:::
 
 ::: {.related-pages}
 ## Related Pages

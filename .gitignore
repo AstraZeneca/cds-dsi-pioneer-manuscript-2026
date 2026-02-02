@@ -72,7 +72,7 @@ _targets/
 .vscode/coder.json
 .vscode/Machine/
 .vscode/settings.json
-quarto/*.rmarkdown
+quarto/**/*.rmarkdown
 
 **/*.quarto_ipynb
 quarto/.posit/
@@ -85,4 +85,7 @@ generate-aws-credential_file.py
 run-aws-credentials.sh
 .env
 node_modules
+package.json
+package-lock.json
 aws/
+core.*

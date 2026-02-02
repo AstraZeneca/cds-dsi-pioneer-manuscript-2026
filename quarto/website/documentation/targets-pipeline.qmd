@@ -317,12 +317,13 @@ The first level of [`tar_map()`](https://docs.ropensci.org/targets/reference/tar
 ```r
 dco_targets = tar_map(
   tibble(
-    dco_name = c("apr", "aug"),
-    patient_data_file_suffix = c("_060825", ""),
-    visit_data_file_suffix = c("_300725", ""),
+    dco_name = c("apr25", "aug25", "jan26"),
+    patient_data_file_suffix = c("_060825", "_aug25", "_jan26"),
+    visit_data_file_suffix = c("_300725", "_aug25", "_jan26"),
     inv_metric_file = c(
-      "data/inv_metric_ctdna_apr.json",
-      "data/inv_metric_ctdna_aug.json"
+      "data/inv_metric_ctdna_apr25.json",
+      "data/inv_metric_ctdna_aug25.json",
+      "data/inv_metric_ctdna_jan26.json"
     )
   ),
   names = "dco_name",
@@ -330,10 +331,11 @@ dco_targets = tar_map(
 )
 ```
 
-This creates two complete sub-pipelines:
+This creates three complete sub-pipelines:
 
-- **apr**: April 2025 data cut-off
-- **aug**: August 2025 data cut-off
+- **apr25**: April 2025 data cut-off
+- **aug25**: August 2025 data cut-off
+- **jan26**: January 2026 data cut-off
 
 Each DCO has its own:
 
@@ -800,10 +802,12 @@ Most targets within the model `tar_map()` are automatically suffixed with the mo
 
 Targets within the `dco_targets` are suffixed with DCO name:
 
-- `sclc_patient_data_apr`
-- `sclc_patient_data_aug`
-- `all_tumor_ssls_orr_rvar_ctdna_apr`
-- `all_tumor_ssls_orr_rvar_ctdna_aug`
+- `sclc_patient_data_apr25`
+- `sclc_patient_data_aug25`
+- `sclc_patient_data_jan26`
+- `all_tumor_ssls_orr_rvar_ctdna_apr25`
+- `all_tumor_ssls_orr_rvar_ctdna_aug25`
+- `all_tumor_ssls_orr_rvar_ctdna_jan26`
 
 ### Event Type Suffix
 
@@ -830,10 +834,10 @@ From R, use [`tar_read()`](https://docs.ropensci.org/targets/reference/tar_read.
 store_path <- "/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/_targets"
 
 # Read a target
-orr <- tar_read(all_tumor_ssls_orr_rvar_ctdna_aug, store = store_path)
+orr <- tar_read(all_tumor_ssls_orr_rvar_ctdna_jan26, store = store_path)
 
 # Or load into environment
-tar_load(all_tumor_ssls_orr_rvar_ctdna_aug, store = store_path)
+tar_load(all_tumor_ssls_orr_rvar_ctdna_jan26, store = store_path)
 ```
 
 **Important**: Always use explicit `store` argument. Never use [`tar_config_set(store = ...)`](https://docs.ropensci.org/targets/reference/tar_config_set.html) as it changes global state.
@@ -887,11 +891,11 @@ See [`tar_make()`](https://docs.ropensci.org/targets/reference/tar_make.html) re
 
 ```r
 # Run specific target and all dependencies
-tar_make(all_tumor_ssls_orr_rvar_ctdna_aug, store = store_path)
+tar_make(all_tumor_ssls_orr_rvar_ctdna_jan26, store = store_path)
 
 # Run multiple targets
 tar_make(
-  c(tumor_ssls_res_posterior_ctdna_aug,
+  c(tumor_ssls_res_posterior_ctdna_jan26,
     tumor_ssls_lfo_clean_ctdna_aug),
   store = store_path
 )
@@ -905,7 +909,7 @@ tar_outdated(store = store_path)  # See reference: https://docs.ropensci.org/tar
 
 # See why a target is outdated
 tar_meta(store = store_path) |>
-  filter(name == "tumor_ssls_res_posterior_ctdna_aug") |>
+  filter(name == "tumor_ssls_res_posterior_ctdna_jan26") |>
   select(name, time, seconds, error, warnings)
 ```
 

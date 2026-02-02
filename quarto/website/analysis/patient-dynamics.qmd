@@ -12,6 +12,11 @@ source("_setup.R")
 
 This page presents individual patient tumor dynamics, including SLD forecasts and RECIST response predictions.
 
+::: {.callout-note}
+## Data Cutoffs
+This page shows results across all data cutoffs: **April 2025**, **August 2025**, and **January 2026 (DCO3)**. Use the tabs to switch between different data cutoffs.
+:::
+
 ::: {.callout-tip}
 ## Related Pages
 - See [Model Specification](../documentation/model-specification.qmd#sec-tumor-dynamics) for the bi-exponential tumor model
@@ -22,88 +27,101 @@ This page presents individual patient tumor dynamics, including SLD forecasts an
 
 Sum of lesion diameters (SLD) forecasts for SCLC-01 patients who are right censored (progression-free at data cutoff).
 
+::: {.panel-tabset}
+
+### April 2025
+
 ```{r}
-#| label: fig-forecast-sld
-#| fig-cap: Forecast measured SLD, for SCLC-01 patients that are right censored.
-#| column: body-outset
-#| fig-width: 7
+#| label: fig-forecast-sld-apr25
+#| fig-cap: Forecast measured SLD for SCLC-01 right censored patients (April 2025 DCO).
+#| fig-width: 10
 #| fig-height: 12
 #| warning: false
 
-tar_read(tumor_ssls_staged_sld_rvar_right_censored_posterior_ctdna_aug) |>
+tar_read(tumor_ssls_staged_sld_rvar_right_censored_posterior_ctdna_apr25) |>
   filter(fct_match(trial, "sclc")) |>
-  mutate(patient_sld = patient_sld * 10) |>
-  plot_dynamics(patient_sld) +
-  scale_x_continuous("Months", breaks = months_to_weeks(seq(0, 48, 12)), label = label_weeks_to_months) +
-  labs(y = "SLD [mm]") +
-  theme(legend.position = "bottom", strip.text = element_blank()) +
-  NULL
+  plot_sld_forecast_censored()
 ```
 
-## Posterior Predictive Checks - Uncensored Patients {#sec-ppc}
-
-Posterior checking plots for patients with observed progression events, comparing model predictions with actual SLD measurements.
-
-### HISTORICAL Trial
+### August 2025
 
 ```{r}
-#| label: fig-forecast-sld-uncensored-historical
-#| fig-cap: Forecast measured SLD, for HISTORICAL patients that are uncensored (posterior checking).
-#| column: body-outset
-#| fig-width: 7
+#| label: fig-forecast-sld-aug25
+#| fig-cap: Forecast measured SLD for SCLC-01 right censored patients (August 2025 DCO).
+#| fig-width: 10
 #| fig-height: 12
 #| warning: false
 
-tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_aug) |>
-  filter(fct_match(trial, "historical"), fct_match(stage, "obs")) |>
-  mutate(patient_sld = patient_sld * 10) |>
-  plot_dynamics(patient_sld) +
-  scale_fill_manual("Stage",
-                    values = c("obs" = AZ_palette[2]),
-                    labels = c("obs" = "Observed")) +
-  scale_x_continuous("Months", breaks = months_to_weeks(seq(0, 48, 2)), label = label_weeks_to_months) +
-  theme(legend.position = "bottom") +
-  NULL
+tar_read(tumor_ssls_staged_sld_rvar_right_censored_posterior_ctdna_aug25) |>
+  filter(fct_match(trial, "sclc")) |>
+  plot_sld_forecast_censored()
 ```
 
-### SCLC Trial
+### January 2026
 
 ```{r}
-#| label: fig-forecast-sld-uncensored-sclc
-#| fig-cap: Forecast measured SLD, for SCLC patients that are uncensored (posterior checking).
-#| column: body-outset
-#| fig-width: 7
+#| label: fig-forecast-sld-jan26
+#| fig-cap: Forecast measured SLD for SCLC-01 right censored patients (January 2026 DCO).
+#| fig-width: 10
 #| fig-height: 12
 #| warning: false
 
-tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_aug) |>
-  filter(fct_match(trial, "sclc"), fct_match(stage, "obs")) |>
-  mutate(patient_sld = patient_sld * 10) |>
-  plot_dynamics(patient_sld) +
-  scale_fill_manual("Stage",
-                    values = c("obs" = AZ_palette[2]),
-                    labels = c("obs" = "Observed")) +
-  scale_x_continuous("Months", breaks = months_to_weeks(seq(0, 48, 2)), label = label_weeks_to_months) +
-  theme(legend.position = "bottom") +
-  NULL
+tar_read(tumor_ssls_staged_sld_rvar_right_censored_posterior_ctdna_jan26) |>
+  filter(fct_match(trial, "sclc")) |>
+  plot_sld_forecast_censored()
 ```
+
+:::
 
 ## RECIST Predictions {#sec-recist}
 
 Predicted RECIST categories over time for censored patients, showing the model's forecast of future tumor response classifications.
 
+::: {.panel-tabset}
+
+### April 2025
+
 ```{r}
-#| label: fig-predict-recist
-#| fig-cap: Predicted and forecast RECIST categories at every week, for SCLC-01 patients who are right censored.
-#| column: body-outset
+#| label: fig-predict-recist-apr25
+#| fig-cap: RECIST predictions for SCLC-01 right censored patients (April 2025 DCO).
 #| fig-width: 10
 #| fig-height: 12
 #| warning: false
 
-tar_read(tumor_ssls_staged_recist_rvar_right_censored_posterior_ctdna_aug) |>
+tar_read(tumor_ssls_staged_recist_rvar_right_censored_posterior_ctdna_apr25) |>
   filter(fct_match(trial, "sclc")) |>
-  plot_recist_predictions(x_breaks = months_to_weeks(seq(0, 60, 12)))
+  plot_recist_censored()
 ```
+
+### August 2025
+
+```{r}
+#| label: fig-predict-recist-aug25
+#| fig-cap: RECIST predictions for SCLC-01 right censored patients (August 2025 DCO).
+#| fig-width: 10
+#| fig-height: 12
+#| warning: false
+
+tar_read(tumor_ssls_staged_recist_rvar_right_censored_posterior_ctdna_aug25) |>
+  filter(fct_match(trial, "sclc")) |>
+  plot_recist_censored()
+```
+
+### January 2026
+
+```{r}
+#| label: fig-predict-recist-jan26
+#| fig-cap: RECIST predictions for SCLC-01 right censored patients (January 2026 DCO).
+#| fig-width: 10
+#| fig-height: 12
+#| warning: false
+
+tar_read(tumor_ssls_staged_recist_rvar_right_censored_posterior_ctdna_jan26) |>
+  filter(fct_match(trial, "sclc")) |>
+  plot_recist_censored()
+```
+
+:::
 
 ::: {.callout-note}
 ## RECIST Categories
@@ -112,28 +130,6 @@ tar_read(tumor_ssls_staged_recist_rvar_right_censored_posterior_ctdna_aug) |>
 - **SD** (Stable Disease): Neither PR nor PD criteria met
 - **PD** (Progressive Disease): ≥20% increase in SLD from nadir plus ≥5mm absolute increase
 :::
-
-## PFS Posterior Predictive Check {#sec-pfs-ppc}
-
-Comparing posterior PFS predictions with observed PFS for uncensored patients to assess model calibration.
-
-```{r}
-#| label: fig-pfs-posterior-check
-#| fig-cap: Posterior checking the posterior PFS predictions compared to the observed PFS, restricted to the uncensored patients.
-#| column: body-outset
-#| fig-width: 10
-
-ppc_spop_pfs <- tar_read(all_tumor_ssls_pfs_rvar_ctdna_aug) |>
-  filter(fct_match(fit_type, "posterior"), !right_censored) |>
-  mutate(event_type = case_when(
-    !progression_before_death ~ "Death",
-    !target_only_right_censored ~ "Target Lesion Progression",
-    TRUE ~ "Residual Progression"
-  ))
-
-ppc_spop_pfs |>
-  plot_pfs_ppc(pfs_var = spop_pfs)
-```
 
 ::: {.related-pages}
 ## Related Pages

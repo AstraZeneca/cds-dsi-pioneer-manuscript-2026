@@ -1,0 +1,189 @@
+# Maps source code files to documentation that should stay in sync
+# Used by /sync-docs skill to detect when documentation needs updating
+
+mappings:
+  # Core model specification documentation
+  - name: "Model Specification"
+    description: "Complete mathematical specification of tumor dynamics and survival model"
+    sources:
+      # Main Stan models
+      - "stan/ssls/sf-ssm-log-space.stan"
+      - "stan/ssls/_sf_functions.stan"
+      - "stan/ssls/_sf_transformed_data.stan"
+      - "stan/ssls/_sf_transformed_parameters.stan"
+      - "stan/ssls/_sf_outcomes_info.stan"
+      - "stan/ssls/_sf-checks.stan"
+
+      # All module Stan files (hierarchical parameters, priors, etc.)
+      - "stan/ssls/modules/**/*.stan"
+
+      # Prior specifications and initializers
+      - "r/priors.R"
+      - "r/sclc/priors.R"
+      - "r/initializers.R"
+      - "r/initializers_fixed.R"
+    docs:
+      - "quarto/website/documentation/model-specification.qmd"
+
+  # System architecture and design patterns
+  - name: "Architecture"
+    description: "Design patterns, hierarchical structure, computational optimization"
+    sources:
+      # Module organization
+      - "stan/ssls/modules/modules_aggregator.stan"
+      - "stan/ssls/modules/**/*.stan"
+
+      # Architecture documentation
+      - "docs/ARCHITECTURE.md"
+
+      # State space utilities
+      - "r/state_space.R"
+    docs:
+      - "quarto/website/documentation/architecture.qmd"
+
+  # AR(1) process noise implementation
+  - name: "AR(1) Process Noise"
+    description: "Time-varying process noise for tumor dynamics"
+    sources:
+      # TR module (contains AR1 implementation)
+      - "stan/ssls/modules/tr/*.stan"
+
+      # AR1 design doc
+      - "docs/ar1_process_noise.md"
+    docs:
+      - "quarto/website/documentation/ar1-process-noise.qmd"
+
+  # Leave-future-out cross-validation methodology
+  - name: "Leave-Future-Out Cross-Validation"
+    description: "Temporal cross-validation methodology and implementation"
+    sources:
+      # LFO-specific Stan models
+      - "stan/ssls/sf-ssls-lfo.stan"
+      - "stan/ssls/sf-ssls-lfo-endpoints.stan"
+      - "stan/ssls/_sf-ssls-lfo-data.stan"
+      - "stan/ssls/_lfo_transformed_data.stan"
+      - "stan/ssls/_lfo_endpoints_generated_quantities.stan"
+
+      # Accuracy computation
+      - "r/accuracy.R"
+      - "r/sclc/accuracy.R"
+
+      # LFO visualization
+      - "r/plot_lfo_diagram.R"
+    docs:
+      - "quarto/website/documentation/leave-future-out-cross-validation.qmd"
+
+  # Targets pipeline architecture
+  - name: "Targets Pipeline"
+    description: "Analysis pipeline structure and organization"
+    sources:
+      # Pipeline definitions
+      - "targets/sclc_targets.R"
+      - "_targets.yaml"
+
+      # Targets utilities
+      - "r/targets_tidyselect.R"
+    docs:
+      - "quarto/website/documentation/targets-pipeline.qmd"
+
+  # Other events model
+  - name: "Other Events Model"
+    description: "Non-target progression and death events"
+    sources:
+      # Other events module
+      - "stan/ssls/modules/other_events/*.stan"
+
+      # Design documentation
+      - "docs/OTHER_EVENTS_MODEL.md"
+    docs:
+      - "quarto/website/documentation/model-specification.qmd"  # Section on other events
+
+  # Analysis results pages (these depend on R plotting/analysis functions)
+  - name: "Model Validation Analysis"
+    description: "LFO results, ELPD comparisons, accuracy metrics"
+    sources:
+      # LFO computation and accuracy
+      - "r/accuracy.R"
+      - "r/sclc/accuracy.R"
+      - "r/plot_lfo_diagram.R"
+
+      # Plotting functions
+      - "r/plot_functions.R"
+      - "r/sclc/plot_functions.R"
+    docs:
+      - "quarto/website/analysis/model-validation.qmd"
+
+  - name: "Parameter Inference Analysis"
+    description: "Population and patient-level parameter estimates"
+    sources:
+      # Posterior processing
+      - "r/posterior.R"
+
+      # Plotting functions
+      - "r/plot_functions.R"
+      - "r/sclc/plot_functions.R"
+
+      # Module parameters
+      - "stan/ssls/modules/tr/*.stan"
+      - "stan/ssls/modules/frac/*.stan"
+      - "stan/ssls/modules/init/*.stan"
+    docs:
+      - "quarto/website/analysis/parameter-inference.qmd"
+
+  - name: "Patient Dynamics Analysis"
+    description: "Individual tumor trajectories and RECIST predictions"
+    sources:
+      # State space and dynamics
+      - "r/state_space.R"
+      - "stan/ssls/_sf_transformed_parameters.stan"
+
+      # Plotting functions
+      - "r/plot_functions.R"
+      - "r/sclc/plot_functions.R"
+    docs:
+      - "quarto/website/analysis/patient-dynamics.qmd"
+
+  - name: "Data Exploration Analysis"
+    description: "Descriptive statistics and data characteristics"
+    sources:
+      # Data preparation
+      - "r/prepare_analysis_data.R"
+      - "r/sclc/prepare_analysis_data.R"
+
+      # Plotting functions
+      - "r/plot_functions.R"
+      - "r/sclc/plot_functions.R"
+
+      # Table functions
+      - "r/table_functions.R"
+    docs:
+      - "quarto/website/analysis/data-exploration.qmd"
+
+  - name: "Clinical Endpoints Analysis"
+    description: "ORR, PFS predictions and survival outcomes"
+    sources:
+      # Endpoints generation
+      - "stan/ssls/_endpoints_generated_quantities.stan"
+      - "stan/ssls/_sf_accuracy_generated_quantities.stan"
+
+      # Accuracy computation
+      - "r/accuracy.R"
+      - "r/sclc/accuracy.R"
+
+      # Plotting functions
+      - "r/plot_functions.R"
+      - "r/sclc/plot_functions.R"
+    docs:
+      - "quarto/website/analysis/clinical-endpoints.qmd"
+
+  - name: "Model Diagnostics Analysis"
+    description: "HMC diagnostics, posterior checks, convergence assessment"
+    sources:
+      # Posterior utilities
+      - "r/posterior.R"
+
+      # Plotting functions
+      - "r/plot_functions.R"
+      - "r/sclc/plot_functions.R"
+    docs:
+      - "quarto/website/analysis/diagnostics.qmd"

@@ -8,9 +8,22 @@ subtitle: "Leave-future-out cross-validation and accuracy assessment"
 #| include: false
 
 source("_setup.R")
+
+# Load SLD data for posterior predictive checks
+sld_data_historical_apr25 <- tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_apr25)
+sld_data_historical_aug25 <- tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_aug25)
+sld_data_historical_jan26 <- tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_jan26)
+sld_data_sclc_apr25 <- tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_apr25)
+sld_data_sclc_aug25 <- tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_aug25)
+sld_data_sclc_jan26 <- tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_jan26)
 ```
 
 This page presents model validation results using leave-future-out (LFO) cross-validation and accuracy assessments.
+
+::: {.callout-note}
+## Data Cutoff
+Leave-future-out cross-validation results on this page are based on **DCO2 (August 2025)**.
+:::
 
 ::: {.callout-tip}
 ## Related Pages
@@ -18,6 +31,116 @@ This page presents model validation results using leave-future-out (LFO) cross-v
 - See [Model Specification](../documentation/model-specification.qmd) for model details
 - See [Architecture](../documentation/architecture.qmd) for computational optimization strategies
 :::
+
+## Posterior Predictive Checks - Uncensored Patients {#sec-ppc}
+
+Posterior checking plots for patients with observed progression events, comparing model predictions with actual SLD measurements.
+
+### HISTORICAL Trial
+
+::: {.panel-tabset}
+
+#### April 2025
+
+```{r}
+#| label: fig-forecast-sld-uncensored-historical-apr25
+#| fig-cap: SLD posterior check for HISTORICAL uncensored patients (April 2025 DCO).
+#| fig-width: 10
+#| fig-height: 12
+#| warning: false
+
+plot_sld_ppc_by_trial_dco("historical", sld_data_historical_apr25)
+```
+
+#### August 2025
+
+```{r}
+#| label: fig-forecast-sld-uncensored-historical-aug25
+#| fig-cap: SLD posterior check for HISTORICAL uncensored patients (August 2025 DCO).
+#| fig-width: 10
+#| fig-height: 12
+#| warning: false
+
+plot_sld_ppc_by_trial_dco("historical", sld_data_historical_aug25)
+```
+
+#### January 2026 {.active}
+
+```{r}
+#| label: fig-forecast-sld-uncensored-historical-jan26
+#| fig-cap: SLD posterior check for HISTORICAL uncensored patients (January 2026 DCO).
+#| fig-width: 10
+#| fig-height: 12
+#| warning: false
+
+plot_sld_ppc_by_trial_dco("historical", sld_data_historical_jan26)
+```
+
+:::
+
+### SCLC Trial
+
+::: {.panel-tabset}
+
+#### April 2025
+
+```{r}
+#| label: fig-forecast-sld-uncensored-sclc-apr25
+#| fig-cap: SLD posterior check for SCLC uncensored patients (April 2025 DCO).
+#| fig-width: 10
+#| fig-height: 12
+#| warning: false
+
+plot_sld_ppc_by_trial_dco("sclc", sld_data_sclc_apr25)
+```
+
+#### August 2025
+
+```{r}
+#| label: fig-forecast-sld-uncensored-sclc-aug25
+#| fig-cap: SLD posterior check for SCLC uncensored patients (August 2025 DCO).
+#| fig-width: 10
+#| fig-height: 12
+#| warning: false
+
+plot_sld_ppc_by_trial_dco("sclc", sld_data_sclc_aug25)
+```
+
+#### January 2026 {.active}
+
+```{r}
+#| label: fig-forecast-sld-uncensored-sclc-jan26
+#| fig-cap: SLD posterior check for SCLC uncensored patients (January 2026 DCO).
+#| fig-width: 10
+#| fig-height: 12
+#| warning: false
+
+plot_sld_ppc_by_trial_dco("sclc", sld_data_sclc_jan26)
+```
+
+:::
+
+## PFS Posterior Predictive Check {#sec-pfs-ppc}
+
+Comparing posterior PFS predictions with observed PFS for uncensored patients to assess model calibration.
+
+```{r}
+#| label: fig-pfs-posterior-check
+#| fig-cap: Posterior checking the posterior PFS predictions compared to the observed PFS, restricted to the uncensored patients.
+#| column: body-outset
+#| fig-width: 10
+
+ppc_spop_pfs <- tar_read(all_tumor_ssls_pfs_rvar_ctdna_jan26) |>
+  filter(fct_match(fit_type, "posterior"), !right_censored) |>
+  mutate(event_type = case_when(
+    !progression_before_death ~ "Death",
+    !target_only_right_censored ~ "Target Lesion Progression",
+    TRUE ~ "Residual Progression"
+  ))
+
+ppc_spop_pfs |>
+  plot_pfs_ppc(pfs_var = spop_pfs)
+```
 
 ## Leave-Future-Out Cross-Validation {#sec-lfo}
 
@@ -122,7 +245,8 @@ Out-of-sample confusion matrix comparing observed RECIST classifications with mo
 #| fig-cap: Out-of-sample (leave-future-out) confusion matrix for the RECIST categories as observed in the data and as estimated using only the target tumor SLD.
 #| fig-width: 6
 
-plot_oos_confusion_matrix(lfo_store)
+oos_confusion_matrix <- tar_read(oos_confusion_matrix_ctdna_jan26, store = lfo_store)
+plot_oos_confusion_matrix(oos_confusion_matrix)
 ```
 
 ```{r}
@@ -131,7 +255,7 @@ plot_oos_confusion_matrix(lfo_store)
 #| fig-width: 7
 #| fig-height: 5
 
-plot_oos_confusion_sankey(lfo_store)
+plot_oos_confusion_sankey(oos_confusion_matrix)
 ```
 
 ### Summary Metrics
@@ -140,7 +264,7 @@ plot_oos_confusion_sankey(lfo_store)
 #| label: tbl-accuracy-metrics
 #| tbl-cap: "Out-of-sample accuracy, sensitivity, and specificity with 90% credible intervals."
 
-compute_oos_accuracy_metrics(lfo_store) |>
+compute_oos_accuracy_metrics(oos_confusion_matrix) |>
   gt() |>
   tab_header(
     title = "RECIST Prediction Performance"
@@ -169,47 +293,19 @@ compute_oos_accuracy_metrics(lfo_store) |>
 - **Specificity**: P(Predicted not X | Observed not X) - probability of correctly predicting NOT class X when true class is not X
 :::
 
-### Progressive Disease Prediction Over Time
+### RECIST Prediction Over Time
 
-Tracking how well the model predicts progressive disease (PD) at different points during the trial.
+Tracking how well the model predicts each RECIST category at different points during the trial.
 
 ```{r}
-#| label: fig-pd-probability-over-time
-#| fig-cap: Probability of predicting PD conditional on observed RECIST being PD, over time.
-#| fig-width: 6
-#| fig-height: 5
+#| label: fig-recist-probability-over-time
+#| fig-cap: Probability of predicting each RECIST category conditional on observed RECIST, over time.
+#| fig-width: 10
+#| fig-height: 6
 
-pd_data <- tar_read(full_oos_confusion_matrix_ctdna_aug, store = lfo_store) |>
-  filter(response == "PD") |>
-  group_by(n, m, cutoff_date, response) |>
-  mutate(
-    total = rvar_sum(oos_recist_confusion_matrix),
-    prop = oos_recist_confusion_matrix / total
-  ) |>
-  ungroup() |>
-  filter(pred_response == "PD") |>
-  arrange(cutoff_date)
-
-# Compute cumulative mean using accumulate (rvar addition preserves draws)
-cumsum_prop <- accumulate(pd_data$prop, `+`)
-running_prop <- map2(cumsum_prop, seq_along(cumsum_prop), ~ .x / .y)
-
-pd_data |>
-  mutate(
-    running_prop = running_prop,
-    running_median = map_dbl(running_prop, median),
-    running_q10 = map_dbl(running_prop, ~ quantile(.x, 0.1)),
-    running_q90 = map_dbl(running_prop, ~ quantile(.x, 0.9))
-  ) |>
-  ggplot(aes(x = cutoff_date)) +
-  geom_ribbon(aes(ymin = running_q10, ymax = running_q90), fill = AZ_turquoise, alpha = 0.4) +
-  geom_line(aes(y = running_median), color = "darkblue", linewidth = 1) +
-  scale_y_continuous("P(Predicted PD | Observed PD)", breaks = seq(0, 1, 0.1), labels = scales::percent_format(), limits = c(0, NA)) +
-  labs(
-    x = "Cutoff Date",
-    caption = "Ribbon shows 80% credible interval of cumulative mean; line shows cumulative median"
-  ) +
-  theme(legend.position = "bottom")
+tar_read(full_oos_confusion_matrix_ctdna_jan26, store = lfo_store) |>
+  plot_recist_sensitivity_over_time() +
+  labs(caption = "Ribbon shows 80% credible interval of cumulative mean; line shows cumulative median.\nDashed lines indicate data cutoff dates (DCO1: Apr 2025, DCO2: Aug 2025, DCO3: Jan 2026).")
 ```
 
 ::: {.related-pages}
