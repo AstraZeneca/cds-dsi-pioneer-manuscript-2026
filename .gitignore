@@ -85,7 +85,27 @@ generate-aws-credential_file.py
 run-aws-credentials.sh
 .env
 node_modules
+aws/
+
+# Claude Code cache and local settings
+.claude/.stan-diagnose-cache/
+.claude/.stan-diagnose-last-dir
+.claude/.stan-diagnose-output-cache
+.claude/settings.local.json
+
+# R package artifacts
+.here
+
+# VS Code workspace files
+*.code-workspace
+
+# Node.js artifacts
 package.json
 package-lock.json
-aws/
+
+# Core dumps
 core.*
+
+# Temporary presentation materials
+presentation_images/
+presentation_pages/
