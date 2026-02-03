@@ -13,6 +13,21 @@ array[n_levels + 1] int enabled_level_pos_oe_slope = create_enabled_pos(
   n_groups_per_level, oe_enable_level_cov
 );
 
+// Pre-computed flat indices for slopes
+array[n_patients, n_levels] int patient_oe_slope_flat_idx;
+{
+  for (i in 1:n_patients) {
+    for (lv in 1:n_levels) {
+      if (oe_enable_level_cov[lv]) {
+        patient_oe_slope_flat_idx[i, lv] =
+          get_global_group_idx(enabled_level_pos_oe_slope, lv, patient_level_groups[i, lv]);
+      } else {
+        patient_oe_slope_flat_idx[i, lv] = 1;
+      }
+    }
+  }
+}
+
 // --- Independent Events Framework ---
 // INDEPENDENT EVENTS MODEL:
 // Target progression (from tumor dynamics) and other-events (from this model)

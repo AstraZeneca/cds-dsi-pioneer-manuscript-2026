@@ -148,23 +148,28 @@ if (n_causes > 0 && (oe_enable_pop_cov || sum(oe_enable_level_cov) > 0)) {
     }
 
     // Multi-level random non-tumor slopes (additive across levels)
-    // Uses enabled position arrays for efficient indexing into compacted parameter arrays
-    for (lv in 1:n_levels) {
-      if (oe_enable_level_cov[lv] && n_covar > 0) {
-        // Use enabled position array (skips disabled levels in parameter indexing)
-        int lv_start = enabled_level_pos_oe_slope[lv];
-        int lv_end = enabled_level_pos_oe_slope[lv + 1] - 1;
+    // Optimized: uses pre-computed flat indices from transformed_data
+    if (n_covar > 0 && n_enabled_groups_oe_slope > 0) {
+      // Step 1: Scale all raw slope effects at once for this cause
+      matrix[n_enabled_groups_oe_slope, n_covar] oe_scaled_level_slope_k;
+      for (lv in 1:n_levels) {
+        if (oe_enable_level_cov[lv]) {
+          int lv_start, lv_end;
+          (lv_start, lv_end) = get_pos(enabled_level_pos_oe_slope, lv);
+          oe_scaled_level_slope_k[lv_start:lv_end, :] =
+            oe_raw_level_slope[k, lv_start:lv_end, :] .*
+            rep_matrix(oe_sd_level_slope[k, lv]', lv_end - lv_start + 1);
+        }
+      }
 
-        // Scale raw slopes for this level
-        matrix[n_groups_per_level[lv], n_covar] level_slopes_qr =
-          oe_raw_level_slope[k, lv_start:lv_end, :] .*
-          rep_matrix(oe_sd_level_slope[k, lv]', n_groups_per_level[lv]);
-
-        // Add slope contributions via group membership
-        covar_linpred += rows_dot_product(
-          Q_covar_design_matrix,
-          level_slopes_qr[patient_level_groups[, lv], :]
-        );
+      // Step 2: Gather and compute dot products using pre-computed flat indices
+      for (lv in 1:n_levels) {
+        if (oe_enable_level_cov[lv]) {
+          covar_linpred += rows_dot_product(
+            Q_covar_design_matrix,
+            oe_scaled_level_slope_k[patient_oe_slope_flat_idx[, lv], :]
+          );
+        }
       }
     }
 

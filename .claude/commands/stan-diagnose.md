@@ -21,6 +21,17 @@ Arguments:
 - `<pattern>` - Glob pattern matching multiple targets (e.g., `*prior*ctdna_aug`, `tumor_ssls_*`)
 - `on <store>` - Optional store name (e.g., `on main`, `on main3`). Defaults to `main`.
 
+**IMPORTANT: Target vs Fit Directory Naming**
+The fit directory names do NOT always match the targets pipeline target names. The mapping is:
+- Target `tumor_ssls_res_prior_ctdna_aug` → Fit dir `prior_tumor_ssls_ctdna_aug`
+- Target `tumor_ssls_res_posterior_ctdna_aug` → Fit dir `tumor_ssls_ctdna_aug`
+
+In general:
+- Prior targets: `tumor_ssls_res_prior_*` → Fit dir: `prior_tumor_ssls_*`
+- Posterior targets: `tumor_ssls_res_posterior_*` → Fit dir: `tumor_ssls_*`
+
+When using `/stan-diagnose`, always use the **fit directory name**, not the target name.
+
 Flags:
 - `-f`, `--force`, `--no-cache` - Bypass cache and force fresh read from CSV files
 
