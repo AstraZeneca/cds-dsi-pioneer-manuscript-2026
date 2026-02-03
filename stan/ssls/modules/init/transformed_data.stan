@@ -1,6 +1,6 @@
 // init/transformed_data.stan
-// Compute enabled group counts and position arrays for initial state module.
-// These allow parameters to be sized exactly for enabled levels only.
+// Compute enabled group counts, position arrays, and pre-computed indices for
+// efficient vectorized operations in transformed_parameters.
 
 // Enabled group count for init intercepts
 int n_enabled_groups_init_intercept = compute_n_enabled_groups(
@@ -12,6 +12,21 @@ array[n_levels + 1] int enabled_level_pos_init_intercept = create_enabled_pos(
   n_groups_per_level, enable_level_intercept_init
 );
 
+// Pre-computed flat indices for intercepts
+array[n_patients, n_levels] int patient_init_intercept_flat_idx;
+{
+  for (i in 1:n_patients) {
+    for (lv in 1:n_levels) {
+      if (enable_level_intercept_init[lv]) {
+        patient_init_intercept_flat_idx[i, lv] =
+          get_global_group_idx(enabled_level_pos_init_intercept, lv, patient_level_groups[i, lv]);
+      } else {
+        patient_init_intercept_flat_idx[i, lv] = 1;
+      }
+    }
+  }
+}
+
 // Enabled group count for init slopes
 int n_enabled_groups_init_slope = compute_n_enabled_groups(
   n_groups_per_level, enable_level_cov_init
@@ -21,3 +36,18 @@ int n_enabled_groups_init_slope = compute_n_enabled_groups(
 array[n_levels + 1] int enabled_level_pos_init_slope = create_enabled_pos(
   n_groups_per_level, enable_level_cov_init
 );
+
+// Pre-computed flat indices for slopes
+array[n_patients, n_levels] int patient_init_slope_flat_idx;
+{
+  for (i in 1:n_patients) {
+    for (lv in 1:n_levels) {
+      if (enable_level_cov_init[lv]) {
+        patient_init_slope_flat_idx[i, lv] =
+          get_global_group_idx(enabled_level_pos_init_slope, lv, patient_level_groups[i, lv]);
+      } else {
+        patient_init_slope_flat_idx[i, lv] = 1;
+      }
+    }
+  }
+}

@@ -1,44 +1,55 @@
 // frac/transformed_parameters.stan — active fraction module transformed parameters
-// Multi-level hierarchy: loop over all levels to accumulate effects
-// Uses enabled position arrays for efficient indexing into compacted parameter arrays
+// Optimized: uses pre-computed flat indices from transformed_data for direct gather
 
 // Population covariate effects
 vector[n_patients] frac_linpred_pop = enable_pop_cov_frac ?
-  (Q_covar_design_matrix * frac_coef_qr_pop) : rep_vector(0, n_patients);
+  (Q_covar_design_matrix * frac_coef_qr_pop) : zeros_vector(n_patients);
 
 // ===== INTERCEPT EFFECTS =====
-vector[n_patients] frac_linpred_level_intercepts = rep_vector(0, n_patients);
-
+// Step 1: Scale all raw effects at once
+vector[n_enabled_groups_frac_intercept] frac_scaled_level_intercept;
 for (lv in 1:n_levels) {
   if (enable_level_intercept_frac[lv]) {
-    // Use enabled position array (skips disabled levels in parameter indexing)
-    int lv_start = enabled_level_pos_frac_intercept[lv];
-    int lv_end = enabled_level_pos_frac_intercept[lv + 1] - 1;
-
-    vector[n_groups_per_level[lv]] level_effects =
+    int lv_start, lv_end;
+    (lv_start, lv_end) = get_pos(enabled_level_pos_frac_intercept, lv);
+    frac_scaled_level_intercept[lv_start:lv_end] =
       frac_sd_level_intercept[lv] * frac_raw_level_intercept[lv_start:lv_end];
+  }
+}
 
-    frac_linpred_level_intercepts += level_effects[patient_level_groups[, lv]];
+// Step 2: Gather using pre-computed flat indices
+vector[n_patients] frac_linpred_level_intercepts = zeros_vector(n_patients);
+for (lv in 1:n_levels) {
+  if (enable_level_intercept_frac[lv]) {
+    frac_linpred_level_intercepts += frac_scaled_level_intercept[patient_frac_intercept_flat_idx[, lv]];
   }
 }
 
 // ===== COVARIATE SLOPE EFFECTS =====
-vector[n_patients] frac_linpred_level_slopes = rep_vector(0, n_patients);
+// Step 1: Scale all raw slope effects at once
+matrix[n_enabled_groups_frac_slope, n_covar] frac_scaled_level_slope;
+if (n_covar > 0 && n_enabled_groups_frac_slope > 0) {
+  for (lv in 1:n_levels) {
+    if (enable_level_cov_frac[lv]) {
+      int lv_start, lv_end;
+      (lv_start, lv_end) = get_pos(enabled_level_pos_frac_slope, lv);
+      frac_scaled_level_slope[lv_start:lv_end, :] =
+        frac_raw_level_slope[lv_start:lv_end, :] .*
+        rep_matrix(frac_sd_level_slope[lv]', lv_end - lv_start + 1);
+    }
+  }
+}
 
-for (lv in 1:n_levels) {
-  if (enable_level_cov_frac[lv] && n_covar > 0) {
-    // Use enabled position array (skips disabled levels in parameter indexing)
-    int lv_start = enabled_level_pos_frac_slope[lv];
-    int lv_end = enabled_level_pos_frac_slope[lv + 1] - 1;
-
-    matrix[n_groups_per_level[lv], n_covar] level_slopes_qr =
-      frac_raw_level_slope[lv_start:lv_end, :] .*
-      rep_matrix(frac_sd_level_slope[lv]', n_groups_per_level[lv]);
-
-    frac_linpred_level_slopes += rows_dot_product(
-      Q_covar_design_matrix,
-      level_slopes_qr[patient_level_groups[, lv], :]
-    );
+// Step 2: Gather and compute dot products
+vector[n_patients] frac_linpred_level_slopes = zeros_vector(n_patients);
+if (n_covar > 0) {
+  for (lv in 1:n_levels) {
+    if (enable_level_cov_frac[lv]) {
+      frac_linpred_level_slopes += rows_dot_product(
+        Q_covar_design_matrix,
+        frac_scaled_level_slope[patient_frac_slope_flat_idx[, lv], :]
+      );
+    }
   }
 }
 

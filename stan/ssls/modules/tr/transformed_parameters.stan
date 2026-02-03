@@ -1,49 +1,55 @@
 // tr/transformed_parameters.stan — active linear predictor assembly for total rate module
-// Multi-level hierarchy: loop over all levels to accumulate effects
-// Uses enabled position arrays for efficient indexing into compacted parameter arrays
+// Optimized: uses pre-computed flat indices from transformed_data for direct gather
 
 // Population covariate effects
 vector[n_patients] tr_linpred_pop = enable_pop_cov_tr ?
-  (Q_covar_design_matrix * tr_coef_qr_pop) : rep_vector(0, n_patients);
+  (Q_covar_design_matrix * tr_coef_qr_pop) : zeros_vector(n_patients);
 
 // ===== INTERCEPT EFFECTS =====
-// Build linear predictor by summing across ALL levels
-vector[n_patients] tr_linpred_level_intercepts = rep_vector(0, n_patients);
-
+// Step 1: Scale all raw effects at once (vectorized per level)
+vector[n_enabled_groups_tr_intercept] tr_scaled_level_intercept;
 for (lv in 1:n_levels) {
   if (enable_level_intercept_tr[lv]) {
-    // Use enabled position array (skips disabled levels in parameter indexing)
-    int lv_start = enabled_level_pos_tr_intercept[lv];
-    int lv_end = enabled_level_pos_tr_intercept[lv + 1] - 1;
-
-    // Scale raw effects by SD
-    vector[n_groups_per_level[lv]] level_effects =
+    int lv_start, lv_end;
+    (lv_start, lv_end) = get_pos(enabled_level_pos_tr_intercept, lv);
+    tr_scaled_level_intercept[lv_start:lv_end] =
       tr_sd_level_intercept[lv] * tr_raw_level_intercept[lv_start:lv_end];
+  }
+}
 
-    // Add to each patient's predictor via their group membership
-    tr_linpred_level_intercepts += level_effects[patient_level_groups[, lv]];
+// Step 2: Gather using pre-computed flat indices (no intermediate array creation)
+vector[n_patients] tr_linpred_level_intercepts = zeros_vector(n_patients);
+for (lv in 1:n_levels) {
+  if (enable_level_intercept_tr[lv]) {
+    tr_linpred_level_intercepts += tr_scaled_level_intercept[patient_tr_intercept_flat_idx[, lv]];
   }
 }
 
 // ===== COVARIATE SLOPE EFFECTS =====
-vector[n_patients] tr_linpred_level_slopes = rep_vector(0, n_patients);
+// Step 1: Scale all raw slope effects at once
+matrix[n_enabled_groups_tr_slope, n_covar] tr_scaled_level_slope;
+if (n_covar > 0 && n_enabled_groups_tr_slope > 0) {
+  for (lv in 1:n_levels) {
+    if (enable_level_cov_tr[lv]) {
+      int lv_start, lv_end;
+      (lv_start, lv_end) = get_pos(enabled_level_pos_tr_slope, lv);
+      tr_scaled_level_slope[lv_start:lv_end, :] =
+        tr_raw_level_slope[lv_start:lv_end, :] .*
+        rep_matrix(tr_sd_level_slope[lv]', lv_end - lv_start + 1);
+    }
+  }
+}
 
-for (lv in 1:n_levels) {
-  if (enable_level_cov_tr[lv] && n_covar > 0) {
-    // Use enabled position array (skips disabled levels in parameter indexing)
-    int lv_start = enabled_level_pos_tr_slope[lv];
-    int lv_end = enabled_level_pos_tr_slope[lv + 1] - 1;
-
-    // Scale raw slopes for this level
-    matrix[n_groups_per_level[lv], n_covar] level_slopes_qr =
-      tr_raw_level_slope[lv_start:lv_end, :] .*
-      rep_matrix(tr_sd_level_slope[lv]', n_groups_per_level[lv]);
-
-    // Add slope contributions via group membership
-    tr_linpred_level_slopes += rows_dot_product(
-      Q_covar_design_matrix,
-      level_slopes_qr[patient_level_groups[, lv], :]
-    );
+// Step 2: Gather and compute dot products using pre-computed flat indices
+vector[n_patients] tr_linpred_level_slopes = zeros_vector(n_patients);
+if (n_covar > 0) {
+  for (lv in 1:n_levels) {
+    if (enable_level_cov_tr[lv]) {
+      tr_linpred_level_slopes += rows_dot_product(
+        Q_covar_design_matrix,
+        tr_scaled_level_slope[patient_tr_slope_flat_idx[, lv], :]
+      );
+    }
   }
 }
 
