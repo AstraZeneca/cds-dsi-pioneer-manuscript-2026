@@ -264,7 +264,7 @@ base_plot_km <- function(
 
   if (!is_null(obs_km_data)) {
     pobj <- pobj +
-      geom_step(aes(x = t, y = s, group = btype, color = btype), linewidth = 0.5, alpha = 0.5, data = \(d) {
+      geom_step(aes(x = t, y = s, group = btype, color = btype), linewidth = 0.75, alpha = 0.5, data = \(d) {
         semi_join(obs_km_data, d, by = "trial")
       })
 
