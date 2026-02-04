@@ -65,3 +65,6 @@ quarto/*_files/
 
 _extensions/
 _targets/
+
+# Claude local notes (user-specific)
+CLAUDE.local.md
