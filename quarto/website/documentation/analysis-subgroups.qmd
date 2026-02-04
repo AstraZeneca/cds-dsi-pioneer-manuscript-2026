@@ -1,0 +1,345 @@
+---
+title: "Analysis Subgroups"
+description: "Patient subgroups used for conditional PFS and ORR predictions"
+---
+
+## Overview
+
+The SCLC-01 analysis includes conditional predictions (PFS quantiles, survival curves, and ORR) for predefined patient subgroups based on baseline clinical characteristics. This page documents:
+
+1. **Base clinical variables** used to define subgroups
+2. **Subgroup definitions** and their filtering logic
+3. **Data sources** and calculation methods
+
+Understanding these subgroups is essential for interpreting the analysis results, particularly the conditional forecasts shown in clinical endpoint visualizations.
+
+---
+
+## Base Clinical Variables
+
+Subgroups are constructed from the following baseline patient characteristics, which are extracted from the clinical trial datasets (ADSL and related ADAM datasets) during data preparation:
+
+### Treatment and Trial Design
+
+| Variable | Description | Source | Values |
+|----------|-------------|--------|--------|
+| `arm` | Treatment arm assignment | ADSL:`ARM` | `B01` (Part B), `C01` (Part C), `E01` (Part E) |
+
+### Biomarkers
+
+| Variable | Description | Source | Calculation |
+|----------|-------------|--------|-------------|
+| `pdl1` | PD-L1 tumor proportion score (%) | ADSL:`PDL1BL` | Character string (see note below) |
+| `pdl1_hi` | High PD-L1 expression (≥50%) | Derived | `discretize_pdl1(pdl1) == "High"` → `TRUE/FALSE` |
+| `baseline_ctdna` | Baseline circulating tumor DNA level | ADSL/Labs | Numeric (copies/mL plasma) |
+
+**Note on PD-L1 Data Format**: The `pdl1` variable contains mixed format character strings as reported by testing laboratories, **not continuous numeric values**:
+
+- **Numeric-like values (~76% of patients)**: `"1"`, `"5"`, `"10"`, `"50"`, `"80"`, `"90"`, `"100"`, or with % symbol (`"10%"`, `"70%"`)
+- **Categorical bins (~24% of patients)**:
+  - Inequalities: `">50"`, `">=75"`, `">=90"`, `">95%"`
+  - Ranges: `"1-49%"`, `"25-49%"`, `"10-20"`, `"1%-10%"`
+  - Qualitative: `"NEGATIVE"`, `"<1"`
+
+The `discretize_pdl1()` function handles all these formats and applies a 50% threshold to create the binary `pdl1_hi` classifier. See `r/sclc/prepare_analysis_data.R:188-243` for the parsing logic.
+
+### Treatment History
+
+| Variable | Description | Source | Calculation |
+|----------|-------------|--------|-------------|
+| `prev_lines` | Number of prior lines of therapy | ADSL | Numeric (0, 1, 2+) |
+| `first_line` | Treatment-naive patient | Derived | `prev_lines == 0` → `TRUE/FALSE` |
+| `cpi_naive` | No prior checkpoint inhibitor | ADSL | `TRUE/FALSE` |
+| `chemo_naive` | No prior chemotherapy | ADSL | `TRUE/FALSE` |
+
+### Tumor Characteristics
+
+| Variable | Description | Source | Values |
+|----------|-------------|--------|--------|
+| `histology` | Tumor histology | ADSL | `Squamous`, `non-Squamous` |
+| `stage` | Disease stage at baseline | ADSL | `IIB`, `IIIA`, `IIIB`, `IIIC`, `IV` |
+| `stage_num` | Numeric stage indicator | Derived | Extracted from `stage` |
+
+### Metastatic Sites
+
+| Variable | Description | Source | Values |
+|----------|-------------|--------|--------|
+| `liver_mets` | Liver metastases present | ADSL | `TRUE/FALSE` |
+| `brain_mets` | Brain metastases present | ADSL | `TRUE/FALSE` |
+| `bone_mets` | Bone metastases present | ADSL | `TRUE/FALSE` |
+
+### Demographics and Performance
+
+| Variable | Description | Source | Values |
+|----------|-------------|--------|--------|
+| `age` | Age at baseline (years) | ADSL:`AGE` | Numeric |
+| `sex` | Biological sex | ADSL:`SEX` | `M`, `F` |
+| `ecogbl` | ECOG performance status | ADSL | `0`, `1` |
+| `smoker` | Smoking history | ADSL | `never`, `ever` (includes former and current) |
+| `race` | Race/ethnicity | ADSL:`RACE` | `White`, `Asian`, `Black`, `Other` |
+
+### Baseline Laboratory Values
+
+All lab values are measured at baseline (screening visit):
+
+| Variable | Description | Source | Units |
+|----------|-------------|--------|-------|
+| `baseline_ldh` | Lactate dehydrogenase | ADLB | U/L |
+| `baseline_albumin` | Serum albumin | ADLB | g/dL |
+| `baseline_neutrophils` | Absolute neutrophil count | ADLB | cells/μL |
+| `baseline_lymph` | Absolute lymphocyte count | ADLB | cells/μL |
+| `baseline_monocytes` | Absolute monocyte count | ADLB | cells/μL |
+| `baseline_nlr` | Neutrophil-to-lymphocyte ratio | Derived | `neutrophils / lymphocytes` |
+| `baseline_hematocrit` | Hematocrit | ADLB | % |
+| `baseline_AST` | Aspartate aminotransferase | ADLB | U/L |
+| `baseline_GGT` | Gamma-glutamyl transferase | ADLB | U/L |
+| `baseline_ALP` | Alkaline phosphatase | ADLB | U/L |
+| `baseline_chloride` | Serum chloride | ADLB | mmol/L |
+
+**Note**: Laboratory values undergo standardization (centering and scaling) before use as covariates in the model. See `prepare_covar_design_matrix()` in `r/sclc/prepare_analysis_data.R`.
+
+---
+
+## Subgroup Definitions
+
+Subgroups are defined in `targets/sclc_targets.R:207-268` using conditional expressions. The table below shows all subgroup definitions used in the analysis.
+
+### PD-L1 Based Subgroups
+
+| Subgroup | Membership Criteria | Description |
+|----------|---------------------|-------------|
+| **pdl1.hi** | `pdl1_hi == TRUE` | High PD-L1 expression (≥50%) |
+| **pdl1.low** | `pdl1_hi == FALSE` | Low PD-L1 expression (<50%) |
+
+### Treatment-Naive Subgroups
+
+| Subgroup | Membership Criteria | Description |
+|----------|---------------------|-------------|
+| **first_liners.yes** | `first_line == TRUE` | Treatment-naive (1L) patients |
+| **first_liners.no** | `first_line == FALSE` | Previously treated (2L+) patients |
+| **cpi_naive.yes** | `cpi_naive == TRUE` | No prior checkpoint inhibitor |
+| **cpi_naive.no** | `cpi_naive == FALSE` | Prior checkpoint inhibitor exposure |
+| **chemo_naive.yes** | `chemo_naive == TRUE` | No prior chemotherapy |
+| **chemo_naive.no** | `chemo_naive == FALSE` | Prior chemotherapy exposure |
+
+### Combined PD-L1 and Treatment Line
+
+| Subgroup | Membership Criteria | Description |
+|----------|---------------------|-------------|
+| **pdl1_naive.hi** | `pdl1_hi & first_line` | High PD-L1, treatment-naive |
+| **pdl1_naive.low** | `!pdl1_hi & first_line` | Low PD-L1, treatment-naive |
+
+### Smoking Status
+
+| Subgroup | Membership Criteria | Description |
+|----------|---------------------|-------------|
+| **smoker.ever** | `smoker == "ever"` | Current or former smokers |
+| **smoker.smoker_never** | `smoker == "never"` | Never smokers |
+
+**Note**: The `smoker` variable collapses "former" and "current" into "ever" for analysis. See `harmonize_smoker_status()` in `r/sclc/prepare_analysis_data.R:245`.
+
+### Histology-Based Subgroups
+
+#### Squamous Cell Carcinoma
+
+| Subgroup | Membership Criteria | Description |
+|----------|---------------------|-------------|
+| **squamous.hi** | `pdl1_hi & histology == "Squamous"` | Squamous, high PD-L1 |
+| **squamous.low** | `!pdl1_hi & histology == "Squamous"` | Squamous, low PD-L1 |
+
+#### Non-Squamous Carcinoma
+
+| Subgroup | Membership Criteria | Description |
+|----------|---------------------|-------------|
+| **non_squamous.hi** | `pdl1_hi & histology == "non-Squamous"` | Non-squamous, high PD-L1 |
+| **non_squamous.low** | `!pdl1_hi & histology == "non-Squamous"` | Non-squamous, low PD-L1 |
+
+### Histology + Treatment-Naive
+
+#### Squamous, Treatment-Naive
+
+| Subgroup | Membership Criteria | Description |
+|----------|---------------------|-------------|
+| **squamous_naive.hi** | `first_line & pdl1_hi & histology == "Squamous"` | Squamous, 1L, high PD-L1 |
+| **squamous_naive.low** | `first_line & !pdl1_hi & histology == "Squamous"` | Squamous, 1L, low PD-L1 |
+
+#### Non-Squamous, Treatment-Naive
+
+| Subgroup | Membership Criteria | Description |
+|----------|---------------------|-------------|
+| **non_squamous_naive.hi** | `first_line & pdl1_hi & histology == "non-Squamous"` | Non-squamous, 1L, high PD-L1 |
+| **non_squamous_naive.low** | `first_line & !pdl1_hi & histology == "non-Squamous"` | Non-squamous, 1L, low PD-L1 |
+
+### Histology + CPI-Naive
+
+#### Squamous, CPI-Naive
+
+| Subgroup | Membership Criteria | Description |
+|----------|---------------------|-------------|
+| **squamous_cpi_naive.hi** | `cpi_naive & pdl1_hi & histology == "Squamous"` | Squamous, CPI-naive, high PD-L1 |
+| **squamous_cpi_naive.low** | `cpi_naive & !pdl1_hi & histology == "Squamous"` | Squamous, CPI-naive, low PD-L1 |
+
+#### Non-Squamous, CPI-Naive
+
+| Subgroup | Membership Criteria | Description |
+|----------|---------------------|-------------|
+| **non_squamous_cpi_naive.hi** | `cpi_naive & pdl1_hi & histology == "non-Squamous"` | Non-squamous, CPI-naive, high PD-L1 |
+| **non_squamous_cpi_naive.low** | `cpi_naive & !pdl1_hi & histology == "non-Squamous"` | Non-squamous, CPI-naive, low PD-L1 |
+
+### Histology + Chemo-Naive
+
+#### Squamous, Chemo-Naive
+
+| Subgroup | Membership Criteria | Description |
+|----------|---------------------|-------------|
+| **squamous_chemo_naive.hi** | `chemo_naive & pdl1_hi & histology == "Squamous"` | Squamous, chemo-naive, high PD-L1 |
+| **squamous_chemo_naive.low** | `chemo_naive & !pdl1_hi & histology == "Squamous"` | Squamous, chemo-naive, low PD-L1 |
+
+#### Non-Squamous, Chemo-Naive
+
+| Subgroup | Membership Criteria | Description |
+|----------|---------------------|-------------|
+| **non_squamous_chemo_naive.hi** | `chemo_naive & pdl1_hi & histology == "non-Squamous"` | Non-squamous, chemo-naive, high PD-L1 |
+| **non_squamous_chemo_naive.low** | `chemo_naive & !pdl1_hi & histology == "non-Squamous"` | Non-squamous, chemo-naive, low PD-L1 |
+
+### Trial Parts (Treatment Arms)
+
+| Subgroup | Membership Criteria | Description |
+|----------|---------------------|-------------|
+| **parts.part_b** | `arm == "B01"` | Part B patients |
+| **parts.part_c** | `arm == "C01"` | Part C patients |
+| **parts.part_e** | `arm == "E01"` | Part E patients |
+
+### Part E with PD-L1 Stratification
+
+| Subgroup | Membership Criteria | Description |
+|----------|---------------------|-------------|
+| **part_e_pdl1.hi** | `pdl1_hi & arm == "E01"` | Part E, high PD-L1 |
+| **part_e_pdl1.low** | `!pdl1_hi & arm == "E01"` | Part E, low PD-L1 |
+
+---
+
+## Subgroup Filtering Implementation
+
+### Data Flow
+
+The subgroup filtering process follows these steps:
+
+1. **Data Preparation** (`r/sclc/prepare_analysis_data.R:3-66`)
+   - Reads cooked patient data and visit data
+   - Converts treatment history flags to logical: `first_line`, `cpi_naive`, `chemo_naive`
+   - Computes derived variables (e.g., PFS, censoring indicators)
+
+2. **PD-L1 Discretization** (`targets/sclc_targets.R:608-610`)
+   ```r
+   mutate(pdl1_hi = fct_match(discretize_pdl1(pdl1), "High"))
+   ```
+   - Parses mixed-format character strings (numbers, ranges, inequalities, percentages)
+   - Applies 50% threshold: values ≥50% → "High", <50% → "Low"
+   - Handles special cases: `">50"` → "High", `"1-49%"` → "Low", `"NEGATIVE"` → "Low"
+   - See `discretize_pdl1()` in `r/sclc/prepare_analysis_data.R:188-243` for full parsing logic
+
+3. **Subgroup Expression Evaluation** (`targets/sclc_targets.R:682-687`)
+   ```r
+   sclc_cond_groups <- get_conditioning_subgroups(
+     all_analysis_data,
+     covar_cond_groups,
+     quo(fct_match(trial, "sclc"))
+   )
+   ```
+   - Evaluates each subgroup expression on the full dataset
+   - Returns patient indices for each subgroup
+   - Only includes SCLC trial patients (excludes historical trials)
+
+4. **Stan Data Preparation** (`r/sclc/prepare_analysis_data.R:108-181`)
+   - Passes subgroup indices to Stan via `cond_group` arrays
+   - Stan model computes conditional predictions for each subgroup
+
+### Code References
+
+The core subgroup logic is implemented in:
+
+- **Subgroup definitions**: `targets/sclc_targets.R:207-268`
+- **Filtering function**: `r/util.R:346-350` (`get_conditioning_subgroups()`)
+- **PD-L1 discretization**: `r/sclc/prepare_analysis_data.R:188-243` (`discretize_pdl1()`)
+- **Data preparation**: `r/sclc/prepare_analysis_data.R:3-66` (`prepare_analysis_data()`)
+
+---
+
+## Data Source Traceability
+
+### Source Datasets
+
+Clinical variables originate from the following ADAM datasets:
+
+| Dataset | Description | Key Variables |
+|---------|-------------|---------------|
+| **ADSL** | Subject-level analysis dataset | Demographics, treatment assignment, baseline characteristics |
+| **ADLB** | Laboratory test results | Baseline lab values (LDH, albumin, CBC, liver function) |
+| **ADRESP** | Tumor assessment responses | RECIST responses, sum of diameters |
+| **ADTTE** | Time-to-event endpoints | PFS, OS, censoring indicators |
+
+### Data Preparation Pipeline
+
+The data preparation pipeline transforms raw ADAM datasets into analysis-ready format:
+
+1. **Raw Data Location**: `/mnt/data/PIONEER_2025_SCLC_data/SCLC_data/`
+   - ADAM datasets stored as RDS files (e.g., `adsl.rds`, `adlb.rds`)
+   - Organized by data cut-off (DCO) in subdirectories
+
+2. **Pipeline Scripts**: `r/data_preparation_pipeline/sclc/`
+   - `main_pipeline_data_sclc.R` - Orchestrates data processing
+   - `wrangle_data_sclc.R` - Extracts and transforms clinical variables
+   - Produces cooked datasets: `cooked_patient_data.csv`, `assessment_visit_data.csv`
+
+3. **Output Location**: `/mnt/data/PIONEER_2025_SCLC_data/`
+   - Cooked datasets with suffix indicating processing date (e.g., `cooked_patient_data_220126.csv`)
+   - Multiple DCOs maintained in parallel (April 2025, August 2025, January 2026)
+
+4. **Targets Integration**: `targets/sclc_targets.R:536-611`
+   - Reads cooked datasets based on DCO selection
+   - Merges with visit data
+   - Applies filtering and derives final analysis variables
+
+### Missing Data Handling
+
+- **Incomplete cases** are identified via `identify_incomplete_cases()` (targets:632-650)
+- Patients with missing covariates are excluded from model fitting
+- Imputation flags available: `imputed_labs`, `imputed_ct` (not currently used in main analysis)
+
+---
+
+## Notes
+
+### Subgroup Size Considerations
+
+- Some subgroups may have small sample sizes, leading to wider credible intervals
+- Clinical interpretation should account for subgroup membership and overlap
+- Subgroups are predefined (not data-driven) to avoid multiplicity issues
+
+### PD-L1 Data Quality and Cutoff
+
+**Cutoff Rationale**: The 50% threshold for `pdl1_hi` aligns with regulatory definitions for PD-L1 "high" expression in NSCLC and clinical decision-making for immunotherapy eligibility.
+
+**Data Format Limitations**: PD-L1 values were recorded as character strings by clinical testing laboratories using various reporting conventions. In the SCLC cohort (118 forecast patients):
+
+- **76% have numeric-like values**: Can be parsed as single numbers (e.g., `"80"`, `"90"`, `"10%"`)
+- **24% have categorical bins**: Represent ranges or thresholds rather than exact measurements (e.g., `">=75"`, `"1-49%"`)
+
+This mixed format reflects real-world clinical practice where PD-L1 testing protocols vary across sites and time periods. The binary `pdl1_hi` classifier enables analysis across all patients regardless of reporting format.
+
+**Most Common Values** (SCLC forecast cohort):
+- `"90"` (11 patients), `"1"` (9), `"100"` (9), `"80"` (8), `"60"` (7), `"10"` (6), `"95"` (6)
+- Categorical: `">=75"` (3), `">50%"` (1), `"1-49%"` (1), `"25-49%"` (1)
+
+### Histology Categories
+
+The "non-Squamous" category includes adenocarcinoma and other non-squamous histologies. Unknown histology is recoded to "non-Squamous" (see targets:437).
+
+---
+
+## Related Documentation
+
+- [Model Specification](model-specification.qmd) - How covariates enter the mechanistic model
+- [Targets Pipeline](targets-pipeline.qmd) - Complete analysis workflow
+- [Clinical Endpoints](../analysis/clinical-endpoints.qmd) - Visualization of subgroup predictions

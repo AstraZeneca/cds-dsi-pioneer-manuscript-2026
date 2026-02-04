@@ -48,9 +48,6 @@ vignettes/*.pdf
 *.utf8.md
 *.knit.md
 
-# pkgdown site
-docs/
-
 # translation temp files
 po/*~
 
@@ -65,3 +62,50 @@ quarto/*_files/
 
 _extensions/
 _targets/
+
+# VS Code
+.vscode/User/
+.vscode/CachedExtensionVSIXs/
+.vscode/CachedProfilesData/
+.vscode/logs/
+.vscode/code-server-ipc.sock
+.vscode/coder.json
+.vscode/Machine/
+.vscode/settings.json
+quarto/**/*.rmarkdown
+
+**/*.quarto_ipynb
+quarto/.posit/
+
+*_files/
+
+*.html
+*.hpp
+generate-aws-credential_file.py
+run-aws-credentials.sh
+.env
+node_modules
+aws/
+
+# Claude Code cache and local settings
+.claude/.stan-diagnose-cache/
+.claude/.stan-diagnose-last-dir
+.claude/.stan-diagnose-output-cache
+.claude/settings.local.json
+
+# R package artifacts
+.here
+
+# VS Code workspace files
+*.code-workspace
+
+# Node.js artifacts
+package.json
+package-lock.json
+
+# Core dumps
+core.*
+
+# Temporary presentation materials
+presentation_images/
+presentation_pages/
