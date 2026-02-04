@@ -285,7 +285,7 @@ The pipeline loads data from five clinical trials:
 2. **ARCTIC** (`arctic_data_path`)
 3. **ATLANTIC** (`atlantic_data_path`)
 4. **PEARL** (`pearl_data_path`)
-5. **SCLC** (`sclc_data_path`)
+5. **SCLC-01** (`sclc_data_path`)
 
 ### Data Pipeline Structure
 
@@ -339,7 +339,7 @@ This creates three complete sub-pipelines:
 
 Each DCO has its own:
 
-- SCLC patient and visit data files
+- SCLC-01 patient and visit data files
 - Inverse metric file for Stan warmup initialization
 - Complete set of downstream targets
 
@@ -360,7 +360,7 @@ Within each DCO, a second `tar_map()` creates eight model variants:
 
 **Legend**:
 
-- **Trials**: "Limited" = HISTORICAL + SCLC only; "All" = includes ARCTIC, ATLANTIC
+- **Trials**: "Limited" = HISTORICAL + SCLC-01 only; "All" = includes ARCTIC, ATLANTIC
 - **Trial RE**: Trial-level random effects enabled
 - **Patient RE**: Patient-level random effects enabled
 - **Other Events**: Non-target progression and death model enabled
