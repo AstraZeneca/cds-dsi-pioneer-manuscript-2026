@@ -1,0 +1,5 @@
+# Shared metadata for comparisons section
+execute:
+  echo: true
+  warning: false
+  message: false

@@ -1,10 +1,16 @@
-  # LOO, lFO and Model Evaluation Utilities
-  #
-  # This file contains functions for Leave-Future-Out (LFO) cross-validation,
-  # model stacking, and various model evaluation metrics for survival analysis
-  # and clinical trial data.}
+#
+# This file contains functions for Leave-Future-Out (LFO) cross-validation,
+# model stacking, and various model evaluation metrics for survival analysis
+# and clinical trial data.}
 
-get_trial_loo <- function(res, log_lik_var = "trial_log_lik", moment_match = TRUE, ...) {
+# nolint start: object_usage_linter
+
+get_trial_loo <- function(
+  res,
+  log_lik_var = "trial_log_lik",
+  moment_match = TRUE,
+  ...
+) {
   res$loo(log_lik_var, moment_match = moment_match, save_psis = TRUE, ...)
 }
 
@@ -36,36 +42,47 @@ get_trial_loo <- function(res, log_lik_var = "trial_log_lik", moment_match = TRU
 #' This approach ensures that the stacked result maintains the correct proportions
 #' of draws from each model as specified by the stacking weights.
 #'
-add_stacked_results <- function(res_data, stacking_weights, ..., by = c("model_type", "trial")) {
+add_stacked_results <- function(
+  res_data,
+  stacking_weights,
+  ...,
+  by = c("model_type", "trial")
+) {
   stack_draws <- function(rvs, simplex) {
-    map2(rvs, simplex_allocate(simplex, ndraws(rvs[1])), \(rv, n) resample_draws(rv, ndraws = n)) |> 
-      map(\(d) as.vector(draws_of(d))) |> 
-      purrr::flatten_dbl() |> 
+    map2(rvs, simplex_allocate(simplex, ndraws(rvs[1])), \(rv, n) {
+      resample_draws(rv, ndraws = n)
+    }) |>
+      map(\(d) as.vector(draws_of(d))) |>
+      purrr::flatten_dbl() |>
       rvar()
   }
-  
-  inner_join(res_data, stacking_weights, by = by) |>  
+
+  inner_join(res_data, stacking_weights, by = by) |>
     mutate(weight = as.numeric(weight)) %>%
     bind_rows(
-      filter(., !is.na(weight)) |> 
-        group_by(fit_type, trial) |> 
-        summarize(model_type = "stacked", across(c(...), \(res) stack_draws(res, weight))) 
+      filter(., !is.na(weight)) |>
+        group_by(fit_type, trial) |>
+        summarize(
+          model_type = "stacked",
+          across(c(...), \(res) stack_draws(res, weight))
+        )
     )
 }
 
 get_trial_c_index <- function(res, analysis_data = NULL) {
-  if (!is_null(analysis_data)) { 
+  if (!is_null(analysis_data)) {
     res <- recover_types(res, select(analysis_data, trial))
   }
-  
+
   spread_rvars(res, trial_c_index[trial])
 }
 
 get_patient_pointwise_loo <- function(model_loo, stan_data) {
-  as_tibble(stan_data[c("patient", "patient_trial")]) |> 
-    rename(trial = patient_trial) |> 
+  as_tibble(stan_data[c("patient", "patient_trial")]) |>
+    rename(trial = patient_trial) |>
     mutate(
-      pareto_k_influence = loo::pareto_k_influence_values(model_loo), imputed = row_number() %in% stan_data$imputed_patients,
+      pareto_k_influence = loo::pareto_k_influence_values(model_loo),
+      imputed = row_number() %in% stan_data$imputed_patients,
       elpd_loo = loo::pointwise(model_loo, "elpd_loo")
     )
 }
@@ -105,24 +122,27 @@ simplex_allocate <- function(simplex, total) {
   if (total %% 1 != 0) {
     stop("total must be an integer")
   }
-  
+
   # Initial allocation using floor after multiplication
   raw_allocation <- simplex * total
   initial_allocation <- floor(raw_allocation)
-  
+
   # Calculate remaining amount to distribute
   remainder <- total - sum(initial_allocation)
-  
+
   if (remainder > 0) {
     # Get fractional parts
     fractional_parts <- raw_allocation - initial_allocation
     # Get indices that would sort in descending order
     sorted_indices <- order(fractional_parts, decreasing = TRUE)
-    
+
     # Only distribute up to the remainder amount
     result <- initial_allocation
     if (remainder > 0) {
-      result[sorted_indices[1:remainder]] <- result[sorted_indices[1:remainder]] + 1
+      result[sorted_indices[1:remainder]] <- result[sorted_indices[
+        1:remainder
+      ]] +
+        1
     }
     return(result)
   } else {
@@ -131,14 +151,23 @@ simplex_allocate <- function(simplex, total) {
 }
 
 get_loo_admin_brier_score <- function(res, loo_obj) {
-  res |> 
-    spread_draws(trial_admin_brier_score[i, t]) |> 
-    ungroup() |> 
-    select(.draw, i, t, trial_admin_brier_score) |> 
-    pivot_wider(id_cols = c(.draw, t), names_from = i, values_from = trial_admin_brier_score) |> 
-    select(!.draw) |> 
-    nest(draws_matrix = !t) |> 
-    transmute(t, mean_brier_score = map_dbl(draws_matrix, \(m) sum(loo::E_loo(as.matrix(m), loo_obj$psis_object, type = "mean")$value)))
+  res |>
+    spread_draws(trial_admin_brier_score[i, t]) |>
+    ungroup() |>
+    select(.draw, i, t, trial_admin_brier_score) |>
+    pivot_wider(
+      id_cols = c(.draw, t),
+      names_from = i,
+      values_from = trial_admin_brier_score
+    ) |>
+    select(!.draw) |>
+    nest(draws_matrix = !t) |>
+    transmute(
+      t,
+      mean_brier_score = map_dbl(draws_matrix, \(m) {
+        sum(loo::E_loo(as.matrix(m), loo_obj$psis_object, type = "mean")$value)
+      })
+    )
 }
 
 # LFO functions ######
@@ -167,15 +196,27 @@ get_loo_admin_brier_score <- function(res, loo_obj) {
 #' This is particularly useful for setting up Leave-Future-Out cross-validation
 #' in time-dependent analyses, such as clinical trials or longitudinal studies.
 #'
-get_lfo_cutoff_days <- function(first_cutoff_date, last_date, first_cutoff_day_idx, days_increment) {
-  len <- time_length(last_date - first_cutoff_date, unit = "days") %/% days_increment + 1
-  n <- seq(len) 
-  
+get_lfo_cutoff_days <- function(
+  first_cutoff_date,
+  last_date,
+  first_cutoff_day_idx,
+  days_increment
+) {
+  len <- time_length(last_date - first_cutoff_date, unit = "days") %/%
+    days_increment +
+    1
+  n <- seq(len)
+
   tibble(
     n,
-    cutoff_date = accumulate(n[-len], \(prev, n) prev + days(days_increment), .init = first_cutoff_date),
-    cutoff_calendar_day = first_cutoff_day_idx + time_length(cutoff_date - first_cutoff_date, unit = "days"),
-  ) 
+    cutoff_date = accumulate(
+      n[-len],
+      \(prev, n) prev + days(days_increment),
+      .init = first_cutoff_date
+    ),
+    cutoff_calendar_day = first_cutoff_day_idx +
+      time_length(cutoff_date - first_cutoff_date, unit = "days"),
+  )
 }
 
 #' Perform Leave-Future-Out (LFO) Cross-Validation
@@ -212,76 +253,170 @@ get_lfo_cutoff_days <- function(first_cutoff_date, last_date, first_cutoff_day_i
 #' when the approximation quality (as measured by the Pareto k statistic) degrades.
 #'
 lfo <- function(
-    stan_data, model, cutoffs, output_path, basename, 
-    output_timestamp = FALSE, refit_n = min(cutoffs$n), 
-    k_threshold = 0.7, lean = FALSE, verbose = FALSE, exact = FALSE, fit_only = FALSE, iter_warmup = 300, iter_sampling = 500, ...) {
+  stan_data,
+  exe_file,
+  cutoffs,
+  all_cutoffs,
+  output_path,
+  basename,
+  initializer,
+  output_timestamp = FALSE,
+  refit_n = min(cutoffs$n),
+  k_threshold = 0.7,
+  lean = FALSE,
+  verbose = FALSE,
+  exact = FALSE,
+  fit_only = FALSE,
+  iter_warmup = 300,
+  iter_sampling = 500,
+  save_warmup = FALSE,
+  parallel_chains = 4,
+  adapt_delta = 0.9,
+  future_window = 1,
+  initializer_factory = NULL,
+  ...
+) {
   if (verbose) {
-    cat("Startin on:\n")
+    cat("Starting on:\n")
     print(cutoffs)
     cat("\n")
   }
-  
-  remaining_cutoffs <- cutoffs |> filter(n >= refit_n) 
-  
-  fit <- stan_data |>
-    list_assign(cutoff_calendar_day = remaining_cutoffs$cutoff_calendar_day, n_cutoffs = nrow(remaining_cutoffs)) %>%
-    sample_and_save(
-      model,
-      .,
-      iter_warmup = iter_warmup, iter_sampling = iter_sampling, parallel_chains = 4, adapt_delta = 0.9,
-      init = create_crcr_pfs_initializer(.),
-      output_dir = file.path(output_path, "fit"), output_basename = str_glue("{basename}-{refit_n}"),
-      timestamp = output_timestamp, 
-      ...
-    ) 
-  
-  if (fit_only) {
-    return(fit)
+
+  remaining_cutoffs <- cutoffs |> filter(n >= refit_n)
+  remaining_all_cutoffs <- all_cutoffs |> filter(n >= refit_n)
+
+  fit_output_dir <- file.path(
+    output_path,
+    "fit",
+    str_glue("{basename}-{refit_n}")
+  )
+
+  # If initializer_factory is provided, create a new initializer for this cutoff
+  # with the correct save directory. Otherwise use the provided initializer.
+  if (!is.null(initializer_factory)) {
+    initializer <- initializer_factory(
+      stan_data = stan_data,
+      save_dir = fit_output_dir,
+      run_id = output_timestamp
+    )
   }
-  
-  psis_results <- fit |> 
-    lfo_log_lik() |> 
-    mutate(refit_n, n = n + refit_n - 1) |> 
-    left_join(select(remaining_cutoffs, n, cutoff_date, cutoff_calendar_day), by = "n")
-  
+
+  # Determine array dimensions based on LFO mode
+  # exact = TRUE: Only need n=1 and m ∈ {1, 2} (minimal memory)
+  # exact = FALSE: Need full matrix for PSIS approximation
+  n_cutoffs <- nrow(remaining_all_cutoffs)
+  if (exact) {
+    max_n_rows <- 1L
+    max_forecast_horizon <- future_window
+  } else {
+    max_n_rows <- n_cutoffs
+    max_forecast_horizon <- n_cutoffs
+  }
+
+  fit <- stan_data |>
+    list_assign(
+      cutoff_calendar_day = remaining_all_cutoffs$cutoff_calendar_day,
+      n_cutoffs = n_cutoffs,
+      max_n_rows = max_n_rows,
+      max_forecast_horizon = max_forecast_horizon
+    ) %>%
+    sample_and_save(
+      exe_file,
+      .,
+      iter_warmup = iter_warmup,
+      iter_sampling = iter_sampling,
+      save_warmup = save_warmup,
+      parallel_chains = parallel_chains,
+      adapt_delta = adapt_delta,
+      init = initializer,
+      output_dir = fit_output_dir,
+      save_profiles = FALSE,
+      timestamp = output_timestamp,
+      ...
+    )
+
+  # Select only the needed log_lik variables for memory efficiency
+  draws <- select_draws(fit, matches("^patient.*log_lik"))
+
+  psis_results <- draws |>
+    lfo_log_lik(future_window = future_window) |>
+    mutate(across(c(n, m), \(x) x + refit_n - 1)) |>
+    left_join(
+      select(remaining_all_cutoffs, n, cutoff_date, cutoff_calendar_day),
+      by = "n"
+    ) |>
+    mutate(tar_group = first(cutoffs$tar_group %||% NA_integer_), refit_n)
+
+  if (fit_only) {
+    return(lst(fit, psis_results))
+  }
+
   if (lean) {
     psis_results <- psis_results |>
-      select(n, contains("E_"))
+      select(n, m, contains("E_"))
+  } else {
+    # Drop heavy draw matrix columns but keep fit and summary statistics
+    # This prevents memory from accumulating through recursive calls
+    psis_results <- psis_results |>
+      select(
+        n, m, refit_n, tar_group, cutoff_date, cutoff_calendar_day,
+        contains("E_"), k
+      ) |>
+      mutate(fit = if_else(n == refit_n, list(fit), list(NULL)))
   }
-  
-  next_cutoffs <- psis_results |> 
-    filter(!is.na(k), k > k_threshold | exact, n > refit_n) %>%
+
+  next_cutoffs <- psis_results |>
+    filter(exact | (!is.na(k) & k > k_threshold), n > refit_n) %>%
     semi_join(remaining_cutoffs, ., by = "n")
-  
+
   if (verbose) {
     cat("LFO results:\n")
-    print(psis_results)
+    print(select(psis_results, n, m, refit_n, k))
     cat("\n")
   }
-  
+
   if (nrow(next_cutoffs) > 0) {
-    return(bind_rows(
-      psis_results, 
-      lfo(
-        stan_data, model, cutoffs, output_path, basename, output_timestamp, refit_n = min(next_cutoffs$n), 
-        k_threshold, lean, verbose, exact, fit_only, iter_warmup, iter_sampling, ...
-      )
-    ))
+    next_results <- lfo(
+      stan_data,
+      exe_file,
+      cutoffs,
+      all_cutoffs,
+      output_path,
+      basename,
+      initializer,
+      output_timestamp,
+      refit_n = min(next_cutoffs$n),
+      k_threshold,
+      lean,
+      verbose,
+      exact,
+      fit_only,
+      iter_warmup,
+      iter_sampling,
+      save_warmup,
+      parallel_chains,
+      adapt_delta,
+      future_window,
+      initializer_factory = initializer_factory,
+      ...
+    )
+
+    return(bind_rows(psis_results, next_results))
   } else {
     return(psis_results)
   }
 }
 
 lfo_drop_bad_approx <- function(lfo_res) {
-  lfo_res |> 
-    group_by(n) %>% 
-    filter(if (has_name(., "refit_n")) min_rank(refit_n) == n() else TRUE) |> 
-    ungroup()  
+  lfo_res |>
+    group_by(n) %>%
+    filter(if (has_name(., "refit_n")) min_rank(refit_n) == n() else TRUE) |>
+    ungroup()
 }
 
-# more stable than log(sum(exp(x))) 
+# more stable than log(sum(exp(x)))
 log_sum_exp <- function(x) {
-  max_x <- max(x)  
+  max_x <- max(x)
   max_x + log(sum(exp(x - max_x)))
 }
 
@@ -291,17 +426,23 @@ log_mean_exp <- function(x) {
 }
 
 lfo_log_lik <- function(res, max_n = Inf, future_window = 1) {
-  res |> 
-    spread_rvars(patient_log_lik[n, m, i], patient_pfs_log_lik[n, m, i], patient_crcr_log_lik[n, m, i]) |>
+  res |>
+    spread_rvars(patient_log_lik[n, m, i]) |>
+    # Convert m from relative (array index) to absolute (cutoff index)
+    # Stan stores arrays as [n, m_rel] where m_rel = m_abs - n + 1
+    mutate(m = n + m - 1) |>
     lfo_log_lik_rvar(max_n, future_window)
 }
 
-psis_resample <- function(l, w, recalc_full = FALSE) { #, negative_only = TRUE) {
-  map2(l, w, function(ln, wn) { 
-    if (!is_null(wn)) {
-      plyr::aaply(ln, 2, \(lni) log_sum_exp(lni + wn * all(wn < 0))) 
-    } else if (recalc_full) { 
-      plyr::aaply(ln, 2, log_mean_exp)
+psis_resample <- function(l, w, recalc_full = FALSE) {
+  #, negative_only = TRUE) {
+  map2(l, w, function(ln, wn) {
+    if (!is_null(ln)) {
+      if (!is_null(wn)) {
+        plyr::aaply(ln, 2, \(lni) log_sum_exp(lni + wn * all(wn < 0)))
+      } else if (recalc_full) {
+        plyr::aaply(ln, 2, log_mean_exp)
+      }
     }
   })
 }
@@ -335,96 +476,149 @@ psis_resample <- function(l, w, recalc_full = FALSE) { #, negative_only = TRUE) 
 #' 4. Calculates approximated expected log-likelihoods using PSIS resampling.
 #' 5. Renames and reorganizes columns for clarity.
 #'
-#' This function is crucial for assessing model performance in a time-series context,
-#' particularly for clinical trial data with progression-free survival (PFS) and
-#' confirmed response (CRCR) outcomes.
+#' This function is crucial for assessing model performance in a time-series context.
 #'
 lfo_log_lik_rvar <- function(log_lik_rvar, max_n = Inf, future_window = 1) {
-  log_lik_rvar |>   
+  log_lik_rvar |>
     filter(m >= n) |>
-    group_by(n, m) |> 
-    summarize(across(matches("^patient(_pfs|_crcr)?_log_lik"), \(l) list(draws_of(l))), .groups = "drop") |>
+    group_by(n, m) |>
+    summarize(
+      across(matches("^patient(_.+)?_log_lik"), \(l) list(draws_of(l))),
+      .groups = "drop"
+    ) |>
     (function(d) {
       inner_join(
-        filter(d, m == max(m)) |> select(!m), # From n to max(m)
-        filter(d, n == 1) |> select(!n),      # From 1 to n
-        by = c("n" = "m"), suffix = c("", "_log_ratio")
-      ) |> 
+        filter(d, m == max(m)) |> select(!m), # From n to max(m), this is the out of sample loglik. For n = 1, that is the exact SAP.
+        filter(d, n == 1) |> select(!n), # From 1 to, this is the loglik for the additional periods of time that we want to PSIS to approximate.
+        # This is relevant to predicting the _next_ row down.
+        by = c("n" = "m"),
+        suffix = c("", "_log_ratio")
+      ) |>
+        # This add loglik columns for M-SAP, rather than the full SAP we get from the above join.
         left_join(
-          mutate(d, m = m - future_window + 1) |> filter(n == m), 
-          by = "n", suffix = c("", "_w")
+          # mutate(d, m = m - future_window + 1) |> filter(n == m),
+          filter(d, m == n + future_window - 1),
+          by = "n",
+          suffix = c("", "_w") # _w is in reference to the m-sap "window"
         )
     })() |>
-    filter(n <= max_n) |> 
+    filter(n <= max_n) |>
     mutate(
       # fit = map(min_rank(n), \(nr) if (nr == 1) res),
       across(
-        matches("^patient(_pfs|_crcr)?_log_lik(_w)?$"), 
-        \(l) map(l, \(ln) plyr::aaply(ln, 2, \(lni) log_mean_exp(lni))), 
+        matches("^patient(_.+)?_log_lik(_w)?$"),
+        \(l) {
+          map_if(l, \(ln) !is_null(ln), \(ln) {
+            plyr::aaply(ln, 2, \(lni) log_mean_exp(lni))
+          })
+        },
         .names = "mean_{.col}"
       ),
       across(
-        matches("^patient(_pfs|_crcr)?_log_lik_log_ratio$"),
-        \(l) map(l, \(ln) suppressWarnings(loo::psis(rowSums(ln)))), 
+        matches("^patient(_.+)?_log_lik_log_ratio$"),
+        \(l) map(l, \(ln) suppressWarnings(loo::psis(rowSums(ln)))),
         .names = "psis_{.col}"
-      ), 
+      ),
       across(
-        starts_with("psis"), 
-        lst(k = \(po) map_dbl(po, loo::pareto_k_values), lwt = \(po) map(po, \(pon) weights(pon, normalize = TRUE)[, 1])), 
+        starts_with("psis"),
+        lst(k = \(po) map_dbl(po, loo::pareto_k_values), lwt = \(po) {
+          map(po, \(pon) weights(pon, normalize = TRUE)[, 1])
+        }),
         .names = "{.fn}_{.col}"
       ),
       across(matches("^(psis|lwt|k)"), lag),
-      
-    ) |> 
-    rename_with(\(n) str_replace_all(
-      n, 
-      c(r"{log_lik_log_ratio}" = "log_ratio",
-        r"{(k|lwt)_psis_patient(_pfs|_crcr)?_log_ratio}" = r"{\1\2}", 
-        r"{^psis_patient(_pfs|_crcr)?_log_ratio}" = r"{psis\1}")
-    )) |>   
+    ) |>
+    rename_with(\(n) {
+      str_replace_all(
+        n,
+        c(
+          r"{log_lik_log_ratio}" = "log_ratio",
+          r"{(k|lwt)_psis_patient(_.+)?_log_ratio}" = r"{\1\2}",
+          r"{^psis_patient(_.+)?_log_ratio}" = r"{psis\1}"
+        )
+      )
+    }) |>
     mutate(
-      dplyover::across2(matches("^patient(_pfs|_crcr)?_log_lik$"), matches("^lwt(_pfs|crcr)?"), psis_resample, .names = "approx_mean_{xcol}"),
-      dplyover::across2(matches("^patient(_pfs|_crcr)?_log_lik_w$"), matches("^lwt(_pfs|crcr)?"), psis_resample, .names = "approx_mean_{xcol}"),
-      across(matches("^(approx_)?mean"), \(m) map_dbl(m, \(mn) if (!is_null(mn)) sum(mn) else NA_real_), .names = "E_{.col}")
-    ) |> 
+      dplyover::across2(
+        matches("^patient(_.+)?_log_lik$"),
+        matches("^lwt(_.+)?"),
+        psis_resample,
+        .names = "approx_mean_{xcol}"
+      ),
+      dplyover::across2(
+        matches("^patient(_.+)?_log_lik_w$"),
+        matches("^lwt(_+)?"),
+        psis_resample,
+        .names = "approx_mean_{xcol}"
+      ),
+      across(
+        matches("^(approx_)?mean"),
+        \(m) map_dbl(m, \(mn) if (!is_null(mn)) sum(mn) else NA_real_),
+        .names = "E_{.col}"
+      )
+    ) |>
     rename_with(\(n) str_replace(n, r"{E_(approx_)?mean}", r"{\1E}"))
 }
 
 redo_lfo_results <- function(lfo_res, lean = FALSE) {
-  new_res <- lfo_res |> 
-    lfo_drop_bad_approx() |> 
-    arrange(n) |> 
-    group_by(refit_n) |> 
-    reframe(lfo_log_lik(first(fit), max_n = n())) |>   
+  new_res <- lfo_res |>
+    lfo_drop_bad_approx() |>
+    arrange(n) |>
+    group_by(refit_n) |>
+    reframe(lfo_log_lik(first(fit), max_n = n())) |>
     mutate(n = n + refit_n - 1)
-  
+
   if (lean) {
     new_res <- new_res |>
       select(n, contains("E_"), k)
   }
-  
+
   return(new_res)
 }
 
 clean_lfo_results <- function(lfo_res) {
-  lfo_res |> 
-    lfo_drop_bad_approx() |> 
+  lfo_res |>
+    lfo_drop_bad_approx() |>
     mutate(
-      E_log_lik = if_else(is.na(k), E_patient_log_lik, approx_E_patient_log_lik),
-      E_pfs_log_lik = if_else(is.na(k), E_patient_pfs_log_lik, approx_E_patient_pfs_log_lik),
-      E_crcr_log_lik = if_else(is.na(k), E_patient_crcr_log_lik, approx_E_patient_crcr_log_lik),
-      E_log_lik_w = if_else(is.na(k), E_patient_log_lik_w, approx_E_patient_log_lik_w),
-      E_pfs_log_lik_w = if_else(is.na(k), E_patient_pfs_log_lik_w, approx_E_patient_pfs_log_lik_w),
-      E_crcr_log_lik_w = if_else(is.na(k), E_patient_crcr_log_lik_w, approx_E_patient_crcr_log_lik_w),
+      E_log_lik = if_else(
+        is.na(k),
+        E_patient_log_lik,
+        approx_E_patient_log_lik
+      ),
+      E_pfs_log_lik = if_else(
+        is.na(k),
+        E_patient_pfs_log_lik,
+        approx_E_patient_pfs_log_lik
+      ),
+      E_crcr_log_lik = if_else(
+        is.na(k),
+        E_patient_crcr_log_lik,
+        approx_E_patient_crcr_log_lik
+      ),
+      E_log_lik_w = if_else(
+        is.na(k),
+        E_patient_log_lik_w,
+        approx_E_patient_log_lik_w
+      ),
+      E_pfs_log_lik_w = if_else(
+        is.na(k),
+        E_patient_pfs_log_lik_w,
+        approx_E_patient_pfs_log_lik_w
+      ),
+      E_crcr_log_lik_w = if_else(
+        is.na(k),
+        E_patient_crcr_log_lik_w,
+        approx_E_patient_crcr_log_lik_w
+      ),
     )
 }
 
 #' Bootstrap Expected Log Pointwise Predictive Density (ELPD) for Leave-Future-Out Cross-Validation
 #'
-#' This function performs bootstrapping to estimate the uncertainty in the Expected Log Pointwise 
+#' This function performs bootstrapping to estimate the uncertainty in the Expected Log Pointwise
 #' Predictive Density (ELPD) for Leave-Future-Out (LFO) cross-validation results.
 #'
-#' @param lfo_res A data frame containing the results of LFO cross-validation, typically output 
+#' @param lfo_res A data frame containing the results of LFO cross-validation, typically output
 #'        from the `lfo` function. Expected to contain columns with patient log-likelihoods and weights.
 #' @param n_bootstrap Integer. The number of bootstrap samples to generate (default: 1000).
 #'
@@ -440,49 +634,218 @@ clean_lfo_results <- function(lfo_res) {
 #'    c. Computes the ELPD using PSIS (Pareto Smoothed Importance Sampling).
 #' 3. Returns a data frame of bootstrapped ELPD estimates.
 #'
-#' This bootstrapping approach helps quantify the uncertainty in the ELPD estimate, 
-#' which is crucial for model comparison and assessment in a time-series context, 
+#' This bootstrapping approach helps quantify the uncertainty in the ELPD estimate,
+#' which is crucial for model comparison and assessment in a time-series context,
 #' particularly for clinical trial data with multiple outcomes.
 #'
 lfo_bootstrap_elpd <- function(lfo_res, n_bootstrap = 1000) {
   get_patient_subset_col <- function(ln, i) {
     n_early_patients <- length(i) - ncol(ln)
     ln[, discard(i, \(x) x < n_early_patients) - n_early_patients]
-  } 
-  
-  origin_res <- lfo_res |> 
-    lfo_drop_bad_approx() |> 
+  }
+
+  origin_res <- lfo_res |>
+    lfo_drop_bad_approx() |>
     arrange(n)
-  
+
   n_lfo_patients <- ncol(first(origin_res$patient_log_lik))
-  
+
   map_dfr(seq(n_bootstrap), function(b) {
     bootstrap_i <- sample(n_lfo_patients, n_lfo_patients, replace = TRUE)
-   
+
     origin_res |>
       mutate(
-        across(matches("^patient(_pfs|_crcr)?_log_lik(_w)?$"), \(l)  map(l, \(ln) get_patient_subset_col(ln, bootstrap_i))),
+        across(matches("^patient(_pfs|_crcr)?_log_lik(_w)?$"), \(l) {
+          map(l, \(ln) get_patient_subset_col(ln, bootstrap_i))
+        }),
         dplyover::across2(
-          matches("^patient(_pfs|_crcr)?_log_lik$"), matches("^lwt(_pfs|crcr)?"), \(l, lw) psis_resample(l, lw, recalc_full = TRUE), .names = "mean_{xcol}"
+          matches("^patient(_pfs|_crcr)?_log_lik$"),
+          matches("^lwt(_pfs|crcr)?"),
+          \(l, lw) psis_resample(l, lw, recalc_full = TRUE),
+          .names = "mean_{xcol}"
         ),
         dplyover::across2(
-          matches("^patient(_pfs|_crcr)?_log_lik_w$"), matches("^lwt(_pfs|crcr)?"), \(l, lw) psis_resample(l, lw, recalc_full = TRUE), .names = "mean_{xcol}"
+          matches("^patient(_pfs|_crcr)?_log_lik_w$"),
+          matches("^lwt(_pfs|crcr)?"),
+          \(l, lw) psis_resample(l, lw, recalc_full = TRUE),
+          .names = "mean_{xcol}"
         ),
-      ) |> 
-      transmute(across(matches("^mean"), \(m) map_dbl(m, \(mn) if (!is_null(mn)) sum(mn) else NA_real_), .names = "E_{.col}")) |> 
-      rename_with(\(n) str_replace(n, r"{E_(approx_)?mean_patient}", r"{\1E}")) |> 
+      ) |>
+      transmute(across(
+        matches("^mean"),
+        \(m) map_dbl(m, \(mn) if (!is_null(mn)) sum(mn) else NA_real_),
+        .names = "E_{.col}"
+      )) |>
+      rename_with(\(n) {
+        str_replace(n, r"{E_(approx_)?mean_patient}", r"{\1E}")
+      }) |>
       summarize(across(everything(), sum))
-  }) 
+  })
 }
 
 lfo_stacking_weights <- function(model_log_lik, log_lik_var = E_log_lik) {
-  model_log_lik |> 
-    map_dfr(clean_lfo_results, .id = "model") |> 
-    select(model, n, {{ log_lik_var }}) |> 
-    pivot_wider(names_from = model, values_from = {{ log_lik_var }}) |> 
-    select(!n) |> 
-    as.matrix() |> 
-    loo::stacking_weights() |> 
-    c() |> 
+  model_log_lik |>
+    map_dfr(clean_lfo_results, .id = "model") |>
+    select(model, n, {{ log_lik_var }}) |>
+    pivot_wider(names_from = model, values_from = {{ log_lik_var }}) |>
+    select(!n) |>
+    as.matrix() |>
+    loo::stacking_weights() |>
+    c() |>
     set_names(names(model_log_lik))
 }
+
+get_oos_confusion_marix <- function(lfo_res, recover_data) {
+  lfo_res |>
+    mutate(
+      w = lead(n_visits_added, default = last(n_future_visits)) %>%
+        divide_by(sum(.)),
+      oos_confusion_matrix = pmap(
+        lst(f = fit, n, m, refit_n),
+        function(f, n, m, refit_n) {
+          if (!is_null(f)) {
+            lite_spread_rvars(
+              f,
+              oos_recist_confusion_matrix[
+                n_mat,
+                m_mat,
+                response,
+                pred_response
+              ],
+              recover_data = recover_data
+            ) |>
+              mutate(across(c(n_mat, m_mat), \(x) x + refit_n - 1)) |>
+              filter(n_mat == n, m_mat == m) |>
+              select(!c(n_mat, m_mat)) |>
+              unnest(oos_recist_confusion_matrix) |>
+              group_by(response) |>
+              mutate(observed = sum(oos_recist_confusion_matrix) > 0) |>
+              ungroup() |>
+              filter(observed)
+          }
+        }
+      )
+    ) |>
+    unnest(oos_confusion_matrix)
+}
+
+#' Compute Accuracy Metrics from Out-of-Sample Confusion Matrix
+#'
+#' Calculates classification accuracy metrics (sensitivity, specificity, and overall accuracy)
+#' from out-of-sample confusion matrix predictions.
+#'
+#' @param confusion_matrix_data Data frame containing the confusion matrix with columns:
+#'   response, pred_response, mean_pred, cell_size, and optionally count.
+#'
+#' @return A data frame with columns:
+#'   \item{metric}{Character. The metric type: "Accuracy", "Sensitivity", or "Specificity"}
+#'   \item{class}{Character. The class label, or "Overall" for accuracy}
+#'   \item{median}{Numeric. The median of the posterior distribution}
+#'   \item{q5}{Numeric. The 5th percentile}
+#'   \item{q95}{Numeric. The 95th percentile}
+#'
+#' @details
+#' The function computes three types of metrics:
+#' - **Sensitivity** (per-class): The true positive rate for each RECIST category
+#' - **Accuracy** (overall): The weighted average of correct predictions across all classes
+#' - **Specificity** (per-class): The true negative rate for each RECIST category
+#'
+#' The confusion matrix data should contain both row-normalized proportions
+#' (for sensitivity/accuracy) and raw counts (for specificity).
+#'
+compute_oos_accuracy_metrics <- function(confusion_matrix_data) {
+  data <- confusion_matrix_data
+
+  # Validate data structure
+  if (nrow(data) == 0) {
+    stop("confusion_matrix_data has no rows")
+  }
+
+  # Check if count column exists - if not, we can't compute specificity
+  has_counts <- "count" %in% names(data)
+
+  # Per-class sensitivity (diagonal elements, as data is row-normalized)
+  sensitivity <- data |>
+    filter(response == pred_response) |>
+    transmute(
+      class = response,
+      metric = "Sensitivity",
+      value = mean_pred
+    )
+
+  # Overall accuracy: need to weight by class prevalence
+  # Since mean_pred is P(Predicted | Observed), we need class weights
+  class_totals <- data |>
+    group_by(response) |>
+    summarize(n = first(cell_size), .groups = "drop") |>
+    mutate(weight = n / sum(n))
+
+  accuracy <- sensitivity |>
+    left_join(class_totals, by = c("class" = "response")) |>
+    summarize(
+      class = "Overall",
+      metric = "Accuracy",
+      value = rvar_weighted_mean(value, weight)
+    )
+
+  # Specificity: requires raw counts
+  if (has_counts) {
+    classes <- levels(data$response)
+
+    # Specificity(X) = P(Predicted != X | Observed != X)
+    # = (correctly predicted non-X) / (all non-X observed)
+    specificity <- map_dfr(classes, function(cls) {
+    # Non-X observations
+    non_x_data <- data |> filter(response != cls)
+
+    # Return NA if no non-X observations (e.g., only one class)
+    if (nrow(non_x_data) == 0 || !("count" %in% names(non_x_data))) {
+      return(tibble(
+        class = cls,
+        metric = "Specificity",
+        value = rvar(NA_real_)
+      ))
+    }
+
+    # Ensure count column exists and has valid values
+    if (all(is.na(non_x_data$count))) {
+      return(tibble(
+        class = cls,
+        metric = "Specificity",
+        value = rvar(NA_real_)
+      ))
+    }
+
+    non_x_total <- rvar_sum(non_x_data$count)
+
+    # Correctly predicted non-X (predicted != X when observed != X)
+    non_x_correct_data <- data |>
+      filter(response != cls, pred_response != cls)
+
+    # If no correct non-X predictions, specificity is 0
+    if (nrow(non_x_correct_data) == 0) {
+      non_x_correct <- rvar(0)
+    } else {
+      non_x_correct <- rvar_sum(non_x_correct_data$count)
+    }
+
+    tibble(
+      class = cls,
+      metric = "Specificity",
+      value = non_x_correct / non_x_total
+    )
+    })
+  } else {
+    # If no counts available, return empty specificity
+    specificity <- tibble()
+  }
+
+  bind_rows(accuracy, sensitivity, specificity) |>
+    distinct(metric, class, value, .keep_all = TRUE) |>
+    tidybayes::point_interval(value, .width = 0.9, .point = median, .interval = qi) |>
+    rename(median = value, q5 = .lower, q95 = .upper) |>
+    select(metric, class, median, q5, q95) |>
+    arrange(metric, class)
+}
+
+# nolint end: object_usage_linter
