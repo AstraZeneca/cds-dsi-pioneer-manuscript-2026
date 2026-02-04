@@ -87,6 +87,7 @@ init_project <- function(output_path = output_path, artifacts_path = artifacts_p
   library(recipes)
 
   source(here("r", "util.R"))
+  source(here("r", "multi_level_hierarchy.R"))  # Required by priors.R
   source(here("r", "priors.R"))
   source(here("r", "posterior.R"))
   source(here("r", "prepare_analysis_data.R"))
