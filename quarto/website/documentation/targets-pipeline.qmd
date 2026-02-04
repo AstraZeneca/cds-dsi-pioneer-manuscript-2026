@@ -1,0 +1,1080 @@
+---
+title: "Targets Pipeline Architecture"
+description: "Comprehensive guide to the SCLC-01 analysis pipeline structure and organization"
+date: last-modified
+---
+
+## Overview
+
+The SCLC-01 analysis is orchestrated using the [`targets`](https://books.ropensci.org/targets/) package, which provides a pipeline framework for reproducible computational workflows. The pipeline is defined in `targets/sclc_targets.R` and consists of approximately 800 targets organized through nested `tar_map()` calls.
+
+The pipeline architecture enables:
+
+- **Reproducibility**: Only outdated targets are re-run when dependencies change
+- **Parallelization**: Crew controllers distribute work across multiple workers
+- **Multiple model variants**: Systematic comparison of model configurations
+- **Data cut-off analysis**: Testing predictive performance at different time points
+- **Prior/posterior comparison**: Validating model behavior and prior sensitivity
+
+## Pipeline Structure
+
+The pipeline uses a three-level nested `tar_map()` structure (see [dynamic branching](https://books.ropensci.org/targets/dynamic.html)):
+
+```
+sclc_targets
+├── dco_targets (Data Cut-Off level)
+│   ├── model_targets (Model variant level)
+│   │   ├── lfo_targets (Leave-Future-Out cross-validation)
+│   │   ├── type_targets (Prior vs Posterior)
+│   │   │   └── event_targets (Censored vs Uncensored)
+```
+
+This nesting creates a combinatorial expansion of targets across different analysis dimensions.
+
+## Initialization and Setup {#sec-init}
+
+### Environment Configuration
+
+The pipeline begins by initializing the project environment and setting up output paths:
+
+```r
+init_project()
+
+sclc_output_path <- tar_path_store() |> fs::path_dir()
+sclc_artifacts_path <- str_replace(
+  sclc_output_path,
+  "^/mnt/data/analysis-results",
+  "/mnt/artifacts/"
+)
+```
+
+The output path structure is controlled via `_targets.yaml` configuration, which sets the store location based on the `TAR_PROJECT` environment variable.
+
+### Directory Structure
+
+Three key directories are created:
+
+- `sclc_output_path/fit/`: Stan model output CSVs
+- `sclc_artifacts_path/models/`: Compiled Stan executables
+- `sclc_artifacts_path/crew_logs/`: Worker process logs
+
+### Crew Controllers {#sec-crew}
+
+The pipeline uses five specialized worker pools for different task types:
+
+```r
+controller_default          # 15 workers - general tasks
+controller_fit              # 8 workers  - MCMC sampling
+controller_many_samples     # 10 workers - large posterior extractions
+controller_lfo              # 24 workers - LFO cross-validation (configurable)
+controller_lfo_endpoints    # 10 workers - endpoint generation
+```
+
+Controllers are configured with the [`crew` package](https://wlandau.github.io/crew/) and assigned to targets via [`tar_resources()`](https://docs.ropensci.org/targets/reference/tar_resources.html) (see [crew integration guide](https://books.ropensci.org/targets/crew.html)).
+
+The `controller_lfo` has special configuration:
+
+- Worker count controlled by `LFO_WORKERS` environment variable (default: 24)
+- Staggered launches (`seconds_launch = 120`) to prevent resource contention
+- Logging enabled for debugging long-running tasks
+
+### Global Options
+
+Pipeline-wide settings are configured via [`tar_option_set()`](https://docs.ropensci.org/targets/reference/tar_option_set.html):
+
+- **Packages**: Core dependencies loaded automatically (tidyverse, cmdstanr, tidybayes, etc.)
+- **Default controller**: `controller_default` unless overridden
+- **Memory**: `"transient"` - targets are unloaded from memory after use (see [memory management](https://books.ropensci.org/targets/data.html#memory))
+- **Format**: `rvar_safe_qs2_format` - custom format for posterior::rvar objects (see [storage formats](https://books.ropensci.org/targets/data.html#formats) and [Custom Formats](#sec-custom-formats) below)
+- **Error handling**: `"continue"` - pipeline continues despite individual target failures
+- **Seed**: `26091468` - ensures reproducibility of stochastic operations
+
+## Custom Implementations {#sec-custom-implementations}
+
+The pipeline uses several custom implementations to handle project-specific challenges with Stan models and posterior storage.
+
+### Custom Format: rvar_safe_qs2 {#sec-custom-formats}
+
+**Problem**: Tibbles containing [`posterior::rvar`](https://mc-stan.org/posterior/reference/rvar.html) objects can fail during serialization because rvar objects cache internal computations as attributes. These cache attributes can cause issues with targets' serialization.
+
+**Solution**: `rvar_safe_qs2_format` is a custom [targets format](https://books.ropensci.org/targets/data.html#formats) that:
+
+1. Detects tibbles with rvar columns
+2. Removes the `"cache"` attribute from rvar objects before saving
+3. Uses [`qs2`](https://cran.r-project.org/package=qs2) for efficient serialization
+4. Ensures objects are returned as tibbles on read
+
+**Implementation** (defined in `r/util.R`):
+
+```r
+rvar_safe_qs2_format <- tar_format(
+  write = function(object, path) {
+    if (tibble::is_tibble(object) &&
+        any(purrr::map_lgl(object, posterior::is_rvar))) {
+      object <- as.data.frame(object) |>
+        dplyr::mutate(across(where(posterior::is_rvar), \(r) {
+          attr(r, "cache") <- NULL
+          r
+        }))
+    }
+    qs2::qs_save(object, path)
+  },
+  read = function(path) {
+    object <- qs2::qs_read(path)
+    if (is.data.frame(object) && !tibble::is_tibble(object)) {
+      object <- tibble::as_tibble(object)
+    }
+    return(object)
+  }
+)
+```
+
+**Performance**: Uses qs2 for fast serialization with minimal overhead for non-rvar objects.
+
+### Stan Model Compilation Tracking {#sec-stan-compilation}
+
+**Problem**: Stan models are expensive to compile (5-15 minutes). By default, targets tracks the compiled binary file, which changes every time the model is recompiled even if the source code hasn't changed. This causes all downstream targets (fits, posteriors, summaries) to invalidate unnecessarily.
+
+**Solution**: Track the source code hash instead of the binary. The pipeline uses two custom functions:
+
+#### 1. `compute_stan_source_hash()`
+
+Computes an MD5 hash of all Stan source files (including `#include` files):
+
+```r
+compute_stan_source_hash <- function(model_file, include_files = NULL) {
+  all_source_files <- c(model_file, include_files)
+  all_source_files |>
+    sort() |>
+    map(read_lines) |>
+    digest::digest(algo = "md5")
+}
+```
+
+This hash changes **only** when source code changes, not when binaries are recompiled.
+
+#### 2. `build_model()`
+
+Compiles Stan models with smart caching:
+
+```r
+build_model <- function(model_file, include_files = NULL, dir = NULL, ...) {
+  # Compute hash of all source file contents
+  source_hash <- compute_stan_source_hash(model_file, include_files)
+
+  # Check if stored hash matches
+  exe_path <- fs::path(dir, model_name)
+  hash_file <- str_c(exe_path, ".source_hash")
+
+  if (fs::file_exists(hash_file)) {
+    stored_hash <- read_lines(hash_file, n_max = 1)
+    if (identical(stored_hash, source_hash)) {
+      message("Source hash matches - skipping recompilation")
+      skip_compile <- TRUE
+    }
+  }
+
+  # Compile model (or skip)
+  model <- cmdstan_model(model_file, force_recompile = !skip_compile, ...)
+
+  # Save hash for future comparisons
+  write_lines(source_hash, hash_file)
+
+  return(model)
+}
+```
+
+#### Pipeline Integration
+
+Model compilation targets return both the hash and the executable path:
+
+```r
+tar_target(
+  tumor_ssls_exe_hash,
+  {
+    model <- build_model(
+      "stan/ssls/sf-ssm-log-space.stan",
+      include_files = find_stan_includes("stan/ssls/sf-ssm-log-space.stan"),
+      dir = file.path(sclc_artifacts_path, "models")
+    )
+    list(
+      source_hash = compute_stan_source_hash(...),  # This is tracked by targets
+      exe_file = model$exe_file()                    # This is used for sampling
+    )
+  },
+  cue = tar_cue("always")  # Always check, but hash prevents invalidation
+)
+```
+
+**Benefits**:
+
+- Downstream targets only re-run when Stan **source code** changes
+- Recompiling for optimization, portability, or different machines doesn't trigger re-runs
+- Avoids wasting hours of compute time on unnecessary MCMC sampling
+- Hash files (`.source_hash`) persist across Domino jobs/workspaces for cache reuse
+
+**Related**: See [`find_stan_includes()`](r/util.R:1013) for automatically discovering all `#include` dependencies.
+
+## Covariate Specifications {#sec-covariates}
+
+### Model Formulas
+
+Three covariate formulas are defined:
+
+```r
+covar_formula            # Full model with all covariates including ctDNA
+covar_formula_no_ctdna   # Excludes baseline_ctdna
+covar_formula_ctdna_only # Only baseline_ctdna
+```
+
+The full formula includes 23 baseline covariates covering demographics, disease characteristics, and biomarkers.
+
+### Conditional Groups {#sec-cond-groups}
+
+The `covar_cond_groups` target defines 14 subgroup stratifications for conditional predictions:
+
+- PD-L1 status (high/low)
+- Treatment line (first-line naive vs experienced)
+- Histology (squamous vs non-squamous)
+- Combinations of the above
+- Study arm (Part B vs Part C)
+
+Each conditional group enables subgroup-specific predictions for survival curves, quantiles, and clinical endpoints.
+
+## Stan Model Compilation {#sec-models}
+
+Three Stan models are compiled and tracked:
+
+### 1. Main SSLS Model
+**File**: `stan/ssls/sf-ssm-log-space.stan`
+**Purpose**: State-space longitudinal survival model
+**Target**: `tumor_ssls_exe_hash`
+
+### 2. LFO SSLS Model
+**File**: `stan/ssls/sf-ssls-lfo.stan`
+**Purpose**: Leave-future-out cross-validation variant
+**Target**: `lfo_tumor_ssls_exe_hash`
+
+### 3. LFO Endpoints Model
+**File**: `stan/ssls/sf-ssls-lfo-endpoints.stan`
+**Purpose**: Efficient endpoint generation from LFO fits
+**Target**: `lfo_endpoints_tumor_ssls_exe_hash`
+
+### Compilation Tracking
+
+Each model target returns a list with two elements:
+
+```r
+list(
+  source_hash = compute_stan_source_hash(model_file, include_files),
+  exe_file = model$exe_file()
+)
+```
+
+The `source_hash` ensures downstream targets only invalidate when Stan source code changes, not on every recompilation. This is critical for avoiding unnecessary re-runs of expensive MCMC sampling. See [Stan Model Compilation Tracking](#sec-stan-compilation) for implementation details.
+
+The [`cue = tar_cue("always")`](https://docs.ropensci.org/targets/reference/tar_cue.html) setting forces compilation checks on every pipeline run (see [cue-based invalidation](https://books.ropensci.org/targets/targets.html#cue)).
+
+## Data Loading {#sec-data}
+
+### Trial Data Sources
+
+The pipeline loads data from five clinical trials:
+
+1. **HISTORICAL** (`historical_data_path`)
+2. **ARCTIC** (`arctic_data_path`)
+3. **ATLANTIC** (`atlantic_data_path`)
+4. **PEARL** (`pearl_data_path`)
+5. **SCLC** (`sclc_data_path`)
+
+### Data Pipeline Structure
+
+For each trial, the data loading follows this pattern:
+
+```
+trial_data_id          # Data version identifier
+├── trial_patient_data_file   # File target (format = "file")
+├── trial_visit_data_file     # File target
+├── trial_patient_data        # Read and process patient data
+├── trial_visit_data          # Read and process visit data
+└── trial_analysis_data       # Combine into analysis-ready format
+```
+
+Using [`format = "file"`](https://books.ropensci.org/targets/data.html#external-files) for CSV file paths ensures targets re-run when files change on disk.
+
+### Data Preparation
+
+The `prepare_analysis_data()` function combines patient and visit data into a nested structure:
+
+- Each row represents one patient
+- `visit_data` column contains a nested tibble of longitudinal measurements
+- Baseline covariates are patient-level columns
+
+## Data Cut-Off Targets (`dco_targets`) {#sec-dco}
+
+The first level of [`tar_map()`](https://docs.ropensci.org/targets/reference/tar_map.html) creates parallel pipelines for different data cut-offs (see [map guide](https://books.ropensci.org/targets/dynamic.html#map)):
+
+```r
+dco_targets = tar_map(
+  tibble(
+    dco_name = c("apr25", "aug25", "jan26"),
+    patient_data_file_suffix = c("_060825", "_aug25", "_jan26"),
+    visit_data_file_suffix = c("_300725", "_aug25", "_jan26"),
+    inv_metric_file = c(
+      "data/inv_metric_ctdna_apr25.json",
+      "data/inv_metric_ctdna_aug25.json",
+      "data/inv_metric_ctdna_jan26.json"
+    )
+  ),
+  names = "dco_name",
+  ...
+)
+```
+
+This creates three complete sub-pipelines:
+
+- **apr25**: April 2025 data cut-off
+- **aug25**: August 2025 data cut-off
+- **jan26**: January 2026 data cut-off
+
+Each DCO has its own:
+
+- SCLC patient and visit data files
+- Inverse metric file for Stan warmup initialization
+- Complete set of downstream targets
+
+## Model Variant Targets {#sec-model-variants}
+
+Within each DCO, a second `tar_map()` creates eight model variants:
+
+| Model | Covariates | Trials | Trial RE | Patient RE | Other Events | Process Noise |
+|-------|-----------|--------|----------|------------|--------------|---------------|
+| `ctdna` | Full (with ctDNA) | Limited | No | Yes | Yes | No |
+| `ctdna_pn` | Full (with ctDNA) | Limited | No | Yes | Yes | Yes |
+| `no_oe` | Full (with ctDNA) | Limited | No | Yes | No | No |
+| `no_ctdna` | No ctDNA | Limited | No | Yes | Yes | No |
+| `ctdna_only` | Only ctDNA | Limited | No | Yes | Yes | No |
+| `all_trials` | No ctDNA | All | Yes | Yes | Yes | No |
+| `no_covar` | None | Limited | No | Yes | Yes | No |
+| `no_hist` | Full (with ctDNA) | Limited | No | No | Yes | No |
+
+**Legend**:
+
+- **Trials**: "Limited" = HISTORICAL + SCLC only; "All" = includes ARCTIC, ATLANTIC
+- **Trial RE**: Trial-level random effects enabled
+- **Patient RE**: Patient-level random effects enabled
+- **Other Events**: Non-target progression and death model enabled
+- **Process Noise**: AR(1) time-varying tumor dynamics enabled
+
+These variants enable systematic sensitivity analysis and model comparison.
+
+### Model Configuration
+
+Each model variant controls Stan model behavior through feature flags:
+
+```r
+default_stan_data_settings = lst(
+  fit_tumor_data = TRUE,
+  fit_other_events_data = other_events,
+
+  # Other events module
+  oe_enable_pop_cov = other_events,
+  oe_enable_pop_tumor_cov = other_events,
+
+  # Tumor regression module
+  enable_trial_intercept_tr = trial_level,
+  enable_patient_intercept_tr = patient_level,
+  enable_pop_process_noise_tr = process_noise,
+
+  # Growth fraction module
+  enable_trial_intercept_frac = trial_level,
+  enable_patient_intercept_frac = patient_level,
+  enable_pop_cov_frac = !is_null(covar_formula),
+
+  # Initial state module
+  enable_trial_intercept_init = trial_level,
+  enable_patient_intercept_init = patient_level,
+  enable_pop_cov_init = !is_null(covar_formula)
+)
+```
+
+These flags are passed to the Stan models and control which code blocks are executed.
+
+## Combined Analysis Data {#sec-combined-data}
+
+Within each model variant, trial data is combined and prepared for analysis:
+
+### Data Combination
+
+The `all_analysis_data` target combines trials based on model configuration:
+
+```r
+all_analysis_data <- bind_rows(
+  historical = if (hist) historical_analysis_data |> remove_incomplete_cases(...),
+  arctic = if (!limited && hist) arctic_analysis_data |> remove_incomplete_cases(...),
+  atlantic = if (!limited && hist) atlantic_analysis_data |> remove_incomplete_cases(...),
+  sclc = sclc_analysis_data |> remove_incomplete_cases(...),
+  .id = "trial"
+)
+```
+
+This creates a multi-trial dataset with:
+
+- Trial identifier as a factor
+- Calendar time variables for LFO analysis
+- Nested visit data with calendar timestamps
+
+### Kaplan-Meier Estimates
+
+Several KM targets provide empirical survival estimates:
+
+- `km_trial_pfs`: Overall by trial
+- `km_trial_pfs_naive`: First-line patients only
+- `km_trial_pfs_pdl1`: Stratified by PD-L1 status
+- `km_trial_pfs_pdl1_naive`: First-line patients stratified by PD-L1
+- `det_km_trial_pfs`: Deterministic PFS (target lesion only)
+
+These serve as comparison benchmarks for model predictions.
+
+## Leave-Future-Out Cross-Validation {#sec-lfo}
+
+LFO cross-validation assesses predictive performance by fitting the model to progressively more data and predicting held-out future observations.
+
+### LFO Cutoffs
+
+The `lfo_cutoffs` target defines prediction timepoints:
+
+```r
+lfo_cutoffs <- get_lfo_cutoffs(all_analysis_data, lfo_step = 30)
+```
+
+This creates cutoffs every 30 days throughout the study calendar, typically resulting in 20-30 cutoffs.
+
+### LFO Grouping
+
+For parallel processing, cutoffs are grouped into chunks using [`tar_group_count()`](https://docs.ropensci.org/tarchetypes/reference/tar_group.html) (see [grouped data frames](https://books.ropensci.org/targets/dynamic.html#grouped-data-frames)):
+
+```r
+tar_group_count(grouped_lfo_cutoffs, lfo_cutoffs, lfo_groups)
+```
+
+The `LFO_GROUPS` environment variable controls the number of groups (default: 24), balancing parallelism with overhead.
+
+### LFO Fitting
+
+The `tumor_ssls_lfo` target is the computational workhorse:
+
+```r
+tumor_ssls_lfo <- lfo(
+  base_tumor_ssls_stan_data,
+  lfo_tumor_ssls_exe_hash$exe_file,
+  grouped_lfo_cutoffs,
+  lfo_cutoffs,
+  sclc_output_path,
+  str_c("lfo_tumor_ssls", model, dco_name, sep = "_"),
+  initializer_factory = function(stan_data, save_dir, run_id) {
+    source("r/initializers_fixed.R")
+    create_tumor_ssls_initializer_fixed(stan_data, save_dir, run_id)
+  },
+  iter_warmup = 500,
+  iter_sampling = 500,
+  parallel_chains = 4,
+  adapt_delta = 0.8,
+  threads_per_chain = base_tumor_ssls_stan_data$n_shards,
+  future_window = 2,
+  exact = TRUE,
+  verbose = TRUE
+)
+```
+
+**Key parameters**:
+
+- [`pattern = map(grouped_lfo_cutoffs)`](https://books.ropensci.org/targets/dynamic.html#patterns): Creates one target per group using dynamic branching
+- `exact = TRUE`: No PSIS-LOO approximation, always refit
+- `future_window = 2`: Number of consecutive cutoffs that reuse the same fit
+- `initializer_factory`: Dynamic initialization based on cutoff data
+- `resources = tar_resources(crew = tar_resources_crew(controller = "lfo"))`: Uses dedicated LFO worker pool
+
+### LFO Results Processing
+
+The raw LFO results are cleaned and processed:
+
+```r
+tumor_ssls_lfo_clean <- clean_lfo_results(tumor_ssls_lfo) |>
+  select(refit_n, n, m, starts_with("E_"), fit) |>
+  left_join(lfo_cutoffs, by = "n")
+```
+
+This contains:
+
+- `refit_n`: Index of the fit used for this prediction
+- `n`: Cutoff index being predicted
+- `m`: Rows of data available at prediction time
+- `E_*`: Expected log predictive densities
+- `fit`: CmdStanMCMC fit object
+
+A lite version (`tumor_ssls_lfo_clean_lite`) excludes the `fit` column to reduce memory usage for downstream targets that don't need the full fit object.
+
+### Out-of-Sample Confusion Matrix
+
+The `full_oos_confusion_matrix` target evaluates RECIST response predictions:
+
+```r
+full_oos_confusion_matrix <- get_oos_confusion_marix(
+  tumor_ssls_lfo_clean,
+  recover_data = all_analysis_data |>
+    select(trial, visit_data) |>
+    unnest(visit_data) |>
+    transmute(trial, response, pred_response = response)
+)
+```
+
+This is aggregated to overall confusion matrix statistics in `oos_confusion_matrix` and `oos_confusion_matrix_counts` (highlighted in the user's selection).
+
+### LFO Endpoints Subset
+
+For computational efficiency, only the last 20 cutoffs are used for detailed endpoint generation:
+
+```r
+tumor_ssls_lfo_endpoints_subset <- tumor_ssls_lfo_clean |>
+  select(refit_n, n, cutoff_date, cutoff_calendar_day, fit) |>
+  tail(20)
+```
+
+This subset feeds into targets that extract:
+
+- `tumor_ssls_cutoff_quant_pfs`: PFS quantiles by trial
+- `tumor_ssls_cutoff_cond_quant_pfs`: PFS quantiles by conditional group
+- `tumor_ssls_cutoff_orr`: Overall response rate by trial
+- `tumor_ssls_cutoff_cond_orr`: ORR by conditional group
+- `tumor_ssls_cutoff_pfs_n`: PFS at specific timepoints (6, 9, 12, 15, 18 months)
+- `tumor_ssls_cutoff_cond_pfs_n`: PFS at specific timepoints by conditional group
+- `tumor_ssls_cutoff_km_est`: KM survival curve estimates by trial
+- `tumor_ssls_cutoff_cond_km_est`: KM estimates by conditional group
+
+These enable tracking of prediction evolution over time.
+
+## Prior and Posterior Analysis {#sec-prior-posterior}
+
+A third level of `tar_map()` creates parallel targets for prior and posterior:
+
+```r
+tar_map(
+  tibble(
+    type = c("prior", "posterior"),
+    fit_data = c(FALSE, TRUE),
+    base_name = c("prior_tumor_ssls", "tumor_ssls"),
+    iter_sampling = 500,
+    iter_warmup = c(300, nth(iter_sampling, 2)),
+    chains = 4
+  ),
+  names = "type",
+  ...
+)
+```
+
+### Prior Sampling
+
+When `fit_data = FALSE`, the Stan model samples from the prior predictive distribution without conditioning on observed data. This generates:
+
+- Prior predictive tumor trajectories
+- Prior predictive survival curves
+- Prior predictive clinical endpoints
+
+Prior samples validate that priors are reasonable and weakly informative.
+
+### Posterior Sampling
+
+When `fit_data = TRUE`, the model conditions on observed data to produce the posterior distribution.
+
+### Stan Sampling
+
+The `tumor_ssls_res` target performs MCMC sampling:
+
+```r
+tumor_ssls_res <- sample_and_save(
+  tumor_ssls_exe_hash$exe_file,
+  tumor_ssls_stan_data,
+  iter_warmup = iter_warmup,
+  iter_sampling = iter_sampling,
+  save_warmup = TRUE,
+  parallel_chains = chains,
+  chains = chains,
+  threads_per_chain = tumor_ssls_stan_data$n_shards,
+  init = tumor_ssls_initializer,
+  adapt_delta = 0.8,
+  save_metric = TRUE,
+  output_dir = file.path(
+    sclc_output_path,
+    "fit",
+    str_c(base_name, model, dco_name, sep = "_")
+  ),
+  timestamp = fit_output_timestamp
+)
+```
+
+This saves CSV output to `sclc_output_path/fit/<name>/` and returns a `CmdStanMCMC` object.
+
+### Posterior Extraction Strategy
+
+To manage memory and storage, draws are split into four specialized targets:
+
+#### 1. Population/Trial Parameters (`tumor_ssls_draws_pop`)
+**Size**: Small
+**Contents**: Population-level parameters, trial-level SDs, measurement error SD
+
+```r
+tumor_ssls_draws_pop <- select_draws(
+  tumor_ssls_res,
+  ends_with("_pop"),
+  starts_with("pop_"),
+  measure_sd,
+  matches("_sd_(trial|patient)_")
+)
+```
+
+#### 2. Patient Parameters (`tumor_ssls_draws_patient_params`)
+**Size**: Large
+**Contents**: Patient-specific parameters
+
+```r
+tumor_ssls_draws_patient_params <- select_draws(
+  tumor_ssls_res,
+  matches("^(frac|init|tr)_.+_patient"),
+  matches("patient_log_(growth|decrease)_rate")
+)
+```
+
+#### 3. SLD and RECIST Predictions (`tumor_ssls_draws_sld_recist`)
+**Size**: Very large
+**Contents**: Patient-level tumor size and response predictions
+
+```r
+tumor_ssls_draws_sld_recist <- select_draws(
+  tumor_ssls_res,
+  rep_patient_log_sld,
+  forecast_patient_log_sld,
+  rep_recist,
+  forecast_recist
+)
+```
+
+#### 4. Trial/Population Endpoints (`tumor_ssls_draws_endpoints`)
+**Size**: Medium
+**Contents**: Survival curves, PFS quantiles, ORR, confusion matrices
+
+```r
+tumor_ssls_draws_endpoints <- select_draws(
+  tumor_ssls_res,
+  matches("(cond_)?(spop|sample)(_target|_other_events)?_(((quant_)?pfs)|km_est|right_censored)"),
+  matches("(cond_)?(spop|sample)_target_(((un)?confirmed_response)|orr|pfs_n)"),
+  recist_confusion_matrix
+)
+```
+
+This strategy avoids loading the entire posterior (which can be >100GB) into memory at once.
+
+### Posterior Summary Targets
+
+Numerous targets transform posterior draws into analysis-ready formats:
+
+**Parameter summaries**:
+
+- `tumor_ssls_rates_rvar`: Growth and decrease rate population parameters
+- `tumor_ssls_noise_sd_rvar`: Measurement error standard deviation
+- `tumor_ssls_init_sd_rvar`: Initial state variability
+
+**Patient-level distributions** (binned posterior intervals):
+
+- `tumor_ssls_rates_bpi_patient`: Histograms of patient growth/decrease rates
+- `tumor_ssls_logits_bpi_patient`: Histograms of logit-scale parameters (fraction, initial state)
+- `tumor_ssls_decrease_prop_bpi_patient`: Histograms of decrease proportions
+
+**Clinical endpoints**:
+
+- `tumor_ssls_pfs_rvar`: Patient-level PFS predictions with censoring
+- `tumor_ssls_km_rvar`: Trial-level Kaplan-Meier curves
+- `tumor_ssls_cond_km_rvar`: Subgroup-specific KM curves
+- `tumor_ssls_trial_quant_pfs`: PFS quantiles (e.g., median PFS) by trial
+- `tumor_ssls_cond_quant_pfs`: PFS quantiles by conditional group
+- `tumor_ssls_orr_rvar`: Overall response rate by trial
+- `tumor_ssls_cond_orr_rvar`: ORR by conditional group
+- `tumor_ssls_forecast_target_pfs_n_rvar`: PFS at specific timepoints (6, 9, 12, 15, 18 months)
+- `tumor_ssls_cond_forecast_target_pfs_n_rvar`: Timepoint PFS by subgroup
+
+**Patient subsamples**:
+
+To reduce storage, patient-level trajectories are subsampled:
+
+```r
+tar_map(
+  tibble(
+    event_type = c("right_censored", "uncensored"),
+    event_cond = c(expr(right_censored), expr(!right_censored)),
+    event_slicer = c(\(d, n) d, \(d, n) slice_sample(d, n = n))
+  ),
+  names = "event_type",
+
+  tar_target(
+    state_patient_subsample,
+    get_state_patients(
+      all_analysis_data,
+      by = trial,
+      cond = event_cond,
+      slicer = event_slicer,
+      sample_size = 40
+    )
+  ),
+  ...
+)
+```
+
+This creates targets for:
+
+- All censored patients (for sensitivity analysis)
+- 40 random uncensored patients (for visualization)
+
+For each subsample, trajectories are extracted:
+
+- `tumor_ssls_patient_states_rvar`: Latent tumor states at observed times
+- `tumor_ssls_patient_forecast_states_rvar`: Forecasted latent states
+- `tumor_ssls_rep_sld_rvar`: Replicated SLD measurements
+- `tumor_ssls_forecast_sld_rvar`: Forecasted SLD
+- `tumor_ssls_recist_rvar`: Replicated RECIST responses
+- `tumor_ssls_forecast_recist_rvar`: Forecasted RECIST responses
+- `tumor_ssls_staged_*_rvar`: Combined observed + forecast
+
+These are used for posterior predictive checks and patient trajectory visualizations.
+
+**Covariate effects**:
+
+- `tumor_ssls_coef`: Regression coefficients for covariates on fraction, initial state, and other events
+
+### Combining Prior and Posterior
+
+After the prior/posterior `tar_map()`, targets combine both types:
+
+```r
+all_tumor_ssls_orr_rvar <- bind_rows(
+  tumor_ssls_orr_rvar_prior,
+  tumor_ssls_orr_rvar_posterior
+) |>
+  mutate(dco = dco_name)
+```
+
+This pattern is repeated for all major result types, creating `all_tumor_ssls_*` targets that include:
+
+- Both prior and posterior (differentiated by `fit_type` column)
+- DCO identifier (for comparing across data cuts)
+
+## Target Naming Conventions {#sec-naming}
+
+Understanding target names helps navigate the pipeline:
+
+### Prefix Patterns
+
+- `tumor_ssls_*`: Core SSLS model targets
+- `lfo_*`: Leave-future-out cross-validation related
+- `cutoff_*`: Data cut at specific calendar times
+- `all_*`: Combined across trials or combined prior/posterior
+
+### Suffix Patterns
+
+- `*_file`: File path targets (format = "file")
+- `*_data`: Data frames
+- `*_rvar`: Posterior random variables (posterior::rvar format)
+- `*_bpi`: Binned posterior intervals (histograms)
+- `*_stan_data`: Stan model input lists
+- `*_exe_hash`: Compiled model tracking
+- `*_res`: MCMC results (CmdStanMCMC objects)
+- `*_draws_*`: Extracted posterior draws
+
+### Model Variant Suffix
+
+Most targets within the model `tar_map()` are automatically suffixed with the model name:
+
+- `all_stan_data_ctdna`
+- `all_stan_data_no_ctdna`
+- `tumor_ssls_res_posterior_ctdna`
+- etc.
+
+### DCO Suffix
+
+Targets within the `dco_targets` are suffixed with DCO name:
+
+- `sclc_patient_data_apr25`
+- `sclc_patient_data_aug25`
+- `sclc_patient_data_jan26`
+- `all_tumor_ssls_orr_rvar_ctdna_apr25`
+- `all_tumor_ssls_orr_rvar_ctdna_aug25`
+- `all_tumor_ssls_orr_rvar_ctdna_jan26`
+
+### Event Type Suffix
+
+Targets within the event type `tar_map()` are suffixed:
+
+- `tumor_ssls_patient_states_rvar_right_censored_posterior`
+- `tumor_ssls_patient_states_rvar_uncensored_posterior`
+
+### Type Suffix
+
+Targets within the prior/posterior `tar_map()` are suffixed:
+
+- `tumor_ssls_res_prior`
+- `tumor_ssls_res_posterior`
+
+## Accessing Pipeline Results {#sec-access}
+
+### Reading Targets
+
+From R, use [`tar_read()`](https://docs.ropensci.org/targets/reference/tar_read.html) or [`tar_load()`](https://docs.ropensci.org/targets/reference/tar_load.html):
+
+```r
+# Set the correct store path
+store_path <- "/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/_targets"
+
+# Read a target
+orr <- tar_read(all_tumor_ssls_orr_rvar_ctdna_jan26, store = store_path)
+
+# Or load into environment
+tar_load(all_tumor_ssls_orr_rvar_ctdna_jan26, store = store_path)
+```
+
+**Important**: Always use explicit `store` argument. Never use [`tar_config_set(store = ...)`](https://docs.ropensci.org/targets/reference/tar_config_set.html) as it changes global state.
+
+### Listing Targets
+
+```r
+# All targets in pipeline
+tar_manifest()  # See reference: https://docs.ropensci.org/targets/reference/tar_manifest.html
+
+# Target dependency graph
+tar_glimpse(store = store_path)   # See reference: https://docs.ropensci.org/targets/reference/tar_glimpse.html
+
+# Target metadata (status, time, size, etc.)
+tar_meta(store = store_path)      # See reference: https://docs.ropensci.org/targets/reference/tar_meta.html
+
+# Filter to specific pattern
+tar_meta(store = store_path) |>
+  filter(str_detect(name, "tumor_ssls_orr"))
+```
+
+### Visualizing the Pipeline
+
+```r
+# Full dependency graph (warning: very large!)
+tar_visnetwork(store = store_path)  # See reference: https://docs.ropensci.org/targets/reference/tar_visnetwork.html
+
+# Focus on specific targets
+tar_visnetwork(
+  targets_only = TRUE,
+  names = starts_with("tumor_ssls_res"),
+  store = store_path
+)
+```
+
+See the [visualization guide](https://books.ropensci.org/targets/visualization.html) for more options.
+
+## Running the Pipeline {#sec-running}
+
+### Full Pipeline Run
+
+```bash
+# Set project and run
+export TAR_PROJECT=sclc
+Rscript -e 'targets::tar_make()'
+```
+
+See [`tar_make()`](https://docs.ropensci.org/targets/reference/tar_make.html) reference and [execution guide](https://books.ropensci.org/targets/practice.html#execution).
+
+### Running Specific Targets
+
+```r
+# Run specific target and all dependencies
+tar_make(all_tumor_ssls_orr_rvar_ctdna_jan26, store = store_path)
+
+# Run multiple targets
+tar_make(
+  c(tumor_ssls_res_posterior_ctdna_jan26,
+    tumor_ssls_lfo_clean_ctdna_aug),
+  store = store_path
+)
+```
+
+### Dry Run (Check What Would Run)
+
+```r
+# See what targets are outdated
+tar_outdated(store = store_path)  # See reference: https://docs.ropensci.org/targets/reference/tar_outdated.html
+
+# See why a target is outdated
+tar_meta(store = store_path) |>
+  filter(name == "tumor_ssls_res_posterior_ctdna_jan26") |>
+  select(name, time, seconds, error, warnings)
+```
+
+See the [debugging guide](https://books.ropensci.org/targets/debugging.html) for troubleshooting strategies.
+
+### Pruning Old Results
+
+```r
+# Remove targets no longer in pipeline
+tar_prune(store = store_path)  # See reference: https://docs.ropensci.org/targets/reference/tar_prune.html
+
+# Remove specific targets to force re-run
+tar_invalidate(
+  starts_with("tumor_ssls_lfo"),
+  store = store_path
+)  # See reference: https://docs.ropensci.org/targets/reference/tar_invalidate.html
+```
+
+## Performance Considerations {#sec-performance}
+
+### Parallelization
+
+The pipeline is heavily parallelized via crew controllers (see [high-performance computing guide](https://books.ropensci.org/targets/hpc.html)):
+
+- **Dynamic branching**: `pattern = map(lfo_cutoffs)` creates many parallel targets
+- **Multiple controllers**: Different task types use different worker pools
+- **Worker limits**: Total workers (~60) should not exceed CPU cores
+
+### Memory Management
+
+Several strategies reduce memory pressure:
+
+- **Transient memory**: Targets unloaded after use (`memory = "transient"`)
+- **Split draws**: Large posteriors split into 4 separate targets
+- **Lite versions**: Targets like `tumor_ssls_lfo_clean_lite` drop large columns
+- **Patient subsampling**: Full trajectories only for selected patients
+
+### Storage Optimization
+
+- **CSV storage**: MCMC samples remain on disk, loaded on demand via [`cmdstanr`](https://mc-stan.org/cmdstanr/)
+- **Custom qs2 format**: Efficient serialization for R objects with `rvar_safe_qs2_format` (see [Custom Formats](#sec-custom-formats))
+- **Selective caching**: Some trajectory targets have `cue = tar_cue("never")` to prevent caching
+
+### Computational Costs
+
+Approximate runtimes with 8 fit workers + 24 LFO workers:
+
+| Target | Time | Notes |
+|--------|------|-------|
+| `tumor_ssls_res_posterior` | 30-60 min | Single model fit |
+| `tumor_ssls_lfo` (all cutoffs) | 4-8 hours | ~24 refits x 4 chains |
+| Full pipeline (1 model, 1 DCO) | 6-12 hours | Including LFO |
+| Full pipeline (8 models, 2 DCOs) | 2-5 days | Full combinatorial expansion |
+
+## Common Patterns {#sec-patterns}
+
+See the [walkthrough chapter](https://books.ropensci.org/targets/walkthrough.html) for general patterns and best practices.
+
+### Adding a New Model Variant
+
+1. Add a row to the model `tar_map()` tibble (line ~611):
+
+```r
+tribble(
+  ~model       , ~model_formula           , ~limited , ~hist , ~trial_level , ~patient_level , ~other_events , ~process_noise ,
+  "my_model"   , covar_formula            , TRUE     , TRUE  , TRUE         , TRUE           , TRUE          , FALSE
+)
+```
+
+2. Optionally add a new formula if needed
+
+3. Run `tar_make()` - the new variant will automatically generate all downstream targets
+
+### Adding a New Posterior Summary
+
+1. Add a target within the prior/posterior `tar_map()` (after line ~1308) using [`tar_target()`](https://docs.ropensci.org/targets/reference/tar_target.html):
+
+```r
+tar_target(
+  my_new_summary,
+  tumor_ssls_draws_endpoints |>
+    spread_rvars(my_parameter[i]) |>
+    mutate(fit_type = type)
+)
+```
+
+2. Combine prior and posterior after the `tar_map()`:
+
+```r
+tar_target(
+  all_my_new_summary,
+  bind_rows(
+    my_new_summary_prior,
+    my_new_summary_posterior
+  ) |>
+    mutate(dco = dco_name)
+)
+```
+
+### Adding a New LFO Endpoint
+
+1. Add a target after the `tumor_ssls_lfo_endpoints_subset` definition (line ~963):
+
+```r
+tar_target(
+  tumor_ssls_cutoff_my_endpoint,
+  tumor_ssls_lfo_endpoints_subset |>
+    reframe(
+      refit_n, n, cutoff_date, cutoff_calendar_day,
+      fit[[1]] |>
+        select_draws(matches("my_endpoint")) |>
+        spread_rvars(my_endpoint[i])
+    ),
+  pattern = map(tumor_ssls_lfo_endpoints_subset),
+  resources = tar_resources(
+    crew = tar_resources_crew(controller = "lfo endpoints")
+  )
+)
+```
+
+### Debugging Failed Targets
+
+```r
+# Read error message
+tar_meta(store = store_path) |>
+  filter(name == "failing_target") |>
+  pull(error)
+
+# Load dependencies and try manually
+tar_load(c(dependency1, dependency2), store = store_path)
+
+# Run the target code interactively
+# (copy from sclc_targets.R)
+
+# Invalidate and re-run with more logging
+tar_invalidate(failing_target, store = store_path)
+tar_make(failing_target, store = store_path, callr_function = NULL)
+```
+
+## Summary {#sec-summary}
+
+The SCLC-01 targets pipeline is a sophisticated workflow that:
+
+- **Compiles and tracks** three Stan models with dependency-aware rebuilding
+- **Loads and prepares** data from five clinical trials
+- **Expands combinatorially** across 8 model variants and 2 data cut-offs
+- **Performs rigorous validation** via leave-future-out cross-validation
+- **Samples prior and posterior** distributions for sensitivity analysis
+- **Extracts hundreds of summaries** for clinical endpoints, parameter estimates, and predictive checks
+- **Parallelizes efficiently** across ~60 workers using crew controllers
+- **Manages memory carefully** through split draws and transient memory
+
+The result is approximately 800 targets organized into a reproducible, transparent, and efficient computational pipeline. Understanding this structure is essential for extending the analysis, debugging issues, and interpreting results.
+
+## See Also
+
+### Project Documentation
+
+- [Onboarding Tutorial](onboarding-tutorial.qmd) - Getting started with the codebase
+- [Architecture](architecture.qmd) - System architecture and optimization details
+- [Leave-Future-Out Cross-Validation](leave-future-out-cross-validation.qmd) - LFO methodology
+
+### Targets Package Resources
+
+- **[Targets user manual](https://books.ropensci.org/targets/)** - Comprehensive guide to the workflow system
+- **[Function reference](https://docs.ropensci.org/targets/reference/index.html)** - Documentation for all targets functions
+- **[tarchetypes package](https://docs.ropensci.org/tarchetypes/)** - Specialized target archetypes (including `tar_map()`, `tar_group_count()`)
+- **[crew package](https://wlandau.github.io/crew/)** - Distributed computing backend
