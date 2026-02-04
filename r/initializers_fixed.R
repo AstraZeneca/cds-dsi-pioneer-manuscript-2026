@@ -12,66 +12,90 @@ create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_
     max_t_width <- max_all_t - min_all_t + 1
 
     with(stan_data, {
-      # Hierarchical SDs - realistic values based on warmup analysis
-      tr_sd_trial <- 0.35
-      frac_sd_trial <- 0.35
-      init_sd_trial <- 0.35
-      tr_sd_patient <- 0.40
-      frac_sd_patient <- 0.40
-      init_sd_patient <- 0.50
+      # Multi-level hierarchy: n_levels, n_groups_per_level
+      # Compute enabled group counts for each module (matches Stan transformed_data)
+      n_enabled_groups_tr_intercept <- sum(n_groups_per_level[enable_level_intercept_tr == 1])
+      n_enabled_groups_tr_slope <- sum(n_groups_per_level[enable_level_cov_tr == 1])
+      n_enabled_groups_frac_intercept <- sum(n_groups_per_level[enable_level_intercept_frac == 1])
+      n_enabled_groups_frac_slope <- sum(n_groups_per_level[enable_level_cov_frac == 1])
+      n_enabled_groups_init_intercept <- sum(n_groups_per_level[enable_level_intercept_init == 1])
+      n_enabled_groups_init_slope <- sum(n_groups_per_level[enable_level_cov_init == 1])
+      n_enabled_groups_oe_slope <- sum(n_groups_per_level[oe_enable_level_cov == 1])
 
-      # Trial-level deviations - small spread
-      tr_trial_dev <- rnorm(n_trials, sd = 0.2)
-      frac_trial_dev <- rnorm(n_trials, sd = 0.2)
-      init_trial_dev <- rnorm(n_trials, sd = 0.2)
+      # Level positions for indexing flattened arrays
+      level_pos <- c(1L, cumsum(n_groups_per_level) + 1L)
 
-      # Patient-level deviations - need heterogeneity for model to fit data
-      tr_patient_dev <- rnorm(n_patients, sd = 0.3)
-      frac_patient_dev <- rnorm(n_patients, sd = 0.3)
-      init_patient_dev <- rnorm(n_patients, sd = 0.3)
+      # Hierarchical SDs per level - c(trial, patient) for 2-level
+      tr_sd_level <- c(0.35, 0.40)
+      frac_sd_level <- c(0.35, 0.40)
+      init_sd_level <- c(0.35, 0.50)
+
+      # Generate deviations for ENABLED levels only (flattened)
+      tr_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
+        if (enable_level_intercept_tr[lv]) rnorm(n_groups_per_level[lv], sd = if (lv == n_levels) 0.3 else 0.2) else NULL
+      }))
+      frac_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
+        if (enable_level_intercept_frac[lv]) rnorm(n_groups_per_level[lv], sd = if (lv == n_levels) 0.3 else 0.2) else NULL
+      }))
+      init_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
+        if (enable_level_intercept_init[lv]) rnorm(n_groups_per_level[lv], sd = if (lv == n_levels) 0.3 else 0.2) else NULL
+      }))
+
+      # Back-calculate raw values using enabled level positions
+      enabled_level_pos_tr <- c(1L, cumsum(n_groups_per_level * enable_level_intercept_tr) + 1L)
+      tr_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
+        if (!enable_level_intercept_tr[lv]) return(NULL)
+        idx <- enabled_level_pos_tr[lv]:(enabled_level_pos_tr[lv + 1] - 1)
+        tr_level_dev[idx] / tr_sd_level[lv]
+      }))
+
+      enabled_level_pos_frac <- c(1L, cumsum(n_groups_per_level * enable_level_intercept_frac) + 1L)
+      frac_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
+        if (!enable_level_intercept_frac[lv]) return(NULL)
+        idx <- enabled_level_pos_frac[lv]:(enabled_level_pos_frac[lv + 1] - 1)
+        frac_level_dev[idx] / frac_sd_level[lv]
+      }))
+
+      enabled_level_pos_init <- c(1L, cumsum(n_groups_per_level * enable_level_intercept_init) + 1L)
+      init_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
+        if (!enable_level_intercept_init[lv]) return(NULL)
+        idx <- enabled_level_pos_init[lv]:(enabled_level_pos_init[lv + 1] - 1)
+        init_level_dev[idx] / init_sd_level[lv]
+      }))
 
       tibble::lst(
         # Population-level parameters - initialize at prior means to avoid catastrophic random inits
-        tr_intercept_pop = -2.0,  # Total rate on log scale (prior mean)
-        frac_log_decrease_pop = 1.5,  # Fraction log decrease (prior mean on logit scale)
-        init_logit_frac_pop = 0.0,  # Initial fraction logit (prior mean)
+        tr_loc_pop = -2.0,  # Total rate on log scale (prior mean)
+        frac_logit_loc_pop = 1.5,  # Fraction on logit scale (prior mean)
+        init_logit_loc_pop = 0.0,  # Initial fraction logit (prior mean)
 
-        # Trial-level SDs and raw values (with heterogeneity)
-        tr_sd_trial_intercept = tr_sd_trial,
-        tr_raw_trial_intercept = if (enable_trial_intercept_tr) tr_trial_dev / tr_sd_trial,
-        frac_sd_trial_intercept = frac_sd_trial,
-        frac_raw_trial_intercept = if (enable_trial_intercept_frac) frac_trial_dev / frac_sd_trial,
-        init_sd_trial_intercept = init_sd_trial,
-        init_raw_trial_intercept = if (enable_trial_intercept_init) init_trial_dev / init_sd_trial,
-
-        # Patient-level SDs and raw values (with heterogeneity - critical for model fit)
-        tr_sd_patient_intercept = tr_sd_patient,
-        tr_raw_patient_intercept = if (enable_patient_intercept_tr) tr_patient_dev / tr_sd_patient,
-        frac_sd_patient_intercept = frac_sd_patient,
-        frac_raw_patient_intercept = if (enable_patient_intercept_frac) frac_patient_dev / frac_sd_patient,
-        init_sd_patient_intercept = init_sd_patient,
-        init_raw_patient_intercept = if (enable_patient_intercept_init) init_patient_dev / init_sd_patient,
+        # Level-indexed intercept SDs and raw values
+        tr_sd_level_intercept = tr_sd_level,
+        tr_raw_level_intercept = tr_raw_level,
+        frac_sd_level_intercept = frac_sd_level,
+        frac_raw_level_intercept = frac_raw_level,
+        init_sd_level_intercept = init_sd_level,
+        init_raw_level_intercept = init_raw_level,
 
         # Covariate effects - all zero
-        # Note: use enable_pop_cov_* flags (not enable_trial_cov_*) for population-level coefficients
         tr_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_tr) array(rep(0, n_covar), dim = n_covar),
         frac_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_frac) array(rep(0, n_covar), dim = n_covar),
         init_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_init) array(rep(0, n_covar), dim = n_covar),
 
-        tr_sd_trial_slope = if (n_covar > 0 && enable_trial_cov_tr) array(rep(0.1, n_covar), dim = n_covar),
-        tr_raw_trial_slope = if (n_covar > 0 && enable_trial_cov_tr) matrix(0, n_trials, n_covar),
-        frac_sd_trial_slope = if (n_covar > 0 && enable_trial_cov_frac) array(rep(0.1, n_covar), dim = n_covar),
-        frac_raw_trial_slope = if (n_covar > 0 && enable_trial_cov_frac) matrix(0, n_trials, n_covar),
-        init_sd_trial_slope = if (n_covar > 0 && enable_trial_cov_init) array(rep(0.1, n_covar), dim = n_covar),
-        init_raw_trial_slope = if (n_covar > 0 && enable_trial_cov_init) matrix(0, n_trials, n_covar),
-
-        # Patient-level covariate SDs and raw effects (with small heterogeneity)
-        tr_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_tr) array(rep(0.2, n_covar), dim = n_covar),
-        tr_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_tr) matrix(rnorm(n_patients * n_covar, sd = 0.3), n_patients, n_covar),
-        frac_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_frac) array(rep(0.2, n_covar), dim = n_covar),
-        frac_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_frac) matrix(rnorm(n_patients * n_covar, sd = 0.3), n_patients, n_covar),
-        init_sd_patient_slope = if (n_covar > 0 && enable_patient_cov_init) array(rep(0.2, n_covar), dim = n_covar),
-        init_raw_patient_slope = if (n_covar > 0 && enable_patient_cov_init) matrix(rnorm(n_patients * n_covar, sd = 0.3), n_patients, n_covar),
+        # Level-indexed slope SDs and raw effects
+        # Slope SDs are always n_levels, but raw effects are sized by enabled groups only
+        tr_sd_level_slope = if (n_covar > 0) lapply(seq_len(n_levels), function(lv) {
+          rep(if (lv == n_levels) 0.2 else 0.1, n_covar)
+        }),
+        tr_raw_level_slope = if (n_covar > 0) matrix(0, n_enabled_groups_tr_slope, n_covar),
+        frac_sd_level_slope = if (n_covar > 0) lapply(seq_len(n_levels), function(lv) {
+          rep(if (lv == n_levels) 0.2 else 0.1, n_covar)
+        }),
+        frac_raw_level_slope = if (n_covar > 0) matrix(0, n_enabled_groups_frac_slope, n_covar),
+        init_sd_level_slope = if (n_covar > 0) lapply(seq_len(n_levels), function(lv) {
+          rep(if (lv == n_levels) 0.2 else 0.1, n_covar)
+        }),
+        init_raw_level_slope = if (n_covar > 0) matrix(0, n_enabled_groups_init_slope, n_covar),
 
         # Patient-level process noise (all disabled for now)
         tr_raw_patient_process_noise = if (enable_patient_process_noise_tr) {
@@ -121,21 +145,21 @@ create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_
         oe_tumor_coef_pop = if (n_tumor_covar > 0 && oe_enable_pop_tumor_cov) {
           array(replicate(n_causes, rep(0, n_tumor_covar)), dim = c(n_causes, n_tumor_covar))
         },
-        oe_sd_trial_tumor_slope = if (n_tumor_covar > 0 && oe_enable_trial_tumor_cov) {
-          array(replicate(n_causes, rep(0.1, n_tumor_covar)), dim = c(n_causes, n_tumor_covar))
-        },
-        oe_raw_trial_tumor_slope = if (n_tumor_covar > 0 && oe_enable_trial_tumor_cov) {
-          array(replicate(n_causes, matrix(0, n_trials, n_tumor_covar), simplify = FALSE), dim = c(n_causes, n_trials, n_tumor_covar))
-        },
+        # Note: oe_enable_trial_tumor_cov is scaffolded but not yet implemented in Stan
 
         oe_covar_coef_qr_pop = if (n_covar > 0 && oe_enable_pop_cov) {
           array(replicate(n_causes, rep(0, n_covar)), dim = c(n_causes, n_covar))
         },
-        oe_sd_trial_slope = if (n_covar > 0 && oe_enable_trial_cov) {
-          array(replicate(n_causes, rep(0.1, n_covar)), dim = c(n_causes, n_covar))
+        # Multi-level random slopes for non-tumor covariates
+        # These are always declared in Stan, so always provide initialization
+        # oe_sd_level_slope: array[n_causes, n_levels] vector[n_covar] -> 3D array
+        oe_sd_level_slope = if (n_covar > 0) {
+          array(0.1, dim = c(n_causes, n_levels, n_covar))
         },
-        oe_raw_trial_slope = if (n_covar > 0 && oe_enable_trial_cov) {
-          array(replicate(n_causes, matrix(0, n_trials, n_covar), simplify = FALSE), dim = c(n_causes, n_trials, n_covar))
+        # oe_raw_level_slope: array[n_causes] matrix[n_enabled_groups_oe_slope, n_covar] -> 3D array
+        # Sized by ENABLED groups only
+        oe_raw_level_slope = if (n_covar > 0) {
+          array(0, dim = c(n_causes, n_enabled_groups_oe_slope, n_covar))
         },
       )
     }) |> purrr::compact() |>
