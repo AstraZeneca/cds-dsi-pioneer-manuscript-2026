@@ -160,7 +160,7 @@ $code-bg: #f8f9fa;
 }
 
 .reveal .column {
-  flex: 1;
+  flex: 0 0 auto;  // Respect width attributes instead of equal sizing
 }
 
 // Image border styling
