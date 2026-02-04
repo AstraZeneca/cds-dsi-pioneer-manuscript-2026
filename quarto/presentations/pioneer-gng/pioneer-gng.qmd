@@ -1032,9 +1032,46 @@ ppc_spop_pfs |>
 
 # Previous Applications
 
-## Previous Applications {.smaller}
+## Forecasting Proof of Concept with Breast-01 to Breast-04
 
-*Content to be added*
+:::: {.columns style="align-items: center;"}
+
+::: {.column width="45%"}
+
+- Modelling of Breast trials showed that **median PFS can be well constrained earlier in the trial** - it may not be necessary to wait for completion
+
+- **Early Breast forecasts were consistent with final outcomes**
+
+- Application to LUNG endometrial trial provided study team with **live forecasts of mPFS, PFS6 and ORR endpoints from DCO 1** (given as 80% and 50% likely ranges)
+
+:::
+
+::: {.column width="55%"}
+
+![](images/db-sim.png){fig-align="center" width="100%"}
+
+:::
+
+::::
+
+
+## LUNG DCO3 Forecast: Go/No-Go Decision Support {.smaller}
+
+:::: {.columns style="align-items: center;"}
+
+::: {.column width="80%"}
+
+![](images/lung-gng.png){fig-align="center" width="80%"}
+
+:::
+
+::: {.column width="20%"}
+
+![](images/lung-gng-info.png){fig-align="left" width="100%"}
+
+:::
+
+::::
 
 
 # {visibility="hidden"}
