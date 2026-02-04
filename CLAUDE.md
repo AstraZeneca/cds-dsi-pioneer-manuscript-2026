@@ -281,6 +281,11 @@ Analysis results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<ru
 - Always use explicit `store` argument: `tar_read(name, store = "path/_targets")`
 - Same applies to all targets functions: `tar_meta()`, `tar_load()`, etc.
 
+### Quarto and Documentation
+- **Always use "SCLC-01"** when referring to the trial in user-facing text (documentation, plots, presentations)
+- Use lowercase "sclc" only for code identifiers (variable names, trial codes, file paths)
+- Example: Write "SCLC-01 trial" in figure captions, but `filter(trial == "sclc")` in R code
+
 ### Adding Module Parameters
 1. Add feature flag in `modules/<module>/flags.stan`
 2. Add hyperparameters in `modules/<module>/hyperparams.stan`
