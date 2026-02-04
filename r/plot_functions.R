@@ -38,6 +38,8 @@ plot_outcome_by_pdl1_and_trial <- function(res_data, outcome, .width = c(0.5, 0.
       space = "free",
       labeller = labeller(trial = str_to_upper, variable = c("all" = "All", "pdl1_naive" = "First Line", "part_e_pdl1" = "Part E"))
     ) +
+    labs(caption = "Points show posterior median; inner bars show 50% credible intervals,\nouter bars show 90% credible intervals.") +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
     NULL
 }
 
@@ -58,8 +60,14 @@ plot_baseline_hazard <- function(res_data, lambda_var, ...) {
       }
     ) +
     stat_lineribbon(aes(ydist = {{ lambda_var }}, fill = fit_type, color = fit_type), alpha = 0.25, linewidth = 0, .width = 0.8) +
-    labs(y = "Baseline Hazard") +
-    theme(legend.position = "bottom")
+    labs(
+      y = "Baseline Hazard",
+      caption = "Ribbons represent 80% credible intervals; faint lines show 25 posterior draws."
+    ) +
+    theme(
+      legend.position = "bottom",
+      plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))
+    )
 }
 
 plot_crcr_baseline_hazard <- function(res_data, analysis_data = NULL) {
@@ -108,8 +116,14 @@ plot_unclassified_survival <- function(res_data, analysis_data, conf_resp_hb) {
     ) +
     scale_alpha_manual("", values = c(prior = 0.125, posterior = 0.25)) +
     scale_linetype_manual("", values = c(Observed = "dotted")) +
-    labs(y = "Count") +
-    theme(legend.position = "bottom") +
+    labs(
+      y = "Count",
+      caption = "Ribbons represent 50% and 80% credible intervals; lines show posterior median."
+    ) +
+    theme(
+      legend.position = "bottom",
+      plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))
+    ) +
     guides(alpha = "none") +
     NULL
 }
@@ -119,7 +133,11 @@ plot_cif <- function(res_data, obs_cif_data) {
     stat_lineribbon(aes(x = t, ydist = trial_cif, fill = fit_type), linewidth = 0, alpha = 0.25, .width = c(0.5, 0.8)) +
     geom_step(aes(x = time, y = estimate, linetype = "Observed"), direction = "vh", data = \(d) semi_join(obs_cif_data, d, by = "trial")) +
     scale_linetype_manual("", values = c(Observed = "dashed")) +
-    labs(y = "CIF") +
+    labs(
+      y = "CIF",
+      caption = "Ribbons represent 50% and 80% credible intervals around cumulative incidence."
+    ) +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
     NULL
 }
 
@@ -133,9 +151,18 @@ plot_hazard_ratio <- function(res_data) {
     ) +
     geom_vline(xintercept = 1, linetype = "dotted") +
     scale_alpha_manual("", values = c(prior = 0.125, posterior = 0.25)) +
-    labs(x = "Hazard Ratio", y = "Density") +
+    labs(
+      x = "Hazard Ratio",
+      y = "Density",
+      caption = "Ribbons represent 50% and 80% credible intervals; lines show posterior median."
+    ) +
     guides(alpha = "none") +
-    theme(legend.position = "bottom", strip.text.y.left = element_text(angle = 0), strip.placement = "outside") +
+    theme(
+      legend.position = "bottom",
+      strip.text.y.left = element_text(angle = 0),
+      strip.placement = "outside",
+      plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))
+    ) +
     NULL
 }
 
@@ -190,7 +217,10 @@ plot_surv_ppc <- function(ppc_data, surv_interval_col, ic_col, rc_col, rep_surv_
     }) +
     scale_color_discrete("", type = AZ_palette, label = c("FALSE" = "Non-response", "TRUE" = "Response"), aesthetic = c("color", "fill")) +
     # scale_color_ramp_discrete() +
-    labs(y = "") +
+    labs(
+      y = "",
+      caption = "Horizontal bars represent 50% and 80% credible intervals for predicted survival times."
+    ) +
     facet_grid(
       vars(trial),
       scales = "free_y",
@@ -203,7 +233,8 @@ plot_surv_ppc <- function(ppc_data, surv_interval_col, ic_col, rc_col, rep_surv_
       panel.grid.major.y = element_blank(),
       panel.grid.minor.y = element_blank(),
       legend.position = "top",
-      strip.text.y.left = element_text(angle = 0)
+      strip.text.y.left = element_text(angle = 0),
+      plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))
     ) +
     guides(
       color_ramp = "none", # Remove the interval legend
@@ -258,9 +289,15 @@ base_plot_km <- function(
     #   fill = NA,
     #   show.legend = FALSE
     # ) +
-    labs(y = "Survival Probability") +
+    labs(
+      y = "Survival Probability",
+      caption = "Ribbons represent 80% credible intervals; lines show posterior median survival curves."
+    ) +
     guides(alpha = "none") +
-    theme(legend.position = "bottom")
+    theme(
+      legend.position = "bottom",
+      plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))
+    )
 
   if (!is_null(obs_km_data)) {
     pobj <- pobj +
@@ -303,7 +340,12 @@ plot_gng <- function(res_data, outcome, lrv_tv, model_type_names) {
     scale_color_discrete("Sample", type = AZ_palette, labels = \(l) str_replace(l, "_", " ") |> str_to_title()) +
     scale_color_ramp_discrete(name = "Credible Intervals") +
     facet_grid(vars(model_type), switch = "y", labeller = labeller(model_type = model_type_names)) +
-    theme(strip.placement = "outside", strip.text.y.left = element_text(angle = 0))
+    labs(caption = "Horizontal bars represent 60% and 80% credible intervals around the median.") +
+    theme(
+      strip.placement = "outside",
+      strip.text.y.left = element_text(angle = 0),
+      plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))
+    )
 }
 
 plot_simple_gng <- function(
@@ -334,6 +376,8 @@ plot_simple_gng <- function(
     scale_y_discrete("", labels = model_type_names) +
     scale_color_discrete("Sample", type = AZ_palette, labels = \(l) str_replace(l, "_", " ") |> str_to_title()) +
     scale_color_ramp_discrete(name = "Credible Intervals", range = c(0.25, 0.5)) +
+    labs(caption = "Horizontal bars represent 60% and 80% credible intervals around the median.") +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
     NULL
 }
 
@@ -390,6 +434,8 @@ plot_prior_post_dens <- function(res_data, param = .value, normalize = "all") {
     scale_fill_discrete("", type = AZ_palette, label = str_to_title) +
     scale_colour_discrete("", type = AZ_palette, label = str_to_title) +
     scale_y_continuous("", breaks = NULL) +
+    labs(caption = "Points show posterior median; intervals represent 50%, 80%, and 99%\ncredible intervals.") +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
     NULL
 }
 
@@ -411,7 +457,12 @@ plot_corr_decay <- function(res_data, param = .value) {
     stat_lineribbon(aes(ydist = {{ param }}, fill = fit_type, color = fit_type), alpha = 0.25, .width = c(0.5, 0.8), linewidth = 0.5) +
     scale_fill_discrete("", type = AZ_palette, label = str_to_title) +
     scale_colour_discrete("", type = AZ_palette, label = str_to_title) +
-    labs(x = "Week", y = "Correlation") +
+    labs(
+      x = "Week",
+      y = "Correlation",
+      caption = "Ribbons represent 50% and 80% credible intervals; lines show posterior median."
+    ) +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
     NULL
 }
 
@@ -427,7 +478,9 @@ plot_dynamics <- function(data, var, expect_rvar = TRUE, na.rm = FALSE) {
   pobj +
     geom_point(aes(y = mmsumdiam), color = AZ_navy, size = 1.5, alpha = 0.75) +
     scale_fill_discrete("Stage", type = AZ_palette, label = c("obs" = "Observed", "forecast" = "Forecast")) +
+    labs(caption = "Ribbons represent 50% and 80% credible intervals;\nlines show posterior median tumor dynamics.") +
     facet_wrap(vars(i), scales = "free") +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
     NULL
 }
 
@@ -444,7 +497,12 @@ plot_level_param <- function(res_data, param = .value) {
     scale_color_discrete("", type = AZ_palette, label = str_to_title) +
     scale_fill_discrete("", type = AZ_palette, label = str_to_title) +
     scale_x_continuous("") +
-    labs(y = "", breaks = NULL) +
+    labs(
+      y = "",
+      breaks = NULL,
+      caption = "Ribbons represent credible intervals; lines show posterior median."
+    ) +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
     NULL
 }
 
@@ -458,9 +516,13 @@ plot_level_rates <- function(res_data) {
     scale_color_discrete("", type = AZ_palette, label = str_to_title) +
     scale_fill_discrete("", type = AZ_palette, label = str_to_title) +
     scale_x_continuous("") +
-    labs(y = "") +
+    labs(
+      y = "",
+      caption = "Ribbons represent credible intervals; lines show posterior median."
+    ) +
     facet_wrap(vars(.variable), scales = "free") + #, labeller = labeller(.variable = \(l) str_remove(l, "log_"))) +
     # coord_cartesian(xlim = c(0, 10)) +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
     NULL
 }
 
@@ -475,6 +537,8 @@ plot_level_decrease_prop <- function(res_data) {
     scale_fill_discrete("", type = AZ_palette, label = str_to_title) +
     scale_x_continuous("", breaks = seq(-1, 1, 0.2)) +
     scale_y_continuous("", breaks = NULL) +
+    labs(caption = "Ribbons represent credible intervals; lines show posterior median.") +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
     NULL
 }
 
@@ -610,7 +674,9 @@ plot_ssls_coef <- function(res_data, name_var = n, ...) {
   res_data |>
     ggplot(aes(y = {{ name_var }})) +
     stat_pointinterval(aes(xdist = .value, ...), point_size = 1, position = "dodge", .width = c(0.5, 0.8)) +
-    geom_vline(xintercept = 0)
+    geom_vline(xintercept = 0) +
+    labs(caption = "Points show posterior median; inner bars show 50% credible intervals,\nouter bars show 80% credible intervals.") +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6)))
 }
 
 # Prepare data for plotting
@@ -681,9 +747,12 @@ plot_pfs_ppc <- function(data, pfs_var = spop_target_pfs, label_patients = FALSE
       labels = c(death = "Death", target_pd = "Target PD", nontarget_pd = "Non-target PD"),
       type = AZ_palette
     ) +
-    labs(caption = "Restricted to uncensored patients.") +
+    labs(caption = "Points show posterior median with 80% credible intervals.\nRestricted to uncensored patients.") +
     facet_wrap(vars(trial), scales = "free", labeller = labeller(trial = str_to_upper)) +
-    theme(legend.position = "bottom") +
+    theme(
+      legend.position = "bottom",
+      plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))
+    ) +
     NULL
 
   if (label_patients) {
