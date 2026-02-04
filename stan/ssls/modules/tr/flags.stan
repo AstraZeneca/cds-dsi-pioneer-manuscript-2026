@@ -1,14 +1,18 @@
 // tr/flags.stan
 // Module: Total Rate (tr)
 // Defines gating flags for total rate module. Population intercept always on.
-// See docs Section 2.3 / 2.4.
+// Multi-level hierarchy: flags are arrays indexed by level (1..n_levels)
 
-int<lower=0,upper=1> enable_pop_cov_tr;           // population covariate linear model
-int<lower=0,upper=1> enable_trial_intercept_tr;    // trial random intercept hierarchy
-int<lower=0,upper=1> enable_trial_cov_tr;          // trial slope deviations (QR)
-int<lower=0,upper=1> enable_patient_intercept_tr;  // patient random intercept hierarchy
-int<lower=0,upper=1> enable_patient_cov_tr;        // patient slope deviations (QR)
-int<lower=0,upper=1> enable_patient_process_noise_tr; // patient-level process noise
-int<lower=0,upper=1> enable_patient_process_noise_sd_tr; // patient-level hierarchy for process noise SD
-int<lower=0,upper=1> enable_patient_process_noise_phi_tr; // patient-level hierarchy for process noise phi
-int<lower=0,upper=1> enable_pop_process_noise_tr; // population-level time-varying process noise 
+int<lower=0,upper=1> enable_pop_cov_tr;  // population covariate linear model
+
+// Per-level flags for hierarchical intercepts and slopes
+// Index 1 = first grouping level (e.g., trial)
+// Index n_levels = patient level
+array[n_levels] int<lower=0,upper=1> enable_level_intercept_tr;
+array[n_levels] int<lower=0,upper=1> enable_level_cov_tr;
+
+// Process noise flags (patient-specific features, unchanged)
+int<lower=0,upper=1> enable_patient_process_noise_tr;
+int<lower=0,upper=1> enable_patient_process_noise_sd_tr;
+int<lower=0,upper=1> enable_patient_process_noise_phi_tr;
+int<lower=0,upper=1> enable_pop_process_noise_tr; 

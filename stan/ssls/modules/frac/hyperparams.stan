@@ -1,28 +1,17 @@
 // frac/hyperparams.stan
 // Hyperparameter (data) declarations for Fraction Mix (frac) module.
-// Mapping old legacy names -> new:
-//   pop_decrease_frac_logit_mean  -> frac_logit_loc_pop_mean
-//   pop_decrease_frac_logit_sd    -> frac_logit_loc_pop_sd
-//   trial_decrease_frac_logit_coef_sd_sd -> frac_sd_trial_slope_sd (per-covariate of slope SD)
-//   patient_decrease_frac_logit_coef_sd_sd -> frac_sd_patient_slope_sd
-//   patient_decrease_frac_logit_sd_sd -> frac_sd_patient_intercept_sd
-//   (trial intercept SD prior previously borrowed total-rate naming; introduce explicit:) trial_decrease_frac_logit_sd_sd -> frac_sd_trial_intercept_sd (if exists later)
-// Covariate coefficient hyperparams:
-//   pop_decrease_frac_logit_coef_mean -> frac_coef_pop_mean
-//   pop_decrease_frac_logit_coef_sd   -> frac_coef_pop_sd
+// Multi-level hierarchy: hyperparameters are arrays indexed by level (1..n_levels)
 
 // Population intercept (logit scale of decrease fraction)
 real frac_logit_loc_pop_mean;
 real<lower=0> frac_logit_loc_pop_sd;
 
-// Intercept hierarchy SD prior scales
-real<lower=0> frac_sd_trial_intercept_sd;   // may be repurposed from existing trial frac intercept hyperparam (define in R later if missing)
-real<lower=0> frac_sd_patient_intercept_sd; // from patient_decrease_frac_logit_sd_sd
+// Hierarchical intercept prior scale hyperparameters - one per level
+array[n_levels] real<lower=0> frac_sd_level_intercept_sd;
 
 // QR-space coefficient hyperparameters (applied in model block)
-vector[n_covar] frac_coef_qr_pop_mean;                   // mean for QR coefficients (typically 0)
-vector<lower=0>[n_covar] frac_coef_qr_pop_sd;            // sd for QR coefficients (typically 1)
+vector[n_covar] frac_coef_qr_pop_mean;
+vector<lower=0>[n_covar] frac_coef_qr_pop_sd;
 
-// Per-covariate slope SD hyperpriors
-row_vector<lower=0>[n_covar] frac_sd_trial_slope_sd;
-row_vector<lower=0>[n_covar] frac_sd_patient_slope_sd;
+// Hierarchical slope SD hyperpriors - one vector per level
+array[n_levels] row_vector<lower=0>[n_covar] frac_sd_level_slope_sd;

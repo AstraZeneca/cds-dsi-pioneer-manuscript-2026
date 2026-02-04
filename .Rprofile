@@ -2,7 +2,13 @@ if (file.exists("~/.Rprofile")) {
   source("~/.Rprofile")
 }
 
-source("renv/activate.R")
+# Find and activate renv - try relative path first (when R starts from project root),
+# then fall back to here::here() for other cases (like Quarto subdirectories)
+if (file.exists("renv/activate.R")) {
+  source("renv/activate.R")
+} else if (requireNamespace("here", quietly = TRUE)) {
+  source(here::here("renv", "activate.R"))
+}
 
 # if (is_domino) {
 data_path <- Sys.getenv("DOMINO_DATASETS_DIR")

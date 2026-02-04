@@ -26,6 +26,6 @@ array[n_causes] vector<lower=0>[n_tumor_covar] oe_tumor_coef_pop_sd;
 array[n_causes] vector[n_covar] oe_covar_coef_qr_pop_mean;
 array[n_causes] vector<lower=0>[n_covar] oe_covar_coef_qr_pop_sd;
 
-// --- Proportional Hazard: Trial-level Random Slope SDs ---
-// Non-tumor covariate random slopes
-array[n_causes] row_vector<lower=0>[n_covar] oe_sd_trial_slope_sd;
+// --- Proportional Hazard: Multi-level Random Slope SDs ---
+// Non-tumor covariate random slopes - one vector per cause per level
+array[n_causes, n_levels] row_vector<lower=0>[n_covar] oe_sd_level_slope_sd;

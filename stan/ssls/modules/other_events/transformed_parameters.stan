@@ -137,22 +137,42 @@ if (n_causes > 0 && oe_enable_pop_tumor_cov) {
 }
 
 // Compute time-INVARIANT non-tumor covariate effects if enabled
-if (n_causes > 0 && (oe_enable_pop_cov || oe_enable_trial_cov)) {
+// sum(oe_enable_level_cov) > 0 means at least one level has covariates enabled
+if (n_causes > 0 && (oe_enable_pop_cov || sum(oe_enable_level_cov) > 0)) {
   for (k in 1:n_causes) {
     vector[n_patients] covar_linpred = rep_vector(0, n_patients);
-    
+
     // Population-level non-tumor covariate effects (QR space)
     if (oe_enable_pop_cov) {
       covar_linpred = Q_covar_design_matrix * oe_covar_coef_qr_pop[k];
     }
-    
-    // Trial-level random non-tumor slopes (additive)
-    if (oe_enable_trial_cov) {
-      matrix[n_trials, n_covar] trial_slope_qr = oe_raw_trial_slope[k] .* rep_matrix(oe_sd_trial_slope[k], n_trials);
-      covar_linpred += rows_dot_product(Q_covar_design_matrix, 
-                                        trial_slope_qr[patient_trial]);
+
+    // Multi-level random non-tumor slopes (additive across levels)
+    // Optimized: uses pre-computed flat indices from transformed_data
+    if (n_covar > 0 && n_enabled_groups_oe_slope > 0) {
+      // Step 1: Scale all raw slope effects at once for this cause
+      matrix[n_enabled_groups_oe_slope, n_covar] oe_scaled_level_slope_k;
+      for (lv in 1:n_levels) {
+        if (oe_enable_level_cov[lv]) {
+          int lv_start, lv_end;
+          (lv_start, lv_end) = get_pos(enabled_level_pos_oe_slope, lv);
+          oe_scaled_level_slope_k[lv_start:lv_end, :] =
+            oe_raw_level_slope[k, lv_start:lv_end, :] .*
+            rep_matrix(oe_sd_level_slope[k, lv]', lv_end - lv_start + 1);
+        }
+      }
+
+      // Step 2: Gather and compute dot products using pre-computed flat indices
+      for (lv in 1:n_levels) {
+        if (oe_enable_level_cov[lv]) {
+          covar_linpred += rows_dot_product(
+            Q_covar_design_matrix,
+            oe_scaled_level_slope_k[patient_oe_slope_flat_idx[, lv], :]
+          );
+        }
+      }
     }
-    
+
     // Total log hazard ratio (only non-tumor covariates, no tumor effects here)
     oe_time_invariant_log_hazard_ratio[k] = covar_linpred;
   }
