@@ -1,0 +1,437 @@
+---
+title: "DCO Comparisons"
+subtitle: "Comparing results across data cutoff dates"
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+source("_setup.R")
+
+# Load multi-DCO data for comparisons
+orr_list <- list(
+  apr25 = tar_read(all_tumor_ssls_orr_rvar_ctdna_apr25),
+  aug25 = tar_read(all_tumor_ssls_orr_rvar_ctdna_aug25),
+  jan26 = jan26_orr_data
+)
+cond_orr_list <- list(
+  apr25 = tar_read(all_tumor_ssls_cond_orr_rvar_ctdna_apr25),
+  aug25 = tar_read(all_tumor_ssls_cond_orr_rvar_ctdna_aug25),
+  jan26 = jan26_cond_orr_data
+)
+
+quant_pfs_list <- list(
+  apr25 = tar_read(all_tumor_ssls_trial_quant_pfs_ctdna_apr25),
+  aug25 = tar_read(all_tumor_ssls_trial_quant_pfs_ctdna_aug25),
+  jan26 = jan26_quant_pfs_data
+)
+cond_quant_pfs_list <- list(
+  apr25 = tar_read(all_tumor_ssls_cond_quant_pfs_ctdna_apr25),
+  aug25 = tar_read(all_tumor_ssls_cond_quant_pfs_ctdna_aug25),
+  jan26 = jan26_cond_quant_pfs_data
+)
+
+# Observed KM data for median PFS plot
+obs_km_list <- list(
+  apr25 = list(
+    all = tar_read(km_trial_pfs_ctdna_apr25),
+    pdl1_naive = tar_read(km_trial_pfs_pdl1_naive_ctdna_apr25),
+    pdl1 = tar_read(km_trial_pfs_pdl1_ctdna_apr25),
+    naive = tar_read(km_trial_pfs_naive_ctdna_apr25)
+  ),
+  aug25 = list(
+    all = tar_read(km_trial_pfs_ctdna_aug25),
+    pdl1_naive = tar_read(km_trial_pfs_pdl1_naive_ctdna_aug25),
+    pdl1 = tar_read(km_trial_pfs_pdl1_ctdna_aug25),
+    naive = tar_read(km_trial_pfs_naive_ctdna_aug25)
+  ),
+  jan26 = list(
+    all = jan26_obs_km_all,
+    pdl1_naive = jan26_obs_km_pdl1_naive,
+    pdl1 = jan26_obs_km_pdl1,
+    naive = jan26_obs_km_first_line
+  )
+)
+
+pfs_n_list <- list(
+  apr25 = tar_read(all_tumor_ssls_forecast_target_pfs_n_rvar_ctdna_apr25),
+  aug25 = tar_read(all_tumor_ssls_forecast_target_pfs_n_rvar_ctdna_aug25),
+  jan26 = jan26_pfs_n_data
+)
+cond_pfs_n_list <- list(
+  apr25 = tar_read(all_tumor_ssls_cond_forecast_target_pfs_n_rvar_ctdna_apr25),
+  aug25 = tar_read(all_tumor_ssls_cond_forecast_target_pfs_n_rvar_ctdna_aug25),
+  jan26 = jan26_cond_pfs_n_data
+)
+```
+
+This page compares clinical endpoint estimates across different data cutoff (DCO) dates to track how predictions evolve as more data becomes available.
+
+::: {.callout-tip}
+## Related Pages
+- See [Clinical Endpoints](../analysis/clinical-endpoints.qmd) for endpoint definitions
+- See [Survival Analysis](../analysis/survival-analysis.qmd) for latest KM curves
+:::
+
+## Overall Response Rate by DCO {#sec-orr-dco}
+
+Comparing ORR estimates across data cutoffs shows how response rate predictions stabilize with additional follow-up.
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+```{r}
+#| label: fig-orr-dco-sample
+#| fig-cap: Sample-based overall response rate (ORR), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
+#| fig-height: 10
+
+plot_orr_by_dco("sample", orr_list, cond_orr_list)
+```
+
+### Superpopulation
+
+```{r}
+#| label: fig-orr-dco-spop
+#| fig-cap: Superpopulation overall response rate (ORR), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
+#| fig-height: 10
+
+plot_orr_by_dco("spop", orr_list, cond_orr_list)
+```
+
+:::
+
+## Median PFS by DCO {#sec-median-pfs-dco}
+
+Tracking median PFS estimates across data cutoffs, comparing model forecasts with observed Kaplan-Meier estimates.
+
+```{=html}
+<style>
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 24px;
+  margin-right: 0.75rem;
+}
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: .4s;
+  border-radius: 24px;
+}
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+input:checked + .toggle-slider {
+  background-color: #003865;
+}
+input:checked + .toggle-slider:before {
+  transform: translateX(26px);
+}
+#median-pfs-sample-with-obs, #median-pfs-spop-with-obs {
+  display: none;
+}
+</style>
+
+<div style="margin-bottom: 1rem;">
+  <label style="display: inline-flex; align-items: center; cursor: pointer; font-weight: 500;">
+    <span class="toggle-switch">
+      <input type="checkbox" id="show-observed-toggle" onchange="toggleObservedKM(this.checked)">
+      <span class="toggle-slider"></span>
+    </span>
+    Show Observed KM Estimates
+  </label>
+</div>
+```
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+::: {#median-pfs-sample-with-obs}
+```{r}
+#| label: fig-median-pfs-dco-sample-with-obs
+#| fig-cap: Sample-based median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
+#| fig-width: 10
+#| fig-height: 6
+
+plot_median_pfs_by_dco("sample", quant_pfs_list, cond_quant_pfs_list, obs_km_list, show_observed = TRUE)
+```
+:::
+
+::: {#median-pfs-sample-without-obs}
+```{r}
+#| label: fig-median-pfs-dco-sample-without-obs
+#| fig-cap: Sample-based median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs. Model forecasts only.
+#| fig-width: 10
+#| fig-height: 6
+
+plot_median_pfs_by_dco("sample", quant_pfs_list, cond_quant_pfs_list, obs_km_list, show_observed = FALSE)
+```
+:::
+
+### Superpopulation
+
+::: {#median-pfs-spop-with-obs}
+```{r}
+#| label: fig-median-pfs-dco-spop-with-obs
+#| fig-cap: Superpopulation median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
+#| fig-width: 10
+#| fig-height: 6
+
+plot_median_pfs_by_dco("spop", quant_pfs_list, cond_quant_pfs_list, obs_km_list, show_observed = TRUE)
+```
+:::
+
+::: {#median-pfs-spop-without-obs}
+```{r}
+#| label: fig-median-pfs-dco-spop-without-obs
+#| fig-cap: Superpopulation median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs. Model forecasts only.
+#| fig-width: 10
+#| fig-height: 6
+
+plot_median_pfs_by_dco("spop", quant_pfs_list, cond_quant_pfs_list, obs_km_list, show_observed = FALSE)
+```
+:::
+
+:::
+
+```{=html}
+<script>
+function toggleObservedKM(show) {
+  document.getElementById('median-pfs-sample-with-obs').style.display = show ? 'block' : 'none';
+  document.getElementById('median-pfs-sample-without-obs').style.display = show ? 'none' : 'block';
+  document.getElementById('median-pfs-spop-with-obs').style.display = show ? 'block' : 'none';
+  document.getElementById('median-pfs-spop-without-obs').style.display = show ? 'none' : 'block';
+}
+</script>
+```
+
+::: {.callout-note}
+## Interpreting the Plot
+- **Diamond markers**: Model forecast with 90% credible interval
+- **Circle markers**: Observed KM median with confidence interval (toggle above)
+- **Arrows**: Indicate median PFS not yet reached (right-censored)
+:::
+
+## PFS-n by DCO {#sec-pfs-n-dco}
+
+Comparing PFS at fixed timepoints across data cutoffs.
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+```{r}
+#| label: fig-pfs-n-dco-sample
+#| fig-cap: Sample-based progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
+#| fig-width: 10
+
+plot_pfs_n_by_dco("sample", pfs_n_list, cond_pfs_n_list, pfs_timepoints)
+```
+
+### Superpopulation
+
+```{r}
+#| label: fig-pfs-n-dco-spop
+#| fig-cap: Superpopulation progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
+#| fig-width: 10
+
+plot_pfs_n_by_dco("spop", pfs_n_list, cond_pfs_n_list, pfs_timepoints)
+```
+
+:::
+
+## Kaplan-Meier Curves by DCO {#sec-km-dco}
+
+Comparing Kaplan-Meier survival curves across data cutoffs.
+
+### By Cohort
+
+Kaplan-Meier curves for SCLC showing All patients, First Line patients, and Part E patients across data cutoffs.
+
+::: {.panel-tabset}
+
+#### Sample-Based
+
+```{r}
+#| label: fig-km-dco-sample
+#| fig-cap: Sample-based Kaplan-Meier forecasts for SCLC across cohorts and data cutoffs.
+#| column: body-outset
+#| fig-width: 9
+#| fig-height: 7
+
+plot_sclc_km_by_dco(
+  estimate_type = "sample",
+  all_km_list = list(
+    apr25 = tar_read(all_tumor_ssls_km_rvar_ctdna_apr25),
+    aug25 = tar_read(all_tumor_ssls_km_rvar_ctdna_aug25),
+    jan26 = tar_read(all_tumor_ssls_km_rvar_ctdna_jan26)
+  ),
+  cond_km_list = list(
+    apr25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_apr25),
+    aug25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_aug25),
+    jan26 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26)
+  ),
+  obs_km_all_list = list(
+    apr25 = tar_read(km_trial_pfs_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_ctdna_jan26)
+  ),
+  obs_km_first_line_list = list(
+    apr25 = tar_read(km_trial_pfs_naive_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_naive_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_naive_ctdna_jan26)
+  ),
+  analysis_data_list = list(
+    apr25 = tar_read(all_analysis_data_ctdna_apr25),
+    aug25 = tar_read(all_analysis_data_ctdna_aug25),
+    jan26 = tar_read(all_analysis_data_ctdna_jan26)
+  )
+)
+```
+
+#### Superpopulation
+
+```{r}
+#| label: fig-km-dco-spop
+#| fig-cap: Superpopulation Kaplan-Meier forecasts for SCLC across cohorts and data cutoffs.
+#| column: body-outset
+#| fig-width: 9
+#| fig-height: 7
+
+plot_sclc_km_by_dco(
+  estimate_type = "spop",
+  all_km_list = list(
+    apr25 = tar_read(all_tumor_ssls_km_rvar_ctdna_apr25),
+    aug25 = tar_read(all_tumor_ssls_km_rvar_ctdna_aug25),
+    jan26 = tar_read(all_tumor_ssls_km_rvar_ctdna_jan26)
+  ),
+  cond_km_list = list(
+    apr25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_apr25),
+    aug25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_aug25),
+    jan26 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26)
+  ),
+  obs_km_all_list = list(
+    apr25 = tar_read(km_trial_pfs_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_ctdna_jan26)
+  ),
+  obs_km_first_line_list = list(
+    apr25 = tar_read(km_trial_pfs_naive_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_naive_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_naive_ctdna_jan26)
+  ),
+  analysis_data_list = list(
+    apr25 = tar_read(all_analysis_data_ctdna_apr25),
+    aug25 = tar_read(all_analysis_data_ctdna_aug25),
+    jan26 = tar_read(all_analysis_data_ctdna_jan26)
+  )
+)
+```
+
+:::
+
+### PDL1-Stratified
+
+Kaplan-Meier curves stratified by PDL1 status (High vs Low) for All patients, First Line patients, and Part E patients across data cutoffs.
+
+::: {.panel-tabset}
+
+#### Sample-Based
+
+```{r}
+#| label: fig-km-dco-sample-pdl1
+#| fig-cap: Sample-based PDL1-stratified Kaplan-Meier forecasts for SCLC across cohorts and data cutoffs.
+#| column: body-outset
+#| fig-width: 9
+#| fig-height: 7
+
+plot_km_pdl1_by_dco(
+  cond_km_data_list = list(
+    apr25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_apr25),
+    aug25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_aug25),
+    jan26 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26)
+  ),
+  obs_km_all_list = list(
+    apr25 = tar_read(km_trial_pfs_pdl1_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_pdl1_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_pdl1_ctdna_jan26)
+  ),
+  obs_km_first_line_list = list(
+    apr25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_pdl1_naive_ctdna_jan26)
+  ),
+  obs_km_part_e_list = list(
+    apr25 = tar_read(km_trial_pfs_part_e_pdl1_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_part_e_pdl1_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_part_e_pdl1_ctdna_jan26)
+  ),
+  estimate_type = "sample"
+)
+```
+
+#### Superpopulation
+
+```{r}
+#| label: fig-km-dco-spop-pdl1
+#| fig-cap: Superpopulation PDL1-stratified Kaplan-Meier forecasts for SCLC across cohorts and data cutoffs.
+#| column: body-outset
+#| fig-width: 9
+#| fig-height: 7
+
+plot_km_pdl1_by_dco(
+  cond_km_data_list = list(
+    apr25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_apr25),
+    aug25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_aug25),
+    jan26 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26)
+  ),
+  obs_km_all_list = list(
+    apr25 = tar_read(km_trial_pfs_pdl1_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_pdl1_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_pdl1_ctdna_jan26)
+  ),
+  obs_km_first_line_list = list(
+    apr25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_pdl1_naive_ctdna_jan26)
+  ),
+  obs_km_part_e_list = list(
+    apr25 = tar_read(km_trial_pfs_part_e_pdl1_ctdna_apr25),
+    aug25 = tar_read(km_trial_pfs_part_e_pdl1_ctdna_aug25),
+    jan26 = tar_read(km_trial_pfs_part_e_pdl1_ctdna_jan26)
+  ),
+  estimate_type = "spop"
+)
+```
+
+:::
+
+::: {.related-pages}
+## Related Pages
+
+- [Clinical Endpoints](../analysis/clinical-endpoints.qmd) - Latest endpoint estimates
+- [Survival Analysis](../analysis/survival-analysis.qmd) - Kaplan-Meier curves
+- [Model Validation](../analysis/model-validation.qmd) - Cross-validation results
+:::
