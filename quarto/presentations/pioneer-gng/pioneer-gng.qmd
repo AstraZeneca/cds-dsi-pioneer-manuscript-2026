@@ -698,14 +698,223 @@ plot_km_pdl1_by_dco(
 
 # Model Validation
 
-## Model Validation {.smaller}
+## Out-of-Sample RECIST Prediction Sensitivity {.smaller}
 
-*Content to be added*
+:::: {.columns}
+
+::: {.column width="48%"}
+
+```{r oos-confusion-matrix}
+#| fig-width: 8
+#| fig-height: 7
+#| cache: true
+
+oos_confusion_matrix <- tar_read(oos_confusion_matrix_ctdna_jan26, store = lfo_store)
+plot_oos_confusion_matrix(oos_confusion_matrix) +
+  labs(title = "RECIST Category Sensitivity") +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12),
+    legend.text = element_text(size = 12),
+    plot.caption = element_text(size = 10)
+  )
+```
+
+:::
+
+::: {.column width="52%"}
+
+```{r oos-confusion-sankey}
+#| fig-width: 9
+#| fig-height: 7
+#| cache: true
+
+plot_oos_confusion_sankey(oos_confusion_matrix) +
+  labs(title = "RECIST Response Flow Diagram") +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    axis.text = element_text(size = 11),
+    legend.text = element_text(size = 12)
+  )
+```
+
+:::
+
+::::
+
+<br>
+
+**Key Findings:**
+
+- Confusion matrix shows **sensitivity (recall)** for each RECIST category: P(Predicted | Observed)
+- Cross-validated RECIST predictions show **70-80% sensitivity** across response categories
+- Model effectively captures progression and response patterns from tumor dynamics alone
+
+
+## RECIST Prediction Sensitivity Over Time {.smaller}
+
+```{r recist-sensitivity-timeline}
+#| fig-width: 14
+#| fig-height: 8
+#| cache: true
+
+tar_read(full_oos_confusion_matrix_ctdna_jan26, store = lfo_store) |>
+  plot_recist_sensitivity_over_time(base_size = 14) +
+  labs(
+    title = "RECIST Prediction Sensitivity Across Trial Timeline",
+    caption = "Ribbon shows 80% credible interval of cumulative mean; line shows cumulative median.\nDashed lines indicate data cutoff dates (DCO1: Apr 2025, DCO2: Aug 2025, DCO3: Jan 2026)."
+  ) +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12),
+    strip.text = element_text(size = 14, face = "bold"),
+    legend.text = element_text(size = 12),
+    plot.caption = element_text(size = 11, hjust = 0)
+  )
+```
+
+<br>
+
+**Interpretation:**
+
+- **Stable performance**: Sensitivity remains consistent at **70-80%** as more data accrues
+- **Early prediction**: High accuracy achieved well before DCO2 and DCO3
+- **Category-specific**: Progressive Disease (PD) shows highest sensitivity; Partial Response (PR) most challenging
+
+
+## Leave-Future-Out Cross-Validation {.smaller}
+
+:::: {.columns}
+
+::: {.column width="42%"}
+
+**Why Leave-Future-Out (LFO)?**
+
+- **Respects temporal structure**: Holds out all future observations from a cutoff point
+- **Prevents information leakage**: Cannot use future data to predict the past
+- **Realistic prediction task**: Mimics real-world forecasting scenario
+
+<br>
+
+```{r lfo-vs-loo-diagram}
+#| fig-width: 7
+#| fig-height: 5
+
+source(here("r/plot_lfo_diagram.R"))
+```
+
+:::
+
+::: {.column width="58%"}
+
+```{r lfo-elpd-comparison}
+#| fig-width: 10
+#| fig-height: 4.5
+#| cache: true
+
+all_lfo_clean <- bind_rows(
+  ctdna = tar_read(tumor_ssls_lfo_clean_lite_ctdna_aug, store = lfo_store),
+  no_hist = tar_read(tumor_ssls_lfo_clean_lite_no_hist_aug, store = lfo_store_no_hist),
+  no_pl = tar_read(tumor_ssls_lfo_clean_lite_no_pl_aug, store = lfo_store_no_pl),
+  ctdna_pn = tar_read(tumor_ssls_lfo_clean_lite_ctdna_pn_aug, store = lfo_store_ctdna_pn),
+  .id = "model"
+) |>
+  filter(n > 3)
+
+lfo_model_labels <- list(
+  ctdna = "SCLC-01 + HISTORICAL",
+  no_pl = "Without Patient-level Hierarchy",
+  no_hist = "Without Any Historical Data",
+  ctdna_pn = "With Population-Level Process Noise"
+)
+
+all_lfo_clean |>
+  filter(fct_match(model, c("ctdna", "ctdna_pn", "no_pl", "no_hist"))) |>
+  plot_lfo_elpd_diff(
+    baseline_model = "no_hist",
+    model_labels = lfo_model_labels
+  ) +
+  labs(title = "Model Comparison: Predictive Performance") +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12),
+    legend.text = element_text(size = 12)
+  )
+```
+
+**Key Results:**
+
+- **Historical data borrowing** (SCLC-01 + HISTORICAL) shows best predictive performance
+- **Hierarchical structure** improves predictions vs. no patient-level hierarchy
+- Positive ELPD difference indicates better performance than baseline (no historical data)
+
+:::
+
+::::
+
+
+## PFS Posterior Predictive Check {.smaller}
+
+:::: {.columns}
+
+::: {.column width="40%"}
+
+**Model Calibration Assessment**
+
+- Comparing **posterior PFS predictions** with **observed PFS** for uncensored patients
+
+- Restricted to patients with observed progression events
+
+- Stratified by **event type**:
+  - Target Lesion Progression
+  - Residual Progression (non-target)
+  - Death without progression
+
+- Ideal calibration: predictions align with 45° line
+
+:::
+
+::: {.column width="60%"}
+
+```{r pfs-posterior-check}
+#| fig-width: 14
+#| fig-height: 9
+
+ppc_spop_pfs <- tar_read(all_tumor_ssls_pfs_rvar_ctdna_jan26) |>
+  filter(fct_match(fit_type, "posterior"), !right_censored) |>
+  mutate(event_type = case_when(
+    !progression_before_death ~ "Death",
+    !target_only_right_censored ~ "Target Lesion Progression",
+    TRUE ~ "Residual Progression"
+  ))
+
+ppc_spop_pfs |>
+  plot_pfs_ppc(pfs_var = spop_pfs) +
+  labs(title = "Posterior PFS vs Observed PFS") +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12),
+    strip.text = element_text(size = 14, face = "bold"),
+    legend.text = element_text(size = 12)
+  )
+```
+
+:::
+
+::::
+
+<br>
+
+**Interpretation:** Model shows good calibration across event types, with predictions clustering near the diagonal
 
 
 # {visibility="hidden"}
 
-## Project Plan: SCLC & Future Trials {.smaller}
+## Project Plan: SCLC-01 & Future Trials {.smaller}
 
 <style>
 .timeline-col {

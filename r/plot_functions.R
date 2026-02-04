@@ -1,5 +1,14 @@
 # nolint start: object_usage_linter
 
+# Trial name labeller for plots
+trial_labeller <- function(x) {
+  case_match(
+    x,
+    "sclc" ~ "SCLC-01",
+    .default = str_to_upper(x)
+  )
+}
+
 prepare_pdl1_and_trial_info <- function(res_data) {
   res_data |>
     filter(
@@ -36,7 +45,7 @@ plot_outcome_by_pdl1_and_trial <- function(res_data, outcome, .width = c(0.5, 0.
       vars(trial),
       scales = "free",
       space = "free",
-      labeller = labeller(trial = str_to_upper, variable = c("all" = "All", "pdl1_naive" = "First Line", "part_e_pdl1" = "Part E"))
+      labeller = labeller(trial = trial_labeller, variable = c("all" = "All", "pdl1_naive" = "First Line", "part_e_pdl1" = "Part E"))
     ) +
     labs(caption = "Points show posterior median; inner bars show 50% credible intervals,\nouter bars show 90% credible intervals.") +
     theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
@@ -550,15 +559,17 @@ plot_confusion_matrix <- function(data, recorded, calculated, p, n = NULL) {
       nvar = if (quo_is_null(nq)) "Unknown" else !!nq,
       pvar = {{ p }},
       n_label = if (!quo_is_null(nq)) str_glue("(n={ nvar })") else "",
-      size_label = str_glue(
-        "{round(pvar, 3)}
-                             {n_label}"
+      size_label = if_else(
+        n_label == "",
+        format(round(pvar, 2), nsmall = 2),
+        str_glue("{format(round(pvar, 2), nsmall = 2)}\n{n_label}")
       )
     ) |>
     ggplot(aes(x = {{ recorded }}, y = {{ calculated }})) +
-    geom_tile(aes(fill = {{ p }}), alpha = 0.5, color = "white", linewidth = 0.5) +
-    geom_text(aes(label = size_label), color = AZ_darkpurple, size = 3) +
-    scale_fill_gradient(low = AZ_turquoise, high = AZ_pink, name = "Proportion") +
+    geom_tile(aes(fill = {{ recorded }}, alpha = {{ p }}), color = "white", linewidth = 1.5) +
+    geom_text(aes(label = size_label), color = AZ_darkpurple, size = 5, lineheight = 0.9, fontface = "bold") +
+    scale_fill_recist(guide = "none") +
+    scale_alpha_continuous(range = c(0, 0.9), guide = "none") +
     scale_x_discrete(limits = fct_rev, drop = FALSE) +
     scale_y_discrete(drop = FALSE) +
     coord_fixed() +
@@ -576,10 +587,110 @@ plot_oos_confusion_matrix <- function(confusion_matrix_data) {
     mutate(mp = median(mean_pred)) |>
     plot_confusion_matrix(response, pred_response, mp) +
     labs(
-      x = "Recorded Response",
-      y = "Median Posterior Response",
-      caption = "Cell proportions are the medians of the column-wise probabilities\n(conditional on recorded response)"
+      x = "Observed RECIST Response",
+      y = "Predicted RECIST Response",
+      caption = "Cell proportions show sensitivity (recall) for each RECIST category:\nP(Predicted response | Observed response). Diagonal elements indicate correct prediction rates."
     )
+}
+
+# Compute specificity matrix from confusion matrix data
+compute_specificity_matrix <- function(confusion_matrix_data) {
+  # Get all unique response categories
+  categories <- sort(unique(confusion_matrix_data$response))
+
+  # Use count rvar if available, otherwise fall back to mean_pred
+  if ("count" %in% names(confusion_matrix_data) && inherits(confusion_matrix_data$count, "rvar")) {
+    # For each category X, compute P(Predicted = Y | Observed ≠ X)
+    # using the count rvar to properly handle uncertainty
+    specificity_data <- map_dfr(categories, function(cat) {
+      # Get all observations where response != cat
+      not_cat_data <- confusion_matrix_data |>
+        filter(response != cat)
+
+      # Total count for obs != cat
+      total_not_cat <- rvar_sum(not_cat_data$count)
+
+      # For each prediction category, sum counts and normalize
+      not_cat_data |>
+        group_by(pred_response) |>
+        summarise(
+          pred_count = rvar_sum(count),
+          .groups = "drop"
+        ) |>
+        mutate(
+          mean_pred = median(pred_count / total_not_cat),
+          not_response = cat
+        ) |>
+        select(not_response, pred_response, mean_pred)
+    })
+  } else {
+    # Fallback: use mean_pred and cell_size (less accurate)
+    if ("mean_pred" %in% names(confusion_matrix_data) && inherits(confusion_matrix_data$mean_pred, "rvar")) {
+      confusion_matrix_data <- confusion_matrix_data |>
+        mutate(mean_pred = median(mean_pred))
+    }
+
+    # Compute prevalence of each observed category
+    if ("cell_size" %in% names(confusion_matrix_data)) {
+      obs_prevalence <- confusion_matrix_data |>
+        group_by(response) |>
+        summarise(prevalence = first(cell_size) / sum(unique(cell_size)), .groups = "drop")
+    } else {
+      obs_prevalence <- tibble(
+        response = categories,
+        prevalence = 1 / length(categories)
+      )
+    }
+
+    specificity_data <- map_dfr(categories, function(cat) {
+      not_cat_data <- confusion_matrix_data |>
+        filter(response != cat) |>
+        left_join(obs_prevalence, by = "response")
+
+      total_not_cat_prevalence <- sum(filter(obs_prevalence, response != cat)$prevalence)
+
+      not_cat_data |>
+        mutate(conditional_prevalence = prevalence / total_not_cat_prevalence) |>
+        group_by(pred_response) |>
+        summarise(
+          mean_pred = sum(mean_pred * conditional_prevalence),
+          .groups = "drop"
+        ) |>
+        mutate(not_response = cat) |>
+        select(not_response, pred_response, mean_pred)
+    })
+  }
+
+  # Ensure we have all combinations
+  all_combos <- expand_grid(
+    not_response = categories,
+    pred_response = categories
+  )
+
+  specificity_data <- all_combos |>
+    left_join(specificity_data, by = c("not_response", "pred_response")) |>
+    mutate(mean_pred = replace_na(mean_pred, 0))
+
+  specificity_data
+}
+
+# Plot specificity matrix
+plot_oos_specificity_matrix <- function(confusion_matrix_data) {
+  specificity_data <- compute_specificity_matrix(confusion_matrix_data)
+
+  specificity_data |>
+    mutate(
+      mp = mean_pred,
+      # Create factor with explicit levels to ensure correct ordering
+      not_response = factor(not_response, levels = c("CR", "PR", "SD", "PD"))
+    ) |>
+    plot_confusion_matrix(not_response, pred_response, mp) +
+    labs(
+      x = "Observed RECIST Response",
+      y = "Predicted RECIST Response",
+      caption = "Cell proportions show P(Predicted response | Observed ≠ category).\nColumn sums to 1.0. Higher off-diagonal values indicate better specificity."
+    ) +
+    scale_x_discrete(labels = ~paste0("NOT\n", .x))
 }
 
 # Reusable function for OOS confusion matrix Sankey diagram
@@ -647,10 +758,7 @@ plot_oos_confusion_sankey <- function(confusion_matrix_data) {
       color = "white"
     ) +
     scale_x_discrete(limits = c("Recorded\nResponse", "Predicted\nResponse"), expand = c(0.15, 0.05)) +
-    scale_fill_manual(
-      values = c("CR" = AZ_green, "PR" = AZ_turquoise, "SD" = AZ_gold, "PD" = AZ_plum),
-      name = "RECIST Category"
-    ) +
+    scale_fill_recist() +
     scale_alpha_manual(
       values = c("TRUE" = 0.8, "FALSE" = 0.4),
       guide = "none"
@@ -722,8 +830,8 @@ plot_recist_predictions <- function(
     ) +
     scale_x_continuous("Months", breaks = x_breaks, label = label_weeks_to_months) +
     scale_y_continuous(labels = scales::percent_format(), expand = c(0, 0)) +
-    scale_fill_manual(values = c("CR" = AZ_green, "PR" = AZ_turquoise, "SD" = AZ_gold, "PD" = AZ_plum), name = "RECIST Category") +
-    scale_color_manual(values = c("CR" = AZ_green, "PR" = AZ_turquoise, "SD" = AZ_gold, "PD" = AZ_plum), name = "RECIST Category") +
+    scale_fill_recist() +
+    scale_color_recist() +
     scale_alpha_manual("", values = c(obs = 0.25, forecast = 0.5), labels = c(obs = "Observed", forecast = "Forecast")) +
     scale_shape_manual("", values = c(obs = 21, target = 23), labels = c(obs = "Observed", target = "Target Lesions Only")) +
     labs(
@@ -748,7 +856,7 @@ plot_pfs_ppc <- function(data, pfs_var = spop_target_pfs, label_patients = FALSE
       type = AZ_palette
     ) +
     labs(caption = "Points show posterior median with 80% credible intervals.\nRestricted to uncensored patients.") +
-    facet_wrap(vars(trial), scales = "free", labeller = labeller(trial = str_to_upper)) +
+    facet_wrap(vars(trial), scales = "free", labeller = labeller(trial = trial_labeller)) +
     theme(
       legend.position = "bottom",
       plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))
