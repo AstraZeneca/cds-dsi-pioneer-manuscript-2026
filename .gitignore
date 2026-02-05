@@ -68,3 +68,6 @@ _targets/
 
 # Claude local notes (user-specific)
 CLAUDE.local.md
+
+# explore folder for temporary analysis
+explore/
