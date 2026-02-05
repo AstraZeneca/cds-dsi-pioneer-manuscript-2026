@@ -1,25 +1,29 @@
-// Given priors on actual tumor mean and SD calculate the corresponding lognormal ones
-real<lower = 0> pop_tumor_gp_alpha = sqrt(log((tumor_sd / tumor_mean)^2 + 1));
-real pop_tumor_gp_intercept = log(tumor_mean) - pop_tumor_gp_alpha^2 / 2.0;
+vector[n_trials] trial_tumor_intercept_effect = zeros_vector(n_trials);
+vector[n_patients] patient_tumor_intercept_effect = raw_patient_tumor_intercept_effect * patient_tumor_intercept_sd;
 
-vector[use_tumor_model ? sum(n_patient_tumors) : 0] tumor_gp_intercept; 
+vector[n_trials] log_trial_tumor_gp_rho_effect = zeros_vector(n_trials);
+vector[n_patients] log_patient_tumor_gp_rho_effect = raw_log_patient_tumor_gp_rho_effect * log_patient_tumor_gp_rho_sd;
 
-if (use_tumor_model) {
-  tumor_gp_intercept = rep_vector(pop_tumor_gp_intercept, sum(n_patient_tumors));
+if (add_trial_level_tumor_intercept) {
+  trial_tumor_intercept_effect = raw_trial_tumor_intercept_effect * trial_tumor_intercept_sd;
 }
 
-if (use_tumor_model && multilevel_patient) {
-  int tumor_pos = 1;
+if (add_trial_level_tumor_gp_param) {
+  log_trial_tumor_gp_rho_effect = raw_log_trial_tumor_gp_rho_effect * log_trial_tumor_gp_rho_sd;
+}
+
+vector[n_patients] patient_tumor_intercept = pop_tumor_intercept + trial_tumor_intercept_effect[patient_trial] + patient_tumor_intercept_effect;
+vector<lower = 0>[n_patients] patient_tumor_gp_rho = exp(log_pop_tumor_gp_rho + log_trial_tumor_gp_rho_effect[patient_trial] + log_patient_tumor_gp_rho_effect);
+
+vector[sum(n_patient_unique_visits)] patient_obs_tumor_gp;
+
+for (i in 1:n_patients) {
+  int patient_gp_pos, patient_gp_end;
+  (patient_gp_pos, patient_gp_end) = get_pos(patient_unique_visits_pos, i);
   
-  for (i in 1:n_patients) {
-    for (j in 1:n_patient_tumors[i]) {
-      tumor_gp_intercept[tumor_pos] += patient_tumor_gp_intercept_effect[i];
-      
-      tumor_pos += 1;
-    }
-  }
-}
-
-if (use_tumor_model && multilevel_tumor) {
-  tumor_gp_intercept += tumor_gp_intercept_effect;
+  patient_obs_tumor_gp[patient_gp_pos:patient_gp_end] = calc_gp_pred(
+  // patient_obs_tumor_gp[patient_gp_pos:patient_gp_end] = ncp_gp_matern52(
+    all_tumor_measure_t[get_int_sub_array(patient_unique_visits_idx, patient_unique_visits_pos, i)], 
+    pop_tumor_gp_alpha, patient_tumor_gp_rho[i], delta, get_sub_vector(patient_tumor_gp_eta, patient_unique_visits_pos, i) 
+  );
 }
