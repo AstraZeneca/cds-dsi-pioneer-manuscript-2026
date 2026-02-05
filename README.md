@@ -1,108 +1,63 @@
-This repository is used by PIONEER projects for predicting PFS and ORR outcomes in small and/or ongoing trials using data from older trials. Currently, there are two projects:
+This repository is used by PIONEER projects for predicting PFS and ORR outcomes in small and/or ongoing trials using data from older trials. Currently, there are three active projects:
 
-1. Predicting outcomes from one of the Breast-01 to -04 trials using the other three.
-2. Predicting the LUNG trial outcomes from the Endometrial trial.
+1. **Breast-01 to -04**: Predicting outcomes from one trial using the other three.
+2. **Endometrial to LUNG**: Predicting the LUNG trial outcomes from the Endometrial trial.
+3. **SCLC-01**: Longitudinal tumor analysis with PFS and ORR predictions.
 
-We predict outcomes using a Bayesian multilevel piece-wise constant proportional hazard survival model for PFS and, similarly, a competing risks model for confirmed response status (which we use as predictor in the PFS model).
+We predict outcomes using a Bayesian multilevel piece-wise constant proportional hazard survival model for PFS and, similarly, a competing risks model for confirmed response status (which we use as predictor in the PFS model). The tumor dynamics are modeled using a state-space longitudinal survival (SSLS) model with modular parameter organization.
 
 # Repo Structure
 
 ``` bash
 .
-├── endometrial_to_lung_targets.R                                        # Endometrial to LUNG project targets file
-├── _targets.R                                                        # Obsolete
-├── quarto                                                            # Notebooks
+├── targets/                                                          # {targets} pipeline definitions
+│   ├── sclc_targets.R                                            # SCLC project pipeline
+│   ├── endometrial_to_lung_targets.R                                    # Endometrial to LUNG pipeline
+│   └── test_targets.R                                                # Testing pipeline
+├── quarto/                                                           # Analysis notebooks
+│   ├── sclc-tumor-analysis.qmd                                   # SCLC tumor analysis
 │   ├── confirmed-response-pfs.qmd                                    # Breast notebook
-│   ├── deck.qmd                                                      # Old deck
-│   ├── endometrial-to-lung.qmd                                         # Endometrial to LUNG notebook
-│   └── early-predict-bc-survival.qmd                                 # Old Breast notebook
-├── r
-│   ├── breast                                                # Breast project specific functions
-│   │   ├── bg.R                             
-│   │   ├── crcr.R
-│   │   ├── posterior.R
-│   │   ├── prepare_analysis_data.R
-│   │   ├── sbc.R
-│   │   └── util.R
-│   ├── endometrial-to-lung                                             # Endometrial to LUNG specific functions (see similarly names files below)
-│   │   ├── prepare_analysis_data.R
-│   │   └── priors.R
-│   ├── entimice                                                      # Scripts to download analysis datasets
-│   │   ├── download-lung-entimice-data.R
-│   │   ├── download-breast-entimice-data.R
-│   │   ├── download-endometrial-entimice-data.R
-│   │   └── entimice_functions.R
-│   ├── initializers.R                                                # Common Stan initializers
-│   ├── plot_functions.R                                              # Common plot functions
-│   ├── posterior.R                                                   # Common functions for extracting samples from Stan fit objects
-│   ├── prepare_analysis_data.R                                       # Common functions used for analysis and Stan data preparation
-│   ├── priors.R                                                      # Common prior specification
-│   ├── table_functions.R                                             # Common functions to generate {gt} tables
-│   └── util.R                                                        # Common utility functions
-└── stan                                                              # Stan statistical models folder
-    ├── base_data.stan                                                # Data shared between all models
-    ├── baseline_hazard                                               # GP PFS baseline hazard files
-    │   ├── baseline_hazard_hyperparam.stan                           # Hyperparameters for GP priors
-    │   ├── baseline_hazard_log_lik_prior_sense.stan                  # Calculations for {priorsense} and {loo}
-    │   ├── baseline_hazard_parameters.stan                           
-    │   ├── baseline_hazard_priors.stan                               
-    │   └── baseline_hazard_transformed_parameters.stan               
-    ├── base_transformed_data.stan                                    # Transformed data shared between all model
-    ├── crcr                                                          # Confirmed response competing risks (CRCR) model files
-    │   ├── confresp-comprisk.stan                                    # Standalone CRCR model
-    │   ├── crcr_baseline_hazard_hyperparam.stan                      
-    │   ├── crcr_data.stan                                            
-    │   ├── crcr_functions.stan
-    │   ├── crcr_gen_quants.stan
-    │   ├── crcr_hyperparam.stan
-    │   ├── crcr_log_lik_prior_sense.stan                             # CRCR calculations needed for {priorsense} and {loo}
-    │   ├── crcr_parameters.stan
-    │   ├── crcr_priors.stan
-    │   ├── crcr_transformed_data.stan
-    │   └── crcr_transformed_parameters.stan
-    ├── breast                                                # Breast project specific files
-    │   ├── pfs2.stan
-    │   ├── pfs_functions.stan
-    │   ├── pfs_generated_quant.stan
-    │   ├── pfs_orr.stan
-    │   ├── pfs.stan
-    │   ├── tumor_stim_hyperparam.stan
-    │   ├── tumor_stim_parameters.stan
-    │   ├── tumor_stim_priors.stan
-    │   ├── tumor_stim_transformed_data.stan
-    │   ├── tumor_stim_transformed_parameters.stan
-    │   ├── fixed_bootstrap_transformed_data.stan                       
-    │   └── bootstrap                                                     # Bootstrap files
-    │       ├── insample_bootstrap_data.stan                              
-    │       ├── insample_bootstrap_gen_quants.stan                        
-    │       ├── leave_out_trial_bootstrap_data.stan                       
-    │       ├── leave_out_trial_bootstrap_functions.stan                  
-    │       ├── leave_out_trial_bootstrap_gen_quants.stan                 
-    │       └── leave_out_trial_bootstrap_transformed_data.stan           
-    ├── pfs-confirmed-response 
-    │   ├── functions.stan 
-    │   ├── data.stan 
-    │   ├── transformed_data.stan
-    │   ├── parameters.stan 
-    │   ├── transformed_parameters.stan 
-    │   ├── priors.stan 
-    │   ├── pfs-confirmed-response.stan                 
-    │   └── lfo-cv.stan           
-    ├── pfs_functions.stan                                           # PFS specific functions
-    ├── pfs_transformed_data.stan                            
-    ├── recruit                                                      # Files for modelling trial recruitment rates and timing
-    │   ├── recruit_parameters.stan
-    │   ├── recruit_priors.stan
-    │   ├── recruit_sample_maturity.stan
-    │   └── recruit.stan                                             # Standalone model
-    ├── tumor                                                        # Tumor specific modelling files
-    │   ├── tumor_data.stan
-    │   ├── tumor_model.stan                                         # Priors and likelihood calculations
-    │   ├── tumor_parameters.stan
-    │   ├── tumor.stan                                               # Standalone model
-    │   └── tumor_transformed_parameters.stan
-    └── util.stan                                                    # General utility functions
-```
+│   └── endometrial-to-lung.qmd                                         # Endometrial to LUNG notebook
+├── r/                                                                # R functions and utilities
+│   ├── sclc/                                                     # SCLC-specific functions
+│   ├── breast/                                               # Breast-specific functions
+│   ├── endometrial-to-lung/                                            # Endometrial to LUNG-specific functions
+│   ├── entimice/                                                     # Scripts to download analysis datasets
+│   ├── data_preparation_pipeline/                                    # Data preparation utilities
+│   ├── initializers.R                                                # Stan model initializers
+│   ├── priors.R                                                      # Prior specifications
+│   ├── posterior.R                                                   # Posterior extraction utilities
+│   ├── plot_functions.R                                              # Visualization functions
+│   ├── table_functions.R                                             # Table generation ({gt})
+│   └── util.R                                                        # Common utilities
+└── stan/                                                             # Stan statistical models
+    ├── ssls/                                                         # State-space longitudinal survival (SSLS) models
+    │   ├── modules/                                                  # Modular parameter organization
+    │   │   ├── tr/                                                   # Total rate module
+    │   │   ├── frac/                                                 # Fraction mix module
+    │   │   ├── init/                                                 # Initial proportions module
+    │   │   └── other_events/                                         # Other events (non-target PD, death)
+    │   ├── sf-ssm-log-space.stan                                     # Main SSLS model
+    │   ├── sf-ssls-lfo.stan                                          # Leave-future-out cross-validation
+    │   └── legacy/                                                   # Legacy monolithic implementations
+    ├── tumor/                                                        # Tumor-specific model components
+    ├── crcr/                                                         # Confirmed response competing risks
+    ├── baseline_hazard/                                              # GP PFS baseline hazard
+    ├── pfs-confirmed-response/                                       # PFS with confirmed response
+    ├── recruit/                                                      # Recruitment modeling
+    ├── breast/                                               # Breast-specific files
+    └── util.stan                                                     # General utility functions
+
+# Documentation
+
+For detailed technical documentation:
+
+- **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** - System architecture, hierarchical parameter design, and Stan optimization
+- **[`docs/ar1_process_noise.md`](docs/ar1_process_noise.md)** - AR(1) time-varying process noise implementation (NEW)
+- **[`docs/OTHER_EVENTS_MODEL.md`](docs/OTHER_EVENTS_MODEL.md)** - Other events model (non-target PD, death) design and implementation
+- **[`docs/CHANGELOG.md`](docs/CHANGELOG.md)** - Major changes and design decisions
+- **[`docs/CODEOWNERS`](docs/CODEOWNERS)** - Code ownership and review requirements
+- **`sld_state_space_model.md`** - State space model documentation
 
 # Workflow
 
@@ -119,14 +74,25 @@ We predict outcomes using a Bayesian multilevel piece-wise constant proportional
 
 # Projects
 
+## SCLC-01 Longitudinal Tumor Analysis
+
+* {targets} project: `sclc`
+* Targets file: `targets/sclc_targets.R`
+* Notebook: `quarto/sclc-tumor-analysis.qmd`
+* Description: Longitudinal tumor analysis with state-space modeling, including PFS and ORR predictions
+
 ## Breast-01 to -04
 
-* Data script: "r/entimice/download-breast-entimice-data.R"
-* {targets} project: [[not yet available]]
-* Notebook: "quarto/confirmed-response-pfs.qmd"
+* Data script: `r/entimice/download-breast-entimice-data.R`
+* {targets} project: (in development)
+* Notebook: `quarto/confirmed-response-pfs.qmd`
+* Description: Cross-validation predictions across Breast trials
 
 ## Predicting LUNG from Endometrial
 
-* Data scripts: "r/entimice/download-endometrial-entimice-data.R" and "r/entimice/download-lung-entimice-data.R".
-* {targets} project: _endometrial_to_lung_
-* Notebook: "quarto/endometrial-to-lung.qmd". URL: https://rstudio-connect.seml.scp.astrazeneca.net/endometrial-to-lung/endometrial-to-lung.html
+* Data scripts: `r/entimice/download-endometrial-entimice-data.R` and `r/entimice/download-lung-entimice-data.R`
+* {targets} project: `endometrial_to_lung`
+* Targets file: `targets/endometrial_to_lung_targets.R`
+* Notebook: `quarto/endometrial-to-lung.qmd`
+* Published URL: https://rstudio-connect.seml.scp.astrazeneca.net/endometrial-to-lung/endometrial-to-lung.html
+* Description: Predicting LUNG trial outcomes using Endometrial trial data

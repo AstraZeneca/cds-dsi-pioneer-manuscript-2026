@@ -1,0 +1,129 @@
+---
+title: "Model Architecture"
+subtitle: "Bayesian Hierarchical State-Space Model Overview"
+---
+
+## Data Flow Overview
+
+::: {.column-page}
+
+![Model Data Flow Diagram](../images/model-diagram-tikz.svg){fig-align="center" width="100%"}
+
+:::
+
+---
+
+## Model Structure
+
+The SCLC forecasting model consists of **two main submodels** that work together to predict progression-free survival (PFS):
+
+### 1. Mechanistic Tumor Dynamics Submodel
+
+**Purpose:** Models target lesion tumor burden over time using a two-component state-space approach.
+
+**Inputs:**
+- Tumor size measurements (SLD - sum of longest diameters)
+- Time points (visit dates/study days)
+- Baseline patient covariates (age, sex, ECOG, baseline tumor burden, biomarkers)
+- Treatment arm assignment
+- Trial identifier (for hierarchical pooling)
+
+**Process:**
+The model decomposes tumor dynamics into two latent components in log-space:
+
+$$
+\mathbf{x}_i(t) = \begin{bmatrix} x_{i,\text{dec}}(t) \\ x_{i,\text{gro}}(t) \end{bmatrix}
+$$
+
+where:
+- $x_{i,\text{dec}}(t)$ represents the **decreasing component** (treatment-induced shrinkage)
+- $x_{i,\text{gro}}(t)$ represents the **growing component** (resistant tumor growth)
+
+The expected SLD relates to these components via:
+$$
+\mathbb{E}[\log(\text{SLD}_i(t))] = \log(\text{SLD}_{i,\text{baseline}}) + \log\left(e^{x_{i,\text{dec}}(t)} + e^{x_{i,\text{gro}}(t)}\right)
+$$
+
+**Three-level hierarchy:** Parameters follow a population → trial → patient structure using non-centered parameterization:
+$$
+\theta_{\text{trial}} \sim \text{Normal}(\theta_{\text{pop}}, \sigma_{\text{trial}}) \\
+\theta_i \sim \text{Normal}(\theta_{\text{trial}}, \sigma_{\text{patient}})
+$$
+
+**Output:**
+- Predicted tumor size trajectories $\text{SLD}_i(t)$ for all future time points
+- Time to target lesion progression $T_i^{\text{target}}$ via RECIST criteria (20% increase from nadir)
+
+---
+
+### 2. Other Events Submodel
+
+**Purpose:** Models competing risks from non-target progression, new lesions, and death.
+
+**Inputs:**
+- Baseline patient covariates
+- Treatment arm assignment
+- **Predicted tumor burden SLD(t)** from Submodel 1 (optional time-varying covariate)
+- Trial identifier
+
+**Process:**
+Uses a proportional hazards framework to model the hazard for "other events":
+
+$$
+\lambda_i(t) = \lambda_0(t) \exp\left(\mathbf{Z}_i^T \boldsymbol{\beta} + f(\text{SLD}_i(t))\right)
+$$
+
+where:
+- $\lambda_0(t)$ is the baseline hazard
+- $\mathbf{Z}_i$ are patient covariates
+- $f(\text{SLD}_i(t))$ optionally captures how tumor burden affects other event risk
+
+**Key feature:** Other events are modeled as **independent** from target lesion progression. Both can be observed for the same patient, and the model learns the hazard function from the data.
+
+**Output:**
+- Hazard function $\lambda_i(t)$ for other events
+- Time to other event $T_i^{\text{other}}$
+
+---
+
+### 3. PFS Combination
+
+The two submodels combine to produce PFS forecasts:
+
+$$
+\text{PFS}_i = \min(T_i^{\text{target}}, T_i^{\text{other}})
+$$
+
+A patient progresses at whichever event occurs first (target lesion progression or other event).
+
+**Full Bayesian inference:** Both submodels generate complete posterior distributions, enabling:
+- Uncertainty quantification for all predictions
+- Probabilistic forecasting of trial endpoints
+- Individual patient trajectory predictions with credible intervals
+
+---
+
+## Key Outputs
+
+From this modeling framework, we generate:
+
+**Individual Level:**
+- Predicted tumor trajectories with uncertainty bands
+- Patient-specific PFS probabilities over time
+- RECIST response classifications (CR, PR, SD, PD) with probabilities
+
+**Trial Level:**
+- Median PFS (mPFS) with credible intervals
+- PFS rates at specific timepoints (e.g., PFS12 = 12-month PFS rate)
+- Objective response rate (ORR)
+- Kaplan-Meier survival curves with uncertainty
+
+**Decision Support:**
+- Go/No-Go recommendations based on probabilistic endpoint forecasts
+- Predictions available **3-6 months earlier** than traditional data cutoff analyses
+
+---
+
+*For detailed mathematical specifications, see [Model Specification](model-specification.qmd).*
+
+*For implementation details, see [Architecture](architecture.qmd) in Technical Reference.*

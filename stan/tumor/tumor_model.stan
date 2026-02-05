@@ -1,45 +1,30 @@
-tumor_mean ~ normal(2.8, 0.1);
-// tumor_sd ~ normal(0, 1.25);
-tumor_sd ~ normal(0, 2);
-
-patient_tumor_gp_intercept_sd ~ normal(0, 0.25);
-
-if (use_tumor_model && multilevel_patient) { 
-  patient_tumor_gp_intercept_effect ~ normal(0, patient_tumor_gp_intercept_sd);
-}
-
-if (use_tumor_model && multilevel_tumor) {
-  tumor_gp_intercept_sd ~ normal(0, 0.1);
-  
-  int tumor_pos = 1;
-  
+if (fit_tumor_data) {
   for (i in 1:n_patients) {
-    for (j in 1:n_patient_tumors[i]) {
-      tumor_gp_intercept_effect ~ normal(0, tumor_gp_intercept_sd[i]);
+    int n_non_measured_visits = n_patient_non_measured_tumor_visits[i];
+    int n_measured_visits = n_patient_post_treat_visits[i] - n_non_measured_visits;
+    
+    vector[n_patient_unique_visits[i]] curr_patient_tumor_gp = get_sub_vector(patient_obs_tumor_gp, patient_unique_visits_pos, i); 
+    vector[n_patient_unique_visits[i]] curr_patient_sld = get_sub_vector(post_treat_sld, post_treat_visits_pos, i);
+    
+    if (n_measured_visits > 0) {
+      array[n_measured_visits] int measured2patient_idx = get_int_sub_array(measured2patient_visits_idx, patient_measured_tumor_visits_pos, i); 
+      vector[n_measured_visits] measured_sld = curr_patient_sld[measured2patient_idx]; 
       
-      tumor_pos += 1;
+      if (prod(measured_sld) <= 0) {
+        fatal_error("Cannot have non-positive measured SLD values.");
+      }
+    
+      target += normal_lpdf(measured_sld | patient_tumor_intercept[i] + curr_patient_tumor_gp[measured2patient_idx], tumor_measure_error_sd);
+    }
+    
+    if (n_non_measured_visits > 0)  {
+      array[n_non_measured_visits] int non_measured2patient_idx = get_int_sub_array(non_measured2patient_visits_idx, patient_non_measured_tumor_visits_pos, i);
+
+      if (sum(curr_patient_sld[non_measured2patient_idx]) > 0) {
+        fatal_error("All SLD values should be zero for non-measured visits.");
+      }
+
+      target += normal_lcdf(zeros_vector(n_non_measured_visits) | patient_tumor_intercept[i] + curr_patient_tumor_gp[non_measured2patient_idx], tumor_measure_error_sd);
     }
   }
 }
-
-pop_tumor_gp_rho ~ inv_gamma(pop_tumor_gp_rho_alpha, pop_tumor_gp_rho_beta);
-
-if (use_tumor_model && fit_tumor_data) {
-  int tumor_pos = 1;
-  int t_measure_pos = 1;
-  int t_missing_measure_pos = 1;
-
-  for (i in 1:n_patients) {
-    for (j in 1:n_patient_tumors[i]) {
-      int t_measure_end = t_measure_pos + n_measures[tumor_pos] - 1;
-      
-      matrix[n_measures[tumor_pos], n_measures[tumor_pos]] L_current_tumor_vcov = 
-        calc_gp_cholesky_vcov(all_measure_t[patient_t_measure_idx[t_measure_pos:t_measure_end]], pop_tumor_gp_alpha, pop_tumor_gp_rho, delta);
-      
-      log(tumor_size[t_measure_pos:t_measure_end]) ~ multi_normal_cholesky(rep_vector(tumor_gp_intercept[tumor_pos], n_measures[tumor_pos]), L_current_tumor_vcov);
-
-      tumor_pos += 1;
-      t_measure_pos = t_measure_end + 1;
-    }
-  }
-}  
