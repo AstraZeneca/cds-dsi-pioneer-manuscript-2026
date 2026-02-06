@@ -65,6 +65,8 @@ quarto preview quarto/website
 **Server URL**: `https://rstudio-connect.seml.scp.astrazeneca.net/connect/`
 **Account**: `kmjq089`
 
+**IMPORTANT**: Always use the R `rsconnect` package for publishing. The `quarto publish connect` CLI command does not work reliably in non-interactive/remote environments because it requires browser-based SSO authentication.
+
 #### Step-by-Step Publishing Instructions
 
 **IMPORTANT**: Always render the site locally first to ensure everything works. Run from the project root:
@@ -163,6 +165,28 @@ quarto publish connect quarto/website
 - **Package not found errors**: Always run deployment from `/mnt/code` (project root) where renv is configured
 
 **SECURITY**: API keys should NEVER be committed to git. The `rsconnect/` directory and `_publish.yml` are already in `.gitignore`.
+
+#### Publishing Presentations
+
+For Quarto revealjs presentations (e.g., `quarto/presentations/pioneer-gng/`), use `rsconnect::deployDoc()`:
+
+```r
+library(rsconnect)
+
+# First render the presentation
+# quarto render quarto/presentations/pioneer-gng/pioneer-gng.qmd
+
+# Then deploy the rendered HTML
+rsconnect::deployDoc(
+  doc = "quarto/presentations/pioneer-gng/pioneer-gng.html",
+  server = "az-connect",
+  account = "kmjq089",
+  appName = "pioneer-gng-presentation"  # Choose a unique name
+)
+```
+
+**Published presentations:**
+- PIONEER Go/No-Go: https://rstudio-connect.seml.scp.astrazeneca.net/content/71d3bcc6-c677-485b-b8fc-562b0f580c9a/
 
 ### Key Configuration Files
 - `_quarto.yml` - Site configuration, navigation, theme settings
