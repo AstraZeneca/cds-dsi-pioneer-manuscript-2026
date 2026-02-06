@@ -181,6 +181,42 @@ $code-bg: #f8f9fa;
   }
 }
 
+// Section introduction slides with title + bullets layout
+.reveal section.section-intro {
+  background: linear-gradient(135deg, $az-navy 0%, darken($az-navy, 10%) 100%);
+
+  // Large white titles in left column
+  .column:first-child {
+    color: white;
+    font-size: 3.8em;
+    font-weight: bold;
+    line-height: 1.2;
+
+    p {
+      color: white;
+      font-size: 1em; // Already scaled by parent
+      margin: 0;
+    }
+  }
+
+  // Right column: gold text and bullets
+  .column:not(:first-child) {
+    p, li {
+      color: $az-gold;
+    }
+
+    // Make bold text platinum for subtle emphasis
+    strong, b {
+      color: $az-platinum;
+    }
+
+    // Gold bullet markers
+    ul li::before {
+      color: $az-gold;
+    }
+  }
+}
+
 // gt table styling for revealjs
 .reveal .gt_table {
   font-size: 0.7em;
