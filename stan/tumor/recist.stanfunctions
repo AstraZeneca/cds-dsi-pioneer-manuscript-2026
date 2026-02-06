@@ -1,41 +1,58 @@
 /**
- * Calculate RECIST status based on target lesions only
+ * RECIST Response Evaluation Functions
+ * 
+ * This file provides functions for calculating RECIST (Response Evaluation 
+ * Criteria in Solid Tumors) status classifications and associated performance
+ * metrics for oncology clinical trials.
+ * 
+ * RECIST Categories:
+ *   1 = CR (Complete Response): Disappearance of all target lesions
+ *   2 = PR (Partial Response): ≥30% decrease from baseline sum
+ *   3 = SD (Stable Disease): Neither PR nor PD criteria met  
+ *   4 = PD (Progressive Disease): ≥20% increase from smallest sum or new lesions
+ * 
+ * Functions:
+ *   - calculate_target_recist(): Target lesion RECIST classification
+ *   - calculate_recist(): Overall RECIST with non-target and new lesions
+ *   - calculate_best_overall_response(): Best response achieved over time
+ *   - update_recist_metrics(): Update prediction accuracy metrics
+ *   - calculate_recist_summary_metrics(): Compute final performance statistics
+ */
+
+/**
+ * Calculate RECIST status based on target lesions only with proper nadir tracking
  * 
  * @param sld_trajectory Vector of sum of longest diameters over time
  * @return Array of target-only RECIST status (1=CR, 2=PR, 3=SD, 4=PD)
  */
-array[] int calculate_target_recist(vector sld_trajectory) {
+array[] int calculate_target_recist(vector sld_trajectory, real pre_nadir, int n_screening) {
   int n = rows(sld_trajectory);
-  array[n] int target_status;
-  real baseline = sld_trajectory[1];
-  
-  // Define RECIST categories as integers
-  int CR = 1;  // Complete Response
-  int PR = 2;  // Partial Response  
-  int SD = 3;  // Stable Disease
-  int PD = 4;  // Progressive Disease
-  
-  // First time point is baseline, so it's SD by definition
-  target_status[1] = SD;
-  
-  // Calculate RECIST status for each subsequent time point based on targets only
-  for (t in 2:n) {
+  assert_greater_than_or_equal(n, n_screening);
+  int n_treat = n - n_screening;
+  array[n_treat] int target_status;
+  real baseline = sld_trajectory[n_screening];
+  real nadir = pre_nadir <= 0 ? baseline : pre_nadir;
+  int CR = 1;
+  int PR = 2;
+  int SD = 3;
+  int PD = 4;
+  for (t in (n_screening + 1):n) {
+    nadir = fmin(nadir, sld_trajectory[t]);
     if (sld_trajectory[t] == 0) {
-      target_status[t] = CR;
+      target_status[t - n_screening] = CR;
+    } else if (nadir > 0 && sld_trajectory[t] > nadir && (sld_trajectory[t] - nadir) / nadir >= 0.2 && (sld_trajectory[t] - nadir) >= 5) {
+      target_status[t - n_screening] = PD;
+    } else if ((sld_trajectory[t] - baseline) / baseline <= -0.3) {
+      target_status[t - n_screening] = PR;
     } else {
-      real ratio = sld_trajectory[t] / baseline;
-      
-      if (ratio >= 1.2) {
-        target_status[t] = PD;
-      } else if (ratio <= 0.7) {
-        target_status[t] = PR;
-      } else {
-        target_status[t] = SD;
-      }
+      target_status[t - n_screening] = SD;
     }
   }
-  
   return target_status;
+}
+
+array[] int calculate_target_recist(vector sld_trajectory, int n_screening) {
+  return calculate_target_recist(sld_trajectory, min(sld_trajectory[:n_screening]), n_screening);
 }
 
 /**
@@ -46,9 +63,13 @@ array[] int calculate_target_recist(vector sld_trajectory) {
  * @param non_target_status Array of non-target lesion status (1=CR, 2=Non-CR/Non-PD, 3=PD)
  * @return Array of overall RECIST status (1=CR, 2=PR, 3=SD, 4=PD)
  */
-array[] int calculate_recist(vector sld_trajectory, array[] int new_lesions, array[] int non_target_status) {
+array[] int calculate_recist(vector sld_trajectory, array[] int new_lesions, array[] int non_target_status, int n_screening) {
   int n = rows(sld_trajectory);
-  array[n] int recist_status;
+  
+  assert_greater_than_or_equal(n, n_screening);
+  
+  int n_treat = n - n_screening;
+  array[n_treat] int recist_status;
   
   // Define RECIST categories as integers
   int CR = 1;  // Complete Response
@@ -62,10 +83,10 @@ array[] int calculate_recist(vector sld_trajectory, array[] int new_lesions, arr
   int NT_PD = 3;
   
   // First get target-only RECIST status
-  array[n] int target_status = calculate_target_recist(sld_trajectory);
+  array[n_treat] int target_status = calculate_target_recist(sld_trajectory, n_screening);
   
   // Then combine with non-target and new lesion information
-  for (t in 1:n) {
+  for (t in 1:n_treat) {
     // Check for progression criteria first
     if (new_lesions[t] == 1 || non_target_status[t] == NT_PD || target_status[t] == PD) {
       recist_status[t] = PD;
@@ -107,16 +128,134 @@ array[] int calculate_best_overall_response(array[] int recist_status) {
 }
 
 /**
- * Convert RECIST integer codes to string representation (for debugging)
- * Note: This is for illustration - Stan doesn't support string return types
- * 
- * @param recist_code Integer RECIST code
- * @return String representation (commented out as Stan doesn't support strings)
+ * Update RECIST accuracy metrics for a single observation
+ * @param obs_cat Observed RECIST category
+ * @param pred_cat Predicted RECIST category
+ * @param correct_predictions Running count of correct predictions
+ * @param category_counts Counts per observed category
+ * @param weighted_acc_linear Running weighted accuracy (linear penalty)
+ * @param weighted_acc_quad Running weighted accuracy (quadratic penalty)
+ * @param correct_response Running count of correct response classifications
+ * @param correct_control Running count of correct disease control classifications
+ * @return Tuple of all updated metrics (excluding confusion matrix)
  */
-// string recist_to_string(int recist_code) {
-//   if (recist_code == 1) return "CR";
-//   else if (recist_code == 2) return "PR";
-//   else if (recist_code == 3) return "SD";
-//   else if (recist_code == 4) return "PD";
-//   else return "Unknown";
-// }
+tuple(int, vector, real, real, int, int) update_recist_metrics(
+  int obs_cat, int pred_cat,
+  int correct_predictions, vector category_counts,
+  real weighted_acc_linear, real weighted_acc_quad,
+  int correct_response, int correct_control
+) {
+// Create local copies for updates
+    int updated_correct_predictions = correct_predictions;
+    vector[4] updated_category_counts = category_counts;
+    real updated_weighted_acc_linear = weighted_acc_linear;
+    real updated_weighted_acc_quad = weighted_acc_quad;
+    int updated_correct_response = correct_response;
+    int updated_correct_control = correct_control;
+    
+    // Update simple accuracy
+    if (obs_cat == pred_cat) {
+      updated_correct_predictions += 1;
+    }
+    
+    // Update category counts
+    updated_category_counts[obs_cat] += 1;
+    
+    // Update weighted accuracies
+    int cat_diff = abs(obs_cat - pred_cat);
+    updated_weighted_acc_linear += 1.0 - cat_diff / 3.0;
+    updated_weighted_acc_quad += 1.0 - square(cat_diff) / 9.0;
+    
+    // Update clinical groupings
+    int obs_response = (obs_cat <= 2) ? 1 : 0;  // CR=1, PR=2
+    int pred_response = (pred_cat <= 2) ? 1 : 0;
+    if (obs_response == pred_response) {
+      updated_correct_response += 1;
+    }
+    
+    int obs_control = (obs_cat <= 3) ? 1 : 0;  // SD=3, PD=4
+    int pred_control = (pred_cat <= 3) ? 1 : 0;
+    if (obs_control == pred_control) {
+      updated_correct_control += 1;
+    }
+    
+    return (updated_correct_predictions, updated_category_counts,
+            updated_weighted_acc_linear, updated_weighted_acc_quad,
+            updated_correct_response, updated_correct_control);
+}
+
+/**
+ * Calculate summary metrics from RECIST prediction counts
+ * @param correct_predictions Total number of correct predictions
+ * @param total_predictions Total number of predictions
+ * @param confusion_matrix 4x4 confusion matrix
+ * @param category_counts Counts per observed category
+ * @param weighted_acc_linear Sum of linear weighted accuracies
+ * @param weighted_acc_quad Sum of quadratic weighted accuracies
+ * @param correct_response Count of correct response classifications
+ * @param correct_control Count of correct disease control classifications
+ * @return Tuple of (accuracy, response_accuracy, disease_control_accuracy, 
+ *                   weighted_linear, weighted_quadratic, category_sensitivity,
+ *                   category_precision, response_sensitivity, response_specificity,
+ *                   progression_sensitivity, progression_specificity)
+ */
+tuple(real, real, real, real, real, vector, vector, real, real, real, real) 
+calculate_recist_summary_metrics(
+  int correct_predictions, int total_predictions,
+  matrix confusion_matrix, vector category_counts,
+  real weighted_acc_linear, real weighted_acc_quad,
+  int correct_response, int correct_control
+) {
+  // Basic accuracies
+  real accuracy = total_predictions > 0 ? (correct_predictions * 1.0 / total_predictions) : 0;
+  real response_accuracy = total_predictions > 0 ? (correct_response * 1.0 / total_predictions) : 0;
+  real disease_control_accuracy = total_predictions > 0 ? (correct_control * 1.0 / total_predictions) : 0;
+  real weighted_linear = total_predictions > 0 ? (weighted_acc_linear / total_predictions) : 0;
+  real weighted_quadratic = total_predictions > 0 ? (weighted_acc_quad / total_predictions) : 0;
+  
+  // Per-category metrics
+  vector[4] category_sensitivity = zeros_vector(4);
+  vector[4] category_precision = zeros_vector(4);
+  
+  for (cat in 1:4) {
+    if (category_counts[cat] > 0) {
+      category_sensitivity[cat] = confusion_matrix[cat, cat] / category_counts[cat];
+    }
+    
+    real pred_count = sum(confusion_matrix[, cat]);
+    if (pred_count > 0) {
+      category_precision[cat] = confusion_matrix[cat, cat] / pred_count;
+    }
+  }
+  
+  // Clinical grouping sensitivity/specificity
+  real response_sensitivity = 0;
+  real response_specificity = 0;
+  real progression_sensitivity = 0;
+  real progression_specificity = 0;
+  
+  // CR=1, PR=2, SD=3, PD=4
+  real true_responders = sum(category_counts[1:2]);
+  real true_non_responders = sum(category_counts[3:4]);
+  real true_progressors = category_counts[4];
+  real true_non_progressors = sum(category_counts[1:3]);
+  
+  if (true_responders > 0) {
+    response_sensitivity = sum(confusion_matrix[1:2, 1:2]) / true_responders;
+  }
+  if (true_non_responders > 0) {
+    response_specificity = sum(confusion_matrix[3:4, 3:4]) / true_non_responders;
+  }
+  if (true_progressors > 0) {
+    progression_sensitivity = confusion_matrix[4, 4] / true_progressors;
+  }
+  if (true_non_progressors > 0) {
+    progression_specificity = sum(confusion_matrix[1:3, 1:3]) / true_non_progressors;
+  }
+  
+  return (accuracy, response_accuracy, disease_control_accuracy,
+          weighted_linear, weighted_quadratic,
+          category_sensitivity, category_precision,
+          response_sensitivity, response_specificity,
+          progression_sensitivity, progression_specificity);
+}

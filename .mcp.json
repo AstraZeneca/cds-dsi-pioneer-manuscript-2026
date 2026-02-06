@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "targets": {
+      "command": "julia",
+      "args": ["--startup-file=no", "--project=/mnt/code/.claude/mcp/targets-mcp", "/mnt/code/.claude/mcp/targets-mcp/server_julia.jl"],
+      "env": {
+        "TAR_PROJECT": "sclc"
+      }
+    },
+    "domino": {
+      "command": "julia",
+      "args": ["--startup-file=no", "--project=/mnt/code/.claude/mcp/domino-mcp", "/mnt/code/.claude/mcp/domino-mcp/server.jl"],
+      "env": {
+        "DOMINO_USER_API_KEY": "${DOMINO_USER_API_KEY}",
+        "DOMINO_HOST": "https://domino.astrazeneca.net"
+      }
+    }
+  }
+}

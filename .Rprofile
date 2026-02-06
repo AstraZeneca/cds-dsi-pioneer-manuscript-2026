@@ -1,18 +1,28 @@
-if (file.exists("~/.Rprofile")) source("~/.Rprofile")
+if (file.exists("~/.Rprofile")) {
+  source("~/.Rprofile")
+}
 
-source("renv/activate.R")
+# Find and activate renv - try relative path first (when R starts from project root),
+# then fall back to here::here() for other cases (like Quarto subdirectories)
+if (file.exists("renv/activate.R")) {
+  source("renv/activate.R")
+} else if (requireNamespace("here", quietly = TRUE)) {
+  source(here::here("renv", "activate.R"))
+}
 
 # if (is_domino) {
-  output_path <- file.path("/mnt/data/analysis-results", Sys.getenv("DOMINO_STARTING_USERNAME"))
-  artifacts_path <- file.path("/mnt/artifacts", Sys.getenv("DOMINO_STARTING_USERNAME"))
-  data_path <- "/mnt/data"
-  fit_output_timestamp <- FALSE
+data_path <- Sys.getenv("DOMINO_DATASETS_DIR")
+output_path <- file.path(data_path, "analysis-results", Sys.getenv("DOMINO_STARTING_USERNAME"))
+artifacts_path <- file.path(Sys.getenv("DOMINO_ARTIFACTS_DIR"), Sys.getenv("DOMINO_STARTING_USERNAME"))
+fit_output_timestamp <- FALSE
 
 library(conflicted)
 
 conflicts_prefer(
-  dplyr::filter, dplyr::lag,
-  posterior::sd, posterior::mad,
+  dplyr::filter,
+  dplyr::lag,
+  posterior::sd,
+  posterior::mad,
   rlang::set_names,
   purrr::flatten_dbl,
 )
@@ -43,3 +53,36 @@ AZ_palette <- c(
   AZ_lightpurple
 )
 
+init_project <- function(output_path = output_path, artifacts_path = artifacts_path) {
+  library(magrittr)
+  library(tidyverse)
+  library(rlang)
+  library(targets)
+  library(tarchetypes)
+  library(stantargets)
+  library(crew)
+  library(autometric)
+  library(here)
+  library(cmdstanr)
+  library(posterior)
+  library(tidybayes)
+  library(qs2)
+  library(recipes)
+
+  source(here("r", "util.R"))
+  source(here("r", "priors.R"))
+  source(here("r", "posterior.R"))
+  source(here("r", "prepare_analysis_data.R"))
+  source(here("r", "initializers.R"))
+  source(here("r", "accuracy.R"))
+  source(here("r", "state_space.R"))
+  source(here("r", "plot_functions.R"))
+  source(here("r", "parquet_draws.R"))
+
+  source(here("r", "sclc", "priors.R"))
+  source(here("r", "sclc", "prepare_analysis_data.R"))
+  source(here("r", "sclc", "accuracy.R"))
+  source(here("r", "sclc", "plot_functions.R"))
+
+  source(here("r", "targets_tidyselect.R"))
+}
