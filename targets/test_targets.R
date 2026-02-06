@@ -4,19 +4,19 @@
 # library(crew)
 # library(here)
 # library(qs2)
-# 
+#
 # tm <- tar_map(
 #   values = list(x = 1:5),
 #   tar_target(t1, data.frame(a = x)),
 #   tar_target(t2, data.frame(b = x))
 # )
-# 
+#
 # all_t <- list(
 #   tar_target(t3, 100)
 # )
-# 
+#
 # list(
-#   all_t, 
+#   all_t,
 #   tm,
 #   tar_combine(ct, tm[["t1"]], command = dplyr::bind_rows(!!!.x))
 # )
@@ -54,27 +54,46 @@ fs::dir_create(file.path(sclc_output_path, "fit"))
 fs::dir_create(file.path(sclc_artifacts_path, "models"))
 fs::dir_create(file.path(sclc_artifacts_path, "crew_logs"))
 
-# We're using different controllers for different types of targets depending on the resources they end up using. 
+# We're using different controllers for different types of targets depending on the resources they end up using.
 
 # crew_options <- crew_options_local(log_directory = file.path(artifacts_path, "crew_logs"))
 controller_default <- crew_controller_local(
-  name = "default", workers = 20, 
-) 
+  name = "default",
+  workers = 20,
+)
 controller_intense <- crew_controller_local(
-  name = "intense", workers = 10, 
+  name = "intense",
+  workers = 10,
 )
 controller_sampling <- crew_controller_local(
-  name = "sampling", workers = 22, 
+  name = "sampling",
+  workers = 22,
 )
 
 tar_option_set(
-  packages = c("magrittr", "tidyverse", "rlang", "here", "targets", "cmdstanr", "tidybayes", "posterior", "priorsense", "loo"),
-  controller = crew_controller_group(controller_default, controller_intense, controller_sampling),
+  packages = c(
+    "magrittr",
+    "tidyverse",
+    "rlang",
+    "here",
+    "targets",
+    "cmdstanr",
+    "tidybayes",
+    "posterior",
+    "priorsense",
+    "loo"
+  ),
+  controller = crew_controller_group(
+    controller_default,
+    controller_intense,
+    controller_sampling
+  ),
   resources = tar_resources(crew = tar_resources_crew(controller = "default")),
-  memory = "transient", garbage_collection = TRUE, 
+  memory = "transient",
+  garbage_collection = TRUE,
   format = "qs",
   error = "continue",
-  seed = 26091468 
+  seed = 26091468
 )
 
 # Some global settings. Some of the Boolean ones are used with tar_skip() to skip some targets depending on the project. Still reports errors at runtime though.
@@ -96,17 +115,21 @@ tumor_ssls <- tar_map(
     fit_type = c("prior", "posterior"),
   ),
   names = "fit_type",
-  
+
   tar_target(t1, tibble(fit_type))
 )
 
 sclc_targets <- lst(
   tumor_ssls,
-  
-  tar_combine(all_tumor_ssls_rates_rvar, tumor_ssls[["t1"]], command = dplyr::bind_rows(!!!.x))
+
+  tar_combine(
+    all_tumor_ssls_rates_rvar,
+    tumor_ssls[["t1"]],
+    command = dplyr::bind_rows(!!!.x)
+  )
   # # tar_combine(all_tumor_ssls_patient_rates_rvar, tar_select_targets(tumor_ssls, starts_with("tumor_ssls_patient_rates")), command = bind_rows(!!!.x)),
   # tar_combine(all_tumor_ssls_patient_rates_rvar, tumor_ssls[["tumor_ssls_rates"]], command = bind_rows(!!!.x)),
-  # tar_combine(all_tumor_ssls_noise_sd_rvar, tar_select_targets(tumor_ssls, starts_with("tumor_ssls_noise_sd_rvar"))), 
+  # tar_combine(all_tumor_ssls_noise_sd_rvar, tar_select_targets(tumor_ssls, starts_with("tumor_ssls_noise_sd_rvar"))),
   # tar_combine(all_tumor_ssls_log_growth_lag_rvar, tar_select_targets(tumor_ssls, starts_with("tumor_ssls_log_growth_lag"))),
   # # tar_combine(all_tumor_ssls_patient_log_growth_lag, tar_select_targets(tumor_ssls, starts_with("tumor_ssls_patient_log_growth_lag"))),
   # tar_combine(all_tumor_ssls_patient_decrease_prop_rvar, tar_select_targets(tumor_ssls, starts_with("tumor_ssls_patient_decrease_prop"))),
@@ -116,6 +139,6 @@ sclc_targets <- lst(
 # sclc_targets <- list(
 #   # sclc_targets,
 #   tumor_ssls,
-# 
+#
 #   tar_combine(all_tumor_ssls_rates_rvar, tumor_ssls[["tumor_ssls_rates_rvar"]], dplyr::bind_rows(!!!.x))
 # )
