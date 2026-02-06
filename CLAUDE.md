@@ -280,6 +280,10 @@ Analysis results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<ru
 - **NEVER use `tar_config_set(store = ...)`** - it changes global state and causes conflicts
 - Always use explicit `store` argument: `tar_read(name, store = "path/_targets")`
 - Same applies to all targets functions: `tar_meta()`, `tar_load()`, etc.
+- **NEVER inline complex code in targets** - extract to helper functions in `r/` directory
+  - Target commands should be simple function calls, not multi-line code blocks
+  - Example: Use `tar_target(name, my_function(arg))` not `tar_target(name, { ... complex code ... })`
+  - Helper functions belong in appropriate `r/` subdirectories (e.g., `r/sclc/plot_functions.R`)
 
 ### Quarto and Documentation
 - **Always use "SCLC-01"** when referring to the trial in user-facing text (documentation, plots, presentations)
