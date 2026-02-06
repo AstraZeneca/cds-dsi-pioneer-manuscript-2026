@@ -31,7 +31,7 @@ filters:
 execute:
   warning: false
   echo: false
-  cache: false
+  cache: true
 ---
 
 ```{r setup}
@@ -50,7 +50,9 @@ source(here::here("quarto", "_shared", "_setup.R"))
 
 ::: {.column width="40%"}
 
-- **Reliable early forecasts**: PIONEER delivers **reliable predictions 3-6 months earlier** than the latest DCO observational-only analyses
+- **Reliable early forecasts**: 
+    * PIONEER delivers **reliable predictions 3-6 months earlier** than the latest DCO observational-only analyses
+    * While uncertainty diminished with more data, our model is able to provide survival information beyond the censoring horizon.
 
 - **High accuracy**: Out-of-sample RECIST prediction sensitivity ranging from **70-80%** across response categories
 
@@ -123,7 +125,7 @@ p_km <- cond_km_part_e |>
   scale_y_continuous("PFS", labels = scales::percent) +
   scale_fill_manual(values = AZ_platinum) +
   guides(color = "none", fill = "none", alpha = "none") +
-  facet_wrap(~ dco, ncol = 3) +
+  facet_wrap(~dco, ncol = 3) +
   labs(title = "Part E PFS Forecast by DCO") +
   theme(
     plot.title = element_text(size = 14, face = "bold"),
@@ -171,7 +173,7 @@ p_enrollment <- part_e_data |>
     label.r = unit(0.3, "lines")
   ) +
   scale_x_date("", limits = x_limits) +
-  scale_y_continuous("Patients", breaks = seq(0, 10, 5)) +
+  scale_y_continuous("Patients") +
   theme_minimal(base_size = 10) +
   theme(panel.grid.minor = element_blank())
 
@@ -197,14 +199,61 @@ p_exec_summary
 
 ::::
 
+::: {.notes}
 
-# Model Structure
+* **What is the model**: 
+  - A Bayesian multimodal, dynamic model for forecasting trial outcomes (e.g., PFS, ORR)
+  - It is a **digital twin** model that uses a mechanistic model to forecast **patient-level** outcomes.
+* From **three different projects/experiments**: we can say that this approach could give us a 3-6 month lead time in go/no-go decisions.
+* In this plot: 
+  - We focus on the Part E patients as those give us a good sense of how the model with little data is able to forecast survival.
+  - We see how as more data is available while the observed KM is truncated, the predictive model is able forecast out with relative stability.
+  - **Ground Truth**: Qualitatively here we see how the the observed data over the DCOs sharpens but does not alter the pattern of the forecast KM. 
+
+:::
+
+
+# {.section-intro}
+
+:::: {.columns style="align-items: center;"}
+
+::: {.column width="35%"}
+Model Structure
+:::
+
+::: {.column width="65%"}
+
+- Multimodal integration of expert knowledge, historical trials, and SCLC-01 data
+- Patient-level digital twin approach for tumor dynamics
+- From tumor size trajectories to RECIST responses and survival endpoints
+
+:::
+
+::::
 
 ## Model Architecture Diagram {.center}
 
 <br>
 
 ![](images/model-infographic-cropped.png){fig-align="center" width="90%"}
+
+::: {.notes}
+
+The model is multimodal over heterogenous sources of information: 
+
+1. Expert/domain knowledge: 
+  * prior elicitation (Shefield Elicitation Framework, SHELF) 
+  * Two populations mechanistic model (pharmokinetic literature)
+2. Historical patient level data
+3. Available data from the target trial at the point of analysis
+
+From the data, we use both baseline features (clinical covariates and ctdna if available) and longitudinal measures (the most important of which is patient-level tumor size trajectories).
+
+Using this info, we model (probabilistically) the data generating process for tumor sizes and responses. 
+
+From these we generate what the future outcomes (beyond censoring) would look like.  
+
+:::
 
 
 ## Digital Twin: From Tumor Size to RECIST Response {.center}
@@ -350,6 +399,30 @@ if (!frames_exist) {
 
 ::::
 
+::: {.notes}
+
+**Here we see**, how we forecast outcomes: 
+
+* We demonstrate this using few patients. 
+* For all patients, there would be similar personalized trajectory.
+* We learn tumour dynamics from the historical trials and then use that knowledge to extrapolate forward
+
+On the top: 
+
+* How our model fits the observed data (dots). We see this is the yellow probabilistic ribbon.
+* The purple ribbon represents the forecast tumor sizes beyond censoring
+
+On the bottom:
+
+* These tumor sizes then determine what the response (its probability) would be at every point in time.
+* (The shapes near the top represent the overall and target response from the data).
+* From that, we get endpoints such as PFS and ORR.
+
+
+
+
+:::
+
 
 ## Model Data Flow {.center}
 
@@ -359,8 +432,108 @@ if (!frames_exist) {
 
 :::
 
+::: {.notes}
 
-# DCO Endpoint Evolution
+* In the previous two slides we talked about the mechanistic submodel.
+* That submodel does not actually handle non-target lesion events and death.
+* For that we jointly use a survival model that captures those "residual" events.
+
+:::
+
+
+## Model Mathematical Specification {.smaller}
+
+:::: {.columns}
+
+::: {.column width="50%"}
+
+**Tumor State-Space Model**
+
+Latent tumor state decomposes into two components:
+
+$$
+\log(\text{SLD}_i(t)) = \log\left(e^{x_{i,\text{dec}}(t)} + e^{x_{i,\text{gro}}(t)}\right)
+$$
+
+**State evolution** between visits:
+
+$$
+\begin{bmatrix} x_{i,\text{dec}}(t+1) \\ x_{i,\text{gro}}(t+1) \end{bmatrix} = \begin{bmatrix} x_{i,\text{dec}}(t) \\ x_{i,\text{gro}}(t) \end{bmatrix} + \Delta t \begin{bmatrix} -d_i \\ g_i \end{bmatrix}
+$$
+
+**Rate parameters** with hierarchical structure:
+
+$$
+\log(r_i) = \mu_{r,\text{pop}} + \eta_{r,s(i)}^{\text{trial}} + \eta_{r,i}^{\text{patient}} + \mathbf{X}_i^T \boldsymbol{\beta}_r
+$$
+
+where $d_i = r_i \cdot \phi_i$ and $g_i = r_i \cdot (1 - \phi_i)$
+
+:::
+
+::: {.column width="50%"}
+
+**Independent Competing Risks**
+
+PFS combines target progression and other events:
+
+$$
+T_i^{\text{PFS}} = \min(T_i^{\text{target}}, T_i^{\text{other}})
+$$
+
+- $T_i^{\text{target}}$: first time RECIST = PD (from tumor model)
+- $T_i^{\text{other}}$: non-target progression, death
+
+**Other events hazard** (proportional hazards):
+
+$$
+\lambda_i(t) = \lambda_{0,s}(t) \cdot \exp\left(\mathbf{Z}_i^T \boldsymbol{\theta} + \mathbf{W}_i(t)^T \boldsymbol{\kappa}\right)
+$$
+
+where $\mathbf{W}_i(t)$ includes tumor-derived time-varying covariates (predicted SLD, growth rate, velocity).
+
+:::
+
+::::
+
+::: {.notes}
+
+**Tumor dynamics (left)**:
+- Two-component state-space model in log-space
+- Decreasing component captures treatment-sensitive cells
+- Growing component captures resistant/proliferating cells
+- All rate parameters follow 3-level hierarchy (population → trial → patient)
+- Total rate $r_i$ and fraction $\phi_i$ determine speed and balance of dynamics
+
+**Other events (right)**:
+- Independent survival model for non-target progression and death
+- Time-varying covariates from tumor model link the two submodels
+- Gaussian process baseline hazard allows flexible shape
+- Combined via competing risks: first event determines PFS
+
+:::
+
+
+# {.section-intro}
+
+:::: {.columns style="align-items: center;"}
+
+::: {.column width="35%"}
+DCO Endpoint Evolution
+:::
+
+::: {.column width="65%"}
+
+- Tracking endpoint predictions across three data cutoffs (Apr 25, Aug 25, Jan 26)
+  - Overall Response Rate (ORR)
+  - Median PFS
+  - PFS at fixed timepoints
+- Results shown for **all** patients, **first line** patients, and **Part E** patients
+- Both sample-based and superpopulation estimates are presented
+
+:::
+
+::::
 
 ## ORR by Data Cutoff {.smaller}
 
@@ -423,6 +596,20 @@ cond_pfs_n_list <- list(
 )
 ```
 
+:::: {.columns}
+
+::: {.column width="33%"}
+
+**Overall Response Rate Evolution**
+
+- For **all** patients estimates, ORR is is precisely estimated and stable across DCOs
+- For **first line** patients, especially the PDL1 Low patients, the outcomes are less stable with more data
+- For **Part E** patients, there is good stability and overlap over time but with greater uncertainty
+
+:::
+
+::: {.column width="67%"}
+
 ::: {.panel-tabset}
 
 ### Sample-Based
@@ -457,6 +644,13 @@ plot_orr_by_dco("spop", orr_list, cond_orr_list, show_priors = FALSE) +
   )
 ```
 
+:::
+
+:::
+
+::::
+
+::: {.notes}
 :::
 
 
@@ -508,7 +702,16 @@ input:checked + .toggle-slider:before {
 }
 </style>
 
-<div style="margin-bottom: 1rem;">
+:::: {.columns}
+
+::: {.column width="33%"}
+
+**Median PFS Forecasting**
+
+- Across DCOs much greater stability 
+- More uncertainty especially for the **Part E** patients
+
+<div style="margin-top: 2rem;">
   <label style="display: inline-flex; align-items: center; cursor: pointer; font-weight: 500;">
     <span class="toggle-switch">
       <input type="checkbox" id="pres-show-observed" onchange="togglePresentationObserved(this.checked)">
@@ -517,6 +720,10 @@ input:checked + .toggle-slider:before {
     Show Observed KM Estimates
   </label>
 </div>
+
+:::
+
+::: {.column width="67%"}
 
 ::: {.panel-tabset}
 
@@ -590,6 +797,10 @@ plot_median_pfs_by_dco("spop", quant_pfs_list, cond_quant_pfs_list, obs_km_list,
 
 :::
 
+:::
+
+::::
+
 <script>
 function togglePresentationObserved(show) {
   document.getElementById('pres-median-pfs-sample-with-obs').style.display = show ? 'block' : 'none';
@@ -599,8 +810,28 @@ function togglePresentationObserved(show) {
 }
 </script>
 
+::: {.notes}
+
+Toggle to overlay observed KM estimates
+
+:::
+
 
 ## PFS at Fixed Timepoints by Data Cutoff {.smaller}
+
+:::: {.columns}
+
+::: {.column width="33%"}
+
+**PFS at Key Milestones**
+
+- Evaluated at 6, 12, 18, and 24 months
+- Hightest precision and stability across endpoints
+- Even **Part E** patients are precise and stable starting from August 2025
+
+:::
+
+::: {.column width="67%"}
 
 ::: {.panel-tabset}
 
@@ -638,10 +869,49 @@ plot_pfs_n_by_dco("spop", pfs_n_list, cond_pfs_n_list, pfs_timepoints, show_prio
 
 :::
 
+:::
 
-# KM Curves by DCO
+::::
+
+::: {.notes}
+:::
+
+
+# {.section-intro}
+
+:::: {.columns style="align-items: center;"}
+
+::: {.column width="35%"}
+KM Curves by DCO
+:::
+
+::: {.column width="65%"}
+
+- Full survival curve forecasts for all cohorts
+- PDL1-stratified predictions 
+- Evolution from early to late data cutoffs
+- Results shown for **all** patients, **first line** patients, and **Part E** patients
+- Both sample-based and superpopulation estimates are presented
+
+:::
+
+::::
 
 ## KM Curves by DCO: By Cohort {.smaller}
+
+:::: {.columns}
+
+::: {.column width="33%"}
+
+**Survival Curves by Cohort**
+
+- Same evolution of observed and model forest KM curves as seen earlier, including **all** patients and **first line** patients
+- For **all** and **first line** the sample-based KM is very precise around the observed, and is able to forecast out beyond the censoring horizon
+- Comparing the sample-based estimates and superpopulation estimates shows how the sample-based is potentially _overfit_ to the observed KM curves 
+
+:::
+
+::: {.column width="67%"}
 
 ::: {.panel-tabset}
 
@@ -677,7 +947,10 @@ plot_sclc_km_by_dco(
     apr25 = tar_read(all_analysis_data_ctdna_apr25),
     aug25 = tar_read(all_analysis_data_ctdna_aug25),
     jan26 = tar_read(all_analysis_data_ctdna_jan26)
-  )
+  ),
+  show_priors = FALSE,
+  fill_color = AZ_platinum,
+  obs_color = AZ_plum
 ) +
   labs(title = "KM Curves by Cohort") +
   theme(
@@ -719,7 +992,10 @@ plot_sclc_km_by_dco(
     apr25 = tar_read(all_analysis_data_ctdna_apr25),
     aug25 = tar_read(all_analysis_data_ctdna_aug25),
     jan26 = tar_read(all_analysis_data_ctdna_jan26)
-  )
+  ),
+  show_priors = FALSE,
+  fill_color = AZ_platinum,
+  obs_color = AZ_plum
 ) +
   labs(title = "KM Curves by Cohort") +
   theme(
@@ -731,8 +1007,30 @@ plot_sclc_km_by_dco(
 
 :::
 
+:::
+
+::::
+
+::: {.notes}
+
+This is a good plot to show the difference between sample-based and superpopulation based
+
+:::
 
 ## KM Curves by DCO: PDL1-Stratified {.smaller}
+
+:::: {.columns}
+
+::: {.column width="33%"}
+
+**PDL1-Stratified Analysis**
+
+* Precision and fit are still very high for the **all** and **first line** patients.
+* Superpopulation estimates avoid overfitting to the observed KM curves.
+
+:::
+
+::: {.column width="67%"}
 
 ::: {.panel-tabset}
 
@@ -812,8 +1110,32 @@ plot_km_pdl1_by_dco(
 
 :::
 
+:::
 
-# Model Validation
+::::
+
+::: {.notes}
+:::
+
+
+# {.section-intro}
+
+:::: {.columns style="align-items: center;"}
+
+::: {.column width="35%"}
+Model Validation
+:::
+
+::: {.column width="65%"}
+
+- Out-of-sample RECIST prediction sensitivity: 70-80% accuracy
+- Leave-future-out cross-validation confirms temporal forecasting
+- Posterior predictive checks show calibration across event types
+- Model performance validated across historical and current trials
+
+:::
+
+::::
 
 ## Out-of-Sample RECIST Prediction Sensitivity {.smaller}
 
@@ -859,13 +1181,15 @@ plot_oos_confusion_sankey(oos_confusion_matrix) +
 
 ::::
 
-<br>
-
 **Key Findings:**
 
-- Confusion matrix shows **sensitivity (recall)** for each RECIST category: P(Predicted | Observed)
+- Confusion matrix shows **sensitivity** for each RECIST category: $\Pr(\text{Predicted} \mid \text{Observed})$
 - Cross-validated RECIST predictions show **70-80% sensitivity** across response categories
 - Model effectively captures progression and response patterns from tumor dynamics alone
+- **Specificity** is also high as can be seen from the right side plot
+
+::: {.notes}
+:::
 
 
 ## RECIST Prediction Sensitivity Over Time {.smaller}
@@ -892,13 +1216,14 @@ tar_read(full_oos_confusion_matrix_ctdna_jan26, store = lfo_store) |>
   )
 ```
 
-<br>
-
 **Interpretation:**
 
 - **Stable performance**: Sensitivity remains consistent at **70-80%** as more data accrues
 - **Early prediction**: High accuracy achieved well before DCO2 and DCO3
 - **Category-specific**: Progressive Disease (PD) shows highest sensitivity; Partial Response (PR) most challenging
+
+::: {.notes}
+:::
 
 
 ## Leave-Future-Out Cross-Validation {.smaller}
@@ -971,6 +1296,18 @@ all_lfo_clean |>
 
 ::::
 
+::: {.notes}
+
+What’s here: cross validation done temporally to realistically capture how our proper out-of-sample observations are in the future. 
+
+The results in the plot are compared against a baseline model with no historical data.
+
+We see that 
+
+* Adding historical data has a significant contribution to performance accuracy (the bars shown represent 1 and 2 SEs)
+* Modelling patient-level heterogeneity and personalizing tumor size trajectories plays a major role in our model’s forecasting.
+
+:::
 
 ## PFS Posterior Predictive Check {.smaller}
 
@@ -1002,11 +1339,13 @@ all_lfo_clean |>
 
 ppc_spop_pfs <- tar_read(all_tumor_ssls_pfs_rvar_ctdna_jan26) |>
   filter(fct_match(fit_type, "posterior"), !right_censored) |>
-  mutate(event_type = case_when(
-    !progression_before_death ~ "Death",
-    !target_only_right_censored ~ "Target Lesion Progression",
-    TRUE ~ "Residual Progression"
-  ))
+  mutate(
+    event_type = case_when(
+      !progression_before_death ~ "Death",
+      !target_only_right_censored ~ "Target Lesion Progression",
+      TRUE ~ "Residual Progression"
+    )
+  )
 
 ppc_spop_pfs |>
   plot_pfs_ppc(pfs_var = spop_pfs) +
@@ -1027,6 +1366,9 @@ ppc_spop_pfs |>
 <br>
 
 **Interpretation:** Model shows good calibration across event types, with predictions clustering near the diagonal
+
+::: {.notes}
+:::
 
 
 # {visibility="hidden"}
@@ -1146,8 +1488,51 @@ ppc_spop_pfs |>
 
 ::::
 
+::: {.notes}
 
-# Previous Applications
+So where are we and where are we going with this model.
+
+For the SCLC trial
+
+* We’ve generated forecasts for three DCOs.
+* This gives us a way to validate the application of this to the g/ng decision 
+* We’re using historical data from 4 trials.
+* We’ve conducted a prior elicitation workshop.
+* We’ve carried out cross validation to evaluate differences in model design.
+* Added joint or sub models to capture progressive disease not determined by measured tumor sizes: changes in non-target tumors, appearance of new tumors, and the event of death on trial.
+
+On our plate right now:
+
+* Looking at how we can incorporate other longitudinal data such as lab and ctDNA results collected during follow-up visits
+
+Scaling as we move into the future:
+
+* Improve out prior elicitation approach to incorporate AI in the elicitation workshops and conducting agentic deep research
+* We need to streamline the process of identifying, harmonizing, and validating historical trials per target trial to forecast
+* Performance improvement to the model codebase and environment
+* Stakeholder and clinical team communication takes a significant amount of time.
+
+:::
+
+
+# {.section-intro}
+
+:::: {.columns style="align-items: center;"}
+
+::: {.column width="35%"}
+Previous Applications
+:::
+
+::: {.column width="65%"}
+
+- Breast trials: Proof of concept for early PFS forecasting
+- LUNG trial: Live Go/No-Go decision support from DCO 1
+- Demonstrated 3-6 month lead time for trial decisions
+- Validated approach across multiple tumor types and treatment modalities
+
+:::
+
+::::
 
 ## Forecasting Proof of Concept with Breast-01 to Breast-04
 
@@ -1171,6 +1556,24 @@ ppc_spop_pfs |>
 
 ::::
 
+::: {.notes}
+
+This is the earliest version of the forecasting model (again still not a mechanistic dynamic model).
+As a PoC we wanted to evaluate how we would have done making early forecast for the mature BREAST–1 through -4 trials.
+
+We did some simulation:
+
+* We held out one trial and trained on the other 3.
+* From the held-out trial we iteratively drew small subsamples of patients
+* Then for different simulated cutoff (early) points in time we forecast endpoints and compared to the known endpoint quantities. (Here the ground truth is “known” since we have the full, mature data we drew subsamples from)
+
+What this plot shows:
+
+* The lines represent the forecast trajectories in mPFS for each of the simulation (only a few are shown).
+* The ribbons represent the distribution of these trajectories from the simulation (something like 1000 simulations)
+* What we saw is that generally we are quite precise and mostly unbiased as early has having only ~15% of patients with a confirmed response.
+
+:::
 
 ## LUNG DCO3 Forecast: Go/No-Go Decision Support {.smaller}
 
@@ -1190,6 +1593,18 @@ ppc_spop_pfs |>
 
 ::::
 
+::: {.notes}
+
+What’s here: The predictions to use for the LUNG go/no-go decision. Threshold probabilities are easily quantified.
+
+The previous version of the model was hierarchical model like the current one, but built as Cox models, not mechanistic models of tumor size dynamics.
+
+This plot compares how probability intervals evolve across three DCOs separated by 4-7 months.
+As expected the the estimates mostly increase in certainty.
+There is fluctuation (as we would expect from the changes in data), but they continue to overlap.
+There will always be risk in making decisions early, but we can see the DCO1 and DCO3 are qualitatively very similar.
+
+:::
 
 # {visibility="hidden"}
 
@@ -1199,11 +1614,13 @@ ppc_spop_pfs |>
 
 ::: {.column width="40%"}
 
+- **Forecasting beyond observed data**: The mechanistic model allows us to detect patient-level patterns that allows up to predict into the future
+
 - **Reliable early forecasts**: PIONEER delivers **reliable predictions 3-6 months earlier** than the latest DCO observational-only analyses
 
 - **High accuracy**: Out-of-sample RECIST prediction sensitivity ranging from **70-80%** across response categories
 
-- **Validated approach**: _Leave-future-out cross-validation_ confirms predictive performance
+- **Validated approach**: _Leave-future-out cross-validation_ confirms predictive performance and avoids overfitting at the patient-level
 
 **Scaling Up for 2026**
 
@@ -1227,3 +1644,17 @@ p_exec_summary
 :::
 
 ::::
+
+::: {.notes}
+
+In summary:
+
+* This model by leveraging historical data, expert knowledge, and mechanistic model has a strong potential to accelerate Ph3ID decision making
+* In order for us to scale there are a number of nexts steps for us to take
+  - Agentic prior elicitation and deep research
+  - Data ingestion automation
+  - Better utilization of compute power at our disposal
+  - Streamlining communication
+
+
+:::
