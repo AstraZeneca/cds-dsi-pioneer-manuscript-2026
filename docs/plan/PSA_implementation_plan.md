@@ -10,7 +10,7 @@ The PIONEER model currently uses SLD (Sum of Longest Diameters) for solid tumor 
 
 - **Backward compatibility**: Maintain both SLD and PSA codepaths via `observation_type` flag
 - **PSA covariates**: Include nadir, nadir_ratio in Phase 1 (clinically important for PCWG3)
-- **Test data**: Flatiron pluvcohort (`/mnt/data/Pioneer_data/pluvcohort.csv`)
+- **Test data**: PSA time course data (longitudinal PSA measurements per patient in weeks) - to be provided
 
 ---
 
@@ -326,18 +326,16 @@ expect_equal(
 
 **Pass criteria**: SLD mode unchanged from baseline
 
-### Stage 7: Full PSA Data Run (Flatiron Pluvcohort)
+### Stage 7: Full PSA Data Run
 
 ```r
-# Load Flatiron pluvcohort data
-# Data location: /mnt/data/Pioneer_data/pluvcohort.csv
-# Longitudinal labs: /mnt/data/Pioneer_data/pluvictolonglabs.csv
-pluvcohort <- read_csv("/mnt/data/Pioneer_data/pluvcohort.csv")
-psa_labs <- read_csv("/mnt/data/Pioneer_data/pluvictolonglabs.csv") |>
-  filter(labname == "PSA")
+# Load PSA time course data (to be provided)
+# Expected format: longitudinal PSA measurements per patient
+# Columns: patient_id, week, psa (ng/mL), [covariates]
+psa_data <- read_csv("path/to/psa_timecourse.csv")
 
 # Prepare analysis data
-psa_analysis_data <- prepare_psa_analysis_data(pluvcohort, psa_labs)
+psa_analysis_data <- prepare_psa_analysis_data(psa_data)
 
 # Full MCMC run
 fit_psa <- model$sample(
@@ -351,7 +349,7 @@ fit_psa <- model$sample(
 expect_true(all(fit_psa$summary()$rhat < 1.1))
 ```
 
-**Pass criteria**: Model converges on Flatiron pluvcohort PSA data
+**Pass criteria**: Model converges on PSA time course data
 
 ---
 
