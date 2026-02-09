@@ -11,6 +11,8 @@ The PIONEER model currently uses SLD (Sum of Longest Diameters) for solid tumor 
 - **Backward compatibility**: Maintain both SLD and PSA codepaths via `observation_type` flag
 - **PSA covariates**: Include nadir, nadir_ratio in Phase 1 (clinically important for PCWG3)
 - **Test data**: PSA time course data (longitudinal PSA measurements per patient in weeks) - to be provided
+- **Future-proof for λ**: Structure code so λ parameter can be introduced later (Phase 3)
+- **Future-proof for dual observations**: Support observation_type=2 (both SLD + PSA) for estimating λ and φ (Phase 5)
 
 ---
 
@@ -21,18 +23,36 @@ The PIONEER model currently uses SLD (Sum of Longest Diameters) for solid tumor 
 **File**: `stan/tumor/base_data.stan` (or equivalent data declaration)
 
 ```stan
-// Add observation type flag
-int<lower=0, upper=2> observation_type;  // 0=SLD, 1=PSA, 2=both
+// Observation type flag
+int<lower=0, upper=2> observation_type;  // 0=SLD only, 1=PSA only, 2=both SLD+PSA
 
-// Rename for clarity (backward compatible)
-// sum_tumor_size → sum_biomarker (or keep sum_tumor_size for SLD, add psa_values for PSA)
-vector[sum(n_patient_visits)] biomarker_values;  // PSA in ng/mL or SLD in cm
+// SLD observations (when observation_type == 0 or 2)
+vector[observation_type != 1 ? sum(n_patient_visits) : 0] sum_tumor_size;
+
+// PSA observations (when observation_type >= 1)
+vector[observation_type >= 1 ? sum(n_patient_psa_visits) : 0] psa_values;
+array[observation_type >= 1 ? n_patients : 0] int n_patient_psa_visits;
+
+// Lambda parameter control (for future Phase 3)
+int<lower=0, upper=1> estimate_lambda;  // 0=fix at 1, 1=estimate (requires observation_type=2)
+real<lower=0> lambda_fixed;  // Used when estimate_lambda=0 (default: 1.0)
 ```
 
 **Changes needed**:
 - Add `observation_type` flag to Stan data
-- Keep `sum_tumor_size` for SLD compatibility
-- Add `psa_values` array for PSA data (when observation_type >= 1)
+- Keep `sum_tumor_size` for SLD compatibility (observation_type 0 or 2)
+- Add `psa_values` array for PSA data (observation_type 1 or 2)
+- Add `estimate_lambda` flag and `lambda_fixed` value (prepare for Phase 3)
+- When `observation_type=2`, both SLD and PSA are observed → can estimate λ
+
+**Identifiability table** (from PSA_260209.md Section 2.4):
+
+| observation_type | estimate_lambda | What's identifiable |
+|------------------|-----------------|---------------------|
+| 0 (SLD only) | N/A | B(t), φ, d, g |
+| 1 (PSA only) | 0 (λ=1) | B(t) = B_PSA(t), φ, d, g |
+| 1 (PSA only) | 0 (λ≠1 fixed) | B_PSA(t), α_PSA, d, g (NOT φ, λ separately) |
+| 2 (both) | 1 | B(t), B_PSA(t), φ, λ, d, g |
 
 ### 1.2 Observation Model Changes
 
@@ -45,19 +65,37 @@ normalized_sld[visit_pos:visit_end] = sum_tumor_size[visit_pos:visit_end] / sum_
 
 Change to:
 ```stan
-// Generalized normalization (works for both SLD and PSA)
-if (observation_type == 0) {
-  // SLD mode (current behavior)
-  normalized_biomarker[visit_pos:visit_end] = sum_tumor_size[...] / sum_tumor_size[visit_pos];
-} else {
-  // PSA mode
-  normalized_biomarker[visit_pos:visit_end] = psa_values[...] / psa_values[visit_pos];
+// SLD normalization (observation_type 0 or 2)
+if (observation_type != 1) {
+  normalized_sld[visit_pos:visit_end] = sum_tumor_size[...] / sum_tumor_size[visit_pos];
+}
+
+// PSA normalization (observation_type 1 or 2)
+if (observation_type >= 1) {
+  normalized_psa[psa_visit_pos:psa_visit_end] = psa_values[...] / psa_values[psa_visit_pos];
 }
 ```
 
-**File**: `stan/ssls/_sf_functions.stan` (line 114, `sf_log_space_obs_lpdf`)
+**File**: `stan/ssls/_sf_functions.stan` or new `_sf_psa_functions.stan`
 
-No changes needed - function already works with normalized observations.
+For Phase 1 (λ=1), the observation likelihood is identical to SLD:
+```stan
+log(normalized_psa) ~ Normal(log(B(t)), σ_psa)
+```
+
+For future Phase 3 (λ≠1), the PSA-weighted burden formula:
+```stan
+// B_PSA(t) = [φ × e^(-d×t) + λ × (1-φ) × e^(g×t)] / [φ + λ × (1-φ)]
+// In log-space with states:
+//   x_s = log(φ) - d*t  (sensitive compartment)
+//   x_g = log(1-φ) + g*t  (resistant compartment)
+real log_B_PSA = log_sum_exp(x_s, log(lambda) + x_g)
+              - log_sum_exp(log_phi, log(lambda) + log1m_phi);
+
+log(normalized_psa) ~ Normal(log_B_PSA, σ_psa)
+```
+
+**Note**: When λ=1, `log_B_PSA = log_B` (mathematically identical).
 
 ### 1.3 PCWG3 Progression Criteria
 
@@ -148,26 +186,67 @@ Variable renaming:
 Add PSA data handling:
 
 ```r
-prepare_tumor_stan_data <- function(analysis_data, ..., observation_type = 0) {
-  # observation_type: 0=SLD, 1=PSA, 2=both
+prepare_tumor_stan_data <- function(
+  analysis_data,
+  ...,
+  observation_type = 0,      # 0=SLD, 1=PSA, 2=both
+  estimate_lambda = 0,       # 0=use lambda_fixed, 1=estimate (requires observation_type=2)
+  lambda_fixed = 1.0         # Fixed value when estimate_lambda=0
+) {
+  # Validate: can only estimate lambda when both observations available
+  if (estimate_lambda == 1 && observation_type != 2) {
+    stop("estimate_lambda=1 requires observation_type=2 (both SLD and PSA)")
+  }
 
-  if (observation_type == 0) {
-    # Current SLD logic
-    biomarker_values <- unnest(analysis_data, visit_data) |>
+  # SLD data (observation_type 0 or 2)
+  if (observation_type != 1) {
+    sld_values <- unnest(analysis_data, visit_data) |>
       pull(mmsumdiam) |> divide_by(10)
   } else {
-    # PSA logic
-    biomarker_values <- unnest(analysis_data, visit_data) |>
+    sld_values <- numeric(0)
+  }
+
+  # PSA data (observation_type 1 or 2)
+  if (observation_type >= 1) {
+    psa_values <- unnest(analysis_data, psa_visit_data) |>
       pull(psa)  # PSA in ng/mL
+    n_patient_psa_visits <- analysis_data |>
+      mutate(n = map_int(psa_visit_data, nrow)) |>
+      pull(n)
+  } else {
+    psa_values <- numeric(0)
+    n_patient_psa_visits <- integer(0)
   }
 
   lst(
     observation_type = observation_type,
-    sum_tumor_size = if (observation_type == 0) biomarker_values else numeric(0),
-    psa_values = if (observation_type >= 1) biomarker_values else numeric(0),
+    estimate_lambda = estimate_lambda,
+    lambda_fixed = lambda_fixed,
+    sum_tumor_size = sld_values,
+    psa_values = psa_values,
+    n_patient_psa_visits = n_patient_psa_visits,
     ...
   )
 }
+```
+
+**Phase 1 usage** (PSA only, λ=1):
+```r
+stan_data <- prepare_tumor_stan_data(
+  analysis_data,
+  observation_type = 1,      # PSA only
+  estimate_lambda = 0,       # Don't estimate
+  lambda_fixed = 1.0         # λ = 1 (mathematically identical to SLD model)
+)
+```
+
+**Future Phase 5 usage** (both SLD + PSA, estimate λ):
+```r
+stan_data <- prepare_tumor_stan_data(
+  analysis_data,
+  observation_type = 2,      # Both SLD and PSA
+  estimate_lambda = 1        # Estimate λ from data
+)
 ```
 
 ### 1.6 PSA-Derived Covariates (Nadir, Nadir Ratio)
@@ -208,27 +287,83 @@ n_tumor_covar <- if (observation_type == 0) 3 else 5
 
 ---
 
-## Future Phase: Hierarchical λ Parameter (NOT in current scope)
+## Future Phases (NOT in current scope, but code structured to support)
 
-This phase is **deferred**. When implemented:
-- Add `lambda_psa` parameter with prior `log(λ) ~ Normal(0, 0.5)`
-- Modify observation model to use B_PSA(t) formula
-- Only identifiable when both PSA and SLD available
+### Phase 3: Hierarchical λ Parameter (PSA-only, λ≠1)
+
+When `observation_type=1` and `estimate_lambda=0` but `lambda_fixed≠1`:
+
+**Use case**: Apply an informative prior or fixed value for λ based on external knowledge about PSA production rates in resistant vs sensitive cells.
+
+**Stan parameter** (add to `stan/ssls/modules/*/parameters.stan`):
+```stan
+// When estimate_lambda=1 (requires observation_type=2)
+real<lower=0> lambda_psa;  // PSA production ratio (resistant/sensitive)
+```
+
+**Prior** (add to `r/priors.R`):
+```stan
+log(lambda_psa) ~ Normal(0, 0.5);  // Centered at λ=1, allows 0.6 to 1.6
+```
+
+**Important**: With PSA-only data, λ and φ are **not separately identifiable**. The model estimates α_PSA (PSA-weighted sensitive fraction) where:
+```
+α_PSA = φ / [φ + λ × (1 - φ)]
+```
+
+### Phase 5: Dual Observations (SLD + PSA, estimate λ and φ)
+
+When `observation_type=2` and `estimate_lambda=1`:
+
+**Use case**: Dataset has both imaging (SLD) and PSA measurements. This enables estimation of true tumor burden B(t), true sensitive fraction φ, AND the PSA production ratio λ.
+
+**Observation model**:
+```stan
+// SLD directly observes true burden
+log(SLD/SLD_base) ~ Normal(log(B(t)), σ_sld)
+
+// PSA observes λ-weighted burden
+log(PSA/PSA_base) ~ Normal(log(B_PSA(t)), σ_psa)
+
+// Where B_PSA(t) = [φ × e^(-d×t) + λ × (1-φ) × e^(g×t)] / [φ + λ × (1-φ)]
+```
+
+**What becomes identifiable**:
+- φ (true sensitive fraction) - from SLD
+- λ (PSA production ratio) - from SLD+PSA comparison
+- d, g (rates) - from both
+- Separate σ_sld and σ_psa (measurement noise)
+
+**Data requirements**:
+- Same patients must have both SLD and PSA observations
+- Observations don't need to be at same timepoints (model interpolates)
 
 ---
 
 ## Files to Modify
 
+### Phase 1 (Current Scope)
+
 | File | Changes |
 |------|---------|
-| `stan/tumor/base_data.stan` | Add `observation_type`, `psa_values` |
-| `stan/ssls/_sf_transformed_data.stan` | Conditional normalization (SLD vs PSA) |
+| `stan/tumor/base_data.stan` | Add `observation_type`, `psa_values`, `estimate_lambda`, `lambda_fixed` |
+| `stan/ssls/_sf_transformed_data.stan` | Conditional normalization (SLD vs PSA vs both) |
 | `stan/ssls/modules/other_events/transformed_data.stan` | Rename sld → biomarker |
 | `stan/ssls/modules/other_events/transformed_parameters.stan` | Rename + add nadir covariates |
 | `stan/pcwg3.stanfunctions` | **NEW**: PCWG3 category functions |
 | `stan/ssls/_endpoints_generated_quantities.stan` | Use PCWG3 for PSA mode |
-| `r/sclc/prepare_analysis_data.R` | Add PSA data handling |
+| `r/sclc/prepare_analysis_data.R` | Add PSA data handling, set `estimate_lambda=0`, `lambda_fixed=1` |
 | `r/priors.R` | Add priors for new PSA covariates |
+
+### Future Phases (Structure now, implement later)
+
+| File | Phase | Changes |
+|------|-------|---------|
+| `stan/ssls/modules/frac/parameters.stan` | 3, 5 | Add `lambda_psa` parameter (gated by `estimate_lambda`) |
+| `stan/ssls/modules/frac/priors.stan` | 3, 5 | Add `log(lambda_psa) ~ Normal(0, 0.5)` prior |
+| `stan/ssls/_sf_functions.stan` | 3, 5 | Update observation likelihood for B_PSA(t) formula |
+| `r/priors.R` | 3, 5 | Add `lambda_psa` prior hyperparameters |
+| `r/initializers.R` | 3, 5 | Add `lambda_psa` initializer |
 
 ---
 
@@ -276,14 +411,25 @@ mock_psa_data <- tibble(
 
 stan_data <- prepare_tumor_stan_data(
   analysis_data = mock_analysis_data,
-  observation_type = 1  # PSA mode
+  observation_type = 1,    # PSA mode
+  estimate_lambda = 0,     # Don't estimate (Phase 1)
+  lambda_fixed = 1.0       # λ = 1
 )
 
 expect_true("psa_values" %in% names(stan_data))
 expect_equal(length(stan_data$psa_values), 6)
+expect_equal(stan_data$observation_type, 1)
+expect_equal(stan_data$estimate_lambda, 0)
+expect_equal(stan_data$lambda_fixed, 1.0)
+
+# Test validation: estimate_lambda=1 should fail without observation_type=2
+expect_error(
+  prepare_tumor_stan_data(mock_analysis_data, observation_type = 1, estimate_lambda = 1),
+  "requires observation_type=2"
+)
 ```
 
-**Pass criteria**: Stan data structure correct for PSA
+**Pass criteria**: Stan data structure correct for PSA, lambda parameters validated
 
 ### Stage 4: Model Compilation
 
@@ -355,10 +501,20 @@ expect_true(all(fit_psa$summary()$rhat < 1.1))
 
 ## Verification Checklist
 
+### Phase 1 (Current Scope)
+
 - [ ] Stan syntax check passes
 - [ ] PCWG3 unit tests pass
-- [ ] R data preparation handles PSA
-- [ ] Model compiles
-- [ ] Short sampling runs without errors
-- [ ] SLD mode backward compatible
+- [ ] R data preparation handles PSA (observation_type=1)
+- [ ] R data preparation validates estimate_lambda requires observation_type=2
+- [ ] Model compiles with new data fields
+- [ ] Short sampling runs without errors (observation_type=1, lambda_fixed=1)
+- [ ] SLD mode backward compatible (observation_type=0)
 - [ ] Full PSA run converges
+
+### Future Phases (Verify structure only)
+
+- [ ] Data structure supports observation_type=2 (both SLD + PSA)
+- [ ] estimate_lambda flag present in Stan data
+- [ ] lambda_fixed value passed through correctly
+- [ ] Code comments/TODO markers in place for Phase 3/5 implementation
