@@ -26,7 +26,7 @@ format:
     pointer:
       color: "#D0006F"
       pointerSize: 24
-filters:
+revealjs-plugins:
   - pointer
 execute:
   warning: false
@@ -348,24 +348,24 @@ if (!frames_exist) {
 
 <div id="digital-twin-slideshow" style="width: 85%; position: relative; margin: 0 auto;">
   <img id="digital-twin-img" src="images/digital-twin-frame-1.png" style="width: 100%; display: block;" />
+  <!-- Hidden preloaded images for embedding -->
+  <img id="digital-twin-frame-1" src="images/digital-twin-frame-1.png" style="display: none;" />
+  <img id="digital-twin-frame-2" src="images/digital-twin-frame-2.png" style="display: none;" />
+  <img id="digital-twin-frame-3" src="images/digital-twin-frame-3.png" style="display: none;" />
+  <img id="digital-twin-frame-4" src="images/digital-twin-frame-4.png" style="display: none;" />
+  <img id="digital-twin-frame-5" src="images/digital-twin-frame-5.png" style="display: none;" />
 </div>
 
 <script>
 (function() {
-  const imagePaths = [
-    'images/digital-twin-frame-1.png',
-    'images/digital-twin-frame-2.png',
-    'images/digital-twin-frame-3.png',
-    'images/digital-twin-frame-4.png',
-    'images/digital-twin-frame-5.png'
+  // Reference the pre-embedded images by ID
+  const imageIds = [
+    'digital-twin-frame-1',
+    'digital-twin-frame-2',
+    'digital-twin-frame-3',
+    'digital-twin-frame-4',
+    'digital-twin-frame-5'
   ];
-
-  // Preload all images
-  const images = imagePaths.map(src => {
-    const img = new Image();
-    img.src = src;
-    return img;
-  });
 
   let currentIndex = 0;
   const imgElement = document.getElementById('digital-twin-img');
@@ -379,9 +379,10 @@ if (!frames_exist) {
 
     // Wait for fade out, then change image and fade in
     setTimeout(() => {
-      currentIndex = (currentIndex + 1) % images.length;
-      imgElement.src = images[currentIndex].src;
-      console.log('Switching to frame:', currentIndex + 1, 'src:', images[currentIndex].src);
+      currentIndex = (currentIndex + 1) % imageIds.length;
+      const sourceImg = document.getElementById(imageIds[currentIndex]);
+      imgElement.src = sourceImg.src;
+      console.log('Switching to frame:', currentIndex + 1);
 
       // Fade in
       setTimeout(() => {
