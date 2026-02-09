@@ -67,10 +67,10 @@ _targets/
 CLAUDE.local.md
 
 # explore folder for temporary analysis
-explore/
+/explore/
 
 # plan folder for planning and brainstorming
-plan/
+/plan/
 
 # VS Code
 .vscode/User/
