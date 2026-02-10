@@ -1,6 +1,6 @@
 ---
 name: verify-model
-description: After Stan model changes, verify implementation matches mathematical specifications in docs. Use when stan/ssls/ files are modified or when user requests model verification.
+description: After Stan model changes, verify implementation matches mathematical specifications in docs. Use when stan/ files are modified or when user requests model verification.
 user-invocable: true
 allowed-tools: [Read, Grep, Glob, Bash]
 ---
@@ -11,7 +11,7 @@ Verifies that Stan model implementation matches the mathematical specifications 
 
 ## When to Use
 
-- After modifications to files in `stan/ssls/` or `stan/ssls/modules/`
+- After modifications to files in `stan/` or `stan/modules/`
 - When user explicitly requests model verification
 - Before committing changes to Stan models
 - When reviewing pull requests that touch Stan code
@@ -101,7 +101,7 @@ This skill provides best-effort verification but cannot:
 
 ### Example 1: Tumor Regression Module Change
 ```
-User modified: stan/ssls/modules/tr/parameters.stan
+User modified: stan/modules/tr/parameters.stan
 
 1. Read docs/MODEL_MATHEMATICAL_SPECIFICATION.md Section 3.1
 2. Compare parameter definitions
@@ -112,7 +112,7 @@ User modified: stan/ssls/modules/tr/parameters.stan
 
 ### Example 2: Prior Specification Change
 ```
-User modified: stan/ssls/modules/frac/priors.stan
+User modified: stan/modules/frac/priors.stan
 
 1. Read docs/MODEL_MATHEMATICAL_SPECIFICATION.md Section 3.2
 2. Check documented prior distributions

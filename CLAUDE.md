@@ -30,7 +30,7 @@ Rscript -e 'targets::tar_make()'
 
 ### Stan Model Syntax Check (fast)
 ```bash
-~/.cmdstan/cmdstan-2.37.0/bin/stanc --include-paths=stan,stan/ssls stan/ssls/sf-ssm-log-space.stan
+~/.cmdstan/cmdstan-2.38.0/bin/stanc --include-paths=stan stan/sf-ssm-log-space.stan
 ```
 
 ### Running Tests
@@ -206,7 +206,7 @@ Then re-render the affected pages.
 
 ### Stan Module System
 
-Stan code uses modular `#include` architecture in `stan/ssls/modules/`:
+Stan code uses modular `#include` architecture in `stan/modules/`:
 - **tr/** - Tumor regression (decrease) dynamics
 - **frac/** - Growth fraction dynamics
 - **init/** - Initial state modeling
@@ -238,8 +238,8 @@ Parameters follow a population → trial → patient hierarchy:
 - `oe_*` - Other events
 
 ### Key Stan Models
-- `stan/ssls/sf-ssm-log-space.stan` - Main state-space longitudinal survival model
-- `stan/ssls/sf-ssls-lfo.stan` - Leave-future-out cross-validation variant
+- `stan/sf-ssm-log-space.stan` - Main state-space longitudinal survival model
+- `stan/sf-ssls-lfo.stan` - Leave-future-out cross-validation variant
 
 ## Key Files
 
