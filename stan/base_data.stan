@@ -38,18 +38,6 @@ array[n_patients] int<lower = 1> n_patient_visits;
 array[sum(n_patient_visits)] int t_patient_visits;
 array[sum(n_patient_visits)] int t_patient_visits_day; // Days
 
-/*
- * Diagram for t_measure and t_day_measure:
- *
- * [-1, 0, 6, 8, -1, 0, 6, 10, -2, 1, ...]
- *  ^         ^   ^             ^  ^
- *  |         |   |             |  |
- *  Tumor 1   |   Tumor 2       |  Tumor 4 (Patient 2)
- *  (Patient 1)   (Patient 1)   Tumor 3 (Patient 1)
- */
-
-vector<lower = 0>[sum(n_patient_visits)] sum_tumor_size; // cm
-
 // Calendar Information. These are the days/weeks each patient started treatment relative
 // to all the patients in the trials modeled.
 array[n_patients] int<lower = 1> calendar_week;
@@ -63,36 +51,16 @@ int<lower = 1> extend_max_all_t;
  * Note on Ragged Arrays:
  *
  * This data structure uses ragged arrays to efficiently represent varying numbers
- * of tumors per patient and measurements per tumor. The arrays are "flattened"
- * into 1D arrays, with the hierarchical structure maintained through careful indexing.
+ * of measurements per patient across time. The arrays are "flattened" into 1D arrays,
+ * with the hierarchical structure maintained through careful indexing.
  *
- * For example, to access the tumor sizes for the j-th tumor of the i-th patient:
- * 1. Calculate the start index for the i-th patient's tumors
- * 2. Calculate the start index for the j-th tumor's measurements
- * 3. Use n_measures to determine how many measurements to read
+ * Longitudinal measurements (tumor SLD, PSA, etc.) are defined in separate modular
+ * files (tumor/data.stan, psa/data.stan) but share this common visit schedule structure.
  */
 
 // ============================================================================
-// TUMOR-SPECIFIC DATA (merged from tumor/base_data.stan)
+// PATIENT-LEVEL COVARIATES
 // ============================================================================
-
-int<lower = 0, upper = 1> fit_tumor_data;
-int<lower = 0> sf_rep_T;
-int<lower = 0, upper = 1> debug;
-int<lower = 1, upper = n_patients> n_shards;
-
-// Note: add_trial_level_baseline_hazard moved to modules/other_events/flags.stan as oe_enable_trial_baseline_hazard
-
-array[sum(n_patient_visits)] int<lower = 1, upper = 5> recist;
-
-array[n_patients] int<lower = 0> pfs; // How many periods after baseline did patient survive. The last week observed with no progression.
-array[n_patients] int<lower = 0, upper = 1> right_censored;
-array[n_patients] int<lower = 0> interval_censored; // The number of weeks after `pfs` that actual progression could have happened. E.g., zero means progression happened the next week.
-
-array[n_patients] int<lower = 0> target_pfs; // PFS based on target tumor SLD only
-array[n_patients] int<lower = 0, upper = 1> target_right_censored;
-
-array[n_patients] int<lower = 0> death_week;
 
 int<lower = 0> n_covar;
 matrix[n_patients, n_covar] covar_design_matrix;
