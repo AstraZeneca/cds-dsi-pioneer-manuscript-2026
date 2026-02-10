@@ -10,7 +10,7 @@ functions {
 }
 
 data {
-  #include "base_data.stan"
+  #include "_base_data.stan"
   #include "modules/tumor/data.stan"
   #include "state_space/data.stan"
   #include "modules/measurement/hyperparams.stan"
@@ -29,7 +29,7 @@ data {
 }
 
 transformed data {
-  #include "base_transformed_data.stan"
+  #include "_base_transformed_data.stan"
   #include "modules/tumor/transformed_data.stan"
   #include "modules/measurement/transformed_data.stan"
   #include "modules/tr/transformed_data.stan"
