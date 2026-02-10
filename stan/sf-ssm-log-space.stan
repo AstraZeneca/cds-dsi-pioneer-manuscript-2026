@@ -5,14 +5,14 @@ functions {
   #include "gp.stanfunctions"
   #include "pfs.stanfunctions"
   #include "lfo.stanfunctions"
-  #include "sf_state_space.stanfunctions"
+  #include "state_space/functions.stanfunctions"
   #include "modules/tumor/tumor.stanfunctions"
 }
 
 data {
   #include "base_data.stan"
   #include "modules/tumor/data.stan"
-  #include "_sf_outcomes_info.stan"
+  #include "state_space/data.stan"
   #include "modules/measurement/hyperparams.stan"
   #include "modules/other_events/data.stan"
   #include "modules/other_events/hyperparams.stan"
@@ -35,9 +35,9 @@ transformed data {
   #include "modules/tr/transformed_data.stan"
   #include "modules/frac/transformed_data.stan"
   #include "modules/init/transformed_data.stan"
-  #include "_sf_transformed_data.stan"
+  #include "state_space/transformed_data.stan"
   #include "modules/other_events/transformed_data.stan"
-  #include "_sf-checks.stan"
+  #include "state_space/checks.stan"
 }
 
 parameters {
@@ -53,7 +53,7 @@ transformed parameters {
   #include "modules/tr/transformed_parameters.stan"
   #include "modules/frac/transformed_parameters.stan"
   #include "modules/init/transformed_parameters.stan"
-  #include "_sf_transformed_parameters.stan"
+  #include "state_space/transformed_parameters.stan"
   #include "modules/other_events/transformed_parameters.stan"
 }
 
@@ -166,5 +166,5 @@ generated quantities {
   }
 
   #include "_endpoints_generated_quantities.stan"  
-  #include "_sf_accuracy_generated_quantities.stan"
+  #include "state_space/generated_quantities.stan"
 }
