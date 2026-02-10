@@ -1,3 +1,30 @@
+// ============================================================================
+// STEIN-FOJO (SF) STATE-SPACE MODEL - GENERAL IMPLEMENTATION
+// ============================================================================
+//
+// This file contains a GENERAL two-component log-space state-space model
+// that can be applied to any biomarker with competing decrease/increase dynamics:
+//   - Component 1: Decreasing (e.g., treatment effect)
+//   - Component 2: Increasing (e.g., progression/resistance)
+//
+// Originally developed for tumor growth (Stein-Fojo model), but the mathematical
+// framework is biomarker-agnostic and can model:
+//   - Tumor burden (SLD) - see modules/tumor/functions.stan for SLD-specific wrappers
+//   - PSA dynamics - future modules/psa/functions.stan will add PSA-specific wrappers
+//   - Any biomarker with decrease + growth dynamics
+//
+// Key functions:
+//   - sf_log_space_transition: State transitions
+//   - sf_log_space_trajectory_ncp: Full trajectory generation (non-centered)
+//   - calc_states: Calculate state trajectories for patients
+//   - generate_patient_states_rng: Generate replicated and forecast states
+//   - calculate_all_patients_endpoints_rng: Simulate clinical endpoints
+//
+// Note: Some function parameters currently use tumor-specific names
+// (e.g., "sum_tumor_size_baseline") for backward compatibility. These could be
+// generalized when adding new biomarkers (e.g., "baseline_value").
+// ============================================================================
+
 row_vector sf_log_space_transition(row_vector current_x, 
                                    real time_next, real time_current,
                                    real decrease_rate, real growth_rate) {
@@ -773,11 +800,6 @@ matrix calc_patient_process_noise(
   return noise;
 }
 
-vector calc_log_sld_mean(matrix patient_states, real sum_tumor_size_baseline) {
-  assert_equal(cols(patient_states), 2);
-
-  return to_vector(log_sum_exp(patient_states[, 1], patient_states[, 2])) + log(sum_tumor_size_baseline);
-}
 
 /**
  * Generate patient states including process noise, SLD trajectories, and forecast states
