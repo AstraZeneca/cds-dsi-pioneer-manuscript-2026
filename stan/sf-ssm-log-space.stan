@@ -5,7 +5,8 @@ functions {
   #include "gp.stan"
   #include "pfs_functions.stan"
   #include "lfo.stan"
-  #include "_sf_functions.stan"
+  #include "sf_state_space.stan"
+  #include "modules/tumor/functions.stan"
   #include "recist.stanfunctions"
 }
 
