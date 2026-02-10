@@ -250,4 +250,4 @@ Group flags by module for better readability:
 
 - `targets/sclc_targets.R` - Model definitions and configurations
 - `r/priors.R` - Prior specifications
-- `stan/ssls/modules/*/flags.stan` - Stan flag definitions
+- `stan/modules/*/flags.stan` - Stan flag definitions
