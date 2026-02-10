@@ -773,6 +773,46 @@ expect_true(all(fit_psa$summary()$rhat < 1.1))
 
 ## Document History
 
+- **2026-02-10 (Implementation)**: Actual implementation deviated from plan in several key ways:
+
+  **1. No flags.stan in PSA module**
+  - Plan: Create `stan/modules/psa/flags.stan` with observation_type, fit_psa_data, estimate_lambda flags
+  - Actual: Did NOT create flags.stan. Flags like observation_type belong at a higher level (main model files), not inside pluggable observation modules. This makes modules truly pluggable.
+
+  **2. Removed measurement/ module entirely**
+  - Plan: Add measure_sd_psa to existing `stan/modules/measurement/` module
+  - Actual: Removed measurement/ module completely. Measurement error now lives inside each observation module:
+    - `tumor/hyperparams.stan`, `tumor/parameters.stan`, `tumor/priors.stan` for SLD
+    - `psa/hyperparams.stan`, `psa/parameters.stan`, `psa/priors.stan` for PSA
+  - Rationale: Each observation module should be self-contained with its own measurement model
+
+  **3. Simplified calc_log_psa_mean for λ=1**
+  - Plan: Function signature included lambda and log_phi parameters
+  - Actual: For Phase 1 (λ=1), simplified to `calc_log_psa_mean(patient_states, psa_baseline)` without lambda/phi args
+  - Rationale: λ=1 makes model mathematically identical to SLD; no need for extra parameters
+
+  **4. Added psa_interval_censored**
+  - Plan: Only psa_pfs and psa_right_censored in data.stan
+  - Actual: Also added `psa_interval_censored` for consistency with other censoring patterns
+
+  **5. Main model files not yet modified**
+  - Plan: Update sf-ssm-log-space.stan, sf-ssls-lfo.stan, sf-ssls-lfo-endpoints.stan with PSA includes
+  - Actual: Only updated to use tumor/ module (moved from measurement/). PSA includes deferred to Phase 2.
+
+  **Files created during implementation:**
+  - `stan/modules/psa/data.stan` ✓
+  - `stan/modules/psa/transformed_data.stan` ✓
+  - `stan/modules/psa/psa.stanfunctions` ✓
+  - `stan/modules/psa/hyperparams.stan` ✓
+  - `stan/modules/psa/parameters.stan` ✓
+  - `stan/modules/psa/priors.stan` ✓
+  - `stan/modules/tumor/hyperparams.stan` ✓ (moved from measurement/)
+  - `stan/modules/tumor/parameters.stan` ✓ (moved from measurement/)
+  - `stan/modules/tumor/priors.stan` ✓ (moved from measurement/)
+
+  **Files removed:**
+  - `stan/modules/measurement/` (entire directory)
+
 - **2026-02-10**: Updated file paths and module structure to reflect Stan reorganization
   - Changed from `stan/tumor/base_data.stan` to `stan/_base_data.stan`
   - Changed from `stan/ssls/_sf_*.stan` to `stan/modules/state_space/*.stan`

@@ -1,16 +1,6 @@
 // Include fragment: transformed data block content for SSLS models
-
-// ============================================================================
-// Basic tumor measurement setup
-// ============================================================================
-
-// Normalize SLD by baseline for each patient
-vector<lower = 0>[sum(n_patient_visits)] normalized_sld;
-for (i in 1:n_patients) {
-  int visit_pos, visit_end;
-  (visit_pos, visit_end) = get_pos(patient_visit_pos, i);
-  normalized_sld[visit_pos:visit_end] = sum_tumor_size[visit_pos:visit_end] / sum_tumor_size[visit_pos]; 
-}
+// This module is biomarker-agnostic - observation-specific normalization
+// (e.g., normalized_sld) should be in the respective observation modules.
 
 // ============================================================================
 // Visit indexing and counts

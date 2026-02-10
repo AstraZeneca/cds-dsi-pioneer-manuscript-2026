@@ -1,3 +1,9 @@
+// ============================================================================
+// TUMOR/SLD TRANSFORMED DATA
+// ============================================================================
+
+// Limit of detection for SLD measurements (cm)
+real log_lod = log(0.1);
 
 // Variables for handling separate baseline and proportional hazards
 // int<lower = 1> n_tumor_separate_trials = separate_trial_tumor_gp ? n_trials : 1;
@@ -60,3 +66,23 @@ array[n_patients + 1] int<lower = 1> forecast_visits_pos = create_pos(n_patient_
 
 // Array of measurement times used for GP modeling
 array[max_all_t] real all_tumor_measure_t = linspaced_array(max_all_t, 1, max_all_t);
+
+// ============================================================================
+// BASELINE SLD AND NORMALIZATION
+// ============================================================================
+// Patient-level baseline SLD (in cm) for converting normalized states to absolute SLD
+// Used by tumor likelihood and by other_events module for tumor covariates
+
+vector[n_patients] log_baseline_sld;
+
+// Normalize SLD by baseline for each patient (used by observation model)
+vector<lower = 0>[sum(n_patient_visits)] normalized_sld;
+
+{
+  for (i in 1:n_patients) {
+    int visit_start, visit_end;
+    (visit_start, visit_end) = get_pos(patient_visit_pos, i);
+    log_baseline_sld[i] = log(sum_tumor_size[visit_start]);
+    normalized_sld[visit_start:visit_end] = sum_tumor_size[visit_start:visit_end] / sum_tumor_size[visit_start];
+  }
+}

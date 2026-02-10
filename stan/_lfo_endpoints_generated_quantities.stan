@@ -105,7 +105,7 @@ profile("gen_quant") {
         cutoff_t_patient_visits,
         cutoff_t_patient_visit_idx,
         cutoff_sum_tumor_size,
-        measure_sd,
+        measure_sd_sld,
         cutoff_n_patient_screening_visits
       );
   } else {
@@ -155,7 +155,7 @@ profile("gen_quant") {
           negative_infinity(),
           1.0,
           rep_matrix(0.0, forecast_size, 2),
-          measure_sd
+          measure_sd_sld
         );
 
       // Store results
