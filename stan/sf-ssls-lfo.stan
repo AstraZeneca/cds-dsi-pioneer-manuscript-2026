@@ -4,22 +4,21 @@ functions {
   #include "gp.stanfunctions"
   #include "pfs.stanfunctions"
   #include "lfo.stanfunctions"
-  #include "modules/state_space/functions.stanfunctions"
+  #include "modules/state_space/sf.stanfunctions"
   #include "modules/tumor/tumor.stanfunctions"
 }
 
 data {
   #include "_base_data.stan"
   #include "modules/tumor/data.stan"
+  #include "modules/tumor/hyperparams.stan"
   #include "modules/state_space/data.stan"
 
-  #include "modules/measurement/hyperparams.stan"
   #include "modules/other_events/data.stan"
   #include "modules/tr/hyperparams.stan"
   #include "modules/frac/hyperparams.stan"
   #include "modules/init/hyperparams.stan"
   #include "modules/other_events/hyperparams.stan"
-  #include "modules/measurement/flags.stan"
   #include "modules/other_events/flags.stan"
   #include "modules/tr/flags.stan"
   #include "modules/frac/flags.stan"
@@ -33,17 +32,20 @@ transformed data {
 
   #include "_base_transformed_data.stan"
   #include "modules/tumor/transformed_data.stan"
-  #include "modules/measurement/transformed_data.stan"
   #include "modules/tr/transformed_data.stan"
   #include "modules/frac/transformed_data.stan"
   #include "modules/init/transformed_data.stan"
   #include "modules/state_space/transformed_data.stan"
+
+  // Generic biomarker baseline for other_events module (SLD mode)
+  vector[n_patients] log_baseline_biomarker = log_baseline_sld;
+
   #include "modules/other_events/transformed_data.stan"
   #include "_lfo_transformed_data.stan"
 }
 
 parameters {
-  #include "modules/measurement/parameters.stan"
+  #include "modules/tumor/parameters.stan"
   #include "modules/other_events/parameters.stan"
   #include "modules/tr/parameters.stan"
   #include "modules/frac/parameters.stan"
@@ -51,7 +53,6 @@ parameters {
 }
 
 transformed parameters {
-  #include "modules/measurement/transformed_parameters.stan"
   #include "modules/tr/transformed_parameters.stan"
   #include "modules/frac/transformed_parameters.stan"
   #include "modules/init/transformed_parameters.stan"
@@ -60,7 +61,7 @@ transformed parameters {
 }
 
 model {
-  #include "modules/measurement/priors.stan"
+  #include "modules/tumor/priors.stan"
   #include "modules/other_events/priors.stan"
   #include "modules/tr/priors.stan"
   #include "modules/frac/priors.stan"
@@ -75,7 +76,7 @@ model {
 
         int cutoff_idx = cutoff_last_visit_idx[i];
 
-        normalized_sld[visit_start:cutoff_idx] ~ sf_log_space_obs(states[visit_start:cutoff_idx], measure_sd, log_lod - log_baseline_sld[i]);
+        normalized_sld[visit_start:cutoff_idx] ~ sf_log_space_obs(states[visit_start:cutoff_idx], measure_sd_sld, log_lod - log_baseline_sld[i]);
       }
     }
 
@@ -169,7 +170,7 @@ generated quantities {
       if (visit_size > 1) {
         rep_patient_log_sld[2:] = to_vector(normal_rng(
           calc_log_sld_mean(patient_states[2:], sum_tumor_size[visit_start]),
-          rep_vector(measure_sd, visit_size - 1)
+          rep_vector(measure_sd_sld, visit_size - 1)
         ));
       }
       
@@ -185,7 +186,7 @@ generated quantities {
           calc_log_sld_mean(forecast_patient_states, sum_tumor_size[visit_start]);
         forecast_patient_log_sld = to_vector(normal_rng(
           forecast_mean_patient_log_sld,
-          rep_vector(measure_sd, n_oos_visits)
+          rep_vector(measure_sd_sld, n_oos_visits)
         ));
       }
 
@@ -298,7 +299,7 @@ generated quantities {
           // Component 1: Tumor model log-likelihood using observed SLD
           real tumor_ll = sf_log_space_obs_lpdf(
               normalized_sld[start_idx:end_idx] | states[start_idx:end_idx],
-              measure_sd, log_lod - log_baseline_sld[i]);
+              measure_sd_sld, log_lod - log_baseline_sld[i]);
 
           patient_log_lik_tumor[n, m_rel, patient_idx] = tumor_ll;
 

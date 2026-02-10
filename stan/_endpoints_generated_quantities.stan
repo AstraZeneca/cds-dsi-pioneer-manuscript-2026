@@ -95,7 +95,7 @@ profile("gen_quant") {
         t_patient_visits,
         t_patient_visit_idx,
         sum_tumor_size,
-        measure_sd,
+        measure_sd_sld,
         n_patient_screening_visits
       );
   } else {
@@ -135,7 +135,7 @@ profile("gen_quant") {
           negative_infinity(),  // growth lag (disabled)
           1.0,                  // growth transition
           rep_matrix(0.0, forecast_size, 2),  // No forecast process noise
-          measure_sd
+          measure_sd_sld
         );
 
       // Store results

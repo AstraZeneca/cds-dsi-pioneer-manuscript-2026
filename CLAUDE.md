@@ -30,7 +30,7 @@ Rscript -e 'targets::tar_make()'
 
 ### Stan Model Syntax Check (fast)
 ```bash
-~/.cmdstan/cmdstan-2.37.0/bin/stanc --include-paths=stan stan/sf-ssm-log-space.stan
+~/.cmdstan/cmdstan-2.38.0/bin/stanc --include-paths=stan stan/sf-ssm-log-space.stan
 ```
 
 ### Running Tests

@@ -116,7 +116,7 @@ create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_
         tr_logit_phi_pop_process_noise_pop = if (enable_pop_process_noise_tr) array(2),
 
         # Measurement error - realistic value
-        measure_sd = 0.15,
+        measure_sd_sld = 0.15,
 
         # Other events baseline hazard - realistic values
         log_lambda_gp_pop_intercept = array(rep(-4.5, n_causes), dim = n_causes),

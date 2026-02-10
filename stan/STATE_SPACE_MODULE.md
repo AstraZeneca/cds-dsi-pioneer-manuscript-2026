@@ -26,7 +26,7 @@ It's **distinct from parameter modules** (tr/frac/init):
 
 | Before | After | Purpose |
 |--------|-------|---------|
-| `sf_state_space.stanfunctions` | `modules/state_space/functions.stanfunctions` | Core SF dynamics functions |
+| `sf_state_space.stanfunctions` | `modules/state_space/sf.stanfunctions` | Core SF dynamics functions |
 | `_sf_outcomes_info.stan` | `modules/state_space/data.stan` | Outcome configuration (quantiles, timepoints) |
 | `_sf_transformed_data.stan` | `modules/state_space/transformed_data.stan` | Setup and preprocessing |
 | `_sf_transformed_parameters.stan` | `modules/state_space/transformed_parameters.stan` | State trajectory computation |
@@ -110,7 +110,7 @@ generated quantities {
 ### After:
 ```stan
 functions {
-  #include "modules/state_space/functions.stanfunctions"
+  #include "modules/state_space/sf.stanfunctions"
   ...
 }
 data {

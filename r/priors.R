@@ -28,10 +28,10 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     pop_decrease_process_sd_sd = 0.1,
     pop_growth_process_sd_sd = 0.1,
     process_corr_param = 2.0,
-    # inv_gamma prior for measure_sd keeps mass away from zero
+    # inv_gamma prior for measure_sd_sld keeps mass away from zero
     # mode = beta/(alpha+1) = 0.75/6 = 0.125 (at typical posterior)
-    measure_sd_alpha = 5,
-    measure_sd_beta = 0.75,
+    measure_sd_sld_alpha = 5,
+    measure_sd_sld_beta = 0.75,
 
     # Process parameters
     decrease_process_alpha = 9.7,
