@@ -4,7 +4,7 @@
 
 ## Summary
 
-Organized all Stein-Fojo (SF) state-space infrastructure into a dedicated `state_space/` module, removing underscore prefixes and grouping related files together.
+Organized all Stein-Fojo (SF) state-space infrastructure into a dedicated `modules/state_space/` module, removing underscore prefixes and grouping related files together.
 
 ## Motivation
 
@@ -26,18 +26,18 @@ It's **distinct from parameter modules** (tr/frac/init):
 
 | Before | After | Purpose |
 |--------|-------|---------|
-| `sf_state_space.stanfunctions` | `state_space/functions.stanfunctions` | Core SF dynamics functions |
-| `_sf_outcomes_info.stan` | `state_space/data.stan` | Outcome configuration (quantiles, timepoints) |
-| `_sf_transformed_data.stan` | `state_space/transformed_data.stan` | Setup and preprocessing |
-| `_sf_transformed_parameters.stan` | `state_space/transformed_parameters.stan` | State trajectory computation |
-| `_sf_accuracy_generated_quantities.stan` | `state_space/generated_quantities.stan` | RECIST accuracy metrics |
-| `_sf-checks.stan` | `state_space/checks.stan` | Validation checks |
-| `_sf-ssls-lfo-data.stan` | `state_space/lfo_data.stan` | LFO-specific data |
+| `sf_state_space.stanfunctions` | `modules/state_space/functions.stanfunctions` | Core SF dynamics functions |
+| `_sf_outcomes_info.stan` | `modules/state_space/data.stan` | Outcome configuration (quantiles, timepoints) |
+| `_sf_transformed_data.stan` | `modules/state_space/transformed_data.stan` | Setup and preprocessing |
+| `_sf_transformed_parameters.stan` | `modules/state_space/transformed_parameters.stan` | State trajectory computation |
+| `_sf_accuracy_generated_quantities.stan` | `modules/state_space/generated_quantities.stan` | RECIST accuracy metrics |
+| `_sf-checks.stan` | `modules/state_space/checks.stan` | Validation checks |
+| `_sf-ssls-lfo-data.stan` | `modules/state_space/lfo_data.stan` | LFO-specific data |
 
 ## New Structure
 
 ```
-stan/
+stan/modules/
 ├── state_space/ - STATE-SPACE INFRASTRUCTURE MODULE
 │   ├── functions.stanfunctions - Core SF dynamics (1900+ lines)
 │   │   ├── sf_log_space_transition
@@ -110,32 +110,32 @@ generated quantities {
 ### After:
 ```stan
 functions {
-  #include "state_space/functions.stanfunctions"
+  #include "modules/state_space/functions.stanfunctions"
   ...
 }
 data {
-  #include "state_space/data.stan"
-  #include "state_space/lfo_data.stan"  // LFO models only
+  #include "modules/state_space/data.stan"
+  #include "modules/state_space/lfo_data.stan"  // LFO models only
   ...
 }
 transformed data {
-  #include "state_space/transformed_data.stan"
-  #include "state_space/checks.stan"
+  #include "modules/state_space/transformed_data.stan"
+  #include "modules/state_space/checks.stan"
   ...
 }
 transformed parameters {
-  #include "state_space/transformed_parameters.stan"
+  #include "modules/state_space/transformed_parameters.stan"
   ...
 }
 generated quantities {
-  #include "state_space/generated_quantities.stan"  // main model only
+  #include "modules/state_space/generated_quantities.stan"  // main model only
   ...
 }
 ```
 
 ## Benefits
 
-1. **Clear Module Identity**: `state_space/` directory makes it obvious these files are related
+1. **Clear Module Identity**: `modules/state_space/` directory makes it obvious these files are related
 2. **No Underscore Prefixes**: Cleaner filenames without `_sf_` prefix
 3. **Logical Grouping**: All state-space infrastructure in one place
 4. **Separation of Concerns**: Clear distinction between state-space infrastructure and parameter modules
@@ -171,7 +171,7 @@ generated quantities {
 | **Purpose** | Orchestrate computation | Define parameters |
 | **Scope** | Full model infrastructure | Specific components |
 | **Dependencies** | Uses all parameter modules | Independent |
-| **Location** | `state_space/` | `modules/<name>/` |
+| **Location** | `modules/state_space/` | `modules/<name>/` |
 | **Examples** | Trajectory computation, outcomes | tr, frac, init |
 
 ## Verification
@@ -186,7 +186,7 @@ All three models compile successfully:
 ## Future: PSA Addition
 
 When adding PSA, the state-space module remains unchanged:
-- PSA will use the same `state_space/` infrastructure
+- PSA will use the same `modules/state_space/` infrastructure
 - Only need to add PSA-specific functions in `modules/psa/`
 - State-space module orchestrates both tumor and PSA states
 

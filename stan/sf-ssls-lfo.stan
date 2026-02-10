@@ -4,14 +4,14 @@ functions {
   #include "gp.stanfunctions"
   #include "pfs.stanfunctions"
   #include "lfo.stanfunctions"
-  #include "state_space/functions.stanfunctions"
+  #include "modules/state_space/functions.stanfunctions"
   #include "modules/tumor/tumor.stanfunctions"
 }
 
 data {
   #include "_base_data.stan"
   #include "modules/tumor/data.stan"
-  #include "state_space/data.stan"
+  #include "modules/state_space/data.stan"
 
   #include "modules/measurement/hyperparams.stan"
   #include "modules/other_events/data.stan"
@@ -25,7 +25,7 @@ data {
   #include "modules/frac/flags.stan"
   #include "modules/init/flags.stan"
 
-  #include "state_space/lfo_data.stan"
+  #include "modules/state_space/lfo_data.stan"
 } 
 
 transformed data {
@@ -37,7 +37,7 @@ transformed data {
   #include "modules/tr/transformed_data.stan"
   #include "modules/frac/transformed_data.stan"
   #include "modules/init/transformed_data.stan"
-  #include "state_space/transformed_data.stan"
+  #include "modules/state_space/transformed_data.stan"
   #include "modules/other_events/transformed_data.stan"
   #include "_lfo_transformed_data.stan"
 }
@@ -55,7 +55,7 @@ transformed parameters {
   #include "modules/tr/transformed_parameters.stan"
   #include "modules/frac/transformed_parameters.stan"
   #include "modules/init/transformed_parameters.stan"
-  #include "state_space/transformed_parameters.stan"
+  #include "modules/state_space/transformed_parameters.stan"
   #include "modules/other_events/transformed_parameters.stan"
 }
 
