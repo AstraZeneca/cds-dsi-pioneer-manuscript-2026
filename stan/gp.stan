@@ -140,41 +140,6 @@ matrix calc_gp_pred(
   return calc_gp_pred(time_points, time_rho, time_delta, process_sd, L_process_corr, eta, 0);
 }
 
-vector ncp_gp_matern32(array[] real x, vector intercept, real alpha, real rho, real delta, vector eta) {
-  int n_x = size(x);
-  matrix[n_x, n_x] L_K = gp_matern32_cholesky_cov(x, alpha, rho, delta); 
-  
-  return intercept + L_K * eta;
-}  
-
-vector ncp_gp_matern32(array[] real x, real intercept, real alpha, real rho, real delta, vector eta) {
-  int n_x = size(x);
-  matrix[n_x, n_x] L_K = gp_matern32_cholesky_cov(x, alpha, rho, delta); 
-  
-  return intercept + L_K * eta;
-}  
-
-row_vector ncp_gp_matern32(array[] real x, real intercept, real alpha, real rho, real delta, row_vector eta) {
-  int n_x = size(x);
-  matrix[n_x, n_x] L_K = gp_matern32_cholesky_cov(x, alpha, rho, delta); 
-  
-  return intercept + eta * L_K';
-}
-
-vector ncp_gp_matern52(array[] real x, real intercept, real alpha, real rho, real delta, vector eta) {
-  int n_x = size(x);
-  matrix[n_x, n_x] L_K = gp_matern52_cholesky_cov(x, alpha, rho, delta); 
-  
-  return intercept + L_K * eta;
-}  
-
-row_vector ncp_gp_matern52(array[] real x, real intercept, real alpha, real rho, real delta, row_vector eta) {
-  int n_x = size(x);
-  matrix[n_x, n_x] L_K = gp_matern52_cholesky_cov(x, alpha, rho, delta); 
-  
-  return intercept + eta * L_K';
-}
-
 vector gp_conditional_mean(
   vector mu_obs,             // Mean for the observed 
   vector mu_pred,            // Mean for the predicted 
@@ -308,15 +273,3 @@ real multi_normal_cholesky_lcdf(vector y, real mu, matrix L_Sigma) {
   return multi_normal_cholesky_lcdf(y | rep_vector(mu, size(y)), L_Sigma);
 }
 
-real multi_normal_lcdf(vector y, vector mu_obs, vector mu_pred, vector y_cond, matrix K_obs, matrix K_pred_obs, matrix K_pred, real delta) {
-  int n_obs = rows(y);
-  int n_pred = rows(mu_pred);
-  
-  vector[n_pred] mu_cond;
-  matrix[n_pred, n_pred] Sigma_cond;
-  (mu_cond, Sigma_cond) = gp_conditional(mu_obs, mu_pred, y_cond, K_obs, K_pred_obs, K_pred, delta);
-  
-  matrix[n_pred, n_pred] L_Sigma_cond = cholesky_decompose(Sigma_cond);
-  
-  return multi_normal_cholesky_lcdf(y | mu_cond, L_Sigma_cond);
-}

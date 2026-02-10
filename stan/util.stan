@@ -286,23 +286,6 @@ array[] int calculate_t_missing_measure(
   return t_missing_measure;
 }
 
-/** Get number of values in x that are less than or equal to y
- */
-int num_leq(array[] int x, int y) {
-  int n = 0;
-  array[size(x)] int sorted_x = sort_asc(x);
-  
-  for (i in 1:size(x)) {
-    if (sorted_x[i] <= y) {
-      n += 1;
-    } else {
-      break;
-    }
-  }
-  
-  return n;
-}
-
 /**
  * Return the indices of elements > 0 (or <= 0 if inverse=1) in an indicator array.
  * @param mask Array of integers (0/1 or any integer)
@@ -681,12 +664,6 @@ void assert_equal(real x, real y) {
 void assert_greater_than_or_equal(int x, int y) {
   if (x < y) {
     fatal_error("Greater than or equal assertion failed.");
-  }
-}
-
-void assert_greater(int x, int y) {
-  if (x <= y) {
-    fatal_error("Greater (strict) assertion failed.");
   }
 }
 

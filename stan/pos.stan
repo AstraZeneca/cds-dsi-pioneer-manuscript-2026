@@ -362,36 +362,6 @@ array[] real get_real_sub_array(array[] real full, array[] int pos, int from, in
 }
 
 /**
- * Extract vector sub-array for a specific group
- * 
- * @param full Full vector containing all groups
- * @param pos Position array
- * @param n Group index
- * @return Sub-vector containing only elements from group n
- */
-vector get_sub_vector(vector full, array[] int pos, int n) {
-  int start, end;
-  (start, end) = get_pos(pos, n);
-  
-  return full[start:end];
-}
-
-/**
- * Extract row vector sub-array for a specific group
- * 
- * @param full Full vector containing all groups
- * @param pos Position array
- * @param n Group index
- * @return Sub-row-vector containing only elements from group n
- */
-row_vector get_sub_row_vector(vector full, array[] int pos, int n) {
-  int start, end;
-  (start, end) = get_pos(pos, n);
-  
-  return full[start:end]';
-}
-
-/**
  * Extract matrix rows for a specific group
  * 
  * @param full Full matrix containing all groups
@@ -484,18 +454,6 @@ int get_int(array[] int x, array[] int pos, int p, int n) {
   }
   
   return x[pos[p] + n - 1]; 
-}
-
-/**
- * Get last element from a group
- * 
- * @param x Array of values
- * @param pos Position array
- * @param p Group index
- * @return Last element in group p
- */
-int get_last_int(array[] int x, array[] int pos, int p) {
-  return get_int(x, pos, p, pos[p + 1] - pos[p]);
 }
 
 array[] int validate_pos(array[] int pos) {
