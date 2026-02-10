@@ -131,36 +131,6 @@ real sf_log_space_obs_lpdf(vector normalized_y, matrix x, real measure_sd, real 
   return lp;
 }
 
-/**
- * Calculate log likelihood for a complete patient trajectory
- *
- * @param y Array of observations
- * @param x Array of state vectors
- * @param times Array of observation times
- * @param decrease_rate Tumor regression rate
- * @param growth_rate Tumor growth rate
- * @param process_sd_reg Process noise SD for regression
- * @param process_sd_growth Process noise SD for growth
- * @param measure_sd Measurement noise SD
- * @param log_lod Log of limit of detection
- * @param alpha Initial state parameter
- * @param state_sd Initial state uncertainty
- *
- * @return Log likelihood
- */
-real sf_log_space_trajectory_lpdf(matrix x, row_vector x0, array[] int times, real decrease_rate, real growth_rate, vector process_sd, matrix L_process_corr) {
-  int T = rows(x) + 1;
-  real log_prob = 0;
-  
-  // State transitions
-  for (t in 1:(T - 1)) {
-    log_prob += sf_log_space_transition_lpdf(x[t] | t > 1 ? x[t - 1] : x0, times[t + 1], times[t],
-                                            decrease_rate, growth_rate,
-                                            process_sd, L_process_corr);
-  }
-  
-  return log_prob;
-}
 
 vector get_growth_lag_factor(vector time_points, real growth_lag, real transition_rate) {
   return inv_logit((time_points - growth_lag) / transition_rate);
@@ -922,36 +892,6 @@ matrix multi_normal_rng(
   return eta_raw * diag_pre_multiply(process_sd, L_process_corr)';
 }
 
-void assert_matching_states(
-  matrix states, row_vector initial_states, array[] int time_points, real decrease_rate, real growth_rate, real growth_lag, real growth_transit_rate,
-  matrix process_noise, int debug 
-) {
-  int n_visits = size(time_points);
-  
-  matrix[n_visits, 2] curr_obs_states = sf_log_space_trajectory_ncp(
-      initial_states,
-      time_points,
-      decrease_rate, growth_rate,
-      growth_lag, growth_transit_rate, 
-      process_noise,
-      debug
-    ).2;
-    
-  matrix[n_visits, 2] rate_diff = states - curr_obs_states;
-
-  for (t in 1:n_visits) {
-    int dec = abs(rate_diff[t, 1]) > 1e-6;
-    int gro = abs(rate_diff[t, 2]) > 1e-6;
-
-    if (dec || gro) {
-      // print("initial_state = ", [ patient_log_decrease_prop[i], patient_log_growth_prop[i] ], ", time_points = ", get_int_sub_array(t_patient_visits, patient_visit_pos, i),
-      //       ", dec rate = ", exp(patient_log_decrease_rate[i]), ", gro rate = ", exp(patient_log_growth_rate[i]), ", lag = ", exp(patient_log_growth_lag[i]), ", transit = ", exp(pop_log_growth_transition_rate));
-
-      fatal_error("t = ", t, ", dec = ", dec, ", gro = ", gro, ", states[t, 1] = ", states[t, 1], ", curr_obs_states[t, 1] = ", curr_obs_states[t, 1],
-      ", states[t, 2] = ", states[t, 2], ", curr_obs_states[t, 2] = ", curr_obs_states[t, 2]);
-    }
-  }
-}
 
 /**
  * Generate patient states with mean SLD calculations

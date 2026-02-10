@@ -555,24 +555,6 @@ tuple(real, int) km_median(vector km_survival) {
   return (q[1], c[1]);
 }
 
-/** Calculate the proportion of patients who survived beyond time time n (PFSn).
- * 
- * @param surv_time Patient survival times
- * @param n
- * @return Proportion surviving >= n
- */
-real calc_pfs_n(array[] int surv_time, data real n) {
-  int n_patients = size(surv_time);
-  array[n_patients] int sorted_surv_time = sort_desc(surv_time);
-  int pfs_n = 0;
-  
-  while (pfs_n < n_patients && sorted_surv_time[pfs_n + 1] >= to_int(n)) {
-    pfs_n += 1;
-  }
-  
-  return 1.0 * pfs_n / n_patients;
-}
-
 /**
  * Calculate the proportion of patients who survived beyond time n (PFSn) using Kaplan-Meier curve
  *
@@ -903,79 +885,6 @@ real calc_c_index(
   }
   
   return calc_c_index(pfs, right_censored, risk_score);
-}
-
-/**
- * Calculate the Administrative Brier Score for survival data with competing risks
- *
- * The Brier Score measures the accuracy of probabilistic predictions in survival analysis.
- * This function calculates the Brier Score at multiple time points, accounting for 
- * administrative censoring and competing risks.
- *
- * @param pfs Array of progression-free survival times for each patient
- * @param admin_right_censored_week Array of administrative right censoring times for each patient
- * @param interval_censored Array indicating the length of interval censoring for each patient
- * @param cause Array indicating the cause of event for each patient
- * @param cause_right_censored Array indicating whether the cause is right-censored for each patient
- * @param ignore_interval_censoring Flag to ignore interval censoring if set to 1
- * @param log_last_cif Array of vectors containing log cumulative incidence function values for each cause and patient
- * @param log_cond_prob_surv Array of matrices containing log conditional survival probabilities for each cause and patient
- * @return A matrix of Brier Scores, where rows represent patients and columns represent time points
- */
-matrix calc_admin_brier_score(
-  array[] int pfs, array[] int admin_right_censored_week, array[] int interval_censored,  
-  array[] int cause, array[] int cause_right_censored,  
-  int ignore_interval_censoring,  
-  array[] vector log_last_cif, array[] matrix log_cond_prob_surv
-) {
-  int n_patients = rows(log_cond_prob_surv[1]);
-  int T = cols(log_cond_prob_surv[1]);
-  int n_causes = size(log_cond_prob_surv);
- 
-  if (n_causes > 2) {
-    fatal_error("Only supports a max of two causes.");
-  }
-  
-  matrix[n_patients, T] brier_score_t = rep_matrix(0, n_patients, T);
-  
-  for (t in 1:T) {
-    real brier_scale = 0;
-    
-    for (i in 1:n_patients) {
-      if (admin_right_censored_week[i] >= t) {
-        brier_scale += 1;
-        
-        int curr_interval_censored = ignore_interval_censoring ? 0 : interval_censored[i]; 
-        real observed_event = 1.0 * min(max(0, pfs[i] + curr_interval_censored + 1 - t), curr_interval_censored + 1) / (curr_interval_censored + 1);
-        
-        real log_risk_score; // Prob[T > t]
-       
-        if (n_causes > 1) {
-          if (cause_right_censored[i]) {
-            log_risk_score = log_sum_exp(
-              log_last_cif[1, i] + log_sum_exp(calculate_log_marginal_exit_prob(log_cond_prob_surv[1, i, :t])), 
-              log_last_cif[2, i] + log_sum_exp(calculate_log_marginal_exit_prob(log_cond_prob_surv[2, i, :t]))) - 
-              log_sum_exp(log_last_cif[1, i], log_last_cif[2, i]);
-          } else {
-            log_risk_score = log_sum_exp(calculate_log_marginal_exit_prob(log_cond_prob_surv[cause[i], i, :t]));
-          }
-        } else {
-          log_risk_score = log_sum_exp(calculate_log_marginal_exit_prob(log_cond_prob_surv[1, i, :t]));
-        }
-        
-        brier_score_t[i, t] = square((1 - exp(log_risk_score)) - observed_event);
-      }
-    }
-   
-    if (brier_scale > 0) {
-      brier_score_t[, t] /= brier_scale; 
-    } else { // No more patients with admin censoring after t: set the loss to zero.
-      break;
-    }
-    
-  }
-  
-  return brier_score_t;
 }
 
 /** Convert a ragged vector tumor size measures to a matrix aligned by measurement week
