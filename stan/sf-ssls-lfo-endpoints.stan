@@ -1,12 +1,11 @@
 functions {
-  #include "util.stan"
-  #include "pos.stan"
-  #include "gp.stan"
-  #include "pfs_functions.stan"
-  #include "lfo.stan"
-  #include "sf_state_space.stan"
-  #include "modules/tumor/functions.stan"
-  #include "recist.stanfunctions"
+  #include "util.stanfunctions"
+  #include "pos.stanfunctions"
+  #include "gp.stanfunctions"
+  #include "pfs.stanfunctions"
+  #include "lfo.stanfunctions"
+  #include "sf_state_space.stanfunctions"
+  #include "modules/tumor/tumor.stanfunctions"
 }
 
 data {
