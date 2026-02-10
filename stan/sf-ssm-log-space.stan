@@ -1,17 +1,16 @@
 // Relocated main model (was tumor/sf-ssm-log-space.stan)
 functions {
-  #include "../util.stan"
-  #include "../pos.stan"
-  #include "../gp.stan"
-  #include "../pfs_functions.stan"
-  #include "../lfo.stan"
+  #include "util.stan"
+  #include "pos.stan"
+  #include "gp.stan"
+  #include "pfs_functions.stan"
+  #include "lfo.stan"
   #include "_sf_functions.stan"
-  #include "../recist.stanfunctions"
+  #include "recist.stanfunctions"
 }
 
 data {
-  #include "../base_data.stan"
-  #include "../tumor/base_data.stan" // tumor-specific base
+  #include "base_data.stan"
   #include "_sf_outcomes_info.stan"
   #include "modules/measurement/hyperparams.stan"
   #include "modules/other_events/data.stan"
@@ -29,8 +28,8 @@ data {
 }
 
 transformed data {
-  #include "../base_transformed_data.stan"
-  #include "../tumor/tumor_transformed_data.stan"
+  #include "base_transformed_data.stan"
+  #include "tumor/tumor_transformed_data.stan"
   #include "modules/measurement/transformed_data.stan"
   #include "modules/tr/transformed_data.stan"
   #include "modules/frac/transformed_data.stan"
