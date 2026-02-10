@@ -16,34 +16,130 @@ The PIONEER model currently uses SLD (Sum of Longest Diameters) for solid tumor 
 
 ---
 
-## Phase 1: Dual-Mode Model (SLD + PSA, λ=1)
+## Stan Directory Structure (Updated 2026-02-10)
 
-### 1.1 Stan Data Input Changes
+The Stan codebase has been reorganized into a modular structure. Key directories:
 
-**File**: `stan/tumor/base_data.stan` (or equivalent data declaration)
-
-```stan
-// Observation type flag
-int<lower=0, upper=2> observation_type;  // 0=SLD only, 1=PSA only, 2=both SLD+PSA
-
-// SLD observations (when observation_type == 0 or 2)
-vector[observation_type != 1 ? sum(n_patient_visits) : 0] sum_tumor_size;
-
-// PSA observations (when observation_type >= 1)
-vector[observation_type >= 1 ? sum(n_patient_psa_visits) : 0] psa_values;
-array[observation_type >= 1 ? n_patients : 0] int n_patient_psa_visits;
-
-// Lambda parameter control (for future Phase 3)
-int<lower=0, upper=1> estimate_lambda;  // 0=fix at 1, 1=estimate (requires observation_type=2)
-real<lower=0> lambda_fixed;  // Used when estimate_lambda=0 (default: 1.0)
+```
+stan/
+├── _base_data.stan              # Core patient/visit structure (shared by all biomarkers)
+├── _base_transformed_data.stan  # Base preprocessing
+├── sf-ssm-log-space.stan        # Main model entry point
+├── sf-ssls-lfo.stan             # Leave-future-out variant
+├── sf-ssls-lfo-endpoints.stan   # LFO endpoints variant
+│
+├── *.stanfunctions              # Function libraries (util, pos, gp, pfs, lfo)
+│
+└── modules/
+    ├── state_space/             # State-space infrastructure (orchestrates parameter modules)
+    │   ├── functions.stanfunctions  # Core SF dynamics (~1900 lines)
+    │   ├── data.stan            # Outcome configuration (quantiles, timepoints)
+    │   ├── transformed_data.stan
+    │   ├── transformed_parameters.stan
+    │   ├── generated_quantities.stan
+    │   ├── checks.stan
+    │   └── lfo_data.stan
+    │
+    ├── tumor/                   # Tumor/SLD-specific module
+    │   ├── data.stan            # SLD measurements, RECIST, PFS outcomes
+    │   ├── transformed_data.stan
+    │   └── tumor.stanfunctions  # calc_log_sld_mean, calculate_target_recist
+    │
+    ├── tr/                      # Total rate parameters
+    ├── frac/                    # Growth fraction parameters
+    ├── init/                    # Initial state parameters
+    ├── measurement/             # Measurement model (σ_meas)
+    └── other_events/            # Non-tumor progression hazards
 ```
 
-**Changes needed**:
-- Add `observation_type` flag to Stan data
-- Keep `sum_tumor_size` for SLD compatibility (observation_type 0 or 2)
-- Add `psa_values` array for PSA data (observation_type 1 or 2)
-- Add `estimate_lambda` flag and `lambda_fixed` value (prepare for Phase 3)
-- When `observation_type=2`, both SLD and PSA are observed → can estimate λ
+**Naming conventions**:
+- `.stanfunctions` extension for files containing only function definitions
+- `_` prefix for base files included at root level
+- Module files follow 7-file pattern: `flags.stan`, `data.stan`, `hyperparams.stan`, `transformed_data.stan`, `parameters.stan`, `transformed_parameters.stan`, `priors.stan`
+
+---
+
+## Phase 1: Dual-Mode Model (SLD + PSA, λ=1)
+
+### 1.1 New PSA Module Structure
+
+Create a new `modules/psa/` module following the established pattern:
+
+```
+stan/modules/psa/
+├── data.stan                # PSA measurements and outcomes
+├── transformed_data.stan    # PSA normalization, visit indices
+├── psa.stanfunctions        # calc_log_psa_mean, calculate_psa_category (PCWG3)
+├── flags.stan               # fit_psa_data, observation_type flags
+└── hyperparams.stan         # PSA measurement error priors, lambda_fixed
+```
+
+### 1.2 Stan Data Input Changes
+
+**File**: `stan/modules/psa/flags.stan` (NEW)
+
+```stan
+// Observation type flag (controls which biomarker likelihoods are active)
+// 0 = SLD only (tumor module)
+// 1 = PSA only (psa module)
+// 2 = Both SLD + PSA (joint modeling)
+int<lower=0, upper=2> observation_type;
+
+// Whether to fit PSA observation model
+int<lower=0, upper=1> fit_psa_data;
+
+// Lambda parameter control (for future Phase 3/5)
+int<lower=0, upper=1> estimate_lambda;  // 0=fix at lambda_fixed, 1=estimate
+```
+
+**File**: `stan/modules/psa/hyperparams.stan` (NEW)
+
+```stan
+// Fixed lambda value when estimate_lambda=0 (default: 1.0)
+real<lower=0> lambda_fixed;
+
+// PSA measurement error prior hyperparameters
+real<lower=0> measure_sd_psa_mean;
+real<lower=0> measure_sd_psa_sd;
+```
+
+**File**: `stan/modules/psa/data.stan` (NEW)
+
+```stan
+// ============================================================================
+// PSA MEASUREMENT DATA
+// ============================================================================
+// PSA-specific longitudinal measurements and outcomes.
+// This module contains data aligned with the visit schedule defined in _base_data.stan.
+//
+// Array lengths: All measurement arrays have length sum(n_patient_visits) and are
+// aligned with t_patient_visits from _base_data.stan.
+
+// PSA values at each visit (ng/mL)
+vector<lower=0>[sum(n_patient_visits)] psa_values;
+
+// Indicator for whether PSA was measured at each visit (handles missing data)
+array[sum(n_patient_visits)] int<lower=0, upper=1> psa_measured;
+
+// ============================================================================
+// PSA-BASED PROGRESSION OUTCOMES (PCWG3)
+// ============================================================================
+
+// PSA progression-free survival
+array[n_patients] int<lower=0> psa_pfs;  // Weeks after baseline
+array[n_patients] int<lower=0, upper=1> psa_right_censored;
+
+// PCWG3 response category at each visit
+// 1 = Undetectable (CR equivalent)
+// 2 = PSA50 (PR equivalent)
+// 3 = Stable (SD equivalent)
+// 4 = PSA-PD (confirmed progression)
+// 5 = Not Evaluable
+array[sum(n_patient_visits)] int<lower=1, upper=5> pcwg3_category;
+
+// PSA undetectable threshold (typically 0.1 ng/mL)
+real<lower=0> psa_undetectable_threshold;
+```
 
 **Identifiability table** (from PSA_260209.md Section 2.4):
 
@@ -54,71 +150,119 @@ real<lower=0> lambda_fixed;  // Used when estimate_lambda=0 (default: 1.0)
 | 1 (PSA only) | 0 (λ≠1 fixed) | B_PSA(t), α_PSA, d, g (NOT φ, λ separately) |
 | 2 (both) | 1 | B(t), B_PSA(t), φ, λ, d, g |
 
-### 1.2 Observation Model Changes
+### 1.3 Observation Model Changes
 
-**File**: `stan/ssls/_sf_transformed_data.stan` (lines 12-18)
+**File**: `stan/modules/psa/transformed_data.stan` (NEW)
 
-Current:
 ```stan
-normalized_sld[visit_pos:visit_end] = sum_tumor_size[visit_pos:visit_end] / sum_tumor_size[visit_pos];
-```
+// ============================================================================
+// PSA NORMALIZATION AND PREPROCESSING
+// ============================================================================
 
-Change to:
-```stan
-// SLD normalization (observation_type 0 or 2)
-if (observation_type != 1) {
-  normalized_sld[visit_pos:visit_end] = sum_tumor_size[...] / sum_tumor_size[visit_pos];
+// Normalized PSA (relative to baseline)
+vector[sum(n_patient_visits)] normalized_psa;
+
+// Log-transformed PSA values
+vector[sum(n_patient_visits)] log_psa_values;
+array[n_patients] real log_baseline_psa;
+
+// Compute normalized PSA per patient
+for (i in 1:n_patients) {
+  int visit_start, visit_end;
+  (visit_start, visit_end) = get_pos(patient_visit_pos, i);
+
+  // Baseline is first post-treatment visit (at screening boundary)
+  int baseline_idx = visit_start + n_screening_visits[i] - 1;
+  real baseline_psa = psa_values[baseline_idx];
+  log_baseline_psa[i] = log(baseline_psa);
+
+  for (v in visit_start:visit_end) {
+    if (psa_measured[v]) {
+      normalized_psa[v] = psa_values[v] / baseline_psa;
+      log_psa_values[v] = log(psa_values[v]);
+    }
+  }
 }
-
-// PSA normalization (observation_type 1 or 2)
-if (observation_type >= 1) {
-  normalized_psa[psa_visit_pos:psa_visit_end] = psa_values[...] / psa_values[psa_visit_pos];
-}
 ```
 
-**File**: `stan/ssls/_sf_functions.stan` or new `_sf_psa_functions.stan`
-
-For Phase 1 (λ=1), the observation likelihood is identical to SLD:
-```stan
-log(normalized_psa) ~ Normal(log(B(t)), σ_psa)
-```
-
-For future Phase 3 (λ≠1), the PSA-weighted burden formula:
-```stan
-// B_PSA(t) = [φ × e^(-d×t) + λ × (1-φ) × e^(g×t)] / [φ + λ × (1-φ)]
-// In log-space with states:
-//   x_s = log(φ) - d*t  (sensitive compartment)
-//   x_g = log(1-φ) + g*t  (resistant compartment)
-real log_B_PSA = log_sum_exp(x_s, log(lambda) + x_g)
-              - log_sum_exp(log_phi, log(lambda) + log1m_phi);
-
-log(normalized_psa) ~ Normal(log_B_PSA, σ_psa)
-```
-
-**Note**: When λ=1, `log_B_PSA = log_B` (mathematically identical).
-
-### 1.3 PCWG3 Progression Criteria
-
-**New file**: `stan/pcwg3.stanfunctions`
-
-Create PCWG3 equivalent of `stan/recist.stanfunctions`:
+**File**: `stan/modules/psa/psa.stanfunctions` (NEW)
 
 ```stan
+// ============================================================================
+// PSA-SPECIFIC FUNCTIONS
+// ============================================================================
+// These functions are specific to PSA measurements. They convert
+// the general 2-component log-space state (from state_space module) into
+// PSA-specific quantities.
+//
+// Follows the same pattern as modules/tumor/tumor.stanfunctions
+
 /**
- * Calculate PCWG3 PSA response category
- * Returns: 1=CR (undetectable), 2=PSA50 (PR), 3=Stable (SD), 4=PSA-PD
+ * Calculate mean log(PSA) from two-component log-space states
+ *
+ * When lambda=1, this is identical to calc_log_sld_mean.
+ * When lambda!=1, applies the PSA-weighted burden formula:
+ *   B_PSA(t) = [φ × e^(-d×t) + λ × (1-φ) × e^(g×t)] / [φ + λ × (1-φ)]
+ *
+ * @param patient_states Matrix of states [n_visits × 2]
+ * @param psa_baseline Baseline PSA measurement
+ * @param lambda PSA production ratio (resistant/sensitive), default 1.0
+ * @param log_phi Log of sensitive fraction at baseline
+ * @return Vector of log(PSA) means at each visit
+ */
+vector calc_log_psa_mean(matrix patient_states, real psa_baseline, real lambda, real log_phi) {
+  assert_equal(cols(patient_states), 2);
+  int n_visits = rows(patient_states);
+  vector[n_visits] log_psa_mean;
+
+  if (lambda == 1.0) {
+    // Simplified: identical to SLD model
+    log_psa_mean = to_vector(log_sum_exp(patient_states[, 1], patient_states[, 2]))
+                   + log(psa_baseline);
+  } else {
+    // Full PSA-weighted burden formula
+    real log_lambda = log(lambda);
+    real log1m_phi = log1m_exp(log_phi);
+    real normalizer = log_sum_exp(log_phi, log_lambda + log1m_phi);
+
+    for (t in 1:n_visits) {
+      real x_s = patient_states[t, 1];  // log(sensitive burden)
+      real x_g = patient_states[t, 2];  // log(resistant burden)
+      log_psa_mean[t] = log_sum_exp(x_s, log_lambda + x_g) - normalizer + log(psa_baseline);
+    }
+  }
+
+  return log_psa_mean;
+}
+
+/**
+ * Calculate PCWG3 PSA response category with confirmation logic
+ *
+ * Categories:
+ *   1 = Undetectable (CR equivalent): PSA < threshold
+ *   2 = PSA50 (PR equivalent): ≥50% decrease from baseline
+ *   3 = Stable (SD equivalent): Neither PSA50 nor PSA-PD
+ *   4 = PSA-PD: ≥25% AND ≥2 ng/mL from nadir, confirmed ≥3 weeks later
+ *
+ * @param psa_trajectory Absolute PSA values (ng/mL) at each visit
+ * @param pre_nadir Pre-existing nadir from previous visits (0 if none)
+ * @param n_screening Number of screening visits before treatment
+ * @param psa_undetectable_threshold Threshold for undetectable (typically 0.1 ng/mL)
+ * @return Array of PCWG3 categories for post-treatment visits
  */
 array[] int calculate_psa_category(
-  vector psa_trajectory,      // Absolute PSA values (ng/mL)
+  vector psa_trajectory,
+  real pre_nadir,
   int n_screening,
-  real psa_undetectable_threshold  // 0.1 ng/mL
+  real psa_undetectable_threshold
 ) {
   int n = rows(psa_trajectory);
+  assert_greater_than_or_equal(n, n_screening);
   int n_treat = n - n_screening;
   array[n_treat] int psa_status;
 
   real baseline = psa_trajectory[n_screening];
-  real nadir = baseline;
+  real nadir = pre_nadir <= 0 ? baseline : pre_nadir;
   int pending_pd_week = -1;
 
   int CR = 1; int PSA50 = 2; int STABLE = 3; int PSA_PD = 4;
@@ -141,7 +285,7 @@ array[] int calculate_psa_category(
         // Not yet confirmed - check other categories
         if (psa_t < psa_undetectable_threshold) {
           psa_status[t - n_screening] = CR;
-        } else if ((baseline - psa_t) / baseline >= 0.5) {
+        } else if (baseline > 0 && (baseline - psa_t) / baseline >= 0.5) {
           psa_status[t - n_screening] = PSA50;
         } else {
           psa_status[t - n_screening] = STABLE;
@@ -151,7 +295,7 @@ array[] int calculate_psa_category(
       pending_pd_week = -1;  // Reset confirmation
       if (psa_t < psa_undetectable_threshold) {
         psa_status[t - n_screening] = CR;
-      } else if ((baseline - psa_t) / baseline >= 0.5) {
+      } else if (baseline > 0 && (baseline - psa_t) / baseline >= 0.5) {
         psa_status[t - n_screening] = PSA50;
       } else {
         psa_status[t - n_screening] = STABLE;
@@ -162,16 +306,34 @@ array[] int calculate_psa_category(
 }
 ```
 
-### 1.4 Other Events Covariate Changes
+### 1.4 Measurement Model Changes
 
-**File**: `stan/ssls/modules/other_events/transformed_data.stan` (lines 51-87)
+**File**: `stan/modules/measurement/parameters.stan` (ADD)
 
-Variable renaming for clarity:
+```stan
+// PSA measurement error (when observation_type >= 1)
+real<lower=0> measure_sd_psa;
+```
+
+**File**: `stan/modules/measurement/priors.stan` (ADD)
+
+```stan
+// PSA measurement error prior (when observation_type >= 1)
+if (observation_type >= 1) {
+  measure_sd_psa ~ normal(measure_sd_psa_mean, measure_sd_psa_sd);
+}
+```
+
+### 1.5 Other Events Covariate Changes
+
+**File**: `stan/modules/other_events/transformed_data.stan`
+
+Variable renaming for biomarker-agnostic naming:
 - `median_log_sld_obs` → `median_log_biomarker_obs`
 - `iqr_log_sld_obs` → `iqr_log_biomarker_obs`
 - `log_baseline_sld` → `log_baseline_biomarker`
 
-**File**: `stan/ssls/modules/other_events/transformed_parameters.stan` (lines 60-137)
+**File**: `stan/modules/other_events/transformed_parameters.stan`
 
 Variable renaming:
 - `log_sld_normalized` → `log_biomarker_normalized`
@@ -179,7 +341,118 @@ Variable renaming:
 - `log_sld_standardized` → `log_biomarker_standardized`
 - `sld_velocity` → `biomarker_velocity`
 
-### 1.5 R Data Preparation Changes
+### 1.6 PSA-Derived Covariates (Nadir, Nadir Ratio)
+
+**File**: `stan/modules/other_events/transformed_parameters.stan` (ADD)
+
+Add after velocity computation:
+
+```stan
+// PSA-specific covariates (only when observation_type >= 1)
+// These use model-predicted burden (not observed PSA) for smoothness
+if (observation_type >= 1 && n_tumor_covar >= 5) {
+  for (k in 1:n_causes) {
+    for (i in 1:n_patients) {
+      // Compute nadir and nadir ratio from predicted burden
+      row_vector[max_all_t] nadir_ratio = rep_row_vector(1, max_all_t);
+
+      real running_nadir = exp(log_biomarker_absolute[i, 1]);
+      for (t in 1:max_all_t) {
+        running_nadir = fmin(running_nadir, exp(log_biomarker_absolute[i, t]));
+        nadir_ratio[t] = exp(log_biomarker_absolute[i, t]) / running_nadir;
+      }
+
+      // Add nadir ratio effect (covariate index 5)
+      oe_time_varying_log_hazard_ratio[k, i] += oe_tumor_coef_pop[k][5] * log(nadir_ratio);
+    }
+  }
+}
+```
+
+### 1.7 Main Model File Updates
+
+**File**: `stan/sf-ssm-log-space.stan` (MODIFY)
+
+Add PSA module includes:
+
+```stan
+functions {
+  #include "util.stanfunctions"
+  #include "pos.stanfunctions"
+  #include "gp.stanfunctions"
+  #include "pfs.stanfunctions"
+  #include "lfo.stanfunctions"
+  #include "modules/state_space/functions.stanfunctions"
+  #include "modules/tumor/tumor.stanfunctions"
+  #include "modules/psa/psa.stanfunctions"  // NEW
+}
+
+data {
+  #include "_base_data.stan"
+  #include "modules/tumor/data.stan"
+  #include "modules/psa/data.stan"          // NEW
+  #include "modules/psa/flags.stan"         // NEW
+  #include "modules/psa/hyperparams.stan"   // NEW
+  #include "modules/state_space/data.stan"
+  // ... rest of includes
+}
+
+transformed data {
+  #include "_base_transformed_data.stan"
+  #include "modules/tumor/transformed_data.stan"
+  #include "modules/psa/transformed_data.stan"  // NEW
+  // ... rest of includes
+}
+```
+
+**File**: `stan/sf-ssm-log-space.stan` model block (MODIFY)
+
+Add conditional PSA likelihood:
+
+```stan
+model {
+  // ... existing priors ...
+
+  profile("loglik") {
+    // SLD likelihood (observation_type 0 or 2)
+    if (fit_tumor_data && observation_type != 1) {
+      profile("tumor loglik") {
+        for (i in 1:n_patients) {
+          int visit_start, visit_end;
+          (visit_start, visit_end) = get_pos(patient_visit_pos, i);
+          normalized_sld[visit_start:visit_end] ~ sf_log_space_obs(
+            states[visit_start:visit_end], measure_sd, log_lod - log_baseline_sld[i]
+          );
+        }
+      }
+    }
+
+    // PSA likelihood (observation_type 1 or 2)
+    if (fit_psa_data && observation_type >= 1) {
+      profile("psa loglik") {
+        for (i in 1:n_patients) {
+          int visit_start, visit_end;
+          (visit_start, visit_end) = get_pos(patient_visit_pos, i);
+          for (v in visit_start:visit_end) {
+            if (psa_measured[v]) {
+              // When lambda=1, this is mathematically identical to SLD model
+              real log_psa_mean = calc_log_psa_mean(
+                states[v:v], psa_values[visit_start], lambda_fixed,
+                patient_log_decrease_prop[i]
+              )[1];
+              log(normalized_psa[v]) ~ normal(log_psa_mean - log_baseline_psa[i], measure_sd_psa);
+            }
+          }
+        }
+      }
+    }
+
+    // ... other events likelihood ...
+  }
+}
+```
+
+### 1.8 R Data Preparation Changes
 
 **File**: `r/sclc/prepare_analysis_data.R`
 
@@ -201,30 +474,36 @@ prepare_tumor_stan_data <- function(
   # SLD data (observation_type 0 or 2)
   if (observation_type != 1) {
     sld_values <- unnest(analysis_data, visit_data) |>
-      pull(mmsumdiam) |> divide_by(10)
+      pull(mmsumdiam) |> magrittr::divide_by(10)
+    fit_tumor_data <- 1L
   } else {
     sld_values <- numeric(0)
+    fit_tumor_data <- 0L
   }
 
   # PSA data (observation_type 1 or 2)
   if (observation_type >= 1) {
-    psa_values <- unnest(analysis_data, psa_visit_data) |>
+    psa_values <- unnest(analysis_data, visit_data) |>
       pull(psa)  # PSA in ng/mL
-    n_patient_psa_visits <- analysis_data |>
-      mutate(n = map_int(psa_visit_data, nrow)) |>
-      pull(n)
+    psa_measured <- as.integer(!is.na(psa_values))
+    psa_values[is.na(psa_values)] <- 0  # Fill NAs for Stan
+    fit_psa_data <- 1L
   } else {
     psa_values <- numeric(0)
-    n_patient_psa_visits <- integer(0)
+    psa_measured <- integer(0)
+    fit_psa_data <- 0L
   }
 
   lst(
     observation_type = observation_type,
     estimate_lambda = estimate_lambda,
     lambda_fixed = lambda_fixed,
+    fit_tumor_data = fit_tumor_data,
+    fit_psa_data = fit_psa_data,
     sum_tumor_size = sld_values,
     psa_values = psa_values,
-    n_patient_psa_visits = n_patient_psa_visits,
+    psa_measured = psa_measured,
+    psa_undetectable_threshold = 0.1,  # ng/mL
     ...
   )
 }
@@ -249,42 +528,6 @@ stan_data <- prepare_tumor_stan_data(
 )
 ```
 
-### 1.6 PSA-Derived Covariates (Nadir, Nadir Ratio)
-
-**File**: `stan/ssls/modules/other_events/transformed_parameters.stan`
-
-Add after velocity computation (around line 134):
-
-```stan
-// PSA-specific covariates (only when observation_type >= 1)
-if (observation_type >= 1 && n_tumor_covar >= 5) {
-  for (k in 1:n_causes) {
-    for (i in 1:n_patients) {
-      // Compute nadir and nadir ratio
-      row_vector[max_all_t] nadir = rep_row_vector(1e10, max_all_t);
-      row_vector[max_all_t] nadir_ratio = rep_row_vector(1, max_all_t);
-
-      real running_nadir = exp(log_biomarker_absolute[1]);
-      for (t in 1:max_all_t) {
-        running_nadir = fmin(running_nadir, exp(log_biomarker_absolute[t]));
-        nadir[t] = running_nadir;
-        nadir_ratio[t] = exp(log_biomarker_absolute[t]) / running_nadir;
-      }
-
-      // Add nadir ratio effect (covariate index 5)
-      oe_time_varying_log_hazard_ratio[k, i] += oe_tumor_coef_pop[k][5] * log(nadir_ratio);
-    }
-  }
-}
-```
-
-**File**: `r/sclc/prepare_analysis_data.R` (line 134)
-
-```r
-n_tumor_covar <- if (observation_type == 0) 3 else 5
-# PSA adds: nadir, nadir_ratio (time_to_nadir can be derived)
-```
-
 ---
 
 ## Future Phases (NOT in current scope, but code structured to support)
@@ -295,7 +538,7 @@ When `observation_type=1` and `estimate_lambda=0` but `lambda_fixed≠1`:
 
 **Use case**: Apply an informative prior or fixed value for λ based on external knowledge about PSA production rates in resistant vs sensitive cells.
 
-**Stan parameter** (add to `stan/ssls/modules/*/parameters.stan`):
+**Stan parameter** (add to `stan/modules/psa/parameters.stan`):
 ```stan
 // When estimate_lambda=1 (requires observation_type=2)
 real<lower=0> lambda_psa;  // PSA production ratio (resistant/sensitive)
@@ -346,22 +589,29 @@ log(PSA/PSA_base) ~ Normal(log(B_PSA(t)), σ_psa)
 
 | File | Changes |
 |------|---------|
-| `stan/tumor/base_data.stan` | Add `observation_type`, `psa_values`, `estimate_lambda`, `lambda_fixed` |
-| `stan/ssls/_sf_transformed_data.stan` | Conditional normalization (SLD vs PSA vs both) |
-| `stan/ssls/modules/other_events/transformed_data.stan` | Rename sld → biomarker |
-| `stan/ssls/modules/other_events/transformed_parameters.stan` | Rename + add nadir covariates |
-| `stan/pcwg3.stanfunctions` | **NEW**: PCWG3 category functions |
-| `stan/ssls/_endpoints_generated_quantities.stan` | Use PCWG3 for PSA mode |
-| `r/sclc/prepare_analysis_data.R` | Add PSA data handling, set `estimate_lambda=0`, `lambda_fixed=1` |
-| `r/priors.R` | Add priors for new PSA covariates |
+| `stan/modules/psa/data.stan` | **NEW**: PSA measurements, PCWG3 categories, outcomes |
+| `stan/modules/psa/flags.stan` | **NEW**: observation_type, fit_psa_data, estimate_lambda |
+| `stan/modules/psa/hyperparams.stan` | **NEW**: lambda_fixed, measure_sd_psa priors |
+| `stan/modules/psa/transformed_data.stan` | **NEW**: PSA normalization, preprocessing |
+| `stan/modules/psa/psa.stanfunctions` | **NEW**: calc_log_psa_mean, calculate_psa_category |
+| `stan/modules/measurement/parameters.stan` | Add measure_sd_psa |
+| `stan/modules/measurement/priors.stan` | Add measure_sd_psa prior |
+| `stan/modules/other_events/transformed_data.stan` | Rename sld → biomarker variables |
+| `stan/modules/other_events/transformed_parameters.stan` | Rename + add nadir covariates |
+| `stan/sf-ssm-log-space.stan` | Add PSA module includes + conditional likelihood |
+| `stan/sf-ssls-lfo.stan` | Add PSA module includes |
+| `stan/sf-ssls-lfo-endpoints.stan` | Add PSA module includes |
+| `stan/_endpoints_generated_quantities.stan` | Use PCWG3 for PSA mode |
+| `r/sclc/prepare_analysis_data.R` | Add PSA data handling |
+| `r/priors.R` | Add priors for PSA measurement error |
 
 ### Future Phases (Structure now, implement later)
 
 | File | Phase | Changes |
 |------|-------|---------|
-| `stan/ssls/modules/frac/parameters.stan` | 3, 5 | Add `lambda_psa` parameter (gated by `estimate_lambda`) |
-| `stan/ssls/modules/frac/priors.stan` | 3, 5 | Add `log(lambda_psa) ~ Normal(0, 0.5)` prior |
-| `stan/ssls/_sf_functions.stan` | 3, 5 | Update observation likelihood for B_PSA(t) formula |
+| `stan/modules/psa/parameters.stan` | 3, 5 | Add `lambda_psa` parameter |
+| `stan/modules/psa/priors.stan` | 3, 5 | Add `log(lambda_psa) ~ Normal(0, 0.5)` prior |
+| `stan/modules/psa/psa.stanfunctions` | 3, 5 | Update calc_log_psa_mean for λ≠1 |
 | `r/priors.R` | 3, 5 | Add `lambda_psa` prior hyperparameters |
 | `r/initializers.R` | 3, 5 | Add `lambda_psa` initializer |
 
@@ -372,8 +622,8 @@ log(PSA/PSA_base) ~ Normal(log(B_PSA(t)), σ_psa)
 ### Stage 1: Syntax Validation (No data required)
 
 ```bash
-# Check Stan syntax after changes
-~/.cmdstan/cmdstan-2.37.0/bin/stanc --include-paths=stan,stan/ssls stan/ssls/sf-ssm-log-space.stan
+# Check Stan syntax after changes (use latest cmdstan)
+~/.cmdstan/cmdstan-2.38.0/bin/stanc --include-paths=stan stan/sf-ssm-log-space.stan
 ```
 
 **Pass criteria**: No syntax errors
@@ -434,7 +684,7 @@ expect_error(
 ### Stage 4: Model Compilation
 
 ```bash
-# Compile modified model
+# Compile modified model via targets pipeline
 ./sclc_targets.sh -k -m '"tumor_ssls_exe_hash"'
 ```
 
@@ -518,3 +768,15 @@ expect_true(all(fit_psa$summary()$rhat < 1.1))
 - [ ] estimate_lambda flag present in Stan data
 - [ ] lambda_fixed value passed through correctly
 - [ ] Code comments/TODO markers in place for Phase 3/5 implementation
+
+---
+
+## Document History
+
+- **2026-02-10**: Updated file paths and module structure to reflect Stan reorganization
+  - Changed from `stan/tumor/base_data.stan` to `stan/_base_data.stan`
+  - Changed from `stan/ssls/_sf_*.stan` to `stan/modules/state_space/*.stan`
+  - Changed from `stan/pcwg3.stanfunctions` to `stan/modules/psa/psa.stanfunctions`
+  - Added complete PSA module structure following established patterns
+  - Updated cmdstan version in test commands (2.37.0 → 2.38.0)
+- **2026-02-09**: Initial implementation plan created
