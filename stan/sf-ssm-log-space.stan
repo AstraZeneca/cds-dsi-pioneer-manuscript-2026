@@ -11,6 +11,7 @@ functions {
 
 data {
   #include "base_data.stan"
+  #include "modules/tumor/data.stan"
   #include "_sf_outcomes_info.stan"
   #include "modules/measurement/hyperparams.stan"
   #include "modules/other_events/data.stan"
@@ -29,7 +30,7 @@ data {
 
 transformed data {
   #include "base_transformed_data.stan"
-  #include "tumor/tumor_transformed_data.stan"
+  #include "modules/tumor/transformed_data.stan"
   #include "modules/measurement/transformed_data.stan"
   #include "modules/tr/transformed_data.stan"
   #include "modules/frac/transformed_data.stan"
