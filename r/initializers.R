@@ -186,7 +186,7 @@ create_tumor_ss_initializer <- function(stan_data) {
       abs(rnorm(1, 0, stan_data$pop_growth_process_sd_sd))
     )
     # Draw from inv_gamma prior (keeps mass away from zero)
-    measure_sd <- invgamma::rinvgamma(1, stan_data$measure_sd_alpha, stan_data$measure_sd_beta)
+    measure_sd_sld <- invgamma::rinvgamma(1, stan_data$measure_sd_sld_alpha, stan_data$measure_sd_sld_beta)
 
     # Hierarchical SDs (new naming convention)
     # Truncate at 0.05 to avoid near-zero inits that cause numerical issues
@@ -212,7 +212,7 @@ create_tumor_ss_initializer <- function(stan_data) {
       pop_log_growth_transition_rate = pop_log_growth_transition_rate,
       patient_log_growth_lag_sd = patient_log_growth_lag_sd,
       pop_process_sd = pop_process_sd,
-      measure_sd = measure_sd
+      measure_sd_sld = measure_sd_sld
     )
 
     if (use_cross_process_corr) init_vals$L_process_corr <- L_process_corr
@@ -317,7 +317,7 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
   scalar_params <- c(
     "tr_loc_pop", "frac_logit_loc_pop",
     "log_pop_tumor_gp_rho", "pop_log_growth_lag",
-    "pop_log_growth_transition_rate", "measure_sd",
+    "pop_log_growth_transition_rate", "measure_sd_sld",
     "init_logit_loc_pop",
     "log_patient_tumor_gp_rho_sd", "tr_sd_patient_intercept",
     "patient_log_growth_lag_sd", "init_sd_patient_intercept",
@@ -543,7 +543,7 @@ create_tumor_ssls_initializer <- function(stan_data) {
         tr_logit_phi_pop_process_noise_pop = if (enable_pop_process_noise_tr) array(rnorm(1, mean = 1.4, sd = 0.3)),  # Match prior mean
 
         # Measurement error - draw from inv_gamma prior (keeps mass away from zero)
-        measure_sd = invgamma::rinvgamma(1, measure_sd_alpha, measure_sd_beta),
+        measure_sd_sld = invgamma::rinvgamma(1, measure_sd_sld_alpha, measure_sd_sld_beta),
         
         # Other events baseline hazard (population level)
         log_lambda_gp_pop_intercept = array(rnorm(n_causes, oe_log_lambda_gp_pop_intercept_mean, oe_log_lambda_gp_pop_intercept_sd), dim = n_causes),
