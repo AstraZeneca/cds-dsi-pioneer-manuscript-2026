@@ -65,18 +65,20 @@ vector[n_patients] log_baseline_sld;
   // Filter out zeros to avoid -Inf
   vector[sum(n_patient_visits)] log_sld_all_obs;
   int n_positive = 0;
-  
+
   for (i in 1:sum(n_patient_visits)) {
     if (sum_tumor_size[i] > 0) {
       n_positive += 1;
       log_sld_all_obs[n_positive] = log(sum_tumor_size[i]);
     }
   }
-  
+
   // Compute robust normalization using median and IQR from positive observations
-  array[3] real quantiles_obs = quantile(log_sld_all_obs[1:n_positive], {0.25, 0.5, 0.75});
-  median_log_sld_obs = quantiles_obs[2];
-  iqr_log_sld_obs = quantiles_obs[3] - quantiles_obs[1];
+  {
+    array[3] real quantiles_obs = quantile(log_sld_all_obs[1:n_positive], {0.25, 0.5, 0.75});
+    median_log_sld_obs = quantiles_obs[2];
+    iqr_log_sld_obs = quantiles_obs[3] - quantiles_obs[1];
+  }
   
   // Also store baseline SLD for each patient (for converting states)
   for (i in 1:n_patients) {

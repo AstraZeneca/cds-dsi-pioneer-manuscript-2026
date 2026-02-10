@@ -36,16 +36,6 @@ for (p in 1:n_patients) {
 print("Multi-level hierarchy validated:");
 print("  n_levels = ", n_levels);
 print("  n_groups_per_level = ", n_groups_per_level);
-print("  n_total_groups = ", n_total_groups);
-
-// Number of patients in each trial
-array[n_trials] int<lower = 0, upper = n_patients> n_trial_patients = rep_array(0, n_trials);
-
-for (i in 1:n_patients) {
-  n_trial_patients[patient_trial[i]] += 1;
-}
-
-print("n_trial_patients = ", n_trial_patients);
 
 // Starting position of patients for each trial in a flattened patient array
 // Diagram for trial_patient_pos:
@@ -56,26 +46,28 @@ print("n_trial_patients = ", n_trial_patients);
 //  |  |   Start of patients in trial 3
 //  |  Start of patients in trial 2
 //  Start of patients in trial 1
-array[n_trials + 1] int<lower = 1, upper = n_patients + 1> trial_patient_pos = create_pos(n_trial_patients);
-
-// Starting position of measurements for each trial in a flattened measurement array
-array[n_trials + 1] int<lower = 1, upper = sum(n_patient_visits) + 1> trial_visit_pos = create_pos(n_patient_visits, trial_patient_pos);
+array[n_trials + 1] int<lower = 1, upper = n_patients + 1> trial_patient_pos;
+{
+  array[n_trials] int n_trial_patients = rep_array(0, n_trials);
+  for (i in 1:n_patients) {
+    n_trial_patients[patient_trial[i]] += 1;
+  }
+  print("n_trial_patients = ", n_trial_patients);
+  trial_patient_pos = create_pos(n_trial_patients);
+}
 
 array[n_patients + 1] int<lower = 1, upper = sum(n_patient_visits) + 1> patient_visit_pos = create_pos(n_patient_visits);
 
 real delta = 1e-5; // Small value used for GP modeling to avoid numerical issues
 
-int min_all_t = min(t_patient_visits); // Earliest measurement time across all patients
-int<lower = min_all_t> max_all_t = max(max(t_patient_visits) + 1, extend_max_all_t); // Latest measurement time or extended time, whichever is greater
-int<lower = 0> max_t_width = max_all_t - min_all_t + 1;
+int max_all_t = max(max(t_patient_visits) + 1, extend_max_all_t); // Latest measurement time or extended time, whichever is greater
+int<lower = 0> max_t_width = max_all_t - min(t_patient_visits) + 1;
 
 print("max(t_patient_visits) = ", max(t_patient_visits));
 print("max_all_t = ", max_all_t);
 print("max_t_width = ", max_t_width);
 
-array[n_patients] int<lower = 0> patient_max_t_width; // Number of time intervals between first and last measurement for each patient
-array[sum(n_patient_visits)] int<lower = 1> t_patient_visit_idx; // Index of each patient visit relative to the first visit for each patient
-array[sum(n_patient_visits)] int<lower = 1, upper = max_t_width> t_visit_trial_idx = id2idx(t_patient_visits, trial_visit_pos); 
+array[sum(n_patient_visits)] int<lower = 1> t_patient_visit_idx; // Index of each patient visit relative to the first visit for each patient 
 
 array[n_patients] int<lower = 0> n_patient_screening_visits = zeros_int_array(n_patients);
 
@@ -96,16 +88,6 @@ for (i in 1:n_patients) {
   if (n_patient_screening_visits[i] == 0) {
     fatal_error("Patient ", i, " has no pre-screening visits.");
   }
-  
-  // Calculate maximum time width for current patient
-  patient_max_t_width[i] = max(t_patient_visits[curr_patient_visit_pos:curr_patient_visit_end]) - min(t_patient_visits[curr_patient_visit_pos:curr_patient_visit_end]) + 1;
-}
-
-// Array of measurement times used for GP modeling
-array[max_t_width] real all_measure_t;
-
-for (t in 1:max_t_width) {
-  all_measure_t[t] = t / 12.0; // Scaling factor for time intervals. The 12 here is arbitrary (if it actually had any meaning at one point).
 }
 
 // Time grid for full states computation: [1, 2, 3, ..., max_t_width]

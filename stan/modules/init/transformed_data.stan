@@ -2,7 +2,7 @@
 // Compute enabled group counts, position arrays, and pre-computed indices for
 // efficient vectorized operations in transformed_parameters.
 
-// Enabled group count for init intercepts
+// Enabled group count for init intercepts (used in parameters block)
 int n_enabled_groups_init_intercept = compute_n_enabled_groups(
   n_groups_per_level, enable_level_intercept_init
 );
