@@ -4,6 +4,9 @@
         "CLAUDE_CODE_SKIP_BEDROCK_AUTH": "1",
         "ANTHROPIC_BEDROCK_BASE_URL": "https://ai-gateway.astrazeneca.net/bedrock",
         "AWS_REGION": "us-east-1",
-        "AWS_BEARER_TOKEN_BEDROCK": "sk-d83a10dbf8899009a861a1fe3a46ee70c3d826de46fa13e3a4db2a3b7e7be453"
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "us.anthropic.claude-opus-4-5-20251101-v1:0",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "ANTHROPIC_MODEL": "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
     }
 }
