@@ -324,13 +324,13 @@ Tracking how well the model predicts each RECIST category at different points du
 
 ```{r}
 #| label: fig-recist-probability-over-time
-#| fig-cap: Probability of predicting each RECIST category conditional on observed RECIST, over time.
+#| fig-cap: "Running average sensitivity for each RECIST category across LFO folds. Ribbons show ±1 SE, where SE is computed within each posterior draw across folds, then averaged. This preserves posterior uncertainty while displaying fold-to-fold variability."
 #| fig-width: 10
 #| fig-height: 6
 
 tar_read(full_oos_confusion_matrix_ctdna_jan26, store = lfo_store) |>
   plot_recist_sensitivity_over_time() +
-  labs(caption = "Ribbon shows 80% credible interval of cumulative mean; line shows cumulative median.\nDashed lines indicate data cutoff dates (DCO1: Apr 2025, DCO2: Aug 2025, DCO3: Jan 2026).")
+  labs(caption = "Dashed lines indicate data cutoff dates (DCO1: Apr 2025, DCO2: Aug 2025, DCO3: Jan 2026).")
 ```
 
 ::: {.related-pages}
