@@ -1454,6 +1454,9 @@ ppc_spop_pfs |>
 
 #### Longitudinal Models
 
+- **Generalize Model** to handle PSA, etc., with tumor sizes
+- **Multistate Residual Events Model** to support capturing transtion between no-event, progression, and death
+- **Model dose-response** to improve model prediction across treatment arms
 - **Longitudinal** labs and ctDNA
 
 </div>
