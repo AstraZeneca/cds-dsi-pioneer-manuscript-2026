@@ -109,3 +109,6 @@ core.*
 # Temporary presentation materials
 presentation_images/
 presentation_pages/
+
+# Core dump files
+core.*
