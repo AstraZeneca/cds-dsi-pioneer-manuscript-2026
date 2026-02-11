@@ -105,3 +105,29 @@ for (t in 2:max_t_width) {
 // Combined flag: any process noise enabled (pop-level or patient-level)
 int enable_any_process_noise_tr = enable_pop_process_noise_tr || enable_patient_process_noise_tr;
 
+// ============================================================================
+// FORECAST VISIT INFRASTRUCTURE
+// ============================================================================
+// These variables define the visit structure for forecasting and are shared
+// across all biomarker modules (tumor, PSA, etc.)
+
+int<lower = 1> last_predict_visit = max_all_t;
+
+// Compute unique visits at population level (needed by state_space for visit_cumsum_mat)
+int n_pop_unique_visits = num_unique(t_patient_visits, 0);
+array[n_pop_unique_visits] int pop_unique_visits = unique(t_patient_visits, 0);
+
+// Map patient visits to population unique visits
+array[sum(n_patient_visits)] int<lower = 1> patient2pop_unique_visit_idx =
+  get_level2level_idx(pop_unique_visits, t_patient_visits, patient_visit_pos);
+
+// Last observed visit and forecast counts per patient
+array[n_patients] int<lower = 1> patient_last_obs_visit = get_max_pos(t_patient_visits, patient_visit_pos);
+array[n_patients] int<lower = 0, upper = last_predict_visit> n_patient_forecast_visits;
+
+for (i in 1:n_patients) {
+  n_patient_forecast_visits[i] = last_predict_visit - patient_last_obs_visit[i];
+}
+
+array[n_patients + 1] int<lower = 1> forecast_visits_pos = create_pos(n_patient_forecast_visits);
+

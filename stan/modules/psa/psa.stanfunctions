@@ -10,7 +10,7 @@
 /**
  * Calculate mean log(PSA) from two-component log-space states
  *
- * When lambda=1, this is identical to calc_log_sld_mean:
+ * When lambda=1, this is identical to calc_log_burden_mean:
  *   log(PSA) = log_sum_exp(state[1], state[2]) + log(psa_baseline)
  *
  * The two-component state represents:
