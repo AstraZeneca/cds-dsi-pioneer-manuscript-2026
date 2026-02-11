@@ -249,7 +249,7 @@ The subgroup filtering process follows these steps:
    ```
    - Evaluates each subgroup expression on the full dataset
    - Returns patient indices for each subgroup
-   - Only includes SCLC trial patients (excludes historical trials)
+   - Only includes SCLC-01 trial patients (excludes historical trials)
 
 4. **Stan Data Preparation** (`r/sclc/prepare_analysis_data.R:108-181`)
    - Passes subgroup indices to Stan via `cond_group` arrays
@@ -321,7 +321,7 @@ The data preparation pipeline transforms raw ADAM datasets into analysis-ready f
 
 **Cutoff Rationale**: The 50% threshold for `pdl1_hi` aligns with regulatory definitions for PD-L1 "high" expression in NSCLC and clinical decision-making for immunotherapy eligibility.
 
-**Data Format Limitations**: PD-L1 values were recorded as character strings by clinical testing laboratories using various reporting conventions. In the SCLC cohort (118 forecast patients):
+**Data Format Limitations**: PD-L1 values were recorded as character strings by clinical testing laboratories using various reporting conventions. In the SCLC-01 cohort (118 forecast patients):
 
 - **76% have numeric-like values**: Can be parsed as single numbers (e.g., `"80"`, `"90"`, `"10%"`)
 - **24% have categorical bins**: Represent ranges or thresholds rather than exact measurements (e.g., `">=75"`, `"1-49%"`)
