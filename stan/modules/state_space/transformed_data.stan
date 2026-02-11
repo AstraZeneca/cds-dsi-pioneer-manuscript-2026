@@ -1,16 +1,7 @@
 // Include fragment: transformed data block content for SSLS models
-
-// ============================================================================
-// Basic tumor measurement setup
-// ============================================================================
-
-// Normalize SLD by baseline for each patient
-vector<lower = 0>[sum(n_patient_visits)] normalized_sld;
-for (i in 1:n_patients) {
-  int visit_pos, visit_end;
-  (visit_pos, visit_end) = get_pos(patient_visit_pos, i);
-  normalized_sld[visit_pos:visit_end] = sum_tumor_size[visit_pos:visit_end] / sum_tumor_size[visit_pos]; 
-}
+// This module is biomarker-agnostic - observation-specific normalization
+// (e.g., normalized_sld) should be in the respective observation modules.
+// Visit infrastructure (forecast_visits_pos, etc.) is in _base_transformed_data.stan.
 
 // ============================================================================
 // Visit indexing and counts
@@ -19,18 +10,6 @@ for (i in 1:n_patients) {
 int<lower = 1> n_total_visits = sum(n_patient_visits);
 array[n_patients + 1] int<lower = 1> patient_visit_m1_pos = create_pos(n_patient_visits, -1);
 int<lower = 1> n_total_forecast_visits = get_pos_total_size(forecast_visits_pos);
-
-// ============================================================================
-// RECIST response categories
-// ============================================================================
-
-int CR = 1;
-int PR = 2;
-int SD = 3;
-int PD = 4;
-
-int NT_CR = 1;
-int NT_PD = 2;
 
 // ============================================================================
 // Covariate design matrix (QR decomposition)

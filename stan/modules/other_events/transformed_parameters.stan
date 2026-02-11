@@ -50,53 +50,53 @@ if (n_causes > 0 && oe_enable_trial_baseline_hazard) {
 // --- Proportional Hazard: Covariate Effects ---
 array[n_causes] vector[n_patients] oe_time_invariant_log_hazard_ratio = rep_array(rep_vector(0, n_patients), n_causes);
 
-// Time-varying tumor burden covariate: log(SLD) at each time point
+// Time-varying biomarker covariate: log(biomarker) at each time point
 // states_full_grid[1] = log(regression), states_full_grid[2] = log(growth)
-// log(SLD) = log(regression + growth) = log_sum_exp(log_regression, log_growth)
+// log(biomarker) = log(regression + growth) = log_sum_exp(log_regression, log_growth)
 // Patient rates (patient_log_decrease_rate, patient_log_growth_rate) are used directly
 array[n_causes] matrix[n_patients, max_all_t] oe_time_varying_log_hazard_ratio = rep_array(rep_matrix(0, n_patients, max_all_t), n_causes);
 
-// Compute time-varying tumor burden from states if enabled
+// Compute time-varying biomarker burden from states if enabled
 if (n_causes > 0 && oe_enable_pop_tumor_cov) {
-  // Normalization constants (median and IQR) for SLD are computed in transformed_data from observed data
+  // Normalization constants (median and IQR) for biomarker are computed in transformed_data from observed data
   // This provides fixed, iteration-stable normalization for consistent prior interpretation
-  
-  // Compute tumor covariate effects using normalized values
+
+  // Compute biomarker covariate effects using normalized values
   for (k in 1:n_causes) {
-    // Tumor covariate coefficients:
-    // [1] = log(SLD) effect
-    // [2] = log(decrease rate) effect  
+    // Biomarker covariate coefficients:
+    // [1] = log(biomarker) effect
+    // [2] = log(decrease rate) effect
     // [3] = log(growth rate) effect
-    // [4] = SLD velocity effect (d/dt log(SLD))
-    
+    // [4] = biomarker velocity effect (d/dt log(biomarker))
+
     for (i in 1:n_patients) {
       int visit_start, visit_end;
       (visit_start, visit_end) = get_pos(patient_visit_pos, i);
-      
+
       // Patient's first visit time in absolute weeks
       int first_visit = t_patient_visits[visit_start];
-      
+
       // Mapping: absolute time t → patient-relative column = t - first_visit + 1
       // Data invariant: first_visit <= 0, so states_start_col = 2 - first_visit >= 2
       int states_start_col = 2 - first_visit;  // Column for absolute time 1
       int states_end_col = states_start_col + max_all_t - 1;  // Column for absolute time max_all_t
-      
-      // Extract log(SLD) for absolute times [1, max_all_t] from this patient's states grid
-      // states_full_grid gives log(normalized_SLD) where normalized = ratio to baseline
-      row_vector[max_all_t] log_sld_normalized = log_sum_exp(
+
+      // Extract log(biomarker) for absolute times [1, max_all_t] from this patient's states grid
+      // states_full_grid gives log(normalized_biomarker) where normalized = ratio to baseline
+      row_vector[max_all_t] log_biomarker_normalized = log_sum_exp(
         states_full_grid[1][i, states_start_col:states_end_col],
         states_full_grid[2][i, states_start_col:states_end_col]
       );
 
-      // Add baseline to get absolute SLD in cm
-      row_vector[max_all_t] log_sld_absolute = log_baseline_sld[i] + log_sld_normalized;
-      
-      // Median-center and IQR-scale using constants from observed data (computed in transformed_data)
-      row_vector[max_all_t] log_sld_standardized = (log_sld_absolute - median_log_sld_obs) / iqr_log_sld_obs;
+      // Add baseline to get absolute biomarker value
+      row_vector[max_all_t] log_biomarker_absolute = log_baseline_biomarker[i] + log_biomarker_normalized;
 
-      // Initialize with log(SLD) effect
-      oe_time_varying_log_hazard_ratio[k, i] = oe_tumor_coef_pop[k][1] * log_sld_standardized;
-      
+      // Median-center and IQR-scale using constants from observed data (computed in transformed_data)
+      row_vector[max_all_t] log_biomarker_standardized = (log_biomarker_absolute - median_log_biomarker_obs) / iqr_log_biomarker_obs;
+
+      // Initialize with log(biomarker) effect
+      oe_time_varying_log_hazard_ratio[k, i] = oe_tumor_coef_pop[k][1] * log_biomarker_standardized;
+
       // Add patient-level rate effects if coefficients are provided
       if (n_tumor_covar >= 3) {
         if (enable_patient_process_noise_tr) {
@@ -113,24 +113,24 @@ if (n_causes > 0 && oe_enable_pop_tumor_cov) {
         }
       }
 
-      // Add SLD velocity (time-varying first derivative)
+      // Add biomarker velocity (time-varying first derivative)
       if (n_tumor_covar >= 4) {
-        // Compute velocity as weekly change in log(SLD)
-        // velocity[t] = log_sld[t] - log_sld[t-1]
-        row_vector[max_all_t] sld_velocity = rep_row_vector(0, max_all_t);
-        
-        // Vectorized computation: velocity[2:T] = log_sld[2:T] - log_sld[1:T-1]
+        // Compute velocity as weekly change in log(biomarker)
+        // velocity[t] = log_biomarker[t] - log_biomarker[t-1]
+        row_vector[max_all_t] biomarker_velocity = rep_row_vector(0, max_all_t);
+
+        // Vectorized computation: velocity[2:T] = log_biomarker[2:T] - log_biomarker[1:T-1]
         // First time point remains 0 (no prior measurement)
-        sld_velocity[2:max_all_t] = log_sld_absolute[2:] - log_sld_absolute[:(max_all_t - 1)];
-        
+        biomarker_velocity[2:max_all_t] = log_biomarker_absolute[2:] - log_biomarker_absolute[:(max_all_t - 1)];
+
         // Z-score normalize velocity
         // Use statistics from t >= 2 (exclude first point which is zero by construction)
-        real mean_velocity = mean(sld_velocity[2:]);
-        real sd_velocity = sd(sld_velocity[2:]);
-        row_vector[max_all_t] sld_velocity_z = (sld_velocity - mean_velocity) / sd_velocity;
-        
+        real mean_velocity = mean(biomarker_velocity[2:]);
+        real sd_velocity = sd(biomarker_velocity[2:]);
+        row_vector[max_all_t] biomarker_velocity_z = (biomarker_velocity - mean_velocity) / sd_velocity;
+
         // Add velocity effect to hazard ratio
-        oe_time_varying_log_hazard_ratio[k, i] += oe_tumor_coef_pop[k][4] * sld_velocity_z;
+        oe_time_varying_log_hazard_ratio[k, i] += oe_tumor_coef_pop[k][4] * biomarker_velocity_z;
       }
     }
   }
