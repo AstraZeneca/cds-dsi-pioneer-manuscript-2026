@@ -169,21 +169,21 @@ generated quantities {
       rep_patient_log_sld[1] = log(sum_tumor_size[visit_start]);
       if (visit_size > 1) {
         rep_patient_log_sld[2:] = to_vector(normal_rng(
-          calc_log_sld_mean(patient_states[2:], sum_tumor_size[visit_start]),
+          calc_log_burden_mean(patient_states[2:], sum_tumor_size[visit_start]),
           rep_vector(measure_sd_sld, visit_size - 1)
         ));
       }
       
       // Calculate mean log SLD (deterministic, no measurement noise)
       vector[visit_size] rep_mean_patient_log_sld = 
-        calc_log_sld_mean(patient_states, sum_tumor_size[visit_start]);
+        calc_log_burden_mean(patient_states, sum_tumor_size[visit_start]);
       
       // Calculate forecast SLD with measurement noise
       vector[n_oos_visits] forecast_patient_log_sld = zeros_vector(n_oos_visits);
       vector[n_oos_visits] forecast_mean_patient_log_sld = zeros_vector(n_oos_visits);
       if (n_oos_visits > 0) {
         forecast_mean_patient_log_sld = 
-          calc_log_sld_mean(forecast_patient_states, sum_tumor_size[visit_start]);
+          calc_log_burden_mean(forecast_patient_states, sum_tumor_size[visit_start]);
         forecast_patient_log_sld = to_vector(normal_rng(
           forecast_mean_patient_log_sld,
           rep_vector(measure_sd_sld, n_oos_visits)
