@@ -84,7 +84,7 @@ Comparing ORR estimates across data cutoffs shows how response rate predictions 
 
 ```{r}
 #| label: fig-orr-dco-sample
-#| fig-cap: Sample-based overall response rate (ORR), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
+#| fig-cap: Sample-based overall response rate (ORR), split by PDL1 status and treatment line for the SCLC-01 trial, shown for all DCOs.
 #| fig-height: 10
 
 plot_orr_by_dco("sample", orr_list, cond_orr_list)
@@ -94,7 +94,7 @@ plot_orr_by_dco("sample", orr_list, cond_orr_list)
 
 ```{r}
 #| label: fig-orr-dco-spop
-#| fig-cap: Superpopulation overall response rate (ORR), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
+#| fig-cap: Superpopulation overall response rate (ORR), split by PDL1 status and treatment line for the SCLC-01 trial, shown for all DCOs.
 #| fig-height: 10
 
 plot_orr_by_dco("spop", orr_list, cond_orr_list)
@@ -171,7 +171,7 @@ input:checked + .toggle-slider:before {
 ::: {#median-pfs-sample-with-obs}
 ```{r}
 #| label: fig-median-pfs-dco-sample-with-obs
-#| fig-cap: Sample-based median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
+#| fig-cap: Sample-based median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC-01 trial, shown for all DCOs.
 #| fig-width: 10
 #| fig-height: 6
 
@@ -182,7 +182,7 @@ plot_median_pfs_by_dco("sample", quant_pfs_list, cond_quant_pfs_list, obs_km_lis
 ::: {#median-pfs-sample-without-obs}
 ```{r}
 #| label: fig-median-pfs-dco-sample-without-obs
-#| fig-cap: Sample-based median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs. Model forecasts only.
+#| fig-cap: Sample-based median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC-01 trial, shown for all DCOs. Model forecasts only.
 #| fig-width: 10
 #| fig-height: 6
 
@@ -195,7 +195,7 @@ plot_median_pfs_by_dco("sample", quant_pfs_list, cond_quant_pfs_list, obs_km_lis
 ::: {#median-pfs-spop-with-obs}
 ```{r}
 #| label: fig-median-pfs-dco-spop-with-obs
-#| fig-cap: Superpopulation median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
+#| fig-cap: Superpopulation median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC-01 trial, shown for all DCOs.
 #| fig-width: 10
 #| fig-height: 6
 
@@ -206,7 +206,7 @@ plot_median_pfs_by_dco("spop", quant_pfs_list, cond_quant_pfs_list, obs_km_list,
 ::: {#median-pfs-spop-without-obs}
 ```{r}
 #| label: fig-median-pfs-dco-spop-without-obs
-#| fig-cap: Superpopulation median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs. Model forecasts only.
+#| fig-cap: Superpopulation median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC-01 trial, shown for all DCOs. Model forecasts only.
 #| fig-width: 10
 #| fig-height: 6
 
@@ -244,7 +244,7 @@ Comparing PFS at fixed timepoints across data cutoffs.
 
 ```{r}
 #| label: fig-pfs-n-dco-sample
-#| fig-cap: Sample-based progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
+#| fig-cap: Sample-based progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC-01 trial, shown for all DCOs.
 #| fig-width: 10
 
 plot_pfs_n_by_dco("sample", pfs_n_list, cond_pfs_n_list, pfs_timepoints)
@@ -254,7 +254,7 @@ plot_pfs_n_by_dco("sample", pfs_n_list, cond_pfs_n_list, pfs_timepoints)
 
 ```{r}
 #| label: fig-pfs-n-dco-spop
-#| fig-cap: Superpopulation progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC trial, shown for all DCOs.
+#| fig-cap: Superpopulation progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC-01 trial, shown for all DCOs.
 #| fig-width: 10
 
 plot_pfs_n_by_dco("spop", pfs_n_list, cond_pfs_n_list, pfs_timepoints)
@@ -268,7 +268,7 @@ Comparing Kaplan-Meier survival curves across data cutoffs.
 
 ### By Cohort
 
-Kaplan-Meier curves for SCLC showing All patients, First Line patients, and Part E patients across data cutoffs.
+Kaplan-Meier curves for SCLC-01 showing All patients, First Line patients, and Part E patients across data cutoffs.
 
 ::: {.panel-tabset}
 
@@ -276,7 +276,7 @@ Kaplan-Meier curves for SCLC showing All patients, First Line patients, and Part
 
 ```{r}
 #| label: fig-km-dco-sample
-#| fig-cap: Sample-based Kaplan-Meier forecasts for SCLC across cohorts and data cutoffs.
+#| fig-cap: Sample-based Kaplan-Meier forecasts for SCLC-01 across cohorts and data cutoffs.
 #| column: body-outset
 #| fig-width: 9
 #| fig-height: 7
@@ -315,7 +315,7 @@ plot_sclc_km_by_dco(
 
 ```{r}
 #| label: fig-km-dco-spop
-#| fig-cap: Superpopulation Kaplan-Meier forecasts for SCLC across cohorts and data cutoffs.
+#| fig-cap: Superpopulation Kaplan-Meier forecasts for SCLC-01 across cohorts and data cutoffs.
 #| column: body-outset
 #| fig-width: 9
 #| fig-height: 7
@@ -362,7 +362,7 @@ Kaplan-Meier curves stratified by PDL1 status (High vs Low) for All patients, Fi
 
 ```{r}
 #| label: fig-km-dco-sample-pdl1
-#| fig-cap: Sample-based PDL1-stratified Kaplan-Meier forecasts for SCLC across cohorts and data cutoffs.
+#| fig-cap: Sample-based PDL1-stratified Kaplan-Meier forecasts for SCLC-01 across cohorts and data cutoffs.
 #| column: body-outset
 #| fig-width: 9
 #| fig-height: 7
@@ -396,7 +396,7 @@ plot_km_pdl1_by_dco(
 
 ```{r}
 #| label: fig-km-dco-spop-pdl1
-#| fig-cap: Superpopulation PDL1-stratified Kaplan-Meier forecasts for SCLC across cohorts and data cutoffs.
+#| fig-cap: Superpopulation PDL1-stratified Kaplan-Meier forecasts for SCLC-01 across cohorts and data cutoffs.
 #| column: body-outset
 #| fig-width: 9
 #| fig-height: 7

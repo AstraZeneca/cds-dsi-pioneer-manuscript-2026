@@ -53,6 +53,23 @@ AZ_palette <- c(
   AZ_lightpurple
 )
 
+# RECIST category colors (standardized across all plots)
+RECIST_COLORS <- c(
+  "CR" = AZ_green,
+  "PR" = AZ_turquoise,
+  "SD" = AZ_gold,
+  "PD" = AZ_plum
+)
+
+# Helper function to create RECIST color scales
+scale_fill_recist <- function(...) {
+  ggplot2::scale_fill_manual(values = RECIST_COLORS, name = "RECIST Category", ...)
+}
+
+scale_color_recist <- function(...) {
+  ggplot2::scale_color_manual(values = RECIST_COLORS, name = "RECIST Category", ...)
+}
+
 init_project <- function(output_path = output_path, artifacts_path = artifacts_path) {
   library(magrittr)
   library(tidyverse)
@@ -70,6 +87,7 @@ init_project <- function(output_path = output_path, artifacts_path = artifacts_p
   library(recipes)
 
   source(here("r", "util.R"))
+  source(here("r", "multi_level_hierarchy.R"))  # Required by priors.R
   source(here("r", "priors.R"))
   source(here("r", "posterior.R"))
   source(here("r", "prepare_analysis_data.R"))
