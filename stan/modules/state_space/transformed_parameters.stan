@@ -55,8 +55,8 @@ patient_growth_rate = exp(patient_log_growth_rate);
 // Full grid: [n_patients × max_t_width]
 // Position 1 = each patient's first visit (different absolute weeks)
 // Position t = t weeks after first visit for that patient
-// Needed when: process noise is ON, or other_events uses time-varying tumor covariates
-array[2] matrix[n_patients, (enable_any_process_noise_tr || oe_enable_pop_tumor_cov) ? max_t_width : 0] states_full_grid;
+// Needed when: process noise is ON, or multistate uses time-varying covariates
+array[2] matrix[n_patients, (enable_any_process_noise_tr || enable_ms_pop_time_varying_cov) ? max_t_width : 0] states_full_grid;
 
 profile("states") {
   if (enable_patient_process_noise_tr) {
@@ -127,9 +127,9 @@ profile("states") {
         states[visit_start:visit_end, 2] = to_vector(states_full_grid[2][i, visit_indices]);
       }
     }
-  } else if (oe_enable_pop_tumor_cov) {
+  } else if (enable_ms_pop_time_varying_cov) {
     // ============================================================================
-    // PROCESS NOISE OFF, but other_events needs full grid: Use vectorized approach
+    // PROCESS NOISE OFF, but multistate needs full grid for time-varying covariates: Use vectorized approach
     // ============================================================================
 
     profile("compute full states") {

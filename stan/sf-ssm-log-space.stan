@@ -5,6 +5,7 @@ functions {
   #include "gp.stanfunctions"
   #include "pfs.stanfunctions"
   #include "lfo.stanfunctions"
+  #include "multistate.stanfunctions"
   #include "modules/state_space/sf.stanfunctions"
   #include "modules/tumor/tumor.stanfunctions"
 }
@@ -14,9 +15,9 @@ data {
   #include "modules/tumor/data.stan"
   #include "modules/tumor/hyperparams.stan"
   #include "modules/state_space/data.stan"
-  #include "modules/other_events/data.stan"
-  #include "modules/other_events/hyperparams.stan"
-  #include "modules/other_events/flags.stan"
+  #include "modules/multistate/flags.stan"
+  #include "modules/multistate/data.stan"
+  #include "modules/multistate/hyperparams.stan"
   #include "modules/tr/hyperparams.stan"
   #include "modules/frac/hyperparams.stan"
   #include "modules/init/hyperparams.stan"
@@ -24,7 +25,7 @@ data {
   #include "modules/frac/flags.stan"
   #include "modules/init/flags.stan"
 
-  int<lower = 0, upper = 1> fit_other_events_data;
+  int<lower = 0, upper = 1> fit_multistate_data;
 }
 
 transformed data {
@@ -34,17 +35,13 @@ transformed data {
   #include "modules/frac/transformed_data.stan"
   #include "modules/init/transformed_data.stan"
   #include "modules/state_space/transformed_data.stan"
-
-  // Generic biomarker baseline for other_events module (SLD mode)
-  vector[n_patients] log_baseline_biomarker = log_baseline_sld;
-
-  #include "modules/other_events/transformed_data.stan"
+  #include "modules/multistate/transformed_data.stan"
   #include "modules/state_space/checks.stan"
 }
 
 parameters {
   #include "modules/tumor/parameters.stan"
-  #include "modules/other_events/parameters.stan"
+  #include "modules/multistate/parameters.stan"
   #include "modules/tr/parameters.stan"
   #include "modules/frac/parameters.stan"
   #include "modules/init/parameters.stan"
@@ -55,17 +52,17 @@ transformed parameters {
   #include "modules/frac/transformed_parameters.stan"
   #include "modules/init/transformed_parameters.stan"
   #include "modules/state_space/transformed_parameters.stan"
-  #include "modules/other_events/transformed_parameters.stan"
+  #include "modules/multistate/transformed_parameters.stan"
 }
 
 model {
   #include "modules/tumor/priors.stan"
-  #include "modules/other_events/priors.stan"
+  #include "modules/multistate/priors.stan"
   #include "modules/tr/priors.stan"
   #include "modules/frac/priors.stan"
   #include "modules/init/priors.stan"
 
-  profile("loglik") { 
+  profile("loglik") {
     if (fit_tumor_data) {
       profile("tumor loglik") {
         for (i in 1:n_patients) {
@@ -76,19 +73,34 @@ model {
       }
     }
 
-    if (fit_other_events_data) {
-      profile("other events loglik") {
-        // Other events likelihood contribution
-        matrix[n_patients, n_causes] patient_response_lp = rep_matrix(0, n_patients, n_causes); 
-        patient_response_lp[, 1] = calc_pch_loglik(
-          ic_other_events_pfs, 
-          other_events_right_censored, 
-          zeros_int_array(n_patients), // other_events_interval_censored
-          0, 
-          log_cond_prob_surv[1]
-        );
+    if (fit_multistate_data) {
+      profile("multistate loglik") {
+        // Multistate likelihood contribution
+        // For SLD mode (enable_ms_01=1, enable_ms_02=0, enable_ms_12=0):
+        //   Single 0→1 transition, equivalent to old other_events
+        // For PSA mode (all enabled): full illness-death likelihood
 
-        target += sum(patient_response_lp);
+        if (enable_ms_01 && !enable_ms_02 && !enable_ms_12) {
+          // SLD mode: single transition using simplified likelihood
+          target += sum(calc_ms_single_transition_loglik(
+            ms_time_01,
+            ms_censored_01,
+            ms_log_cond_surv_01
+          ));
+        } else {
+          // Full multistate mode
+          target += calc_multistate_loglik(
+            enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
+            ms_final_state,
+            ms_time_01, ms_time_02, ms_time_12,
+            ms_censored_01, ms_censored_02, ms_censored_12,
+            ms_prog_deterministic,
+            ms_log_cond_surv_01,
+            ms_log_cond_surv_02,
+            ms_log_cond_surv_12_s,
+            ms_log_cond_surv_12_t
+          );
+        }
       }
     }
   }
@@ -166,6 +178,7 @@ generated quantities {
     }
   }
 
-  #include "_endpoints_generated_quantities.stan"  
-  #include "modules/state_space/generated_quantities.stan"
+  // TODO: Update generated quantities for multistate
+  // #include "_endpoints_generated_quantities.stan"
+  // #include "modules/state_space/generated_quantities.stan"
 }

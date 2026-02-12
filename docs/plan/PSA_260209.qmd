@@ -1,13 +1,12 @@
-# PSA Adaptation Plan for PIONEER Model (Revised)
-
-**Date:** 2026-02-09
-**Author:** Claude Code
-**Status:** Design Proposal (Revised)
-**Previous Version:** PSA_260206.md
-
+---
+title: "PSA Adaptation Plan for PIONEER Model (Revised)"
+date: 2026-02-09
+author: Claude Code
+status: Design Proposal (Revised)
+number-sections: true
 ---
 
-## Executive Summary
+## Executive Summary {.unnumbered}
 
 This document presents a comprehensive plan to adapt the PIONEER tumor dynamics model from solid tumors (SLD-based) to metastatic castration-resistant prostate cancer (mCRPC) using PSA as the primary biomarker. Key enhancements include:
 
@@ -18,9 +17,9 @@ This document presents a comprehensive plan to adapt the PIONEER tumor dynamics 
 
 ---
 
-## 1. Problem Statement
+## Problem Statement
 
-### 1.1 Original Problem
+### Original Problem
 
 > The current PIONEER model comprises two parts:
 >
@@ -31,7 +30,7 @@ This document presents a comprehensive plan to adapt the PIONEER tumor dynamics 
 >
 > **Challenge:** Convert this model to work with metastatic prostate cancer where we do not have tumor size (SLD) measurements, instead we have Prostate Specific Antigen (PSA) measurements at baseline and various time intervals.
 
-### 1.2 Mathematical Formulation
+### Mathematical Formulation
 
 **Current SLD Model:**
 
@@ -40,6 +39,7 @@ $$
 $$
 
 Where:
+
 - $\phi \in (0,1)$ = sensitive tumor fraction
 - $d > 0$ = decrease rate (treatment effect)
 - $g > 0$ = growth rate (resistance)
@@ -54,7 +54,7 @@ Where $\rho_s$ and $\rho_r$ are PSA release rates from sensitive and resistant t
 
 **Identifiability Problem:** From PSA observations alone, we cannot separately identify $(\rho_s \times \text{SLD}_{\text{base}} \times \phi)$ and $(\rho_r \times \text{SLD}_{\text{base}} \times (1-\phi))$.
 
-### 1.3 Extended Questions (from 2026-02-09 discussion)
+### Extended Questions (from 2026-02-09 discussion)
 
 1. **Latent Burden:** If we only have PSA observations, how do we obtain the latent tumor burden to pass to the hazard module?
 
@@ -68,9 +68,9 @@ Where $\rho_s$ and $\rho_r$ are PSA release rates from sensitive and resistant t
 
 ---
 
-## 2. Proposed Solution: Latent Tumor Burden Model
+## Proposed Solution: Latent Tumor Burden Model
 
-### 2.1 Core Architecture
+### Core Architecture
 
 The key insight is to separate the **latent tumor state** from the **observation model**:
 
@@ -98,7 +98,7 @@ The key insight is to separate the **latent tumor state** from the **observation
 
 - **$\lambda$ (lambda)**: The relative production rate of each biomarker from resistant vs. sensitive cells. For example, $\lambda_{\text{PSA}} = \rho_{\text{resistant}} / \rho_{\text{sensitive}}$ is the ratio of PSA production rates. When $\lambda = 1$, both cell types produce the biomarker equally, and the observed biomarker directly reflects true tumor burden $B(t)$. When $\lambda \neq 1$, the biomarker observation is weighted by differential production rates.
 
-### 2.2 Latent State-Space Model
+### Latent State-Space Model
 
 **State Variables:**
 
@@ -135,9 +135,9 @@ $$
 B(t) = e^{x_s(t)} + e^{x_r(t)} = \phi \times e^{-d \times t} + (1-\phi) \times e^{g \times t}
 $$
 
-### 2.3 Observation Models
+### Observation Models
 
-#### 2.3.1 SLD Observation (Solid Tumors)
+#### SLD Observation (Solid Tumors)
 
 SLD is directly proportional to tumor burden:
 
@@ -145,7 +145,7 @@ $$
 \log\left(\frac{\text{SLD}(t)}{\text{SLD}_{\text{base}}}\right) \sim \text{Normal}\left(\log(B(t)), \sigma^2_{\text{SLD}}\right)
 $$
 
-#### 2.3.2 PSA Observation (Prostate Cancer)
+#### PSA Observation (Prostate Cancer)
 
 PSA reflects tumor burden weighted by differential production rates. Let $\lambda = \rho_r / \rho_s$ be the ratio of PSA production rates (resistant to sensitive cells).
 
@@ -175,9 +175,9 @@ $$
 \log\left(\frac{\text{PSA}(t)}{\text{PSA}_{\text{base}}}\right) \sim \text{Normal}\left(\log(B_{\text{PSA}}(t)), \sigma^2_{\text{PSA}}\right)
 $$
 
-### 2.4 The $\lambda$ Parameter and Identifiability
+### The $\lambda$ Parameter and Identifiability {#sec-lambda}
 
-#### 2.4.1 What is $\alpha_{\text{PSA}}$?
+#### What is $\alpha_{\text{PSA}}$?
 
 The normalized PSA equation from section 2.3.2 can be rewritten as:
 
@@ -193,7 +193,7 @@ $$
 
 This $\alpha_{\text{PSA}}$ is the **apparent sensitive fraction** — what the true sensitive fraction $\phi$ looks like when observed through PSA. It has the same mathematical role as $\phi$ in $B(t)$, but is a composite of $\phi$ and $\lambda$.
 
-#### 2.4.2 Interpretation of $\lambda$
+#### Interpretation of $\lambda$
 
 | Value | Interpretation |
 |-------|----------------|
@@ -201,7 +201,7 @@ This $\alpha_{\text{PSA}}$ is the **apparent sensitive fraction** — what the t
 | $\lambda > 1$ | Resistant cells produce more PSA; $\alpha_{\text{PSA}} < \phi$; PSA rises faster than tumor grows |
 | $\lambda < 1$ | Resistant cells produce less PSA; $\alpha_{\text{PSA}} > \phi$; PSA underestimates resistant burden |
 
-#### 2.4.3 Identifiability
+#### Identifiability {#sec-identifiability}
 
 When fitting the model to PSA data, we estimate $\alpha_{\text{PSA}}$, $d$, and $g$ directly. We cannot separately identify $\phi$ and $\lambda$ — only their composite $\alpha_{\text{PSA}}$.
 
@@ -213,7 +213,7 @@ When fitting the model to PSA data, we estimate $\alpha_{\text{PSA}}$, $d$, and 
 
 **Note:** The first row covers both SLD-only and PSA-only with $\lambda = 1$ because they are mathematically identical — the same model with different variable names. This is why Phase 1 (assuming $\lambda = 1$) requires minimal changes to the existing PIONEER model.
 
-#### 2.4.4 Inverse Relationship
+#### Inverse Relationship
 
 If $\lambda$ is known (e.g., from combined PSA + SLD data or external information), $\phi$ can be recovered:
 
@@ -223,9 +223,9 @@ $$
 
 ---
 
-## 3. Multi-Biomarker Extension
+## Multi-Biomarker Extension
 
-### 3.1 General Framework
+### General Framework
 
 For any biomarker $k$ with production ratio $\lambda_k$:
 
@@ -237,7 +237,7 @@ $$
 \log\left(\frac{Y_k(t)}{Y_{k,\text{base}}}\right) \sim \text{Normal}\left(\log(B_k(t)), \sigma^2_k\right)
 $$
 
-### 3.2 Prostate Cancer Biomarkers
+### Prostate Cancer Biomarkers
 
 | Biomarker | $\lambda$ Parameter | Clinical Relevance |
 |-----------|-------------|-------------------|
@@ -246,7 +246,7 @@ $$
 | ALP | $\lambda_{\text{ALP}}$ | Bone disease activity |
 | ctDNA | $\lambda_{\text{ctDNA}}$ | Circulating tumor DNA |
 
-### 3.3 Architecture Diagram
+### Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -274,9 +274,9 @@ $$
 
 ---
 
-## 4. PCWG3 vs RECIST: Response Categories
+## PCWG3 vs RECIST: Response Categories
 
-### 4.1 Comparison Table
+### Comparison Table
 
 | RECIST Category | SLD Criterion | PCWG3/PSA Analog | PSA Criterion |
 |-----------------|---------------|------------------|---------------|
@@ -285,11 +285,12 @@ $$
 | **SD** | Neither PR nor PD | **PSA Stable** | Neither PSA50 nor PSA-PD |
 | **PD** | $\geq 20\%$ increase from nadir AND $\geq 5$mm | **PSA-PD** | $\geq 25\%$ AND $\geq 2$ ng/mL from nadir (confirmed) |
 
-### 4.2 PCWG3 PSA Progression Criteria (Scher et al. 2016)
+### PCWG3 PSA Progression Criteria (Scher et al. 2016)
 
 **Scenario A: After PSA Decline from Baseline**
 
 PSA-PD = TRUE if ALL of:
+
 - $\frac{\text{PSA} - \text{nadir}}{\text{nadir}} \geq 0.25$
 - $\text{PSA} - \text{nadir} \geq 2$ ng/mL
 - Confirmed by second value $\geq 3$ weeks later
@@ -297,12 +298,13 @@ PSA-PD = TRUE if ALL of:
 **Scenario B: No PSA Decline from Baseline**
 
 PSA-PD = TRUE if ALL of:
+
 - $t > 12$ weeks
 - $\frac{\text{PSA} - \text{baseline}}{\text{baseline}} \geq 0.25$
 - $\text{PSA} - \text{baseline} \geq 2$ ng/mL
 - Confirmed by second value $\geq 3$ weeks later
 
-### 4.3 Key Differences
+### Key Differences
 
 | Aspect | RECIST | PCWG3 PSA |
 |--------|--------|-----------|
@@ -313,9 +315,9 @@ PSA-PD = TRUE if ALL of:
 
 ---
 
-## 5. PSA and Death: Clinical Relationship
+## PSA and Death: Clinical Relationship
 
-### 5.1 Why PSA May Be More Prognostic for Death
+### Why PSA May Be More Prognostic for Death
 
 | Aspect | SLD (RECIST) | PSA |
 |--------|--------------|-----|
@@ -324,7 +326,7 @@ PSA-PD = TRUE if ALL of:
 | **Micrometastases** | Not captured | Contributes to PSA |
 | **Measurement frequency** | Every 9-12 weeks | Every 3-4 weeks |
 
-### 5.2 PSA Kinetics as Prognostic Markers
+### PSA Kinetics as Prognostic Markers
 
 | PSA Metric | Prognostic Value | Evidence |
 |------------|------------------|----------|
@@ -333,63 +335,41 @@ PSA-PD = TRUE if ALL of:
 | PSA nadir | Deeper = better OS | Abiraterone, Enzalutamide |
 | PSA velocity | Rising = higher death risk | PCWG3 |
 
-### 5.3 Complete Covariate Specification: Longitudinal → Hazard Model
+### Covariate Specification: Longitudinal to Hazard Model {#sec-covariates}
 
-This section specifies **all covariates** that flow from the tumor dynamics module to the multi-state hazard model.
+This section specifies the **general framework** for covariates flowing from the tumor dynamics module to the multi-state hazard model. See @sec-appendix-psa-covariates for PSA-specific covariate recommendations.
 
-#### 5.3.1 Primary Tumor Burden Covariate (Time-Varying)
+#### Covariate Categories
 
-The burden covariate depends on available data and λ setting:
+**Biomarker-derived covariates** (from longitudinal model):
 
-| Data Available | $\lambda$ Setting | Burden Covariate | Formula |
-|----------------|-----------|------------------|---------|
-| **SLD only** | N/A | True burden $B(t)$ | $\phi \times e^{-d \times t} + (1-\phi) \times e^{g \times t}$ |
-| **PSA only** | $\lambda = 1$ | $B_{\text{PSA}}(t) = B(t)$ | $\phi \times e^{-d \times t} + (1-\phi) \times e^{g \times t}$ |
-| **PSA only** | $\lambda \neq 1$ | $B_{\text{PSA}}(t)$ | $\frac{\phi \times e^{-d \times t} + \lambda \times (1-\phi) \times e^{g \times t}}{\phi + \lambda \times (1-\phi)}$ |
-| **Both SLD + PSA** | Estimated | True burden $B(t)$ | $\phi \times e^{-d \times t} + (1-\phi) \times e^{g \times t}$ |
+- Log burden: $\log(B(t))$ — current tumor/biomarker burden
+- Burden velocity: $\frac{d}{dt} \log(B(t))$ — rate of change
+- Log decrease rate: $\log(d)$ — treatment sensitivity
+- Log growth rate: $\log(g)$ — resistance/progression rate
 
-**Key insight:** When only PSA is observed and $\lambda \neq 1$, we cannot estimate true tumor burden $B(t)$. We use $B_{\text{PSA}}(t)$ (PSA-represented burden) as the covariate instead. This is still clinically meaningful as it reflects what PSA tells us about disease activity.
+**Non-tumor covariates** (baseline characteristics):
 
-#### 5.3.2 Core Time-Varying Covariates (from Current PIONEER)
+- Configurable via `n_nontumor_covar` flag
+- Examples: age, ECOG, baseline labs, prior therapies
 
-| Covariate | Symbol | Time Nature | Description |
-|-----------|--------|-------------|-------------|
-| Log burden | $\log(B(t))$ or $\log(B_{\text{PSA}}(t))$ | Time-varying | Current tumor/PSA burden |
-| Log decrease rate | $\log(d)$ | Time-invariant* | Treatment sensitivity |
-| Log growth rate | $\log(g)$ | Time-invariant* | Resistance/progression rate |
-| Burden velocity | $\frac{d}{dt} \log(B(t))$ | Time-varying | Rate of change in burden |
+**Biomarker-specific covariates** (optional):
 
-*Can be time-varying if AR(1) process noise is enabled (`enable_patient_process_noise_tr`)
+- Nadir, time-to-nadir, nadir ratio (see @sec-appendix-psa-covariates for PSA)
+- Configurable based on clinical relevance for specific biomarkers
 
-#### 5.3.3 Additional PSA-Derived Covariates (New for Prostate Cancer)
+#### Primary Burden Covariate
 
-| Covariate | Formula | Time Nature | Interpretation |
-|-----------|---------|-------------|----------------|
-| PSA nadir | $\min(B_{\text{PSA}}(s))$ for $s \leq t$ | Time-varying | Best response achieved so far |
-| Time to nadir | $\arg\min(B_{\text{PSA}}(s))$ for $s \leq t$ | Time-varying | When best response occurred |
-| Nadir ratio | $B_{\text{PSA}}(t) / \text{nadir}(t)$ | Time-varying | Current burden relative to best response |
+The burden covariate depends on available data and $\lambda$ setting (see @sec-identifiability):
 
-**Note:** PSA doubling time $(\log(2)/g)$ and PSA half-life $(\log(2)/d)$ are sometimes reported clinically, but these are just monotonic transformations of $\log(g)$ and $\log(d)$ respectively. Since $\log(g)$ and $\log(d)$ are already included as covariates, adding doubling time or half-life would be redundant.
-
-#### 5.3.4 Summary Table: All Covariates for Hazard Model
-
-| # | Covariate | Source | Time Nature | Used In Transitions |
-|---|-----------|--------|-------------|---------------------|
-| 1 | $\log(B(t))$ or $\log(B_{\text{PSA}}(t))$ | Longitudinal model | Time-varying | $0\to 1, 0\to 2$ |
-| 2 | $\log(d)$ | Longitudinal model | Time-invariant* | $0\to 1, 0\to 2, 1\to 2$ |
-| 3 | $\log(g)$ | Longitudinal model | Time-invariant* | $0\to 1, 0\to 2, 1\to 2$ |
-| 4 | Velocity $\frac{d}{dt} \log(B)$ | Longitudinal model | Time-varying | $0\to 1, 0\to 2$ |
-| 5 | PSA nadir | Derived from $B_{\text{PSA}}$ | Time-varying | $1\to 2$ |
-| 6 | Time to nadir | Derived from $B_{\text{PSA}}$ | Time-varying | $1\to 2$ |
-| 7 | Nadir ratio | Derived from $B_{\text{PSA}}$ | Time-varying | $0\to 1, 0\to 2$ |
-
-Plus **non-tumor covariates** (time-invariant patient characteristics): age, ECOG, hemoglobin, albumin, LDH, ALP, prior therapies, etc.
+- **When $B(t)$ is identifiable**: Use true burden $B(t)$
+- **When only $B_k(t)$ is identifiable**: Use biomarker-weighted burden $B_k(t)$
 
 ---
 
-## 6. Multi-State Hazard Model (Illness-Death)
+## Multi-State Hazard Model (Illness-Death) {#sec-multistate}
 
-### 6.1 Motivation
+### Motivation
 
 The current PIONEER model uses a competing-risks framework where progression and death are conflated. A **multi-state illness-death model** is more clinically realistic:
 
@@ -397,7 +377,7 @@ The current PIONEER model uses a competing-risks framework where progression and
 - Post-progression survival can be explicitly modeled
 - Clinical progression diagnosis can be directly incorporated
 
-### 6.2 State Diagram
+### State Diagram
 
 ```
                     ┌─────────────────┐
@@ -405,79 +385,123 @@ The current PIONEER model uses a competing-risks framework where progression and
                     │    (State 0)    │
                     └────────┬────────┘
                              │
-              ┌──────────────┼──────────────┐
-              │              │              │
-          λ₀₁(t)             │          λ₀₂(t)
-              │              │              │
-              ▼              │              ▼
-    ┌─────────────────┐      │    ┌─────────────────┐
-    │   Progressed    │      │    │      Dead       │
-    │    (State 1)    │      │    │    (State 2)    │
-    └────────┬────────┘      │    │   (absorbing)   │
-             │               │    └─────────────────┘
-             │          λ₁₂(s)            ▲
-             │               │            │
-             └───────────────┴────────────┘
+              ┌──────────────┴──────────────┐
+              │                             │
+          λ₀₁(t)                        λ₀₂(t)
+              │                             │
+              ▼                             ▼
+    ┌─────────────────┐           ┌─────────────────┐
+    │   Progressed    │           │      Dead       │
+    │    (State 1)    │           │    (State 2)    │
+    └────────┬────────┘           │   (absorbing)   │
+             │                    └─────────────────┘
+             │         λ₁₂(s)            ▲
+             └───────────────────────────┘
 ```
 
 **Three Transitions:**
+
 - $\lambda_{01}(t)$: No Progression → Progression
 - $\lambda_{02}(t)$: No Progression → Death (without progression)
 - $\lambda_{12}(s)$: Progression → Death (post-progression, clock reset)
 
-### 6.3 PSA Role in Each Transition
+### PSA Role in Each Transition
 
 | Transition | PSA Role | Primary Drivers |
 |------------|----------|-----------------|
-| **0→1 (Progression)** | ★★★★★ PRIMARY | PSA dynamics define PCWG3 progression |
+| **0→1 (PSA-PD)** | ★★★★★ DETERMINISTIC | PCWG3 criteria from SF model (automatic) |
+| **0→1 (Other PD)** | ★★★ COVARIATE | Clinical/radiographic progression; PSA as covariate in hazard |
 | **0→2 (Death w/o progression)** | ★★★ MODERATE | Clinical factors dominate (ECOG, comorbidities) |
 | **1→2 (Post-progression death)** | ★★★★ IMPORTANT | PSA at progression, nadir, history |
 
-### 6.4 Transition Hazard Models
+### Transition Hazard Models
 
 #### Transition $0 \to 1$: Progression
 
-**Option A: Deterministic (from PCWG3)**
+Progression can occur via two mechanisms (whichever comes first):
+
+**1. PSA Progression (Deterministic from SF model)**
+
+PCWG3 PSA-PD is determined directly by the mechanistic state-space model:
 
 $$
-T_{01} = \min\{t : \text{PCWG3\_criteria\_met}(\text{PSA}(t), \text{PSA}_{\text{base}}, \text{nadir}(t), t)\}
+T_{01,\text{PSA}} = \min\{t : \text{PCWG3\_criteria\_met}(\text{PSA}(t), \text{PSA}_{\text{base}}, \text{nadir}(t), t)\}
 $$
 
-**Option B: Stochastic Hazard**
+This mirrors how RECIST PD works in the current PIONEER model—progression is a deterministic consequence of the tumor dynamics.
+
+**2. Other Progression (Stochastic Hazard)**
+
+Non-PSA progression (clinical, radiographic, symptomatic) is modeled via hazard $\lambda_{01}(t)$ using the shared covariate structure (see below).
+
+**Combined:** The actual progression time is $T_{01} = \min(T_{01,\text{PSA}}, T_{01,\text{other}})$.
+
+#### Unified Covariate Structure
+
+All stochastic transitions use the **same general framework** with **transition-specific coefficients**, following the pattern established in the current PIONEER `other_events` module:
 
 $$
-\lambda_{01}(t) = \lambda_{01,\text{base}}(t) \times \exp(\beta_1 \times \log(B_{\text{PSA}}(t)) + \beta_2 \times \text{velocity}(t))
+\lambda_{jk}(t) = \lambda_{jk,\text{base}}(t) \times \exp\left( \mathbf{x}(t)^\top \boldsymbol{\beta}_{jk} \right)
 $$
 
-#### Transition $0 \to 2$: Death Without Progression
+The covariate vector $\mathbf{x}(t)$ is **configurable** and consists of:
+
+**Time-varying covariates** $\mathbf{x}_{\text{tv}}(t)$: Derived from the longitudinal model or external time-series data.
+
+**Time-invariant covariates** $\mathbf{x}_{\text{ti}}$: Baseline characteristics.
+
+**Transition-specific covariates** $\mathbf{x}_{jk}$: Available only for certain transitions (e.g., burden at progression for $1 \to 2$).
+
+The specific covariates included are controlled by **flags** (e.g., `enable_tumor_covar`, `n_tumor_covar`, `n_nontumor_covar`), matching the current `other_events` module design. This allows:
+
+1. **Migration path**: Current `other_events` becomes a single-transition multistate model ($0 \to 2$ only)
+2. **Flexibility**: Different applications can use different covariate sets
+3. **Future-proofing**: New covariates can be added without changing the core framework
+
+See @sec-appendix-psa-covariates for PSA-specific covariate recommendations.
+
+#### Time Scales for $1 \to 2$ Transition
+
+For the post-progression death hazard, the baseline can depend on **both** time scales:
+
+- $t$ = time since baseline (clock-forward)
+- $s = t - T_{01}$ = time since progression (clock-reset / sojourn time)
+
+The general form is:
 
 $$
-\lambda_{02}(t) = \lambda_{02,\text{base}}(t) \times \exp\left(
-    \begin{aligned}
-    &\gamma_1 \times \log(B_{\text{PSA}}(t)) + \gamma_2 \times \text{velocity}(t) \\
-    &+ \gamma_3 \times \text{age} + \gamma_4 \times \text{ECOG} \\
-    &+ \gamma_5 \times \text{hemoglobin} + \gamma_6 \times \text{albumin} \\
-    &+ \gamma_7 \times \text{LDH} + \gamma_8 \times \text{ALP}
-    \end{aligned}
-\right)
+\lambda_{12}(t, s) = \lambda_{12,\text{base}}(t, s) \times \exp(\mathbf{x}^\top \boldsymbol{\beta}_{12})
 $$
 
-#### Transition $1 \to 2$: Post-Progression Death
+**Modeling options for the baseline hazard:**
 
-$$
-\lambda_{12}(s) = \lambda_{12,\text{base}}(s) \times \exp\left(
-    \begin{aligned}
-    &\delta_1 \times \log(\text{PSA}_{\text{at progression}}) \\
-    &+ \delta_2 \times \log(\text{PSA}_{\text{nadir}}) \\
-    &+ \delta_3 \times \log(T_{01}) \\
-    &+ \delta_4 \times \text{age} + \delta_5 \times \text{ECOG}_{\text{at progression}}
-    \end{aligned}
-\right)
-$$
+| Model | Baseline | Interpretation |
+|-------|----------|----------------|
+| **Markov** | $\lambda_{12,\text{base}}(t)$ | Hazard depends on total time; progression is just a covariate |
+| **Semi-Markov** | $\lambda_{12,\text{base}}(s)$ | Hazard depends on time in current state; "clock resets" at progression |
+| **Extended** | $\lambda_{12,\text{base}}(t, s)$ | Both time scales matter |
 
-Where $s = t - T_{01}$ is time since progression (clock reset).
+For the extended model, practical parameterizations include:
 
-### 6.5 Information Flow
+- **Additive (log-scale)**: $\log \lambda_{12,\text{base}}(t,s) = f(t) + g(s)$
+- **With interaction**: $\log \lambda_{12,\text{base}}(t,s) = f(t) + g(s) + h(t,s)$
+
+where $f$, $g$, $h$ can be modeled with splines, GPs, or piecewise-constant hazards.
+
+The choice between these is an **empirical question**—model comparison (e.g., LOO-CV) can determine which time scale(s) best explain the data.
+
+::: {.callout-note}
+## Post-Progression PSA Censoring
+
+If PSA measurement stops after progression (e.g., patient drops out of trial), we cannot compute time-varying covariates for the $1 \to 2$ transition. This requires extending the model to a **4-state structure** with an additional "post-progression, PSA-censored" state where the hazard uses only:
+
+- Covariates observed at progression ($B_{\text{PSA}}(T_{01})$, $T_{01}$)
+- Time-invariant covariates (age, baseline labs)
+
+This extension is deferred to a future phase.
+:::
+
+### Information Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -512,9 +536,9 @@ Where $s = t - T_{01}$ is time since progression (clock reset).
 
 ---
 
-## 7. Clinical Endpoints
+## Clinical Endpoints
 
-### 7.1 Endpoint Comparison
+### Endpoint Comparison
 
 | Endpoint | Solid Tumors (RECIST) | Prostate Cancer (PCWG3) |
 |----------|----------------------|-------------------------|
@@ -524,7 +548,7 @@ Where $s = t - T_{01}$ is time since progression (clock reset).
 | **rPFS** | N/A | Radiographic PFS (if imaging) |
 | **OS** | Time to death | Time to death |
 
-### 7.2 Composite Endpoints in Multi-State Model
+### Composite Endpoints in Multi-State Model
 
 **Progression-Free Survival:**
 
@@ -549,11 +573,12 @@ $$
 
 ---
 
-## 8. Implementation Phases
+## Implementation Phases
 
-### Phase 1: PSA-Only Model (λ = 1)
+### Phase 1: PSA-Only Model ($\lambda = 1$)
 
 **Scope:**
+
 - Replace SLD with PSA throughout
 - Implement PCWG3 progression criteria
 - Keep current hazard model structure (single other-events)
@@ -562,13 +587,15 @@ $$
 **Deliverable:** Working PSA model for prostate cancer
 
 **Changes:**
+
 - Observation model: $\log(\text{PSA}/\text{PSA}_{\text{base}}) \sim \text{Normal}(\log(B(t)), \sigma)$
 - Generated quantities: PCWG3 categories instead of RECIST
 - Variable renaming: `log_sld` → `log_burden` or `log_psa`
 
-### Phase 2: Multi-State Hazard Model
+### Phase 2: Multi-State Hazard Model {#sec-phase2}
 
 **Scope:**
+
 - Replace other-events with illness-death model
 - Three transitions: $0\to 1$, $0\to 2$, $1\to 2$
 - PSA dynamics primarily drive $0\to 1$
@@ -577,13 +604,15 @@ $$
 **Deliverable:** Multi-state model with explicit progression and death transitions
 
 **Changes:**
+
 - New module: `multi_state_hazard/` replacing `other_events/`
 - Likelihood: Multi-state survival likelihood
 - Generated quantities: PFS, OS, PPS as separate outputs
 
-### Phase 3: Hierarchical λ Parameter
+### Phase 3: Hierarchical $\lambda$ Parameter
 
 **Scope:**
+
 - Add $\lambda$ as hierarchical parameter
 - Allows differential PSA production
 - Use informative prior centered at $\lambda = 1$
@@ -591,12 +620,14 @@ $$
 **Deliverable:** More flexible PSA model
 
 **Changes:**
+
 - New parameter: `lambda_psa` with prior $\log(\lambda) \sim \text{Normal}(0, 0.5)$
 - Observation model: $\log(\text{PSA}/\text{PSA}_{\text{base}}) \sim \text{Normal}(\log(B_{\text{PSA}}(t)), \sigma)$
 
 ### Phase 4: Multi-Biomarker Support
 
 **Scope:**
+
 - Support multiple biomarkers (PSA, LDH, ALP, ctDNA)
 - Each biomarker has own $\lambda$ and $\sigma$
 - Shared latent tumor dynamics
@@ -604,6 +635,7 @@ $$
 **Deliverable:** Unified multi-modal model
 
 **Changes:**
+
 - Array of λ parameters: `lambda[n_biomarkers]`
 - Multiple observation likelihoods
 - Ragged data structure for different observation schedules
@@ -611,6 +643,7 @@ $$
 ### Phase 5: Combined SLD + PSA (Future)
 
 **Scope:**
+
 - Support datasets with both imaging and PSA
 - Identify true $\phi$ and $\lambda$ from combined data
 - Use true $B(t)$ in hazard model
@@ -619,9 +652,9 @@ $$
 
 ---
 
-## 9. Stan Implementation Sketch
+## Stan Implementation Sketch
 
-### 9.1 Latent State Computation
+### Latent State Computation
 
 ```stan
 // Shared across all biomarkers
@@ -640,7 +673,7 @@ for (i in 1:n_patients) {
 }
 ```
 
-### 9.2 Multi-Biomarker Observation Model
+### Multi-Biomarker Observation Model
 
 ```stan
 // For each biomarker k
@@ -657,7 +690,7 @@ for (k in 1:n_biomarkers) {
 }
 ```
 
-### 9.3 PCWG3 Progression Detection
+### PCWG3 Progression Detection
 
 ```stan
 // In generated quantities
@@ -692,7 +725,7 @@ for (i in 1:n_patients) {
 }
 ```
 
-### 9.4 Multi-State Likelihood (Sketch)
+### Multi-State Likelihood (Sketch)
 
 ```stan
 // Multi-state hazard model
@@ -728,9 +761,9 @@ for (i in 1:n_patients) {
 
 ---
 
-## 10. Summary
+## Summary
 
-### 10.1 Key Design Decisions
+### Key Design Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
@@ -740,7 +773,7 @@ for (i in 1:n_patients) {
 | Hazard model | Multi-state (illness-death) | Separates progression from death |
 | PSA role | Primary for progression, covariate for death | Matches clinical evidence |
 
-### 10.2 Advantages
+### Advantages
 
 1. **Unified framework**: Same latent dynamics, different observation models
 2. **Future-proof**: Easy to add new biomarkers or imaging
@@ -748,16 +781,14 @@ for (i in 1:n_patients) {
 4. **Identifiable**: Clear separation of what can/cannot be estimated
 5. **Backward compatible**: Phase 1 is mathematically identical to current model
 
-### 10.3 Open Questions
+### Open Questions
 
 1. Should $\lambda$ vary by patient (hierarchical) or be population-level?
-2. Should $0 \to 1$ transition be deterministic (PCWG3) or stochastic?
-3. How to handle radiographic progression (rPFS) in addition to PSA-PFS?
-4. Should post-progression hazard use clock-reset or clock-forward time?
+2. How to handle radiographic progression (rPFS) in addition to PSA-PFS?
 
 ---
 
-## 11. References
+## References {.unnumbered}
 
 - **PCWG3 Guidelines:** Scher et al. (2016) "Trial Design and Objectives for Castration-Resistant Prostate Cancer", Journal of Clinical Oncology
 - **Current PIONEER Model:** `stan/ssls/sf-ssm-log-space.stan`
@@ -766,6 +797,56 @@ for (i in 1:n_patients) {
 
 ---
 
-**Document Version:** 2.0
-**Last Updated:** 2026-02-09
-**Status:** Design Proposal (Revised)
+## PSA-Specific Covariates {#sec-appendix-psa-covariates .appendix}
+
+This appendix details the recommended covariate specification for PSA-based prostate cancer models.
+
+### Primary Burden Covariate
+
+- **When $\lambda = 1$**: $B_{\text{PSA}}(t) = B(t)$ — PSA directly reflects tumor burden
+- **When $\lambda \neq 1$**: Use $B_{\text{PSA}}(t)$ — PSA-weighted burden (see @sec-identifiability)
+
+### PSA-Derived Time-Varying Covariates
+
+| Covariate | Formula | Interpretation |
+|-----------|---------|----------------|
+| PSA nadir | $\min(B_{\text{PSA}}(s))$ for $s \leq t$ | Best response achieved so far |
+| Time to nadir | $\arg\min(B_{\text{PSA}}(s))$ for $s \leq t$ | When best response occurred |
+| Nadir ratio | $B_{\text{PSA}}(t) / \text{nadir}(t)$ | Current burden relative to best response |
+
+**Note:** PSA doubling time $(\log(2)/g)$ and PSA half-life $(\log(2)/d)$ are sometimes reported clinically, but these are monotonic transformations of $\log(g)$ and $\log(d)$ respectively. Since those are already included, adding doubling time or half-life would be redundant.
+
+### Post-Progression Covariates (for $1 \to 2$ transition)
+
+| Covariate | Symbol | Description |
+|-----------|--------|-------------|
+| PSA at progression | $B_{\text{PSA}}(T_{01})$ | Burden when progression occurred |
+| Time to progression | $T_{01}$ | How long patient was progression-free |
+
+### Recommended Non-Tumor Covariates
+
+Based on prostate cancer prognostic literature:
+
+- Age
+- ECOG performance status
+- Hemoglobin
+- Albumin
+- LDH (lactate dehydrogenase)
+- ALP (alkaline phosphatase)
+- Prior therapies (number of lines, specific agents)
+
+### Summary Table: PSA Model Covariates
+
+| # | Covariate | Source | Time Nature | Transitions |
+|---|-----------|--------|-------------|-------------|
+| 1 | $\log(B_{\text{PSA}}(t))$ | Longitudinal model | Time-varying | $0\to 1, 0\to 2$ |
+| 2 | $\log(d)$ | Longitudinal model | Time-invariant* | $0\to 1, 0\to 2, 1\to 2$ |
+| 3 | $\log(g)$ | Longitudinal model | Time-invariant* | $0\to 1, 0\to 2, 1\to 2$ |
+| 4 | Velocity $\frac{d}{dt} \log(B_{\text{PSA}})$ | Longitudinal model | Time-varying | $0\to 1, 0\to 2$ |
+| 5 | PSA nadir | Derived | Time-varying | $1\to 2$ |
+| 6 | Time to nadir | Derived | Time-varying | $1\to 2$ |
+| 7 | Nadir ratio | Derived | Time-varying | $0\to 1, 0\to 2$ |
+| 8+ | Non-tumor covariates | Baseline data | Time-invariant | All |
+
+*Can be time-varying if AR(1) process noise is enabled (`enable_patient_process_noise_tr`)
+
