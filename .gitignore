@@ -73,14 +73,8 @@ CLAUDE.local.md
 /plan/
 
 # VS Code
-.vscode/User/
-.vscode/CachedExtensionVSIXs/
-.vscode/CachedProfilesData/
-.vscode/logs/
-.vscode/code-server-ipc.sock
-.vscode/coder.json
-.vscode/Machine/
-.vscode/settings.json
+.vscode/
+
 quarto/**/*.rmarkdown
 
 **/*.quarto_ipynb
@@ -119,5 +113,6 @@ core.*
 presentation_images/
 presentation_pages/
 
-# Core dump files
-core.*
+# From roger/FI_pipeline
+brads_code/
+output/
