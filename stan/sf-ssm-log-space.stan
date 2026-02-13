@@ -52,6 +52,7 @@ transformed parameters {
   #include "modules/frac/transformed_parameters.stan"
   #include "modules/init/transformed_parameters.stan"
   #include "modules/state_space/transformed_parameters.stan"
+  #include "_ms_time_varying_covar.stan"
   #include "modules/multistate/transformed_parameters.stan"
 }
 
