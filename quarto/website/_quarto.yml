@@ -13,8 +13,9 @@ website:
   navbar:
     background: primary
     left:
-      - text: Home
+      - icon: house-fill
         href: index.qmd
+        aria-label: "Home"
       - text: Data
         href: analysis/data-exploration.qmd
       - text: Analysis
@@ -59,6 +60,9 @@ website:
           - text: Leave-Future-Out Cross-Validation
             href: documentation/leave-future-out-cross-validation.qmd
     right:
+      - icon: file-earmark-slides
+        href: https://rstudio-connect.seml.scp.astrazeneca.net/content/084c017e-8ec4-4efd-ae02-e4a86c9dc51f/
+        aria-label: "Go/No-Go Presentation"
       - icon: github
         href: https://github.com/azu-oncology-rd/cds-dsi-pioneer-sclc-01-2025
   sidebar:

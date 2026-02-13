@@ -65,6 +65,8 @@ quarto preview quarto/website
 **Server URL**: `https://rstudio-connect.seml.scp.astrazeneca.net/connect/`
 **Account**: `kmjq089`
 
+**IMPORTANT**: Always use the R `rsconnect` package for publishing. The `quarto publish connect` CLI command does not work reliably in non-interactive/remote environments because it requires browser-based SSO authentication.
+
 #### Step-by-Step Publishing Instructions
 
 **IMPORTANT**: Always render the site locally first to ensure everything works. Run from the project root:
@@ -163,6 +165,28 @@ quarto publish connect quarto/website
 - **Package not found errors**: Always run deployment from `/mnt/code` (project root) where renv is configured
 
 **SECURITY**: API keys should NEVER be committed to git. The `rsconnect/` directory and `_publish.yml` are already in `.gitignore`.
+
+#### Publishing Presentations
+
+For Quarto revealjs presentations (e.g., `quarto/presentations/pioneer-gng/`), use `rsconnect::deployDoc()`:
+
+```r
+library(rsconnect)
+
+# First render the presentation
+# quarto render quarto/presentations/pioneer-gng/pioneer-gng.qmd
+
+# Then deploy the rendered HTML
+rsconnect::deployDoc(
+  doc = "quarto/presentations/pioneer-gng/pioneer-gng.html",
+  server = "az-connect",
+  account = "kmjq089",
+  appName = "pioneer-gng-presentation"  # Choose a unique name
+)
+```
+
+**Published presentations:**
+- PIONEER Go/No-Go: https://rstudio-connect.seml.scp.astrazeneca.net/content/71d3bcc6-c677-485b-b8fc-562b0f580c9a/
 
 ### Key Configuration Files
 - `_quarto.yml` - Site configuration, navigation, theme settings
@@ -277,11 +301,21 @@ Analysis results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<ru
 - Follow tidyverse style guide
 - Prefer `purrr` and `dplyr` over base R loops
 - Use `testthat` for unit tests
+- **NEVER hardcode subject IDs** (usubjid, patient_id, etc.) - always use dynamic selection or filtering
 
 ### Targets
 - **NEVER use `tar_config_set(store = ...)`** - it changes global state and causes conflicts
 - Always use explicit `store` argument: `tar_read(name, store = "path/_targets")`
 - Same applies to all targets functions: `tar_meta()`, `tar_load()`, etc.
+- **NEVER inline complex code in targets** - extract to helper functions in `r/` directory
+  - Target commands should be simple function calls, not multi-line code blocks
+  - Example: Use `tar_target(name, my_function(arg))` not `tar_target(name, { ... complex code ... })`
+  - Helper functions belong in appropriate `r/` subdirectories (e.g., `r/sclc/plot_functions.R`)
+
+### Quarto and Documentation
+- **Always use "SCLC-01"** when referring to the trial in user-facing text (documentation, plots, presentations)
+- Use lowercase "sclc" only for code identifiers (variable names, trial codes, file paths)
+- Example: Write "SCLC-01 trial" in figure captions, but `filter(trial == "sclc")` in R code
 
 ### Adding Module Parameters
 1. Add feature flag in `modules/<module>/flags.stan`

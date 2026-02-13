@@ -444,17 +444,21 @@ get_km_res <- function(
 #' @param pfs_var Name of the PFS variable (unquoted, default: pfs)
 #' @param week_var Name of the week variable in visit_data (unquoted, default: week)
 #' @param calendar_day_var Name of the calendar day variable in visit_data (unquoted, default: calendar_day)
+#' @param require_post_baseline Logical; if TRUE, excludes patients who have no post-baseline
+#'   visits (week > 0) at the cutoff. This filters out retroactively-added patients who weren't
+#'   in the original DCO. Default is FALSE for backwards compatibility.
 #'
 #' @return A modified tibble with adjusted PFS, right_censored, and interval_censored values
 #'
 #' @details
 #' For each patient, the function:
 #' 1. Filters visits to only those occurring on or before the cutoff calendar day
-#' 2. If the patient's original PFS event occurred after the cutoff, sets them as right-censored
+#' 2. Optionally removes patients with no post-baseline visits (if require_post_baseline = TRUE)
+#' 3. If the patient's original PFS event occurred after the cutoff, sets them as right-censored
 #'    at the time of their last visit before/at the cutoff
-#' 3. Recalculates interval censoring based on the gap between the last observed visit
+#' 4. Recalculates interval censoring based on the gap between the last observed visit
 #'    and the cutoff date
-#' 4. Preserves the original PFS if it occurred before the cutoff
+#' 5. Preserves the original PFS if it occurred before the cutoff
 #'
 #' @examples
 #' \dontrun{
@@ -477,7 +481,8 @@ apply_calendar_cutoff <- function(
   cutoff_calendar_day,
   pfs_var = pfs,
   week_var = week,
-  calendar_day_var = visit_calendar_day
+  calendar_day_var = visit_calendar_day,
+  require_post_baseline = FALSE
 ) {
   analysis_data |>
     mutate(
@@ -488,6 +493,14 @@ apply_calendar_cutoff <- function(
     ) |>
     # Remove patients who have no visits before/at the cutoff
     filter(map_int(visit_data, nrow) > 0) |>
+    # Optionally require at least one post-baseline visit (week > 0)
+    # This filters out patients who only have baseline/screening data,
+
+    # which typically indicates retroactively-added patients not in original DCO
+    filter(
+      !require_post_baseline |
+        map_lgl(visit_data, \(vd) any(pull(vd, {{ week_var }}) > 0))
+    ) |>
     mutate(
       # Determine last observed week before cutoff
       last_obs_week = map_int(visit_data, \(vd) {

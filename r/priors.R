@@ -1,6 +1,7 @@
 # nolint start: object_usage_linter
 
-source("r/multi_level_hierarchy.R")
+# Dependencies: Requires r/multi_level_hierarchy.R to be loaded
+# (sourced by init_project() in .Rprofile)
 
 get_tumor_priors <- function(stan_data, coef_elicited_priors) {
   # Directly specified priors (simplified)
