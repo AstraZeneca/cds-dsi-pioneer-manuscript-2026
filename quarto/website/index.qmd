@@ -25,7 +25,7 @@ source("_setup.R")
 ::: {.hero-text}
 # SCLC-01 Forecasting
 
-A comprehensive Bayesian hierarchical modeling system for analyzing tumor dynamics and progression-free survival in oncology trials.
+A digital twin Bayesian hierarchical model for forecasting tumor dynamics and progression-free survival in oncology trials.
 :::
 
 ::: {.hero-image}
