@@ -693,7 +693,7 @@ plot_orr_by_dco("spop", orr_list, cond_orr_list, show_priors = FALSE) +
   border-radius: 50%;
 }
 input:checked + .toggle-slider {
-  background-color: #003865;
+  background-color: var(--az-navy);
 }
 input:checked + .toggle-slider:before {
   transform: translateX(26px);
@@ -1164,13 +1164,13 @@ plot_oos_confusion_matrix(oos_confusion_matrix) +
 
 ::: {.column width="52%"}
 
-```{r oos-confusion-sankey}
+```{r oos-confusion-matrix}
 #| fig-width: 6
 #| fig-height: 5.5
 #| out-height: 480px
 
-plot_oos_confusion_sankey(oos_confusion_matrix) +
-  labs(title = "RECIST Response Flow Diagram") +
+plot_oos_confusion_matrix(oos_confusion_matrix, add_caption = FALSE) +
+  labs(title = "RECIST Prediction Accuracy") +
   theme(
     plot.title = element_text(size = 18, face = "bold"),
     axis.text = element_text(size = 11),
@@ -1276,7 +1276,8 @@ all_lfo_clean |>
   filter(fct_match(model, c("ctdna", "ctdna_pn", "no_pl", "no_hist"))) |>
   plot_lfo_elpd_diff(
     baseline_model = "no_hist",
-    model_labels = lfo_model_labels
+    model_labels = lfo_model_labels,
+    add_vline = TRUE
   ) +
   labs(title = "Model Comparison: Predictive Performance") +
   theme(
@@ -1385,7 +1386,7 @@ ppc_spop_pfs |>
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 .timeline-header {
-  background: #003865;
+  background: var(--az-navy);
   color: white;
   padding: 0.8rem 1rem;
   margin: -1.2rem -1.2rem 1rem -1.2rem;
@@ -1396,7 +1397,7 @@ ppc_spop_pfs |>
   letter-spacing: 0.5px;
 }
 .timeline-col h4 {
-  color: #830051;
+  color: var(--az-plum);
   font-size: 0.95em;
   font-weight: bold;
   margin-top: 1rem;

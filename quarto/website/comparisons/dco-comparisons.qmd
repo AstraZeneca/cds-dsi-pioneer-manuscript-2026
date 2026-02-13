@@ -143,7 +143,7 @@ Tracking median PFS estimates across data cutoffs, comparing model forecasts wit
   border-radius: 50%;
 }
 input:checked + .toggle-slider {
-  background-color: #003865;
+  background-color: var(--az-navy);
 }
 input:checked + .toggle-slider:before {
   transform: translateX(26px);
