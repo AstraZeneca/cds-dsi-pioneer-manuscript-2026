@@ -262,6 +262,9 @@ Analysis results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<ru
 
 ## Coding Guidelines
 
+### General
+- **No backward-compatibility aliases**: Do not create variable or function aliases for backward compatibility unless explicitly requested. When renaming, update all references directly instead of adding shims or aliases.
+
 ### Stan
 - Use built-in zero constructors: `zeros_vector()`, `zeros_int_array()`
 - Don't pass array/vector sizes as arguments; use `size()` internally

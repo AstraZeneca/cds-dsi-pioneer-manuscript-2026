@@ -40,6 +40,10 @@ transformed data {
   // Generic biomarker baseline for other_events module (SLD mode)
   vector[n_patients] log_baseline_biomarker = log_baseline_sld;
 
+  // LFO model uses old other_events module, not multistate.
+  // Define missing multistate flags so state_space module compiles.
+  int enable_ms_pop_time_varying_cov = 0;
+
   #include "modules/other_events/transformed_data.stan"
   #include "_lfo_transformed_data.stan"
 }
@@ -208,24 +212,24 @@ generated quantities {
         // All forecast visits are PD since patient already had PD before cutoff
         full_predict_overall_recist[(treat_visit_size + 1):] = rep_array(PD, n_oos_visits);
       } else {
-        // Integrate other events PFS to mark RECIST as PD when other events cause progression
+        // Integrate multistate PFS to mark RECIST as PD when multistate events cause progression
         // Since we only process cutoff-observed patients (cutoff_observed_mask[i] == 1),
-        // we can always use the already-calculated sample_other_events_pfs from _lfo_endpoints_generated_quantities.stan
+        // we can always use the already-calculated sample_ms_pfs from _lfo_endpoints_generated_quantities.stan
         int cutoff_patient_idx = patient_to_cutoff_idx[i];
-        int forecast_other_events_pfs = sample_other_events_pfs[cutoff_patient_idx];
-        int forecast_other_events_censored = sample_other_events_right_censored[cutoff_patient_idx];
+        int forecast_ms_pfs = sample_ms_pfs[cutoff_patient_idx];
+        int forecast_ms_censored = sample_ms_right_censored[cutoff_patient_idx];
 
-        if (!forecast_other_events_censored) {
-          // Other events PD occurs at week forecast_other_events_pfs
-          // Find first forecast visit at or after other events PFS
-          int forecast_other_events_visit_idx = 1;
-          while (forecast_other_events_visit_idx <= n_oos_visits && forecast_time[forecast_other_events_visit_idx + 1] < forecast_other_events_pfs) {
-            forecast_other_events_visit_idx += 1;
+        if (!forecast_ms_censored) {
+          // Multistate PD occurs at week forecast_ms_pfs
+          // Find first forecast visit at or after multistate PFS
+          int forecast_ms_visit_idx = 1;
+          while (forecast_ms_visit_idx <= n_oos_visits && forecast_time[forecast_ms_visit_idx + 1] < forecast_ms_pfs) {
+            forecast_ms_visit_idx += 1;
           }
-          
-          // Mark all subsequent forecast visits as PD (from the first visit >= other events PFS onward)
-          if (forecast_other_events_visit_idx <= n_oos_visits) {
-            full_predict_overall_recist[(treat_visit_size + forecast_other_events_visit_idx):] = rep_array(PD, n_oos_visits - forecast_other_events_visit_idx + 1);
+
+          // Mark all subsequent forecast visits as PD (from the first visit >= multistate PFS onward)
+          if (forecast_ms_visit_idx <= n_oos_visits) {
+            full_predict_overall_recist[(treat_visit_size + forecast_ms_visit_idx):] = rep_array(PD, n_oos_visits - forecast_ms_visit_idx + 1);
           }
         }
       }

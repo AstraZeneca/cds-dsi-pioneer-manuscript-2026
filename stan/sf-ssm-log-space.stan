@@ -179,7 +179,6 @@ generated quantities {
     }
   }
 
-  // TODO: Update generated quantities for multistate
-  // #include "_endpoints_generated_quantities.stan"
-  // #include "modules/state_space/generated_quantities.stan"
+  #include "_endpoints_generated_quantities.stan"
+  #include "modules/state_space/generated_quantities.stan"
 }
