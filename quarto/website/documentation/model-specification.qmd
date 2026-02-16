@@ -6,9 +6,9 @@ number-sections: false
 
 ## Overview {#sec-model-overview}
 
-This document provides a complete mathematical specification of the Bayesian hierarchical model for analyzing tumor dynamics and survival outcomes in oncology clinical trials. The model integrates:
+This document provides a complete mathematical specification of the Bayesian hierarchical model for analyzing tumor dynamics and survival outcomes in oncology clinical trials. The model is a **tumor growth inhibition (TGI)** model in the tradition of [Stein et al. (2008)](https://doi.org/10.1158/1078-0432.CCR-07-2180), extended with a state-space formulation in log-space, a multi-level hierarchy, and an independent competing-risks survival component. It integrates:
 
-1. **Tumor growth dynamics** via a state-space model in log-space
+1. **Tumor growth dynamics** via a state-space TGI model in log-space
 2. **Independent competing events** for other (non-target) progression events
 3. **Clinical endpoints** including progression-free survival (PFS) and objective response rate (ORR)
 
