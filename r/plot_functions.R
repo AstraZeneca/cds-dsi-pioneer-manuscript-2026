@@ -575,22 +575,27 @@ plot_confusion_matrix <- function(data, recorded, calculated, p, n = NULL) {
     coord_fixed() +
     theme_minimal() +
     theme(
-      panel.grid.major = element_blank(),
+      panel.grid = element_blank(),
       plot.margin = margin(5, 5, 15, 5, "pt")
     ) +
     NULL
 }
 
 # Reusable function for OOS confusion matrix plot
-plot_oos_confusion_matrix <- function(confusion_matrix_data) {
-  confusion_matrix_data |>
+plot_oos_confusion_matrix <- function(confusion_matrix_data, add_caption = TRUE) {
+  p <- confusion_matrix_data |>
     mutate(mp = median(mean_pred)) |>
     plot_confusion_matrix(response, pred_response, mp) +
     labs(
       x = "Observed RECIST Response",
-      y = "Predicted RECIST Response",
-      caption = "Cell proportions show sensitivity (recall) for each RECIST category:\nP(Predicted response | Observed response). Diagonal elements indicate correct prediction rates."
+      y = "Predicted RECIST Response"
     )
+
+  if (add_caption) {
+    p <- p + labs(caption = "Cell proportions show sensitivity (recall) for each RECIST category:\nP(Predicted response | Observed response). Diagonal elements indicate correct prediction rates.")
+  }
+
+  return(p)
 }
 
 # Compute specificity matrix from confusion matrix data
@@ -1053,7 +1058,7 @@ plot_lfo_elpd_diff <- function(
 
   # Add vertical line if requested
   if (add_vline) {
-    p <- p + geom_vline(xintercept = 0, linetype = "dashed", color = "gray50")
+    p <- p + geom_vline(xintercept = 0, linetype = "dotted", color = "black", linewidth = 0.8)
   }
 
   # Add baseline label if requested
@@ -1069,6 +1074,13 @@ plot_lfo_elpd_diff <- function(
   # Calculate x-axis limits with extra space on the right for the baseline text
   x_min <- min(plot_data$mean - 2 * plot_data$se, na.rm = TRUE)
   x_max <- max(plot_data$mean + 2 * plot_data$se, na.rm = TRUE)
+
+  # If adding a vertical line at zero, ensure zero is included in the axis
+  if (add_vline) {
+    x_min <- min(x_min, 0)
+    x_max <- max(x_max, 0)
+  }
+
   x_range <- x_max - x_min
 
   # Add extra space on the right: proportional to baseline text length

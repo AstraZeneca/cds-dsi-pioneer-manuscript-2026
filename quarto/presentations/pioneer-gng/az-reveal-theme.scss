@@ -28,6 +28,20 @@ $code-bg: #f8f9fa;
 
 /*-- scss:rules --*/
 
+// Export AZ colors as CSS custom properties for use in inline <style> blocks
+:root {
+  --az-navy: #{$az-navy};
+  --az-gold: #{$az-gold};
+  --az-plum: #{$az-plum};
+  --az-turquoise: #{$az-turquoise};
+  --az-darkpurple: #{$az-darkpurple};
+  --az-green: #{$az-green};
+  --az-platinum: #{$az-platinum};
+  --az-darkgrey: #{$az-darkgrey};
+  --az-pink: #{$az-pink};
+  --az-lightpurple: #{$az-lightpurple};
+}
+
 // Title slide styling
 .reveal .slide-background.title-slide {
   background: linear-gradient(135deg, $az-navy 0%, darken($az-navy, 10%) 100%);
