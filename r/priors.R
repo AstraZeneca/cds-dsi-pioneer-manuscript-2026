@@ -21,6 +21,10 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
   n_levels <- stan_data$n_levels %||% 2L
   n_covar <- stan_data$n_covar
 
+  # Multistate covariate dimensions (default 0 if not specified)
+  n_time_varying_covar <- stan_data$n_time_varying_covar %||% 0L
+  n_time_invariant_covar <- stan_data$n_time_invariant_covar %||% n_covar
+
   lst(
     # GP hyperparameters
     pop_tumor_gp_rho_meanlog = 3,
@@ -29,10 +33,10 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     pop_decrease_process_sd_sd = 0.1,
     pop_growth_process_sd_sd = 0.1,
     process_corr_param = 2.0,
-    # inv_gamma prior for measure_sd keeps mass away from zero
+    # inv_gamma prior for measure_sd_sld keeps mass away from zero
     # mode = beta/(alpha+1) = 0.75/6 = 0.125 (at typical posterior)
-    measure_sd_alpha = 5,
-    measure_sd_beta = 0.75,
+    measure_sd_sld_alpha = 5,
+    measure_sd_sld_beta = 0.75,
 
     # Process parameters
     decrease_process_alpha = 9.7,
@@ -97,53 +101,108 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
 
     rate_corr_param = 2.0,
 
-    # Other events baseline hazard GP hyperparameters
-    oe_log_lambda_gp_pop_intercept_mean = array(
-      -4.5,
-      dim = c(stan_data$n_causes)
-    ),
-    oe_log_lambda_gp_pop_intercept_sd = array(0.5, dim = c(stan_data$n_causes)),
-    # inv_gamma(5, 1.3) matches half-normal(0, 0.4) but avoids values near 0
-    oe_log_lambda_gp_pop_alpha_alpha = array(5.0, dim = c(stan_data$n_causes)),
-    oe_log_lambda_gp_pop_alpha_beta = array(1.3, dim = c(stan_data$n_causes)),
-    oe_log_lambda_gp_pop_rho_alpha = array(8.0, dim = c(stan_data$n_causes)),
-    oe_log_lambda_gp_pop_rho_beta = array(12.0, dim = c(stan_data$n_causes)),
-    # inv_gamma(5, 0.8) matches half-normal(0, 0.25) but avoids values near 0
-    oe_log_lambda_gp_trial_alpha_alpha = array(
-      5.0,
-      dim = c(stan_data$n_causes)
-    ),
-    oe_log_lambda_gp_trial_alpha_beta = array(0.8, dim = c(stan_data$n_causes)),
-    oe_log_lambda_gp_trial_rho_alpha = array(5.0, dim = c(stan_data$n_causes)),
-    oe_log_lambda_gp_trial_rho_beta = array(7.0, dim = c(stan_data$n_causes)),
-    oe_log_lambda_gp_trial_intercept_sd_sd = array(
-      0.3,
-      dim = c(stan_data$n_causes)
-    ),
+    # =========================================================================
+    # Multistate Hazard Model Hyperparameters
+    # =========================================================================
+    # Replaces other_events module. Supports configurable transitions:
+    #   - 0→1: Progression / PFS event
+    #   - 0→2: Death without progression
+    #   - 1→2: Post-progression death (sojourn _s and clock-forward _t GPs)
 
-    # Other events covariate effect hyperparameters
-    oe_tumor_coef_pop_mean = array(
-      rep(0, stan_data$n_tumor_covar),
-      dim = c(stan_data$n_causes, stan_data$n_tumor_covar)
-    ),
-    oe_tumor_coef_pop_sd = array(
-      rep(0.5, stan_data$n_tumor_covar),
-      dim = c(stan_data$n_causes, stan_data$n_tumor_covar)
-    ),
-    oe_covar_coef_qr_pop_mean = array(
-      -coef_elicited_priors$coef_mean,
-      dim = c(stan_data$n_causes, stan_data$n_covar)
-    ),
-    oe_covar_coef_qr_pop_sd = array(
-      coef_elicited_priors$coef_sd,
-      dim = c(stan_data$n_causes, stan_data$n_covar)
-    ),
-    # Multi-level random slope SD hyperpriors for non-tumor covariates
-    # Dimensions: [n_causes, n_levels, n_covar]
-    oe_sd_level_slope_sd = array(
-      rep(0.15, stan_data$n_causes * n_levels * stan_data$n_covar),
-      dim = c(stan_data$n_causes, n_levels, stan_data$n_covar)
-    ),
+    # --- Population-level baseline hazard GP hyperparameters ---
+    # Relaxed priors to avoid divergences
+    # inv_gamma(3, 1.0) - wider prior on alpha
+    # inv_gamma(5, 5.0) - wider prior on rho
+
+    # 0→1 transition
+    ms_log_lambda_gp_01_pop_intercept_mean = -4.5,
+    ms_log_lambda_gp_01_pop_intercept_sd = 1.0,  # Wider intercept prior
+    ms_log_lambda_gp_01_pop_alpha_alpha = 3.0,   # Relaxed
+    ms_log_lambda_gp_01_pop_alpha_beta = 1.0,
+    ms_log_lambda_gp_01_pop_rho_alpha = 5.0,     # Relaxed
+    ms_log_lambda_gp_01_pop_rho_beta = 5.0,
+
+    # 0→2 transition
+    ms_log_lambda_gp_02_pop_intercept_mean = -4.5,
+    ms_log_lambda_gp_02_pop_intercept_sd = 1.0,
+    ms_log_lambda_gp_02_pop_alpha_alpha = 3.0,
+    ms_log_lambda_gp_02_pop_alpha_beta = 1.0,
+    ms_log_lambda_gp_02_pop_rho_alpha = 5.0,
+    ms_log_lambda_gp_02_pop_rho_beta = 5.0,
+
+    # 1→2 transition (sojourn time GP)
+    ms_log_lambda_gp_12_s_pop_intercept_mean = -4.5,
+    ms_log_lambda_gp_12_s_pop_intercept_sd = 1.0,
+    ms_log_lambda_gp_12_s_pop_alpha_alpha = 3.0,
+    ms_log_lambda_gp_12_s_pop_alpha_beta = 1.0,
+    ms_log_lambda_gp_12_s_pop_rho_alpha = 5.0,
+    ms_log_lambda_gp_12_s_pop_rho_beta = 5.0,
+
+    # 1→2 transition (clock-forward time GP)
+    ms_log_lambda_gp_12_t_pop_intercept_mean = -4.5,
+    ms_log_lambda_gp_12_t_pop_intercept_sd = 1.0,
+    ms_log_lambda_gp_12_t_pop_alpha_alpha = 3.0,
+    ms_log_lambda_gp_12_t_pop_alpha_beta = 1.0,
+    ms_log_lambda_gp_12_t_pop_rho_alpha = 5.0,
+    ms_log_lambda_gp_12_t_pop_rho_beta = 5.0,
+
+    # --- Level-level baseline hazard GP hyperparameters (N-level hierarchy) ---
+    # Relaxed priors to avoid divergences
+
+    # 0→1 transition (per level)
+    ms_log_lambda_gp_01_level_intercept_sd_sd = rep(0.5, n_levels),  # Wider
+    ms_log_lambda_gp_01_level_alpha_alpha = rep(3.0, n_levels),      # Relaxed
+    ms_log_lambda_gp_01_level_alpha_beta = rep(1.0, n_levels),
+    ms_log_lambda_gp_01_level_rho_alpha = rep(4.0, n_levels),        # Relaxed
+    ms_log_lambda_gp_01_level_rho_beta = rep(4.0, n_levels),
+
+    # 0→2 transition (per level)
+    ms_log_lambda_gp_02_level_intercept_sd_sd = rep(0.5, n_levels),
+    ms_log_lambda_gp_02_level_alpha_alpha = rep(3.0, n_levels),
+    ms_log_lambda_gp_02_level_alpha_beta = rep(1.0, n_levels),
+    ms_log_lambda_gp_02_level_rho_alpha = rep(4.0, n_levels),
+    ms_log_lambda_gp_02_level_rho_beta = rep(4.0, n_levels),
+
+    # 1→2 sojourn time GP (per level)
+    ms_log_lambda_gp_12_s_level_intercept_sd_sd = rep(0.5, n_levels),
+    ms_log_lambda_gp_12_s_level_alpha_alpha = rep(3.0, n_levels),
+    ms_log_lambda_gp_12_s_level_alpha_beta = rep(1.0, n_levels),
+    ms_log_lambda_gp_12_s_level_rho_alpha = rep(4.0, n_levels),
+    ms_log_lambda_gp_12_s_level_rho_beta = rep(4.0, n_levels),
+
+    # 1→2 clock-forward time GP (per level)
+    ms_log_lambda_gp_12_t_level_intercept_sd_sd = rep(0.5, n_levels),
+    ms_log_lambda_gp_12_t_level_alpha_alpha = rep(3.0, n_levels),
+    ms_log_lambda_gp_12_t_level_alpha_beta = rep(1.0, n_levels),
+    ms_log_lambda_gp_12_t_level_rho_alpha = rep(4.0, n_levels),
+    ms_log_lambda_gp_12_t_level_rho_beta = rep(4.0, n_levels),
+
+    # --- Time-varying covariate coefficient hyperparameters ---
+    ms_time_varying_coef_01_mean = rep(0, n_time_varying_covar),
+    ms_time_varying_coef_01_sd = rep(0.5, n_time_varying_covar),
+    ms_time_varying_coef_02_mean = rep(0, n_time_varying_covar),
+    ms_time_varying_coef_02_sd = rep(0.5, n_time_varying_covar),
+    ms_time_varying_coef_12_mean = rep(0, n_time_varying_covar),
+    ms_time_varying_coef_12_sd = rep(0.5, n_time_varying_covar),
+
+    # --- Time-invariant covariate coefficient hyperparameters (QR space) ---
+    ms_time_invariant_coef_01_mean = rep(0, n_time_invariant_covar),
+    ms_time_invariant_coef_01_sd = rep(1, n_time_invariant_covar),
+    ms_time_invariant_coef_02_mean = rep(0, n_time_invariant_covar),
+    ms_time_invariant_coef_02_sd = rep(1, n_time_invariant_covar),
+    ms_time_invariant_coef_12_mean = rep(0, n_time_invariant_covar),
+    ms_time_invariant_coef_12_sd = rep(1, n_time_invariant_covar),
+
+    # --- Multi-level random slope SD hyperpriors (per level, per transition) ---
+    ms_sd_level_slope_01_sd = lapply(seq_len(n_levels), function(lv) {
+      rep(0.15, n_time_invariant_covar)
+    }),
+    ms_sd_level_slope_02_sd = lapply(seq_len(n_levels), function(lv) {
+      rep(0.15, n_time_invariant_covar)
+    }),
+    ms_sd_level_slope_12_sd = lapply(seq_len(n_levels), function(lv) {
+      rep(0.15, n_time_invariant_covar)
+    }),
 
     log_lod_sd = 0.2
   )

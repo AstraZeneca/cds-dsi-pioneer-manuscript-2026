@@ -71,7 +71,7 @@ Look for patterns in which parameters have issues:
 **A. Divergences in hierarchical SDs**
 - Cause: Neal's funnel geometry (centered parameterization)
 - Check: Is non-centered parameterization used? (should be `*_raw_*` parameters)
-- Fix: Verify NCP implementation in `stan/ssls/modules/*/transformed_parameters.stan`
+- Fix: Verify NCP implementation in `stan/modules/*/transformed_parameters.stan`
 
 **B. Low ESS for process noise**
 - Cause: AR(1) parameters ($\phi$, $\sigma$) are difficult to identify
@@ -93,7 +93,7 @@ Look for patterns in which parameters have issues:
 For each issue found, provide:
 
 1. **Parameter name and module** (e.g., `tr_sd_patient_intercept` in TR module)
-2. **File location** (e.g., `stan/ssls/modules/tr/parameters.stan:18`)
+2. **File location** (e.g., `stan/modules/tr/parameters.stan:18`)
 3. **Specific problem** (e.g., "Rhat = 1.08, ESS_bulk = 45")
 4. **Root cause** (e.g., "Hierarchical SD with weak prior causing exploration issues")
 5. **Recommended fix** with code snippet:
@@ -137,7 +137,7 @@ Chains: [number] | Iterations: [number] | Warmup: [number]
 
 ### Critical Issues (❌)
 1. **Parameter:** tr_sd_patient_intercept
-   - **Location:** stan/ssls/modules/tr/parameters.stan:18
+   - **Location:** stan/modules/tr/parameters.stan:18
    - **Issue:** Rhat = 1.12, ESS_bulk = 34
    - **Cause:** Weak prior allowing excessive variance
    - **Fix:** Update r/priors.R:
@@ -168,9 +168,9 @@ Chains: [number] | Iterations: [number] | Warmup: [number]
 - `r/priors.R` - Hyperparameter defaults
 
 **Stan code:**
-- `stan/ssls/modules/*/parameters.stan` - Parameter declarations
-- `stan/ssls/modules/*/priors.stan` - Prior specifications
-- `stan/ssls/modules/*/transformed_parameters.stan` - NCP implementations
+- `stan/modules/*/parameters.stan` - Parameter declarations
+- `stan/modules/*/priors.stan` - Prior specifications
+- `stan/modules/*/transformed_parameters.stan` - NCP implementations
 
 **Pipeline configuration:**
 - `targets/sclc_targets.R` - MCMC settings (chains, iterations, adapt_delta)

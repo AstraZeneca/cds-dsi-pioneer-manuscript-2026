@@ -20,7 +20,7 @@ This skill helps keep documentation synchronized with source code changes by:
 
 # Check specific file(s)
 /sync-docs --file path/to/file.R
-/sync-docs --file stan/ssls/sf-ssls-lfo.stan
+/sync-docs --file stan/sf-ssls-lfo.stan
 
 # Full audit of all mappings (comprehensive review)
 /sync-docs --all
@@ -210,7 +210,7 @@ When detecting new files that don't match any mapping:
 
 **Consider these factors:**
 - File type (`.R`, `.stan`, `.qmd`, etc.)
-- Location in directory structure (`r/`, `stan/ssls/modules/`, `targets/`, etc.)
+- Location in directory structure (`r/`, `stan/modules/`, `targets/`, etc.)
 - File purpose (utility, analysis, plotting, data prep, model specification)
 - Related existing files (is there a similar file in a mapping?)
 
@@ -280,7 +280,7 @@ Update documentation to explain the optional cutoff parameter for early data ana
 
 **Change detected:**
 ```
-New file: stan/ssls/modules/tr/ar1_helpers.stan
+New file: stan/modules/tr/ar1_helpers.stan
 ```
 
 **Finding:**

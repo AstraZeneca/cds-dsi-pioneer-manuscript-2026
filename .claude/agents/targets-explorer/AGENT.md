@@ -170,7 +170,7 @@ Rscript -e 'targets::tar_visnetwork(label = "time")'  # Shows parallelization op
 
 2. **Model Compilation**
    - Target: `compiled_model`
-   - Compiles Stan code in `stan/ssls/`
+   - Compiles Stan code in `stan/`
 
 3. **Model Fitting**
    - Target: `model_fit` (or similar)
@@ -259,7 +259,7 @@ When explaining why target A depends on target B:
 
 **Scenario: Add new covariate**
 - Add to data prep: `r/sclc/prepare_analysis_data.R`
-- Update Stan data structure: Check `stan/ssls/modules/*/data.stan`
+- Update Stan data structure: Check `stan/modules/*/data.stan`
 - Invalidated targets: Everything from `analysis_data` onward
 
 ## Debugging Checklist

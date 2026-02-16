@@ -297,17 +297,19 @@ enable_patient_process_noise_frac = 0  # Not yet implemented
 
 ### Stan Module System
 
-The Stan code uses a modular architecture with `#include` directives. Modules are organized by feature in `stan/ssls/modules/`:
+The Stan code uses a modular architecture with `#include` directives. Modules are organized by feature in `stan/modules/`:
 
+- **`state_space/`** - State-space infrastructure (orchestrates computation)
 - **`tr/`** - Tumor regression (decrease) dynamics
 - **`frac/`** - Growth fraction dynamics
 - **`init/`** - Initial state modeling
+- **`tumor/`** - Tumor-specific functions (SLD conversions, RECIST)
 - **`other_events/`** - Non-target progression and death events
 - **`measurement/`** - Observation model
 
 ### Module File Pattern
 
-Each module follows a 7-file structure:
+Each parameter module (tr, frac, init, etc.) typically follows a 7-file structure:
 
 | File | Purpose |
 |------|---------|
@@ -319,11 +321,34 @@ Each module follows a 7-file structure:
 | `transformed_parameters.stan` | Derived quantities |
 | `priors.stan` | Prior distributions |
 
+Infrastructure modules (state_space, tumor) may have different files based on their needs:
+- `state_space/` - Contains functions, data, transformed_data, transformed_parameters, checks, generated_quantities
+- `tumor/` - Contains data, transformed_data, and tumor.stanfunctions
+
+### File Naming Conventions
+
+**Extensions:**
+
+- **`.stanfunctions`** - Files containing ONLY function definitions (e.g., `util.stanfunctions`, `gp.stanfunctions`)
+- **`.stan`** - Files with data/parameters/model blocks, or block fragments
+
+**Prefixes:**
+
+- **Underscore `_`** - Include fragments (e.g., `_base_data.stan`, `_base_transformed_data.stan`)
+- **No underscore** - Complete model files (e.g., `sf-ssm-log-space.stan`) or module files
+
+**Examples:**
+- `util.stanfunctions` - Utility function library
+- `_base_data.stan` - Base data fragment (included in data block)
+- `modules/tumor/tumor.stanfunctions` - Tumor-specific functions
+- `sf-ssm-log-space.stan` - Complete model file
+
 This standardization makes modules:
 
 - **Self-contained** - Each module includes all its dependencies
 - **Composable** - Modules can be enabled/disabled independently
 - **Maintainable** - Consistent structure across all modules
+- **Clear at a glance** - File type evident from extension/prefix
 
 ### Code Organization Best Practices
 
