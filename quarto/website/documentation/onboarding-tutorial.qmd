@@ -48,6 +48,8 @@ This tutorial provides a structured path for new team members to understand the 
 
 ### 1.2 Core Model Intuition
 
+The model is a **tumor growth inhibition (TGI)** model — the standard pharmacometrics framework for describing how tumors shrink under treatment and eventually regrow. Classic TGI models (e.g., Stein-Fojo biexponential) fit SLD trajectories directly; PIONEER extends this into a Bayesian state-space formulation with hierarchical borrowing across trials.
+
 The model captures two fundamental biological processes:
 
 1. **Treatment Effect (Shrinkage):** Tumor cells killed by therapy → exponential decay
