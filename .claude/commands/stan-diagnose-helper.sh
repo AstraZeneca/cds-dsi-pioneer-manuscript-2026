@@ -227,10 +227,53 @@ if [[ "$OUTPUT_DIR" == *"*"* ]] || [[ "$OUTPUT_DIR" == *"?"* ]]; then
 fi
 
 # Count header lines dynamically (comment lines starting with # plus column header)
+# PERFORMANCE: Only reads first 200KB - headers are always at the top of the file
 count_header_lines() {
     local file="$1"
-    local comment_lines=$(grep -c "^#" "$file" 2>/dev/null | head -1 || echo "0")
+    local comment_lines=$(head -c 200000 "$file" 2>/dev/null | grep -c "^#" || echo "0")
     echo $((comment_lines + 1))  # +1 for column names row
+}
+
+# Estimate total data lines without full-file scan
+# Uses file size and sample line length from the last line
+estimate_line_count() {
+    local file="$1"
+    local header_lines="$2"
+    local file_size=$(stat -c%s "$file" 2>/dev/null || echo "0")
+    # Get a sample line length from the last data line (tail is fast - seeks from end)
+    local sample_line=$(tail -c 60000000 "$file" | grep -v "^#" | tail -1)
+    local line_len=${#sample_line}
+    if [ "$line_len" -gt 0 ]; then
+        # +1 for newline character
+        local total_lines=$(( file_size / (line_len + 1) ))
+        local data_lines=$(( total_lines - header_lines ))
+        echo "$data_lines"
+    else
+        echo "0"
+    fi
+}
+
+# Check adaptation status: infers from estimated line count vs num_warmup
+# With ~15MB lines, the "Adaptation terminated" comment is buried deep in multi-GB files
+# and can't be found via tail. Instead, infer from data: if lines > warmup, we're sampling.
+# Args: file, header_lines, num_warmup
+# Returns: 0 if adapted (sampling), 1 if still in warmup
+check_adapted() {
+    local file="$1"
+    local header_lines="$2"
+    local num_warmup="$3"
+    local data_lines=$(estimate_line_count "$file" "$header_lines")
+    # Add 10% margin to account for estimation error
+    local threshold=$(( num_warmup + num_warmup / 10 ))
+    [ "$data_lines" -gt "$threshold" ]
+}
+
+# Read config values from Stan CSV header (first ~200KB)
+# These are comment lines like "# num_warmup = 300"
+read_header_config() {
+    local file="$1"
+    local key="$2"
+    head -c 200000 "$file" 2>/dev/null | grep "$key" | head -1 | grep -oP '\d+' || echo ""
 }
 
 # Find the latest run (exclude profile files)
@@ -262,30 +305,30 @@ run_single_status() {
     for i in 1 2 3 4; do
         local FILE=$(ls "$dir"/sf-ssm-log-space-${run_id}-${i}-*.csv 2>/dev/null | head -1)
         if [ -f "$FILE" ]; then
-            local lines=$(wc -l < "$FILE")
             local header_lines=$(count_header_lines "$FILE")
-            local last_line=$(tail -10 "$FILE" | grep -v "^#" | tail -1)
+            local num_warmup=$(read_header_config "$FILE" "num_warmup")
+            num_warmup=${num_warmup:-300}
+            local num_samples=$(read_header_config "$FILE" "num_samples")
+            num_samples=${num_samples:-500}
+            local last_line=$(tail -c 60000000 "$FILE" | grep -v "^#" | tail -1)
             local lp=$(echo "$last_line" | cut -d',' -f1)
             local stepsize=$(echo "$last_line" | cut -d',' -f3)
             local energy=$(echo "$last_line" | cut -d',' -f7)
-            local adapted=$(grep -c "^# Adaptation terminated" "$FILE" 2>/dev/null | tr -d '\n' || echo "0")
-            adapted=${adapted:-0}
-            local num_warmup=$(grep "num_warmup" "$FILE" | head -1 | grep -oP '\d+' || echo "300")
-            local num_samples=$(grep "num_samples" "$FILE" | head -1 | grep -oP '\d+' || echo "500")
-            local divs_recent=$(tail -55 "$FILE" | grep -v "^#" | tail -50 | cut -d',' -f6 | grep -c "^1" 2>/dev/null | tr -d '\n' || echo "0")
+            local adapted=0
+            if check_adapted "$FILE" "$header_lines" "$num_warmup"; then adapted=1; fi
+            local divs_recent=$(tail -c 1500000000 "$FILE" | grep -v "^#" | tail -50 | cut -d',' -f6 | grep -c "^1" 2>/dev/null | tr -d '\n' || echo "0")
 
-            local stage pct data_lines
+            local data_lines=$(estimate_line_count "$FILE" "$header_lines")
+            local stage pct
             if [ "$adapted" -eq 1 ]; then
-                local sampling_start=$((header_lines + num_warmup + 1))
-                local sampling_lines=$((lines - sampling_start))
+                local sampling_lines=$((data_lines - num_warmup))
+                [ "$sampling_lines" -lt 0 ] && sampling_lines=0
                 pct=$((sampling_lines * 100 / num_samples))
                 stage="samp"
                 data_lines=$sampling_lines
             else
-                local warmup_lines=$((lines - header_lines))
-                pct=$((warmup_lines * 100 / num_warmup))
+                pct=$((data_lines * 100 / num_warmup))
                 stage="warm"
-                data_lines=$warmup_lines
             fi
 
             local line_out="  Ch$i: ${pct}% ${stage}, lp=${lp}, div=${divs_recent}"
@@ -364,43 +407,42 @@ case "$COMMAND" in
             for i in 1 2 3 4; do
                 FILE=$(ls "$OUTPUT_DIR"/sf-ssm-log-space-${RUN_ID}-${i}-*.csv 2>/dev/null | head -1)
                 if [ -f "$FILE" ]; then
-                    lines=$(wc -l < "$FILE")
                     header_lines=$(count_header_lines "$FILE")
 
+                    # Get config from header (reads only first 200KB)
+                    num_warmup=$(read_header_config "$FILE" "num_warmup")
+                    num_warmup=${num_warmup:-300}
+                    num_samples=$(read_header_config "$FILE" "num_samples")
+                    num_samples=${num_samples:-500}
+
                     # Get last non-comment line values efficiently (tail seeks from end)
-                    # Skip comment lines that might be incomplete writes
-                    last_line=$(tail -10 "$FILE" | grep -v "^#" | tail -1)
+                    last_line=$(tail -c 60000000 "$FILE" | grep -v "^#" | tail -1)
                     lp=$(echo "$last_line" | cut -d',' -f1)
                     stepsize=$(echo "$last_line" | cut -d',' -f3)
                     treedepth=$(echo "$last_line" | cut -d',' -f4)
                     energy=$(echo "$last_line" | cut -d',' -f7)
 
-                    # Check adaptation status (just look for the marker, fast grep)
-                    adapted=$(grep -c "^# Adaptation terminated" "$FILE" 2>/dev/null | tr -d '\n' || echo "0")
-                    adapted=${adapted:-0}
-
-                    # Get num_warmup from config
-                    num_warmup=$(grep "num_warmup" "$FILE" | head -1 | grep -oP '\d+' || echo "300")
-                    num_samples=$(grep "num_samples" "$FILE" | head -1 | grep -oP '\d+' || echo "500")
+                    # Check adaptation status (inferred from line count vs warmup)
+                    adapted=0
+                    if check_adapted "$FILE" "$header_lines" "$num_warmup"; then adapted=1; fi
 
                     # Recent divergences (last 50 data lines, exclude comments)
-                    divs_recent=$(tail -55 "$FILE" | grep -v "^#" | tail -50 | cut -d',' -f6 | grep -c "^1" 2>/dev/null | tr -d '\n' || echo "0")
-                    maxtree_recent=$(tail -55 "$FILE" | grep -v "^#" | tail -50 | cut -d',' -f4 | grep -c "^10" 2>/dev/null | tr -d '\n' || echo "0")
+                    divs_recent=$(tail -c 1500000000 "$FILE" | grep -v "^#" | tail -50 | cut -d',' -f6 | grep -c "^1" 2>/dev/null | tr -d '\n' || echo "0")
+                    maxtree_recent=$(tail -c 1500000000 "$FILE" | grep -v "^#" | tail -50 | cut -d',' -f4 | grep -c "^10" 2>/dev/null | tr -d '\n' || echo "0")
+
+                    # Estimate data lines from file size (avoids wc -l full scan)
+                    data_lines=$(estimate_line_count "$FILE" "$header_lines")
 
                     # Calculate progress
-                    # Structure: header_lines + warmup + [adaptation_comment] + sampling
                     if [ "$adapted" -eq 1 ]; then
-                        # After adaptation: header + warmup + 1 comment + sampling
-                        sampling_start=$((header_lines + num_warmup + 1))
-                        sampling_lines=$((lines - sampling_start))
+                        sampling_lines=$((data_lines - num_warmup))
+                        [ "$sampling_lines" -lt 0 ] && sampling_lines=0
                         pct=$((sampling_lines * 100 / num_samples))
                         stage="sampling"
                         data_lines=$sampling_lines
                     else
-                        warmup_lines=$((lines - header_lines))
-                        pct=$((warmup_lines * 100 / num_warmup))
+                        pct=$((data_lines * 100 / num_warmup))
                         stage="warmup"
-                        data_lines=$warmup_lines
                     fi
 
                     # Warn if problematic
@@ -415,7 +457,7 @@ case "$COMMAND" in
                         fi
                     fi
 
-                    line_out="Chain $i: $lines lines ($data_lines $stage, $pct%), lp=$lp, step=$stepsize, energy=$energy, divs_recent=$divs_recent, maxtree_recent=$maxtree_recent, adapted=$adapted$warn"
+                    line_out="Chain $i: ~${data_lines} ${stage} (~${pct}%), lp=$lp, step=$stepsize, energy=$energy, divs_recent=$divs_recent, maxtree_recent=$maxtree_recent, adapted=$adapted$warn"
                 else
                     line_out="Chain $i: FILE NOT FOUND"
                 fi
@@ -429,12 +471,13 @@ case "$COMMAND" in
 
     stuck)
         echo "Finding iterations with lp__ < -100000..."
+        echo "Note: Only checks last 200 iterations (use chain deep dive for full history)"
         for i in 1 2 3 4; do
             FILE=$(ls "$OUTPUT_DIR"/sf-ssm-log-space-${RUN_ID}-${i}-*.csv 2>/dev/null | head -1)
             if [ -f "$FILE" ]; then
-                header_lines=$(count_header_lines "$FILE")
                 echo "=== Chain $i ==="
-                awk -F',' -v hdr="$header_lines" 'NR>hdr && $1 < -100000 {print NR-hdr": lp="$1" step="$3" tree="$4" div="$6" energy="$7}' "$FILE" | head -10
+                # Only check recent iterations to avoid full-file scan
+                tail -c 5500000000 "$FILE" | grep -v "^#" | tail -200 | awk -F',' '$1 < -100000 {print NR": lp="$1" step="$3" tree="$4" div="$6" energy="$7}' | head -10
             fi
         done
         ;;
@@ -461,28 +504,30 @@ case "$COMMAND" in
             for i in 1 2 3 4; do
                 FILE=$(ls "$OUTPUT_DIR"/sf-ssm-log-space-${RUN_ID}-${i}-*.csv 2>/dev/null | head -1)
                 if [ -f "$FILE" ]; then
-                    lines=$(wc -l < "$FILE")
                     header_lines=$(count_header_lines "$FILE")
-                    last_line=$(tail -10 "$FILE" | grep -v "^#" | tail -1)
+                    num_warmup=$(read_header_config "$FILE" "num_warmup")
+                    num_warmup=${num_warmup:-300}
+                    num_samples=$(read_header_config "$FILE" "num_samples")
+                    num_samples=${num_samples:-500}
+                    last_line=$(tail -c 60000000 "$FILE" | grep -v "^#" | tail -1)
                     lp=$(echo "$last_line" | cut -d',' -f1)
                     stepsize=$(echo "$last_line" | cut -d',' -f3)
                     energy=$(echo "$last_line" | cut -d',' -f7)
-                    divs_recent=$(tail -50 "$FILE" | cut -d',' -f6 | grep -c "^1" 2>/dev/null || echo "0")
-                    maxtree_recent=$(tail -50 "$FILE" | cut -d',' -f4 | grep -c "^10" 2>/dev/null || echo "0")
-                    adapted=$(grep -c "^# Adaptation terminated" "$FILE" 2>/dev/null || echo "0")
-                    num_warmup=$(grep "num_warmup" "$FILE" | head -1 | grep -oP '\d+' || echo "300")
-                    num_samples=$(grep "num_samples" "$FILE" | head -1 | grep -oP '\d+' || echo "500")
+                    divs_recent=$(tail -c 1500000000 "$FILE" | grep -v "^#" | tail -50 | cut -d',' -f6 | grep -c "^1" 2>/dev/null || echo "0")
+                    maxtree_recent=$(tail -c 1500000000 "$FILE" | grep -v "^#" | tail -50 | cut -d',' -f4 | grep -c "^10" 2>/dev/null || echo "0")
+                    adapted=0
+                    if check_adapted "$FILE" "$header_lines" "$num_warmup"; then adapted=1; fi
+                    data_lines=$(estimate_line_count "$FILE" "$header_lines")
                     if [ "$adapted" -eq 1 ]; then
-                        sampling_start=$((header_lines + num_warmup + 1))
-                        sampling_lines=$((lines - sampling_start))
+                        sampling_lines=$((data_lines - num_warmup))
+                        [ "$sampling_lines" -lt 0 ] && sampling_lines=0
                         pct=$((sampling_lines * 100 / num_samples))
-                        stage="$sampling_lines sampling"
+                        stage="~$sampling_lines sampling"
                     else
-                        warmup_lines=$((lines - header_lines))
-                        pct=$((warmup_lines * 100 / num_warmup))
-                        stage="$warmup_lines warmup"
+                        pct=$((data_lines * 100 / num_warmup))
+                        stage="~$data_lines warmup"
                     fi
-                    echo "Chain $i: $lines lines ($stage, $pct%) lp=$lp step=$stepsize energy=$energy divs_recent=$divs_recent maxtree_recent=$maxtree_recent adapted=$adapted" >> "$LOG"
+                    echo "Chain $i: (~$data_lines data, $stage, ~$pct%) lp=$lp step=$stepsize energy=$energy divs_recent=$divs_recent maxtree_recent=$maxtree_recent adapted=$adapted" >> "$LOG"
                 fi
             done
             echo "Logged at $(date)"
@@ -506,14 +551,15 @@ case "$COMMAND" in
         echo "File: $FILE"
         echo ""
 
-        lines=$(wc -l < "$FILE")
         header_lines=$(count_header_lines "$FILE")
-        adapted=$(grep -c "^# Adaptation terminated" "$FILE" 2>/dev/null | tr -d '\n' || echo "0")
-        adapted=${adapted:-0}
-        num_warmup=$(grep "num_warmup" "$FILE" | head -1 | grep -oP '\d+' || echo "300")
-        num_samples=$(grep "num_samples" "$FILE" | head -1 | grep -oP '\d+' || echo "500")
-        seed=$(grep "^# *seed" "$FILE" | head -1 | grep -oP '\d+' || echo "unknown")
-        init_file=$(grep "^# init = " "$FILE" | head -1 | sed 's/.*= //')
+        num_warmup=$(read_header_config "$FILE" "num_warmup")
+        num_warmup=${num_warmup:-300}
+        num_samples=$(read_header_config "$FILE" "num_samples")
+        num_samples=${num_samples:-500}
+        adapted=0
+        if check_adapted "$FILE" "$header_lines" "$num_warmup"; then adapted=1; fi
+        seed=$(head -c 200000 "$FILE" | grep "^# *seed" | head -1 | grep -oP '\d+' || echo "unknown")
+        init_file=$(head -c 200000 "$FILE" | grep "^# init = " | head -1 | sed 's/.*= //')
 
         echo "Configuration:"
         echo "  Seed: $seed"
@@ -521,48 +567,42 @@ case "$COMMAND" in
         echo "  Init file: $init_file"
         echo ""
 
-        # Progress
+        # Progress (estimated from file size)
+        data_lines=$(estimate_line_count "$FILE" "$header_lines")
         if [ "$adapted" -eq 1 ]; then
-            sampling_start=$((header_lines + num_warmup + 1))
-            sampling_lines=$((lines - sampling_start))
+            sampling_lines=$((data_lines - num_warmup))
+            [ "$sampling_lines" -lt 0 ] && sampling_lines=0
             pct=$((sampling_lines * 100 / num_samples))
-            echo "Progress: $sampling_lines/$num_samples sampling ($pct%)"
+            echo "Progress: ~$sampling_lines/$num_samples sampling (~$pct%)"
         else
-            warmup_lines=$((lines - header_lines))
-            pct=$((warmup_lines * 100 / num_warmup))
-            echo "Progress: $warmup_lines/$num_warmup warmup ($pct%)"
+            pct=$((data_lines * 100 / num_warmup))
+            echo "Progress: ~$data_lines/$num_warmup warmup (~$pct%)"
         fi
         echo ""
 
         # Current state (last 5 iterations)
         echo "Last 5 iterations:"
-        tail -10 "$FILE" | grep -v "^#" | tail -5 | awk -F',' '{printf "  lp=%10.2f step=%.6f tree=%2d div=%d energy=%10.1f\n", $1, $3, $4, $6, $7}'
+        tail -c 150000000 "$FILE" | grep -v "^#" | tail -5 | awk -F',' '{printf "  lp=%10.2f step=%.6f tree=%2d div=%d energy=%10.1f\n", $1, $3, $4, $6, $7}'
         echo ""
 
-        # Divergence summary
-        echo "Divergence summary:"
-        if [ "$adapted" -eq 1 ]; then
-            warmup_divs=$(head -$((header_lines + num_warmup)) "$FILE" | tail -n +$((header_lines + 1)) | cut -d',' -f6 | grep -c "^1" 2>/dev/null | tr -d '\n' || echo "0")
-            sampling_divs=$(tail -n +$((header_lines + num_warmup + 2)) "$FILE" | grep -v "^#" | cut -d',' -f6 | grep -c "^1" 2>/dev/null | tr -d '\n' || echo "0")
-            echo "  Warmup: $warmup_divs divergences"
-            echo "  Sampling: $sampling_divs divergences"
-        else
-            total_divs=$(tail -n +$((header_lines + 1)) "$FILE" | grep -v "^#" | cut -d',' -f6 | grep -c "^1" 2>/dev/null | tr -d '\n' || echo "0")
-            echo "  Total (warmup): $total_divs divergences"
-        fi
-        divs_recent=$(tail -55 "$FILE" | grep -v "^#" | tail -50 | cut -d',' -f6 | grep -c "^1" 2>/dev/null | tr -d '\n' || echo "0")
-        echo "  Recent (last 50): $divs_recent divergences"
+        # Divergence summary (recent only - full counts require full-file scan)
+        echo "Divergence summary (recent):"
+        divs_recent=$(tail -c 1500000000 "$FILE" | grep -v "^#" | tail -50 | cut -d',' -f6 | grep -c "^1" 2>/dev/null | tr -d '\n' || echo "0")
+        echo "  Last 50 iterations: $divs_recent divergences"
+        divs_recent_200=$(tail -c 5500000000 "$FILE" | grep -v "^#" | tail -200 | cut -d',' -f6 | grep -c "^1" 2>/dev/null | tr -d '\n' || echo "0")
+        echo "  Last 200 iterations: $divs_recent_200 divergences"
         echo ""
 
-        # Step size adaptation
-        echo "Step size history (every 50 iters during warmup):"
-        head -$((header_lines + num_warmup + 5)) "$FILE" | awk -F',' -v hdr="$header_lines" \
-            'NR>hdr && (NR-hdr)%50==0 {printf "  iter %3d: step=%.6f\n", NR-hdr, $3}' | head -10
+        # Step size adaptation (warmup data is in the header region - read limited bytes)
+        # For files with ~15MB lines, warmup of 300 iters = ~4.5GB, so we can only show
+        # step sizes from the last N iterations, not the full warmup history
+        echo "Recent step size history (last 200 iters, every 50):"
+        tail -c 5500000000 "$FILE" | grep -v "^#" | tail -200 | awk -F',' '(NR%50)==0 {printf "  recent iter %3d: step=%.6f\n", NR, $3}' | head -10
         echo ""
 
-        # Max treedepth
-        maxtree=$(tail -n +$((header_lines + 1)) "$FILE" | grep -v "^#" | cut -d',' -f4 | grep -c "^10" 2>/dev/null | tr -d '\n' || echo "0")
-        echo "Max treedepth hits: $maxtree"
+        # Max treedepth (recent only)
+        maxtree_recent=$(tail -c 5500000000 "$FILE" | grep -v "^#" | tail -200 | cut -d',' -f4 | grep -c "^10" 2>/dev/null | tr -d '\n' || echo "0")
+        echo "Max treedepth hits (last 200): $maxtree_recent"
         ;;
 
     inits)
