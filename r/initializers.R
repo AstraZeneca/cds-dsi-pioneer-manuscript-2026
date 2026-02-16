@@ -186,7 +186,7 @@ create_tumor_ss_initializer <- function(stan_data) {
       abs(rnorm(1, 0, stan_data$pop_growth_process_sd_sd))
     )
     # Draw from inv_gamma prior (keeps mass away from zero)
-    measure_sd <- invgamma::rinvgamma(1, stan_data$measure_sd_alpha, stan_data$measure_sd_beta)
+    measure_sd_sld <- invgamma::rinvgamma(1, stan_data$measure_sd_sld_alpha, stan_data$measure_sd_sld_beta)
 
     # Hierarchical SDs (new naming convention)
     # Truncate at 0.05 to avoid near-zero inits that cause numerical issues
@@ -212,7 +212,7 @@ create_tumor_ss_initializer <- function(stan_data) {
       pop_log_growth_transition_rate = pop_log_growth_transition_rate,
       patient_log_growth_lag_sd = patient_log_growth_lag_sd,
       pop_process_sd = pop_process_sd,
-      measure_sd = measure_sd
+      measure_sd_sld = measure_sd_sld
     )
 
     if (use_cross_process_corr) init_vals$L_process_corr <- L_process_corr
@@ -317,7 +317,7 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
   scalar_params <- c(
     "tr_loc_pop", "frac_logit_loc_pop",
     "log_pop_tumor_gp_rho", "pop_log_growth_lag",
-    "pop_log_growth_transition_rate", "measure_sd",
+    "pop_log_growth_transition_rate", "measure_sd_sld",
     "init_logit_loc_pop",
     "log_patient_tumor_gp_rho_sd", "tr_sd_patient_intercept",
     "patient_log_growth_lag_sd", "init_sd_patient_intercept",
@@ -424,7 +424,31 @@ create_tumor_ssls_initializer <- function(stan_data) {
       n_enabled_groups_frac_slope <- sum(n_groups_per_level[enable_level_cov_frac == 1])
       n_enabled_groups_init_intercept <- sum(n_groups_per_level[enable_level_intercept_init == 1])
       n_enabled_groups_init_slope <- sum(n_groups_per_level[enable_level_cov_init == 1])
-      n_enabled_groups_oe_slope <- sum(n_groups_per_level[oe_enable_level_cov == 1])
+
+      # Derived flags for 1→2 GPs (which time scales need which GPs)
+      need_12_s_gp <- enable_ms_12 && (ms_time_scale_12 == 1 || ms_time_scale_12 == 2)
+      need_12_t_gp <- enable_ms_12 && (ms_time_scale_12 == 0 || ms_time_scale_12 == 2)
+
+      # Multistate enabled group counts - SEPARATE for each transition (matches Stan logic)
+      # Only count groups if the transition AND hierarchy are both enabled
+      n_enabled_groups_ms_baseline_01 <- if (enable_ms_01) {
+        sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1])
+      } else 0L
+
+      n_enabled_groups_ms_baseline_02 <- if (enable_ms_02) {
+        sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1])
+      } else 0L
+
+      n_enabled_groups_ms_baseline_12_s <- if (need_12_s_gp) {
+        sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1])
+      } else 0L
+
+      n_enabled_groups_ms_baseline_12_t <- if (need_12_t_gp) {
+        sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1])
+      } else 0L
+
+      # Covariate slope enabled groups (shared across transitions)
+      n_enabled_groups_ms_slope <- sum(n_groups_per_level[enable_ms_level_cov == 1])
 
       # Helper to draw truncated normal on actual scale
       rtruncnorm_actual <- function(n, sd, max_dev = 1.5) {
@@ -543,59 +567,141 @@ create_tumor_ssls_initializer <- function(stan_data) {
         tr_logit_phi_pop_process_noise_pop = if (enable_pop_process_noise_tr) array(rnorm(1, mean = 1.4, sd = 0.3)),  # Match prior mean
 
         # Measurement error - draw from inv_gamma prior (keeps mass away from zero)
-        measure_sd = invgamma::rinvgamma(1, measure_sd_alpha, measure_sd_beta),
-        
-        # Other events baseline hazard (population level)
-        log_lambda_gp_pop_intercept = array(rnorm(n_causes, oe_log_lambda_gp_pop_intercept_mean, oe_log_lambda_gp_pop_intercept_sd), dim = n_causes),
-        log_lambda_gp_pop_alpha = array(rep(1.0, n_causes), dim = n_causes),  # Initialize to 1.0 to avoid boundary at zero
-        log_lambda_gp_pop_rho = array(invgamma::rinvgamma(n_causes, oe_log_lambda_gp_pop_rho_alpha, oe_log_lambda_gp_pop_rho_beta), dim = n_causes),
-        # log_lambda_gp_pop_eta is array[n_causes] row_vector[max_all_t]
-        # In R, this becomes a list of n_causes row vectors (each of length max_all_t)
-        log_lambda_gp_pop_eta = replicate(n_causes, rnorm(max_all_t), simplify = FALSE),
-        
-        # Other events baseline hazard (trial level)
-        # Note: trial alpha/rho are shared across causes (not indexed by cause)
-        log_lambda_gp_trial_alpha = if (oe_enable_trial_baseline_hazard) {
-          rep(1.0, n_trials)  # Initialize to 1.0 to avoid boundary at zero
+        measure_sd_sld = invgamma::rinvgamma(1, measure_sd_sld_alpha, measure_sd_sld_beta),
+
+        # =====================================================================
+        # MULTISTATE HAZARD MODEL PARAMETERS
+        # =====================================================================
+        # Replaces other_events module. Supports configurable transitions:
+        #   - 0→1: Progression / PFS event
+        #   - 0→2: Death without progression
+        #   - 1→2: Post-progression death (sojourn _s and clock-forward _t GPs)
+
+        # --- 0→1 Transition (Progression / PFS event) ---
+        ms_log_lambda_gp_01_pop_intercept = if (enable_ms_01) {
+          array(rnorm(1, ms_log_lambda_gp_01_pop_intercept_mean, ms_log_lambda_gp_01_pop_intercept_sd), dim = 1)
         },
-        log_lambda_gp_trial_rho = if (oe_enable_trial_baseline_hazard) {
-          # Use the first cause's hyperparameters since they're shared across causes
-          invgamma::rinvgamma(n_trials, oe_log_lambda_gp_trial_rho_alpha[1], oe_log_lambda_gp_trial_rho_beta[1])
+        ms_log_lambda_gp_01_pop_alpha = if (enable_ms_01) array(1.0, dim = 1),  # Start at 1.0 to avoid boundary
+        ms_log_lambda_gp_01_pop_rho = if (enable_ms_01) {
+          array(invgamma::rinvgamma(1, ms_log_lambda_gp_01_pop_rho_alpha, ms_log_lambda_gp_01_pop_rho_beta), dim = 1)
         },
-        # These ARE indexed by cause
-        log_lambda_gp_trial_intercept_sd = if (oe_enable_trial_baseline_hazard) abs(rnorm(n_causes, sd = oe_log_lambda_gp_trial_intercept_sd_sd)),
-        raw_log_lambda_gp_trial_intercept = if (oe_enable_trial_baseline_hazard) {
-          array(replicate(n_causes, rnorm(n_trials), simplify = FALSE), dim = c(n_causes, n_trials))
+        ms_log_lambda_gp_01_pop_eta = if (enable_ms_01) rnorm(max_all_t),
+        # Level hierarchy for 0→1 (always sized by n_levels)
+        ms_log_lambda_gp_01_level_alpha = rep(1.0, n_levels),
+        ms_log_lambda_gp_01_level_rho = invgamma::rinvgamma(n_levels, ms_log_lambda_gp_01_level_rho_alpha, ms_log_lambda_gp_01_level_rho_beta),
+        ms_log_lambda_gp_01_level_intercept_sd = abs(rnorm(n_levels, sd = ms_log_lambda_gp_01_level_intercept_sd_sd)),
+        ms_log_lambda_gp_01_level_eta = if (enable_ms_01 && n_enabled_groups_ms_baseline_01 > 0) {
+          matrix(rnorm(n_enabled_groups_ms_baseline_01 * max_all_t), nrow = n_enabled_groups_ms_baseline_01, ncol = max_all_t)
         },
-        # log_lambda_gp_trial_eta is array[n_causes] matrix[n_trials, max_all_t]
-        log_lambda_gp_trial_eta = if (oe_enable_trial_baseline_hazard) {
-          replicate(n_causes, matrix(rnorm(n_trials * max_all_t), n_trials, max_all_t), simplify = FALSE)
+        ms_raw_log_lambda_gp_01_level_intercept = if (n_enabled_groups_ms_baseline_01 > 0) {
+          rnorm(n_enabled_groups_ms_baseline_01)
         },
-        
-        # Other events covariate effects (tumor covariates)
-        # Note: tumor coefficients are NOT QR-transformed (unlike oe_covar_coef_qr_pop)
-        oe_tumor_coef_pop = if (n_tumor_covar > 0 && oe_enable_pop_tumor_cov) {
-          array(replicate(n_causes, rnorm(n_tumor_covar, 0, 1)), dim = c(n_causes, n_tumor_covar))
+
+        # --- 0→2 Transition (Death without progression) ---
+        ms_log_lambda_gp_02_pop_intercept = if (enable_ms_02) {
+          array(rnorm(1, ms_log_lambda_gp_02_pop_intercept_mean, ms_log_lambda_gp_02_pop_intercept_sd), dim = 1)
         },
-        # Note: oe_enable_trial_tumor_cov is scaffolded but not yet implemented in Stan
-        # When implemented, add oe_sd_trial_tumor_slope and oe_raw_trial_tumor_slope here
-        
-        # Other events covariate effects (design matrix covariates)
-        oe_covar_coef_qr_pop = if (n_covar > 0 && oe_enable_pop_cov) {
-          array(replicate(n_causes, rnorm(n_covar, 0, 1)), dim = c(n_causes, n_covar))
+        ms_log_lambda_gp_02_pop_alpha = if (enable_ms_02) array(1.0, dim = 1),
+        ms_log_lambda_gp_02_pop_rho = if (enable_ms_02) {
+          array(invgamma::rinvgamma(1, ms_log_lambda_gp_02_pop_rho_alpha, ms_log_lambda_gp_02_pop_rho_beta), dim = 1)
         },
-        # Multi-level random slopes for non-tumor covariates
-        # These are always declared in Stan, so always provide initialization
-        # oe_sd_level_slope: array[n_causes, n_levels] vector[n_covar] -> 3D array
-        oe_sd_level_slope = if (n_covar > 0) {
-          array(abs(rnorm(n_causes * n_levels * n_covar, sd = 0.15)),
-                dim = c(n_causes, n_levels, n_covar))
+        ms_log_lambda_gp_02_pop_eta = if (enable_ms_02) rnorm(max_all_t),
+        # Level hierarchy for 0→2 (conditional on enable_ms_02)
+        ms_log_lambda_gp_02_level_alpha = if (enable_ms_02) rep(1.0, n_levels) else numeric(0),
+        ms_log_lambda_gp_02_level_rho = if (enable_ms_02) invgamma::rinvgamma(n_levels, ms_log_lambda_gp_02_level_rho_alpha, ms_log_lambda_gp_02_level_rho_beta) else numeric(0),
+        ms_log_lambda_gp_02_level_intercept_sd = if (enable_ms_02) abs(rnorm(n_levels, sd = ms_log_lambda_gp_02_level_intercept_sd_sd)) else numeric(0),
+        ms_log_lambda_gp_02_level_eta = if (enable_ms_02 && n_enabled_groups_ms_baseline_02 > 0) {
+          matrix(rnorm(n_enabled_groups_ms_baseline_02 * max_all_t), nrow = n_enabled_groups_ms_baseline_02, ncol = max_all_t)
         },
-        # oe_raw_level_slope: array[n_causes] matrix[n_enabled_groups_oe_slope, n_covar] -> 3D array
-        # Sized by ENABLED groups only
-        oe_raw_level_slope = if (n_covar > 0) {
-          array(rnorm(n_causes * n_enabled_groups_oe_slope * n_covar),
-                dim = c(n_causes, n_enabled_groups_oe_slope, n_covar))
+        ms_raw_log_lambda_gp_02_level_intercept = if (n_enabled_groups_ms_baseline_02 > 0) {
+          rnorm(n_enabled_groups_ms_baseline_02)
+        },
+
+        # --- 1→2 Transition: Sojourn Time GP (semi-Markov or extended) ---
+        ms_log_lambda_gp_12_s_pop_intercept = if (need_12_s_gp) {
+          array(rnorm(1, ms_log_lambda_gp_12_s_pop_intercept_mean, ms_log_lambda_gp_12_s_pop_intercept_sd), dim = 1)
+        },
+        ms_log_lambda_gp_12_s_pop_alpha = if (need_12_s_gp) array(1.0, dim = 1),
+        ms_log_lambda_gp_12_s_pop_rho = if (need_12_s_gp) {
+          array(invgamma::rinvgamma(1, ms_log_lambda_gp_12_s_pop_rho_alpha, ms_log_lambda_gp_12_s_pop_rho_beta), dim = 1)
+        },
+        ms_log_lambda_gp_12_s_pop_eta = if (need_12_s_gp) rnorm(ms_max_sojourn_t),
+        # Level hierarchy for 1→2 sojourn (conditional on need_12_s_gp)
+        ms_log_lambda_gp_12_s_level_alpha = if (need_12_s_gp) rep(1.0, n_levels) else numeric(0),
+        ms_log_lambda_gp_12_s_level_rho = if (need_12_s_gp) invgamma::rinvgamma(n_levels, ms_log_lambda_gp_12_s_level_rho_alpha, ms_log_lambda_gp_12_s_level_rho_beta) else numeric(0),
+        ms_log_lambda_gp_12_s_level_intercept_sd = if (need_12_s_gp) abs(rnorm(n_levels, sd = ms_log_lambda_gp_12_s_level_intercept_sd_sd)) else numeric(0),
+        ms_log_lambda_gp_12_s_level_eta = if (need_12_s_gp && n_enabled_groups_ms_baseline_12_s > 0) {
+          matrix(rnorm(n_enabled_groups_ms_baseline_12_s * ms_max_sojourn_t), nrow = n_enabled_groups_ms_baseline_12_s, ncol = ms_max_sojourn_t)
+        },
+        ms_raw_log_lambda_gp_12_s_level_intercept = if (n_enabled_groups_ms_baseline_12_s > 0) {
+          rnorm(n_enabled_groups_ms_baseline_12_s)
+        },
+
+        # --- 1→2 Transition: Clock-forward Time GP (Markov or extended) ---
+        ms_log_lambda_gp_12_t_pop_intercept = if (need_12_t_gp) {
+          array(rnorm(1, ms_log_lambda_gp_12_t_pop_intercept_mean, ms_log_lambda_gp_12_t_pop_intercept_sd), dim = 1)
+        },
+        ms_log_lambda_gp_12_t_pop_alpha = if (need_12_t_gp) array(1.0, dim = 1),
+        ms_log_lambda_gp_12_t_pop_rho = if (need_12_t_gp) {
+          array(invgamma::rinvgamma(1, ms_log_lambda_gp_12_t_pop_rho_alpha, ms_log_lambda_gp_12_t_pop_rho_beta), dim = 1)
+        },
+        ms_log_lambda_gp_12_t_pop_eta = if (need_12_t_gp) rnorm(max_all_t),
+        # Level hierarchy for 1→2 clock-forward (conditional on need_12_t_gp)
+        ms_log_lambda_gp_12_t_level_alpha = if (need_12_t_gp) rep(1.0, n_levels) else numeric(0),
+        ms_log_lambda_gp_12_t_level_rho = if (need_12_t_gp) invgamma::rinvgamma(n_levels, ms_log_lambda_gp_12_t_level_rho_alpha, ms_log_lambda_gp_12_t_level_rho_beta) else numeric(0),
+        ms_log_lambda_gp_12_t_level_intercept_sd = if (need_12_t_gp) abs(rnorm(n_levels, sd = ms_log_lambda_gp_12_t_level_intercept_sd_sd)) else numeric(0),
+        ms_log_lambda_gp_12_t_level_eta = if (need_12_t_gp && n_enabled_groups_ms_baseline_12_t > 0) {
+          matrix(rnorm(n_enabled_groups_ms_baseline_12_t * max_all_t), nrow = n_enabled_groups_ms_baseline_12_t, ncol = max_all_t)
+        },
+        ms_raw_log_lambda_gp_12_t_level_intercept = if (n_enabled_groups_ms_baseline_12_t > 0) {
+          rnorm(n_enabled_groups_ms_baseline_12_t)
+        },
+
+        # --- Time-varying Covariate Coefficients ---
+        ms_time_varying_coef_01 = if (enable_ms_01 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
+          rnorm(n_time_varying_covar, ms_time_varying_coef_01_mean, ms_time_varying_coef_01_sd)
+        },
+        ms_time_varying_coef_02 = if (enable_ms_02 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
+          rnorm(n_time_varying_covar, ms_time_varying_coef_02_mean, ms_time_varying_coef_02_sd)
+        },
+        ms_time_varying_coef_12 = if (enable_ms_12 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
+          rnorm(n_time_varying_covar, ms_time_varying_coef_12_mean, ms_time_varying_coef_12_sd)
+        },
+
+        # --- Time-invariant Covariate Coefficients (QR space) ---
+        ms_time_invariant_coef_qr_01 = if (enable_ms_01 && enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0) {
+          rnorm(n_time_invariant_covar, ms_time_invariant_coef_01_mean, ms_time_invariant_coef_01_sd)
+        },
+        ms_time_invariant_coef_qr_02 = if (enable_ms_02 && enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0) {
+          rnorm(n_time_invariant_covar, ms_time_invariant_coef_02_mean, ms_time_invariant_coef_02_sd)
+        },
+        ms_time_invariant_coef_qr_12 = if (enable_ms_12 && enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0) {
+          rnorm(n_time_invariant_covar, ms_time_invariant_coef_12_mean, ms_time_invariant_coef_12_sd)
+        },
+
+        # --- Multi-level Random Slope SDs (array[n_levels] vector[n_time_invariant_covar]) ---
+        ms_sd_level_slope_01 = if (enable_ms_01 && n_time_invariant_covar > 0) {
+          lapply(seq_len(n_levels), function(lv) abs(rnorm(n_time_invariant_covar, sd = ms_sd_level_slope_01_sd[[lv]])))
+        },
+        ms_sd_level_slope_02 = if (enable_ms_02 && n_time_invariant_covar > 0) {
+          lapply(seq_len(n_levels), function(lv) abs(rnorm(n_time_invariant_covar, sd = ms_sd_level_slope_02_sd[[lv]])))
+        },
+        ms_sd_level_slope_12 = if (enable_ms_12 && n_time_invariant_covar > 0) {
+          lapply(seq_len(n_levels), function(lv) abs(rnorm(n_time_invariant_covar, sd = ms_sd_level_slope_12_sd[[lv]])))
+        },
+
+        # --- Multi-level Raw Random Slopes (matrix[n_enabled_groups_ms_slope, n_time_invariant_covar]) ---
+        ms_raw_level_slope_01 = if (enable_ms_01 && n_time_invariant_covar > 0) {
+          matrix(rnorm(n_enabled_groups_ms_slope * n_time_invariant_covar, sd = 0.5),
+                 nrow = n_enabled_groups_ms_slope, ncol = n_time_invariant_covar)
+        },
+        ms_raw_level_slope_02 = if (enable_ms_02 && n_time_invariant_covar > 0) {
+          matrix(rnorm(n_enabled_groups_ms_slope * n_time_invariant_covar, sd = 0.5),
+                 nrow = n_enabled_groups_ms_slope, ncol = n_time_invariant_covar)
+        },
+        ms_raw_level_slope_12 = if (enable_ms_12 && n_time_invariant_covar > 0) {
+          matrix(rnorm(n_enabled_groups_ms_slope * n_time_invariant_covar, sd = 0.5),
+                 nrow = n_enabled_groups_ms_slope, ncol = n_time_invariant_covar)
         },
       )
     }) |> compact()

@@ -997,9 +997,9 @@ The model enforces several constraints for identifiability:
 
 ## Document Maintenance
 
-**Version:** 1.3
-**Last Updated:** January 2026
-**Corresponding Stan Model:** `stan/ssls/sf-ssm-log-space.stan`
+**Version:** 1.4
+**Last Updated:** February 2026
+**Corresponding Stan Model:** `stan/sf-ssm-log-space.stan`
 
 **Update Protocol:**
 When the Stan model changes, this document should be updated to reflect:
@@ -1011,6 +1011,7 @@ When the Stan model changes, this document should be updated to reflect:
 
 **Changelog:**
 
+- **v1.4 (February 2026):** Updated Stan code organization - reorganized directory structure, separated tumor data from base structure into `modules/tumor/`, organized state-space infrastructure into `modules/state_space/`, standardized `.stanfunctions` naming convention for function-only files. Model paths updated from `stan/ssls/` to `stan/`. No mathematical changes to model specification.
 - **v1.3 (January 2026):** Corrected section 6.4 (renamed from "Sample-Based vs. Superpopulation Estimates" to "Sample-Based vs. Posterior Predictive Estimates"). The `spop_*` quantities are **not** true superpopulation estimates that integrate over patient-level variation; they are posterior predictive estimates that condition on the same patient parameters but ignore observed outcomes. Clarified that true superpopulation inference would require drawing new patient random effects and potentially new covariates.
 - **v1.2 (January 2026):** Added section 6.4 explaining the difference between sample-based and superpopulation estimates, including mathematical definitions, use cases, and interpretation guidance.
 - **v1.1 (January 2026):** Updated rate formulas to show log-space addition (not multiplication), added 4th tumor covariate (SLD velocity), fixed RECIST thresholds to include nadir tracking and 5mm rule, added missing feature flags for AR(1) patient hierarchies, documented sparse matrix state computation method.

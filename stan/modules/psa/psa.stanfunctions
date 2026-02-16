@@ -1,0 +1,144 @@
+// ============================================================================
+// PSA-SPECIFIC FUNCTIONS
+// ============================================================================
+// These functions are specific to PSA measurements. They convert
+// the general 2-component log-space state (from state_space module) into
+// PSA-specific quantities.
+//
+// Follows the same pattern as modules/tumor/tumor.stanfunctions
+
+/**
+ * Calculate mean log(PSA) from two-component log-space states
+ *
+ * When lambda=1, this is identical to calc_log_sld_mean:
+ *   log(PSA) = log_sum_exp(state[1], state[2]) + log(psa_baseline)
+ *
+ * The two-component state represents:
+ *   Component 1: Decreasing tumor burden (treatment effect)
+ *   Component 2: Growing tumor burden (progression/resistance)
+ *
+ * @param patient_states Matrix of states [n_visits x 2]
+ * @param psa_baseline Baseline PSA measurement (ng/mL)
+ * @return Vector of log(PSA) means at each visit
+ */
+vector calc_log_psa_mean(matrix patient_states, real psa_baseline) {
+  assert_equal(cols(patient_states), 2);
+
+  return to_vector(log_sum_exp(patient_states[, 1], patient_states[, 2])) + log(psa_baseline);
+}
+
+// ============================================================================
+// PCWG3 RESPONSE EVALUATION FUNCTIONS
+// ============================================================================
+// Functions for calculating PCWG3 (Prostate Cancer Working Group 3)
+// response categories from PSA measurements.
+//
+// Categories:
+//   1 = Undetectable (CR equivalent): PSA < threshold
+//   2 = PSA50 (PR equivalent): >= 50% decrease from baseline
+//   3 = Stable (SD equivalent): Neither PSA50 nor PSA-PD
+//   4 = PSA-PD: >= 25% AND >= 2 ng/mL from nadir, confirmed >= 3 weeks later
+
+/**
+ * Calculate PCWG3 PSA response category with confirmation logic
+ *
+ * PCWG3 PSA Progression Criteria:
+ * - Scenario A (after PSA decline): >= 25% AND >= 2 ng/mL rise from nadir, confirmed
+ * - Scenario B (no decline): After 12 weeks, >= 25% AND >= 2 ng/mL rise from baseline, confirmed
+ *
+ * @param psa_trajectory Absolute PSA values (ng/mL) at each visit
+ * @param visit_weeks Week number for each visit (for 12-week rule)
+ * @param pre_nadir Pre-existing nadir from previous visits (0 if none)
+ * @param n_screening Number of screening visits before treatment
+ * @param psa_undetectable_threshold Threshold for undetectable (typically 0.1 ng/mL)
+ * @return Array of PCWG3 categories for post-treatment visits
+ */
+array[] int calculate_psa_category(
+  vector psa_trajectory,
+  array[] int visit_weeks,
+  real pre_nadir,
+  int n_screening,
+  real psa_undetectable_threshold
+) {
+  int n = rows(psa_trajectory);
+  assert_greater_than_or_equal(n, n_screening);
+  int n_treat = n - n_screening;
+  array[n_treat] int psa_status;
+
+  real baseline = psa_trajectory[n_screening];
+  real nadir = pre_nadir <= 0 ? baseline : pre_nadir;
+  int pending_pd_week = -1;
+  int had_decline = 0;  // Track if PSA ever declined below baseline
+
+  int CR = 1; int PSA50 = 2; int STABLE = 3; int PSA_PD = 4;
+
+  for (t in (n_screening + 1):n) {
+    real psa_t = psa_trajectory[t];
+    int week_t = visit_weeks[t];
+    int idx = t - n_screening;
+
+    // Update nadir and check if we've had a decline
+    if (psa_t < nadir) {
+      nadir = psa_t;
+      had_decline = 1;
+    }
+
+    // Check PCWG3 progression criteria
+    int meets_pd_criteria = 0;
+
+    if (had_decline) {
+      // Scenario A: After PSA decline - use nadir as reference
+      meets_pd_criteria = (nadir > 0) &&
+                         ((psa_t - nadir) / nadir >= 0.25) &&
+                         ((psa_t - nadir) >= 2.0);
+    } else {
+      // Scenario B: No decline - use baseline as reference, only after 12 weeks
+      meets_pd_criteria = (week_t > 12) &&
+                         (baseline > 0) &&
+                         ((psa_t - baseline) / baseline >= 0.25) &&
+                         ((psa_t - baseline) >= 2.0);
+    }
+
+    // Handle confirmation requirement (>= 3 weeks between measurements)
+    if (meets_pd_criteria) {
+      if (pending_pd_week > 0 && (week_t - pending_pd_week) >= 3) {
+        // Confirmed progression
+        psa_status[idx] = PSA_PD;
+      } else {
+        if (pending_pd_week < 0) {
+          pending_pd_week = week_t;
+        }
+        // Not yet confirmed - assign based on other criteria
+        if (psa_t < psa_undetectable_threshold) {
+          psa_status[idx] = CR;
+        } else if (baseline > 0 && (baseline - psa_t) / baseline >= 0.5) {
+          psa_status[idx] = PSA50;
+        } else {
+          psa_status[idx] = STABLE;
+        }
+      }
+    } else {
+      pending_pd_week = -1;  // Reset confirmation window
+      if (psa_t < psa_undetectable_threshold) {
+        psa_status[idx] = CR;
+      } else if (baseline > 0 && (baseline - psa_t) / baseline >= 0.5) {
+        psa_status[idx] = PSA50;
+      } else {
+        psa_status[idx] = STABLE;
+      }
+    }
+  }
+  return psa_status;
+}
+
+/**
+ * Simplified overload without pre-existing nadir
+ */
+array[] int calculate_psa_category(
+  vector psa_trajectory,
+  array[] int visit_weeks,
+  int n_screening,
+  real psa_undetectable_threshold
+) {
+  return calculate_psa_category(psa_trajectory, visit_weeks, 0, n_screening, psa_undetectable_threshold);
+}
