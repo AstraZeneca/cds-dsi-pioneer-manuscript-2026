@@ -199,17 +199,6 @@ profile("gen_quant") {
   );
   
   // Calculate patient-level endpoints for cutoff-observed patients (including forecasts)
-  // Empty matrices for disabled multistate transitions (LFO uses old other_events module)
-  matrix[0, 0] lfo_empty_ms_02;
-  matrix[0, 0] lfo_empty_ms_12_s;
-  matrix[0, 0] lfo_empty_ms_12_t;
-  // Dummy arrays for multistate data (not used when enable_ms_02=0 and enable_ms_12=0)
-  array[n_cutoff_observed_patients] int lfo_dummy_ms_final_state = zeros_int_array(n_cutoff_observed_patients);
-  array[n_cutoff_observed_patients] int lfo_dummy_ms_time_02 = zeros_int_array(n_cutoff_observed_patients);
-  array[n_cutoff_observed_patients] int lfo_dummy_ms_censored_02 = rep_array(1, n_cutoff_observed_patients);
-  array[n_cutoff_observed_patients] int lfo_dummy_ms_censored_12 = rep_array(1, n_cutoff_observed_patients);
-  array[n_cutoff_observed_patients] int lfo_dummy_ms_time_12 = zeros_int_array(n_cutoff_observed_patients);
-
   (sample_target_pfs, sample_target_right_censored,
    spop_target_pfs, spop_target_right_censored,
    spop_target_obs_cens_pfs, spop_target_obs_cens_right_censored,
@@ -226,24 +215,24 @@ profile("gen_quant") {
       cutoff_recist,
       cutoff_rep_recist,
       cutoff_forecast_recist,
-      log_cond_prob_surv[1, cutoff_observed_patients],  // Subset to cutoff-observed patients (matrix)
-      0,  // enable_ms_02: disabled in LFO
-      0,  // enable_ms_12: disabled in LFO
-      0,  // ms_time_scale_12: not applicable
-      lfo_empty_ms_02,
-      lfo_empty_ms_12_s,
-      lfo_empty_ms_12_t,
+      ms_log_cond_surv_01[cutoff_observed_patients],
+      enable_ms_02,
+      enable_ms_12,
+      ms_time_scale_12,
+      enable_ms_02 ? ms_log_cond_surv_02[cutoff_observed_patients] : ms_log_cond_surv_02,
+      need_12_s_gp ? ms_log_cond_surv_12_s[cutoff_observed_patients] : ms_log_cond_surv_12_s,
+      need_12_t_gp ? ms_log_cond_surv_12_t[cutoff_observed_patients] : ms_log_cond_surv_12_t,
       cutoff_pfs,
       cutoff_interval_censored,
       cutoff_right_censored,
       cutoff_target_pfs,
       cutoff_target_right_censored,
-      cutoff_other_events_right_censored,
-      lfo_dummy_ms_final_state,
-      lfo_dummy_ms_time_02,
-      lfo_dummy_ms_censored_02,
-      lfo_dummy_ms_censored_12,
-      lfo_dummy_ms_time_12,
+      cutoff_ms_censored_01,
+      ms_final_state[cutoff_observed_patients],
+      ms_time_02[cutoff_observed_patients],
+      ms_censored_02[cutoff_observed_patients],
+      ms_censored_12[cutoff_observed_patients],
+      ms_time_12[cutoff_observed_patients],
       cutoff_patient_visit_pos,
       cutoff_forecast_visits_pos,
       cutoff_patient_last_obs_visit,

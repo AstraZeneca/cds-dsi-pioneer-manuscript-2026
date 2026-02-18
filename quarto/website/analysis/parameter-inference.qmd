@@ -107,8 +107,16 @@ The model includes covariate effects on multiple model components. These coeffic
 #| fig-width: 10
 #| fig-height: 6
 
-tar_read(all_tumor_ssls_coef_ctdna_jan26) |>
-  filter(!fct_match(.variable, "oe_tumor_coef_pop")) |>
+coef_data <- tar_read(all_tumor_ssls_coef_ctdna_jan26)
+
+# Filter out multistate coefficients (variable name depends on model version)
+ms_tv_names <- c("ms_time_varying_coef_01", "oe_tumor_coef_pop")
+ms_ti_names <- c("ms_time_invariant_coef_qr_01", "oe_covar_coef_qr_pop")
+all_ms_names <- c(ms_tv_names, ms_ti_names)
+present_ms_names <- intersect(all_ms_names, levels(coef_data$.variable))
+
+coef_data |>
+  filter(!.variable %in% present_ms_names) |>
   left_join(all_stan_data |> pluck("covar_design_matrix") |> colnames() |> enframe(), by = c("n" = "name")) |>
   plot_ssls_coef(value, color = fit_type) +
   scale_color_discrete("", type = AZ_palette, label = str_to_title) +
@@ -117,21 +125,23 @@ tar_read(all_tumor_ssls_coef_ctdna_jan26) |>
              scales = "free_x",
              labeller = labeller(.variable = c("init_coef_qr_pop" = "Proportion of responsive tumors",
                                                "frac_coef_qr_pop" = "Proportion of rates total that is decreasing",
-                                               "oe_covar_coef_qr_pop" = "Residual events hazard rate"))) +
+                                               "oe_covar_coef_qr_pop" = "Multistate 0→1 hazard rate",
+                                               "ms_time_invariant_coef_qr_01" = "Multistate 0→1 hazard rate"))) +
   theme(legend.position = "bottom")
 ```
 
-## Tumor Effects on Residual Events {#sec-tumor-effects}
+## Tumor Effects on Multistate Events {#sec-tumor-effects}
 
-The residual events model (non-target progression and death) includes effects of tumor state variables.
+The multistate model (0→1 transition: non-target progression and death) includes effects of tumor state variables.
 
 ```{r}
 #| label: fig-pop-tumor-coef
-#| fig-cap: Prior predicted and posterior linear models for tumor size effects on the residual events model.
+#| fig-cap: Prior predicted and posterior linear models for tumor size effects on the multistate 0→1 transition model.
 #| fig-height: 3
 
 tar_read(all_tumor_ssls_coef_ctdna_jan26) |>
-  filter(fct_match(.variable, "oe_tumor_coef_pop")) |>
+  filter(.variable %in% intersect(c("ms_time_varying_coef_01", "oe_tumor_coef_pop"),
+                                   levels(.variable))) |>
   mutate(n = factor(n, levels = 1:3, labels = c("SLD", "Decrease Rate", "Growth Rate"))) |>
   plot_ssls_coef(color = fit_type) +
   scale_y_discrete() +

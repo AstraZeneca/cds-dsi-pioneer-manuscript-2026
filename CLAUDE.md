@@ -240,7 +240,7 @@ Stan code uses modular `#include` architecture in `stan/modules/`:
 - **tr/** - Tumor regression (decrease) dynamics
 - **frac/** - Growth fraction dynamics
 - **init/** - Initial state modeling
-- **other_events/** - Non-target progression and death events
+- **multistate/** - Multistate hazard model (PFS events, death, post-progression)
 - **measurement/** - Observation model (measurement error)
 
 Each module follows a 7-file pattern:
@@ -265,7 +265,7 @@ Parameters follow a population → trial → patient hierarchy:
 - `tr_*` - Tumor regression
 - `frac_*` - Growth fraction
 - `init_*` - Initial state
-- `oe_*` - Other events
+- `ms_*` - Multistate hazard
 
 ### Key Stan Models
 - `stan/sf-ssm-log-space.stan` - Main state-space longitudinal survival model
