@@ -3,7 +3,35 @@
 # Dependencies: Requires r/multi_level_hierarchy.R to be loaded
 # (sourced by init_project() in .Rprofile)
 
-get_tumor_priors <- function(stan_data, coef_elicited_priors) {
+#' Transform elicited priors from original covariate space to QR space
+#'
+#' When covariates are correlated, the QR decomposition's R matrix introduces
+#' rotation.  Elicited priors encode directional knowledge about individual
+#' covariate effects in the **original** (standardized) space.  This function
+#' maps those priors into QR space so the Stan model sees correctly rotated
+#' prior hyperparameters.
+#'
+#' @param coef_mean Numeric vector of prior means in original space.
+#' @param coef_sd   Numeric vector of prior SDs in original space.
+#' @param design_matrix The covariate design matrix (n_patients x n_covar).
+#' @return A list with `coef_mean_qr`, `coef_sd_qr`, and `R_stan`.
+transform_priors_to_qr_space <- function(coef_mean, coef_sd, design_matrix) {
+  n <- nrow(design_matrix)
+  R_stan <- qr.R(qr(design_matrix)) / sqrt(n - 1)
+
+  mu_qr <- as.vector(R_stan %*% coef_mean)
+  sigma_sq_qr <- diag(R_stan %*% diag(coef_sd^2) %*% t(R_stan))
+  sd_qr <- sqrt(sigma_sq_qr)
+
+  list(
+    coef_mean_qr = mu_qr,
+    coef_sd_qr = sd_qr,
+    R_stan = R_stan
+  )
+}
+
+get_tumor_priors <- function(stan_data, coef_elicited_priors,
+                             covar_design_matrix = NULL) {
   # Directly specified priors (simplified)
   # Choose log-total rate prior similar to historical center; adjust if needed.
   # Updated: shifted mean from -1.0 to -2.0 to reduce prior-posterior conflict
@@ -24,6 +52,31 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
   # Multistate covariate dimensions (default 0 if not specified)
   n_time_varying_covar <- stan_data$n_time_varying_covar %||% 0L
   n_time_invariant_covar <- stan_data$n_time_invariant_covar %||% n_covar
+
+  # Transform elicited priors to QR space (frac and init modules)
+  # TR and MS use isotropic N(0,1) priors which are rotation-invariant
+  if (n_covar > 0 && !is.null(covar_design_matrix)) {
+    qr_frac <- transform_priors_to_qr_space(
+      coef_elicited_priors$coef_mean,
+      coef_elicited_priors$coef_sd,
+      covar_design_matrix
+    )
+    qr_init <- transform_priors_to_qr_space(
+      coef_elicited_priors$coef_mean,
+      coef_elicited_priors$coef_sd,
+      covar_design_matrix
+    )
+  } else {
+    # Fallback: use original-space priors directly (no design matrix available)
+    qr_frac <- list(
+      coef_mean_qr = coef_elicited_priors$coef_mean,
+      coef_sd_qr = coef_elicited_priors$coef_sd
+    )
+    qr_init <- list(
+      coef_mean_qr = coef_elicited_priors$coef_mean,
+      coef_sd_qr = coef_elicited_priors$coef_sd
+    )
+  }
 
   lst(
     # GP hyperparameters
@@ -75,8 +128,8 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     frac_logit_loc_pop_mean = frac_logit_loc_pop_mean,
     frac_logit_loc_pop_sd = frac_logit_loc_pop_sd,
     frac_sd_level_intercept_sd = c(0.25, 0.25),
-    frac_coef_qr_pop_mean = as.array(coef_elicited_priors$coef_mean),
-    frac_coef_qr_pop_sd = as.array(coef_elicited_priors$coef_sd),
+    frac_coef_qr_pop_mean = as.array(qr_frac$coef_mean_qr),
+    frac_coef_qr_pop_sd = as.array(qr_frac$coef_sd_qr),
     frac_sd_level_slope_sd = list(
       trial = rep(0.05, n_covar),
       patient = rep(0.03, n_covar)
@@ -86,8 +139,8 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     init_logit_loc_pop_mean = init_logit_loc_pop_mean,
     init_logit_loc_pop_sd = init_logit_loc_pop_sd,
     init_sd_level_intercept_sd = c(0.6, 0.5),
-    init_coef_qr_pop_mean = as.array(coef_elicited_priors$coef_mean),
-    init_coef_qr_pop_sd = as.array(coef_elicited_priors$coef_sd),
+    init_coef_qr_pop_mean = as.array(qr_init$coef_mean_qr),
+    init_coef_qr_pop_sd = as.array(qr_init$coef_sd_qr),
     init_sd_level_slope_sd = list(
       trial = rep(0.10, n_covar),
       patient = rep(0.08, n_covar)
