@@ -1471,8 +1471,8 @@ tuple(
 
     // --- Unconditional (spop) OS ---
     {
-      int spop_time_01 = spop_ms_pfs[i];  // Already computed above (week of detection, 1-indexed)
-      int spop_cens_01 = spop_ms_right_censored[i];
+      int spop_time_01 = spop_pfs[i];  // Combined PFS: first progression by any mechanism (target or multistate)
+      int spop_cens_01 = spop_right_censored[i];
 
       int spop_time_02 = max_all_t + 1;
       int spop_cens_02 = 1;
@@ -1549,8 +1549,8 @@ tuple(
 
     // --- Conditional (sample) OS ---
     {
-      int sample_time_01 = sample_ms_pfs[i];
-      int sample_cens_01 = sample_ms_right_censored[i];
+      int sample_time_01 = sample_pfs[i];  // Combined PFS: first progression by any mechanism (target or multistate)
+      int sample_cens_01 = sample_right_censored[i];
 
       int sample_time_02 = max_all_t + 1;
       int sample_cens_02 = 1;
