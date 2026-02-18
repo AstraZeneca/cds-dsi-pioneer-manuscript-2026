@@ -330,7 +330,7 @@ sclc/
 │           ├── tr/                   # Tumor regression
 │           ├── frac/                 # Growth fraction
 │           ├── init/                 # Initial state
-│           ├── other_events/         # Non-target events
+│           ├── multistate/           # Multistate hazard model
 │           └── measurement/          # Observation model
 ├── r/
 │   ├── sclc/                     # Project-specific R code
@@ -369,7 +369,7 @@ Each module follows a **7-file pattern**:
 | `tr_*` | Tumor regression (decrease rate) |
 | `frac_*` | Growth fraction |
 | `init_*` | Initial state |
-| `oe_*` | Other events |
+| `ms_*` | Multistate hazard |
 
 **Hierarchical Suffixes:**
 

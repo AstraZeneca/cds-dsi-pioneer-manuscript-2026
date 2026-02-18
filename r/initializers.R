@@ -572,7 +572,7 @@ create_tumor_ssls_initializer <- function(stan_data) {
         # =====================================================================
         # MULTISTATE HAZARD MODEL PARAMETERS
         # =====================================================================
-        # Replaces other_events module. Supports configurable transitions:
+        # Supports configurable transitions:
         #   - 0→1: Progression / PFS event
         #   - 0→2: Death without progression
         #   - 1→2: Post-progression death (sojourn _s and clock-forward _t GPs)

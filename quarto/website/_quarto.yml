@@ -59,6 +59,10 @@ website:
             href: documentation/ar1-process-noise.qmd
           - text: Leave-Future-Out Cross-Validation
             href: documentation/leave-future-out-cross-validation.qmd
+          - text: "---"
+          - text: Extensions
+          - text: PSA Adaptation Plan
+            href: documentation/psa-adaptation.qmd
     right:
       - icon: file-earmark-slides
         href: https://rstudio-connect.seml.scp.astrazeneca.net/content/084c017e-8ec4-4efd-ae02-e4a86c9dc51f/
@@ -81,6 +85,9 @@ website:
             - documentation/architecture.qmd
             - documentation/ar1-process-noise.qmd
             - documentation/leave-future-out-cross-validation.qmd
+        - section: "Extensions"
+          contents:
+            - documentation/psa-adaptation.qmd
     - title: "Data"
       style: docked
       contents:

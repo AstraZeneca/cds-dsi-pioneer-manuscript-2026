@@ -375,11 +375,12 @@ Each model variant controls Stan model behavior through feature flags:
 ```r
 default_stan_data_settings = lst(
   fit_tumor_data = TRUE,
-  fit_other_events_data = other_events,
+  fit_multistate_data = other_events,
 
-  # Other events module
-  oe_enable_pop_cov = other_events,
-  oe_enable_pop_tumor_cov = other_events,
+  # Multistate module
+  enable_ms_01 = other_events,
+  enable_ms_02 = other_events,
+  enable_ms_12 = other_events,
 
   # Tumor regression module
   enable_trial_intercept_tr = trial_level,
@@ -666,7 +667,7 @@ tumor_ssls_draws_sld_recist <- select_draws(
 ```r
 tumor_ssls_draws_endpoints <- select_draws(
   tumor_ssls_res,
-  matches("(cond_)?(spop|sample)(_target|_other_events)?_(((quant_)?pfs)|km_est|right_censored)"),
+  matches("(cond_)?(spop|sample)(_target|_ms)?_(((quant_)?pfs)|km_est|right_censored)"),
   matches("(cond_)?(spop|sample)_target_(((un)?confirmed_response)|orr|pfs_n)"),
   recist_confusion_matrix
 )
