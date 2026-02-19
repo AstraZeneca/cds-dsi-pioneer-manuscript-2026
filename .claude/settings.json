@@ -19,6 +19,7 @@
     }
   },
   "enabledPlugins": {
-    "bayesian-toolkit@pioneer-claude-marketplace": true
+    "bayesian-toolkit@pioneer-claude-marketplace": true,
+    "worktree-manager@pioneer-claude-marketplace": true
   }
 }
