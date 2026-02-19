@@ -59,6 +59,8 @@ website:
             href: documentation/ar1-process-noise.qmd
           - text: Leave-Future-Out Cross-Validation
             href: documentation/leave-future-out-cross-validation.qmd
+          - text: Time Index Conventions
+            href: documentation/index-conventions.qmd
           - text: "---"
           - text: Extensions
           - text: PSA Adaptation Plan
@@ -85,6 +87,7 @@ website:
             - documentation/architecture.qmd
             - documentation/ar1-process-noise.qmd
             - documentation/leave-future-out-cross-validation.qmd
+            - documentation/index-conventions.qmd
         - section: "Extensions"
           contents:
             - documentation/psa-adaptation.qmd

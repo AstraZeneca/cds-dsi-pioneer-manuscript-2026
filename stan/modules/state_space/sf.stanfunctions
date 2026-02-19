@@ -1508,7 +1508,7 @@ tuple(
             }
             int t12_raw; int c12_raw;
             (t12_raw, c12_raw) = survival_time_rng(combined_log_cond_surv_12);
-            spop_os[i] = spop_time_01 + t12_raw;
+            spop_os[i] = spop_time_01 + t12_raw + 1;  // +1: t12_raw is 0-indexed
             spop_os_censored[i] = c12_raw;
           } else {
             // No room to simulate post-progression death
@@ -1519,12 +1519,12 @@ tuple(
           // Semi-Markov: sojourn time only
           int t12_raw; int c12_raw;
           (t12_raw, c12_raw) = survival_time_rng(ms_log_cond_surv_12_s[i]);
-          spop_os[i] = spop_time_01 + t12_raw;
+          spop_os[i] = spop_time_01 + t12_raw + 1;  // +1: t12_raw is 0-indexed
           spop_os_censored[i] = c12_raw;
         } else {
           // Markov: clock-forward time only
           int t12_raw; int c12_raw;
-          (t12_raw, c12_raw) = survival_time_rng(ms_log_cond_surv_12_t[i], spop_time_01 - 1, 1, 0);
+          (t12_raw, c12_raw) = survival_time_rng(ms_log_cond_surv_12_t[i], spop_time_01, 1, 0);
           spop_os[i] = t12_raw + 1;
           spop_os_censored[i] = c12_raw;
         }
@@ -1557,8 +1557,8 @@ tuple(
       if (enable_ms_02) {
         // Use observed 0→2 data when available
         if (!ms_censored_02[i]) {
-          // Death without progression was observed
-          sample_time_02 = ms_time_02[i] + 1;
+          // Death without progression was observed (death_week is exact, 1-indexed)
+          sample_time_02 = ms_time_02[i];
           sample_cens_02 = 0;
         } else {
           // Censored for 0→2: forecast from observed time
@@ -1579,12 +1579,12 @@ tuple(
       } else if (sample_progressed_first && enable_ms_12) {
         // Check if post-progression death was observed
         if (!ms_censored_12[i]) {
-          // Use observed post-progression death time
-          sample_os[i] = sample_time_01 + ms_time_12[i];
+          // Use exact observed death time: pfs + ms_time_12 = death_week (exact, no +1)
+          sample_os[i] = pfs[i] + ms_time_12[i];
           sample_os_censored[i] = 0;
         } else {
           // Forecast post-progression death
-          int t_start = sample_time_01;
+          int t_start = pfs[i];  // Must match likelihood: GP indexed from pfs, not detection week
           int max_s = cols(ms_log_cond_surv_12_s);
           int max_t_12 = cols(ms_log_cond_surv_12_t);
 
@@ -1598,20 +1598,20 @@ tuple(
               }
               int t12_raw; int c12_raw;
               (t12_raw, c12_raw) = survival_time_rng(combined_log_cond_surv_12);
-              sample_os[i] = sample_time_01 + t12_raw;
+              sample_os[i] = pfs[i] + t12_raw + 1;  // +1: t12_raw is 0-indexed
               sample_os_censored[i] = c12_raw;
             } else {
-              sample_os[i] = sample_time_01;
+              sample_os[i] = pfs[i];  // Censored at progression time
               sample_os_censored[i] = 1;
             }
           } else if (ms_time_scale_12 == 1) {
             int t12_raw; int c12_raw;
             (t12_raw, c12_raw) = survival_time_rng(ms_log_cond_surv_12_s[i]);
-            sample_os[i] = sample_time_01 + t12_raw;
+            sample_os[i] = pfs[i] + t12_raw + 1;  // +1: t12_raw is 0-indexed
             sample_os_censored[i] = c12_raw;
           } else {
             int t12_raw; int c12_raw;
-            (t12_raw, c12_raw) = survival_time_rng(ms_log_cond_surv_12_t[i], sample_time_01 - 1, 1, 0);
+            (t12_raw, c12_raw) = survival_time_rng(ms_log_cond_surv_12_t[i], pfs[i], 1, 0);
             sample_os[i] = t12_raw + 1;
             sample_os_censored[i] = c12_raw;
           }
