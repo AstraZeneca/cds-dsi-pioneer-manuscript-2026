@@ -323,6 +323,44 @@ Analysis results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<ru
 - Use lowercase "sclc" only for code identifiers (variable names, trial codes, file paths)
 - Example: Write "SCLC-01 trial" in figure captions, but `filter(trial == "sclc")` in R code
 
+### Git Worktree Workflow
+When working with multiple git worktrees, follow this pattern to avoid duplicate commits:
+
+1. **Make changes in your current worktree** - Don't `cd` to other worktrees to make the same changes
+2. **Commit locally** - Commit your work in the worktree where you made the changes
+3. **Merge from the target worktree** - Switch to the other worktree and merge or rebase
+
+**Example:**
+```bash
+# In worktree A (/mnt/code/worktrees/code-feature-x): make changes and commit
+git add .claude/settings.json
+git commit -m "Update plugin configuration"
+
+# In worktree B (/mnt/code on main branch): merge the changes
+cd /mnt/code
+git merge feature-x
+git push origin main
+```
+
+**Why this pattern?**
+- Avoids duplicate commits (same change, different SHAs)
+- Keeps cleaner git history
+- More efficient than manually replicating changes across worktrees
+- Leverages git's merge/rebase capabilities
+
+**Common mistake:**
+```bash
+# ❌ DON'T DO THIS:
+# Making the same change in multiple worktrees separately
+cd /mnt/code && edit file && git commit
+cd /mnt/code/worktrees/code-feature-x && edit file && git commit  # Duplicate!
+
+# ✓ DO THIS INSTEAD:
+# Make change once, then merge
+cd /mnt/code/worktrees/code-feature-x && edit file && git commit
+cd /mnt/code && git merge feature-x
+```
+
 ### Adding Module Parameters
 1. Add feature flag in `modules/<module>/flags.stan`
 2. Add hyperparameters in `modules/<module>/hyperparams.stan`
