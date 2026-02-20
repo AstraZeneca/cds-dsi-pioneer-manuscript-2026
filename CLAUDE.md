@@ -68,131 +68,16 @@ quarto preview quarto/website
 
 ### Publishing to RStudio Connect
 
-**Server URL**: `https://rstudio-connect.seml.scp.astrazeneca.net/connect/`
-**Account**: `kmjq089`
+See `docs/PUBLISHING.md` for full publishing instructions (API keys, rsconnect setup, troubleshooting).
 
-**IMPORTANT**: Always use the R `rsconnect` package for publishing. The `quarto publish connect` CLI command does not work reliably in non-interactive/remote environments because it requires browser-based SSO authentication.
-
-#### Step-by-Step Publishing Instructions
-
-**IMPORTANT**: Always render the site locally first to ensure everything works. Run from the project root:
+**Quick reference:**
 ```bash
-# From /mnt/code (project root)
+# Render first (always from project root)
 quarto render quarto/website
+
+# Deploy via R
+Rscript -e 'rsconnect::deploySite(siteDir = "quarto/website", server = "az-connect", account = "kmjq089")'
 ```
-
-#### Method 1: Using R rsconnect (Recommended)
-
-This is the most reliable method. Follow these steps:
-
-**Step 1: Get your API key**
-1. Go to `https://rstudio-connect.seml.scp.astrazeneca.net/connect/` in your browser
-2. Sign in with SSO
-3. Click your name (top right) → "API Keys"
-4. Click "New API Key" and copy it
-
-**Step 2: Configure credentials (one-time setup)**
-```r
-library(rsconnect)
-
-# Add the server
-rsconnect::addConnectServer(
-  url = "https://rstudio-connect.seml.scp.astrazeneca.net",
-  name = "az-connect"
-)
-
-# Add your API key (paste your actual key here)
-rsconnect::connectApiUser(
-  account = "kmjq089",
-  server = "az-connect",
-  apiKey = "YOUR_API_KEY_HERE"
-)
-```
-
-This stores credentials in `~/.rsconnect/` (outside the git repo).
-
-**Step 3: Deploy the website**
-
-**IMPORTANT**: Always run from the project root directory (where renv is configured), not from inside the website directory.
-
-```r
-# From /mnt/code directory
-library(rsconnect)
-rsconnect::deploySite(
-  siteDir = "quarto/website",
-  server = "az-connect",
-  account = "kmjq089"
-)
-```
-
-**Step 4: Find your published site**
-After deployment completes, look for the URL in the output or go to:
-`https://rstudio-connect.seml.scp.astrazeneca.net/connect/#/content/listing?q=owner:kmjq089`
-
-#### Method 2: Using Quarto CLI
-
-This requires browser authentication (SSO) and may not work in remote CLI environments.
-
-```bash
-# From /mnt/code (project root)
-quarto publish connect quarto/website --server https://rstudio-connect.seml.scp.astrazeneca.net/connect/
-```
-
-This will open your browser for SSO authentication.
-
-#### Updating an Existing Deployment
-
-Once you've published the first time, subsequent deployments are simple:
-
-```r
-# From /mnt/code directory
-library(rsconnect)
-rsconnect::deploySite(
-  siteDir = "quarto/website",
-  server = "az-connect",
-  account = "kmjq089"
-)
-```
-
-Or from bash:
-```bash
-# From /mnt/code (project root)
-quarto publish connect quarto/website
-```
-
-#### Troubleshooting
-
-- **API key expired**: Generate a new one and re-run `rsconnect::connectApiUser()`
-- **Publishing fails**: Make sure `quarto render quarto/website` (from project root) completes successfully first
-- **Missing plots**: Delete `_freeze/` cache and re-render from project root
-- **IMPORTANT**: Always run quarto commands from `/mnt/code` (project root), not from inside `quarto/website/`
-- **Git tracking warnings**: Confirm `rsconnect/` and `_publish.yml` are in `.gitignore`
-- **Can't find account/server**: Make sure you're using the correct server name (`az-connect`). Run `rsconnect::accounts()` to check configured accounts.
-- **Package not found errors**: Always run deployment from `/mnt/code` (project root) where renv is configured
-
-**SECURITY**: API keys should NEVER be committed to git. The `rsconnect/` directory and `_publish.yml` are already in `.gitignore`.
-
-#### Publishing Presentations
-
-For Quarto revealjs presentations (e.g., `quarto/presentations/pioneer-gng/`), use `rsconnect::deployDoc()`:
-
-```r
-library(rsconnect)
-
-# First render the presentation
-# quarto render quarto/presentations/pioneer-gng/pioneer-gng.qmd
-
-# Then deploy the rendered HTML
-rsconnect::deployDoc(
-  doc = "quarto/presentations/pioneer-gng/pioneer-gng.html",
-  server = "az-connect",
-  account = "kmjq089",
-  appName = "pioneer-gng-presentation"  # Choose a unique name
-)
-```
-
-**Published presentations:**
-- PIONEER Go/No-Go: https://rstudio-connect.seml.scp.astrazeneca.net/content/71d3bcc6-c677-485b-b8fc-562b0f580c9a/
 
 ### Key Configuration Files
 - `_quarto.yml` - Site configuration, navigation, theme settings
@@ -202,27 +87,7 @@ rsconnect::deployDoc(
 - `images/` - PIONEER helmet logo and favicon
 
 ### Theme and Styling
-The site uses **AZ corporate colors** defined in `az-theme.scss`:
-- Primary (navy): `#003865`
-- Gold: `#F0AB00`
-- Turquoise: `#68D2DF`
-- Plum: `#830051`
-- Pink: `#D0006F`
-- Platinum: `#9DB0AC`
-
-Home page features a 2/3 text + 1/3 image layout with the PIONEER helmet logo. Favicon is a white "P" on navy circle background.
-
-### Site Structure
-```
-├── index.qmd                           # Home page
-├── documentation/
-│   ├── onboarding-tutorial.qmd         # Getting started guide
-│   └── model-specification.qmd         # Full model specification
-└── analysis/
-    ├── descriptive-statistics.qmd      # Data exploration
-    ├── model-validation.qmd            # Posterior checks, LFO results
-    └── outcome-predictions.qmd         # PFS predictions
-```
+The site uses **AZ corporate colors** defined in `az-theme.scss` (navy `#003865`, gold `#F0AB00`, turquoise `#68D2DF`, plum `#830051`, pink `#D0006F`, platinum `#9DB0AC`).
 
 ### Rebuilding After Changes
 If you update plot functions in `r/plot_functions.R`, you may need to clear the freeze cache:
@@ -322,6 +187,11 @@ Analysis results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<ru
 - **Always use "SCLC-01"** when referring to the trial in user-facing text (documentation, plots, presentations)
 - Use lowercase "sclc" only for code identifiers (variable names, trial codes, file paths)
 - Example: Write "SCLC-01 trial" in figure captions, but `filter(trial == "sclc")` in R code
+- **Model specification is the blueprint**: `quarto/website/documentation/model-specification.qmd` is the authoritative specification for everything in the Stan model. Code and documentation must always match:
+  - When changing Stan code, update the model specification to reflect the change
+  - When the specification defines behavior (e.g., index conventions, endpoint formulas, routing logic), the code must not violate those definitions without updating the spec first
+  - If a proposed code change contradicts the specification, flag the discrepancy before implementing
+  - Treat the specification as a contract: it documents what the model *should* do, not just what it *happens* to do
 
 ### Git Worktree Workflow
 When working with multiple git worktrees, follow this pattern to avoid duplicate commits:
@@ -442,81 +312,7 @@ This will catch most issues automatically before reviewers see your PR.
 
 ## GitHub Project Management
 
-Issues across all PIONEER repos are tracked in the **PIONEER 2026** GitHub Project.
-
-### Project IDs (reference)
-- **Project number**: 56
-- **Project node ID**: `PVT_kwDOCLUTRM4A7VlR`
-- **Owner**: `azu-oncology-rd`
-
-### Field IDs
-| Field  | Field ID | Options |
-|--------|----------|---------|
-| Status | `PVTSSF_lADOCLUTRM4A7VlRzgvqnuE` | Todo: `f75ad846`, In Progress: `47fc9ee4`, Done: `98236657`, Blocked: `262596ac` |
-| Trial  | `PVTSSF_lADOCLUTRM4A7VlRzg76fW0` | SCLC-01: `a7d09f93`, Trial-Lung-01: `48351c43`, TRIAL-C: `b01a613f`, TRIAL-D: `706eb7ec`, Pioneer: `22aaa53c` |
-
-### Creating an Issue and Adding to Project
-
-```bash
-# 1. Create the issue in the appropriate repo (assigned to current user)
-gh issue create \
-  --repo azu-oncology-rd/REPO_NAME \
-  --assignee kmjq089_azu \
-  --title "Issue title" \
-  --body "Issue body"
-
-# 2. Add issue to the project
-gh project item-add 56 --owner azu-oncology-rd --url ISSUE_URL
-
-# 3. Find the project item ID
-gh project item-list 56 --owner azu-oncology-rd --limit 200 --format json \
-  | python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-for item in data.get('items', []):
-    if 'SEARCH_TERM' in item.get('title', ''):
-        print(item['id']); break
-"
-
-# 4. Set Trial field (use option IDs from table above)
-gh project item-edit \
-  --project-id PVT_kwDOCLUTRM4A7VlR \
-  --id ITEM_ID \
-  --field-id PVTSSF_lADOCLUTRM4A7VlRzg76fW0 \
-  --single-select-option-id TRIAL_OPTION_ID
-
-# 5. Set Status field (use option IDs from table above)
-gh project item-edit \
-  --project-id PVT_kwDOCLUTRM4A7VlR \
-  --id ITEM_ID \
-  --field-id PVTSSF_lADOCLUTRM4A7VlRzgvqnuE \
-  --single-select-option-id STATUS_OPTION_ID
-```
-
-### Auth Requirements
-
-The `gh` token needs the `project` scope. If missing, run:
-```bash
-gh auth refresh -h github.com -s project
-```
-
-### Querying Field Options
-
-If new trials or statuses are added, query the current options:
-```bash
-gh api graphql -f query='
-{
-  node(id: "PVT_kwDOCLUTRM4A7VlR") {
-    ... on ProjectV2 {
-      field(name: "FIELD_NAME") {
-        ... on ProjectV2SingleSelectField {
-          options { id name }
-        }
-      }
-    }
-  }
-}'
-```
+Issues across all PIONEER repos are tracked in the **PIONEER 2026** GitHub Project (project number 56, owner `azu-oncology-rd`). See `docs/GITHUB_PROJECT.md` for full reference (project/field IDs, `gh` commands, GraphQL queries).
 
 ## Documentation
 

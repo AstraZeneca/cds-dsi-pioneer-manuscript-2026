@@ -1221,6 +1221,58 @@ tuple(
 }
 
 /**
+ * Sample post-progression death time (1→2 transition).
+ *
+ * Dispatches on time scale:
+ *   2 = Extended (sojourn + clock-forward GPs combined additively)
+ *   1 = Semi-Markov (sojourn GP only)
+ *   0 = Markov (clock-forward GP only)
+ *
+ * @param ms_time_scale_12    Time scale selector (0, 1, or 2)
+ * @param log_cond_surv_12_s  Sojourn log-conditional-survival (1 row)
+ * @param log_cond_surv_12_t  Clock-forward log-conditional-survival (1 row)
+ * @param pfs_week            PFS week (1-indexed, last clean assessment)
+ * @param sojourn_obs         Observed sojourn intervals to condition on (0 = unconditional)
+ * @return (os_week, censored) where os_week is 1-indexed calendar week of death
+ */
+tuple(int, int) sample_post_progression_death_rng(
+    int ms_time_scale_12,
+    row_vector log_cond_surv_12_s,
+    row_vector log_cond_surv_12_t,
+    int pfs_week,
+    int sojourn_obs) {
+
+  int max_s = cols(log_cond_surv_12_s);
+  int max_t = cols(log_cond_surv_12_t);
+
+  if (ms_time_scale_12 == 2) {
+    // Extended: sojourn + clock-forward combined additively
+    int max_post_prog = min(max_s, max_t - pfs_week);
+    if (max_post_prog > 0) {
+      row_vector[max_post_prog] combined;
+      for (s in 1:max_post_prog)
+        combined[s] = log_cond_surv_12_s[s] + log_cond_surv_12_t[pfs_week + s];
+      int t12_raw; int c12;
+      (t12_raw, c12) = survival_time_rng(combined, sojourn_obs, 1, 0);
+      return (pfs_week + t12_raw + 1, c12);
+    }
+    return (pfs_week, 1);  // No room → censored at progression
+
+  } else if (ms_time_scale_12 == 1) {
+    // Semi-Markov: sojourn time only
+    int t12_raw; int c12;
+    (t12_raw, c12) = survival_time_rng(log_cond_surv_12_s, sojourn_obs, 1, 0);
+    return (pfs_week + t12_raw + 1, c12);
+
+  } else {
+    // Markov: clock-forward time only
+    int t12_raw; int c12;
+    (t12_raw, c12) = survival_time_rng(log_cond_surv_12_t, pfs_week + sojourn_obs, 1, 0);
+    return (t12_raw + 1, c12);
+  }
+}
+
+/**
  * Calculate patient-level endpoints (PFS and response indicators) for all patients
  * This function processes all patients at once, computing PFS times, censoring status,
  * and confirmed/unconfirmed response indicators.
@@ -1310,9 +1362,23 @@ tuple(
   int max_all_t,
   array[] int n_patient_screening_visits  // Number of screening visits per patient
 ) {
+  // Illness-death model states:
+  //   0 = alive without progression
+  //   1 = alive with progression (post-progression)
+  //   2 = dead
+  // Transitions: 0→1 (progression), 0→2 (direct death), 1→2 (post-progression death)
+  //
+  // Key data conventions:
+  //   pfs[i]         = last clean assessment week (1-indexed)
+  //   ms_time_02[i]  = death_week for observed 0→2 deaths (1-indexed, exact)
+  //   ms_time_12[i]  = sojourn time post-progression:
+  //                     observed death: death_week - pfs (exact sojourn)
+  //                     censored alive: patient_max_t - pfs (observed sojourn survival)
+  //                     never progressed: 0
+
   int n_patients = size(patient_visit_pos) - 1;
   int n_target_right_censored_patients = sum(target_right_censored);
-  
+
   // RECIST constants
   int CR = 1; int PR = 2; int SD = 3; int PD = 4;
   
@@ -1493,41 +1559,9 @@ tuple(
         spop_os_censored[i] = 0;
       } else if (spop_progressed_first && enable_ms_12) {
         // Progressed first → sample post-progression death (1→2)
-        int t_start = spop_time_01;  // Clock-forward time at progression
-        int max_s = cols(ms_log_cond_surv_12_s);
-        int max_t_12 = cols(ms_log_cond_surv_12_t);
-
-        if (ms_time_scale_12 == 2) {
-          // Extended: combine sojourn GP and clock-forward GP additively
-          int max_post_prog = min(max_s, max_t_12 - t_start);
-          if (max_post_prog > 0) {
-            row_vector[max_post_prog] combined_log_cond_surv_12;
-            for (s in 1:max_post_prog) {
-              combined_log_cond_surv_12[s] = ms_log_cond_surv_12_s[i, s]
-                                           + ms_log_cond_surv_12_t[i, t_start + s];
-            }
-            int t12_raw; int c12_raw;
-            (t12_raw, c12_raw) = survival_time_rng(combined_log_cond_surv_12);
-            spop_os[i] = spop_time_01 + t12_raw + 1;  // +1: t12_raw is 0-indexed
-            spop_os_censored[i] = c12_raw;
-          } else {
-            // No room to simulate post-progression death
-            spop_os[i] = spop_time_01;
-            spop_os_censored[i] = 1;
-          }
-        } else if (ms_time_scale_12 == 1) {
-          // Semi-Markov: sojourn time only
-          int t12_raw; int c12_raw;
-          (t12_raw, c12_raw) = survival_time_rng(ms_log_cond_surv_12_s[i]);
-          spop_os[i] = spop_time_01 + t12_raw + 1;  // +1: t12_raw is 0-indexed
-          spop_os_censored[i] = c12_raw;
-        } else {
-          // Markov: clock-forward time only
-          int t12_raw; int c12_raw;
-          (t12_raw, c12_raw) = survival_time_rng(ms_log_cond_surv_12_t[i], spop_time_01, 1, 0);
-          spop_os[i] = t12_raw + 1;
-          spop_os_censored[i] = c12_raw;
-        }
+        (spop_os[i], spop_os_censored[i]) = sample_post_progression_death_rng(
+          ms_time_scale_12, ms_log_cond_surv_12_s[i], ms_log_cond_surv_12_t[i],
+          spop_time_01, 0);  // sojourn_obs=0: unconditional
       } else {
         // Both censored (no death observed)
         spop_os[i] = max(spop_time_01, spop_time_02);
@@ -1569,52 +1603,29 @@ tuple(
         }
       }
 
-      // Determine which transition fires first
-      int sample_progressed_first = !sample_cens_01 && (sample_cens_02 || sample_time_01 <= sample_time_02);
-      int sample_died_directly = enable_ms_02 && !sample_cens_02 && (sample_cens_01 || sample_time_02 < sample_time_01);
+      // Routing truth table for competing risks:
+      //   Observed 0→2 death (!ms_censored_02)  → always direct death (conditional PPC)
+      //   Forecasted 0→2 before progression     → direct death
+      //   Forecasted 0→2 after progression      → progression first, then 1→2 path
+      //   Both censored                         → censored OS = max(time_01, time_02)
+      int sample_died_directly = enable_ms_02 && !sample_cens_02
+        && (!ms_censored_02[i] || sample_cens_01 || sample_time_02 < sample_time_01);
+      int sample_progressed_first = !sample_died_directly && !sample_cens_01
+        && (sample_cens_02 || sample_time_01 <= sample_time_02);
 
       if (sample_died_directly) {
         sample_os[i] = sample_time_02;
         sample_os_censored[i] = 0;
       } else if (sample_progressed_first && enable_ms_12) {
-        // Check if post-progression death was observed
         if (!ms_censored_12[i]) {
-          // Use exact observed death time: pfs + ms_time_12 = death_week (exact, no +1)
+          // Observed death: use exact time (pfs + sojourn = death_week)
           sample_os[i] = pfs[i] + ms_time_12[i];
           sample_os_censored[i] = 0;
         } else {
-          // Forecast post-progression death
-          int t_start = pfs[i];  // Must match likelihood: GP indexed from pfs, not detection week
-          int max_s = cols(ms_log_cond_surv_12_s);
-          int max_t_12 = cols(ms_log_cond_surv_12_t);
-
-          if (ms_time_scale_12 == 2) {
-            int max_post_prog = min(max_s, max_t_12 - t_start);
-            if (max_post_prog > 0) {
-              row_vector[max_post_prog] combined_log_cond_surv_12;
-              for (s in 1:max_post_prog) {
-                combined_log_cond_surv_12[s] = ms_log_cond_surv_12_s[i, s]
-                                             + ms_log_cond_surv_12_t[i, t_start + s];
-              }
-              int t12_raw; int c12_raw;
-              (t12_raw, c12_raw) = survival_time_rng(combined_log_cond_surv_12);
-              sample_os[i] = pfs[i] + t12_raw + 1;  // +1: t12_raw is 0-indexed
-              sample_os_censored[i] = c12_raw;
-            } else {
-              sample_os[i] = pfs[i];  // Censored at progression time
-              sample_os_censored[i] = 1;
-            }
-          } else if (ms_time_scale_12 == 1) {
-            int t12_raw; int c12_raw;
-            (t12_raw, c12_raw) = survival_time_rng(ms_log_cond_surv_12_s[i]);
-            sample_os[i] = pfs[i] + t12_raw + 1;  // +1: t12_raw is 0-indexed
-            sample_os_censored[i] = c12_raw;
-          } else {
-            int t12_raw; int c12_raw;
-            (t12_raw, c12_raw) = survival_time_rng(ms_log_cond_surv_12_t[i], pfs[i], 1, 0);
-            sample_os[i] = t12_raw + 1;
-            sample_os_censored[i] = c12_raw;
-          }
+          // Forecast: condition on observed sojourn survival
+          (sample_os[i], sample_os_censored[i]) = sample_post_progression_death_rng(
+            ms_time_scale_12, ms_log_cond_surv_12_s[i], ms_log_cond_surv_12_t[i],
+            pfs[i], ms_time_12[i]);
         }
       } else {
         // Both censored
@@ -1625,11 +1636,16 @@ tuple(
       // Update multistate PFS for competing risks
       if (enable_ms_02) {
         if (sample_died_directly) {
+          // Direct death (observed or forecasted before progression).
+          // PFS = death_week (death is a PFS event).
+          sample_pfs[i] = sample_time_02;
+          sample_right_censored[i] = 0;
           sample_ms_pfs[i] = sample_time_02;
           sample_ms_right_censored[i] = 0;
+        } else {
+          sample_pfs[i] = min(sample_target_pfs[i], sample_ms_pfs[i]);
+          sample_right_censored[i] = sample_target_right_censored[i] && sample_ms_right_censored[i];
         }
-        sample_pfs[i] = min(sample_target_pfs[i], sample_ms_pfs[i]);
-        sample_right_censored[i] = sample_target_right_censored[i] && sample_ms_right_censored[i];
       }
     }
   }
