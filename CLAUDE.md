@@ -183,6 +183,22 @@ Analysis results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<ru
   - Example: Use `tar_target(name, my_function(arg))` not `tar_target(name, { ... complex code ... })`
   - Helper functions belong in appropriate `r/` subdirectories (e.g., `r/sclc/plot_functions.R`)
 
+### Bash and Command Execution
+- **NEVER pipe long-running commands to `head`, `tail`, or similar** when running in background - it prevents real-time output monitoring
+- If you need to capture output while preserving streaming, use `tee` instead: `command | tee output.log`
+- Background tasks automatically capture output to a file - don't truncate it with pipes
+- Example:
+  ```bash
+  # ❌ DON'T: User can't see real-time progress
+  Rscript -e 'targets::tar_make()' | head -100
+
+  # ✓ DO: Full streaming output visible
+  Rscript -e 'targets::tar_make()'
+
+  # ✓ ALTERNATIVE: If you need to save output too
+  Rscript -e 'targets::tar_make()' | tee build.log
+  ```
+
 ### Quarto and Documentation
 - **Always use "SCLC-01"** when referring to the trial in user-facing text (documentation, plots, presentations)
 - Use lowercase "sclc" only for code identifiers (variable names, trial codes, file paths)
