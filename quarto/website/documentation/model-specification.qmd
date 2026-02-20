@@ -663,6 +663,87 @@ $$
 \text{PFS-}t^* = \hat{S}_s(t^*)
 $$
 
+### 4.7 Overall Survival (OS) {#sec-os-computation}
+
+OS computation uses the illness-death model's competing risks structure. The implementation handles both **unconditional** (posterior predictive, `spop_*`) and **conditional** (sample-based, `sample_*`) modes, using the helper function `sample_post_progression_death_rng` for post-progression death simulation.
+
+#### 4.7.1 Competing Risks Routing
+
+For each patient, two competing events are evaluated:
+
+- **Transition $0 \to 2$**: Direct death without progression
+- **Transition $0 \to 1$**: Progression (which opens the $1 \to 2$ path)
+
+The routing determines which event fires first:
+
+| Scenario | OS Path |
+|----------|---------|
+| $T_{02} < T_{01}$ (death before progression) | Direct death: $\text{OS} = T_{02}$ |
+| $T_{01} \leq T_{02}$ (progression first) | Post-progression death: $\text{OS} = T_{01} + T_{12}$ |
+| Both censored | Censored: $\text{OS} = \max(T_{01}, T_{02})$ |
+
+**Conditional mode additional rule:** When the patient has an *observed* direct death (`ms_censored_02 = 0`), the observed path is always used regardless of simulated progression time. This ensures the conditional posterior predictive check (PPC) respects the observed illness-death trajectory. For *forecasted* direct deaths (patient was alive at data cutoff but the model samples a death), the standard timing comparison applies.
+
+#### 4.7.2 Post-Progression Death ($1 \to 2$) Simulation
+
+When progression fires first, post-progression death is simulated from the $1 \to 2$ transition hazard. The baseline hazard supports three time scales (see @sec-multistate-baseline):
+
+**Extended** ($\text{ms\_time\_scale\_12} = 2$): Combines sojourn and clock-forward GPs additively:
+
+$$
+\log h_{12}(s, t) = \log \lambda_{12,s}(s) + \log \lambda_{12,t}(t)
+$$
+
+where $s$ is sojourn time (weeks since progression) and $t$ is calendar time. The conditional survival is:
+
+$$
+\log S_{12}^{\text{cond}}(s \mid t_{\text{pfs}}) = \sum_{u=1}^{s} \left[ \log S_{12,s}^{\text{cond}}(u) + \log S_{12,t}^{\text{cond}}(t_{\text{pfs}} + u) \right]
+$$
+
+**Semi-Markov** ($\text{ms\_time\_scale\_12} = 1$): Sojourn time only:
+
+$$
+\log S_{12}^{\text{cond}}(s) = \sum_{u=1}^{s} \log S_{12,s}^{\text{cond}}(u)
+$$
+
+**Markov** ($\text{ms\_time\_scale\_12} = 0$): Clock-forward time only, conditioned at calendar time $t_{\text{pfs}}$:
+
+$$
+S_{12}(t \mid t > t_{\text{pfs}}) = \frac{S_{12,t}(t)}{S_{12,t}(t_{\text{pfs}})}
+$$
+
+#### 4.7.3 Sojourn Conditioning for Censored Patients
+
+In conditional mode, patients who have progressed but are still alive at data cutoff have an observed sojourn survival time:
+
+$$
+s_i^{\text{obs}} = t_i^{\text{max}} - t_i^{\text{pfs}}
+$$
+
+The forecast must condition on surviving this observed sojourn, using the conditional survival function from $s_i^{\text{obs}}$ onward. This applies to all three time scales:
+
+- **Semi-Markov**: Sample from $S_{12,s}(\cdot \mid s > s_i^{\text{obs}})$
+- **Markov**: Sample from $S_{12,t}(\cdot \mid t > t_i^{\text{pfs}} + s_i^{\text{obs}})$
+- **Extended**: Sample from the combined hazard conditioned on $s > s_i^{\text{obs}}$
+
+In unconditional mode, sojourn conditioning is not applied (equivalent to $s_i^{\text{obs}} = 0$).
+
+#### 4.7.4 PFS Update for Competing Risks
+
+When direct death ($0 \to 2$) fires before progression, PFS must be updated:
+
+$$
+\text{PFS}_i = T_{i,02}, \quad \text{censored} = 0
+$$
+
+Death without progression is a PFS event (the patient cannot progress after dying). This overrides the target-lesion and multistate PFS computations from @sec-pfs.
+
+When progression fires first, the combined PFS is unchanged:
+
+$$
+\text{PFS}_i = \min(\text{PFS}_{i,\text{target}}, \text{PFS}_{i,\text{multistate}})
+$$
+
 ---
 
 ## 5. Prior Distributions {#sec-priors}
@@ -778,13 +859,14 @@ For each posterior sample, the following quantities are computed:
 - Forecasted states beyond observed data
 - RECIST classifications at each timepoint
 - PFS times (target, multistate transitions, combined)
+- OS times (competing risks routing, post-progression death)
 - Response indicators (confirmed, unconfirmed)
 
 **Trial-level:**
 
 - Objective response rate (ORR)
-- Kaplan-Meier survival curves
-- Median PFS and quantiles
+- Kaplan-Meier survival curves (PFS and OS)
+- Median PFS/OS and quantiles
 - PFS at fixed timepoints (PFS-6, PFS-12, etc.)
 
 **Conditional groups:**
@@ -1069,7 +1151,7 @@ The model enforces several constraints for identifiability:
 
 ## Document Maintenance
 
-**Version:** 1.5
+**Version:** 1.6
 **Last Updated:** February 2026
 **Corresponding Stan Model:** `stan/sf-ssm-log-space.stan`
 
@@ -1083,6 +1165,7 @@ When the Stan model changes, this document should be updated to reflect:
 
 **Changelog:**
 
+- **v1.6 (February 2026):** Added Section 4.7 "Overall Survival (OS)" documenting the competing risks routing logic, post-progression death simulation across three time scales, sojourn conditioning for censored patients, and PFS update for competing risks. Updated Section 6.3 to include OS in generated quantities.
 - **v1.5 (February 2026):** Replaced Section 3 "Other Events Model (Independent Competing Risks)" with "Multistate Hazard Model (Illness-Death)" to reflect the implemented multistate module. Updated notation, priors, and PFS sections to use multistate terminology ($\lambda_{jk}$, transitions $0 \to 1$, $0 \to 2$, $1 \to 2$). Added composite endpoint definitions (PFS, OS, PPS) from multistate framework. Added reference to PSA adaptation plan.
 - **v1.4 (February 2026):** Updated Stan code organization - reorganized directory structure, separated tumor data from base structure into `modules/tumor/`, organized state-space infrastructure into `modules/state_space/`, standardized `.stanfunctions` naming convention for function-only files. Model paths updated from `stan/ssls/` to `stan/`. No mathematical changes to model specification.
 - **v1.3 (January 2026):** Corrected section 6.4 (renamed from "Sample-Based vs. Superpopulation Estimates" to "Sample-Based vs. Posterior Predictive Estimates"). The `spop_*` quantities are **not** true superpopulation estimates that integrate over patient-level variation; they are posterior predictive estimates that condition on the same patient parameters but ignore observed outcomes. Clarified that true superpopulation inference would require drawing new patient random effects and potentially new covariates.
