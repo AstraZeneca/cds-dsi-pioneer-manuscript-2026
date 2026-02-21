@@ -305,9 +305,10 @@ if (need_12_s_gp) {
 
 if (need_12_t_gp) {
   // Clock-forward time GP
+  // In extended mode, intercept is zero (sojourn GP carries it) to avoid non-identifiability
   ms_log_pop_lambda_12_t = calc_gp_pred(
     all_tumor_measure_t,
-    ms_log_lambda_gp_12_t_pop_intercept[1],
+    ms_12_t_has_intercept ? ms_log_lambda_gp_12_t_pop_intercept[1] : 0.0,
     ms_log_lambda_gp_12_t_pop_alpha[1],
     ms_log_lambda_gp_12_t_pop_rho[1],
     delta,
@@ -327,9 +328,10 @@ if (need_12_t_gp) {
         ms_log_lambda_gp_12_t_level_intercept_sd[lv];
 
       for (g in lv_start:lv_end) {
+        // In extended mode, level intercept is zero (sojourn GP carries it)
         ms_log_level_lambda_12_t_residual[g] = calc_gp_pred(
           all_tumor_measure_t,
-          ms_log_lambda_gp_12_t_level_intercept[g],
+          ms_12_t_has_intercept ? ms_log_lambda_gp_12_t_level_intercept[g] : 0.0,
           ms_log_lambda_gp_12_t_level_alpha[lv],
           ms_log_lambda_gp_12_t_level_rho[lv],
           delta,
