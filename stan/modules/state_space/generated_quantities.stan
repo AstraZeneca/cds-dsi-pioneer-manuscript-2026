@@ -1,3 +1,8 @@
+// Back-transformed coefficients from QR space to original space
+#include "../tr/generated_quantities.stan"
+#include "../frac/generated_quantities.stan"
+#include "../init/generated_quantities.stan"
+
 // RECIST prediction accuracy metrics - trial level
 array[n_trials] int<lower=0> correct_recist_predictions = zeros_int_array(n_trials);
 array[n_trials] int<lower=0> total_recist_predictions = zeros_int_array(n_trials);
