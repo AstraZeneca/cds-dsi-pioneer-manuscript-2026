@@ -18,6 +18,11 @@ for (i in 1:n_patients) {
 int need_12_s_gp = enable_ms_12 && (ms_time_scale_12 == 1 || ms_time_scale_12 == 2);
 int need_12_t_gp = enable_ms_12 && (ms_time_scale_12 == 0 || ms_time_scale_12 == 2);
 
+// In extended mode (2), both GPs are active and additive. To avoid
+// non-identifiability of two intercepts, the clock-forward GP is zero-mean
+// and only the sojourn GP carries the intercept.
+int ms_12_t_has_intercept = need_12_t_gp && !need_12_s_gp;  // Only in pure Markov mode
+
 // --- Enabled Group Counts for Baseline Hazard N-level Hierarchy ---
 int n_enabled_groups_ms_baseline_01 = enable_ms_01 ? compute_n_enabled_groups(
   n_groups_per_level, enable_ms_level_baseline_hazard
