@@ -155,6 +155,40 @@ Analysis results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<ru
 - **Targets store**: `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/_targets`
 - **Fit CSVs**: `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/fit`
 
+### Store Selection via TAR_BRANCH
+
+Analysis results are organized by data cut-off (DCO) using the `TAR_BRANCH` environment variable:
+- `export TAR_BRANCH=dco3` - January 26, 2026 DCO (current, includes pdl1_central)
+- `export TAR_BRANCH=dco2` - August 2025 DCO
+- `export TAR_BRANCH=dco1` - April 2025 DCO
+
+Store path: `/mnt/data/analysis-results/<user>/sclc/<TAR_BRANCH>/_targets`
+
+**Example:**
+```bash
+export TAR_BRANCH=dco3
+Rscript -e 'targets::tar_make(sclc_patient_data_jan26)'
+```
+
+When working with stored targets directly (e.g., in standalone scripts), always specify the store path explicitly:
+```r
+tar_read(sclc_patient_data_jan26, store = "/mnt/data/analysis-results/karim_naguib/sclc/dco3/_targets")
+```
+
+### SCLC Data Files
+
+Patient and visit data files use date-based suffixes indicating when they were processed:
+- `cooked_patient_data_200226.csv` - Feb 26, 2026 (includes pdl1_central column)
+- `cooked_patient_data_220126.csv` - Jan 22, 2026 (older, missing pdl1_central)
+- `assessment_visit_data_200226.csv` - Feb 26, 2026
+
+**Important columns:**
+- `pdl1` - Site-reported PDL1 values (original baseline)
+- `pdl1_central` - Centrally assessed PDL1 values (added Feb 2026, from PDL1CBL)
+- `pdl1_hi` / `pdl1_high` - Binary flag (≥50% threshold, derived from pdl1)
+
+**Note**: Central vs site PDL1 can show significant discordance. Always check which column is being used for stratification.
+
 ## Coding Guidelines
 
 ### General
@@ -198,6 +232,16 @@ Analysis results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<ru
   # ✓ ALTERNATIVE: If you need to save output too
   Rscript -e 'targets::tar_make()' | tee build.log
   ```
+
+### Data Pipeline Scripts
+- **NEVER run data preparation scripts without explicit confirmation from the user**
+- A hookify rule (`.claude/hookify.data-pipeline-confirmation.local.md`) blocks accidental execution of:
+  - `r/data_preparation_pipeline/*/main_pipeline_data_*.R`
+  - Scripts containing `wrangle_data`, `prepare.*data`, or `pipeline.*` patterns
+- **Why this matters**: Data pipeline scripts regenerate CSV files and can take hours to run
+- **Before running**: Check if processed CSV files already exist at the expected location
+- **Better alternative**: Use `targets::tar_make()` with specific target names to rebuild only what changed
+- **Pattern**: Data pipelines should only run when raw data is updated, not for routine analysis
 
 ### Quarto and Documentation
 - **Always use "SCLC-01"** when referring to the trial in user-facing text (documentation, plots, presentations)
