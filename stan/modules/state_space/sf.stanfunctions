@@ -1288,9 +1288,9 @@ tuple(
   int enable_ms_02,
   int enable_ms_12,
   int ms_time_scale_12,
-  matrix ms_log_cond_surv_02,    // matrix[n_patients, max_all_t] or [0,0] - 0→2 log conditional survival
-  matrix ms_log_cond_surv_12_s,  // matrix[n_patients, ms_max_sojourn_t] or [0,0] - 1→2 sojourn GP
-  matrix ms_log_cond_surv_12_t,  // matrix[n_patients, max_all_t] or [0,0] - 1→2 clock-forward GP
+  matrix log_cond_surv_02,    // matrix[n_patients, max_all_t] or [0,0] - 0→2 log conditional survival
+  matrix log_cond_surv_12_s,  // matrix[n_patients, ms_max_sojourn_t] or [0,0] - 1→2 sojourn GP
+  matrix log_cond_surv_12_t,  // matrix[n_patients, max_all_t] or [0,0] - 1→2 clock-forward GP
   array[] int pfs,
   array[] int interval_censored,
   array[] int right_censored,
@@ -1492,7 +1492,7 @@ tuple(
       int spop_cens_02 = 1;
       if (enable_ms_02) {
         int t02_raw; int c02_raw;
-        (t02_raw, c02_raw) = survival_time_rng(ms_log_cond_surv_02[i]);
+        (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[i]);
         spop_time_02 = t02_raw + 1;  // Convert to 1-indexed week
         spop_cens_02 = c02_raw;
       }
@@ -1508,10 +1508,10 @@ tuple(
       } else if (spop_progressed_first && enable_ms_12) {
         // Progressed first → sample post-progression death (1→2)
         // Guard: clock-forward matrix is [0,0] when ms_time_scale_12==1 (semi-Markov)
-        row_vector[cols(ms_log_cond_surv_12_t)] surv_12_t_i =
-          cols(ms_log_cond_surv_12_t) > 0 ? ms_log_cond_surv_12_t[i] : rep_row_vector(0, 0);
+        row_vector[cols(log_cond_surv_12_t)] surv_12_t_i =
+          cols(log_cond_surv_12_t) > 0 ? log_cond_surv_12_t[i] : rep_row_vector(0, 0);
         (spop_os[i], spop_os_censored[i]) = sample_post_progression_death_rng(
-          ms_time_scale_12, ms_log_cond_surv_12_s[i], surv_12_t_i,
+          ms_time_scale_12, log_cond_surv_12_s[i], surv_12_t_i,
           spop_time_01, 0);  // sojourn_obs=0: unconditional
       } else {
         // Both censored (no death observed)
@@ -1548,7 +1548,7 @@ tuple(
         } else {
           // Censored for 0→2: forecast from observed time
           int t02_raw; int c02_raw;
-          (t02_raw, c02_raw) = survival_time_rng(ms_log_cond_surv_02[i], pfs[i], 1, 0);
+          (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[i], pfs[i], 1, 0);
           sample_time_02 = t02_raw + 1;
           sample_cens_02 = c02_raw;
         }
@@ -1575,10 +1575,10 @@ tuple(
         } else {
           // Forecast: condition on observed sojourn survival
           // Guard: clock-forward matrix is [0,0] when ms_time_scale_12==1 (semi-Markov)
-          row_vector[cols(ms_log_cond_surv_12_t)] surv_12_t_i =
-            cols(ms_log_cond_surv_12_t) > 0 ? ms_log_cond_surv_12_t[i] : rep_row_vector(0, 0);
+          row_vector[cols(log_cond_surv_12_t)] surv_12_t_i =
+            cols(log_cond_surv_12_t) > 0 ? log_cond_surv_12_t[i] : rep_row_vector(0, 0);
           (sample_os[i], sample_os_censored[i]) = sample_post_progression_death_rng(
-            ms_time_scale_12, ms_log_cond_surv_12_s[i], surv_12_t_i,
+            ms_time_scale_12, log_cond_surv_12_s[i], surv_12_t_i,
             pfs[i], ms_time_12[i]);
         }
       } else {

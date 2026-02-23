@@ -84,7 +84,7 @@ model {
       target += sum(calc_ms_single_transition_loglik(
         cutoff_ms_time_01,
         cutoff_ms_censored_01,
-        ms_log_cond_surv_01[cutoff_observed_patients]
+        log_cond_surv_01[cutoff_observed_patients]
       ));
     }
   }
@@ -310,7 +310,7 @@ generated quantities {
             array[1] int test_end = {test_end_week};
 
             // Extract single patient's survival probabilities as a 1-row matrix
-            matrix[1, max_all_t] patient_log_surv = ms_log_cond_surv_01[i:i];
+            matrix[1, max_all_t] patient_log_surv = log_cond_surv_01[i:i];
 
             // Calculate log-likelihood using the same function as in model block
             ms_ll = calc_pch_loglik(
