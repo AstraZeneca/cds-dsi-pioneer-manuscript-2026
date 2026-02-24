@@ -54,15 +54,20 @@ matrix gp_matern52_cholesky_cov(array[] real x, real alpha, real rho, real delta
 vector calc_gp_pred(array[] real x, vector intercept, real alpha, real rho, real delta, vector eta) {
   int n_x = size(x);
   matrix[n_x, n_x] L_K = gp_exp_quad_cholesky_cov(x, alpha, rho, delta); // K = L_K * L_K'
-  
-  return intercept + L_K * eta;
+  vector[n_x] gp_dev = L_K * eta;
+
+  // Center the GP deviation so the intercept alone controls the level.
+  // Without this, the GP can absorb a constant offset, making the intercept non-identifiable.
+  return intercept + (gp_dev - mean(gp_dev));
 }  
 
 row_vector calc_gp_pred(array[] real x, row_vector intercept, real alpha, real rho, real delta, row_vector eta) {
   int n_x = size(x);
-  matrix[n_x, n_x] L_K = gp_exp_quad_cholesky_cov(x, alpha, rho, delta); 
-  
-  return intercept + eta * L_K';
+  matrix[n_x, n_x] L_K = gp_exp_quad_cholesky_cov(x, alpha, rho, delta);
+  row_vector[n_x] gp_dev = eta * L_K';
+
+  // Center the GP deviation so the intercept alone controls the level.
+  return intercept + (gp_dev - mean(gp_dev));
 }
 
 vector calc_gp_pred(array[] real x, real intercept, real alpha, real rho, real delta, vector eta) {
