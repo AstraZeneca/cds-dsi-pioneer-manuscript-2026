@@ -1221,58 +1221,6 @@ tuple(
 }
 
 /**
- * Sample post-progression death time (1→2 transition).
- *
- * Dispatches on time scale:
- *   2 = Extended (sojourn + clock-forward GPs combined additively)
- *   1 = Semi-Markov (sojourn GP only)
- *   0 = Markov (clock-forward GP only)
- *
- * @param ms_time_scale_12    Time scale selector (0, 1, or 2)
- * @param log_cond_surv_12_s  Sojourn log-conditional-survival (1 row)
- * @param log_cond_surv_12_t  Clock-forward log-conditional-survival (1 row)
- * @param pfs_week            PFS week (1-indexed, last clean assessment)
- * @param sojourn_obs         Observed sojourn intervals to condition on (0 = unconditional)
- * @return (os_week, censored) where os_week is 1-indexed calendar week of death
- */
-tuple(int, int) sample_post_progression_death_rng(
-    int ms_time_scale_12,
-    row_vector log_cond_surv_12_s,
-    row_vector log_cond_surv_12_t,
-    int pfs_week,
-    int sojourn_obs) {
-
-  int max_s = cols(log_cond_surv_12_s);
-  int max_t = cols(log_cond_surv_12_t);
-
-  if (ms_time_scale_12 == 2) {
-    // Extended: sojourn + clock-forward combined additively
-    int max_post_prog = min(max_s, max_t - pfs_week);
-    if (max_post_prog > 0) {
-      row_vector[max_post_prog] combined;
-      for (s in 1:max_post_prog)
-        combined[s] = log_cond_surv_12_s[s] + log_cond_surv_12_t[pfs_week + s];
-      int t12_raw; int c12;
-      (t12_raw, c12) = survival_time_rng(combined, sojourn_obs, 1, 0);
-      return (pfs_week + t12_raw + 1, c12);
-    }
-    return (pfs_week, 1);  // No room → censored at progression
-
-  } else if (ms_time_scale_12 == 1) {
-    // Semi-Markov: sojourn time only
-    int t12_raw; int c12;
-    (t12_raw, c12) = survival_time_rng(log_cond_surv_12_s, sojourn_obs, 1, 0);
-    return (pfs_week + t12_raw + 1, c12);
-
-  } else {
-    // Markov: clock-forward time only
-    int t12_raw; int c12;
-    (t12_raw, c12) = survival_time_rng(log_cond_surv_12_t, pfs_week + sojourn_obs, 1, 0);
-    return (t12_raw + 1, c12);
-  }
-}
-
-/**
  * Calculate patient-level endpoints (PFS and response indicators) for all patients
  * This function processes all patients at once, computing PFS times, censoring status,
  * and confirmed/unconfirmed response indicators.
