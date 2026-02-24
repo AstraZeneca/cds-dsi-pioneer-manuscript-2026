@@ -60,27 +60,28 @@
     \footnotesize\fcolorbox{black}{gray!15}{\parbox{4.8cm}{\centering\textbf{Output:} $\text{SLD}_i(t) \rightarrow T_i^{\text{target}}$}}
 };
 
-% ==================== OTHER EVENTS MODEL ====================
+% ==================== MULTISTATE HAZARD MODEL ====================
 \node (events) [model, fill=white, draw=black, line width=1.5pt, text width=5.4cm] at (0,-2) {
-    \large\textbf{Other Events Model}\\[0.1cm]
+    \large\textbf{Multistate Hazard Model}\\[0.1cm]
     \noindent\rule{5.2cm}{0.4pt}\\[0.2cm]
-    \small Proportional Hazards\\[0.3cm]
+    \small Illness-Death Structure\\[0.3cm]
     \begin{flushleft}\footnotesize
-    • Non-target progression\\
-    • New lesions\\
-    • Death
+    • 0$\to$1: Progression\\
+    • 0$\to$2: Death w/o prog.\\
+    • 1$\to$2: Post-prog. death
     \end{flushleft}
     \vspace{0.1cm}
-    \footnotesize\fcolorbox{black}{gray!15}{\parbox{4.8cm}{\centering\textbf{Output:} $\lambda_i(t) \rightarrow T_i^{\text{other}}$}}
+    \footnotesize\fcolorbox{black}{gray!15}{\parbox{4.8cm}{\centering\textbf{Output:} $\lambda_{jk}(t) \rightarrow T_i^{01}, T_i^{12}$}}
 };
 
-% ==================== PFS COMBINATION ====================
+% ==================== COMPOSITE ENDPOINTS ====================
 \node (pfs) [rectangle, rounded corners, fill=gray!10, draw=black, line width=1.5pt,
-             minimum width=4.5cm, minimum height=2.7cm, font=\normalsize, text width=4cm, align=center, inner sep=8pt] at (7.5,1.2) {
-    \large\textbf{PFS Combination}\\[0.1cm]
-    \noindent\rule{3.8cm}{0.4pt}\\[0.2cm]
-    \normalsize
-    $\text{PFS}_i = \min(T_i^{\text{target}}, T_i^{\text{other}})$
+             minimum width=4.5cm, minimum height=3.2cm, font=\normalsize, text width=4cm, align=center, inner sep=8pt] at (7.5,1.2) {
+    \large\textbf{Composite Endpoints}\\[0.1cm]
+    \noindent\rule{3.8cm}{0.4pt}\\[0.15cm]
+    \small
+    $\text{PFS}_i = \min(T_i^{\text{target}}, T_i^{01})$\\[0.2cm]
+    $\text{OS}_i$ via illness-death routing
 };
 
 % ==================== OUTPUT NODES ====================
@@ -89,16 +90,17 @@
     \noindent\rule{3cm}{0.4pt}\\[0.1cm]
     \begin{flushleft}\footnotesize
     • Trajectories\\
-    • PFS probabilities\\
-    • RECIST
+    • PFS/OS prob.\\
+    • RECIST\\
+    • PPS
     \end{flushleft}};
 
 \node (out2) [output, fill=white, text=black, text width=3.2cm] at (13.5,1.2)
     {\textbf{Trial Level}\\[0.1cm]
     \noindent\rule{3cm}{0.4pt}\\[0.1cm]
     \begin{flushleft}\footnotesize
-    • Median PFS\\
-    • PFS rates\\
+    • mPFS, mOS\\
+    • PFS/OS rates\\
     • ORR\\
     • KM curves
     \end{flushleft}};
@@ -121,9 +123,9 @@
 % Mechanistic to Other Events (SLD feedforward)
 \draw [arrow, black, line width=1pt] (mech.south) -- node[right, font=\small, text=black] {$\text{SLD}_i(t)$} (events.north);
 
-% Models to PFS
+% Models to Composite Endpoints
 \draw [arrow, black, line width=0.8pt] (mech.east) to[out=0,in=150] node[pos=0.6, outputbox, font=\small] {$T^{\text{target}}$} (pfs.west);
-\draw [arrow, black, line width=0.8pt] (events.east) to[out=0,in=210] node[pos=0.6, outputbox, font=\small] {$T^{\text{other}}$} (pfs.west);
+\draw [arrow, black, line width=0.8pt] (events.east) to[out=0,in=210] node[pos=0.6, outputbox, font=\small] {$T^{01}, T^{12}$} (pfs.west);
 
 % PFS to Outputs
 \draw [arrow, black, line width=0.8pt] (pfs.north) to[out=90,in=180] (out1.west);
