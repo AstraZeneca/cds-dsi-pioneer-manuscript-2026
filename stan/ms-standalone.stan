@@ -105,7 +105,7 @@ model {
     target += sum(calc_ms_single_transition_loglik(
       ms_time_01,
       ms_censored_01,
-      ms_log_cond_surv_01
+      log_cond_surv_01
     ));
   } else if (fit_multistate_data) {
     // Full illness-death likelihood
@@ -115,10 +115,10 @@ model {
       ms_time_01, ms_time_02, ms_time_12,
       ms_censored_01, ms_censored_02, ms_censored_12,
       ms_prog_deterministic,
-      ms_log_cond_surv_01,
-      ms_log_cond_surv_02,
-      ms_log_cond_surv_12_s,
-      ms_log_cond_surv_12_t
+      log_cond_surv_01,
+      log_cond_surv_02,
+      log_cond_surv_12_s,
+      log_cond_surv_12_t
     );
   }
 }

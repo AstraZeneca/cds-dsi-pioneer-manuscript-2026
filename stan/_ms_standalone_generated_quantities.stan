@@ -83,14 +83,14 @@ for (i in 1:n_patients) {
   // ── 1. PFS via 0→1 transition ────────────────────────────────────────
 
   // Unconditional: full posterior predictive from time 0
-  (spop_ms_pfs[i], spop_ms_right_censored[i]) = survival_time_rng(ms_log_cond_surv_01[i]);
+  (spop_ms_pfs[i], spop_ms_right_censored[i]) = survival_time_rng(log_cond_surv_01[i]);
   spop_ms_pfs[i] += 1;  // Convert to 1-based detection week
 
   // Conditional: respect observed data, forecast only censored patients
   if (ms_censored_01[i]) {
     // Censored for 0→1: forecast from observed time
     (sample_ms_pfs[i], sample_ms_right_censored[i]) =
-      survival_time_rng(ms_log_cond_surv_01[i], ms_time_01[i], 1, 0);
+      survival_time_rng(log_cond_surv_01[i], ms_time_01[i], 1, 0);
     sample_ms_pfs[i] += 1;
   } else {
     // Event observed: use data (pfs + interval_censored + 1 = detection week)
@@ -101,8 +101,8 @@ for (i in 1:n_patients) {
   // ── 2. OS via competing risks (0→1 vs 0→2) + illness-death routing ──
 
   // Guard: clock-forward matrix is [0,0] when ms_time_scale_12==1 (semi-Markov)
-  row_vector[cols(ms_log_cond_surv_12_t)] surv_12_t_i =
-    cols(ms_log_cond_surv_12_t) > 0 ? ms_log_cond_surv_12_t[i] : rep_row_vector(0, 0);
+  row_vector[cols(log_cond_surv_12_t)] surv_12_t_i =
+    cols(log_cond_surv_12_t) > 0 ? log_cond_surv_12_t[i] : rep_row_vector(0, 0);
 
   // --- Unconditional (spop) OS ---
   {
@@ -113,7 +113,7 @@ for (i in 1:n_patients) {
     int spop_cens_02 = 1;
     if (enable_ms_02) {
       int t02_raw; int c02_raw;
-      (t02_raw, c02_raw) = survival_time_rng(ms_log_cond_surv_02[i]);
+      (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[i]);
       spop_time_02 = t02_raw + 1;
       spop_cens_02 = c02_raw;
     }
@@ -130,7 +130,7 @@ for (i in 1:n_patients) {
       spop_ms_right_censored[i] = 0;
     } else if (spop_progressed_first && enable_ms_12) {
       (spop_os[i], spop_os_censored[i]) = sample_post_progression_death_rng(
-        ms_time_scale_12, ms_log_cond_surv_12_s[i], surv_12_t_i,
+        ms_time_scale_12, log_cond_surv_12_s[i], surv_12_t_i,
         spop_time_01, 0);  // sojourn_obs=0: unconditional
     } else {
       // Both censored
@@ -154,7 +154,7 @@ for (i in 1:n_patients) {
       } else {
         // Censored for 0→2: forecast from observed time
         int t02_raw; int c02_raw;
-        (t02_raw, c02_raw) = survival_time_rng(ms_log_cond_surv_02[i], ms_time_01[i], 1, 0);
+        (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[i], ms_time_01[i], 1, 0);
         sample_time_02 = t02_raw + 1;
         sample_cens_02 = c02_raw;
       }
@@ -180,7 +180,7 @@ for (i in 1:n_patients) {
       } else {
         // Forecast post-progression death, conditioning on observed sojourn survival
         (sample_os[i], sample_os_censored[i]) = sample_post_progression_death_rng(
-          ms_time_scale_12, ms_log_cond_surv_12_s[i], surv_12_t_i,
+          ms_time_scale_12, log_cond_surv_12_s[i], surv_12_t_i,
           sample_time_01, ms_time_12[i]);
       }
     } else {
