@@ -320,6 +320,33 @@ In the SCLC-01 analysis, only transition $0 \to 1$ is enabled, modeling other (n
 Transitions $0 \to 2$ and $1 \to 2$ are available for Overall Survival (OS) modeling when death data is included.
 :::
 
+#### 3.1.1 State Encoding and Routing Logic {#sec-state-encoding}
+
+Each patient's observed trajectory is encoded via their **final state** and **transition times**, which determine how the Stan model routes them through the illness-death structure:
+
+**Final State Encoding:**
+
+| State | Interpretation | Likelihood Contribution |
+|-------|----------------|------------------------|
+| 0 | Censored in state 0 (no progression, no death) | Survival for 0→1 and 0→2 |
+| 1 | Alive in state 1 (progressed, alive at last follow-up) | Event for 0→1, survival for 1→2 |
+| 2 | Dead (absorbed state) | Routed via transition times (see below) |
+
+**Routing Logic for State 2 (Death):**
+
+The model uses transition times to distinguish between two death paths:
+
+1. **Direct death (0→2):** $T_{01} = 0$ (sentinel value) indicates the patient died without progression
+   - Likelihood: Event for 0→2, no contribution from 0→1 or 1→2
+
+2. **Post-progression death (0→1→2):** $T_{01} > 0$ indicates progression occurred first
+   - Likelihood: Event for 0→1 at time $T_{01}$, event for 1→2 at sojourn time $T_{12} = T_{\text{death}} - T_{01}$
+   - Minimum sojourn time: $T_{12} \geq 1$ week (ensures hazard contribution even if death occurred in same week as progression)
+
+**Key Implementation Detail:**
+
+Progressed-then-died patients are assigned **final state = 2** (not state 1), ensuring their post-progression death contributes to the 1→2 transition hazard. State 1 is reserved for patients who progressed but remain alive at data cutoff (censored for 1→2).
+
 ### 3.2 Transition Hazard Models
 
 Each stochastic transition follows the same general proportional hazards framework with **transition-specific coefficients**:
@@ -350,10 +377,16 @@ When enabled, models post-progression survival. The baseline hazard can depend o
 
 | Model | Baseline | Interpretation |
 |-------|----------|----------------|
-| **Markov** | $\lambda_{12,\text{base}}(t)$ | Hazard depends on total time; progression is just a covariate |
-| **Semi-Markov** | $\lambda_{12,\text{base}}(s)$ | Hazard depends on time since progression ($s = t - T_{01}$); "clock resets" |
+| **Markov** (`ms_time_scale_12=0`) | $\lambda_{12,\text{base}}(t)$ | Hazard depends on total time; progression is just a covariate |
+| **Semi-Markov** (`ms_time_scale_12=1`) | $\lambda_{12,\text{base}}(s)$ | Hazard depends on time since progression ($s = t - T_{01}$); "clock resets" |
+| **Extended** (`ms_time_scale_12=2`) | $\lambda_{12,\text{base}}(s,t)$ | Combines sojourn and clock-forward GPs additively |
 
 The choice is controlled by the `ms_time_scale_12` flag.
+
+::: {.callout-note}
+## Current Configuration
+SCLC-01 uses **semi-Markov** (sojourn time only) for the 1→2 transition. The extended mode, which combines sojourn and clock-forward GPs, exhibited non-identifiability: the clock-forward GP compensated for its zeroed intercept by inflating its amplitude to create a surrogate negative offset, making the two GP components redundant. Semi-Markov mode avoids this issue while adequately capturing post-progression survival dynamics.
+:::
 
 ### 3.3 Baseline Hazard (Gaussian Process)
 
@@ -688,29 +721,40 @@ The routing determines which event fires first:
 
 When progression fires first, post-progression death is simulated from the $1 \to 2$ transition hazard. The baseline hazard supports three time scales (see @sec-multistate-baseline):
 
-**Extended** ($\text{ms\_time\_scale\_12} = 2$): Combines sojourn and clock-forward GPs additively:
+::: {.callout-note}
+## Current Configuration
+SCLC-01 uses **semi-Markov** ($\text{ms\_time\_scale\_12} = 1$). All three modes are documented below for reference.
+:::
 
-$$
-\log h_{12}(s, t) = \log \lambda_{12,s}(s) + \log \lambda_{12,t}(t)
-$$
-
-where $s$ is sojourn time (weeks since progression) and $t$ is calendar time. The conditional survival is:
-
-$$
-\log S_{12}^{\text{cond}}(s \mid t_{\text{pfs}}) = \sum_{u=1}^{s} \left[ \log S_{12,s}^{\text{cond}}(u) + \log S_{12,t}^{\text{cond}}(t_{\text{pfs}} + u) \right]
-$$
-
-**Semi-Markov** ($\text{ms\_time\_scale\_12} = 1$): Sojourn time only:
+**Semi-Markov** ($\text{ms\_time\_scale\_12} = 1$): Sojourn time only (current default):
 
 $$
 \log S_{12}^{\text{cond}}(s) = \sum_{u=1}^{s} \log S_{12,s}^{\text{cond}}(u)
 $$
+
+where $s$ is sojourn time (weeks since progression). This "clock reset" formulation models post-progression survival as a function of time since progression, independent of when progression occurred.
 
 **Markov** ($\text{ms\_time\_scale\_12} = 0$): Clock-forward time only, conditioned at calendar time $t_{\text{pfs}}$:
 
 $$
 S_{12}(t \mid t > t_{\text{pfs}}) = \frac{S_{12,t}(t)}{S_{12,t}(t_{\text{pfs}})}
 $$
+
+In this formulation, post-progression hazard depends on total time from treatment start, and progression is effectively a covariate.
+
+**Extended** ($\text{ms\_time\_scale\_12} = 2$): Combines sojourn and clock-forward GPs additively:
+
+$$
+\log h_{12}(s, t) = \log \lambda_{12,s}(s) + \log \lambda_{12,t}(t)
+$$
+
+where $s$ is sojourn time and $t$ is calendar time. The conditional survival is:
+
+$$
+\log S_{12}^{\text{cond}}(s \mid t_{\text{pfs}}) = \sum_{u=1}^{s} \left[ \log S_{12,s}^{\text{cond}}(u) + \log S_{12,t}^{\text{cond}}(t_{\text{pfs}} + u) \right]
+$$
+
+This mode exhibited non-identifiability in practice and is not currently used.
 
 #### 4.7.3 Sojourn Conditioning for Censored Patients
 
@@ -1151,8 +1195,8 @@ The model enforces several constraints for identifiability:
 
 ## Document Maintenance
 
-**Version:** 1.6
-**Last Updated:** February 2026
+**Version:** 1.7
+**Last Updated:** February 24, 2026
 **Corresponding Stan Model:** `stan/sf-ssm-log-space.stan`
 
 **Update Protocol:**
@@ -1165,6 +1209,7 @@ When the Stan model changes, this document should be updated to reflect:
 
 **Changelog:**
 
+- **v1.7 (February 24, 2026):** Updated multistate model documentation to reflect current implementation. Changed 1→2 transition default to **semi-Markov** (sojourn time only) in Section 3.2.3 and Section 4.7.2, addressing non-identifiability in extended mode. Added Section 3.1.1 documenting illness-death state encoding (0/1/2) and routing logic, clarifying that progressed-then-died patients use state 2 with minimum 1-week sojourn. Reordered time scale modes to present semi-Markov first as the current configuration. Added callout notes in Sections 3.2.3 and 4.7.2 explaining mode selection rationale.
 - **v1.6 (February 2026):** Added Section 4.7 "Overall Survival (OS)" documenting the competing risks routing logic, post-progression death simulation across three time scales, sojourn conditioning for censored patients, and PFS update for competing risks. Updated Section 6.3 to include OS in generated quantities.
 - **v1.5 (February 2026):** Replaced Section 3 "Other Events Model (Independent Competing Risks)" with "Multistate Hazard Model (Illness-Death)" to reflect the implemented multistate module. Updated notation, priors, and PFS sections to use multistate terminology ($\lambda_{jk}$, transitions $0 \to 1$, $0 \to 2$, $1 \to 2$). Added composite endpoint definitions (PFS, OS, PPS) from multistate framework. Added reference to PSA adaptation plan.
 - **v1.4 (February 2026):** Updated Stan code organization - reorganized directory structure, separated tumor data from base structure into `modules/tumor/`, organized state-space infrastructure into `modules/state_space/`, standardized `.stanfunctions` naming convention for function-only files. Model paths updated from `stan/ssls/` to `stan/`. No mathematical changes to model specification.
