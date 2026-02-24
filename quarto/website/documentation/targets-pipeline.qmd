@@ -20,14 +20,38 @@ The pipeline architecture enables:
 
 The pipeline uses a three-level nested `tar_map()` structure (see [dynamic branching](https://books.ropensci.org/targets/dynamic.html)):
 
+```{mermaid}
+%%| fig-width: 8
+%%| fig-cap: "Nested tar_map() structure showing the three-level pipeline hierarchy"
+graph TD
+    A[sclc_targets] --> B[dco_targets]
+    B --> C[model_targets]
+    C --> D[lfo_targets]
+    C --> E[type_targets]
+    E --> F[event_targets]
+
+    B:::dco
+    C:::model
+    D:::lfo
+    E:::type
+    F:::event
+
+    classDef dco fill:#68D2DF,stroke:#003865,stroke-width:2px,color:#000
+    classDef model fill:#F0AB00,stroke:#003865,stroke-width:2px,color:#000
+    classDef lfo fill:#9DB0AC,stroke:#003865,stroke-width:2px,color:#000
+    classDef type fill:#D0006F,stroke:#003865,stroke-width:2px,color:#fff
+    classDef event fill:#830051,stroke:#003865,stroke-width:2px,color:#fff
+
+    style A fill:#003865,stroke:#F0AB00,stroke-width:3px,color:#fff
 ```
-sclc_targets
-├── dco_targets (Data Cut-Off level)
-│   ├── model_targets (Model variant level)
-│   │   ├── lfo_targets (Leave-Future-Out cross-validation)
-│   │   ├── type_targets (Prior vs Posterior)
-│   │   │   └── event_targets (Censored vs Uncensored)
-```
+
+**Branching levels:**
+
+- **dco_targets**: Data Cut-Off level (apr25, aug25, jan26)
+- **model_targets**: Model variant level (different feature configurations)
+- **lfo_targets**: Leave-Future-Out cross-validation (temporal CV folds)
+- **type_targets**: Prior vs Posterior (model validation)
+- **event_targets**: Censored vs Uncensored (patient subsamples)
 
 This nesting creates a combinatorial expansion of targets across different analysis dimensions.
 
