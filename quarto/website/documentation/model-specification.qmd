@@ -1,7 +1,7 @@
 ---
 title: "Mathematical Specification"
 subtitle: "Complete mathematical specification of the tumor dynamics and survival model"
-number-sections: false
+number-sections: true
 ---
 
 ## Overview {#sec-model-overview}
@@ -23,7 +23,7 @@ This document provides a complete mathematical specification of the Bayesian hie
 
 ## 1. Model Structure and Hierarchy {#sec-model-structure}
 
-### 1.1 Data Organization
+### Data Organization
 
 The model operates on a hierarchical structure:
 
@@ -38,7 +38,7 @@ $$
 - $t \in \{1, \ldots, T_i\}$: visit index for patient $i$
 - $s(i)$: trial assignment for patient $i$
 
-### 1.2 Hierarchical Levels
+### Hierarchical Levels
 
 The model uses a three-level hierarchy for most parameters:
 
@@ -50,7 +50,7 @@ The model uses a three-level hierarchy for most parameters:
 
 ## 2. Tumor Dynamics: State-Space Model {#sec-tumor-dynamics}
 
-### 2.1 State Representation
+### State Representation
 
 Tumor burden is decomposed into two latent components in log-space:
 
@@ -71,9 +71,9 @@ $$
 
 The **observation model** with measurement error is specified in @sec-observation-model.
 
-### 2.2 State Evolution
+### State Evolution
 
-#### 2.2.1 Deterministic Dynamics
+#### Deterministic Dynamics
 
 Between consecutive visits at times $t$ and $t+1$, the expected state evolves as:
 
@@ -89,7 +89,7 @@ where:
 
 **State transitions are deterministic** given the rates. Time-varying behavior (when enabled) comes from AR(1) process noise on the rates themselves (@sec-ar1-process-noise), not from stochastic state transitions.
 
-### 2.3 Initial State Model {#sec-initial-state}
+### Initial State Model {#sec-initial-state}
 
 The initial state at baseline ($t=1$) is parameterized as:
 
@@ -107,7 +107,7 @@ where $f_{\alpha,i} = \text{logit}(\alpha_i)$ is the logit of the initial propor
 Stan uses `log_inv_logit()` and `log1m_inv_logit()` for numerical stability, identical to the fraction module (@sec-fraction-model).
 :::
 
-#### 2.3.1 Hierarchical Model for Initial Proportion
+#### Hierarchical Model for Initial Proportion
 
 $$
 \begin{aligned}
@@ -125,9 +125,9 @@ $$
 - $\boldsymbol{\gamma}_{\alpha,s}^{\text{trial}} \sim \mathcal{N}(\mathbf{0}, \text{diag}(\boldsymbol{\tau}_{\alpha,\text{trial},\text{slope}}^2))$: trial random slopes
 - $\boldsymbol{\gamma}_{\alpha,i}^{\text{patient}} \sim \mathcal{N}(\mathbf{0}, \text{diag}(\boldsymbol{\tau}_{\alpha,\text{patient},\text{slope}}^2))$: patient random slopes
 
-### 2.4 Rate Parameters {#sec-rate-parameters}
+### Rate Parameters {#sec-rate-parameters}
 
-#### 2.4.1 Total Rate Model
+#### Total Rate Model
 
 The total rate $r_i$ controls the overall speed of tumor dynamics:
 
@@ -140,7 +140,7 @@ $$
 
 with the same hierarchical structure as the initial proportion model.
 
-#### 2.4.2 Fraction Model {#sec-fraction-model}
+#### Fraction Model {#sec-fraction-model}
 
 The fraction $\phi_i \in (0, 1)$ allocates the total rate between decrease and growth:
 
@@ -151,7 +151,7 @@ $$
 \end{aligned}
 $$
 
-#### 2.4.3 Instantaneous Rates (Time-Invariant Case)
+#### Instantaneous Rates (Time-Invariant Case)
 
 When process noise is disabled, rates are constant and computed in log-space:
 
@@ -176,7 +176,7 @@ $$
 Stan uses `log_inv_logit()` and `log1m_inv_logit()` for numerical stability.
 :::
 
-#### 2.4.4 Time-Varying Rates (AR(1) Process Noise) {#sec-ar1-process-noise}
+#### Time-Varying Rates (AR(1) Process Noise) {#sec-ar1-process-noise}
 
 When process noise is enabled, rates vary over time via an **autoregressive order 1 (AR(1))** process. This allows the model to capture smooth temporal trends in tumor dynamics beyond what measurement error alone can explain.
 
@@ -275,7 +275,7 @@ The multiplicative structure ($r_i(t) = r_i \cdot \exp(\delta_{r,i}(t))$) ensure
 
 
 
-### 2.5 Observation Model {#sec-observation-model}
+### Observation Model {#sec-observation-model}
 
 Observed SLD measurements include measurement error:
 
@@ -297,7 +297,7 @@ where $\Phi(\cdot)$ is the standard normal CDF.
 
 ## 3. Multistate Hazard Model (Illness-Death) {#sec-multistate}
 
-### 3.1 Model Structure
+### Model Structure
 
 The model uses an **illness-death multistate model** where progression and death are modeled as distinct transitions between states. This replaces a simple competing-risks framework with a clinically realistic structure that can capture post-progression survival.
 
@@ -320,7 +320,7 @@ In the SCLC-01 analysis, only transition $0 \to 1$ is enabled, modeling other (n
 Transitions $0 \to 2$ and $1 \to 2$ are available for Overall Survival (OS) modeling when death data is included.
 :::
 
-#### 3.1.1 State Encoding and Routing Logic {#sec-state-encoding}
+#### State Encoding and Routing Logic {#sec-state-encoding}
 
 Each patient's observed trajectory is encoded via their **final state** and **transition times**, which determine how the Stan model routes them through the illness-death structure:
 
@@ -347,7 +347,7 @@ The model uses transition times to distinguish between two death paths:
 
 Progressed-then-died patients are assigned **final state = 2** (not state 1), ensuring their post-progression death contributes to the 1→2 transition hazard. State 1 is reserved for patients who progressed but remain alive at data cutoff (censored for 1→2).
 
-### 3.2 Transition Hazard Models
+### Transition Hazard Models
 
 Each stochastic transition follows the same general proportional hazards framework with **transition-specific coefficients**:
 
@@ -363,15 +363,15 @@ $$
 - $\boldsymbol{\theta}_{jk}$: transition-specific time-invariant covariate effects
 - $\boldsymbol{\kappa}_{jk}$: transition-specific time-varying covariate effects
 
-#### 3.2.1 Transition $0 \to 1$: Progression
+#### Transition $0 \to 1$: Progression
 
 Non-target progression events (new lesions, clinical progression, death without target PD) are modeled via hazard $\lambda_{01}(t)$. Target lesion progression is determined separately by the tumor dynamics model.
 
-#### 3.2.2 Transition $0 \to 2$: Death Without Progression
+#### Transition $0 \to 2$: Death Without Progression
 
 When enabled, models the hazard of dying before any progression event.
 
-#### 3.2.3 Transition $1 \to 2$: Post-Progression Death
+#### Transition $1 \to 2$: Post-Progression Death {#sec-transition-12-timescales}
 
 When enabled, models post-progression survival. The baseline hazard can depend on different **time scales**:
 
@@ -388,11 +388,11 @@ The choice is controlled by the `ms_time_scale_12` flag.
 SCLC-01 uses **semi-Markov** (sojourn time only) for the 1→2 transition. The extended mode, which combines sojourn and clock-forward GPs, exhibited non-identifiability: the clock-forward GP compensated for its zeroed intercept by inflating its amplitude to create a surrogate negative offset, making the two GP components redundant. Semi-Markov mode avoids this issue while adequately capturing post-progression survival dynamics.
 :::
 
-### 3.3 Baseline Hazard (Gaussian Process)
+### Baseline Hazard (Gaussian Process)
 
 Each transition has its own GP baseline hazard. For transition $j \to k$:
 
-#### 3.3.1 Population-Level Baseline
+#### Population-Level Baseline
 
 $$
 \log(\lambda_{jk,\text{pop}}(t)) \sim \text{GP}(\mu_{\lambda_{jk},\text{pop}}, k_{jk,\text{pop}}(t, t'))
@@ -410,7 +410,7 @@ $$
 - $\alpha_{jk,\text{pop}}^2$: marginal variance (controls vertical scale)
 - $\rho_{jk,\text{pop}}$: length scale (controls smoothness)
 
-#### 3.3.2 Trial-Level Deviations
+#### Trial-Level Deviations
 
 $$
 \log(\lambda_{jk,s}(t)) = \log(\lambda_{jk,\text{pop}}(t)) + f_{jk,s}(t)
@@ -422,7 +422,7 @@ $$
 k_{jk,s}(t, t') = \alpha_{jk,s}^2 \exp\left(-\frac{(t - t')^2}{2\rho_{jk,s}^2}\right)
 $$
 
-### 3.4 Time-Varying Tumor Covariates
+### Time-Varying Tumor Covariates
 
 The model extracts tumor-derived covariates from the state-space model predictions:
 
@@ -464,7 +464,7 @@ where $\bar{\Delta}_i$ and $\text{sd}(\Delta_i)$ are computed from the patient's
 - Standardization constants (median and IQR) for $w_1$ are computed from **observed** SLD data and fixed across MCMC iterations
 - Using predicted SLD (not observed) ensures covariates are smooth and measurement-error-free
 
-### 3.5 Survival Function
+### Survival Function
 
 For each transition $j \to k$, the conditional survival probability is:
 
@@ -478,7 +478,7 @@ $$
 S_{jk,i}(t) = \exp\left(-\sum_{u=1}^t \lambda_{jk,i}(u)\right)
 $$
 
-### 3.6 Clinical Endpoints from Multistate Model {#sec-multistate-endpoints}
+### Clinical Endpoints from Multistate Model {#sec-multistate-endpoints}
 
 The multistate structure yields the following composite endpoints:
 
@@ -514,7 +514,7 @@ $$
 For actual estimates of these endpoints, see [Clinical Endpoints](../analysis/clinical-endpoints.qmd).
 :::
 
-### 4.1 RECIST Response Classification {#sec-recist}
+### RECIST Response Classification {#sec-recist}
 
 Response is determined from SLD trajectories using standard RECIST 1.1 criteria for **target lesions only**:
 
@@ -535,7 +535,7 @@ where $\text{nadir}_i(t) = \min_{u \leq t} \text{SLD}_i(u)$ is the minimum SLD o
 - **PR is relative to baseline**, not nadir
 - **Nadir tracking** is maintained throughout treatment
 
-### 4.2 Objective Response Rate (ORR)
+### Objective Response Rate (ORR)
 
 **Confirmed response:** PR or CR at two consecutive visits
 
@@ -543,11 +543,11 @@ $$
 \text{ORR}_s = \frac{1}{n_s} \sum_{i: s(i) = s} \mathbb{I}\left(\exists t: \text{RECIST}_i(t), \text{RECIST}_i(t+1) \in \{\text{CR}, \text{PR}\}\right)
 $$
 
-### 4.3 Progression-Free Survival (PFS) {#sec-pfs}
+### Progression-Free Survival (PFS) {#sec-pfs}
 
 The observed PFS data $T_i^{\text{PFS,obs}}$ combines progression from target lesions and other events (non-target progression, new lesions, death, etc.). The model decomposes this into two components that are inferred from the data via the multistate model (@sec-multistate):
 
-#### 4.3.1 Target Lesion PFS
+#### Target Lesion PFS
 
 Target lesion progression time is determined from the state-space model predictions:
 
@@ -569,7 +569,7 @@ where $\text{RECIST}_i(t)$ is computed from the posterior predictive SLD traject
 2. Model predictions are based solely on target lesion SLD dynamics
 3. Measurement error and visit timing create uncertainty in exact progression time
 
-#### 4.3.2 Non-Target Progression (Multistate $0 \to 1$)
+#### Non-Target Progression (Multistate $0 \to 1$)
 
 Non-target progression time is inferred as the complement of target progression:
 
@@ -601,7 +601,7 @@ The model observes:
 
 It learns the transition hazard $\lambda_{01,i}(t)$ by fitting to the complement: patients who had PFS events that cannot be explained by target progression alone must have experienced non-target events.
 
-#### 4.3.3 Combined PFS
+#### Combined PFS
 
 The combined PFS from the multistate model (@sec-multistate-endpoints) is:
 
@@ -633,7 +633,7 @@ The model reconstructs the joint PFS distribution by combining predictions from 
 
 When OS modeling is enabled (transitions $0 \to 2$ and $1 \to 2$), the model additionally produces OS and PPS predictions as described in @sec-multistate-endpoints.
 
-#### 4.3.4 Data Reconciliation
+#### Data Reconciliation
 
 **Observed vs. Predicted:**
 
@@ -655,7 +655,7 @@ This decomposition allows the model to:
 - Predict future PFS by combining both processes
 - When OS is enabled, additionally model death via transitions $0 \to 2$ and $1 \to 2$
 
-### 4.4 Kaplan-Meier Estimation {#sec-kaplan-meier}
+### Kaplan-Meier Estimation {#sec-kaplan-meier}
 
 For trial $s$, the Kaplan-Meier survival curve is:
 
@@ -674,7 +674,7 @@ where:
 For Kaplan-Meier survival curves, see [Survival Analysis](../analysis/survival-analysis.qmd).
 :::
 
-### 4.5 Median PFS and Quantiles
+### Median PFS and Quantiles
 
 The median PFS is:
 
@@ -688,7 +688,7 @@ $$
 \text{PFS}_s^{(q)} = \inf\{t: \hat{S}_s(t) \leq 1-q\}
 $$
 
-### 4.6 PFS at Fixed Timepoints (PFS-n)
+### PFS at Fixed Timepoints (PFS-n)
 
 Survival probability at fixed timepoint $t^*$ (e.g., 6 months, 12 months):
 
@@ -696,11 +696,11 @@ $$
 \text{PFS-}t^* = \hat{S}_s(t^*)
 $$
 
-### 4.7 Overall Survival (OS) {#sec-os-computation}
+### Overall Survival (OS) {#sec-os-computation}
 
 OS computation uses the illness-death model's competing risks structure. The implementation handles both **unconditional** (posterior predictive, `spop_*`) and **conditional** (sample-based, `sample_*`) modes, using the helper function `sample_post_progression_death_rng` for post-progression death simulation.
 
-#### 4.7.1 Competing Risks Routing
+#### Competing Risks Routing
 
 For each patient, two competing events are evaluated:
 
@@ -717,9 +717,9 @@ The routing determines which event fires first:
 
 **Conditional mode additional rule:** When the patient has an *observed* direct death (`ms_censored_02 = 0`), the observed path is always used regardless of simulated progression time. This ensures the conditional posterior predictive check (PPC) respects the observed illness-death trajectory. For *forecasted* direct deaths (patient was alive at data cutoff but the model samples a death), the standard timing comparison applies.
 
-#### 4.7.2 Post-Progression Death ($1 \to 2$) Simulation
+#### Post-Progression Death ($1 \to 2$) Simulation
 
-When progression fires first, post-progression death is simulated from the $1 \to 2$ transition hazard. The baseline hazard supports three time scales (see @sec-multistate-baseline):
+When progression fires first, post-progression death is simulated from the $1 \to 2$ transition hazard. The baseline hazard supports three time scales (see @sec-transition-12-timescales):
 
 ::: {.callout-note}
 ## Current Configuration
@@ -756,7 +756,7 @@ $$
 
 This mode exhibited non-identifiability in practice and is not currently used.
 
-#### 4.7.3 Sojourn Conditioning for Censored Patients
+#### Sojourn Conditioning for Censored Patients
 
 In conditional mode, patients who have progressed but are still alive at data cutoff have an observed sojourn survival time:
 
@@ -772,7 +772,7 @@ The forecast must condition on surviving this observed sojourn, using the condit
 
 In unconditional mode, sojourn conditioning is not applied (equivalent to $s_i^{\text{obs}} = 0$).
 
-#### 4.7.4 PFS Update for Competing Risks
+#### PFS Update for Competing Risks
 
 When direct death ($0 \to 2$) fires before progression, PFS must be updated:
 
@@ -792,13 +792,13 @@ $$
 
 ## 5. Prior Distributions {#sec-priors}
 
-### 5.1 Measurement Error
+### Measurement Error
 
 $$
 \sigma_{\text{meas}} \sim \mathcal{N}^+(0, \sigma_{\text{meas},0})
 $$
 
-### 5.2 Initial Proportion Module
+### Initial Proportion Module
 
 $$
 \begin{aligned}
@@ -811,15 +811,15 @@ $$
 \end{aligned}
 $$
 
-### 5.3 Total Rate Module
+### Total Rate Module
 
 Same structure as initial proportion module, with hyperparameters $m_{r,*}$, $s_{r,*}$.
 
-### 5.4 Fraction Module
+### Fraction Module
 
 Same structure as initial proportion module, with hyperparameters $m_{\phi,*}$, $s_{\phi,*}$.
 
-### 5.5 AR(1) Process Noise (when enabled)
+### AR(1) Process Noise (when enabled)
 
 $$
 \begin{aligned}
@@ -830,7 +830,7 @@ $$
 \end{aligned}
 $$
 
-### 5.6 Multistate Baseline Hazard
+### Multistate Baseline Hazard
 
 For each enabled transition $j \to k$:
 
@@ -845,7 +845,7 @@ $$
 \end{aligned}
 $$
 
-### 5.7 Multistate Covariate Effects
+### Multistate Covariate Effects
 
 For each enabled transition $j \to k$:
 
@@ -861,7 +861,7 @@ $$
 
 ## 6. Posterior Inference {#sec-posterior}
 
-### 6.1 Joint Posterior
+### Joint Posterior
 
 The joint posterior distribution is:
 
@@ -879,7 +879,7 @@ where:
 - $\boldsymbol{\Theta}$: all model parameters
 - $\mathcal{D}$: observed data (SLD measurements, event times, censoring indicators)
 
-### 6.2 Sampling Algorithm
+### Sampling Algorithm
 
 The model is fit using Hamiltonian Monte Carlo (HMC) via Stan's No-U-Turn Sampler (NUTS):
 
@@ -893,7 +893,7 @@ The model is fit using Hamiltonian Monte Carlo (HMC) via Stan's No-U-Turn Sample
 For MCMC diagnostics, see [Diagnostics](../analysis/diagnostics.qmd).
 :::
 
-### 6.3 Generated Quantities
+### Generated Quantities
 
 For each posterior sample, the following quantities are computed:
 
@@ -917,7 +917,7 @@ For each posterior sample, the following quantities are computed:
 
 - Same metrics stratified by covariates (e.g., PD-L1 status, trial)
 
-### 6.4 Sample-Based vs. Posterior Predictive Estimates {#sec-sample-vs-spop}
+### Sample-Based vs. Posterior Predictive Estimates {#sec-sample-vs-spop}
 
 When making predictions for a trial, we generate two types of estimates that differ in how they handle observed data:
 
@@ -1012,7 +1012,7 @@ This comparison is a key model validation diagnostic, not a population vs. sampl
 
 ## 7. Model Features and Flexibility {#sec-features}
 
-### 7.1 Modular Design
+### Modular Design
 
 The model uses feature flags to enable/disable components:
 
@@ -1037,7 +1037,7 @@ The model uses feature flags to enable/disable components:
 For details on the modular Stan architecture, see [Architecture](architecture.qmd).
 :::
 
-### 7.2 Computational Efficiency
+### Computational Efficiency
 
 **State computation strategies:**
 
@@ -1054,7 +1054,7 @@ The model uses three different state computation methods depending on configurat
 - Map-reduce framework for patient-level computations
 - Configurable number of shards for parallel processing
 
-### 7.3 Identifiability Constraints
+### Identifiability Constraints
 
 The model enforces several constraints for identifiability:
 
@@ -1067,7 +1067,7 @@ The model enforces several constraints for identifiability:
 
 ## 8. Notation Summary {#sec-notation}
 
-### 8.1 Indices and Dimensions
+### Indices and Dimensions
 
 | Symbol | Description |
 |--------|-------------|
@@ -1078,7 +1078,7 @@ The model enforces several constraints for identifiability:
 | $n_{\text{patients}}$ | Number of patients |
 | $T_i$ | Number of visits for patient $i$ |
 
-### 8.2 Latent States
+### Latent States
 
 | Symbol | Description |
 |--------|-------------|
@@ -1087,7 +1087,7 @@ The model enforces several constraints for identifiability:
 | $x_{i,\text{gro}}(t)$ | Log growing component |
 | $\alpha_i$ | Initial proportion (decreasing) |
 
-### 8.3 Rate Parameters
+### Rate Parameters
 
 | Symbol | Description |
 |--------|-------------|
@@ -1097,7 +1097,7 @@ The model enforces several constraints for identifiability:
 | $d_i(t)$ | Instantaneous decrease rate |
 | $g_i(t)$ | Instantaneous growth rate |
 
-### 8.4 Observations
+### Observations
 
 | Symbol | Description |
 |--------|-------------|
@@ -1105,7 +1105,7 @@ The model enforces several constraints for identifiability:
 | $\sigma_{\text{meas}}$ | Measurement error SD |
 | $\text{LOD}$ | Limit of detection |
 
-### 8.5 Multistate Hazard Model
+### Multistate Hazard Model
 
 | Symbol | Description |
 |--------|-------------|
@@ -1116,7 +1116,7 @@ The model enforces several constraints for identifiability:
 | $T_{i,02}$ | Time to death without progression |
 | $T_{i,12}$ | Post-progression survival time |
 
-### 8.6 Clinical Endpoints
+### Clinical Endpoints
 
 | Symbol | Description |
 |--------|-------------|
@@ -1126,7 +1126,7 @@ The model enforces several constraints for identifiability:
 | $\text{ORR}_s$ | Objective response rate (trial $s$) |
 | $\text{mPFS}_s$ | Median PFS (trial $s$) |
 
-### 8.7 Hierarchical Parameters
+### Hierarchical Parameters
 
 | Symbol | Description |
 |--------|-------------|
@@ -1142,7 +1142,7 @@ The model enforces several constraints for identifiability:
 
 ## 9. Key Model Properties {#sec-properties}
 
-### 9.1 Independence Assumptions
+### Independence Assumptions
 
 **Multistate transitions:**
 
@@ -1157,7 +1157,7 @@ The model enforces several constraints for identifiability:
 - Same AR(1) process affects both decrease and growth rates proportionally
 - Measurement errors are independent across visits
 
-### 9.2 Time-Varying vs. Time-Invariant
+### Time-Varying vs. Time-Invariant
 
 **Time-invariant (default):**
 
@@ -1171,7 +1171,7 @@ The model enforces several constraints for identifiability:
 - $O(n \times T)$ computation
 - Captures visit-to-visit variability beyond measurement error
 
-### 9.3 Interpretability
+### Interpretability
 
 **Log-space advantages:**
 
