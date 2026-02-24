@@ -97,6 +97,17 @@ rm -rf quarto/website/_freeze/analysis/
 
 Then re-render the affected pages.
 
+### TikZ Diagrams
+- Compile diagrams: `/home/ubuntu/.TinyTeX/bin/x86_64-linux/pdflatex -output-directory=quarto/website/images quarto/website/images/<name>.tex`
+- Convert to SVG: `pdf2svg quarto/website/images/<name>.pdf quarto/website/images/<name>-tikz.svg`
+- Clean artifacts: `rm -f quarto/website/images/<name>.{aux,log,pdf}`
+- Use `/tikz-diagram` skill for guided workflow with prerequisite checks
+
+### Documentation Sync
+- Run `/sync-docs` after code changes to identify outdated documentation
+- Updates doc-mappings.yaml when new source files are added to major features
+- Architecture diagrams in `quarto/website/images/` may need regeneration when model structure changes
+
 ## Architecture
 
 ### Stan Module System
@@ -105,7 +116,7 @@ Stan code uses modular `#include` architecture in `stan/modules/`:
 - **tr/** - Tumor regression (decrease) dynamics
 - **frac/** - Growth fraction dynamics
 - **init/** - Initial state modeling
-- **multistate/** - Multistate hazard model (PFS events, death, post-progression)
+- **multistate/** - Illness-death multistate model (replaced "other_events" module; 3 transitions: 0→1, 0→2, 1→2)
 - **measurement/** - Observation model (measurement error)
 
 Each module follows a 7-file pattern:
@@ -272,6 +283,8 @@ Extract and join appropriately for plotting with upper confidence bands.
 - **Always use "SCLC-01"** when referring to the trial in user-facing text (documentation, plots, presentations)
 - Use lowercase "sclc" only for code identifiers (variable names, trial codes, file paths)
 - Example: Write "SCLC-01 trial" in figure captions, but `filter(trial == "sclc")` in R code
+- **Use automatic section numbering**: Set `number-sections: true` in frontmatter, don't use manual numbers (1.1, 2.3) in headings
+- **Cross-references**: Use section IDs `{#sec-name}` and reference with `@sec-name`, never hardcode "Section X.Y.Z"
 - **Model specification is the blueprint**: `quarto/website/documentation/model-specification.qmd` is the authoritative specification for everything in the Stan model. Code and documentation must always match:
   - When changing Stan code, update the model specification to reflect the change
   - When the specification defines behavior (e.g., index conventions, endpoint formulas, routing logic), the code must not violate those definitions without updating the spec first
