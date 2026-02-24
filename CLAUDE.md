@@ -141,6 +141,7 @@ Parameters follow a population → trial → patient hierarchy:
 ### R Code
 - `r/priors.R` - Prior specifications (shared)
 - `r/initializers.R` - Stan model initializers (shared)
+- `r/util.R` - Utility functions including `select_draws(fit, matches(...))` for efficient parameter extraction from CmdStanR fits
 - `r/sclc/prepare_analysis_data.R` - SCLC-specific data prep
 - `targets/sclc_targets.R` - SCLC pipeline definition
 
@@ -175,6 +176,12 @@ When working with stored targets directly (e.g., in standalone scripts), always 
 tar_read(sclc_patient_data_jan26, store = "/mnt/data/analysis-results/karim_naguib/sclc/dco3/_targets")
 ```
 
+**Verifying fit versions**: `tar_outdated()` can be unreliable for `*_res_*` targets. Check timestamps directly:
+```bash
+ls -lt /mnt/data/analysis-results/.../fit/tumor_ssls_ctdna_jan26/*.csv | head -5
+targets::tar_meta(tumor_ssls_km_*_jan26, store = "...")$time
+```
+
 ### SCLC Data Files
 
 Patient and visit data files use date-based suffixes indicating when they were processed:
@@ -188,6 +195,23 @@ Patient and visit data files use date-based suffixes indicating when they were p
 - `pdl1_hi` / `pdl1_high` - Binary flag (≥50% threshold, derived from pdl1)
 
 **Note**: Central vs site PDL1 can show significant discordance. Always check which column is being used for stratification.
+
+### PFS Endpoint Definitions
+
+Model outputs three PFS variants (in `tumor_ssls_km_rvar_*` targets):
+- `target_km_est` - RECIST PD only (death is censored) - **NOT comparable to clinical PFS**
+- `ms_km_est` - Multistate hazard (0→1 transition)
+- `km_est` - Combined (progression OR death, includes 0→2 events) - **use for comparison against observed PFS**
+
+**Critical**: Observed PFS includes death without progression (0→2 events). HISTORICAL has 89 such events (14%), SCLC-01 has 4 (3%). Always use `km_est` when comparing model predictions to observed PFS KM.
+
+### Observed KM Data Structure
+
+`km_trial_pfs` and `km_trial_os` targets have `btype` column:
+- `btype == "lb"` - Lower bound / point estimate
+- `btype == "ub"` - Upper bound of confidence interval
+
+Extract and join appropriately for plotting with upper confidence bands.
 
 ## Coding Guidelines
 
@@ -212,6 +236,7 @@ Patient and visit data files use date-based suffixes indicating when they were p
 - **NEVER use `tar_config_set(store = ...)`** - it changes global state and causes conflicts
 - Always use explicit `store` argument: `tar_read(name, store = "path/_targets")`
 - Same applies to all targets functions: `tar_meta()`, `tar_load()`, etc.
+- **IMPORTANT**: `TAR_BRANCH` environment variable does NOT work with `tar_make()` - always use explicit `store="/path/_targets"` argument
 - **NEVER inline complex code in targets** - extract to helper functions in `r/` directory
   - Target commands should be simple function calls, not multi-line code blocks
   - Example: Use `tar_target(name, my_function(arg))` not `tar_target(name, { ... complex code ... })`
