@@ -1,0 +1,302 @@
+---
+title: "Overall Survival"
+subtitle: "Kaplan-Meier survival curves, median OS, and OS at fixed timepoints"
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+source("_setup.R")
+```
+
+This page presents overall survival (OS) analysis results for the SCLC-01 trial using **DCO3 (January 2026)** data.
+
+::: {.callout-note}
+## OS Endpoint Definition
+OS is measured from randomization to death from any cause. Patients alive at last follow-up are censored. Unlike PFS, OS does not include a progression component --- all events are deaths.
+:::
+
+::: {.callout-tip}
+## Related Pages
+- See [Clinical Endpoints](clinical-endpoints.qmd) for ORR and median PFS results
+- See [Survival Analysis](survival-analysis.qmd) for PFS Kaplan-Meier curves
+- See [Model Specification](../documentation/model-specification.qmd) for endpoint definitions
+:::
+
+## SCLC-01 OS Forecasts {#sec-sclc-os-km}
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+Overall survival Kaplan-Meier curves for the SCLC-01 trial, comparing model predictions with observed data across cohorts.
+
+```{r}
+#| label: fig-os-km-sclc-sample
+#| fig-cap: Sample-based overall survival Kaplan-Meier forecast for SCLC-01 trial.
+#| fig-width: 7
+
+plot_sclc_km_by_estimate_type(
+  "sample",
+  jan26_os_km_data,
+  jan26_cond_os_km_data,
+  jan26_obs_os_km_all,
+  jan26_obs_os_km_first_line,
+  all_analysis_data,
+  endpoint = "os"
+)
+```
+
+### Superpopulation
+
+Overall survival Kaplan-Meier curves for the SCLC-01 trial. Superpopulation estimates represent the expected survival for the underlying population, not just the specific patients in the trial.
+
+```{r}
+#| label: fig-os-km-sclc-spop
+#| fig-cap: Superpopulation overall survival Kaplan-Meier forecast for SCLC-01 trial.
+#| fig-width: 7
+
+plot_sclc_km_by_estimate_type(
+  "spop",
+  jan26_os_km_data,
+  jan26_cond_os_km_data,
+  jan26_obs_os_km_all,
+  jan26_obs_os_km_first_line,
+  all_analysis_data,
+  endpoint = "os"
+)
+```
+
+:::
+
+## PDL1-Stratified OS {#sec-pdl1-os-km}
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+Overall survival curves stratified by PDL1 status and treatment line.
+
+```{r}
+#| label: fig-os-km-pdl1-sample
+#| fig-cap: Sample-based PDL1-stratified overall survival forecast.
+#| fig-width: 7
+#| fig-height: 5
+
+plot_pdl1_km_by_estimate_type(
+  "sample",
+  cond_km_data = jan26_cond_os_km_data,
+  obs_km_all = jan26_obs_os_km_pdl1,
+  obs_km_first_line = jan26_obs_os_km_pdl1_naive,
+  obs_km_part_e = jan26_obs_os_km_part_e_pdl1,
+  endpoint = "os"
+)
+```
+
+### Superpopulation
+
+Overall survival curves stratified by PDL1 status and treatment line.
+
+```{r}
+#| label: fig-os-km-pdl1-spop
+#| fig-cap: Superpopulation PDL1-stratified overall survival forecast.
+#| fig-width: 7
+#| fig-height: 5
+
+plot_pdl1_km_by_estimate_type(
+  "spop",
+  cond_km_data = jan26_cond_os_km_data,
+  obs_km_all = jan26_obs_os_km_pdl1,
+  obs_km_first_line = jan26_obs_os_km_pdl1_naive,
+  obs_km_part_e = jan26_obs_os_km_part_e_pdl1,
+  endpoint = "os"
+)
+```
+
+:::
+
+## Median Overall Survival {#sec-median-os}
+
+Median OS represents the time at which 50% of patients have died.
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+```{r}
+#| label: fig-median-os-sample
+#| fig-cap: Sample-based median overall survival, split by PDL1 status and treatment line for the SCLC-01 trial.
+
+plot_median_survival_by_estimate_type("sample", jan26_quant_os_data, jan26_cond_quant_os_data, endpoint = "os")
+```
+
+### Superpopulation
+
+```{r}
+#| label: fig-median-os-spop
+#| fig-cap: Superpopulation median overall survival, split by PDL1 status and treatment line for the SCLC-01 trial.
+
+plot_median_survival_by_estimate_type("spop", jan26_quant_os_data, jan26_cond_quant_os_data, endpoint = "os")
+```
+
+:::
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+#### All Patients
+
+```{r}
+#| label: tbl-median-os-summary-sample-all
+#| tbl-cap: "Sample-based median OS summary for all patients."
+
+create_median_survival_table("sample", "all", jan26_quant_os_data, jan26_cond_quant_os_data, endpoint = "os")
+```
+
+#### First Line Patients
+
+```{r}
+#| label: tbl-median-os-summary-sample-first-line
+#| tbl-cap: "Sample-based median OS summary for first line patients."
+
+create_median_survival_table("sample", "first_line", jan26_quant_os_data, jan26_cond_quant_os_data, endpoint = "os")
+```
+
+#### Part E
+
+```{r}
+#| label: tbl-median-os-summary-sample-part-e
+#| tbl-cap: "Sample-based median OS summary for Part E patients."
+
+create_median_survival_table("sample", "part_e", jan26_quant_os_data, jan26_cond_quant_os_data, endpoint = "os")
+```
+
+### Superpopulation
+
+#### All Patients
+
+```{r}
+#| label: tbl-median-os-summary-spop-all
+#| tbl-cap: "Superpopulation median OS summary for all patients."
+
+create_median_survival_table("spop", "all", jan26_quant_os_data, jan26_cond_quant_os_data, endpoint = "os")
+```
+
+#### First Line Patients
+
+```{r}
+#| label: tbl-median-os-summary-spop-first-line
+#| tbl-cap: "Superpopulation median OS summary for first line patients."
+
+create_median_survival_table("spop", "first_line", jan26_quant_os_data, jan26_cond_quant_os_data, endpoint = "os")
+```
+
+#### Part E
+
+```{r}
+#| label: tbl-median-os-summary-spop-part-e
+#| tbl-cap: "Superpopulation median OS summary for Part E patients."
+
+create_median_survival_table("spop", "part_e", jan26_quant_os_data, jan26_cond_quant_os_data, endpoint = "os")
+```
+
+:::
+
+## OS at Fixed Timepoints (OS-n) {#sec-os-n}
+
+OS-n represents the probability of being alive at specific timepoints (e.g., 6, 9, 12, 18 months).
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+```{r}
+#| label: fig-os-n-sample
+#| fig-cap: Sample-based overall survival at different time points, split by PDL1 status and treatment line for the SCLC-01 trial.
+
+plot_survival_n_by_estimate_type("sample", jan26_os_n_data, jan26_cond_os_n_data, pfs_timepoints, endpoint = "os")
+```
+
+### Superpopulation
+
+```{r}
+#| label: fig-os-n-spop
+#| fig-cap: Superpopulation overall survival at different time points, split by PDL1 status and treatment line for the SCLC-01 trial.
+
+plot_survival_n_by_estimate_type("spop", jan26_os_n_data, jan26_cond_os_n_data, pfs_timepoints, endpoint = "os")
+```
+
+:::
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+#### All Patients
+
+```{r}
+#| label: tbl-os-n-summary-sample-all
+#| tbl-cap: "Sample-based OS-n summary for all patients."
+
+create_survival_n_table("sample", "all", jan26_os_n_data, jan26_cond_os_n_data, endpoint = "os")
+```
+
+#### First Line Patients
+
+```{r}
+#| label: tbl-os-n-summary-sample-first-line
+#| tbl-cap: "Sample-based OS-n summary for first line patients."
+
+create_survival_n_table("sample", "first_line", jan26_os_n_data, jan26_cond_os_n_data, endpoint = "os")
+```
+
+#### Part E
+
+```{r}
+#| label: tbl-os-n-summary-sample-part-e
+#| tbl-cap: "Sample-based OS-n summary for Part E patients."
+
+create_survival_n_table("sample", "part_e", jan26_os_n_data, jan26_cond_os_n_data, endpoint = "os")
+```
+
+### Superpopulation
+
+#### All Patients
+
+```{r}
+#| label: tbl-os-n-summary-spop-all
+#| tbl-cap: "Superpopulation OS-n summary for all patients."
+
+create_survival_n_table("spop", "all", jan26_os_n_data, jan26_cond_os_n_data, endpoint = "os")
+```
+
+#### First Line Patients
+
+```{r}
+#| label: tbl-os-n-summary-spop-first-line
+#| tbl-cap: "Superpopulation OS-n summary for first line patients."
+
+create_survival_n_table("spop", "first_line", jan26_os_n_data, jan26_cond_os_n_data, endpoint = "os")
+```
+
+#### Part E
+
+```{r}
+#| label: tbl-os-n-summary-spop-part-e
+#| tbl-cap: "Superpopulation OS-n summary for Part E patients."
+
+create_survival_n_table("spop", "part_e", jan26_os_n_data, jan26_cond_os_n_data, endpoint = "os")
+```
+
+:::
+
+::: {.related-pages}
+## Related Pages
+
+- [Clinical Endpoints](clinical-endpoints.qmd) - ORR and median PFS results
+- [Survival Analysis](survival-analysis.qmd) - PFS Kaplan-Meier curves
+- [DCO Comparisons](../comparisons/dco-comparisons.qmd) - Data cutoff comparisons
+- [Model Specification](../documentation/model-specification.qmd) - Endpoint definitions
+:::
