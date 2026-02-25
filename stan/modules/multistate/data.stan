@@ -27,8 +27,7 @@ array[n_patients] int<lower=0, upper=1> ms_censored_02;
 array[n_patients] int<lower=0, upper=1> ms_censored_12;
 
 // --- 0→3 Transition: Dropout ---
-array[n_patients] int<lower=0> ms_time_03;              // Time at dropout (or censoring time for 0→3)
-array[n_patients] int<lower=0, upper=1> ms_censored_03; // 1 = no dropout (admin-censored or had event), 0 = dropped out
+array[n_patients] int<lower=0> ms_time_03;  // Calendar week of dropout (= patient_max_t for all patients)
 
 // --- 3→2 Transition: Off-trial death ---
 array[n_patients] int<lower=0> ms_time_32;              // Time from dropout to death (clock-forward weeks), 0 if N/A

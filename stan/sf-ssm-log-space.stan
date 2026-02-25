@@ -97,7 +97,7 @@ model {
             ms_time_01, ms_time_02, ms_time_12,
             ms_time_03, ms_time_32,
             ms_censored_01, ms_censored_02, ms_censored_12,
-            ms_censored_03, ms_censored_32,
+            ms_censored_32,
             ms_prog_deterministic,
             log_cond_surv_01,
             log_cond_surv_02,
