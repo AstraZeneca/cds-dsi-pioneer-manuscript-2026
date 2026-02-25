@@ -4,13 +4,19 @@
 
 // --- Validate Final State Upper Bound ---
 int ms_max_state = (enable_ms_02 || enable_ms_12) ? 2 : 1;
+if (enable_ms_03) ms_max_state = 3;
 for (i in 1:n_patients) {
   if (ms_final_state[i] > ms_max_state) {
     fatal_error("Patient ", i, " has ms_final_state=", ms_final_state[i],
                 " but max reachable state is ", ms_max_state,
                 " given transition flags (enable_ms_02=", enable_ms_02,
-                ", enable_ms_12=", enable_ms_12, ")");
+                ", enable_ms_12=", enable_ms_12,
+                ", enable_ms_03=", enable_ms_03, ")");
   }
+}
+
+if (!enable_ms_03 && enable_ms_32) {
+  fatal_error("enable_ms_32=1 requires enable_ms_03=1");
 }
 
 // --- Derived Flags for Time Scale ---
@@ -37,6 +43,10 @@ int n_enabled_groups_ms_baseline_12_s = need_12_s_gp ? compute_n_enabled_groups(
 ) : 0;
 
 int n_enabled_groups_ms_baseline_12_t = need_12_t_gp ? compute_n_enabled_groups(
+  n_groups_per_level, enable_ms_level_baseline_hazard
+) : 0;
+
+int n_enabled_groups_ms_baseline_32 = enable_ms_32 ? compute_n_enabled_groups(
   n_groups_per_level, enable_ms_level_baseline_hazard
 ) : 0;
 
