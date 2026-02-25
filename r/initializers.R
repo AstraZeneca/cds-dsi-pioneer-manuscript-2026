@@ -675,26 +675,26 @@ create_tumor_ssls_initializer <- function(stan_data) {
           rnorm(n_enabled_groups_ms_baseline_03)
         },
 
-        # --- 3→2 Transition (Off-trial death: Markovian GP) ---
-        log_lambda_gp_32_pop_intercept = if (enable_ms_32) {
-          array(rnorm(1, log_lambda_gp_32_pop_intercept_mean, log_lambda_gp_32_pop_intercept_sd), dim = 1)
+        # --- 3→2 Transition (Off-trial death: sojourn time GP, semi-Markov) ---
+        log_lambda_gp_32_s_pop_intercept = if (enable_ms_32) {
+          array(rnorm(1, log_lambda_gp_32_s_pop_intercept_mean, log_lambda_gp_32_s_pop_intercept_sd), dim = 1)
         },
-        log_lambda_gp_32_pop_alpha = if (enable_ms_32) array(1.0, dim = 1),
-        log_lambda_gp_32_pop_rho = if (enable_ms_32) {
-          array(invgamma::rinvgamma(1, log_lambda_gp_32_pop_rho_alpha, log_lambda_gp_32_pop_rho_beta), dim = 1)
+        log_lambda_gp_32_s_pop_alpha = if (enable_ms_32) array(1.0, dim = 1),
+        log_lambda_gp_32_s_pop_rho = if (enable_ms_32) {
+          array(invgamma::rinvgamma(1, log_lambda_gp_32_s_pop_rho_alpha, log_lambda_gp_32_s_pop_rho_beta), dim = 1)
         },
-        log_lambda_gp_32_pop_eta = if (enable_ms_32) rnorm(max_all_t),
-        log_lambda_gp_32_level_alpha = if (enable_ms_32) rep(1.0, n_levels) else numeric(0),
-        log_lambda_gp_32_level_rho = if (enable_ms_32) {
-          invgamma::rinvgamma(n_levels, log_lambda_gp_32_level_rho_alpha, log_lambda_gp_32_level_rho_beta)
+        log_lambda_gp_32_s_pop_eta = if (enable_ms_32) rnorm(ms_max_sojourn_t_32),
+        log_lambda_gp_32_s_level_alpha = if (enable_ms_32) rep(1.0, n_levels) else numeric(0),
+        log_lambda_gp_32_s_level_rho = if (enable_ms_32) {
+          invgamma::rinvgamma(n_levels, log_lambda_gp_32_s_level_rho_alpha, log_lambda_gp_32_s_level_rho_beta)
         } else numeric(0),
-        log_lambda_gp_32_level_intercept_sd = if (enable_ms_32) {
-          abs(rnorm(n_levels, sd = log_lambda_gp_32_level_intercept_sd_sd))
+        log_lambda_gp_32_s_level_intercept_sd = if (enable_ms_32) {
+          abs(rnorm(n_levels, sd = log_lambda_gp_32_s_level_intercept_sd_sd))
         } else numeric(0),
-        log_lambda_gp_32_level_eta = if (enable_ms_32 && n_enabled_groups_ms_baseline_32 > 0) {
-          matrix(rnorm(n_enabled_groups_ms_baseline_32 * max_all_t), nrow = n_enabled_groups_ms_baseline_32, ncol = max_all_t)
+        log_lambda_gp_32_s_level_eta = if (enable_ms_32 && n_enabled_groups_ms_baseline_32 > 0) {
+          matrix(rnorm(n_enabled_groups_ms_baseline_32 * ms_max_sojourn_t_32), nrow = n_enabled_groups_ms_baseline_32, ncol = ms_max_sojourn_t_32)
         },
-        raw_log_lambda_gp_32_level_intercept = if (n_enabled_groups_ms_baseline_32 > 0) {
+        raw_log_lambda_gp_32_s_level_intercept = if (n_enabled_groups_ms_baseline_32 > 0) {
           rnorm(n_enabled_groups_ms_baseline_32)
         },
 

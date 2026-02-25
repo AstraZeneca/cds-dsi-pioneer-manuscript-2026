@@ -68,20 +68,20 @@ real log_lambda_03_pop_mean;
 real<lower=0> log_lambda_03_pop_sd;
 array[n_levels] real<lower=0> log_lambda_03_level_intercept_sd_sd;
 
-// --- 3→2 Baseline Hazard GP: Population-level (Markov clock-forward) ---
-real<lower=0> log_lambda_gp_32_pop_alpha_alpha;
-real<lower=0> log_lambda_gp_32_pop_alpha_beta;
-real<lower=0> log_lambda_gp_32_pop_rho_alpha;
-real<lower=0> log_lambda_gp_32_pop_rho_beta;
-real log_lambda_gp_32_pop_intercept_mean;
-real<lower=0> log_lambda_gp_32_pop_intercept_sd;
+// --- 3→2 Baseline Hazard GP: Population-level (sojourn time, semi-Markov) ---
+real<lower=0> log_lambda_gp_32_s_pop_alpha_alpha;
+real<lower=0> log_lambda_gp_32_s_pop_alpha_beta;
+real<lower=0> log_lambda_gp_32_s_pop_rho_alpha;
+real<lower=0> log_lambda_gp_32_s_pop_rho_beta;
+real log_lambda_gp_32_s_pop_intercept_mean;
+real<lower=0> log_lambda_gp_32_s_pop_intercept_sd;
 
 // --- 3→2 Baseline Hazard GP: Level-level ---
-array[n_levels] real<lower=0> log_lambda_gp_32_level_intercept_sd_sd;
-array[n_levels] real<lower=0> log_lambda_gp_32_level_alpha_alpha;
-array[n_levels] real<lower=0> log_lambda_gp_32_level_alpha_beta;
-array[n_levels] real<lower=0> log_lambda_gp_32_level_rho_alpha;
-array[n_levels] real<lower=0> log_lambda_gp_32_level_rho_beta;
+array[n_levels] real<lower=0> log_lambda_gp_32_s_level_intercept_sd_sd;
+array[n_levels] real<lower=0> log_lambda_gp_32_s_level_alpha_alpha;
+array[n_levels] real<lower=0> log_lambda_gp_32_s_level_alpha_beta;
+array[n_levels] real<lower=0> log_lambda_gp_32_s_level_rho_alpha;
+array[n_levels] real<lower=0> log_lambda_gp_32_s_level_rho_beta;
 
 // --- Covariate Coefficient Hyperparameters ---
 // Time-varying coefficients (population-level)
