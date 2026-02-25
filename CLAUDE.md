@@ -412,6 +412,12 @@ This will catch most issues automatically before reviewers see your PR.
 
 Issues across all PIONEER repos are tracked in the **PIONEER 2026** GitHub Project (project number 56, owner `azu-oncology-rd`). See `docs/GITHUB_PROJECT.md` for full reference (project/field IDs, `gh` commands, GraphQL queries).
 
+## Pioneer Claude Marketplace
+
+- Plugin registry: `/home/ubuntu/.claude/plugins/marketplaces/pioneer-claude-marketplace/.claude-plugin/marketplace.json`
+- **Adding a plugin**: create files in `plugins/<name>/` AND register it in `marketplace.json` — without the registry entry it won't appear in `/plugin`
+- Marketplace repo: `https://github.com/azu-oncology-rd/cds-dsi-pioneer-claude-marketplace`
+
 ## Documentation
 
 Key technical docs in `docs/`:
