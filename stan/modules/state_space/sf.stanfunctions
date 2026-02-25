@@ -1292,7 +1292,7 @@ tuple(
   int ms_time_scale_12,
   matrix log_cond_surv_02,    // matrix[n_patients, max_all_t] or [0,0] - 0→2 log conditional survival
   matrix log_cond_surv_03,    // matrix[n_patients, max_all_t] or [0,0] - 0→3 log conditional survival
-  matrix log_cond_surv_32,    // matrix[n_patients, max_all_t] or [0,0] - 3→2 log conditional survival
+  matrix log_cond_surv_32,    // matrix[n_patients, ms_max_sojourn_t_32] or [0,0] - 3→2 log conditional survival
   matrix log_cond_surv_12_s,  // matrix[n_patients, ms_max_sojourn_t] or [0,0] - 1→2 sojourn GP
   matrix log_cond_surv_12_t,  // matrix[n_patients, max_all_t] or [0,0] - 1→2 clock-forward GP
   array[] int pfs,
