@@ -26,6 +26,14 @@ array[n_patients] int<lower=0, upper=1> ms_censored_01;
 array[n_patients] int<lower=0, upper=1> ms_censored_02;
 array[n_patients] int<lower=0, upper=1> ms_censored_12;
 
+// --- 0→3 Transition: Dropout ---
+array[n_patients] int<lower=0> ms_time_03;              // Time at dropout (or censoring time for 0→3)
+array[n_patients] int<lower=0, upper=1> ms_censored_03; // 1 = no dropout (admin-censored or had event), 0 = dropped out
+
+// --- 3→2 Transition: Off-trial death ---
+array[n_patients] int<lower=0> ms_time_32;              // Time from dropout to death (clock-forward weeks), 0 if N/A
+array[n_patients] int<lower=0, upper=1> ms_censored_32; // 1 = censored in state 3, 0 = off-trial death observed
+
 // --- Deterministic Progression Flag ---
 // Was progression determined by the mechanistic model (PSA-PD/RECIST-PD)?
 // If 1, no hazard contribution at T₀₁ from the stochastic 0→1 component
