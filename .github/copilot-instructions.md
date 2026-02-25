@@ -9,8 +9,8 @@ This is the **sclc** project within the broader Pioneer CDS-DSI codebase. Sclc i
 ### What Sclc Uses
 
 **Stan Models:**
-- Primary model: `stan/ssls/sf-ssls-lfo.stan` and `stan/ssls/sf-ssm-log-space.stan`
-- Modular architecture with components in `stan/ssls/modules/`
+- Primary model: `stan/sf-ssls-lfo.stan` and `stan/sf-ssm-log-space.stan`
+- Modular architecture with components in `stan/modules/`
 - Uses **n_causes = 1** (single combined competing risk for all non-target events)
 
 **R Code Paths:**
@@ -45,7 +45,7 @@ This is the **sclc** project within the broader Pioneer CDS-DSI codebase. Sclc i
 
 The Stan code uses a modular architecture with `#include` directives. Modules are organized by feature:
 
-- **State Space Module** (`stan/ssls/modules/`):
+- **State Space Module** (`stan/modules/`):
   - `tr/` - Tumor regression (decrease) dynamics
   - `frac/` - Growth fraction dynamics
   - `init/` - Initial state modeling
@@ -151,7 +151,7 @@ The Stan code uses a modular architecture with `#include` directives. Modules ar
 
 **Use `stanc` for syntax checking:**
 ```bash
-~/.cmdstan/cmdstan-2.37.0/bin/stanc --include-paths=stan,stan/ssls stan/ssls/sf-ssm-log-space.stan
+~/.cmdstan/cmdstan-2.37.0/bin/stanc --include-paths=stan,stan/ssls stan/sf-ssm-log-space.stan
 ```
 
 This is faster than full compilation and sufficient for checking syntax correctness. Only do full compilation with `cmdstanr::cmdstan_model()` when you need the executable.
@@ -219,7 +219,7 @@ When editing files used by multiple projects (`r/priors.R`, `r/prepare_analysis_
 
 ### Stan Module Structure
 
-Each module in `stan/ssls/modules/` follows this 7-file pattern:
+Each module in `stan/modules/` follows this 7-file pattern:
 1. `flags.stan` - Feature switches
 2. `data.stan` - Module-specific data declarations
 3. `hyperparams.stan` - Prior hyperparameters

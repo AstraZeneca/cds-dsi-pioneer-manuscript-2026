@@ -20,11 +20,11 @@ This page provides an overview of the data used in the SCLC-01 longitudinal tumo
 
 ## Patient Enrollment Timeline {#sec-enrollment}
 
-Timeline showing when patients enrolled in the SCLC trial, with vertical lines indicating data cutoff (DCO) dates.
+Timeline showing when patients enrolled in the SCLC-01 trial, with vertical lines indicating data cutoff (DCO) dates.
 
 ```{r}
 #| label: fig-enrollment-timeline
-#| fig-cap: Patient enrollment timeline for SCLC trial showing treatment start dates and data cutoff dates.
+#| fig-cap: Patient enrollment timeline for SCLC-01 trial showing treatment start dates and data cutoff dates.
 #| fig-width: 10
 #| fig-height: 4
 
@@ -61,11 +61,11 @@ all_analysis_data |>
 
 ### Assessment Visits Timeline
 
-Timeline showing when assessment visits were recorded in the SCLC trial.
+Timeline showing when assessment visits were recorded in the SCLC-01 trial.
 
 ```{r}
 #| label: fig-visits-timeline
-#| fig-cap: Assessment visits timeline for SCLC trial showing when tumor measurements were recorded, with data cutoff dates marked.
+#| fig-cap: Assessment visits timeline for SCLC-01 trial showing when tumor measurements were recorded, with data cutoff dates marked.
 #| fig-width: 10
 #| fig-height: 4
 

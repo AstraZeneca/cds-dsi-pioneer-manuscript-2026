@@ -30,7 +30,7 @@ Rscript -e 'targets::tar_make()'
 
 ### Stan Model Syntax Check (fast)
 ```bash
-~/.cmdstan/cmdstan-2.37.0/bin/stanc --include-paths=stan,stan/ssls stan/ssls/sf-ssm-log-space.stan
+~/.cmdstan/cmdstan-2.38.0/bin/stanc --include-paths=stan stan/sf-ssm-log-space.stan
 ```
 
 ### Running Tests
@@ -64,6 +64,8 @@ quarto preview quarto/website
 
 **Server URL**: `https://rstudio-connect.seml.scp.astrazeneca.net/connect/`
 **Account**: `kmjq089`
+
+**IMPORTANT**: Always use the R `rsconnect` package for publishing. The `quarto publish connect` CLI command does not work reliably in non-interactive/remote environments because it requires browser-based SSO authentication.
 
 #### Step-by-Step Publishing Instructions
 
@@ -164,6 +166,28 @@ quarto publish connect quarto/website
 
 **SECURITY**: API keys should NEVER be committed to git. The `rsconnect/` directory and `_publish.yml` are already in `.gitignore`.
 
+#### Publishing Presentations
+
+For Quarto revealjs presentations (e.g., `quarto/presentations/pioneer-gng/`), use `rsconnect::deployDoc()`:
+
+```r
+library(rsconnect)
+
+# First render the presentation
+# quarto render quarto/presentations/pioneer-gng/pioneer-gng.qmd
+
+# Then deploy the rendered HTML
+rsconnect::deployDoc(
+  doc = "quarto/presentations/pioneer-gng/pioneer-gng.html",
+  server = "az-connect",
+  account = "kmjq089",
+  appName = "pioneer-gng-presentation"  # Choose a unique name
+)
+```
+
+**Published presentations:**
+- PIONEER Go/No-Go: https://rstudio-connect.seml.scp.astrazeneca.net/content/71d3bcc6-c677-485b-b8fc-562b0f580c9a/
+
 ### Key Configuration Files
 - `_quarto.yml` - Site configuration, navigation, theme settings
 - `az-theme.scss` - AstraZeneca color scheme (navy, gold, turquoise, etc.)
@@ -206,7 +230,7 @@ Then re-render the affected pages.
 
 ### Stan Module System
 
-Stan code uses modular `#include` architecture in `stan/ssls/modules/`:
+Stan code uses modular `#include` architecture in `stan/modules/`:
 - **tr/** - Tumor regression (decrease) dynamics
 - **frac/** - Growth fraction dynamics
 - **init/** - Initial state modeling
@@ -238,8 +262,8 @@ Parameters follow a population → trial → patient hierarchy:
 - `oe_*` - Other events
 
 ### Key Stan Models
-- `stan/ssls/sf-ssm-log-space.stan` - Main state-space longitudinal survival model
-- `stan/ssls/sf-ssls-lfo.stan` - Leave-future-out cross-validation variant
+- `stan/sf-ssm-log-space.stan` - Main state-space longitudinal survival model
+- `stan/sf-ssls-lfo.stan` - Leave-future-out cross-validation variant
 
 ## Key Files
 
@@ -262,6 +286,9 @@ Analysis results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<ru
 
 ## Coding Guidelines
 
+### General
+- **No backward-compatibility aliases**: Do not create variable or function aliases for backward compatibility unless explicitly requested. When renaming, update all references directly instead of adding shims or aliases.
+
 ### Stan
 - Use built-in zero constructors: `zeros_vector()`, `zeros_int_array()`
 - Don't pass array/vector sizes as arguments; use `size()` internally
@@ -274,11 +301,21 @@ Analysis results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<ru
 - Follow tidyverse style guide
 - Prefer `purrr` and `dplyr` over base R loops
 - Use `testthat` for unit tests
+- **NEVER hardcode subject IDs** (usubjid, patient_id, etc.) - always use dynamic selection or filtering
 
 ### Targets
 - **NEVER use `tar_config_set(store = ...)`** - it changes global state and causes conflicts
 - Always use explicit `store` argument: `tar_read(name, store = "path/_targets")`
 - Same applies to all targets functions: `tar_meta()`, `tar_load()`, etc.
+- **NEVER inline complex code in targets** - extract to helper functions in `r/` directory
+  - Target commands should be simple function calls, not multi-line code blocks
+  - Example: Use `tar_target(name, my_function(arg))` not `tar_target(name, { ... complex code ... })`
+  - Helper functions belong in appropriate `r/` subdirectories (e.g., `r/sclc/plot_functions.R`)
+
+### Quarto and Documentation
+- **Always use "SCLC-01"** when referring to the trial in user-facing text (documentation, plots, presentations)
+- Use lowercase "sclc" only for code identifiers (variable names, trial codes, file paths)
+- Example: Write "SCLC-01 trial" in figure captions, but `filter(trial == "sclc")` in R code
 
 ### Adding Module Parameters
 1. Add feature flag in `modules/<module>/flags.stan`

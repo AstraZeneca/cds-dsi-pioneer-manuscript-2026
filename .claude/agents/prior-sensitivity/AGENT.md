@@ -33,7 +33,7 @@ Priors critically affect Bayesian inference, especially with limited data. This 
 
 Read and catalog all priors from:
 - **Primary source:** `r/priors.R` - Default hyperparameter values
-- **Stan code:** `stan/ssls/modules/*/priors.stan` - Prior distributions
+- **Stan code:** `stan/modules/*/priors.stan` - Prior distributions
 - **Documentation:** `docs/MODEL_MATHEMATICAL_SPECIFICATION.md` Section 5
 
 **For each prior, record:**
@@ -215,8 +215,8 @@ We use weakly informative priors that regularize extreme parameter values while 
 
 **Prior specifications:**
 - `r/priors.R` - Hyperparameter defaults (main file to review)
-- `stan/ssls/modules/*/hyperparams.stan` - Hyperparameter declarations
-- `stan/ssls/modules/*/priors.stan` - Prior distributions
+- `stan/modules/*/hyperparams.stan` - Hyperparameter declarations
+- `stan/modules/*/priors.stan` - Prior distributions
 
 **Documentation:**
 - `docs/MODEL_MATHEMATICAL_SPECIFICATION.md` Section 5 - Mathematical prior specifications
