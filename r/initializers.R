@@ -447,6 +447,14 @@ create_tumor_ssls_initializer <- function(stan_data) {
         sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1])
       } else 0L
 
+      n_enabled_groups_ms_baseline_03 <- if (enable_ms_03) {
+        sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1])
+      } else 0L
+
+      n_enabled_groups_ms_baseline_32 <- if (enable_ms_32) {
+        sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1])
+      } else 0L
+
       # Covariate slope enabled groups (shared across transitions)
       n_enabled_groups_ms_slope <- sum(n_groups_per_level[enable_ms_level_cov == 1])
 
@@ -586,10 +594,9 @@ create_tumor_ssls_initializer <- function(stan_data) {
           array(invgamma::rinvgamma(1, log_lambda_gp_01_pop_rho_alpha, log_lambda_gp_01_pop_rho_beta), dim = 1)
         },
         log_lambda_gp_01_pop_eta = if (enable_ms_01) rnorm(max_all_t),
-        # Level hierarchy for 0→1 (always sized by n_levels)
-        log_lambda_gp_01_level_alpha = rep(1.0, n_levels),
-        log_lambda_gp_01_level_rho = invgamma::rinvgamma(n_levels, log_lambda_gp_01_level_rho_alpha, log_lambda_gp_01_level_rho_beta),
-        log_lambda_gp_01_level_intercept_sd = abs(rnorm(n_levels, sd = log_lambda_gp_01_level_intercept_sd_sd)),
+        log_lambda_gp_01_level_alpha = if (enable_ms_01) rep(1.0, n_levels) else numeric(0),
+        log_lambda_gp_01_level_rho = if (enable_ms_01) invgamma::rinvgamma(n_levels, log_lambda_gp_01_level_rho_alpha, log_lambda_gp_01_level_rho_beta) else numeric(0),
+        log_lambda_gp_01_level_intercept_sd = if (enable_ms_01) abs(rnorm(n_levels, sd = log_lambda_gp_01_level_intercept_sd_sd)) else numeric(0),
         log_lambda_gp_01_level_eta = if (enable_ms_01 && n_enabled_groups_ms_baseline_01 > 0) {
           matrix(rnorm(n_enabled_groups_ms_baseline_01 * max_all_t), nrow = n_enabled_groups_ms_baseline_01, ncol = max_all_t)
         },
@@ -655,6 +662,40 @@ create_tumor_ssls_initializer <- function(stan_data) {
         },
         raw_log_lambda_gp_12_t_level_intercept = if (n_enabled_groups_ms_baseline_12_t > 0) {
           rnorm(n_enabled_groups_ms_baseline_12_t)
+        },
+
+        # --- 0→3 Transition (Dropout: constant hazard with N-level hierarchy) ---
+        log_lambda_03_pop = if (enable_ms_03) {
+          array(rnorm(1, log_lambda_03_pop_mean, log_lambda_03_pop_sd), dim = 1)
+        },
+        log_lambda_03_level_intercept_sd = if (enable_ms_03) {
+          abs(rnorm(n_levels, sd = log_lambda_03_level_intercept_sd_sd))
+        } else numeric(0),
+        raw_log_lambda_03_level_intercept = if (n_enabled_groups_ms_baseline_03 > 0) {
+          rnorm(n_enabled_groups_ms_baseline_03)
+        },
+
+        # --- 3→2 Transition (Off-trial death: Markovian GP) ---
+        log_lambda_gp_32_pop_intercept = if (enable_ms_32) {
+          array(rnorm(1, log_lambda_gp_32_pop_intercept_mean, log_lambda_gp_32_pop_intercept_sd), dim = 1)
+        },
+        log_lambda_gp_32_pop_alpha = if (enable_ms_32) array(1.0, dim = 1),
+        log_lambda_gp_32_pop_rho = if (enable_ms_32) {
+          array(invgamma::rinvgamma(1, log_lambda_gp_32_pop_rho_alpha, log_lambda_gp_32_pop_rho_beta), dim = 1)
+        },
+        log_lambda_gp_32_pop_eta = if (enable_ms_32) rnorm(max_all_t),
+        log_lambda_gp_32_level_alpha = if (enable_ms_32) rep(1.0, n_levels) else numeric(0),
+        log_lambda_gp_32_level_rho = if (enable_ms_32) {
+          invgamma::rinvgamma(n_levels, log_lambda_gp_32_level_rho_alpha, log_lambda_gp_32_level_rho_beta)
+        } else numeric(0),
+        log_lambda_gp_32_level_intercept_sd = if (enable_ms_32) {
+          abs(rnorm(n_levels, sd = log_lambda_gp_32_level_intercept_sd_sd))
+        } else numeric(0),
+        log_lambda_gp_32_level_eta = if (enable_ms_32 && n_enabled_groups_ms_baseline_32 > 0) {
+          matrix(rnorm(n_enabled_groups_ms_baseline_32 * max_all_t), nrow = n_enabled_groups_ms_baseline_32, ncol = max_all_t)
+        },
+        raw_log_lambda_gp_32_level_intercept = if (n_enabled_groups_ms_baseline_32 > 0) {
+          rnorm(n_enabled_groups_ms_baseline_32)
         },
 
         # --- Time-varying Covariate Coefficients ---

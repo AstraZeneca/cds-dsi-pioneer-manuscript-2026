@@ -186,10 +186,20 @@ if (need_12_t_gp) {
 }
 
 // ============================================================================
-// 0→3 TRANSITION PRIORS (Dropout, constant hazard)
+// 0→3 TRANSITION PRIORS (Dropout, constant hazard with N-level hierarchy)
 // ============================================================================
 if (enable_ms_03) {
-  log_lambda_03 ~ normal(log_lambda_03_mean, log_lambda_03_sd);
+  log_lambda_03_pop[1] ~ normal(log_lambda_03_pop_mean, log_lambda_03_pop_sd);
+
+  for (lv in 1:n_levels) {
+    log_lambda_03_level_intercept_sd[lv] ~ normal(
+      0, log_lambda_03_level_intercept_sd_sd[lv]
+    );
+  }
+
+  if (n_enabled_groups_ms_baseline_03 > 0) {
+    raw_log_lambda_03_level_intercept ~ std_normal();
+  }
 }
 
 // ============================================================================
