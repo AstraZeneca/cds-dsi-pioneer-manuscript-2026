@@ -380,15 +380,35 @@ if (need_12_t_gp) {
 }
 
 // ============================================================================
-// 0→3 TRANSITION: Constant hazard per trial
+// 0→3 TRANSITION: Constant hazard with N-level hierarchy
 // ============================================================================
-// For constant hazard λ: log P(survive interval) = -exp(log_lambda) per interval
-// Stored as full matrix for interface consistency with the likelihood.
+// Population intercept + per-level group shifts, no temporal GP.
+// log P(survive interval) = -exp(patient log hazard) per interval.
+vector[n_enabled_groups_ms_baseline_03] log_lambda_03_level_intercept;
 matrix[enable_ms_03 ? n_patients : 0, enable_ms_03 ? max_all_t : 0] log_cond_surv_03;
 
 if (enable_ms_03) {
+  // Patient-level log hazard: population + sum of enabled level intercepts
+  vector[n_patients] log_lambda_03_patient = rep_vector(log_lambda_03_pop[1], n_patients);
+
+  for (lv in 1:n_levels) {
+    if (enable_ms_level_baseline_hazard[lv]) {
+      int lv_start, lv_end;
+      (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
+
+      log_lambda_03_level_intercept[lv_start:lv_end] =
+        raw_log_lambda_03_level_intercept[lv_start:lv_end] *
+        log_lambda_03_level_intercept_sd[lv];
+
+      for (i in 1:n_patients) {
+        log_lambda_03_patient[i] +=
+          log_lambda_03_level_intercept[patient_ms_baseline_flat_idx[i, lv]];
+      }
+    }
+  }
+
   for (i in 1:n_patients) {
-    log_cond_surv_03[i] = rep_row_vector(-exp(log_lambda_03[patient_trial[i]]), max_all_t);
+    log_cond_surv_03[i] = rep_row_vector(-exp(log_lambda_03_patient[i]), max_all_t);
   }
 }
 

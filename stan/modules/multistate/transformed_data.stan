@@ -46,6 +46,10 @@ int n_enabled_groups_ms_baseline_12_t = need_12_t_gp ? compute_n_enabled_groups(
   n_groups_per_level, enable_ms_level_baseline_hazard
 ) : 0;
 
+int n_enabled_groups_ms_baseline_03 = enable_ms_03 ? compute_n_enabled_groups(
+  n_groups_per_level, enable_ms_level_baseline_hazard
+) : 0;
+
 int n_enabled_groups_ms_baseline_32 = enable_ms_32 ? compute_n_enabled_groups(
   n_groups_per_level, enable_ms_level_baseline_hazard
 ) : 0;

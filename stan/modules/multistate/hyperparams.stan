@@ -63,9 +63,10 @@ array[n_levels] real<lower=0> log_lambda_gp_12_t_level_alpha_beta;
 array[n_levels] real<lower=0> log_lambda_gp_12_t_level_rho_alpha;
 array[n_levels] real<lower=0> log_lambda_gp_12_t_level_rho_beta;
 
-// --- 0→3 Constant Hazard (Dropout) ---
-vector[n_trials] log_lambda_03_mean;
-vector<lower=0>[n_trials] log_lambda_03_sd;
+// --- 0→3 Constant Hazard (Dropout): Population + N-level hierarchy ---
+real log_lambda_03_pop_mean;
+real<lower=0> log_lambda_03_pop_sd;
+array[n_levels] real<lower=0> log_lambda_03_level_intercept_sd_sd;
 
 // --- 3→2 Baseline Hazard GP: Population-level (Markov clock-forward) ---
 real<lower=0> log_lambda_gp_32_pop_alpha_alpha;
