@@ -1,0 +1,297 @@
+/*-- scss:defaults --*/
+
+// Import shared AZ color palette
+@import "../../_shared/az-colors";
+
+// Revealjs presentation theme using AZ colors
+
+// Headings
+$presentation-heading-color: $az-navy;
+$presentation-heading-font: "Arial", sans-serif;
+$presentation-heading-font-weight: 600;
+
+// Body
+$body-bg: #ffffff;
+$body-color: $az-darkgrey;
+$link-color: $az-navy;
+$link-color-hover: $az-plum;
+
+// Font sizes
+$presentation-font-size-root: 32px;
+$presentation-h1-font-size: 1.8em;
+$presentation-h2-font-size: 1.4em;
+$presentation-h3-font-size: 1.2em;
+
+// Code
+$code-color: $az-plum;
+$code-bg: #f8f9fa;
+
+/*-- scss:rules --*/
+
+// Export AZ colors as CSS custom properties for use in inline <style> blocks
+:root {
+  --az-navy: #{$az-navy};
+  --az-gold: #{$az-gold};
+  --az-plum: #{$az-plum};
+  --az-turquoise: #{$az-turquoise};
+  --az-darkpurple: #{$az-darkpurple};
+  --az-green: #{$az-green};
+  --az-platinum: #{$az-platinum};
+  --az-darkgrey: #{$az-darkgrey};
+  --az-pink: #{$az-pink};
+  --az-lightpurple: #{$az-lightpurple};
+}
+
+// Title slide styling
+.reveal .slide-background.title-slide {
+  background: linear-gradient(135deg, $az-navy 0%, darken($az-navy, 10%) 100%);
+}
+
+.reveal section.title-slide {
+  h1, h2, h3 {
+    color: white;
+  }
+  p {
+    color: rgba(255, 255, 255, 0.9);
+  }
+}
+
+// Slide footer with gold accent
+.reveal .slide-footer {
+  border-top: 2px solid $az-gold;
+  color: $az-darkgrey;
+  font-size: 0.7em;
+  padding-top: 8px;
+}
+
+// Slide number styling
+.reveal .slide-number {
+  color: $az-navy;
+  font-weight: 600;
+}
+
+// Lists with gold bullets (exclude nav elements)
+.reveal ul:not(.nav):not(.nav-tabs):not(.nav-pills):not([role="tablist"]) {
+  list-style-type: none;
+  padding-left: 0;
+}
+
+.reveal ul:not(.nav):not(.nav-tabs):not(.nav-pills):not([role="tablist"]) > li:not(.nav-item):not([role="presentation"]) {
+  padding-left: 1.5em;
+  position: relative;
+  margin-bottom: 0.5em;
+}
+
+.reveal ul:not(.nav):not(.nav-tabs):not(.nav-pills):not([role="tablist"]) > li:not(.nav-item):not([role="presentation"])::before {
+  content: "▸";
+  color: $az-gold;
+  font-weight: bold;
+  position: absolute;
+  left: 0;
+}
+
+// Nested lists
+.reveal ul:not(.nav):not([role="tablist"]) ul > li:not(.nav-item):not([role="presentation"])::before {
+  content: "–";
+  color: $az-turquoise;
+}
+
+// Explicitly remove bullets from tab navigation
+.reveal .panel-tabset ul,
+.reveal .panel-tabset li,
+.reveal ul[role="tablist"],
+.reveal ul[role="tablist"] li {
+  list-style-type: none !important;
+  padding-left: 0 !important;
+
+  &::before, &::after {
+    content: none !important;
+    display: none !important;
+  }
+}
+
+// Tables
+.reveal table {
+  border-collapse: collapse;
+  margin: 1em auto;
+}
+
+.reveal table th {
+  background-color: $az-navy;
+  color: white;
+  padding: 0.5em 1em;
+  border-bottom: 2px solid $az-gold;
+}
+
+.reveal table td {
+  padding: 0.4em 1em;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.reveal table tbody tr:nth-child(even) {
+  background-color: #f8f9fa;
+}
+
+// Callout boxes
+.reveal .callout {
+  border-left: 4px solid $az-turquoise;
+  background-color: rgba(104, 210, 223, 0.1);
+  padding: 1em;
+  margin: 1em 0;
+  border-radius: 0 4px 4px 0;
+}
+
+.reveal .callout-important {
+  border-left-color: $az-pink;
+  background-color: rgba(208, 0, 111, 0.1);
+}
+
+.reveal .callout-tip {
+  border-left-color: $az-gold;
+  background-color: rgba(240, 171, 0, 0.1);
+}
+
+// Emphasis text with AZ colors
+.reveal strong {
+  color: $az-navy;
+}
+
+.reveal em {
+  color: $az-plum;
+}
+
+// Custom highlight class
+.reveal .highlight {
+  background-color: rgba(240, 171, 0, 0.3);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+
+// Two-column layout helper
+.reveal .columns {
+  display: flex;
+  gap: 2em;
+}
+
+.reveal .column {
+  flex: 0 0 auto;  // Respect width attributes instead of equal sizing
+}
+
+// Image border styling
+.reveal img {
+  border-radius: 4px;
+}
+
+.reveal .bordered-image img {
+  border: 2px solid $az-navy;
+}
+
+// Section divider slides
+.reveal section.section-divider {
+  background: linear-gradient(135deg, $az-navy 0%, darken($az-navy, 10%) 100%);
+  h2 {
+    color: white;
+    font-size: 2em;
+  }
+}
+
+// Section introduction slides with title + bullets layout
+.reveal section.section-intro {
+  background: linear-gradient(135deg, $az-navy 0%, darken($az-navy, 10%) 100%);
+
+  // Large white titles in left column
+  .column:first-child {
+    color: white;
+    font-size: 3.8em;
+    font-weight: bold;
+    line-height: 1.2;
+
+    p {
+      color: white;
+      font-size: 1em; // Already scaled by parent
+      margin: 0;
+    }
+  }
+
+  // Right column: gold text and bullets
+  .column:not(:first-child) {
+    p, li {
+      color: $az-gold;
+    }
+
+    // Make bold text platinum for subtle emphasis
+    strong, b {
+      color: $az-platinum;
+    }
+
+    // Gold bullet markers
+    ul li::before {
+      color: $az-gold;
+    }
+  }
+}
+
+// gt table styling for revealjs
+.reveal .gt_table {
+  font-size: 0.7em;
+}
+
+.reveal .gt_table thead th,
+.reveal .gt_col_heading {
+  background-color: $az-navy !important;
+  color: white !important;
+  border-bottom: 2px solid $az-gold !important;
+}
+
+.reveal .gt_row {
+  border-bottom: 1px solid #dee2e6;
+}
+
+.reveal .gt_row:nth-child(even) {
+  background-color: #f8f9fa;
+}
+
+// Remove arrows from tab titles - comprehensive override
+.reveal .panel-tabset .nav-link::after,
+.reveal .panel-tabset .nav-link::before,
+.reveal .nav-tabs .nav-link::after,
+.reveal .nav-tabs .nav-link::before,
+.reveal .panel-tabset .nav-item::after,
+.reveal .panel-tabset .nav-item::before,
+.reveal .panel-tabset a::after,
+.reveal .panel-tabset a::before,
+.panel-tabset .nav-link::after,
+.panel-tabset .nav-link::before,
+.nav-tabs .nav-link::after,
+.nav-tabs .nav-link::before {
+  display: none !important;
+  content: none !important;
+  visibility: hidden !important;
+}
+
+// Additional override for any list styling in tabs
+.reveal .panel-tabset ul.nav,
+.reveal .panel-tabset .nav-tabs,
+.reveal .nav-tabs {
+  list-style: none !important;
+}
+
+.reveal .panel-tabset ul.nav li,
+.reveal .panel-tabset .nav-tabs li,
+.reveal .nav-tabs li,
+.reveal .nav-item {
+  list-style: none !important;
+  padding-left: 0 !important;
+}
+
+.reveal .panel-tabset ul.nav li::before,
+.reveal .panel-tabset ul.nav li::after,
+.reveal .panel-tabset .nav-tabs li::before,
+.reveal .panel-tabset .nav-tabs li::after,
+.reveal .nav-tabs li::before,
+.reveal .nav-tabs li::after,
+.reveal .nav-item::before,
+.reveal .nav-item::after {
+  content: none !important;
+  display: none !important;
+}

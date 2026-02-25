@@ -78,7 +78,7 @@ plot_sld_ppc_by_trial_dco("historical", sld_data_historical_jan26)
 
 :::
 
-### SCLC Trial
+### SCLC-01 Trial
 
 ::: {.panel-tabset}
 
@@ -86,7 +86,7 @@ plot_sld_ppc_by_trial_dco("historical", sld_data_historical_jan26)
 
 ```{r}
 #| label: fig-forecast-sld-uncensored-sclc-apr25
-#| fig-cap: SLD posterior check for SCLC uncensored patients (April 2025 DCO).
+#| fig-cap: SLD posterior check for SCLC-01 uncensored patients (April 2025 DCO).
 #| fig-width: 10
 #| fig-height: 12
 #| warning: false
@@ -98,7 +98,7 @@ plot_sld_ppc_by_trial_dco("sclc", sld_data_sclc_apr25)
 
 ```{r}
 #| label: fig-forecast-sld-uncensored-sclc-aug25
-#| fig-cap: SLD posterior check for SCLC uncensored patients (August 2025 DCO).
+#| fig-cap: SLD posterior check for SCLC-01 uncensored patients (August 2025 DCO).
 #| fig-width: 10
 #| fig-height: 12
 #| warning: false
@@ -110,7 +110,7 @@ plot_sld_ppc_by_trial_dco("sclc", sld_data_sclc_aug25)
 
 ```{r}
 #| label: fig-forecast-sld-uncensored-sclc-jan26
-#| fig-cap: SLD posterior check for SCLC uncensored patients (January 2026 DCO).
+#| fig-cap: SLD posterior check for SCLC-01 uncensored patients (January 2026 DCO).
 #| fig-width: 10
 #| fig-height: 12
 #| warning: false
@@ -204,8 +204,8 @@ all_lfo_clean |>
     baseline_model = "no_hist",
     model_labels = lfo_model_labels |>
       list_assign(
-        ctdna = "SCLC + HISTORICAL",
-        all_trials = "SCLC + All Historical Trials",
+        ctdna = "SCLC-01 + HISTORICAL",
+        all_trials = "SCLC-01 + All Historical Trials",
       )
   )
 ```
@@ -238,12 +238,14 @@ all_lfo_clean |>
 
 ### RECIST Prediction Accuracy
 
-Out-of-sample confusion matrix comparing observed RECIST classifications with model predictions.
+Out-of-sample sensitivity analysis showing how well the model predicts each RECIST category conditional on the observed response.
+
+::: {layout-ncol=2}
 
 ```{r}
 #| label: fig-data-vs-posterior-confusion-matrix
-#| fig-cap: Out-of-sample (leave-future-out) confusion matrix for the RECIST categories as observed in the data and as estimated using only the target tumor SLD.
-#| fig-width: 6
+#| fig-cap: Out-of-sample (leave-future-out) confusion matrix showing sensitivity (recall) for each RECIST category. Cell values represent P(Predicted response | Observed response).
+#| fig-width: 5
 
 oos_confusion_matrix <- tar_read(oos_confusion_matrix_ctdna_jan26, store = lfo_store)
 plot_oos_confusion_matrix(oos_confusion_matrix)
@@ -252,11 +254,33 @@ plot_oos_confusion_matrix(oos_confusion_matrix)
 ```{r}
 #| label: fig-data-vs-posterior-sankey
 #| fig-cap: Sankey diagram showing the flow from recorded to predicted RECIST responses. Flow width represents prediction proportions; percentages indicate correct prediction rates.
-#| fig-width: 7
+#| fig-width: 6
 #| fig-height: 5
 
 plot_oos_confusion_sankey(oos_confusion_matrix)
 ```
+
+:::
+
+### RECIST Specificity Analysis
+
+The specificity matrix shows the complementary view: for each category X, it displays the distribution of predictions when the true response is **NOT** X.
+
+```{r}
+#| label: fig-data-vs-posterior-specificity-matrix
+#| fig-cap: Out-of-sample specificity-related matrix. Each column shows P(Predicted response | Observed ≠ category). Higher proportions in off-diagonal cells indicate better specificity (correct rejection of false positives).
+#| fig-width: 6
+
+plot_oos_specificity_matrix(oos_confusion_matrix)
+```
+
+::: {.callout-note}
+## Understanding Specificity
+- Each column shows predictions for cases where the true response is **NOT** that category
+- Example: "NOT CR" column shows predictions for all PR, SD, and PD cases
+- Higher off-diagonal proportions (e.g., P(Predicted ≠ CR | Observed ≠ CR)) indicate better specificity
+- Specificity for category X = sum of all rows except X in the "NOT X" column
+:::
 
 ### Summary Metrics
 
@@ -288,8 +312,9 @@ compute_oos_accuracy_metrics(oos_confusion_matrix) |>
 
 ::: {.callout-note}
 ## Interpreting Metrics
+- **Confusion Matrix**: Shows column-wise proportions conditional on observed (true) response, i.e., sensitivity/recall for each category
 - **Overall Accuracy**: Weighted average of per-class sensitivities, weighted by class prevalence
-- **Sensitivity**: P(Predicted X | Observed X) - probability of correctly predicting class X given true class is X
+- **Sensitivity**: P(Predicted X | Observed X) - probability of correctly predicting class X given true class is X (diagonal elements in confusion matrix)
 - **Specificity**: P(Predicted not X | Observed not X) - probability of correctly predicting NOT class X when true class is not X
 :::
 
@@ -299,13 +324,13 @@ Tracking how well the model predicts each RECIST category at different points du
 
 ```{r}
 #| label: fig-recist-probability-over-time
-#| fig-cap: Probability of predicting each RECIST category conditional on observed RECIST, over time.
+#| fig-cap: "Running average sensitivity for each RECIST category across LFO folds. Ribbons show ±1 SE, where SE is computed within each posterior draw across folds, then averaged. This preserves posterior uncertainty while displaying fold-to-fold variability."
 #| fig-width: 10
 #| fig-height: 6
 
 tar_read(full_oos_confusion_matrix_ctdna_jan26, store = lfo_store) |>
   plot_recist_sensitivity_over_time() +
-  labs(caption = "Ribbon shows 80% credible interval of cumulative mean; line shows cumulative median.\nDashed lines indicate data cutoff dates (DCO1: Apr 2025, DCO2: Aug 2025, DCO3: Jan 2026).")
+  labs(caption = "Dashed lines indicate data cutoff dates (DCO1: Apr 2025, DCO2: Aug 2025, DCO3: Jan 2026).")
 ```
 
 ::: {.related-pages}

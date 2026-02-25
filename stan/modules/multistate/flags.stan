@@ -1,0 +1,26 @@
+// ============================================================================
+// Multistate Hazard Model Flags
+// ============================================================================
+// Configurable transitions for flexible multistate modeling:
+//   - SLD model: (1, 0, 0) - single 0→1 transition (PFS event)
+//   - PSA model: (1, 1, 1) - full illness-death
+
+// --- Transition Enable Flags ---
+int<lower=0, upper=1> enable_ms_01;  // 0→1: Progression / PFS event
+int<lower=0, upper=1> enable_ms_02;  // 0→2: Death without progression
+int<lower=0, upper=1> enable_ms_12;  // 1→2: Post-progression death
+
+// --- Time Scale for 1→2 Transition ---
+// 0 = Markov (clock-forward t)
+// 1 = Semi-Markov (sojourn time s = t - T₀₁)
+// 2 = Extended (additive: GP_t(t) + GP_s(s))
+int<lower=0, upper=2> ms_time_scale_12;
+
+// --- Baseline Hazard Hierarchy ---
+// Uses generic n_levels structure (consistent with tr, frac, init modules)
+array[n_levels] int<lower=0, upper=1> enable_ms_level_baseline_hazard;
+
+// --- Covariate Flags ---
+int<lower=0, upper=1> enable_ms_pop_time_invariant_cov;  // Population-level time-invariant covariates
+int<lower=0, upper=1> enable_ms_pop_time_varying_cov;    // Population-level time-varying covariates
+array[n_levels] int<lower=0, upper=1> enable_ms_level_cov;  // Per-level random slopes for time-invariant

@@ -1,5 +1,14 @@
 # nolint start: object_usage_linter
 
+# Trial name labeller for plots
+trial_labeller <- function(x) {
+  case_match(
+    x,
+    "sclc" ~ "SCLC-01",
+    .default = str_to_upper(x)
+  )
+}
+
 prepare_pdl1_and_trial_info <- function(res_data) {
   res_data |>
     filter(
@@ -36,8 +45,10 @@ plot_outcome_by_pdl1_and_trial <- function(res_data, outcome, .width = c(0.5, 0.
       vars(trial),
       scales = "free",
       space = "free",
-      labeller = labeller(trial = str_to_upper, variable = c("all" = "All", "pdl1_naive" = "First Line", "part_e_pdl1" = "Part E"))
+      labeller = labeller(trial = trial_labeller, variable = c("all" = "All", "pdl1_naive" = "First Line", "part_e_pdl1" = "Part E"))
     ) +
+    labs(caption = "Points show posterior median; inner bars show 50% credible intervals,\nouter bars show 90% credible intervals.") +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
     NULL
 }
 
@@ -58,8 +69,14 @@ plot_baseline_hazard <- function(res_data, lambda_var, ...) {
       }
     ) +
     stat_lineribbon(aes(ydist = {{ lambda_var }}, fill = fit_type, color = fit_type), alpha = 0.25, linewidth = 0, .width = 0.8) +
-    labs(y = "Baseline Hazard") +
-    theme(legend.position = "bottom")
+    labs(
+      y = "Baseline Hazard",
+      caption = "Ribbons represent 80% credible intervals; faint lines show 25 posterior draws."
+    ) +
+    theme(
+      legend.position = "bottom",
+      plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))
+    )
 }
 
 plot_crcr_baseline_hazard <- function(res_data, analysis_data = NULL) {
@@ -108,8 +125,14 @@ plot_unclassified_survival <- function(res_data, analysis_data, conf_resp_hb) {
     ) +
     scale_alpha_manual("", values = c(prior = 0.125, posterior = 0.25)) +
     scale_linetype_manual("", values = c(Observed = "dotted")) +
-    labs(y = "Count") +
-    theme(legend.position = "bottom") +
+    labs(
+      y = "Count",
+      caption = "Ribbons represent 50% and 80% credible intervals; lines show posterior median."
+    ) +
+    theme(
+      legend.position = "bottom",
+      plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))
+    ) +
     guides(alpha = "none") +
     NULL
 }
@@ -119,7 +142,11 @@ plot_cif <- function(res_data, obs_cif_data) {
     stat_lineribbon(aes(x = t, ydist = trial_cif, fill = fit_type), linewidth = 0, alpha = 0.25, .width = c(0.5, 0.8)) +
     geom_step(aes(x = time, y = estimate, linetype = "Observed"), direction = "vh", data = \(d) semi_join(obs_cif_data, d, by = "trial")) +
     scale_linetype_manual("", values = c(Observed = "dashed")) +
-    labs(y = "CIF") +
+    labs(
+      y = "CIF",
+      caption = "Ribbons represent 50% and 80% credible intervals around cumulative incidence."
+    ) +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
     NULL
 }
 
@@ -133,9 +160,18 @@ plot_hazard_ratio <- function(res_data) {
     ) +
     geom_vline(xintercept = 1, linetype = "dotted") +
     scale_alpha_manual("", values = c(prior = 0.125, posterior = 0.25)) +
-    labs(x = "Hazard Ratio", y = "Density") +
+    labs(
+      x = "Hazard Ratio",
+      y = "Density",
+      caption = "Ribbons represent 50% and 80% credible intervals; lines show posterior median."
+    ) +
     guides(alpha = "none") +
-    theme(legend.position = "bottom", strip.text.y.left = element_text(angle = 0), strip.placement = "outside") +
+    theme(
+      legend.position = "bottom",
+      strip.text.y.left = element_text(angle = 0),
+      strip.placement = "outside",
+      plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))
+    ) +
     NULL
 }
 
@@ -190,7 +226,10 @@ plot_surv_ppc <- function(ppc_data, surv_interval_col, ic_col, rc_col, rep_surv_
     }) +
     scale_color_discrete("", type = AZ_palette, label = c("FALSE" = "Non-response", "TRUE" = "Response"), aesthetic = c("color", "fill")) +
     # scale_color_ramp_discrete() +
-    labs(y = "") +
+    labs(
+      y = "",
+      caption = "Horizontal bars represent 50% and 80% credible intervals for predicted survival times."
+    ) +
     facet_grid(
       vars(trial),
       scales = "free_y",
@@ -203,7 +242,8 @@ plot_surv_ppc <- function(ppc_data, surv_interval_col, ic_col, rc_col, rep_surv_
       panel.grid.major.y = element_blank(),
       panel.grid.minor.y = element_blank(),
       legend.position = "top",
-      strip.text.y.left = element_text(angle = 0)
+      strip.text.y.left = element_text(angle = 0),
+      plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))
     ) +
     guides(
       color_ramp = "none", # Remove the interval legend
@@ -258,13 +298,19 @@ base_plot_km <- function(
     #   fill = NA,
     #   show.legend = FALSE
     # ) +
-    labs(y = "Survival Probability") +
+    labs(
+      y = "Survival Probability",
+      caption = "Ribbons represent 80% credible intervals; lines show posterior median survival curves."
+    ) +
     guides(alpha = "none") +
-    theme(legend.position = "bottom")
+    theme(
+      legend.position = "bottom",
+      plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))
+    )
 
   if (!is_null(obs_km_data)) {
     pobj <- pobj +
-      geom_step(aes(x = t, y = s, group = btype, color = btype), linewidth = 0.5, alpha = 0.5, data = \(d) {
+      geom_step(aes(x = t, y = s, group = btype, color = btype), linewidth = 0.75, alpha = 0.5, data = \(d) {
         semi_join(obs_km_data, d, by = "trial")
       })
 
@@ -303,7 +349,12 @@ plot_gng <- function(res_data, outcome, lrv_tv, model_type_names) {
     scale_color_discrete("Sample", type = AZ_palette, labels = \(l) str_replace(l, "_", " ") |> str_to_title()) +
     scale_color_ramp_discrete(name = "Credible Intervals") +
     facet_grid(vars(model_type), switch = "y", labeller = labeller(model_type = model_type_names)) +
-    theme(strip.placement = "outside", strip.text.y.left = element_text(angle = 0))
+    labs(caption = "Horizontal bars represent 60% and 80% credible intervals around the median.") +
+    theme(
+      strip.placement = "outside",
+      strip.text.y.left = element_text(angle = 0),
+      plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))
+    )
 }
 
 plot_simple_gng <- function(
@@ -334,6 +385,8 @@ plot_simple_gng <- function(
     scale_y_discrete("", labels = model_type_names) +
     scale_color_discrete("Sample", type = AZ_palette, labels = \(l) str_replace(l, "_", " ") |> str_to_title()) +
     scale_color_ramp_discrete(name = "Credible Intervals", range = c(0.25, 0.5)) +
+    labs(caption = "Horizontal bars represent 60% and 80% credible intervals around the median.") +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
     NULL
 }
 
@@ -390,6 +443,8 @@ plot_prior_post_dens <- function(res_data, param = .value, normalize = "all") {
     scale_fill_discrete("", type = AZ_palette, label = str_to_title) +
     scale_colour_discrete("", type = AZ_palette, label = str_to_title) +
     scale_y_continuous("", breaks = NULL) +
+    labs(caption = "Points show posterior median; intervals represent 50%, 80%, and 99%\ncredible intervals.") +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
     NULL
 }
 
@@ -411,7 +466,12 @@ plot_corr_decay <- function(res_data, param = .value) {
     stat_lineribbon(aes(ydist = {{ param }}, fill = fit_type, color = fit_type), alpha = 0.25, .width = c(0.5, 0.8), linewidth = 0.5) +
     scale_fill_discrete("", type = AZ_palette, label = str_to_title) +
     scale_colour_discrete("", type = AZ_palette, label = str_to_title) +
-    labs(x = "Week", y = "Correlation") +
+    labs(
+      x = "Week",
+      y = "Correlation",
+      caption = "Ribbons represent 50% and 80% credible intervals; lines show posterior median."
+    ) +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
     NULL
 }
 
@@ -427,7 +487,9 @@ plot_dynamics <- function(data, var, expect_rvar = TRUE, na.rm = FALSE) {
   pobj +
     geom_point(aes(y = mmsumdiam), color = AZ_navy, size = 1.5, alpha = 0.75) +
     scale_fill_discrete("Stage", type = AZ_palette, label = c("obs" = "Observed", "forecast" = "Forecast")) +
+    labs(caption = "Ribbons represent 50% and 80% credible intervals;\nlines show posterior median tumor dynamics.") +
     facet_wrap(vars(i), scales = "free") +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
     NULL
 }
 
@@ -444,7 +506,12 @@ plot_level_param <- function(res_data, param = .value) {
     scale_color_discrete("", type = AZ_palette, label = str_to_title) +
     scale_fill_discrete("", type = AZ_palette, label = str_to_title) +
     scale_x_continuous("") +
-    labs(y = "", breaks = NULL) +
+    labs(
+      y = "",
+      breaks = NULL,
+      caption = "Ribbons represent credible intervals; lines show posterior median."
+    ) +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
     NULL
 }
 
@@ -458,9 +525,13 @@ plot_level_rates <- function(res_data) {
     scale_color_discrete("", type = AZ_palette, label = str_to_title) +
     scale_fill_discrete("", type = AZ_palette, label = str_to_title) +
     scale_x_continuous("") +
-    labs(y = "") +
+    labs(
+      y = "",
+      caption = "Ribbons represent credible intervals; lines show posterior median."
+    ) +
     facet_wrap(vars(.variable), scales = "free") + #, labeller = labeller(.variable = \(l) str_remove(l, "log_"))) +
     # coord_cartesian(xlim = c(0, 10)) +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
     NULL
 }
 
@@ -475,6 +546,8 @@ plot_level_decrease_prop <- function(res_data) {
     scale_fill_discrete("", type = AZ_palette, label = str_to_title) +
     scale_x_continuous("", breaks = seq(-1, 1, 0.2)) +
     scale_y_continuous("", breaks = NULL) +
+    labs(caption = "Ribbons represent credible intervals; lines show posterior median.") +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
     NULL
 }
 
@@ -486,36 +559,143 @@ plot_confusion_matrix <- function(data, recorded, calculated, p, n = NULL) {
       nvar = if (quo_is_null(nq)) "Unknown" else !!nq,
       pvar = {{ p }},
       n_label = if (!quo_is_null(nq)) str_glue("(n={ nvar })") else "",
-      size_label = str_glue(
-        "{round(pvar, 3)}
-                             {n_label}"
+      size_label = if_else(
+        n_label == "",
+        format(round(pvar, 2), nsmall = 2),
+        str_glue("{format(round(pvar, 2), nsmall = 2)}\n{n_label}")
       )
     ) |>
     ggplot(aes(x = {{ recorded }}, y = {{ calculated }})) +
-    geom_tile(aes(fill = {{ p }}), alpha = 0.5, color = "white", linewidth = 0.5) +
-    geom_text(aes(label = size_label), color = AZ_darkpurple, size = 3) +
-    scale_fill_gradient(low = AZ_turquoise, high = AZ_pink, name = "Proportion") +
+    geom_tile(aes(fill = {{ recorded }}, alpha = {{ p }}), color = "white", linewidth = 1.5) +
+    geom_text(aes(label = size_label), color = AZ_darkpurple, size = 5, lineheight = 0.9, fontface = "bold") +
+    scale_fill_recist(guide = "none") +
+    scale_alpha_continuous(range = c(0, 0.9), guide = "none") +
     scale_x_discrete(limits = fct_rev, drop = FALSE) +
     scale_y_discrete(drop = FALSE) +
     coord_fixed() +
     theme_minimal() +
     theme(
-      panel.grid.major = element_blank(),
+      panel.grid = element_blank(),
       plot.margin = margin(5, 5, 15, 5, "pt")
     ) +
     NULL
 }
 
 # Reusable function for OOS confusion matrix plot
-plot_oos_confusion_matrix <- function(confusion_matrix_data) {
-  confusion_matrix_data |>
+plot_oos_confusion_matrix <- function(confusion_matrix_data, add_caption = TRUE) {
+  p <- confusion_matrix_data |>
     mutate(mp = median(mean_pred)) |>
     plot_confusion_matrix(response, pred_response, mp) +
     labs(
-      x = "Recorded Response",
-      y = "Median Posterior Response",
-      caption = "Cell proportions are the medians of the column-wise probabilities\n(conditional on recorded response)"
+      x = "Observed RECIST Response",
+      y = "Predicted RECIST Response"
     )
+
+  if (add_caption) {
+    p <- p + labs(caption = "Cell proportions show sensitivity (recall) for each RECIST category:\nP(Predicted response | Observed response). Diagonal elements indicate correct prediction rates.")
+  }
+
+  return(p)
+}
+
+# Compute specificity matrix from confusion matrix data
+compute_specificity_matrix <- function(confusion_matrix_data) {
+  # Get all unique response categories
+  categories <- sort(unique(confusion_matrix_data$response))
+
+  # Use count rvar if available, otherwise fall back to mean_pred
+  if ("count" %in% names(confusion_matrix_data) && inherits(confusion_matrix_data$count, "rvar")) {
+    # For each category X, compute P(Predicted = Y | Observed ≠ X)
+    # using the count rvar to properly handle uncertainty
+    specificity_data <- map_dfr(categories, function(cat) {
+      # Get all observations where response != cat
+      not_cat_data <- confusion_matrix_data |>
+        filter(response != cat)
+
+      # Total count for obs != cat
+      total_not_cat <- rvar_sum(not_cat_data$count)
+
+      # For each prediction category, sum counts and normalize
+      not_cat_data |>
+        group_by(pred_response) |>
+        summarise(
+          pred_count = rvar_sum(count),
+          .groups = "drop"
+        ) |>
+        mutate(
+          mean_pred = median(pred_count / total_not_cat),
+          not_response = cat
+        ) |>
+        select(not_response, pred_response, mean_pred)
+    })
+  } else {
+    # Fallback: use mean_pred and cell_size (less accurate)
+    if ("mean_pred" %in% names(confusion_matrix_data) && inherits(confusion_matrix_data$mean_pred, "rvar")) {
+      confusion_matrix_data <- confusion_matrix_data |>
+        mutate(mean_pred = median(mean_pred))
+    }
+
+    # Compute prevalence of each observed category
+    if ("cell_size" %in% names(confusion_matrix_data)) {
+      obs_prevalence <- confusion_matrix_data |>
+        group_by(response) |>
+        summarise(prevalence = first(cell_size) / sum(unique(cell_size)), .groups = "drop")
+    } else {
+      obs_prevalence <- tibble(
+        response = categories,
+        prevalence = 1 / length(categories)
+      )
+    }
+
+    specificity_data <- map_dfr(categories, function(cat) {
+      not_cat_data <- confusion_matrix_data |>
+        filter(response != cat) |>
+        left_join(obs_prevalence, by = "response")
+
+      total_not_cat_prevalence <- sum(filter(obs_prevalence, response != cat)$prevalence)
+
+      not_cat_data |>
+        mutate(conditional_prevalence = prevalence / total_not_cat_prevalence) |>
+        group_by(pred_response) |>
+        summarise(
+          mean_pred = sum(mean_pred * conditional_prevalence),
+          .groups = "drop"
+        ) |>
+        mutate(not_response = cat) |>
+        select(not_response, pred_response, mean_pred)
+    })
+  }
+
+  # Ensure we have all combinations
+  all_combos <- expand_grid(
+    not_response = categories,
+    pred_response = categories
+  )
+
+  specificity_data <- all_combos |>
+    left_join(specificity_data, by = c("not_response", "pred_response")) |>
+    mutate(mean_pred = replace_na(mean_pred, 0))
+
+  specificity_data
+}
+
+# Plot specificity matrix
+plot_oos_specificity_matrix <- function(confusion_matrix_data) {
+  specificity_data <- compute_specificity_matrix(confusion_matrix_data)
+
+  specificity_data |>
+    mutate(
+      mp = mean_pred,
+      # Create factor with explicit levels to ensure correct ordering
+      not_response = factor(not_response, levels = c("CR", "PR", "SD", "PD"))
+    ) |>
+    plot_confusion_matrix(not_response, pred_response, mp) +
+    labs(
+      x = "Observed RECIST Response",
+      y = "Predicted RECIST Response",
+      caption = "Cell proportions show P(Predicted response | Observed ≠ category).\nColumn sums to 1.0. Higher off-diagonal values indicate better specificity."
+    ) +
+    scale_x_discrete(labels = ~paste0("NOT\n", .x))
 }
 
 # Reusable function for OOS confusion matrix Sankey diagram
@@ -583,10 +763,7 @@ plot_oos_confusion_sankey <- function(confusion_matrix_data) {
       color = "white"
     ) +
     scale_x_discrete(limits = c("Recorded\nResponse", "Predicted\nResponse"), expand = c(0.15, 0.05)) +
-    scale_fill_manual(
-      values = c("CR" = AZ_green, "PR" = AZ_turquoise, "SD" = AZ_gold, "PD" = AZ_plum),
-      name = "RECIST Category"
-    ) +
+    scale_fill_recist() +
     scale_alpha_manual(
       values = c("TRUE" = 0.8, "FALSE" = 0.4),
       guide = "none"
@@ -610,7 +787,9 @@ plot_ssls_coef <- function(res_data, name_var = n, ...) {
   res_data |>
     ggplot(aes(y = {{ name_var }})) +
     stat_pointinterval(aes(xdist = .value, ...), point_size = 1, position = "dodge", .width = c(0.5, 0.8)) +
-    geom_vline(xintercept = 0)
+    geom_vline(xintercept = 0) +
+    labs(caption = "Points show posterior median; inner bars show 50% credible intervals,\nouter bars show 80% credible intervals.") +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6)))
 }
 
 # Prepare data for plotting
@@ -656,8 +835,8 @@ plot_recist_predictions <- function(
     ) +
     scale_x_continuous("Months", breaks = x_breaks, label = label_weeks_to_months) +
     scale_y_continuous(labels = scales::percent_format(), expand = c(0, 0)) +
-    scale_fill_manual(values = c("CR" = AZ_green, "PR" = AZ_turquoise, "SD" = AZ_gold, "PD" = AZ_plum), name = "RECIST Category") +
-    scale_color_manual(values = c("CR" = AZ_green, "PR" = AZ_turquoise, "SD" = AZ_gold, "PD" = AZ_plum), name = "RECIST Category") +
+    scale_fill_recist() +
+    scale_color_recist() +
     scale_alpha_manual("", values = c(obs = 0.25, forecast = 0.5), labels = c(obs = "Observed", forecast = "Forecast")) +
     scale_shape_manual("", values = c(obs = 21, target = 23), labels = c(obs = "Observed", target = "Target Lesions Only")) +
     labs(
@@ -681,9 +860,12 @@ plot_pfs_ppc <- function(data, pfs_var = spop_target_pfs, label_patients = FALSE
       labels = c(death = "Death", target_pd = "Target PD", nontarget_pd = "Non-target PD"),
       type = AZ_palette
     ) +
-    labs(caption = "Restricted to uncensored patients.") +
-    facet_wrap(vars(trial), scales = "free", labeller = labeller(trial = str_to_upper)) +
-    theme(legend.position = "bottom") +
+    labs(caption = "Points show posterior median with 80% credible intervals.\nRestricted to uncensored patients.") +
+    facet_wrap(vars(trial), scales = "free", labeller = labeller(trial = trial_labeller)) +
+    theme(
+      legend.position = "bottom",
+      plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))
+    ) +
     NULL
 
   if (label_patients) {
@@ -876,7 +1058,7 @@ plot_lfo_elpd_diff <- function(
 
   # Add vertical line if requested
   if (add_vline) {
-    p <- p + geom_vline(xintercept = 0, linetype = "dashed", color = "gray50")
+    p <- p + geom_vline(xintercept = 0, linetype = "dotted", color = "black", linewidth = 0.8)
   }
 
   # Add baseline label if requested
@@ -892,6 +1074,13 @@ plot_lfo_elpd_diff <- function(
   # Calculate x-axis limits with extra space on the right for the baseline text
   x_min <- min(plot_data$mean - 2 * plot_data$se, na.rm = TRUE)
   x_max <- max(plot_data$mean + 2 * plot_data$se, na.rm = TRUE)
+
+  # If adding a vertical line at zero, ensure zero is included in the axis
+  if (add_vline) {
+    x_min <- min(x_min, 0)
+    x_max <- max(x_max, 0)
+  }
+
   x_range <- x_max - x_min
 
   # Add extra space on the right: proportional to baseline text length

@@ -25,7 +25,7 @@ To see how results evolve across data cutoff dates, visit [DCO Comparisons](../c
 
 ## Historical Trials {#sec-historical-km}
 
-Kaplan-Meier curves for the historical trials (excluding SCLC) used to inform the hierarchical model.
+Kaplan-Meier curves for the historical trials (excluding SCLC-01) used to inform the hierarchical model.
 
 ```{r}
 #| label: fig-kaplan-meier-historical
@@ -45,17 +45,17 @@ plot_km(
 )
 ```
 
-## SCLC Forecasts {#sec-sclc-km}
+## SCLC-01 Forecasts {#sec-sclc-km}
 
 ::: {.panel-tabset}
 
 ### Sample-Based
 
-Kaplan-Meier curves for the SCLC trial, comparing model predictions with observed data. The full forecasting row predicts PFS beyond the observed right censoring while the observed censoring row censors predictions that exceed the observed right censoring.
+Kaplan-Meier curves for the SCLC-01 trial, comparing model predictions with observed data. The full forecasting row predicts PFS beyond the observed right censoring while the observed censoring row censors predictions that exceed the observed right censoring.
 
 ```{r}
 #| label: fig-kaplan-meier-sclc-forecast
-#| fig-cap: Sample-based Kaplan-Meier forecast for SCLC trial.
+#| fig-cap: Sample-based Kaplan-Meier forecast for SCLC-01 trial.
 #| fig-width: 7
 
 plot_sclc_km_by_estimate_type(
@@ -70,11 +70,11 @@ plot_sclc_km_by_estimate_type(
 
 ### Superpopulation
 
-Kaplan-Meier curves for the SCLC trial, comparing model predictions with observed data. The full forecasting row predicts PFS beyond the observed right censoring while the observed censoring row censors predictions that exceed the observed right censoring.
+Kaplan-Meier curves for the SCLC-01 trial, comparing model predictions with observed data. The full forecasting row predicts PFS beyond the observed right censoring while the observed censoring row censors predictions that exceed the observed right censoring.
 
 ```{r}
 #| label: fig-kaplan-meier-sclc-superpopulation
-#| fig-cap: Superpopulation Kaplan-Meier forecast for SCLC trial. Superpopulation KM estimates represent the expected survival for the underlying population, not just the specific patients in the trial.
+#| fig-cap: Superpopulation Kaplan-Meier forecast for SCLC-01 trial. Superpopulation KM estimates represent the expected survival for the underlying population, not just the specific patients in the trial.
 #| fig-width: 7
 
 plot_sclc_km_by_estimate_type(
