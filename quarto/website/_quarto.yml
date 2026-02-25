@@ -8,7 +8,7 @@ project:
 
 website:
   title: "PIONEER: SCLC-01 Forecasting"
-  description: "Bayesian hierarchical modeling for tumor dynamics and progression-free survival"
+  description: "Bayesian hierarchical modeling for tumor dynamics, progression-free survival, and overall survival"
   favicon: images/favicon.ico
   navbar:
     background: primary
@@ -25,6 +25,8 @@ website:
             href: analysis/clinical-endpoints.qmd
           - text: Survival Analysis
             href: analysis/survival-analysis.qmd
+          - text: Overall Survival
+            href: analysis/overall-survival.qmd
           - text: DCO Comparisons
             href: comparisons/dco-comparisons.qmd
           - text: "---"
@@ -102,6 +104,7 @@ website:
           contents:
             - analysis/clinical-endpoints.qmd
             - analysis/survival-analysis.qmd
+            - analysis/overall-survival.qmd
             - comparisons/dco-comparisons.qmd
         - section: "Model Details"
           contents:
