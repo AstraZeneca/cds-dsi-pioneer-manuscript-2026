@@ -89,7 +89,7 @@ real calc_multistate_loglik(
   array[] int time_01, array[] int time_02, array[] int time_12,
   array[] int time_03, array[] int time_32,
   array[] int censored_01, array[] int censored_02, array[] int censored_12,
-  array[] int censored_03, array[] int censored_32,
+  array[] int censored_32,
   array[] int prog_deterministic,
   matrix log_cond_surv_01,
   matrix log_cond_surv_02,

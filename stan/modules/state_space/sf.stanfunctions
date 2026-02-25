@@ -1306,8 +1306,7 @@ tuple(
   array[] int ms_censored_02,  // Censoring indicator for 0→2
   array[] int ms_censored_12,  // Censoring indicator for 1→2
   array[] int ms_time_12,      // Observed time to post-progression death (sojourn)
-  array[] int ms_time_03,      // Observed time to dropout (calendar week, 1-indexed)
-  array[] int ms_censored_03,  // Censoring indicator for 0→3
+  array[] int ms_time_03,      // Calendar week of dropout (= patient_max_t; 1-indexed)
   array[] int ms_time_32,      // Observed sojourn from dropout to death (0 if not observed)
   array[] int ms_censored_32,  // Censoring indicator for 3→2
   array[] int patient_visit_pos,
