@@ -30,7 +30,7 @@ array[n_patients] int<lower=0, upper=1> ms_censored_12;
 array[n_patients] int<lower=0> ms_time_03;  // Calendar week of dropout (= patient_max_t for all patients)
 
 // --- 3→2 Transition: Off-trial death ---
-array[n_patients] int<lower=0> ms_time_32;              // Time from dropout to death (clock-forward weeks), 0 if N/A
+array[n_patients] int<lower=0> ms_time_32;              // Sojourn time in state 3 until off-trial death, 0 if N/A
 array[n_patients] int<lower=0, upper=1> ms_censored_32; // 1 = censored in state 3, 0 = off-trial death observed
 
 // --- Deterministic Progression Flag ---
@@ -42,6 +42,8 @@ array[n_patients] int<lower=0, upper=1> ms_prog_deterministic;
 // max_all_t is already defined in base data
 // Max sojourn time grid (only needed if enable_ms_12=1)
 int<lower=1> ms_max_sojourn_t;
+// Max sojourn time grid for 3→2 (only needed if enable_ms_32=1)
+int<lower=1> ms_max_sojourn_t_32;
 
 // --- Covariate Dimensions ---
 int<lower=0> n_time_varying_covar;    // Number of time-varying covariates

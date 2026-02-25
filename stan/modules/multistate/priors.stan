@@ -203,36 +203,36 @@ if (enable_ms_03) {
 }
 
 // ============================================================================
-// 3→2 TRANSITION PRIORS (Off-trial death, GP baseline hazard)
+// 3→2 TRANSITION PRIORS (Off-trial death, sojourn time GP baseline hazard)
 // ============================================================================
 if (enable_ms_32) {
   // Population-level baseline hazard GP
-  log_lambda_gp_32_pop_alpha[1] ~ inv_gamma(
-    log_lambda_gp_32_pop_alpha_alpha, log_lambda_gp_32_pop_alpha_beta
+  log_lambda_gp_32_s_pop_alpha[1] ~ inv_gamma(
+    log_lambda_gp_32_s_pop_alpha_alpha, log_lambda_gp_32_s_pop_alpha_beta
   );
-  log_lambda_gp_32_pop_rho[1] ~ inv_gamma(
-    log_lambda_gp_32_pop_rho_alpha, log_lambda_gp_32_pop_rho_beta
+  log_lambda_gp_32_s_pop_rho[1] ~ inv_gamma(
+    log_lambda_gp_32_s_pop_rho_alpha, log_lambda_gp_32_s_pop_rho_beta
   );
-  log_lambda_gp_32_pop_intercept[1] ~ normal(
-    log_lambda_gp_32_pop_intercept_mean, log_lambda_gp_32_pop_intercept_sd
+  log_lambda_gp_32_s_pop_intercept[1] ~ normal(
+    log_lambda_gp_32_s_pop_intercept_mean, log_lambda_gp_32_s_pop_intercept_sd
   );
-  to_vector(log_lambda_gp_32_pop_eta) ~ std_normal();
+  to_vector(log_lambda_gp_32_s_pop_eta) ~ std_normal();
 
   // Level-level baseline hazard GP
   for (lv in 1:n_levels) {
-    log_lambda_gp_32_level_alpha[lv] ~ inv_gamma(
-      log_lambda_gp_32_level_alpha_alpha[lv], log_lambda_gp_32_level_alpha_beta[lv]
+    log_lambda_gp_32_s_level_alpha[lv] ~ inv_gamma(
+      log_lambda_gp_32_s_level_alpha_alpha[lv], log_lambda_gp_32_s_level_alpha_beta[lv]
     );
-    log_lambda_gp_32_level_rho[lv] ~ inv_gamma(
-      log_lambda_gp_32_level_rho_alpha[lv], log_lambda_gp_32_level_rho_beta[lv]
+    log_lambda_gp_32_s_level_rho[lv] ~ inv_gamma(
+      log_lambda_gp_32_s_level_rho_alpha[lv], log_lambda_gp_32_s_level_rho_beta[lv]
     );
-    log_lambda_gp_32_level_intercept_sd[lv] ~ normal(
-      0, log_lambda_gp_32_level_intercept_sd_sd[lv]
+    log_lambda_gp_32_s_level_intercept_sd[lv] ~ normal(
+      0, log_lambda_gp_32_s_level_intercept_sd_sd[lv]
     );
   }
   if (n_enabled_groups_ms_baseline_32 > 0) {
-    raw_log_lambda_gp_32_level_intercept ~ std_normal();
-    to_vector(log_lambda_gp_32_level_eta) ~ std_normal();
+    raw_log_lambda_gp_32_s_level_intercept ~ std_normal();
+    to_vector(log_lambda_gp_32_s_level_eta) ~ std_normal();
   }
 }
 

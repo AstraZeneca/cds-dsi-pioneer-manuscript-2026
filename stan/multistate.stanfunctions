@@ -39,9 +39,9 @@ vector calc_ms_single_transition_loglik(
 }
 
 /**
- * Sample off-trial death time (3→2 transition) from the Markovian GP hazard.
+ * Sample off-trial death time (3→2 transition) from the sojourn time GP hazard.
  *
- * @param log_cond_surv_32  Patient row of log conditional survival for 3→2 [max_t]
+ * @param log_cond_surv_32  Patient row of log conditional survival for 3→2 [ms_max_sojourn_t_32]
  * @param dropout_week      Calendar week of dropout (1-indexed)
  * @param sojourn_obs       Observed sojourn intervals to condition on (0 = unconditional)
  * @return (os_week, censored) where os_week is 1-indexed calendar week of death
@@ -51,8 +51,8 @@ tuple(int, int) sample_dropout_death_rng(
     int dropout_week,
     int sojourn_obs) {
   int t32_raw; int c32;
-  (t32_raw, c32) = survival_time_rng(log_cond_surv_32, dropout_week + sojourn_obs, 1, 0);
-  return (t32_raw + 1, c32);
+  (t32_raw, c32) = survival_time_rng(log_cond_surv_32, sojourn_obs, 1, 0);
+  return (dropout_week + t32_raw + 1, c32);
 }
 
 /**
@@ -293,23 +293,17 @@ real calc_multistate_loglik(
       }
 
       // Post-dropout: 3→2 (off-trial death or censored in state 3)
+      // Sojourn time GP: indexed by sojourn time since dropout (1, 2, ...)
       if (enable_32 && time_32[i] > 0) {
-        int t_start = time_03[i] + 1;
-        int t_end = time_03[i] + time_32[i];
-
         if (!censored_32[i]) {
-          // Off-trial death at t_end
-          if (t_end - 1 >= t_start && t_end <= cols(log_cond_surv_32)) {
-            patient_ll += sum(log_cond_surv_32[i, t_start:(t_end - 1)]);
+          // Off-trial death: survived sojourn intervals 1..time_32-1, then died
+          if (time_32[i] > 1) {
+            patient_ll += sum(log_cond_surv_32[i, 1:(time_32[i] - 1)]);
           }
-          if (t_end <= cols(log_cond_surv_32)) {
-            patient_ll += log1m_exp(log_cond_surv_32[i, t_end]);
-          }
+          patient_ll += log1m_exp(log_cond_surv_32[i, time_32[i]]);
         } else {
-          // Censored in state 3: survived until t_end
-          if (t_start <= t_end && t_end <= cols(log_cond_surv_32)) {
-            patient_ll += sum(log_cond_surv_32[i, t_start:t_end]);
-          }
+          // Censored in state 3: survived sojourn intervals 1..time_32
+          patient_ll += sum(log_cond_surv_32[i, 1:time_32[i]]);
         }
       }
     }

@@ -104,18 +104,18 @@ array[enable_ms_03 ? n_levels : 0] real<lower=0> log_lambda_03_level_intercept_s
 vector[n_enabled_groups_ms_baseline_03] raw_log_lambda_03_level_intercept;
 
 // ============================================================================
-// 3→2 TRANSITION PARAMETERS (Markovian GP baseline hazard)
+// 3→2 TRANSITION PARAMETERS (Sojourn time GP baseline hazard, semi-Markov)
 // ============================================================================
 
 // --- Population-level Baseline Hazard GP ---
-array[enable_ms_32 ? 1 : 0] real log_lambda_gp_32_pop_intercept;
-array[enable_ms_32 ? 1 : 0] real<lower=0> log_lambda_gp_32_pop_alpha;
-array[enable_ms_32 ? 1 : 0] real<lower=0> log_lambda_gp_32_pop_rho;
-row_vector[enable_ms_32 ? max_all_t : 0] log_lambda_gp_32_pop_eta;
+array[enable_ms_32 ? 1 : 0] real log_lambda_gp_32_s_pop_intercept;
+array[enable_ms_32 ? 1 : 0] real<lower=0> log_lambda_gp_32_s_pop_alpha;
+array[enable_ms_32 ? 1 : 0] real<lower=0> log_lambda_gp_32_s_pop_rho;
+row_vector[enable_ms_32 ? ms_max_sojourn_t_32 : 0] log_lambda_gp_32_s_pop_eta;
 
 // --- Level-level Baseline Hazard GP ---
-array[enable_ms_32 ? n_levels : 0] real<lower=0> log_lambda_gp_32_level_alpha;
-array[enable_ms_32 ? n_levels : 0] real<lower=0> log_lambda_gp_32_level_rho;
-array[enable_ms_32 ? n_levels : 0] real<lower=0> log_lambda_gp_32_level_intercept_sd;
-matrix[n_enabled_groups_ms_baseline_32, enable_ms_32 ? max_all_t : 0] log_lambda_gp_32_level_eta;
-vector[n_enabled_groups_ms_baseline_32] raw_log_lambda_gp_32_level_intercept;
+array[enable_ms_32 ? n_levels : 0] real<lower=0> log_lambda_gp_32_s_level_alpha;
+array[enable_ms_32 ? n_levels : 0] real<lower=0> log_lambda_gp_32_s_level_rho;
+array[enable_ms_32 ? n_levels : 0] real<lower=0> log_lambda_gp_32_s_level_intercept_sd;
+matrix[n_enabled_groups_ms_baseline_32, enable_ms_32 ? ms_max_sojourn_t_32 : 0] log_lambda_gp_32_s_level_eta;
+vector[n_enabled_groups_ms_baseline_32] raw_log_lambda_gp_32_s_level_intercept;
