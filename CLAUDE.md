@@ -416,7 +416,15 @@ Issues across all PIONEER repos are tracked in the **PIONEER 2026** GitHub Proje
 
 - Plugin registry: `/home/ubuntu/.claude/plugins/marketplaces/pioneer-claude-marketplace/.claude-plugin/marketplace.json`
 - **Adding a plugin**: create files in `plugins/<name>/` AND register it in `marketplace.json` — without the registry entry it won't appear in `/plugin`
+- **Version bumps are required for deployment**: bump version in BOTH `plugins/<name>/.claude-plugin/plugin.json` AND `marketplace.json` whenever adding/changing tools — the plugin manager won't reinstall otherwise
+- MCP tool naming convention: `mcp__plugin_<plugin-name>_<server-name>__<tool-name>` (e.g. `mcp__plugin_domino-toolkit_domino__start_job`)
 - Marketplace repo: `https://github.com/azu-oncology-rd/cds-dsi-pioneer-claude-marketplace`
+
+## Domino Environment
+
+- Key env vars auto-set by Domino: `DOMINO_USER_API_KEY`, `DOMINO_USER_HOST`, `DOMINO_PROJECT_ID`, `DOMINO_PROJECT_NAME`
+- Jobs API: list/get via `GET /api/jobs/beta/jobs`, logs via `GET /api/jobs/beta/jobs/{id}/logs`, start via `POST /v4/jobs/start`, stop via `POST /v4/jobs/stop`
+- `stop_job` requires both `projectId` AND `jobId` in the request body
 
 ## Documentation
 
