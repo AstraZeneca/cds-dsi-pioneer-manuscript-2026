@@ -95,3 +95,25 @@ vector[enable_ms_12 && enable_ms_pop_time_invariant_cov ? n_time_invariant_covar
 // --- Multi-level Random Slopes for 1→2 ---
 array[n_levels] vector<lower=0>[enable_ms_12 ? n_time_invariant_covar : 0] sd_level_slope_12;
 matrix[enable_ms_12 ? n_enabled_groups_ms_slope : 0, n_time_invariant_covar] raw_level_slope_12;
+
+// ============================================================================
+// 0→3 TRANSITION PARAMETERS (constant hazard, no GP)
+// ============================================================================
+vector[enable_ms_03 ? n_trials : 0] log_lambda_03;
+
+// ============================================================================
+// 3→2 TRANSITION PARAMETERS (Markovian GP baseline hazard)
+// ============================================================================
+
+// --- Population-level Baseline Hazard GP ---
+array[enable_ms_32 ? 1 : 0] real log_lambda_gp_32_pop_intercept;
+array[enable_ms_32 ? 1 : 0] real<lower=0> log_lambda_gp_32_pop_alpha;
+array[enable_ms_32 ? 1 : 0] real<lower=0> log_lambda_gp_32_pop_rho;
+row_vector[enable_ms_32 ? max_all_t : 0] log_lambda_gp_32_pop_eta;
+
+// --- Level-level Baseline Hazard GP ---
+array[enable_ms_32 ? n_levels : 0] real<lower=0> log_lambda_gp_32_level_alpha;
+array[enable_ms_32 ? n_levels : 0] real<lower=0> log_lambda_gp_32_level_rho;
+array[enable_ms_32 ? n_levels : 0] real<lower=0> log_lambda_gp_32_level_intercept_sd;
+matrix[n_enabled_groups_ms_baseline_32, enable_ms_32 ? max_all_t : 0] log_lambda_gp_32_level_eta;
+vector[n_enabled_groups_ms_baseline_32] raw_log_lambda_gp_32_level_intercept;
