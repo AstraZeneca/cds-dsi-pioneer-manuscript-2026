@@ -98,7 +98,7 @@ for (i in 1:n_patients) {
     sample_ms_right_censored[i] = 0;
   }
 
-  // ── 2. OS via competing risks (0→1 vs 0→2) + illness-death routing ──
+  // ── 2. OS via competing risks (0→1 vs 0→2 vs 0→3) + illness-death routing ──
 
   // Guard: clock-forward matrix is [0,0] when ms_time_scale_12==1 (semi-Markov)
   row_vector[cols(log_cond_surv_12_t)] surv_12_t_i =
@@ -118,9 +118,26 @@ for (i in 1:n_patients) {
       spop_cens_02 = c02_raw;
     }
 
+    int spop_time_03 = max_all_t + 1;
+    int spop_cens_03 = 1;
+    if (enable_ms_03) {
+      int t03_raw; int c03_raw;
+      (t03_raw, c03_raw) = survival_time_rng(log_cond_surv_03[i]);
+      spop_time_03 = t03_raw + 1;
+      spop_cens_03 = c03_raw;
+    }
+
     // Competing risks truth table
-    int spop_progressed_first = !spop_cens_01 && (spop_cens_02 || spop_time_01 <= spop_time_02);
-    int spop_died_directly = enable_ms_02 && !spop_cens_02 && (spop_cens_01 || spop_time_02 < spop_time_01);
+    // Priority on ties: progression (0→1) > direct death (0→2) > dropout (0→3)
+    int spop_progressed_first = !spop_cens_01
+      && (spop_cens_02 || spop_time_01 <= spop_time_02)
+      && (spop_cens_03 || spop_time_01 <= spop_time_03);
+    int spop_died_directly = enable_ms_02 && !spop_cens_02
+      && (spop_cens_01 || spop_time_02 < spop_time_01)
+      && (spop_cens_03 || spop_time_02 <= spop_time_03);
+    int spop_dropped_out = enable_ms_03 && !spop_cens_03
+      && (spop_cens_01 || spop_time_03 < spop_time_01)
+      && (spop_cens_02 || spop_time_03 < spop_time_02);
 
     if (spop_died_directly) {
       spop_os[i] = spop_time_02;
@@ -128,13 +145,26 @@ for (i in 1:n_patients) {
       // Death without progression is a PFS event
       spop_ms_pfs[i] = spop_time_02;
       spop_ms_right_censored[i] = 0;
+    } else if (spop_dropped_out && enable_ms_32) {
+      // Dropped out: sample post-dropout death (3→2) unconditionally
+      (spop_os[i], spop_os_censored[i]) = sample_dropout_death_rng(
+        log_cond_surv_32[i], spop_time_03, 0);  // sojourn_obs=0: unconditional
+      // Dropout censors PFS at dropout time
+      spop_ms_pfs[i] = spop_time_03;
+      spop_ms_right_censored[i] = 1;
+    } else if (spop_dropped_out) {
+      // Dropped out but 3→2 not modeled: censor OS at dropout
+      spop_os[i] = spop_time_03;
+      spop_os_censored[i] = 1;
+      spop_ms_pfs[i] = spop_time_03;
+      spop_ms_right_censored[i] = 1;
     } else if (spop_progressed_first && enable_ms_12) {
       (spop_os[i], spop_os_censored[i]) = sample_post_progression_death_rng(
         ms_time_scale_12, log_cond_surv_12_s[i], surv_12_t_i,
         spop_time_01, 0);  // sojourn_obs=0: unconditional
     } else {
-      // Both censored
-      spop_os[i] = max(spop_time_01, spop_time_02);
+      // All censored
+      spop_os[i] = max({spop_time_01, spop_time_02, spop_time_03});
       spop_os_censored[i] = 1;
     }
   }
@@ -160,13 +190,33 @@ for (i in 1:n_patients) {
       }
     }
 
+    // State 3: observed dropout is ground truth — takes priority over forecasts
+    int sample_dropped_out = enable_ms_03 && ms_final_state[i] == 3;
+
     // Routing truth table
-    int sample_died_directly = enable_ms_02 && !sample_cens_02
+    int sample_died_directly = !sample_dropped_out && enable_ms_02 && !sample_cens_02
       && (!ms_censored_02[i] || sample_cens_01 || sample_time_02 < sample_time_01);
-    int sample_progressed_first = !sample_died_directly && !sample_cens_01
+    int sample_progressed_first = !sample_dropped_out && !sample_died_directly && !sample_cens_01
       && (sample_cens_02 || sample_time_01 <= sample_time_02);
 
-    if (sample_died_directly) {
+    if (sample_dropped_out) {
+      if (!ms_censored_32[i]) {
+        // Off-trial death was observed: use exact calendar time
+        sample_os[i] = ms_time_03[i] + ms_time_32[i];
+        sample_os_censored[i] = 0;
+      } else if (enable_ms_32) {
+        // Forecast post-dropout death conditioning on observed sojourn survival
+        (sample_os[i], sample_os_censored[i]) = sample_dropout_death_rng(
+          log_cond_surv_32[i], ms_time_03[i], ms_time_32[i]);
+      } else {
+        // 3→2 not modeled: censor at last off-trial observation
+        sample_os[i] = ms_time_03[i] + ms_time_32[i];
+        sample_os_censored[i] = 1;
+      }
+      // Dropout censors PFS at dropout time
+      sample_ms_pfs[i] = ms_time_03[i];
+      sample_ms_right_censored[i] = 1;
+    } else if (sample_died_directly) {
       sample_os[i] = sample_time_02;
       sample_os_censored[i] = 0;
       // Death without progression is a PFS event
@@ -184,7 +234,7 @@ for (i in 1:n_patients) {
           sample_time_01, ms_time_12[i]);
       }
     } else {
-      // Both censored
+      // All censored
       sample_os[i] = max(sample_time_01, sample_time_02);
       sample_os_censored[i] = 1;
     }
