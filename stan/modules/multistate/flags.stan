@@ -20,6 +20,13 @@ int<lower=0, upper=2> ms_time_scale_12;
 // Uses generic n_levels structure (consistent with tr, frac, init modules)
 array[n_levels] int<lower=0, upper=1> enable_ms_level_baseline_hazard;
 
+// --- Dropout / Off-trial Transitions ---
+// 0→3: Dropout (off-trial). Constant hazard (no GP).
+int<lower=0, upper=1> enable_ms_03;
+
+// 3→2: Off-trial death. Markovian GP baseline hazard (clock-forward).
+int<lower=0, upper=1> enable_ms_32;
+
 // --- Covariate Flags ---
 int<lower=0, upper=1> enable_ms_pop_time_invariant_cov;  // Population-level time-invariant covariates
 int<lower=0, upper=1> enable_ms_pop_time_varying_cov;    // Population-level time-varying covariates
