@@ -379,3 +379,72 @@ if (need_12_t_gp) {
   log_cond_surv_12_t = -exp(log_cond_surv_12_t);
 }
 
+// ============================================================================
+// 0→3 TRANSITION: Constant hazard per trial
+// ============================================================================
+// For constant hazard λ: log P(survive interval) = -exp(log_lambda) per interval
+// Stored as full matrix for interface consistency with the likelihood.
+matrix[enable_ms_03 ? n_patients : 0, enable_ms_03 ? max_all_t : 0] log_cond_surv_03;
+
+if (enable_ms_03) {
+  for (i in 1:n_patients) {
+    log_cond_surv_03[i] = rep_row_vector(-exp(log_lambda_03[patient_trial[i]]), max_all_t);
+  }
+}
+
+// ============================================================================
+// 3→2 TRANSITION: Markovian GP baseline hazard (clock-forward)
+// ============================================================================
+
+row_vector[enable_ms_32 ? max_all_t : 0] log_pop_lambda_32;
+matrix[n_enabled_groups_ms_baseline_32, enable_ms_32 ? max_all_t : 0] log_level_lambda_32_residual;
+vector[n_enabled_groups_ms_baseline_32] log_lambda_gp_32_level_intercept;
+matrix[enable_ms_32 ? n_patients : 0, enable_ms_32 ? max_all_t : 0] log_cond_surv_32;
+
+if (enable_ms_32) {
+  // Compute population GP
+  log_pop_lambda_32 = calc_gp_pred(
+    all_tumor_measure_t,
+    log_lambda_gp_32_pop_intercept[1],
+    log_lambda_gp_32_pop_alpha[1],
+    log_lambda_gp_32_pop_rho[1],
+    delta,
+    log_lambda_gp_32_pop_eta
+  );
+
+  // Initialize with population baseline
+  log_cond_surv_32 = rep_matrix(log_pop_lambda_32, n_patients);
+
+  // Add level-level GP residuals (same pattern as 0→2)
+  for (lv in 1:n_levels) {
+    if (enable_ms_level_baseline_hazard[lv]) {
+      int lv_start, lv_end;
+      (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
+
+      log_lambda_gp_32_level_intercept[lv_start:lv_end] =
+        raw_log_lambda_gp_32_level_intercept[lv_start:lv_end] *
+        log_lambda_gp_32_level_intercept_sd[lv];
+
+      for (g in lv_start:lv_end) {
+        log_level_lambda_32_residual[g] = calc_gp_pred(
+          all_tumor_measure_t,
+          log_lambda_gp_32_level_intercept[g],
+          log_lambda_gp_32_level_alpha[lv],
+          log_lambda_gp_32_level_rho[lv],
+          delta,
+          log_lambda_gp_32_level_eta[g]
+        );
+      }
+
+      for (i in 1:n_patients) {
+        log_cond_surv_32[i] += log_level_lambda_32_residual[patient_ms_baseline_flat_idx[i, lv]];
+      }
+    }
+  }
+
+  // No covariates for 3→2 in v1
+
+  // Transform to log conditional survival
+  log_cond_surv_32 = -exp(log_cond_surv_32);
+}
+
