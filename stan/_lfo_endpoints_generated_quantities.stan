@@ -14,25 +14,29 @@ array[n_cutoff_total_forecast_visits] int<lower = CR, upper = PD> cutoff_forecas
 array[n_cutoff_observed_patients] int<lower = 0> sample_target_pfs, spop_target_pfs, spop_target_obs_cens_pfs;
 array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_target_right_censored, spop_target_right_censored, spop_target_obs_cens_right_censored;
 
-// Other events and combined PFS (declared at top level for use in confusion matrix)
-array[n_cutoff_observed_patients] int<lower = 0> sample_other_events_pfs, spop_other_events_pfs;
-array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_other_events_right_censored, spop_other_events_right_censored;
+// Multistate and combined PFS (declared at top level for use in confusion matrix)
+array[n_cutoff_observed_patients] int<lower = 0> sample_ms_pfs, spop_ms_pfs;
+array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_ms_right_censored, spop_ms_right_censored;
 array[n_cutoff_observed_patients] int<lower = 0> sample_pfs, spop_pfs;
 array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_right_censored, spop_right_censored;
+
+// OS endpoints (LFO model: always censored since multistate 0→2/1→2 not modeled)
+array[n_cutoff_observed_patients] int<lower = 0> sample_os, spop_os;
+array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_os_censored, spop_os_censored;
 
 array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_target_km_est, spop_target_km_est, spop_target_obs_cens_km_est;
 array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_target_km_est, cond_spop_target_km_est, cond_spop_target_obs_cens_km_est;
 
-array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_other_events_km_est, spop_other_events_km_est;
+array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_ms_km_est, spop_ms_km_est;
 array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_km_est, spop_km_est;
-array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_other_events_km_est, cond_spop_other_events_km_est;
+array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_ms_km_est, cond_spop_ms_km_est;
 array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_km_est, cond_spop_km_est;
 
 array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] sample_target_pfs_n, spop_target_pfs_n,
-                                                               sample_other_events_pfs_n, spop_other_events_pfs_n,
+                                                               sample_ms_pfs_n, spop_ms_pfs_n,
                                                                sample_pfs_n, spop_pfs_n;
 array[n_cond_group] vector<lower = 0, upper = 1>[n_pfs_timepoints] cond_sample_target_pfs_n, cond_spop_target_pfs_n,
-                                                                   cond_sample_other_events_pfs_n, cond_spop_other_events_pfs_n,
+                                                                   cond_sample_ms_pfs_n, cond_spop_ms_pfs_n,
                                                                    cond_sample_pfs_n, cond_spop_pfs_n;
 
 array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_target_confirmed_response, spop_target_confirmed_response;
@@ -56,16 +60,16 @@ array[n_trials, n_pfs_quantiles] int spop_target_quant_pfs_exceeds_max = rep_arr
 array[n_cond_group, n_pfs_quantiles] int cond_sample_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
 array[n_cond_group, n_pfs_quantiles] int cond_spop_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
 
-// PFS quantiles - other events
-array[n_trials] vector<lower = 0>[n_pfs_quantiles] sample_other_events_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
-array[n_trials] vector<lower = 0>[n_pfs_quantiles] spop_other_events_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
-array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_sample_other_events_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
-array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_spop_other_events_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+// PFS quantiles - multistate events
+array[n_trials] vector<lower = 0>[n_pfs_quantiles] sample_ms_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+array[n_trials] vector<lower = 0>[n_pfs_quantiles] spop_ms_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_sample_ms_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_spop_ms_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
 
-array[n_trials, n_pfs_quantiles] int sample_other_events_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
-array[n_trials, n_pfs_quantiles] int spop_other_events_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
-array[n_cond_group, n_pfs_quantiles] int cond_sample_other_events_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
-array[n_cond_group, n_pfs_quantiles] int cond_spop_other_events_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+array[n_trials, n_pfs_quantiles] int sample_ms_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+array[n_trials, n_pfs_quantiles] int spop_ms_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+array[n_cond_group, n_pfs_quantiles] int cond_sample_ms_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+array[n_cond_group, n_pfs_quantiles] int cond_spop_ms_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
 
 // PFS quantiles - combined
 array[n_trials] vector<lower = 0>[n_pfs_quantiles] sample_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
@@ -77,6 +81,24 @@ array[n_trials, n_pfs_quantiles] int sample_quant_pfs_exceeds_max = rep_array(ze
 array[n_trials, n_pfs_quantiles] int spop_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
 array[n_cond_group, n_pfs_quantiles] int cond_sample_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
 array[n_cond_group, n_pfs_quantiles] int cond_spop_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+
+// OS KM estimates
+array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_os_km_est, spop_os_km_est;
+array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_os_km_est, cond_spop_os_km_est;
+
+// OS quantiles
+array[n_trials] vector<lower = 0>[n_pfs_quantiles] sample_os_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+array[n_trials] vector<lower = 0>[n_pfs_quantiles] spop_os_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+array[n_trials, n_pfs_quantiles] int sample_os_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+array[n_trials, n_pfs_quantiles] int spop_os_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_sample_os_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_spop_os_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+array[n_cond_group, n_pfs_quantiles] int cond_sample_os_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+array[n_cond_group, n_pfs_quantiles] int cond_spop_os_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+
+// OS at timepoints
+array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] sample_os_n, spop_os_n;
+array[n_cond_group] vector<lower = 0, upper = 1>[n_pfs_timepoints] cond_sample_os_n, cond_spop_os_n;
 
 vector<lower = 0>[n_trials] sample_target_median_pfs = zeros_vector(n_trials), spop_target_median_pfs = zeros_vector(n_trials);
 vector<lower = 0>[n_cond_group] cond_sample_target_median_pfs = zeros_vector(n_cond_group), cond_spop_target_median_pfs = zeros_vector(n_cond_group);
@@ -187,24 +209,37 @@ profile("gen_quant") {
   (sample_target_pfs, sample_target_right_censored,
    spop_target_pfs, spop_target_right_censored,
    spop_target_obs_cens_pfs, spop_target_obs_cens_right_censored,
-   sample_other_events_pfs, sample_other_events_right_censored,
-   spop_other_events_pfs, spop_other_events_right_censored,
+   sample_ms_pfs, sample_ms_right_censored,
+   spop_ms_pfs, spop_ms_right_censored,
    sample_pfs, sample_right_censored,
    spop_pfs, spop_right_censored,
    sample_target_confirmed_response, sample_target_unconfirmed_response,
    spop_target_confirmed_response, spop_target_unconfirmed_response,
-   forecast_target_pfs, forecast_target_right_censored) =
+   forecast_target_pfs, forecast_target_right_censored,
+   sample_os, sample_os_censored,
+   spop_os, spop_os_censored) =
     calculate_all_patients_endpoints_rng(
       cutoff_recist,
       cutoff_rep_recist,
       cutoff_forecast_recist,
-      log_cond_prob_surv[1:1, cutoff_observed_patients],  // Subset to cutoff-observed patients
+      log_cond_surv_01[cutoff_observed_patients],
+      enable_ms_02,
+      enable_ms_12,
+      ms_time_scale_12,
+      enable_ms_02 ? log_cond_surv_02[cutoff_observed_patients] : log_cond_surv_02,
+      need_12_s_gp ? log_cond_surv_12_s[cutoff_observed_patients] : log_cond_surv_12_s,
+      need_12_t_gp ? log_cond_surv_12_t[cutoff_observed_patients] : log_cond_surv_12_t,
       cutoff_pfs,
       cutoff_interval_censored,
       cutoff_right_censored,
       cutoff_target_pfs,
       cutoff_target_right_censored,
-      cutoff_other_events_right_censored,
+      cutoff_ms_censored_01,
+      ms_final_state[cutoff_observed_patients],
+      ms_time_02[cutoff_observed_patients],
+      ms_censored_02[cutoff_observed_patients],
+      ms_censored_12[cutoff_observed_patients],
+      ms_time_12[cutoff_observed_patients],
       cutoff_patient_visit_pos,
       cutoff_forecast_visits_pos,
       cutoff_patient_last_obs_visit,
@@ -223,16 +258,20 @@ profile("gen_quant") {
   array[n_patients] int all_spop_target_right_censored = rep_array(1, n_patients);
   array[n_patients] int all_spop_target_obs_cens_pfs = zeros_int_array(n_patients);
   array[n_patients] int all_spop_target_obs_cens_right_censored = rep_array(1, n_patients);
-  array[n_patients] int all_sample_other_events_pfs = zeros_int_array(n_patients);
-  array[n_patients] int all_sample_other_events_right_censored = rep_array(1, n_patients);
-  array[n_patients] int all_spop_other_events_pfs = zeros_int_array(n_patients);
-  array[n_patients] int all_spop_other_events_right_censored = rep_array(1, n_patients);
+  array[n_patients] int all_sample_ms_pfs = zeros_int_array(n_patients);
+  array[n_patients] int all_sample_ms_right_censored = rep_array(1, n_patients);
+  array[n_patients] int all_spop_ms_pfs = zeros_int_array(n_patients);
+  array[n_patients] int all_spop_ms_right_censored = rep_array(1, n_patients);
   array[n_patients] int all_sample_pfs = zeros_int_array(n_patients);
   array[n_patients] int all_sample_right_censored = rep_array(1, n_patients);
   array[n_patients] int all_spop_pfs = zeros_int_array(n_patients);
   array[n_patients] int all_spop_right_censored = rep_array(1, n_patients);
   array[n_patients] int all_sample_target_confirmed_response = zeros_int_array(n_patients);
   array[n_patients] int all_spop_target_confirmed_response = zeros_int_array(n_patients);
+  array[n_patients] int all_sample_os = zeros_int_array(n_patients);
+  array[n_patients] int all_sample_os_censored = rep_array(1, n_patients);
+  array[n_patients] int all_spop_os = zeros_int_array(n_patients);
+  array[n_patients] int all_spop_os_censored = rep_array(1, n_patients);
 
   // Fill in values for cutoff-observed patients
   for (obs_idx in 1:n_cutoff_observed_patients) {
@@ -243,32 +282,40 @@ profile("gen_quant") {
     all_spop_target_right_censored[i] = spop_target_right_censored[obs_idx];
     all_spop_target_obs_cens_pfs[i] = spop_target_obs_cens_pfs[obs_idx];
     all_spop_target_obs_cens_right_censored[i] = spop_target_obs_cens_right_censored[obs_idx];
-    all_sample_other_events_pfs[i] = sample_other_events_pfs[obs_idx];
-    all_sample_other_events_right_censored[i] = sample_other_events_right_censored[obs_idx];
-    all_spop_other_events_pfs[i] = spop_other_events_pfs[obs_idx];
-    all_spop_other_events_right_censored[i] = spop_other_events_right_censored[obs_idx];
+    all_sample_ms_pfs[i] = sample_ms_pfs[obs_idx];
+    all_sample_ms_right_censored[i] = sample_ms_right_censored[obs_idx];
+    all_spop_ms_pfs[i] = spop_ms_pfs[obs_idx];
+    all_spop_ms_right_censored[i] = spop_ms_right_censored[obs_idx];
     all_sample_pfs[i] = sample_pfs[obs_idx];
     all_sample_right_censored[i] = sample_right_censored[obs_idx];
     all_spop_pfs[i] = spop_pfs[obs_idx];
     all_spop_right_censored[i] = spop_right_censored[obs_idx];
     all_sample_target_confirmed_response[i] = sample_target_confirmed_response[obs_idx];
     all_spop_target_confirmed_response[i] = spop_target_confirmed_response[obs_idx];
+    all_sample_os[i] = sample_os[obs_idx];
+    all_sample_os_censored[i] = sample_os_censored[obs_idx];
+    all_spop_os[i] = spop_os[obs_idx];
+    all_spop_os_censored[i] = spop_os_censored[obs_idx];
   }
 
   // Aggregate to trial-level metrics (using ALL enrolled patients for proper KM estimation)
   (sample_target_orr, spop_target_orr,
    sample_target_km_est, spop_target_km_est, spop_target_obs_cens_km_est,
-   sample_other_events_km_est, spop_other_events_km_est,
+   sample_ms_km_est, spop_ms_km_est,
    sample_km_est, spop_km_est,
    sample_target_quant_pfs, spop_target_quant_pfs,
    sample_target_quant_pfs_exceeds_max, spop_target_quant_pfs_exceeds_max,
-   sample_other_events_quant_pfs, spop_other_events_quant_pfs,
-   sample_other_events_quant_pfs_exceeds_max, spop_other_events_quant_pfs_exceeds_max,
+   sample_ms_quant_pfs, spop_ms_quant_pfs,
+   sample_ms_quant_pfs_exceeds_max, spop_ms_quant_pfs_exceeds_max,
    sample_quant_pfs, spop_quant_pfs,
    sample_quant_pfs_exceeds_max, spop_quant_pfs_exceeds_max,
    sample_target_pfs_n, spop_target_pfs_n,
-   sample_other_events_pfs_n, spop_other_events_pfs_n,
-   sample_pfs_n, spop_pfs_n) =
+   sample_ms_pfs_n, spop_ms_pfs_n,
+   sample_pfs_n, spop_pfs_n,
+   sample_os_km_est, spop_os_km_est,
+   sample_os_quant, spop_os_quant,
+   sample_os_quant_exceeds_max, spop_os_quant_exceeds_max,
+   sample_os_n, spop_os_n) =
     aggregate_trial_metrics(
       all_sample_target_confirmed_response,
       all_spop_target_confirmed_response,
@@ -278,14 +325,18 @@ profile("gen_quant") {
       all_spop_target_right_censored,
       all_spop_target_obs_cens_pfs,
       all_spop_target_obs_cens_right_censored,
-      all_sample_other_events_pfs,
-      all_sample_other_events_right_censored,
-      all_spop_other_events_pfs,
-      all_spop_other_events_right_censored,
+      all_sample_ms_pfs,
+      all_sample_ms_right_censored,
+      all_spop_ms_pfs,
+      all_spop_ms_right_censored,
       all_sample_pfs,
       all_sample_right_censored,
       all_spop_pfs,
       all_spop_right_censored,
+      all_sample_os,
+      all_sample_os_censored,
+      all_spop_os,
+      all_spop_os_censored,
       trial_patient_pos,
       max_all_t,
       pfs_quantiles,
@@ -295,17 +346,21 @@ profile("gen_quant") {
   // Aggregate to conditional group-level metrics (using cutoff-observed patients only)
   (cond_sample_target_orr, cond_spop_target_orr,
    cond_sample_target_km_est, cond_spop_target_km_est, cond_spop_target_obs_cens_km_est,
-   cond_sample_other_events_km_est, cond_spop_other_events_km_est,
+   cond_sample_ms_km_est, cond_spop_ms_km_est,
    cond_sample_km_est, cond_spop_km_est,
    cond_sample_target_quant_pfs, cond_spop_target_quant_pfs,
    cond_sample_target_quant_pfs_exceeds_max, cond_spop_target_quant_pfs_exceeds_max,
-   cond_sample_other_events_quant_pfs, cond_spop_other_events_quant_pfs,
-   cond_sample_other_events_quant_pfs_exceeds_max, cond_spop_other_events_quant_pfs_exceeds_max,
+   cond_sample_ms_quant_pfs, cond_spop_ms_quant_pfs,
+   cond_sample_ms_quant_pfs_exceeds_max, cond_spop_ms_quant_pfs_exceeds_max,
    cond_sample_quant_pfs, cond_spop_quant_pfs,
    cond_sample_quant_pfs_exceeds_max, cond_spop_quant_pfs_exceeds_max,
    cond_sample_target_pfs_n, cond_spop_target_pfs_n,
-   cond_sample_other_events_pfs_n, cond_spop_other_events_pfs_n,
-   cond_sample_pfs_n, cond_spop_pfs_n) =
+   cond_sample_ms_pfs_n, cond_spop_ms_pfs_n,
+   cond_sample_pfs_n, cond_spop_pfs_n,
+   cond_sample_os_km_est, cond_spop_os_km_est,
+   cond_sample_os_quant, cond_spop_os_quant,
+   cond_sample_os_quant_exceeds_max, cond_spop_os_quant_exceeds_max,
+   cond_sample_os_n, cond_spop_os_n) =
     aggregate_conditional_group_metrics(
       sample_target_confirmed_response,
       spop_target_confirmed_response,
@@ -315,14 +370,18 @@ profile("gen_quant") {
       spop_target_right_censored,
       spop_target_obs_cens_pfs,
       spop_target_obs_cens_right_censored,
-      sample_other_events_pfs,
-      sample_other_events_right_censored,
-      spop_other_events_pfs,
-      spop_other_events_right_censored,
+      sample_ms_pfs,
+      sample_ms_right_censored,
+      spop_ms_pfs,
+      spop_ms_right_censored,
       sample_pfs,
       sample_right_censored,
       spop_pfs,
       spop_right_censored,
+      sample_os,
+      sample_os_censored,
+      spop_os,
+      spop_os_censored,
       cutoff_cond_group,
       cutoff_cond_group_pos,
       max_all_t,

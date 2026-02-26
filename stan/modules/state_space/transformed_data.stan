@@ -11,17 +11,18 @@ int<lower = 1> n_total_visits = sum(n_patient_visits);
 array[n_patients + 1] int<lower = 1> patient_visit_m1_pos = create_pos(n_patient_visits, -1);
 int<lower = 1> n_total_forecast_visits = get_pos_total_size(forecast_visits_pos);
 
-// ============================================================================
-// Covariate design matrix (QR decomposition)
+// RECIST response categories
 // ============================================================================
 
-matrix[n_patients, n_covar] Q_covar_design_matrix;
-matrix[n_covar, n_covar] R_covar_design_matrix;
+int CR = 1;
+int PR = 2;
+int SD = 3;
+int PD = 4;
 
-if (n_covar > 0) {
-  Q_covar_design_matrix = qr_thin_Q(covar_design_matrix) * sqrt(n_patients - 1);
-  R_covar_design_matrix = qr_thin_R(covar_design_matrix) / sqrt(n_patients - 1);
-}
+int NT_CR = 1;
+int NT_PD = 2;
+
+#include "_qr_decomposition.stan"
 
 // ============================================================================
 // Create cumulative sum indicator matrix for batched state computation
@@ -43,4 +44,4 @@ matrix[n_pop_unique_visits, max_unique_visit] visit_cumsum_mat;
 // Endpoints: PFS conditioning groups
 // ============================================================================
 
-array[n_cond_group + 1] int cond_group_pos = create_pos(cond_group_size);
+#include "modules/endpoints/transformed_data.stan"

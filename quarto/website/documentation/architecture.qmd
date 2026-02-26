@@ -82,7 +82,7 @@ All parameters follow consistent prefixes based on their module:
 | Tumor Regression | `tr_` | `tr_intercept_pop`, `tr_sd_trial_intercept` |
 | Growth Fraction | `frac_` | `frac_intercept_pop`, `frac_sd_patient_intercept` |
 | Initial State | `init_` | `init_intercept_pop`, `init_sd_trial_intercept` |
-| Other Events | `oe_` | `oe_baseline_hazard_pop`, `oe_sd_trial_baseline_hazard` |
+| Multistate Hazard | `ms_` | `ms_log_lambda_gp_01_pop_intercept`, `ms_time_varying_coef_01` |
 
 ### Parameter Naming Template
 
@@ -304,7 +304,7 @@ The Stan code uses a modular architecture with `#include` directives. Modules ar
 - **`frac/`** - Growth fraction dynamics
 - **`init/`** - Initial state modeling
 - **`tumor/`** - Tumor-specific functions (SLD conversions, RECIST)
-- **`other_events/`** - Non-target progression and death events
+- **`multistate/`** - Multistate hazard model (PFS events, death, post-progression)
 - **`measurement/`** - Observation model
 
 ### Module File Pattern

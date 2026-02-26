@@ -4,6 +4,7 @@ functions {
   #include "gp.stanfunctions"
   #include "pfs.stanfunctions"
   #include "lfo.stanfunctions"
+  #include "multistate.stanfunctions"
   #include "modules/state_space/sf.stanfunctions"
   #include "modules/tumor/tumor.stanfunctions"
 }
@@ -13,19 +14,20 @@ data {
   #include "modules/tumor/data.stan"
   #include "modules/tumor/hyperparams.stan"
   #include "modules/state_space/data.stan"
-
-  #include "modules/other_events/data.stan"
+  #include "modules/multistate/flags.stan"
+  #include "modules/multistate/data.stan"
+  #include "modules/multistate/hyperparams.stan"
   #include "modules/tr/hyperparams.stan"
   #include "modules/frac/hyperparams.stan"
   #include "modules/init/hyperparams.stan"
-  #include "modules/other_events/hyperparams.stan"
-  #include "modules/other_events/flags.stan"
   #include "modules/tr/flags.stan"
   #include "modules/frac/flags.stan"
   #include "modules/init/flags.stan"
 
+  int<lower = 0, upper = 1> fit_multistate_data;
+
   #include "modules/state_space/lfo_data.stan"
-} 
+}
 
 transformed data {
   print("cutoff_calendar_day = ", cutoff_calendar_day);
@@ -36,17 +38,13 @@ transformed data {
   #include "modules/frac/transformed_data.stan"
   #include "modules/init/transformed_data.stan"
   #include "modules/state_space/transformed_data.stan"
-
-  // Generic biomarker baseline for other_events module (SLD mode)
-  vector[n_patients] log_baseline_biomarker = log_baseline_sld;
-
-  #include "modules/other_events/transformed_data.stan"
+  #include "modules/multistate/transformed_data.stan"
   #include "_lfo_transformed_data.stan"
 }
 
 parameters {
   #include "modules/tumor/parameters.stan"
-  #include "modules/other_events/parameters.stan"
+  #include "modules/multistate/parameters.stan"
   #include "modules/tr/parameters.stan"
   #include "modules/frac/parameters.stan"
   #include "modules/init/parameters.stan"
@@ -57,12 +55,13 @@ transformed parameters {
   #include "modules/frac/transformed_parameters.stan"
   #include "modules/init/transformed_parameters.stan"
   #include "modules/state_space/transformed_parameters.stan"
-  #include "modules/other_events/transformed_parameters.stan"
+  #include "_ms_time_varying_covar.stan"
+  #include "modules/multistate/transformed_parameters.stan"
 }
 
 model {
   #include "modules/tumor/priors.stan"
-  #include "modules/other_events/priors.stan"
+  #include "modules/multistate/priors.stan"
   #include "modules/tr/priors.stan"
   #include "modules/frac/priors.stan"
   #include "modules/init/priors.stan"
@@ -80,22 +79,13 @@ model {
       }
     }
 
-    // Other events likelihood contribution (cutoff-aware)
-    if (n_causes > 0) {
-      matrix[n_cutoff_observed_patients, n_causes] patient_response_lp = rep_matrix(0, n_cutoff_observed_patients, n_causes);
-
-      // Use cutoff-censored data and enforce time window to prevent data leakage
-      patient_response_lp[, 1] = calc_pch_loglik(
-        cutoff_ic_other_events_pfs,
-        cutoff_other_events_right_censored,
-        zeros_int_array(n_cutoff_observed_patients), // interval_censored
-        0,
-        log_cond_prob_surv[1, cutoff_observed_patients],
-        ones_int_array(n_cutoff_observed_patients), // start_from
-        cutoff_last_visit_week // end_at - strictly bounded by cutoff
-      );
-
-      target += sum(patient_response_lp);
+    // Multistate likelihood contribution (cutoff-aware)
+    if (enable_ms_01) {
+      target += sum(calc_ms_single_transition_loglik(
+        cutoff_ms_time_01,
+        cutoff_ms_censored_01,
+        log_cond_surv_01[cutoff_observed_patients]
+      ));
     }
   }
 }
@@ -208,24 +198,24 @@ generated quantities {
         // All forecast visits are PD since patient already had PD before cutoff
         full_predict_overall_recist[(treat_visit_size + 1):] = rep_array(PD, n_oos_visits);
       } else {
-        // Integrate other events PFS to mark RECIST as PD when other events cause progression
+        // Integrate multistate PFS to mark RECIST as PD when multistate events cause progression
         // Since we only process cutoff-observed patients (cutoff_observed_mask[i] == 1),
-        // we can always use the already-calculated sample_other_events_pfs from _lfo_endpoints_generated_quantities.stan
+        // we can always use the already-calculated sample_ms_pfs from _lfo_endpoints_generated_quantities.stan
         int cutoff_patient_idx = patient_to_cutoff_idx[i];
-        int forecast_other_events_pfs = sample_other_events_pfs[cutoff_patient_idx];
-        int forecast_other_events_censored = sample_other_events_right_censored[cutoff_patient_idx];
+        int forecast_ms_pfs = sample_ms_pfs[cutoff_patient_idx];
+        int forecast_ms_censored = sample_ms_right_censored[cutoff_patient_idx];
 
-        if (!forecast_other_events_censored) {
-          // Other events PD occurs at week forecast_other_events_pfs
-          // Find first forecast visit at or after other events PFS
-          int forecast_other_events_visit_idx = 1;
-          while (forecast_other_events_visit_idx <= n_oos_visits && forecast_time[forecast_other_events_visit_idx + 1] < forecast_other_events_pfs) {
-            forecast_other_events_visit_idx += 1;
+        if (!forecast_ms_censored) {
+          // Multistate PD occurs at week forecast_ms_pfs
+          // Find first forecast visit at or after multistate PFS
+          int forecast_ms_visit_idx = 1;
+          while (forecast_ms_visit_idx <= n_oos_visits && forecast_time[forecast_ms_visit_idx + 1] < forecast_ms_pfs) {
+            forecast_ms_visit_idx += 1;
           }
-          
-          // Mark all subsequent forecast visits as PD (from the first visit >= other events PFS onward)
-          if (forecast_other_events_visit_idx <= n_oos_visits) {
-            full_predict_overall_recist[(treat_visit_size + forecast_other_events_visit_idx):] = rep_array(PD, n_oos_visits - forecast_other_events_visit_idx + 1);
+
+          // Mark all subsequent forecast visits as PD (from the first visit >= multistate PFS onward)
+          if (forecast_ms_visit_idx <= n_oos_visits) {
+            full_predict_overall_recist[(treat_visit_size + forecast_ms_visit_idx):] = rep_array(PD, n_oos_visits - forecast_ms_visit_idx + 1);
           }
         }
       }
@@ -303,33 +293,30 @@ generated quantities {
 
           patient_log_lik_tumor[n, m_rel, patient_idx] = tumor_ll;
 
-          // Component 2: Other events model log-likelihood using ACTUAL observed PFS
+          // Component 2: Multistate model log-likelihood using ACTUAL observed PFS
           // (not cutoff-censored - we want true OOS evaluation against real outcomes)
-          real oe_ll = 0;
+          real ms_ll = 0;
 
-          if (n_causes > 0) {
+          if (enable_ms_01) {
             // Get test window boundaries in weeks
             int test_start_week = t_patient_visits[start_idx];
             int test_end_week = t_patient_visits[end_idx];
 
-            // Use ACTUAL observed other events PFS (not cutoff-censored)
+            // Use ACTUAL observed multistate PFS (not cutoff-censored)
             // This ensures proper OOS evaluation against real outcomes
-            array[1] int obs_oe_pfs = {ic_other_events_pfs[i]};
-            array[1] int obs_oe_censored = {other_events_right_censored[i]};
-            array[1] int obs_oe_ic = {other_events_interval_censored[i]};
+            array[1] int obs_ms_time = {ms_time_01[i]};
+            array[1] int obs_ms_censored = {ms_censored_01[i]};
             array[1] int test_start = {test_start_week};
             array[1] int test_end = {test_end_week};
 
             // Extract single patient's survival probabilities as a 1-row matrix
-            // log_cond_prob_surv is array[n_causes] matrix[n_patients, max_all_t]
-            // We need matrix[1, max_all_t] for this single patient
-            matrix[1, max_all_t] patient_log_surv = log_cond_prob_surv[1, i:i];
+            matrix[1, max_all_t] patient_log_surv = log_cond_surv_01[i:i];
 
             // Calculate log-likelihood using the same function as in model block
-            oe_ll = calc_pch_loglik(
-              obs_oe_pfs,
-              obs_oe_censored,
-              obs_oe_ic,
+            ms_ll = calc_pch_loglik(
+              obs_ms_time,
+              obs_ms_censored,
+              zeros_int_array(1), // no interval censoring
               0, // ignore_interval_censoring
               patient_log_surv,
               test_start,
@@ -337,10 +324,10 @@ generated quantities {
             )[1]; // Extract single element from returned vector
           }
 
-          patient_log_lik_oe[n, m_rel, patient_idx] = oe_ll;
+          patient_log_lik_oe[n, m_rel, patient_idx] = ms_ll;
 
           // Joint log-likelihood: log P(SLD, OE PFS | θ) = log P(SLD | θ) + log P(OE PFS | θ)
-          patient_log_lik[n, m_rel, patient_idx] = tumor_ll + oe_ll;
+          patient_log_lik[n, m_rel, patient_idx] = tumor_ll + ms_ll;
 
           // Below part is for OOS RECIST confusion matrix calculation
 

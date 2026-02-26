@@ -1,0 +1,155 @@
+---
+title: "Time Index Conventions"
+description: "Comprehensive reference for all time indexing, offset, and interval-censoring conventions used in the SCLC-01 Stan model and R data pipeline."
+date-modified: "2026-02-19"
+execute:
+  eval: false
+---
+
+## Overview
+
+The SCLC-01 model uses several interrelated time index conventions across its Stan code, R data preparation, and generated quantities. Inconsistencies between these conventions have been a recurring source of bugs, particularly in overall survival (OS) simulation. This page serves as the authoritative reference for all conventions.
+
+## Week Indexing {#sec-week-indexing}
+
+Treatment time uses **1-based indexing**: week 1 is the first week of treatment.
+
+- Week 0 and below represent baseline or pre-treatment time points.
+- A survival or PFS value of 0 means the event (death or progression) occurred at week 1 --- the patient survived zero complete weeks.
+- `max_all_t` is the maximum week index across all patients in the dataset.
+
+## PFS Convention (Internal Model) {#sec-pfs-convention}
+
+The variable `pfs` in the Stan data block represents the **last assessment week where the patient was observed alive and progression-free**. This is a critical distinction from the conventional (externally reported) PFS.
+
+- `pfs` is **not** the detection week. It is the last clean assessment prior to detection.
+- For a patient whose progression was detected at their week 12 assessment, `pfs` might be 6 (the previous clean assessment at week 6).
+- `interval_censored` (IC) is the number of candidate weeks between `pfs` and the detection assessment that could have been the actual last progression-free week.
+- The detection week (conventional PFS for external consumers) is:
+
+$$
+\text{detection week} = \texttt{pfs} + \texttt{IC} + 1
+$$
+
+- Currently, IC is not sampled (this is a future enhancement); `pfs` is treated as the actual last surviving week.
+
+::: {.callout-note}
+The distinction between `pfs` (internal model convention) and the detection week (external convention) is the single most important convention to understand. Many bugs have originated from confusing these two quantities.
+:::
+
+## Death Week Convention {#sec-death-week}
+
+The variable `death_week` is computed in R as:
+
+```r
+death_week <- (death_date - trtsdt) %/% 7 + 1
+```
+
+Key properties:
+
+- Death is an **exact event** --- there is no interval censoring for death.
+- No +1 offset is needed when using `death_week`: it already represents the exact week of death in 1-based indexing.
+- Unlike PFS, death does not have an IC component.
+
+::: {.callout-warning}
+Do not add +1 to `death_week` when computing multistate transition times. The +1 is already incorporated in the R computation. Adding another +1 inflates observed OS by one week.
+:::
+
+## Multistate Transition Times {#sec-multistate-transitions}
+
+The multistate model tracks transitions between three states: alive and progression-free (state 0), progressed (state 1), and dead (state 2). Each transition has its own time definition.
+
+### 0 to 1: Progression {#sec-transition-01}
+
+- `ms_time_01` = `pfs` for patients who progressed (the last clean assessment week).
+- This is the **internal model PFS**, not the detection week.
+
+### 0 to 2: Direct Death Without Progression {#sec-transition-02}
+
+- `ms_time_02` = `death_week` for patients who died without progressing.
+- Already exact and 1-indexed. No adjustments needed.
+
+### 1 to 2: Post-Progression Death {#sec-transition-12}
+
+- `ms_time_12` = `death_week - pfs` for patients who progressed and subsequently died.
+- This is the **sojourn time** measured from the last clean assessment week.
+- It includes the IC gap (weeks between the last clean assessment and progression detection).
+- For censored patients (alive at data cutoff): `ms_time_12` = `patient_max_t - pfs`.
+
+## `survival_time_rng` Return Convention {#sec-survival-time-rng}
+
+The Stan function `survival_time_rng` has two overloads with the same return convention:
+
+1. **Basic form**: `survival_time_rng(log_cond_prob_surv)` returns a **0-indexed** survival time (the number of complete intervals survived).
+   - A return value of 0 means the event occurred in the first interval.
+   - To convert to 1-indexed weeks: `event_week = survival_time_rng(...) + 1`.
+
+2. **Forecast overload**: `survival_time_rng(lcs, obs_time, censored, ic)` returns a value in the same **0-indexed** space as `obs_time`.
+
+::: {.callout-important}
+Always add +1 when converting `survival_time_rng` output to 1-based week indices. Forgetting this offset shifts all simulated event times by one week.
+:::
+
+## GP Clock-Forward Indexing (1 to 2 Transition) {#sec-gp-clock-forward}
+
+In the likelihood function `calc_multistate_loglik`, the Markov/extended path queries the clock-forward Gaussian process (GP) at indices:
+
+$$
+\texttt{time\_01}[i] + 1 \quad \text{through} \quad \texttt{time\_01}[i] + \texttt{time\_12}[i]
+$$
+
+where `time_01 = pfs` (the last clean week).
+
+The simulation (generated quantities) **must match** this indexing:
+
+- `t_start` for GP queries in simulation should be `pfs[i]`, **not** `sample_time_01`.
+- `sample_time_01` includes the IC+1 offset for multistate PFS and therefore queries different GP indices than the likelihood.
+- A mismatch between likelihood and simulation GP indexing causes **systematic bias** in OS predictions.
+
+::: {.callout-warning}
+This is a subtle but critical invariant. The likelihood computes post-progression hazard using GP values starting at `pfs + 1`. If the simulation starts GP queries at `sample_time_01` (which equals `pfs + IC + 1`), the first `IC + 1` weeks of post-progression hazard are skipped, systematically inflating simulated OS.
+:::
+
+## Conversion Table {#sec-conversion-table}
+
+| Quantity | Definition | Index Base | IC? | +1 Needed? |
+|----------|-----------|:----------:|:---:|:----------:|
+| `pfs` (Stan) | Last clean assessment week | 1-based | No | No |
+| `pfs + IC + 1` | Detection week (conventional PFS) | 1-based | Yes | Yes |
+| `death_week` | Exact week of death | 1-based | No | No |
+| `ms_time_01` | = `pfs` for progressed patients | 1-based | No | No |
+| `ms_time_02` | = `death_week` for 0 to 2 deaths | 1-based | No | No |
+| `ms_time_12` | = `death_week - pfs` (sojourn time) | Duration | Implicit | No |
+| `survival_time_rng()` return | Intervals survived | 0-based | No | Need +1 for weeks |
+| `sample_ms_pfs` | = `pfs + IC + 1` (detection week) | 1-based | Yes | Yes |
+| `sample_pfs` | = `min(sample_target_pfs, sample_ms_pfs)` | 1-based | Mixed | Mixed |
+
+: Time index conventions summary {.striped .hover}
+
+## Common Pitfalls {#sec-common-pitfalls}
+
+The following bugs have been discovered due to convention confusion. Each represents a class of error to guard against during development.
+
+::: {.callout-warning}
+### Pitfall 1: Using `sample_time_01` instead of `pfs` for observed OS
+
+Using `sample_time_01` (which equals `sample_pfs` and includes the IC+1 offset) instead of `pfs[i]` when computing observed OS inflates the result by IC+1 weeks. The internal model tracks progression from `pfs`, not from the detection week.
+:::
+
+::: {.callout-warning}
+### Pitfall 2: GP index mismatch between likelihood and simulation
+
+Using `sample_time_01` as `t_start` for GP queries in the simulation when the likelihood uses `time_01[i]` (= `pfs`) causes the simulation to query different GP indices than the likelihood. This produces systematically biased OS predictions because the post-progression hazard trajectory is shifted.
+:::
+
+::: {.callout-warning}
+### Pitfall 3: Adding +1 to `ms_time_02` for direct deaths
+
+Adding +1 to `ms_time_02` for observed direct deaths (0 to 2 transitions) is incorrect because `death_week` is already exact and 1-indexed. The extra +1 inflates observed OS for these patients by one week.
+:::
+
+::: {.callout-warning}
+### Pitfall 4: Adding +1 to `pfs + ms_time_12` for post-progression deaths
+
+Adding +1 to `pfs + ms_time_12` for observed 1 to 2 deaths is incorrect because `death_week` (which equals `pfs + ms_time_12`) is already exact. The extra +1 inflates observed OS for these patients by one week.
+:::
