@@ -17,6 +17,13 @@ This page presents overall survival (OS) analysis results for the SCLC-01 trial 
 OS is measured from randomization to death from any cause. Patients alive at last follow-up are censored. Unlike PFS, OS does not include a progression component --- all events are deaths.
 :::
 
+::: {.callout-warning}
+## Known Limitation: 3-State Model
+These results were generated using the **3-state illness-death model** (alive → progressed → dead), which does not account for treatment dropout (Pattern E). The model's OS predictions are **systematically more pessimistic** than the observed Kaplan-Meier --- the observed OS falls above the 80% credible interval at most timepoints for both SCLC-01 and HISTORICAL.
+
+This is because dropout patients (who tend to have worse prognosis) are forced into the standard 0→1→2 pathway, inflating the estimated 0→2 (direct death) and 1→2 (post-progression death) hazard rates for all patients. The **4-state model** (`karim/handle-pattern-e`, [issue #31](https://github.com/azu-oncology-rd/cds-dsi-pioneer-core/issues/31)) adds a dedicated dropout state (0→3) with its own post-dropout death hazard (3→2), which is expected to correct this bias.
+:::
+
 ::: {.callout-tip}
 ## Related Pages
 - See [Clinical Endpoints](clinical-endpoints.qmd) for ORR and median PFS results

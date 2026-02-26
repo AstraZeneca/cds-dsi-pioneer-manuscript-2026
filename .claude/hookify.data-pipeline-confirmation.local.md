@@ -2,7 +2,7 @@
 name: data-pipeline-confirmation
 enabled: true
 event: bash
-pattern: Rscript.*/(data_preparation_pipeline|main_pipeline|wrangle_data|prepare.*data\.R|pipeline.*\.R)
+pattern: Rscript.*(data_preparation_pipeline/.*main_pipeline_data|wrangle_data|pipeline.*\.R)
 action: block
 ---
 
