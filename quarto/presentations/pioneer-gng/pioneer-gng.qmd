@@ -224,7 +224,7 @@ Model Structure
 ::: {.column width="65%"}
 
 - Multimodal integration of expert knowledge, historical trials, and SCLC-01 data
-- Patient-level digital twin approach for tumor dynamics
+- Patient-level digital twin approach based on a tumor growth inhibition (TGI) model
 - From tumor size trajectories to RECIST responses and survival endpoints
 
 :::
@@ -448,7 +448,7 @@ On the bottom:
 
 ::: {.column width="50%"}
 
-**Tumor State-Space Model**
+**Tumor Growth Inhibition (TGI) State-Space Model**
 
 Latent tumor state decomposes into two components:
 
@@ -500,7 +500,7 @@ where $\mathbf{W}_i(t)$ includes tumor-derived time-varying covariates (predicte
 ::: {.notes}
 
 **Tumor dynamics (left)**:
-- Two-component state-space model in log-space
+- Two-component TGI state-space model in log-space (extends the classic Stein-Fojo biexponential)
 - Decreasing component captures treatment-sensitive cells
 - Growing component captures resistant/proliferating cells
 - All rate parameters follow 3-level hierarchy (population → trial → patient)

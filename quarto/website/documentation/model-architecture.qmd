@@ -56,49 +56,62 @@ $$
 
 ---
 
-### 2. Other Events Submodel
+### 2. Multistate Hazard Submodel (Illness-Death)
 
-**Purpose:** Models competing risks from non-target progression, new lesions, and death.
+**Purpose:** Models competing risks and post-progression survival through an illness-death multistate framework with three transitions: 0→1 (progression), 0→2 (death without progression), 1→2 (post-progression death).
 
 **Inputs:**
 - Baseline patient covariates
 - Treatment arm assignment
-- **Predicted tumor burden SLD(t)** from Submodel 1 (optional time-varying covariate)
+- **Predicted tumor burden SLD(t)** from Submodel 1 (time-varying covariates)
 - Trial identifier
 
 **Process:**
-Uses a proportional hazards framework to model the hazard for "other events":
+Each transition follows a proportional hazards framework with Gaussian process baseline hazards:
 
 $$
-\lambda_i(t) = \lambda_0(t) \exp\left(\mathbf{Z}_i^T \boldsymbol{\beta} + f(\text{SLD}_i(t))\right)
+\lambda_{jk,i}(t) = \lambda_{jk,0}(t) \exp\left(\mathbf{Z}_i^T \boldsymbol{\theta}_{jk} + \mathbf{W}_i(t)^T \boldsymbol{\kappa}_{jk}\right)
 $$
 
 where:
-- $\lambda_0(t)$ is the baseline hazard
-- $\mathbf{Z}_i$ are patient covariates
-- $f(\text{SLD}_i(t))$ optionally captures how tumor burden affects other event risk
+- $\lambda_{jk,0}(t)$ is the transition-specific baseline hazard (Gaussian process)
+- $\mathbf{Z}_i$ are time-invariant patient covariates
+- $\mathbf{W}_i(t)$ are tumor-derived time-varying covariates (SLD, rates, velocity)
+- $\boldsymbol{\theta}_{jk}$, $\boldsymbol{\kappa}_{jk}$ are transition-specific covariate effects
 
-**Key feature:** Other events are modeled as **independent** from target lesion progression. Both can be observed for the same patient, and the model learns the hazard function from the data.
+**Key feature:** The multistate structure captures post-progression survival (PPS) and enables Overall Survival (OS) prediction by modeling death both with and without progression.
 
 **Output:**
-- Hazard function $\lambda_i(t)$ for other events
-- Time to other event $T_i^{\text{other}}$
+- Transition hazards $\lambda_{01}(t)$, $\lambda_{02}(t)$, $\lambda_{12}(s)$
+- Time to progression $T_i^{01}$ (non-target events)
+- Overall Survival (OS) and Post-Progression Survival (PPS)
 
 ---
 
-### 3. PFS Combination
+### 3. Composite Endpoints
 
-The two submodels combine to produce PFS forecasts:
+The two submodels combine to produce PFS and OS forecasts:
 
+**Progression-Free Survival (PFS):**
 $$
-\text{PFS}_i = \min(T_i^{\text{target}}, T_i^{\text{other}})
+\text{PFS}_i = \min(T_i^{\text{target}}, T_i^{01}, T_i^{02})
 $$
 
-A patient progresses at whichever event occurs first (target lesion progression or other event).
+A patient progresses at whichever event occurs first: target lesion progression, non-target progression, or death.
+
+**Overall Survival (OS):**
+$$
+\text{OS}_i = \begin{cases}
+T_i^{02} & \text{if death without progression} \\
+T_i^{01} + T_i^{12} & \text{if progression then death}
+\end{cases}
+$$
+
+The multistate structure routes patients through observed trajectories (direct death 0→2 vs progression then death 0→1→2).
 
 **Full Bayesian inference:** Both submodels generate complete posterior distributions, enabling:
 - Uncertainty quantification for all predictions
-- Probabilistic forecasting of trial endpoints
+- Probabilistic forecasting of PFS and OS endpoints
 - Individual patient trajectory predictions with credible intervals
 
 ---
@@ -109,14 +122,15 @@ From this modeling framework, we generate:
 
 **Individual Level:**
 - Predicted tumor trajectories with uncertainty bands
-- Patient-specific PFS probabilities over time
+- Patient-specific PFS and OS probabilities over time
 - RECIST response classifications (CR, PR, SD, PD) with probabilities
+- Post-progression survival (PPS) for progressed patients
 
 **Trial Level:**
-- Median PFS (mPFS) with credible intervals
-- PFS rates at specific timepoints (e.g., PFS12 = 12-month PFS rate)
+- Median PFS and median OS with credible intervals
+- PFS/OS rates at specific timepoints (e.g., PFS12, OS18)
 - Objective response rate (ORR)
-- Kaplan-Meier survival curves with uncertainty
+- Kaplan-Meier survival curves (PFS and OS) with uncertainty
 
 **Decision Support:**
 - Go/No-Go recommendations based on probabilistic endpoint forecasts

@@ -193,13 +193,12 @@ for (i in 1:n_patients) {
   }
 }
 
-// Other events likelihood (cutoff-aware)
-patient_response_lp[, 1] = calc_pch_loglik(
-  cutoff_ic_other_events_pfs,      // Censored at cutoff
-  cutoff_other_events_right_censored,
-  ...,
-  cutoff_last_visit_week           // Bounded by cutoff time
-);
+// Multistate likelihood (cutoff-aware)
+target += sum(calc_ms_single_transition_loglik(
+  cutoff_ms_time_01,               // Censored at cutoff
+  cutoff_ms_censored_01,
+  ms_log_cond_surv_01[cutoff_observed_patients]
+));
 ```
 
 ### Out-of-Sample Prediction
@@ -249,14 +248,14 @@ real tumor_ll = sf_log_space_obs_lpdf(
   measure_sd, log_lod - log_baseline_sld[i]
 );
 
-// Other events component
-real oe_ll = calc_pch_loglik(
-  obs_oe_pfs, obs_oe_censored, obs_oe_ic, 0,
+// Multistate component
+real ms_ll = calc_pch_loglik(
+  obs_ms_time, obs_ms_censored, zeros_int_array(1), 0,
   patient_log_surv, test_start, test_end
 )[1];
 
 // Joint log-likelihood
-patient_log_lik[n, m_rel, patient_idx] = tumor_ll + oe_ll;
+patient_log_lik[n, m_rel, patient_idx] = tumor_ll + ms_ll;
 ```
 
 ### Confusion Matrix Generation
@@ -309,16 +308,16 @@ if (had_insample_pd == 1) {
 
 ### Other Events Integration
 
-The model integrates other events (non-target progression, death) with target RECIST:
+The model integrates multistate events (non-target progression, death) with target RECIST:
 
 ```stan
-// If other events cause PD before target lesion PD
-if (!forecast_other_events_censored) {
-  // Find first forecast visit at or after other events PFS
+// If multistate events cause PD before target lesion PD
+if (!forecast_ms_censored) {
+  // Find first forecast visit at or after multistate PFS
   // Mark all subsequent visits as PD
-  if (forecast_other_events_visit_idx <= n_oos_visits) {
-    full_predict_overall_recist[(treat_visit_size + forecast_other_events_visit_idx):] =
-      rep_array(PD, n_oos_visits - forecast_other_events_visit_idx + 1);
+  if (forecast_ms_visit_idx <= n_oos_visits) {
+    full_predict_overall_recist[(treat_visit_size + forecast_ms_visit_idx):] =
+      rep_array(PD, n_oos_visits - forecast_ms_visit_idx + 1);
   }
 }
 ```
@@ -355,7 +354,7 @@ lfo_fit <- lfo_model$sample(
 ```r
 # Extract ELPD components
 tumor_elpd <- lfo_fit$draws("patient_log_lik_tumor")
-oe_elpd <- lfo_fit$draws("patient_log_lik_oe")
+ms_elpd <- lfo_fit$draws("patient_log_lik_oe")
 joint_elpd <- lfo_fit$draws("patient_log_lik")
 
 # Extract confusion matrix

@@ -60,6 +60,11 @@ quarto/*.pdf
 quarto/*.html
 quarto/*_files/
 
+# TikZ build artifacts in images directory
+quarto/website/images/*.pdf
+quarto/website/images/*.aux
+quarto/website/images/*.log
+
 _extensions/
 _targets/
 
