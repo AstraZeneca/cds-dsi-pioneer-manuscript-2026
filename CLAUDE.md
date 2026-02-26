@@ -219,10 +219,12 @@ Model outputs three PFS variants (in `tumor_ssls_km_rvar_*` targets):
 ### Observed KM Data Structure
 
 `km_trial_pfs` and `km_trial_os` targets have `btype` column:
-- `btype == "lb"` - Lower bound / point estimate
-- `btype == "ub"` - Upper bound of confidence interval
+- `btype == "lb"` - Lower bound: events placed at `time + 1` (earliest possible)
+- `btype == "ub"` - Upper bound: events placed at `time + interval_censored + 1` (latest possible)
 
-Extract and join appropriately for plotting with upper confidence bands.
+Plots always use `btype == "ub"`. For PFS, `interval_censored` captures visit-gap uncertainty (up to 6 weeks). **For OS targets, always add `interval_censored = 0L` in the `mutate()` before calling `get_km_res()`** — deaths are observed exactly and the PFS interval_censored column must not be carried over, or it shifts death times forward and inflates the observed OS KM.
+
+`dco-comparisons.qmd` requires `km_trial_pfs_*_ctdna_{apr25,aug25}` targets (5 variants × 2 DCOs). These are fast to build but are not auto-built — run `tar_make()` for them explicitly if missing from the store.
 
 ## Coding Guidelines
 
@@ -248,6 +250,8 @@ Extract and join appropriately for plotting with upper confidence bands.
 - Always use explicit `store` argument: `tar_read(name, store = "path/_targets")`
 - Same applies to all targets functions: `tar_meta()`, `tar_load()`, etc.
 - **IMPORTANT**: `TAR_BRANCH` environment variable does NOT work with `tar_make()` - always use explicit `store="/path/_targets"` argument
+- `_targets.yaml` sclc store uses `!expr` with `DOMINO_STARTING_USERNAME` and `TAR_BRANCH` — never hardcode username or branch in this file
+- `tumor_ssls_draws_pop` selection: `time_invariant_coef_qr_*` and `time_varying_coef_*` params don't follow the `_pop` suffix — they need `matches("^(time_invariant|time_varying)_coef")` added to the `select_draws` call
 - **NEVER inline complex code in targets** - extract to helper functions in `r/` directory
   - Target commands should be simple function calls, not multi-line code blocks
   - Example: Use `tar_target(name, my_function(arg))` not `tar_target(name, { ... complex code ... })`
