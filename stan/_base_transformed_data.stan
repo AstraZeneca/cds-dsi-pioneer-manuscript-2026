@@ -26,10 +26,13 @@ if (n_groups_per_level[n_levels] != n_patients) {
 }
 
 // Validate backward compatibility: patient_level_groups[,1] must match patient_trial
-for (p in 1:n_patients) {
-  if (patient_level_groups[p, 1] != patient_trial[p]) {
-    fatal_error("patient_level_groups[", p, ", 1] = ", patient_level_groups[p, 1],
-                " must match patient_trial[", p, "] = ", patient_trial[p]);
+// Only applies when n_levels >= 2 (i.e., trial level exists as the first column)
+if (n_levels >= 2) {
+  for (p in 1:n_patients) {
+    if (patient_level_groups[p, 1] != patient_trial[p]) {
+      fatal_error("patient_level_groups[", p, ", 1] = ", patient_level_groups[p, 1],
+                  " must match patient_trial[", p, "] = ", patient_trial[p]);
+    }
   }
 }
 

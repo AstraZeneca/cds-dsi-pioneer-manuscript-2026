@@ -59,3 +59,12 @@ vector<lower = 0>[sum(n_patient_visits)] normalized_sld;
     normalized_sld[visit_start:visit_end] = sum_tumor_size[visit_start:visit_end] / sum_tumor_size[visit_start];
   }
 }
+
+// Biomarker-agnostic baseline for state_space module
+vector[n_patients] baseline_obs_per_patient;
+{
+  for (i in 1:n_patients) {
+    int visit_start = patient_visit_pos[i];
+    baseline_obs_per_patient[i] = sum_tumor_size[visit_start];
+  }
+}
