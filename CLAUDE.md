@@ -59,6 +59,14 @@ The SCLC-01 analysis results are published as a Quarto website located in `quart
 ```bash
 # From project root
 quarto render quarto/website
+
+# Render using a non-default pipeline store (e.g. multistate-trial-level)
+TAR_BRANCH=multistate-trial-level quarto render quarto/website
+```
+
+When switching stores, clear the freeze cache first to avoid stale cached outputs:
+```bash
+rm -rf quarto/website/_freeze/
 ```
 
 The rendered site is output to `quarto/website/_site/`. To preview:
