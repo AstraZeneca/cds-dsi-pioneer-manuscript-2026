@@ -32,5 +32,5 @@ endometrial_to_lung_june_impute:
   as_job: yes
 sclc:
   script: targets/sclc_targets.R
-  store: /mnt/data/analysis-results/karim_naguib/sclc/dco3/_targets
+  store: !expr file.path("/mnt/data/analysis-results", Sys.getenv("DOMINO_STARTING_USERNAME", Sys.getenv("USER")), "sclc", Sys.getenv("TAR_BRANCH", "main"), "_targets")
   as_job: no
