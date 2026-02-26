@@ -126,3 +126,6 @@ presentation_pages/
 
 # Core dump files
 core.*
+
+# Git worktrees
+/worktrees/
