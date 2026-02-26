@@ -33,7 +33,7 @@ Overall response rate represents the proportion of patients achieving complete r
 
 ```{r}
 #| label: fig-orr-sample
-#| fig-cap: Sample-based overall response rate (ORR), split by PDL1 status and treatment line for the SCLC trial.
+#| fig-cap: Sample-based overall response rate (ORR), split by PDL1 status and treatment line for the SCLC-01 trial.
 
 plot_orr_by_estimate_type("sample", jan26_orr_data, jan26_cond_orr_data)
 ```
@@ -42,7 +42,7 @@ plot_orr_by_estimate_type("sample", jan26_orr_data, jan26_cond_orr_data)
 
 ```{r}
 #| label: fig-orr-spop
-#| fig-cap: Superpopulation overall response rate (ORR), split by PDL1 status and treatment line for the SCLC trial.
+#| fig-cap: Superpopulation overall response rate (ORR), split by PDL1 status and treatment line for the SCLC-01 trial.
 
 plot_orr_by_estimate_type("spop", jan26_orr_data, jan26_cond_orr_data)
 ```
@@ -121,7 +121,7 @@ Median PFS represents the time at which 50% of patients have experienced progres
 
 ```{r}
 #| label: fig-median-pfs-sample
-#| fig-cap: Sample-based median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial.
+#| fig-cap: Sample-based median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC-01 trial.
 
 plot_median_pfs_by_estimate_type("sample", jan26_quant_pfs_data, jan26_cond_quant_pfs_data)
 ```
@@ -130,7 +130,7 @@ plot_median_pfs_by_estimate_type("sample", jan26_quant_pfs_data, jan26_cond_quan
 
 ```{r}
 #| label: fig-median-pfs-spop
-#| fig-cap: Superpopulation median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC trial.
+#| fig-cap: Superpopulation median progression-free survival (PFS), split by PDL1 status and treatment line for the SCLC-01 trial.
 
 plot_median_pfs_by_estimate_type("spop", jan26_quant_pfs_data, jan26_cond_quant_pfs_data)
 ```
@@ -209,7 +209,7 @@ PFS-n represents the probability of being progression-free at specific timepoint
 
 ```{r}
 #| label: fig-pfs-n-sample
-#| fig-cap: Sample-based progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC trial.
+#| fig-cap: Sample-based progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC-01 trial.
 
 plot_pfs_n_by_estimate_type("sample", jan26_pfs_n_data, jan26_cond_pfs_n_data, pfs_timepoints)
 ```
@@ -218,7 +218,7 @@ plot_pfs_n_by_estimate_type("sample", jan26_pfs_n_data, jan26_cond_pfs_n_data, p
 
 ```{r}
 #| label: fig-pfs-n-spop
-#| fig-cap: Superpopulation progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC trial.
+#| fig-cap: Superpopulation progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC-01 trial.
 
 plot_pfs_n_by_estimate_type("spop", jan26_pfs_n_data, jan26_cond_pfs_n_data, pfs_timepoints)
 ```

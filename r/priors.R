@@ -1,8 +1,37 @@
 # nolint start: object_usage_linter
 
-source("r/multi_level_hierarchy.R")
+# Dependencies: Requires r/multi_level_hierarchy.R to be loaded
+# (sourced by init_project() in .Rprofile)
 
-get_tumor_priors <- function(stan_data, coef_elicited_priors) {
+#' Transform elicited priors from original covariate space to QR space
+#'
+#' When covariates are correlated, the QR decomposition's R matrix introduces
+#' rotation.  Elicited priors encode directional knowledge about individual
+#' covariate effects in the **original** (standardized) space.  This function
+#' maps those priors into QR space so the Stan model sees correctly rotated
+#' prior hyperparameters.
+#'
+#' @param coef_mean Numeric vector of prior means in original space.
+#' @param coef_sd   Numeric vector of prior SDs in original space.
+#' @param design_matrix The covariate design matrix (n_patients x n_covar).
+#' @return A list with `coef_mean_qr`, `coef_sd_qr`, and `R_stan`.
+transform_priors_to_qr_space <- function(coef_mean, coef_sd, design_matrix) {
+  n <- nrow(design_matrix)
+  R_stan <- qr.R(qr(design_matrix)) / sqrt(n - 1)
+
+  mu_qr <- as.vector(R_stan %*% coef_mean)
+  sigma_sq_qr <- diag(R_stan %*% diag(coef_sd^2) %*% t(R_stan))
+  sd_qr <- sqrt(sigma_sq_qr)
+
+  list(
+    coef_mean_qr = mu_qr,
+    coef_sd_qr = sd_qr,
+    R_stan = R_stan
+  )
+}
+
+get_tumor_priors <- function(stan_data, coef_elicited_priors,
+                             covar_design_matrix = NULL) {
   # Directly specified priors (simplified)
   # Choose log-total rate prior similar to historical center; adjust if needed.
   # Updated: shifted mean from -1.0 to -2.0 to reduce prior-posterior conflict
@@ -19,6 +48,35 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
   # Get n_levels from stan_data (default 2 for backward compat)
   n_levels <- stan_data$n_levels %||% 2L
   n_covar <- stan_data$n_covar
+
+  # Multistate covariate dimensions (default 0 if not specified)
+  n_time_varying_covar <- stan_data$n_time_varying_covar %||% 0L
+  n_time_invariant_covar <- stan_data$n_time_invariant_covar %||% n_covar
+
+  # Transform elicited priors to QR space (frac and init modules)
+  # TR and MS use isotropic N(0,1) priors which are rotation-invariant
+  if (n_covar > 0 && !is.null(covar_design_matrix)) {
+    qr_frac <- transform_priors_to_qr_space(
+      coef_elicited_priors$coef_mean,
+      coef_elicited_priors$coef_sd,
+      covar_design_matrix
+    )
+    qr_init <- transform_priors_to_qr_space(
+      coef_elicited_priors$coef_mean,
+      coef_elicited_priors$coef_sd,
+      covar_design_matrix
+    )
+  } else {
+    # Fallback: use original-space priors directly (no design matrix available)
+    qr_frac <- list(
+      coef_mean_qr = coef_elicited_priors$coef_mean,
+      coef_sd_qr = coef_elicited_priors$coef_sd
+    )
+    qr_init <- list(
+      coef_mean_qr = coef_elicited_priors$coef_mean,
+      coef_sd_qr = coef_elicited_priors$coef_sd
+    )
+  }
 
   lst(
     # GP hyperparameters
@@ -70,8 +128,8 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     frac_logit_loc_pop_mean = frac_logit_loc_pop_mean,
     frac_logit_loc_pop_sd = frac_logit_loc_pop_sd,
     frac_sd_level_intercept_sd = c(0.25, 0.25),
-    frac_coef_qr_pop_mean = as.array(coef_elicited_priors$coef_mean),
-    frac_coef_qr_pop_sd = as.array(coef_elicited_priors$coef_sd),
+    frac_coef_qr_pop_mean = as.array(qr_frac$coef_mean_qr),
+    frac_coef_qr_pop_sd = as.array(qr_frac$coef_sd_qr),
     frac_sd_level_slope_sd = list(
       trial = rep(0.05, n_covar),
       patient = rep(0.03, n_covar)
@@ -81,8 +139,8 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
     init_logit_loc_pop_mean = init_logit_loc_pop_mean,
     init_logit_loc_pop_sd = init_logit_loc_pop_sd,
     init_sd_level_intercept_sd = c(0.6, 0.5),
-    init_coef_qr_pop_mean = as.array(coef_elicited_priors$coef_mean),
-    init_coef_qr_pop_sd = as.array(coef_elicited_priors$coef_sd),
+    init_coef_qr_pop_mean = as.array(qr_init$coef_mean_qr),
+    init_coef_qr_pop_sd = as.array(qr_init$coef_sd_qr),
     init_sd_level_slope_sd = list(
       trial = rep(0.10, n_covar),
       patient = rep(0.08, n_covar)
@@ -96,53 +154,108 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors) {
 
     rate_corr_param = 2.0,
 
-    # Other events baseline hazard GP hyperparameters
-    oe_log_lambda_gp_pop_intercept_mean = array(
-      -4.5,
-      dim = c(stan_data$n_causes)
-    ),
-    oe_log_lambda_gp_pop_intercept_sd = array(0.5, dim = c(stan_data$n_causes)),
-    # inv_gamma(5, 1.3) matches half-normal(0, 0.4) but avoids values near 0
-    oe_log_lambda_gp_pop_alpha_alpha = array(5.0, dim = c(stan_data$n_causes)),
-    oe_log_lambda_gp_pop_alpha_beta = array(1.3, dim = c(stan_data$n_causes)),
-    oe_log_lambda_gp_pop_rho_alpha = array(8.0, dim = c(stan_data$n_causes)),
-    oe_log_lambda_gp_pop_rho_beta = array(12.0, dim = c(stan_data$n_causes)),
-    # inv_gamma(5, 0.8) matches half-normal(0, 0.25) but avoids values near 0
-    oe_log_lambda_gp_trial_alpha_alpha = array(
-      5.0,
-      dim = c(stan_data$n_causes)
-    ),
-    oe_log_lambda_gp_trial_alpha_beta = array(0.8, dim = c(stan_data$n_causes)),
-    oe_log_lambda_gp_trial_rho_alpha = array(5.0, dim = c(stan_data$n_causes)),
-    oe_log_lambda_gp_trial_rho_beta = array(7.0, dim = c(stan_data$n_causes)),
-    oe_log_lambda_gp_trial_intercept_sd_sd = array(
-      0.3,
-      dim = c(stan_data$n_causes)
-    ),
+    # =========================================================================
+    # Multistate Hazard Model Hyperparameters
+    # =========================================================================
+    # Supports configurable transitions:
+    #   - 0→1: Progression / PFS event
+    #   - 0→2: Death without progression
+    #   - 1→2: Post-progression death (sojourn _s and clock-forward _t GPs)
 
-    # Other events covariate effect hyperparameters
-    oe_tumor_coef_pop_mean = array(
-      rep(0, stan_data$n_tumor_covar),
-      dim = c(stan_data$n_causes, stan_data$n_tumor_covar)
-    ),
-    oe_tumor_coef_pop_sd = array(
-      rep(0.5, stan_data$n_tumor_covar),
-      dim = c(stan_data$n_causes, stan_data$n_tumor_covar)
-    ),
-    oe_covar_coef_qr_pop_mean = array(
-      -coef_elicited_priors$coef_mean,
-      dim = c(stan_data$n_causes, stan_data$n_covar)
-    ),
-    oe_covar_coef_qr_pop_sd = array(
-      coef_elicited_priors$coef_sd,
-      dim = c(stan_data$n_causes, stan_data$n_covar)
-    ),
-    # Multi-level random slope SD hyperpriors for non-tumor covariates
-    # Dimensions: [n_causes, n_levels, n_covar]
-    oe_sd_level_slope_sd = array(
-      rep(0.15, stan_data$n_causes * n_levels * stan_data$n_covar),
-      dim = c(stan_data$n_causes, n_levels, stan_data$n_covar)
-    ),
+    # --- Population-level baseline hazard GP hyperparameters ---
+    # Relaxed priors to avoid divergences
+    # inv_gamma(3, 1.0) - wider prior on alpha
+    # inv_gamma(5, 5.0) - wider prior on rho
+
+    # 0→1 transition
+    log_lambda_gp_01_pop_intercept_mean = -4.5,
+    log_lambda_gp_01_pop_intercept_sd = 1.0,  # Wider intercept prior
+    log_lambda_gp_01_pop_alpha_alpha = 3.0,   # Relaxed
+    log_lambda_gp_01_pop_alpha_beta = 1.0,
+    log_lambda_gp_01_pop_rho_alpha = 5.0,     # Relaxed
+    log_lambda_gp_01_pop_rho_beta = 5.0,
+
+    # 0→2 transition
+    log_lambda_gp_02_pop_intercept_mean = -4.5,
+    log_lambda_gp_02_pop_intercept_sd = 1.0,
+    log_lambda_gp_02_pop_alpha_alpha = 3.0,
+    log_lambda_gp_02_pop_alpha_beta = 1.0,
+    log_lambda_gp_02_pop_rho_alpha = 5.0,
+    log_lambda_gp_02_pop_rho_beta = 5.0,
+
+    # 1→2 transition (sojourn time GP)
+    log_lambda_gp_12_s_pop_intercept_mean = -4.5,
+    log_lambda_gp_12_s_pop_intercept_sd = 1.0,
+    log_lambda_gp_12_s_pop_alpha_alpha = 3.0,
+    log_lambda_gp_12_s_pop_alpha_beta = 1.0,
+    log_lambda_gp_12_s_pop_rho_alpha = 5.0,
+    log_lambda_gp_12_s_pop_rho_beta = 5.0,
+
+    # 1→2 transition (clock-forward time GP)
+    log_lambda_gp_12_t_pop_intercept_mean = -4.5,
+    log_lambda_gp_12_t_pop_intercept_sd = 1.0,
+    log_lambda_gp_12_t_pop_alpha_alpha = 3.0,
+    log_lambda_gp_12_t_pop_alpha_beta = 1.0,
+    log_lambda_gp_12_t_pop_rho_alpha = 5.0,
+    log_lambda_gp_12_t_pop_rho_beta = 5.0,
+
+    # --- Level-level baseline hazard GP hyperparameters (N-level hierarchy) ---
+    # Relaxed priors to avoid divergences
+
+    # 0→1 transition (per level)
+    log_lambda_gp_01_level_intercept_sd_sd = rep(0.5, n_levels),  # Wider
+    log_lambda_gp_01_level_alpha_alpha = rep(3.0, n_levels),      # Relaxed
+    log_lambda_gp_01_level_alpha_beta = rep(1.0, n_levels),
+    log_lambda_gp_01_level_rho_alpha = rep(4.0, n_levels),        # Relaxed
+    log_lambda_gp_01_level_rho_beta = rep(4.0, n_levels),
+
+    # 0→2 transition (per level)
+    log_lambda_gp_02_level_intercept_sd_sd = rep(0.5, n_levels),
+    log_lambda_gp_02_level_alpha_alpha = rep(3.0, n_levels),
+    log_lambda_gp_02_level_alpha_beta = rep(1.0, n_levels),
+    log_lambda_gp_02_level_rho_alpha = rep(4.0, n_levels),
+    log_lambda_gp_02_level_rho_beta = rep(4.0, n_levels),
+
+    # 1→2 sojourn time GP (per level)
+    log_lambda_gp_12_s_level_intercept_sd_sd = rep(0.5, n_levels),
+    log_lambda_gp_12_s_level_alpha_alpha = rep(3.0, n_levels),
+    log_lambda_gp_12_s_level_alpha_beta = rep(1.0, n_levels),
+    log_lambda_gp_12_s_level_rho_alpha = rep(4.0, n_levels),
+    log_lambda_gp_12_s_level_rho_beta = rep(4.0, n_levels),
+
+    # 1→2 clock-forward time GP (per level)
+    log_lambda_gp_12_t_level_intercept_sd_sd = rep(0.5, n_levels),
+    log_lambda_gp_12_t_level_alpha_alpha = rep(3.0, n_levels),
+    log_lambda_gp_12_t_level_alpha_beta = rep(1.0, n_levels),
+    log_lambda_gp_12_t_level_rho_alpha = rep(4.0, n_levels),
+    log_lambda_gp_12_t_level_rho_beta = rep(4.0, n_levels),
+
+    # --- Time-varying covariate coefficient hyperparameters ---
+    time_varying_coef_01_mean = rep(0, n_time_varying_covar),
+    time_varying_coef_01_sd = rep(0.5, n_time_varying_covar),
+    time_varying_coef_02_mean = rep(0, n_time_varying_covar),
+    time_varying_coef_02_sd = rep(0.5, n_time_varying_covar),
+    time_varying_coef_12_mean = rep(0, n_time_varying_covar),
+    time_varying_coef_12_sd = rep(0.5, n_time_varying_covar),
+
+    # --- Time-invariant covariate coefficient hyperparameters (QR space) ---
+    time_invariant_coef_01_mean = rep(0, n_time_invariant_covar),
+    time_invariant_coef_01_sd = rep(1, n_time_invariant_covar),
+    time_invariant_coef_02_mean = rep(0, n_time_invariant_covar),
+    time_invariant_coef_02_sd = rep(1, n_time_invariant_covar),
+    time_invariant_coef_12_mean = rep(0, n_time_invariant_covar),
+    time_invariant_coef_12_sd = rep(1, n_time_invariant_covar),
+
+    # --- Multi-level random slope SD hyperpriors (per level, per transition) ---
+    sd_level_slope_01_sd = lapply(seq_len(n_levels), function(lv) {
+      rep(0.15, n_time_invariant_covar)
+    }),
+    sd_level_slope_02_sd = lapply(seq_len(n_levels), function(lv) {
+      rep(0.15, n_time_invariant_covar)
+    }),
+    sd_level_slope_12_sd = lapply(seq_len(n_levels), function(lv) {
+      rep(0.15, n_time_invariant_covar)
+    }),
 
     log_lod_sd = 0.2
   )

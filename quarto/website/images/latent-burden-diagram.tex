@@ -1,0 +1,104 @@
+% Compile with: pdflatex latent-burden-diagram.tex
+% Then convert to SVG: pdf2svg latent-burden-diagram.pdf latent-burden-diagram.svg
+\documentclass[tikz,border=15pt]{standalone}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows.meta,positioning,calc,fit}
+\usepackage{amsmath}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{sfmath}
+
+\begin{document}
+
+\begin{tikzpicture}[
+  latent/.style={
+    rectangle, rounded corners=8pt,
+    minimum width=12cm, minimum height=3cm,
+    text centered, draw=black, line width=1.5pt,
+    font=\normalsize, align=center, inner sep=10pt
+  },
+  obs/.style={
+    rectangle, rounded corners=6pt,
+    minimum width=3.2cm, minimum height=2.2cm,
+    text centered, draw=black, line width=0.8pt,
+    font=\small, align=center, inner sep=6pt,
+    fill=white
+  },
+  data/.style={
+    rectangle, rounded corners=4pt,
+    minimum width=2.6cm, minimum height=0.9cm,
+    text centered, draw=black!50, line width=0.5pt,
+    font=\footnotesize, align=center,
+    fill=gray!10
+  },
+  transition/.style={
+    ->{Stealth[length=7pt,width=5pt]},
+    line width=1pt, black
+  }
+]
+
+% ==================== LATENT STATE ====================
+\node (latent) [latent, fill=white] at (0, 0) {
+    \large\textbf{Single Latent Tumor State}\\[0.3cm]
+    \normalsize
+    Sensitive: $\phi \times e^{-d \times t}$ \qquad\qquad
+    Resistant: $(1-\phi) \times e^{g \times t}$\\[0.25cm]
+    \normalsize True Burden: $B(t) = \phi \times e^{-d \times t} + (1-\phi) \times e^{g \times t}$
+};
+
+% ==================== OBSERVATION MODELS ====================
+\node (obs_sld) [obs, text width=2.8cm] at (-5, -4) {
+    \textbf{SLD}\\[0.1cm]
+    $\lambda = 1$\\[0.1cm]
+    \footnotesize $\sigma_{\text{SLD}}$
+};
+
+\node (obs_psa) [obs, text width=2.8cm] at (-0.0, -4) {
+    \textbf{PSA}\\[0.1cm]
+    $\lambda_{\text{PSA}}$\\[0.1cm]
+    \footnotesize $\sigma_{\text{PSA}}$
+};
+
+\node (obs_ldh) [obs, text width=2.8cm] at (5, -4) {
+    \textbf{LDH}\\[0.1cm]
+    $\lambda_{\text{LDH}}$\\[0.1cm]
+    \footnotesize $\sigma_{\text{LDH}}$
+};
+
+% ==================== DATA NODES ====================
+\node (data_sld) [data] at (-5, -6.2) {
+    $\text{SLD}_{\text{obs}}[i,t]$
+};
+
+\node (data_psa) [data] at (0, -6.2) {
+    $\text{PSA}_{\text{obs}}[i,t]$
+};
+
+\node (data_ldh) [data] at (5, -6.2) {
+    $\text{LDH}_{\text{obs}}[i,t]$
+};
+
+% ==================== ARROWS ====================
+
+% Latent to observations
+\draw [transition] (latent.south) ++(-3.5,0) -- (obs_sld.north);
+\draw [transition] (latent.south) -- (obs_psa.north);
+\draw [transition] (latent.south) ++(3.5,0) -- (obs_ldh.north);
+
+% Observations to data
+\draw [transition, black!50] (obs_sld.south) -- (data_sld.north);
+\draw [transition, black!50] (obs_psa.south) -- (data_psa.north);
+\draw [transition, black!50] (obs_ldh.south) -- (data_ldh.north);
+
+% ==================== LABELS ====================
+\node[font=\footnotesize, text=black!60] at (-5, -2) {$B_{\text{SLD}}(t) = B(t)$};
+\node[font=\footnotesize, text=black!60] at (0, -2) {$B_{\text{PSA}}(t)$};
+\node[font=\footnotesize, text=black!60] at (5, -2) {$B_{\text{LDH}}(t)$};
+
+% Parameters shared label
+\node[font=\footnotesize, text=black!50, align=center] at (0, 2) {
+    Parameters $\phi$, $d$, $g$ shared across all biomarkers
+};
+
+\end{tikzpicture}
+\end{document}

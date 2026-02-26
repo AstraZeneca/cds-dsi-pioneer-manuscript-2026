@@ -164,18 +164,15 @@ calculate_recist_summary_metrics(
 // ============================================================================
 // RECIST-BASED ENDPOINT GENERATION FUNCTIONS
 // ============================================================================
-// These functions compute RECIST classifications, patient-level endpoints 
+// These functions compute RECIST classifications, patient-level endpoints
 // (PFS, response indicators), and trial-level metrics. They are specific to
 // tumor/SLD-based workflows using RECIST response criteria.
-//
-// Moved from modules/state_space/sf.stanfunctions to keep biomarker-specific
-// logic in the appropriate module.
 
 /**
  * Calculate RECIST classifications for all patients with internalized loop
  * This function processes all patients at once, computing both observed (replicated)
  * and forecasted RECIST responses.
- * 
+ *
  * @param rep_mean_patient_log_sld Mean log SLD for observed visits (all patients)
  * @param forecast_mean_patient_log_sld Mean log SLD for forecast (all patients)
  * @param patient_visit_pos Position array for patient visits
@@ -183,7 +180,7 @@ calculate_recist_summary_metrics(
  * @param n_patient_visits Number of visits per patient
  * @param n_patient_screening_visits Number of screening visits per patient
  * @param n_patient_forecast_visits Number of forecast visits per patient
- * 
+ *
  * @return Tuple containing:
  *   - rep_recist: RECIST classifications for observed treatment visits
  *   - forecast_recist: RECIST classifications for forecast visits
@@ -199,49 +196,49 @@ tuple(
   array[] int n_patient_screening_visits  // Number of screening visits per patient
 ) {
   int n_patients = size(patient_visit_pos) - 1;
-  
+
   // Compute total sizes from position arrays
   int n_total_visits = get_pos_total_size(patient_visit_pos);
   int n_total_forecast_visits = get_pos_total_size(forecast_visits_pos);
-  
+
   // RECIST constants
   int CR = 1; int PR = 2; int SD = 3; int PD = 4;
-  
+
   // Initialize output arrays with sentinel values
   // rep_recist is sized for ALL visits (including screening) to allow direct indexing with treat_visit_start:visit_end
   array[n_total_visits] int rep_recist = rep_array(PD + 1, n_total_visits);
   array[n_total_forecast_visits] int forecast_recist;
-  
+
   // Process each patient
   for (i in 1:n_patients) {
     // Compute sizes from position arrays
     int visit_size = get_pos_size(patient_visit_pos, i);
     int forecast_size = get_pos_size(forecast_visits_pos, i);
     int n_obs_treat_visits = visit_size - n_patient_screening_visits[i];
-    
+
     // Get full visit positions (for extracting SLD means and indexing rep_recist)
     int visit_start, screening_visit_end, treat_visit_start, visit_end;
     (visit_start, screening_visit_end, treat_visit_start, visit_end) = get_visit_pos(
       patient_visit_pos, i, n_patient_screening_visits[i]);
-    
+
     // Get forecast visit positions
     int forecast_visit_start, forecast_visit_end;
     (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
-    
+
     // Calculate RECIST for observed + forecast SLD
     // calculate_target_recist drops screening visits, so output length = n_obs_treat_visits + forecast_size
     array[n_obs_treat_visits + forecast_size] int full_predict_recist = calculate_target_recist(
-      exp(append_row(rep_mean_patient_log_sld[visit_start:visit_end], 
+      exp(append_row(rep_mean_patient_log_sld[visit_start:visit_end],
                     forecast_mean_patient_log_sld[forecast_visit_start:forecast_visit_end])) * 10,
       n_patient_screening_visits[i]
     );
-    
+
     // Split into observed and forecast components
     // Use absolute visit indices for rep_recist (sized for all visits)
     rep_recist[treat_visit_start:visit_end] = full_predict_recist[:n_obs_treat_visits];
     forecast_recist[forecast_visit_start:forecast_visit_end] = full_predict_recist[(n_obs_treat_visits + 1):];
   }
-  
+
   return (rep_recist, forecast_recist);
 }
 
@@ -287,10 +284,10 @@ tuple(
   array[] int,  // spop_target_right_censored
   array[] int,  // spop_target_obs_cens_pfs
   array[] int,  // spop_target_obs_cens_right_censored
-  array[] int,  // sample_other_events_pfs
-  array[] int,  // sample_other_events_right_censored
-  array[] int,  // spop_other_events_pfs
-  array[] int,  // spop_other_events_right_censored
+  array[] int,  // sample_ms_pfs
+  array[] int,  // sample_ms_right_censored
+  array[] int,  // spop_ms_pfs
+  array[] int,  // spop_ms_right_censored
   array[] int,  // sample_pfs
   array[] int,  // sample_right_censored
   array[] int,  // spop_pfs
@@ -300,18 +297,33 @@ tuple(
   array[] int,  // spop_target_confirmed_response
   array[] int,  // spop_target_unconfirmed_response
   array[] int,  // forecast_target_pfs
-  array[] int   // forecast_target_right_censored
+  array[] int,  // forecast_target_right_censored
+  array[] int,  // sample_os
+  array[] int,  // sample_os_censored
+  array[] int,  // spop_os
+  array[] int   // spop_os_censored
 ) calculate_all_patients_endpoints_rng(
   array[] int recist,
   array[] int rep_recist,
   array[] int forecast_recist,
-  array[] matrix log_cond_prob_surv,  // [n_causes] matrix[n_patients, max_all_t] - log conditional survival probabilities for each cause
+  matrix ms_log_cond_surv,  // matrix[n_patients, max_all_t] - log conditional survival probabilities (0→1)
+  int enable_ms_02,
+  int enable_ms_12,
+  int ms_time_scale_12,
+  matrix log_cond_surv_02,    // matrix[n_patients, max_all_t] or [0,0] - 0→2 log conditional survival
+  matrix log_cond_surv_12_s,  // matrix[n_patients, ms_max_sojourn_t] or [0,0] - 1→2 sojourn GP
+  matrix log_cond_surv_12_t,  // matrix[n_patients, max_all_t] or [0,0] - 1→2 clock-forward GP
   array[] int pfs,
   array[] int interval_censored,
   array[] int right_censored,
   array[] int target_pfs,  // PFS based on target lesions only (observed data)
   array[] int target_right_censored,  // Censoring status for target lesions only (observed data)
-  array[] int other_events_right_censored,  // From transformed data - censoring status for other events
+  array[] int ms_right_censored,  // Censoring status for multistate events
+  array[] int ms_final_state,  // Final state per patient: 0=censored, 1=progressed, 2=dead
+  array[] int ms_time_02,      // Observed time to death without progression
+  array[] int ms_censored_02,  // Censoring indicator for 0→2
+  array[] int ms_censored_12,  // Censoring indicator for 1→2
+  array[] int ms_time_12,      // Observed time to post-progression death (sojourn)
   array[] int patient_visit_pos,
   array[] int forecast_visits_pos,
   array[] int patient_last_obs_visit,
@@ -320,9 +332,23 @@ tuple(
   int max_all_t,
   array[] int n_patient_screening_visits  // Number of screening visits per patient
 ) {
+  // Illness-death model states:
+  //   0 = alive without progression
+  //   1 = alive with progression (post-progression)
+  //   2 = dead
+  // Transitions: 0→1 (progression), 0→2 (direct death), 1→2 (post-progression death)
+  //
+  // Key data conventions:
+  //   pfs[i]         = last clean assessment week (1-indexed)
+  //   ms_time_02[i]  = death_week for observed 0→2 deaths (1-indexed, exact)
+  //   ms_time_12[i]  = sojourn time post-progression:
+  //                     observed death: death_week - pfs (exact sojourn)
+  //                     censored alive: patient_max_t - pfs (observed sojourn survival)
+  //                     never progressed: 0
+
   int n_patients = size(patient_visit_pos) - 1;
   int n_target_right_censored_patients = sum(target_right_censored);
-  
+
   // RECIST constants
   int CR = 1; int PR = 2; int SD = 3; int PD = 4;
   
@@ -340,18 +366,24 @@ tuple(
   array[n_target_right_censored_patients] int forecast_target_pfs;
   array[n_target_right_censored_patients] int forecast_target_right_censored;
   
-  // Other events PFS (cause 1 in competing risks)
-  array[n_patients] int sample_other_events_pfs;
-  array[n_patients] int sample_other_events_right_censored;
-  array[n_patients] int spop_other_events_pfs;
-  array[n_patients] int spop_other_events_right_censored;
+  // Multistate PFS
+  array[n_patients] int sample_ms_pfs;
+  array[n_patients] int sample_ms_right_censored;
+  array[n_patients] int spop_ms_pfs;
+  array[n_patients] int spop_ms_right_censored;
   
   // Combined PFS (minimum of target and other events)
   array[n_patients] int sample_pfs;
   array[n_patients] int sample_right_censored;
   array[n_patients] int spop_pfs;
   array[n_patients] int spop_right_censored;
-  
+
+  // OS (overall survival)
+  array[n_patients] int sample_os;
+  array[n_patients] int sample_os_censored;
+  array[n_patients] int spop_os;
+  array[n_patients] int spop_os_censored;
+
   int right_censored_idx = 1;
   
   // Process each patient
@@ -440,40 +472,160 @@ tuple(
     spop_target_confirmed_response[i] = !spop_target_confirmed_response_censored && spop_target_confirmed_response_week < spop_target_pfs[i];
     spop_target_unconfirmed_response[i] = !spop_target_unconfirmed_response_censored && spop_target_unconfirmed_response_week <= spop_target_pfs[i];
     
-    // Calculate other events PFS using survival_time_rng from cause 1 (other events)
-    // For other-events censored (either admin or competing target): forecast from observed time
-    // For other-events observed: use observed time with interval censoring
-    if (other_events_right_censored[i]) {
-      // Other-event is censored (either no event at all, or target progressed first)
-      // Forecast what WOULD happen with other-events
+    // Calculate multistate PFS using survival_time_rng
+    // For ms-censored (either admin or competing target): forecast from observed time
+    // For ms-observed: use observed time with interval censoring
+    if (ms_right_censored[i]) {
+      // Multistate event is censored (either no event at all, or target progressed first)
+      // Forecast what WOULD happen with multistate events
       // right_censored=1 forces forecast
-      (sample_other_events_pfs[i], sample_other_events_right_censored[i]) = survival_time_rng(log_cond_prob_surv[1, i], pfs[i], 1, 0); 
-      sample_other_events_pfs[i] += 1;
+      (sample_ms_pfs[i], sample_ms_right_censored[i]) = survival_time_rng(ms_log_cond_surv[i], pfs[i], 1, 0);
+      sample_ms_pfs[i] += 1;
     } else {
-      // Other-event actually occurred - use observed time
-      sample_other_events_pfs[i] = pfs[i] + interval_censored[i] + 1;
-      sample_other_events_right_censored[i] = 0;  // Not censored
+      // Multistate event actually occurred - use observed time
+      sample_ms_pfs[i] = pfs[i] + interval_censored[i] + 1;
+      sample_ms_right_censored[i] = 0;  // Not censored
     }
-    
+
     // Unconditional posterior predictive (always sample from scratch)
-    (spop_other_events_pfs[i], spop_other_events_right_censored[i]) = survival_time_rng(log_cond_prob_surv[1, i]);
-    spop_other_events_pfs[i] += 1;  // Convert to conventional week (week of detection)
+    (spop_ms_pfs[i], spop_ms_right_censored[i]) = survival_time_rng(ms_log_cond_surv[i]);
+    spop_ms_pfs[i] += 1;  // Convert to conventional week (week of detection)
     
     // Combined PFS: For independent events, these represent "first of any event"
-    // Note: With independent events, both target AND other-events can occur
-    // Combined variables represent whichever happened first (for backward compatibility)
-    sample_pfs[i] = min(sample_target_pfs[i], sample_other_events_pfs[i]);
+    // Note: With independent events, both target AND multistate events can occur
+    // Combined variables represent whichever happened first
+    sample_pfs[i] = min(sample_target_pfs[i], sample_ms_pfs[i]);
     // Censored only if BOTH event types are censored
-    sample_right_censored[i] = sample_target_right_censored[i] && sample_other_events_right_censored[i];
-    
-    spop_pfs[i] = min(spop_target_pfs[i], spop_other_events_pfs[i]);
-    spop_right_censored[i] = spop_target_right_censored[i] && spop_other_events_right_censored[i];
+    sample_right_censored[i] = sample_target_right_censored[i] && sample_ms_right_censored[i];
 
-    sample_pfs[i] = min(sample_target_pfs[i], sample_other_events_pfs[i]);
-    // Censored only if BOTH event types are censored
-    sample_right_censored[i] = sample_target_right_censored[i] && sample_other_events_right_censored[i];
+    spop_pfs[i] = min(spop_target_pfs[i], spop_ms_pfs[i]);
+    spop_right_censored[i] = spop_target_right_censored[i] && spop_ms_right_censored[i];
+
+    // =========================================================================
+    // OS SIMULATION: Competing risks (0→1 vs 0→2) + post-progression death (1→2)
+    // =========================================================================
+
+    // --- Unconditional (spop) OS ---
+    {
+      int spop_time_01 = spop_pfs[i];  // Combined PFS: first progression by any mechanism (target or multistate)
+      int spop_cens_01 = spop_right_censored[i];
+
+      int spop_time_02 = max_all_t + 1;
+      int spop_cens_02 = 1;
+      if (enable_ms_02) {
+        int t02_raw; int c02_raw;
+        (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[i]);
+        spop_time_02 = t02_raw + 1;  // Convert to 1-indexed week
+        spop_cens_02 = c02_raw;
+      }
+
+      // Determine which transition fires first in state 0
+      int spop_progressed_first = !spop_cens_01 && (spop_cens_02 || spop_time_01 <= spop_time_02);
+      int spop_died_directly = enable_ms_02 && !spop_cens_02 && (spop_cens_01 || spop_time_02 < spop_time_01);
+
+      if (spop_died_directly) {
+        // Death without progression
+        spop_os[i] = spop_time_02;
+        spop_os_censored[i] = 0;
+      } else if (spop_progressed_first && enable_ms_12) {
+        // Progressed first → sample post-progression death (1→2)
+        // Guard: clock-forward matrix is [0,0] when ms_time_scale_12==1 (semi-Markov)
+        row_vector[cols(log_cond_surv_12_t)] surv_12_t_i =
+          cols(log_cond_surv_12_t) > 0 ? log_cond_surv_12_t[i] : rep_row_vector(0, 0);
+        (spop_os[i], spop_os_censored[i]) = sample_post_progression_death_rng(
+          ms_time_scale_12, log_cond_surv_12_s[i], surv_12_t_i,
+          spop_time_01, 0);  // sojourn_obs=0: unconditional
+      } else {
+        // Both censored (no death observed)
+        spop_os[i] = max(spop_time_01, spop_time_02);
+        spop_os_censored[i] = 1;
+      }
+
+      // Update multistate PFS using competing risks: PFS = min(time_01, time_02)
+      if (enable_ms_02) {
+        if (spop_died_directly) {
+          // Death without progression counts as PFS event
+          spop_ms_pfs[i] = spop_time_02;
+          spop_ms_right_censored[i] = 0;
+        }
+        // Recompute combined PFS with possible 0→2 event
+        spop_pfs[i] = min(spop_target_pfs[i], spop_ms_pfs[i]);
+        spop_right_censored[i] = spop_target_right_censored[i] && spop_ms_right_censored[i];
+      }
+    }
+
+    // --- Conditional (sample) OS ---
+    {
+      int sample_time_01 = sample_pfs[i];  // Combined PFS: first progression by any mechanism (target or multistate)
+      int sample_cens_01 = sample_right_censored[i];
+
+      int sample_time_02 = max_all_t + 1;
+      int sample_cens_02 = 1;
+      if (enable_ms_02) {
+        // Use observed 0→2 data when available
+        if (!ms_censored_02[i]) {
+          // Death without progression was observed (death_week is exact, 1-indexed)
+          sample_time_02 = ms_time_02[i];
+          sample_cens_02 = 0;
+        } else {
+          // Censored for 0→2: forecast from observed time
+          int t02_raw; int c02_raw;
+          (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[i], pfs[i], 1, 0);
+          sample_time_02 = t02_raw + 1;
+          sample_cens_02 = c02_raw;
+        }
+      }
+
+      // Routing truth table for competing risks:
+      //   Observed 0→2 death (!ms_censored_02)  → always direct death (conditional PPC)
+      //   Forecasted 0→2 before progression     → direct death
+      //   Forecasted 0→2 after progression      → progression first, then 1→2 path
+      //   Both censored                         → censored OS = max(time_01, time_02)
+      int sample_died_directly = enable_ms_02 && !sample_cens_02
+        && (!ms_censored_02[i] || sample_cens_01 || sample_time_02 < sample_time_01);
+      int sample_progressed_first = !sample_died_directly && !sample_cens_01
+        && (sample_cens_02 || sample_time_01 <= sample_time_02);
+
+      if (sample_died_directly) {
+        sample_os[i] = sample_time_02;
+        sample_os_censored[i] = 0;
+      } else if (sample_progressed_first && enable_ms_12) {
+        if (!ms_censored_12[i]) {
+          // Observed death: use exact time (pfs + sojourn = death_week)
+          sample_os[i] = pfs[i] + ms_time_12[i];
+          sample_os_censored[i] = 0;
+        } else {
+          // Forecast: condition on observed sojourn survival
+          // Guard: clock-forward matrix is [0,0] when ms_time_scale_12==1 (semi-Markov)
+          row_vector[cols(log_cond_surv_12_t)] surv_12_t_i =
+            cols(log_cond_surv_12_t) > 0 ? log_cond_surv_12_t[i] : rep_row_vector(0, 0);
+          (sample_os[i], sample_os_censored[i]) = sample_post_progression_death_rng(
+            ms_time_scale_12, log_cond_surv_12_s[i], surv_12_t_i,
+            pfs[i], ms_time_12[i]);
+        }
+      } else {
+        // Both censored
+        sample_os[i] = max(sample_time_01, sample_time_02);
+        sample_os_censored[i] = 1;
+      }
+
+      // Update multistate PFS for competing risks
+      if (enable_ms_02) {
+        if (sample_died_directly) {
+          // Direct death (observed or forecasted before progression).
+          // PFS = death_week (death is a PFS event).
+          sample_pfs[i] = sample_time_02;
+          sample_right_censored[i] = 0;
+          sample_ms_pfs[i] = sample_time_02;
+          sample_ms_right_censored[i] = 0;
+        } else {
+          sample_pfs[i] = min(sample_target_pfs[i], sample_ms_pfs[i]);
+          sample_right_censored[i] = sample_target_right_censored[i] && sample_ms_right_censored[i];
+        }
+      }
+    }
   }
-  
+
   return (
     sample_target_pfs,
     sample_target_right_censored,
@@ -481,10 +633,10 @@ tuple(
     spop_target_right_censored,
     spop_target_obs_cens_pfs,
     spop_target_obs_cens_right_censored,
-    sample_other_events_pfs,
-    sample_other_events_right_censored,
-    spop_other_events_pfs,
-    spop_other_events_right_censored,
+    sample_ms_pfs,
+    sample_ms_right_censored,
+    spop_ms_pfs,
+    spop_ms_right_censored,
     sample_pfs,
     sample_right_censored,
     spop_pfs,
@@ -494,7 +646,11 @@ tuple(
     spop_target_confirmed_response,
     spop_target_unconfirmed_response,
     forecast_target_pfs,
-    forecast_target_right_censored
+    forecast_target_right_censored,
+    sample_os,
+    sample_os_censored,
+    spop_os,
+    spop_os_censored
   );
 }
 

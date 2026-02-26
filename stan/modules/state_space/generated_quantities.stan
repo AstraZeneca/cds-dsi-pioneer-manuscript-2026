@@ -1,3 +1,8 @@
+// Back-transformed coefficients from QR space to original space
+#include "modules/tr/generated_quantities.stan"
+#include "modules/frac/generated_quantities.stan"
+#include "modules/init/generated_quantities.stan"
+
 // Biomarker-agnostic trajectory generation
 // Contract: requires baseline_obs_per_patient[n_patients] (transformed data)
 //           and measure_sd_obs (generated quantities scalar) to be defined

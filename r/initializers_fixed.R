@@ -1,11 +1,137 @@
-# Temporary fixed initializer for testing chain stability
+# Fixed initializers for testing chain stability
 # Uses reproducible per-chain values with realistic heterogeneity
 
-create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_id = NULL) {
-  function(chain_id) {
-    # Note: targets already sets a deterministic seed per target, so we don't need set.seed() here
-    # The chain_id parameter is kept for interface compatibility but not used for seeding
+# =========================================================================
+# Shared multistate initialization helper
+# =========================================================================
+# Called by both the joint model (create_tumor_ssls_initializer_fixed) and
+# the standalone multistate model (create_ms_standalone_initializer_fixed).
+# Must be called inside a with(stan_data, { ... }) block so that all
+# multistate fields (flags, hyperparameters, dimensions) are in scope.
 
+ms_init_values_fixed <- function(env) {
+  with(env, {
+    # Derived flags for 1→2 GPs
+    need_12_s_gp <- enable_ms_12 && (ms_time_scale_12 == 1 || ms_time_scale_12 == 2)
+    need_12_t_gp <- enable_ms_12 && (ms_time_scale_12 == 0 || ms_time_scale_12 == 2)
+
+    # Multistate enabled group counts - SEPARATE for each transition
+    n_enabled_groups_ms_baseline_01 <- if (enable_ms_01) sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1]) else 0L
+    n_enabled_groups_ms_baseline_02 <- if (enable_ms_02) sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1]) else 0L
+    n_enabled_groups_ms_baseline_12_s <- if (need_12_s_gp) sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1]) else 0L
+    n_enabled_groups_ms_baseline_12_t <- if (need_12_t_gp) sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1]) else 0L
+    n_enabled_groups_ms_slope <- sum(n_groups_per_level[enable_ms_level_cov == 1])
+
+    tibble::lst(
+      # --- 0→1 Transition ---
+      log_lambda_gp_01_pop_intercept = if (enable_ms_01) array(-4.5, dim = 1),
+      log_lambda_gp_01_pop_alpha = if (enable_ms_01) array(1.0, dim = 1),
+      log_lambda_gp_01_pop_rho = if (enable_ms_01) array(1.4, dim = 1),
+      log_lambda_gp_01_pop_eta = if (enable_ms_01) rnorm(max_all_t, sd = 0.1),
+      log_lambda_gp_01_level_alpha = rep(1.0, n_levels),
+      log_lambda_gp_01_level_rho = rep(1.4, n_levels),
+      log_lambda_gp_01_level_intercept_sd = rep(0.1, n_levels),
+      log_lambda_gp_01_level_eta = if (enable_ms_01 && n_enabled_groups_ms_baseline_01 > 0) {
+        matrix(rnorm(n_enabled_groups_ms_baseline_01 * max_all_t, sd = 0.1),
+               nrow = n_enabled_groups_ms_baseline_01, ncol = max_all_t)
+      },
+      raw_log_lambda_gp_01_level_intercept = if (n_enabled_groups_ms_baseline_01 > 0) rep(0, n_enabled_groups_ms_baseline_01),
+
+      # --- 0→2 Transition ---
+      log_lambda_gp_02_pop_intercept = if (enable_ms_02) array(-4.5, dim = 1),
+      log_lambda_gp_02_pop_alpha = if (enable_ms_02) array(1.0, dim = 1),
+      log_lambda_gp_02_pop_rho = if (enable_ms_02) array(1.4, dim = 1),
+      log_lambda_gp_02_pop_eta = if (enable_ms_02) rnorm(max_all_t, sd = 0.1),
+      log_lambda_gp_02_level_alpha = if (enable_ms_02) rep(1.0, n_levels) else numeric(0),
+      log_lambda_gp_02_level_rho = if (enable_ms_02) rep(1.4, n_levels) else numeric(0),
+      log_lambda_gp_02_level_intercept_sd = if (enable_ms_02) rep(0.1, n_levels) else numeric(0),
+      log_lambda_gp_02_level_eta = if (enable_ms_02 && n_enabled_groups_ms_baseline_02 > 0) {
+        matrix(rnorm(n_enabled_groups_ms_baseline_02 * max_all_t, sd = 0.1),
+               nrow = n_enabled_groups_ms_baseline_02, ncol = max_all_t)
+      },
+      raw_log_lambda_gp_02_level_intercept = if (n_enabled_groups_ms_baseline_02 > 0) rep(0, n_enabled_groups_ms_baseline_02),
+
+      # --- 1→2 Sojourn GP ---
+      log_lambda_gp_12_s_pop_intercept = if (need_12_s_gp) array(-4.5, dim = 1),
+      log_lambda_gp_12_s_pop_alpha = if (need_12_s_gp) array(1.0, dim = 1),
+      log_lambda_gp_12_s_pop_rho = if (need_12_s_gp) array(1.4, dim = 1),
+      log_lambda_gp_12_s_pop_eta = if (need_12_s_gp) rnorm(ms_max_sojourn_t, sd = 0.1),
+      log_lambda_gp_12_s_level_alpha = if (need_12_s_gp) rep(1.0, n_levels) else numeric(0),
+      log_lambda_gp_12_s_level_rho = if (need_12_s_gp) rep(1.4, n_levels) else numeric(0),
+      log_lambda_gp_12_s_level_intercept_sd = if (need_12_s_gp) rep(0.1, n_levels) else numeric(0),
+      log_lambda_gp_12_s_level_eta = if (need_12_s_gp && n_enabled_groups_ms_baseline_12_s > 0) {
+        matrix(rnorm(n_enabled_groups_ms_baseline_12_s * ms_max_sojourn_t, sd = 0.1),
+               nrow = n_enabled_groups_ms_baseline_12_s, ncol = ms_max_sojourn_t)
+      },
+      raw_log_lambda_gp_12_s_level_intercept = if (n_enabled_groups_ms_baseline_12_s > 0) rep(0, n_enabled_groups_ms_baseline_12_s),
+
+      # --- 1→2 Clock-forward GP ---
+      log_lambda_gp_12_t_pop_intercept = if (need_12_t_gp) array(-4.5, dim = 1),
+      log_lambda_gp_12_t_pop_alpha = if (need_12_t_gp) array(1.0, dim = 1),
+      log_lambda_gp_12_t_pop_rho = if (need_12_t_gp) array(1.4, dim = 1),
+      log_lambda_gp_12_t_pop_eta = if (need_12_t_gp) rnorm(max_all_t, sd = 0.1),
+      log_lambda_gp_12_t_level_alpha = if (need_12_t_gp) rep(1.0, n_levels) else numeric(0),
+      log_lambda_gp_12_t_level_rho = if (need_12_t_gp) rep(1.4, n_levels) else numeric(0),
+      log_lambda_gp_12_t_level_intercept_sd = if (need_12_t_gp) rep(0.1, n_levels) else numeric(0),
+      log_lambda_gp_12_t_level_eta = if (need_12_t_gp && n_enabled_groups_ms_baseline_12_t > 0) {
+        matrix(rnorm(n_enabled_groups_ms_baseline_12_t * max_all_t, sd = 0.1),
+               nrow = n_enabled_groups_ms_baseline_12_t, ncol = max_all_t)
+      },
+      raw_log_lambda_gp_12_t_level_intercept = if (n_enabled_groups_ms_baseline_12_t > 0) rep(0, n_enabled_groups_ms_baseline_12_t),
+
+      # --- Time-varying covariate coefficients ---
+      time_varying_coef_01 = if (enable_ms_01 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
+        rep(0, n_time_varying_covar)
+      },
+      time_varying_coef_02 = if (enable_ms_02 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
+        rep(0, n_time_varying_covar)
+      },
+      time_varying_coef_12 = if (enable_ms_12 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
+        rep(0, n_time_varying_covar)
+      },
+
+      # --- Time-invariant covariate coefficients ---
+      time_invariant_coef_qr_01 = if (enable_ms_01 && enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0) {
+        rep(0, n_time_invariant_covar)
+      },
+      time_invariant_coef_qr_02 = if (enable_ms_02 && enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0) {
+        rep(0, n_time_invariant_covar)
+      },
+      time_invariant_coef_qr_12 = if (enable_ms_12 && enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0) {
+        rep(0, n_time_invariant_covar)
+      },
+
+      # --- Multi-level random slopes ---
+      sd_level_slope_01 = if (enable_ms_01 && n_time_invariant_covar > 0) {
+        lapply(seq_len(n_levels), function(lv) rep(0.1, n_time_invariant_covar))
+      },
+      sd_level_slope_02 = if (enable_ms_02 && n_time_invariant_covar > 0) {
+        lapply(seq_len(n_levels), function(lv) rep(0.1, n_time_invariant_covar))
+      },
+      sd_level_slope_12 = if (enable_ms_12 && n_time_invariant_covar > 0) {
+        lapply(seq_len(n_levels), function(lv) rep(0.1, n_time_invariant_covar))
+      },
+      raw_level_slope_01 = if (enable_ms_01 && n_time_invariant_covar > 0) {
+        matrix(0, nrow = n_enabled_groups_ms_slope, ncol = n_time_invariant_covar)
+      },
+      raw_level_slope_02 = if (enable_ms_02 && n_time_invariant_covar > 0) {
+        matrix(0, nrow = n_enabled_groups_ms_slope, ncol = n_time_invariant_covar)
+      },
+      raw_level_slope_12 = if (enable_ms_12 && n_time_invariant_covar > 0) {
+        matrix(0, nrow = n_enabled_groups_ms_slope, ncol = n_time_invariant_covar)
+      },
+    )
+  })
+}
+
+# =========================================================================
+# Joint model initializer (tumor + multistate)
+# =========================================================================
+
+create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_id = NULL) {
+  # Capture helper in closure so it's available when called in a different process
+  .ms_init <- ms_init_values_fixed
+  function(chain_id) {
     # Compute max_t_width (same as in Stan's transformed data)
     min_all_t <- min(stan_data$t_patient_visits)
     max_all_t <- max(max(stan_data$t_patient_visits) + 1, stan_data$extend_max_all_t %||% 0)
@@ -20,7 +146,6 @@ create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_
       n_enabled_groups_frac_slope <- sum(n_groups_per_level[enable_level_cov_frac == 1])
       n_enabled_groups_init_intercept <- sum(n_groups_per_level[enable_level_intercept_init == 1])
       n_enabled_groups_init_slope <- sum(n_groups_per_level[enable_level_cov_init == 1])
-      n_enabled_groups_oe_slope <- sum(n_groups_per_level[oe_enable_level_cov == 1])
 
       # Level positions for indexing flattened arrays
       level_pos <- c(1L, cumsum(n_groups_per_level) + 1L)
@@ -63,11 +188,12 @@ create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_
         init_level_dev[idx] / init_sd_level[lv]
       }))
 
-      tibble::lst(
-        # Population-level parameters - initialize at prior means to avoid catastrophic random inits
-        tr_loc_pop = -2.0,  # Total rate on log scale (prior mean)
-        frac_logit_loc_pop = 1.5,  # Fraction on logit scale (prior mean)
-        init_logit_loc_pop = 0.0,  # Initial fraction logit (prior mean)
+      # Tumor dynamics parameters
+      tumor_init <- tibble::lst(
+        # Population-level parameters - initialize at prior means
+        tr_loc_pop = -2.0,
+        frac_logit_loc_pop = 1.5,
+        init_logit_loc_pop = 0.0,
 
         # Level-indexed intercept SDs and raw values
         tr_sd_level_intercept = tr_sd_level,
@@ -83,7 +209,6 @@ create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_
         init_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_init) array(rep(0, n_covar), dim = n_covar),
 
         # Level-indexed slope SDs and raw effects
-        # Slope SDs are always n_levels, but raw effects are sized by enabled groups only
         tr_sd_level_slope = if (n_covar > 0) lapply(seq_len(n_levels), function(lv) {
           rep(if (lv == n_levels) 0.2 else 0.1, n_covar)
         }),
@@ -117,57 +242,43 @@ create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_
 
         # Measurement error - realistic value
         measure_sd_sld = 0.15,
-
-        # Other events baseline hazard - realistic values
-        log_lambda_gp_pop_intercept = array(rep(-4.5, n_causes), dim = n_causes),
-        log_lambda_gp_pop_alpha = array(rep(1.0, n_causes), dim = n_causes),
-        log_lambda_gp_pop_rho = array(rep(1.4, n_causes), dim = n_causes),
-        # GP eta (time effects) - small heterogeneity for smoother start
-        log_lambda_gp_pop_eta = replicate(n_causes, rnorm(max_all_t, sd = 0.1), simplify = FALSE),
-
-        # Other events trial-level baseline hazard
-        log_lambda_gp_trial_alpha = if (oe_enable_trial_baseline_hazard) {
-          rep(1.0, n_trials)
-        },
-        log_lambda_gp_trial_rho = if (oe_enable_trial_baseline_hazard) {
-          rep(1.4, n_trials)
-        },
-        log_lambda_gp_trial_intercept_sd = if (oe_enable_trial_baseline_hazard) rep(0.1, n_causes),
-        raw_log_lambda_gp_trial_intercept = if (oe_enable_trial_baseline_hazard) {
-          array(replicate(n_causes, rep(0, n_trials), simplify = FALSE), dim = c(n_causes, n_trials))
-        },
-        log_lambda_gp_trial_eta = if (oe_enable_trial_baseline_hazard) {
-          replicate(n_causes, matrix(rnorm(n_trials * max_all_t, sd = 0.1), n_trials, max_all_t), simplify = FALSE)
-        },
-
-        # Other events covariate effects - all zero
-        # Note: tumor coefficients are NOT QR-transformed (unlike oe_covar_coef_qr_pop)
-        oe_tumor_coef_pop = if (n_tumor_covar > 0 && oe_enable_pop_tumor_cov) {
-          array(replicate(n_causes, rep(0, n_tumor_covar)), dim = c(n_causes, n_tumor_covar))
-        },
-        # Note: oe_enable_trial_tumor_cov is scaffolded but not yet implemented in Stan
-
-        oe_covar_coef_qr_pop = if (n_covar > 0 && oe_enable_pop_cov) {
-          array(replicate(n_causes, rep(0, n_covar)), dim = c(n_causes, n_covar))
-        },
-        # Multi-level random slopes for non-tumor covariates
-        # These are always declared in Stan, so always provide initialization
-        # oe_sd_level_slope: array[n_causes, n_levels] vector[n_covar] -> 3D array
-        oe_sd_level_slope = if (n_covar > 0) {
-          array(0.1, dim = c(n_causes, n_levels, n_covar))
-        },
-        # oe_raw_level_slope: array[n_causes] matrix[n_enabled_groups_oe_slope, n_covar] -> 3D array
-        # Sized by ENABLED groups only
-        oe_raw_level_slope = if (n_covar > 0) {
-          array(0, dim = c(n_causes, n_enabled_groups_oe_slope, n_covar))
-        },
       )
+
+      # Combine tumor + multistate init values
+      c(tumor_init, .ms_init(environment()))
     }) |> purrr::compact() |>
       (\(init_vals) {
         # Save init values to disk if save_dir is provided
         if (!is.null(save_dir)) {
           dir.create(save_dir, recursive = TRUE, showWarnings = FALSE)
-          # Include run_id in filename to avoid collisions between runs
+          filename <- if (!is.null(run_id)) {
+            sprintf("init-%s-chain-%d.json", run_id, chain_id)
+          } else {
+            sprintf("init-chain-%d.json", chain_id)
+          }
+          init_file <- file.path(save_dir, filename)
+          jsonlite::write_json(init_vals, init_file, auto_unbox = TRUE, pretty = TRUE)
+          message("Saved init values for chain ", chain_id, " to ", init_file)
+        }
+        init_vals
+      })()
+  }
+}
+
+# =========================================================================
+# Standalone multistate model initializer
+# =========================================================================
+
+create_ms_standalone_initializer_fixed <- function(stan_data, save_dir = NULL, run_id = NULL) {
+  # Capture helper in closure so it's available when called in a different process
+  .ms_init <- ms_init_values_fixed
+  function(chain_id) {
+    with(stan_data, {
+      .ms_init(environment())
+    }) |> purrr::compact() |>
+      (\(init_vals) {
+        if (!is.null(save_dir)) {
+          dir.create(save_dir, recursive = TRUE, showWarnings = FALSE)
           filename <- if (!is.null(run_id)) {
             sprintf("init-%s-chain-%d.json", run_id, chain_id)
           } else {

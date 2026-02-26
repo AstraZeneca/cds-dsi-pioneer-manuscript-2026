@@ -7,16 +7,6 @@
 // Limit of detection for SLD measurements (cm)
 real log_lod = log(0.1);
 
-// RECIST response category constants
-int CR = 1;
-int PR = 2;
-int SD = 3;
-int PD = 4;
-
-// Non-target lesion status constants
-int NT_CR = 1;
-int NT_PD = 2;
-
 vector[sum(n_patient_visits)] log_sum_tumor_size = log(sum_tumor_size); // cm
 vector[sum(n_patient_visits) - sum(n_patient_screening_visits)] post_treat_sld;
 
@@ -44,9 +34,41 @@ array[max_all_t] real all_tumor_measure_t = linspaced_array(max_all_t, 1, max_al
 // BASELINE SLD AND NORMALIZATION
 // ============================================================================
 // Patient-level baseline SLD (in cm) for converting normalized states to absolute SLD
-// Used by tumor likelihood and by other_events module for tumor covariates
+// Used by tumor likelihood and by multistate module for tumor covariates
 
 vector[n_patients] log_baseline_sld;
+
+// ============================================================================
+// SLD NORMALIZATION CONSTANTS FOR PROPORTIONAL HAZARDS
+// ============================================================================
+// Robust normalization statistics (median and IQR) from observed log(SLD)
+// Using median/IQR instead of mean/SD for robustness to outliers
+// Used by multistate module for time-varying covariates
+
+real median_log_sld_obs;
+real iqr_log_sld_obs;
+
+// Compute robust normalization statistics from observed log(SLD)
+{
+  // Get all observed log(SLD) values across all patients and visits
+  // Filter out zeros to avoid -Inf
+  vector[sum(n_patient_visits)] log_sld_all_obs;
+  int n_positive = 0;
+
+  for (i in 1:sum(n_patient_visits)) {
+    if (sum_tumor_size[i] > 0) {
+      n_positive += 1;
+      log_sld_all_obs[n_positive] = log(sum_tumor_size[i]);
+    }
+  }
+
+  // Compute robust normalization using median and IQR from positive observations
+  {
+    array[3] real quantiles_obs = quantile(log_sld_all_obs[1:n_positive], {0.25, 0.5, 0.75});
+    median_log_sld_obs = quantiles_obs[2];
+    iqr_log_sld_obs = quantiles_obs[3] - quantiles_obs[1];
+  }
+}
 
 // Normalize SLD by baseline for each patient (used by observation model)
 vector<lower = 0>[sum(n_patient_visits)] normalized_sld;

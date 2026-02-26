@@ -1,5 +1,35 @@
 /* Custom styles for SCLC-01 Analysis Website */
 
+/* Import modern sans-serif font for title */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@600&display=swap');
+
+/* Modern, clean navbar title */
+.navbar-title,
+.navbar .navbar-brand {
+  font-family: 'IBM Plex Sans', -apple-system, system-ui, sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 1.05rem !important;
+  letter-spacing: -0.01em !important;
+  color: white !important;
+  transition: color 0.2s ease !important;
+}
+
+.navbar-title:hover,
+.navbar .navbar-brand:hover {
+  color: var(--az-gold) !important;
+}
+
+/* Ensure home icon has NO text - hide any text nodes */
+.navbar .navbar-nav .nav-item:has(.bi-house-fill) .nav-link {
+  font-size: 0 !important;
+  padding-left: 0.5rem !important;
+  padding-right: 0.5rem !important;
+}
+
+.navbar .navbar-nav .nav-item:has(.bi-house-fill) .bi {
+  font-size: 1.2rem !important;
+}
+
 /* Card styling for landing page */
 .card-grid {
   display: grid;

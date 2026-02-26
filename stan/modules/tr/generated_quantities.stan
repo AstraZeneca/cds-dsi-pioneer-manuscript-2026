@@ -1,6 +1,7 @@
 // tr/generated_quantities.stan
-// Optional generated quantities (e.g., residuals) for total rate module.
+// Back-transform QR coefficients to original covariate space
 
-/* Example placeholders:
-vector[n_patients] tr_rate_resid_patient = tr_loc_patient - mean(tr_loc_patient);
-*/
+vector[enable_pop_cov_tr && n_covar > 0 ? n_covar : 0] tr_coef_pop;
+if (enable_pop_cov_tr && n_covar > 0) {
+  tr_coef_pop = mdivide_left_tri_low(R_covar_design_matrix', tr_coef_qr_pop);
+}
