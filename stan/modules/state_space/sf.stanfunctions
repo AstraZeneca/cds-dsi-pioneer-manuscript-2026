@@ -1038,23 +1038,23 @@ tuple(
  * @param last_predict_visit Last prediction visit week (scalar)
  * @param t_patient_visits All patient visit times (flat array)
  * @param t_patient_visit_idx Patient visit indices relative to first visit
- * @param sum_tumor_size Baseline tumor sizes (flat array)
- * @param measure_sd Measurement standard deviation
+ * @param baseline_obs_per_patient Baseline biomarker value per patient [n_patients]
+ * @param measure_sd_obs Measurement standard deviation
  * @param n_patient_screening_visits Number of screening visits per patient
- * 
+ *
  * @return Tuple containing:
  *   - forecast_patient_states: All forecasted states
- *   - rep_patient_log_sld: All replicated log SLD for observed visits
- *   - rep_mean_patient_log_sld: All mean log SLD for observed visits
- *   - forecast_patient_log_sld: All forecasted log SLD
- *   - forecast_mean_patient_log_sld: All mean log SLD for forecast
+ *   - rep_patient_log_obs: All replicated log biomarker for observed visits
+ *   - rep_mean_patient_log_obs: All mean log biomarker for observed visits
+ *   - forecast_patient_log_obs: All forecasted log biomarker
+ *   - forecast_mean_patient_log_obs: All mean log biomarker for forecast
  */
 tuple(
   matrix,  // forecast_patient_states [n_total_forecast_visits, 2]
-  vector,  // rep_patient_log_sld [sum(n_patient_visits)]
-  vector,  // rep_mean_patient_log_sld [sum(n_patient_visits)]
-  vector,  // forecast_patient_log_sld [n_total_forecast_visits]
-  vector   // forecast_mean_patient_log_sld [n_total_forecast_visits]
+  vector,  // rep_patient_log_obs [sum(n_patient_visits)]
+  vector,  // rep_mean_patient_log_obs [sum(n_patient_visits)]
+  vector,  // forecast_patient_log_obs [n_total_forecast_visits]
+  vector   // forecast_mean_patient_log_obs [n_total_forecast_visits]
 ) generate_all_patients_states_with_means_rng(
   array[] matrix states_full_grid,
   array[] int patient_visit_pos,
@@ -1064,8 +1064,8 @@ tuple(
   int last_predict_visit,
   array[] int t_patient_visits,
   array[] int t_patient_visit_idx,
-  vector sum_tumor_size,
-  real measure_sd,
+  vector baseline_obs_per_patient,
+  real measure_sd_obs,
   array[] int n_patient_screening_visits  // Number of screening visits per patient
 ) {
   // Calculate sizes from position arrays
@@ -1075,10 +1075,10 @@ tuple(
   
   // Initialize output arrays
   matrix[n_total_forecast_visits, 2] forecast_patient_states;
-  vector[n_total_visits] rep_patient_log_sld;
-  vector[n_total_visits] rep_mean_patient_log_sld;
-  vector[n_total_forecast_visits] forecast_patient_log_sld;
-  vector[n_total_forecast_visits] forecast_mean_patient_log_sld;
+  vector[n_total_visits] rep_patient_log_obs;
+  vector[n_total_visits] rep_mean_patient_log_obs;
+  vector[n_total_forecast_visits] forecast_patient_log_obs;
+  vector[n_total_forecast_visits] forecast_mean_patient_log_obs;
   
   // Process each patient: generate noise then states
   for (i in 1:n_patients) {
@@ -1119,49 +1119,49 @@ tuple(
       temp_forecast_patient_states[, 2] = to_vector(states_full_grid[2][i, forecast_time_abs[2:]]);
     }
     
-    // Calculate replicated SLD for observed visits
-    vector[visit_size] temp_rep_patient_log_sld = zeros_vector(visit_size);
-    temp_rep_patient_log_sld[1] = log(sum_tumor_size[visit_start]);
+    // Calculate replicated log biomarker for observed visits
+    vector[visit_size] temp_rep_patient_log_obs = zeros_vector(visit_size);
+    temp_rep_patient_log_obs[1] = log(baseline_obs_per_patient[i]);
     if (visit_size > 1) {
-      temp_rep_patient_log_sld[2:] = to_vector(normal_rng(
-        calc_log_burden_mean(patient_states[2:], sum_tumor_size[visit_start]),
-        rep_vector(measure_sd, visit_size - 1)
+      temp_rep_patient_log_obs[2:] = to_vector(normal_rng(
+        calc_log_burden_mean(patient_states[2:], baseline_obs_per_patient[i]),
+        rep_vector(measure_sd_obs, visit_size - 1)
       ));
     }
-    
-    // Calculate mean log SLD (deterministic, no measurement noise)
-    vector[visit_size] temp_rep_mean_patient_log_sld = 
-      calc_log_burden_mean(patient_states, sum_tumor_size[visit_start]);
-    
-    // Calculate forecast SLD with measurement noise
-    vector[forecast_size] temp_forecast_patient_log_sld = zeros_vector(forecast_size);
-    vector[forecast_size] temp_forecast_mean_patient_log_sld = zeros_vector(forecast_size);
+
+    // Calculate mean log biomarker (deterministic, no measurement noise)
+    vector[visit_size] temp_rep_mean_patient_log_obs =
+      calc_log_burden_mean(patient_states, baseline_obs_per_patient[i]);
+
+    // Calculate forecast log biomarker with measurement noise
+    vector[forecast_size] temp_forecast_patient_log_obs = zeros_vector(forecast_size);
+    vector[forecast_size] temp_forecast_mean_patient_log_obs = zeros_vector(forecast_size);
     if (forecast_size > 0) {
-      temp_forecast_mean_patient_log_sld = 
-        calc_log_burden_mean(temp_forecast_patient_states, sum_tumor_size[visit_start]);
-      temp_forecast_patient_log_sld = to_vector(normal_rng(
-        temp_forecast_mean_patient_log_sld,
-        rep_vector(measure_sd, forecast_size)
+      temp_forecast_mean_patient_log_obs =
+        calc_log_burden_mean(temp_forecast_patient_states, baseline_obs_per_patient[i]);
+      temp_forecast_patient_log_obs = to_vector(normal_rng(
+        temp_forecast_mean_patient_log_obs,
+        rep_vector(measure_sd_obs, forecast_size)
       ));
     }
-    
+
     // Assign to output arrays
     if (forecast_size > 0) {
       forecast_patient_states[forecast_visit_start:forecast_visit_end] = temp_forecast_patient_states;
-      forecast_patient_log_sld[forecast_visit_start:forecast_visit_end] = temp_forecast_patient_log_sld;
-      forecast_mean_patient_log_sld[forecast_visit_start:forecast_visit_end] = temp_forecast_mean_patient_log_sld;
+      forecast_patient_log_obs[forecast_visit_start:forecast_visit_end] = temp_forecast_patient_log_obs;
+      forecast_mean_patient_log_obs[forecast_visit_start:forecast_visit_end] = temp_forecast_mean_patient_log_obs;
     }
-    
-    rep_patient_log_sld[visit_start:visit_end] = temp_rep_patient_log_sld;
-    rep_mean_patient_log_sld[visit_start:visit_end] = temp_rep_mean_patient_log_sld;
+
+    rep_patient_log_obs[visit_start:visit_end] = temp_rep_patient_log_obs;
+    rep_mean_patient_log_obs[visit_start:visit_end] = temp_rep_mean_patient_log_obs;
   }
   
   return (
     forecast_patient_states,
-    rep_patient_log_sld,
-    rep_mean_patient_log_sld,
-    forecast_patient_log_sld,
-    forecast_mean_patient_log_sld
+    rep_patient_log_obs,
+    rep_mean_patient_log_obs,
+    forecast_patient_log_obs,
+    forecast_mean_patient_log_obs
   );
 }
 

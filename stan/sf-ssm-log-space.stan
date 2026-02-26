@@ -166,6 +166,15 @@ generated quantities {
     }
   }
 
-  #include "_endpoints_generated_quantities.stan"  
+  // Set generic measure_sd for state_space module
+  real measure_sd_obs = measure_sd_sld;
+
+  // Biomarker-agnostic trajectory generation
   #include "modules/state_space/generated_quantities.stan"
+
+  // SLD-specific: RECIST classification + PFS endpoints
+  #include "_tumor_endpoints_generated_quantities.stan"
+
+  // RECIST accuracy metrics
+  #include "modules/tumor/generated_quantities.stan"
 }

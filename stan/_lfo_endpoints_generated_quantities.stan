@@ -90,6 +90,13 @@ profile("gen_quant") {
   vector[n_cutoff_visits] cutoff_sum_tumor_size = sum_tumor_size[cutoff_state_indices];
   array[n_cutoff_visits] int cutoff_t_patient_visit_idx = t_patient_visit_idx[cutoff_state_indices];
 
+  // Per-patient baselines for the batched function (which expects per-patient, not per-visit)
+  vector[n_cutoff_observed_patients] cutoff_baseline_obs_per_patient;
+  for (i in 1:n_cutoff_observed_patients) {
+    int visit_start = cutoff_patient_visit_pos[i];
+    cutoff_baseline_obs_per_patient[i] = cutoff_sum_tumor_size[visit_start];
+  }
+
   // Generate states for cutoff-observed patients (including forecasts for censored patients)
   if (enable_patient_process_noise_tr) {
     // Process noise ON: Use states_full_grid (dense grid computed in transformed_parameters)
@@ -104,7 +111,7 @@ profile("gen_quant") {
         max_all_t,  // Forecast up to max time
         cutoff_t_patient_visits,
         cutoff_t_patient_visit_idx,
-        cutoff_sum_tumor_size,
+        cutoff_baseline_obs_per_patient,
         measure_sd_sld,
         cutoff_n_patient_screening_visits
       );

@@ -41,3 +41,11 @@ vector[sum(n_patient_visits) - sum(n_patient_screening_visits)] post_treat_psa;
     }
   }
 }
+
+// Biomarker-agnostic baseline for state_space module
+vector[n_patients] baseline_obs_per_patient;
+{
+  for (i in 1:n_patients) {
+    baseline_obs_per_patient[i] = exp(log_baseline_psa[i]);
+  }
+}
