@@ -10,12 +10,6 @@ We predict outcomes using a Bayesian multilevel piece-wise constant proportional
 
 ``` bash
 .
-├── workflows/                                                        # Domino Flows (Flyte) pipeline templates
-│   └── sclc/                                                     # SCLC multi-stage workflow templates
-│       ├── config.py                                                 # Hardware tiers, store paths, command builders
-│       ├── full_pipeline.py                                          # 4-stage: data prep → stan data → fit → post-proc
-│       ├── fits_only.py                                              # 2-stage: stan data → model fit
-│       └── post_processing.py                                        # 1-stage: draws extraction + KM estimation
 ├── targets/                                                          # {targets} pipeline definitions
 │   ├── sclc_targets.R                                            # SCLC project pipeline
 │   ├── endometrial_to_lung_targets.R                                    # Endometrial to LUNG pipeline
