@@ -20,14 +20,38 @@ The pipeline architecture enables:
 
 The pipeline uses a three-level nested `tar_map()` structure (see [dynamic branching](https://books.ropensci.org/targets/dynamic.html)):
 
+```{mermaid}
+%%| fig-width: 8
+%%| fig-cap: "Nested tar_map() structure showing the three-level pipeline hierarchy"
+graph TD
+    A[sclc_targets] --> B[dco_targets]
+    B --> C[model_targets]
+    C --> D[lfo_targets]
+    C --> E[type_targets]
+    E --> F[event_targets]
+
+    B:::dco
+    C:::model
+    D:::lfo
+    E:::type
+    F:::event
+
+    classDef dco fill:#68D2DF,stroke:#003865,stroke-width:2px,color:#000
+    classDef model fill:#F0AB00,stroke:#003865,stroke-width:2px,color:#000
+    classDef lfo fill:#9DB0AC,stroke:#003865,stroke-width:2px,color:#000
+    classDef type fill:#D0006F,stroke:#003865,stroke-width:2px,color:#fff
+    classDef event fill:#830051,stroke:#003865,stroke-width:2px,color:#fff
+
+    style A fill:#003865,stroke:#F0AB00,stroke-width:3px,color:#fff
 ```
-sclc_targets
-├── dco_targets (Data Cut-Off level)
-│   ├── model_targets (Model variant level)
-│   │   ├── lfo_targets (Leave-Future-Out cross-validation)
-│   │   ├── type_targets (Prior vs Posterior)
-│   │   │   └── event_targets (Censored vs Uncensored)
-```
+
+**Branching levels:**
+
+- **dco_targets**: Data Cut-Off level (apr25, aug25, jan26)
+- **model_targets**: Model variant level (different feature configurations)
+- **lfo_targets**: Leave-Future-Out cross-validation (temporal CV folds)
+- **type_targets**: Prior vs Posterior (model validation)
+- **event_targets**: Censored vs Uncensored (patient subsamples)
 
 This nesting creates a combinatorial expansion of targets across different analysis dimensions.
 
@@ -375,11 +399,12 @@ Each model variant controls Stan model behavior through feature flags:
 ```r
 default_stan_data_settings = lst(
   fit_tumor_data = TRUE,
-  fit_other_events_data = other_events,
+  fit_multistate_data = other_events,
 
-  # Other events module
-  oe_enable_pop_cov = other_events,
-  oe_enable_pop_tumor_cov = other_events,
+  # Multistate module
+  enable_ms_01 = other_events,
+  enable_ms_02 = other_events,
+  enable_ms_12 = other_events,
 
   # Tumor regression module
   enable_trial_intercept_tr = trial_level,
@@ -666,7 +691,7 @@ tumor_ssls_draws_sld_recist <- select_draws(
 ```r
 tumor_ssls_draws_endpoints <- select_draws(
   tumor_ssls_res,
-  matches("(cond_)?(spop|sample)(_target|_other_events)?_(((quant_)?pfs)|km_est|right_censored)"),
+  matches("(cond_)?(spop|sample)(_target|_ms)?_(((quant_)?pfs)|km_est|right_censored)"),
   matches("(cond_)?(spop|sample)_target_(((un)?confirmed_response)|orr|pfs_n)"),
   recist_confusion_matrix
 )

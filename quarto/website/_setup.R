@@ -85,3 +85,24 @@ pfs_timepoints <- tar_read(pfs_timepoints)
 jan26_obs_km_pdl1 <- tar_read(km_trial_pfs_pdl1_ctdna_jan26)
 jan26_obs_km_pdl1_naive <- tar_read(km_trial_pfs_pdl1_naive_ctdna_jan26)
 jan26_obs_km_part_e_pdl1 <- tar_read(km_trial_pfs_part_e_pdl1_ctdna_jan26)
+
+# === OS Data ===
+
+# OS KM data
+jan26_os_km_data <- tar_read(all_tumor_ssls_km_os_rvar_ctdna_jan26)
+jan26_cond_os_km_data <- tar_read(all_tumor_ssls_cond_km_os_rvar_ctdna_jan26)
+jan26_obs_os_km_all <- tar_read(km_trial_os_ctdna_jan26)
+jan26_obs_os_km_first_line <- tar_read(km_trial_os_naive_ctdna_jan26)
+
+# Median OS data
+jan26_quant_os_data <- tar_read(all_tumor_ssls_trial_quant_os_ctdna_jan26)
+jan26_cond_quant_os_data <- tar_read(all_tumor_ssls_cond_quant_os_ctdna_jan26)
+
+# OS-n data
+jan26_os_n_data <- tar_read(all_tumor_ssls_forecast_os_n_rvar_ctdna_jan26)
+jan26_cond_os_n_data <- tar_read(all_tumor_ssls_cond_forecast_os_n_rvar_ctdna_jan26)
+
+# PDL1 observed OS KM data
+jan26_obs_os_km_pdl1 <- tar_read(km_trial_os_pdl1_ctdna_jan26)
+jan26_obs_os_km_pdl1_naive <- tar_read(km_trial_os_pdl1_naive_ctdna_jan26)
+jan26_obs_os_km_part_e_pdl1 <- tar_read(km_trial_os_part_e_pdl1_ctdna_jan26)

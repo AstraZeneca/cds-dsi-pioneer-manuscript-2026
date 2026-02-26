@@ -10,6 +10,12 @@ Sclc is a Bayesian hierarchical modeling system for analyzing tumor dynamics and
 2. **Endometrial to LUNG**: Trial outcome predictions
 3. **Breast-01 to -04**: Cross-validation predictions
 
+### GitHub Repositories (azu-oncology-rd org)
+- **This repo**: `cds-dsi-pioneer-core` — shared modeling core
+- `cds-dsi-pioneer-sclc-01-2025` — SCLC-01 analysis
+- `cds-dsi-pioneer-lung-2024` — LUNG analysis
+- `cds-dsi-pioneer-pioneer-2026` — Pioneer analysis
+
 ## Build and Development Commands
 
 ### Initial Setup
@@ -62,131 +68,16 @@ quarto preview quarto/website
 
 ### Publishing to RStudio Connect
 
-**Server URL**: `https://rstudio-connect.seml.scp.astrazeneca.net/connect/`
-**Account**: `kmjq089`
+See `docs/PUBLISHING.md` for full publishing instructions (API keys, rsconnect setup, troubleshooting).
 
-**IMPORTANT**: Always use the R `rsconnect` package for publishing. The `quarto publish connect` CLI command does not work reliably in non-interactive/remote environments because it requires browser-based SSO authentication.
-
-#### Step-by-Step Publishing Instructions
-
-**IMPORTANT**: Always render the site locally first to ensure everything works. Run from the project root:
+**Quick reference:**
 ```bash
-# From /mnt/code (project root)
+# Render first (always from project root)
 quarto render quarto/website
+
+# Deploy via R
+Rscript -e 'rsconnect::deploySite(siteDir = "quarto/website", server = "az-connect", account = "kmjq089")'
 ```
-
-#### Method 1: Using R rsconnect (Recommended)
-
-This is the most reliable method. Follow these steps:
-
-**Step 1: Get your API key**
-1. Go to `https://rstudio-connect.seml.scp.astrazeneca.net/connect/` in your browser
-2. Sign in with SSO
-3. Click your name (top right) → "API Keys"
-4. Click "New API Key" and copy it
-
-**Step 2: Configure credentials (one-time setup)**
-```r
-library(rsconnect)
-
-# Add the server
-rsconnect::addConnectServer(
-  url = "https://rstudio-connect.seml.scp.astrazeneca.net",
-  name = "az-connect"
-)
-
-# Add your API key (paste your actual key here)
-rsconnect::connectApiUser(
-  account = "kmjq089",
-  server = "az-connect",
-  apiKey = "YOUR_API_KEY_HERE"
-)
-```
-
-This stores credentials in `~/.rsconnect/` (outside the git repo).
-
-**Step 3: Deploy the website**
-
-**IMPORTANT**: Always run from the project root directory (where renv is configured), not from inside the website directory.
-
-```r
-# From /mnt/code directory
-library(rsconnect)
-rsconnect::deploySite(
-  siteDir = "quarto/website",
-  server = "az-connect",
-  account = "kmjq089"
-)
-```
-
-**Step 4: Find your published site**
-After deployment completes, look for the URL in the output or go to:
-`https://rstudio-connect.seml.scp.astrazeneca.net/connect/#/content/listing?q=owner:kmjq089`
-
-#### Method 2: Using Quarto CLI
-
-This requires browser authentication (SSO) and may not work in remote CLI environments.
-
-```bash
-# From /mnt/code (project root)
-quarto publish connect quarto/website --server https://rstudio-connect.seml.scp.astrazeneca.net/connect/
-```
-
-This will open your browser for SSO authentication.
-
-#### Updating an Existing Deployment
-
-Once you've published the first time, subsequent deployments are simple:
-
-```r
-# From /mnt/code directory
-library(rsconnect)
-rsconnect::deploySite(
-  siteDir = "quarto/website",
-  server = "az-connect",
-  account = "kmjq089"
-)
-```
-
-Or from bash:
-```bash
-# From /mnt/code (project root)
-quarto publish connect quarto/website
-```
-
-#### Troubleshooting
-
-- **API key expired**: Generate a new one and re-run `rsconnect::connectApiUser()`
-- **Publishing fails**: Make sure `quarto render quarto/website` (from project root) completes successfully first
-- **Missing plots**: Delete `_freeze/` cache and re-render from project root
-- **IMPORTANT**: Always run quarto commands from `/mnt/code` (project root), not from inside `quarto/website/`
-- **Git tracking warnings**: Confirm `rsconnect/` and `_publish.yml` are in `.gitignore`
-- **Can't find account/server**: Make sure you're using the correct server name (`az-connect`). Run `rsconnect::accounts()` to check configured accounts.
-- **Package not found errors**: Always run deployment from `/mnt/code` (project root) where renv is configured
-
-**SECURITY**: API keys should NEVER be committed to git. The `rsconnect/` directory and `_publish.yml` are already in `.gitignore`.
-
-#### Publishing Presentations
-
-For Quarto revealjs presentations (e.g., `quarto/presentations/pioneer-gng/`), use `rsconnect::deployDoc()`:
-
-```r
-library(rsconnect)
-
-# First render the presentation
-# quarto render quarto/presentations/pioneer-gng/pioneer-gng.qmd
-
-# Then deploy the rendered HTML
-rsconnect::deployDoc(
-  doc = "quarto/presentations/pioneer-gng/pioneer-gng.html",
-  server = "az-connect",
-  account = "kmjq089",
-  appName = "pioneer-gng-presentation"  # Choose a unique name
-)
-```
-
-**Published presentations:**
-- PIONEER Go/No-Go: https://rstudio-connect.seml.scp.astrazeneca.net/content/71d3bcc6-c677-485b-b8fc-562b0f580c9a/
 
 ### Key Configuration Files
 - `_quarto.yml` - Site configuration, navigation, theme settings
@@ -196,27 +87,7 @@ rsconnect::deployDoc(
 - `images/` - PIONEER helmet logo and favicon
 
 ### Theme and Styling
-The site uses **AZ corporate colors** defined in `az-theme.scss`:
-- Primary (navy): `#003865`
-- Gold: `#F0AB00`
-- Turquoise: `#68D2DF`
-- Plum: `#830051`
-- Pink: `#D0006F`
-- Platinum: `#9DB0AC`
-
-Home page features a 2/3 text + 1/3 image layout with the PIONEER helmet logo. Favicon is a white "P" on navy circle background.
-
-### Site Structure
-```
-├── index.qmd                           # Home page
-├── documentation/
-│   ├── onboarding-tutorial.qmd         # Getting started guide
-│   └── model-specification.qmd         # Full model specification
-└── analysis/
-    ├── descriptive-statistics.qmd      # Data exploration
-    ├── model-validation.qmd            # Posterior checks, LFO results
-    └── outcome-predictions.qmd         # PFS predictions
-```
+The site uses **AZ corporate colors** defined in `az-theme.scss` (navy `#003865`, gold `#F0AB00`, turquoise `#68D2DF`, plum `#830051`, pink `#D0006F`, platinum `#9DB0AC`).
 
 ### Rebuilding After Changes
 If you update plot functions in `r/plot_functions.R`, you may need to clear the freeze cache:
@@ -226,6 +97,17 @@ rm -rf quarto/website/_freeze/analysis/
 
 Then re-render the affected pages.
 
+### TikZ Diagrams
+- Compile diagrams: `/home/ubuntu/.TinyTeX/bin/x86_64-linux/pdflatex -output-directory=quarto/website/images quarto/website/images/<name>.tex`
+- Convert to SVG: `pdf2svg quarto/website/images/<name>.pdf quarto/website/images/<name>-tikz.svg`
+- Clean artifacts: `rm -f quarto/website/images/<name>.{aux,log,pdf}`
+- Use `/tikz-diagram` skill for guided workflow with prerequisite checks
+
+### Documentation Sync
+- Run `/sync-docs` after code changes to identify outdated documentation
+- Updates doc-mappings.yaml when new source files are added to major features
+- Architecture diagrams in `quarto/website/images/` may need regeneration when model structure changes
+
 ## Architecture
 
 ### Stan Module System
@@ -234,7 +116,7 @@ Stan code uses modular `#include` architecture in `stan/modules/`:
 - **tr/** - Tumor regression (decrease) dynamics
 - **frac/** - Growth fraction dynamics
 - **init/** - Initial state modeling
-- **other_events/** - Non-target progression and death events
+- **multistate/** - Illness-death multistate model (replaced "other_events" module; 3 transitions: 0→1, 0→2, 1→2)
 - **measurement/** - Observation model (measurement error)
 
 Each module follows a 7-file pattern:
@@ -259,7 +141,7 @@ Parameters follow a population → trial → patient hierarchy:
 - `tr_*` - Tumor regression
 - `frac_*` - Growth fraction
 - `init_*` - Initial state
-- `oe_*` - Other events
+- `ms_*` - Multistate hazard
 
 ### Key Stan Models
 - `stan/sf-ssm-log-space.stan` - Main state-space longitudinal survival model
@@ -270,6 +152,7 @@ Parameters follow a population → trial → patient hierarchy:
 ### R Code
 - `r/priors.R` - Prior specifications (shared)
 - `r/initializers.R` - Stan model initializers (shared)
+- `r/util.R` - Utility functions including `select_draws(fit, matches(...))` for efficient parameter extraction from CmdStanR fits
 - `r/sclc/prepare_analysis_data.R` - SCLC-specific data prep
 - `targets/sclc_targets.R` - SCLC pipeline definition
 
@@ -283,6 +166,65 @@ Parameters follow a population → trial → patient hierarchy:
 Analysis results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/`:
 - **Targets store**: `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/_targets`
 - **Fit CSVs**: `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/fit`
+
+### Store Selection via TAR_BRANCH
+
+Analysis results are organized by data cut-off (DCO) using the `TAR_BRANCH` environment variable:
+- `export TAR_BRANCH=dco3` - January 26, 2026 DCO (current, includes pdl1_central)
+- `export TAR_BRANCH=dco2` - August 2025 DCO
+- `export TAR_BRANCH=dco1` - April 2025 DCO
+
+Store path: `/mnt/data/analysis-results/<user>/sclc/<TAR_BRANCH>/_targets`
+
+**Example:**
+```bash
+export TAR_BRANCH=dco3
+Rscript -e 'targets::tar_make(sclc_patient_data_jan26)'
+```
+
+When working with stored targets directly (e.g., in standalone scripts), always specify the store path explicitly:
+```r
+tar_read(sclc_patient_data_jan26, store = "/mnt/data/analysis-results/karim_naguib/sclc/dco3/_targets")
+```
+
+**Verifying fit versions**: `tar_outdated()` can be unreliable for `*_res_*` targets. Check timestamps directly:
+```bash
+ls -lt /mnt/data/analysis-results/.../fit/tumor_ssls_ctdna_jan26/*.csv | head -5
+targets::tar_meta(tumor_ssls_km_*_jan26, store = "...")$time
+```
+
+### SCLC Data Files
+
+Patient and visit data files use date-based suffixes indicating when they were processed:
+- `cooked_patient_data_200226.csv` - Feb 26, 2026 (includes pdl1_central column)
+- `cooked_patient_data_220126.csv` - Jan 22, 2026 (older, missing pdl1_central)
+- `assessment_visit_data_200226.csv` - Feb 26, 2026
+
+**Important columns:**
+- `pdl1` - Site-reported PDL1 values (original baseline)
+- `pdl1_central` - Centrally assessed PDL1 values (added Feb 2026, from PDL1CBL)
+- `pdl1_hi` / `pdl1_high` - Binary flag (≥50% threshold, derived from pdl1)
+
+**Note**: Central vs site PDL1 can show significant discordance. Always check which column is being used for stratification.
+
+### PFS Endpoint Definitions
+
+Model outputs three PFS variants (in `tumor_ssls_km_rvar_*` targets):
+- `target_km_est` - RECIST PD only (death is censored) - **NOT comparable to clinical PFS**
+- `ms_km_est` - Multistate hazard (0→1 transition)
+- `km_est` - Combined (progression OR death, includes 0→2 events) - **use for comparison against observed PFS**
+
+**Critical**: Observed PFS includes death without progression (0→2 events). HISTORICAL has 89 such events (14%), SCLC-01 has 4 (3%). Always use `km_est` when comparing model predictions to observed PFS KM.
+
+### Observed KM Data Structure
+
+`km_trial_pfs` and `km_trial_os` targets have `btype` column:
+- `btype == "lb"` - Lower bound: events placed at `time + 1` (earliest possible)
+- `btype == "ub"` - Upper bound: events placed at `time + interval_censored + 1` (latest possible)
+
+Plots always use `btype == "ub"`. For PFS, `interval_censored` captures visit-gap uncertainty (up to 6 weeks). **For OS targets, always add `interval_censored = 0L` in the `mutate()` before calling `get_km_res()`** — deaths are observed exactly and the PFS interval_censored column must not be carried over, or it shifts death times forward and inflates the observed OS KM.
+
+`dco-comparisons.qmd` requires `km_trial_pfs_*_ctdna_{apr25,aug25}` targets (5 variants × 2 DCOs). These are fast to build but are not auto-built — run `tar_make()` for them explicitly if missing from the store.
 
 ## Coding Guidelines
 
@@ -307,15 +249,89 @@ Analysis results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<ru
 - **NEVER use `tar_config_set(store = ...)`** - it changes global state and causes conflicts
 - Always use explicit `store` argument: `tar_read(name, store = "path/_targets")`
 - Same applies to all targets functions: `tar_meta()`, `tar_load()`, etc.
+- **IMPORTANT**: `TAR_BRANCH` environment variable does NOT work with `tar_make()` - always use explicit `store="/path/_targets"` argument
+- `_targets.yaml` sclc store uses `!expr` with `DOMINO_STARTING_USERNAME` and `TAR_BRANCH` — never hardcode username or branch in this file
+- `tumor_ssls_draws_pop` selection: `time_invariant_coef_qr_*` and `time_varying_coef_*` params don't follow the `_pop` suffix — they need `matches("^(time_invariant|time_varying)_coef")` added to the `select_draws` call
 - **NEVER inline complex code in targets** - extract to helper functions in `r/` directory
   - Target commands should be simple function calls, not multi-line code blocks
   - Example: Use `tar_target(name, my_function(arg))` not `tar_target(name, { ... complex code ... })`
   - Helper functions belong in appropriate `r/` subdirectories (e.g., `r/sclc/plot_functions.R`)
 
+### Bash and Command Execution
+- **NEVER pipe long-running commands to `head`, `tail`, or similar** when running in background - it prevents real-time output monitoring
+- If you need to capture output while preserving streaming, use `tee` instead: `command | tee output.log`
+- Background tasks automatically capture output to a file - don't truncate it with pipes
+- Example:
+  ```bash
+  # ❌ DON'T: User can't see real-time progress
+  Rscript -e 'targets::tar_make()' | head -100
+
+  # ✓ DO: Full streaming output visible
+  Rscript -e 'targets::tar_make()'
+
+  # ✓ ALTERNATIVE: If you need to save output too
+  Rscript -e 'targets::tar_make()' | tee build.log
+  ```
+
+### Data Pipeline Scripts
+- **NEVER run data preparation scripts without explicit confirmation from the user**
+- A hookify rule (`.claude/hookify.data-pipeline-confirmation.local.md`) blocks accidental execution of:
+  - `r/data_preparation_pipeline/*/main_pipeline_data_*.R`
+  - Scripts containing `wrangle_data`, `prepare.*data`, or `pipeline.*` patterns
+- **Why this matters**: Data pipeline scripts regenerate CSV files and can take hours to run
+- **Before running**: Check if processed CSV files already exist at the expected location
+- **Better alternative**: Use `targets::tar_make()` with specific target names to rebuild only what changed
+- **Pattern**: Data pipelines should only run when raw data is updated, not for routine analysis
+
 ### Quarto and Documentation
 - **Always use "SCLC-01"** when referring to the trial in user-facing text (documentation, plots, presentations)
 - Use lowercase "sclc" only for code identifiers (variable names, trial codes, file paths)
 - Example: Write "SCLC-01 trial" in figure captions, but `filter(trial == "sclc")` in R code
+- **Use automatic section numbering**: Set `number-sections: true` in frontmatter, don't use manual numbers (1.1, 2.3) in headings
+- **Cross-references**: Use section IDs `{#sec-name}` and reference with `@sec-name`, never hardcode "Section X.Y.Z"
+- **Model specification is the blueprint**: `quarto/website/documentation/model-specification.qmd` is the authoritative specification for everything in the Stan model. Code and documentation must always match:
+  - When changing Stan code, update the model specification to reflect the change
+  - When the specification defines behavior (e.g., index conventions, endpoint formulas, routing logic), the code must not violate those definitions without updating the spec first
+  - If a proposed code change contradicts the specification, flag the discrepancy before implementing
+  - Treat the specification as a contract: it documents what the model *should* do, not just what it *happens* to do
+
+### Git Worktree Workflow
+When working with multiple git worktrees, follow this pattern to avoid duplicate commits:
+
+1. **Make changes in your current worktree** - Don't `cd` to other worktrees to make the same changes
+2. **Commit locally** - Commit your work in the worktree where you made the changes
+3. **Merge from the target worktree** - Switch to the other worktree and merge or rebase
+
+**Example:**
+```bash
+# In worktree A (/mnt/code/worktrees/code-feature-x): make changes and commit
+git add .claude/settings.json
+git commit -m "Update plugin configuration"
+
+# In worktree B (/mnt/code on main branch): merge the changes
+cd /mnt/code
+git merge feature-x
+git push origin main
+```
+
+**Why this pattern?**
+- Avoids duplicate commits (same change, different SHAs)
+- Keeps cleaner git history
+- More efficient than manually replicating changes across worktrees
+- Leverages git's merge/rebase capabilities
+
+**Common mistake:**
+```bash
+# ❌ DON'T DO THIS:
+# Making the same change in multiple worktrees separately
+cd /mnt/code && edit file && git commit
+cd /mnt/code/worktrees/code-feature-x && edit file && git commit  # Duplicate!
+
+# ✓ DO THIS INSTEAD:
+# Make change once, then merge
+cd /mnt/code/worktrees/code-feature-x && edit file && git commit
+cd /mnt/code && git merge feature-x
+```
 
 ### Adding Module Parameters
 1. Add feature flag in `modules/<module>/flags.stan`
@@ -395,6 +411,24 @@ The repository includes automated code review agents. Before creating your PR:
 ```
 
 This will catch most issues automatically before reviewers see your PR.
+
+## GitHub Project Management
+
+Issues across all PIONEER repos are tracked in the **PIONEER 2026** GitHub Project (project number 56, owner `azu-oncology-rd`). See `docs/GITHUB_PROJECT.md` for full reference (project/field IDs, `gh` commands, GraphQL queries).
+
+## Pioneer Claude Marketplace
+
+- Plugin registry: `/home/ubuntu/.claude/plugins/marketplaces/pioneer-claude-marketplace/.claude-plugin/marketplace.json`
+- **Adding a plugin**: create files in `plugins/<name>/` AND register it in `marketplace.json` — without the registry entry it won't appear in `/plugin`
+- **Version bumps are required for deployment**: bump version in BOTH `plugins/<name>/.claude-plugin/plugin.json` AND `marketplace.json` whenever adding/changing tools — the plugin manager won't reinstall otherwise
+- MCP tool naming convention: `mcp__plugin_<plugin-name>_<server-name>__<tool-name>` (e.g. `mcp__plugin_domino-toolkit_domino__start_job`)
+- Marketplace repo: `https://github.com/azu-oncology-rd/cds-dsi-pioneer-claude-marketplace`
+
+## Domino Environment
+
+- Key env vars auto-set by Domino: `DOMINO_USER_API_KEY`, `DOMINO_USER_HOST`, `DOMINO_PROJECT_ID`, `DOMINO_PROJECT_NAME`
+- Jobs API: list/get via `GET /api/jobs/beta/jobs`, logs via `GET /api/jobs/beta/jobs/{id}/logs`, start via `POST /v4/jobs/start`, stop via `POST /v4/jobs/stop`
+- `stop_job` requires both `projectId` AND `jobId` in the request body
 
 ## Documentation
 
