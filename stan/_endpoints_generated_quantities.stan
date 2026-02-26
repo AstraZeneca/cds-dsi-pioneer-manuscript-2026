@@ -11,11 +11,15 @@ array[n_total_forecast_visits] int<lower = CR, upper = PD> forecast_recist;
 // Endpoints (PFS, ORR, Median PFS, PFSn, ...) ////////////
 
 array[n_patients] int<lower = 0> sample_target_pfs, spop_target_pfs, sample_ms_pfs, spop_ms_pfs, spop_target_obs_cens_pfs,
-                                 sample_pfs, spop_pfs; 
-array[n_patients] int<lower = 0, upper = 1> 
-  sample_target_right_censored, spop_target_right_censored, spop_target_obs_cens_right_censored, 
-  sample_ms_right_censored, spop_ms_right_censored, 
+                                 sample_pfs, spop_pfs;
+array[n_patients] int<lower = 0, upper = 1>
+  sample_target_right_censored, spop_target_right_censored, spop_target_obs_cens_right_censored,
+  sample_ms_right_censored, spop_ms_right_censored,
   sample_right_censored, spop_right_censored;
+
+// OS endpoints
+array[n_patients] int<lower = 0> sample_os, spop_os;
+array[n_patients] int<lower = 0, upper = 1> sample_os_censored, spop_os_censored;
 
 // Forecasting for right censored patients 
 array[sum(target_right_censored)] int<lower = 0> forecast_target_pfs;
@@ -76,6 +80,24 @@ array[n_trials, n_pfs_quantiles] int sample_quant_pfs_exceeds_max = rep_array(ze
 array[n_trials, n_pfs_quantiles] int spop_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
 array[n_cond_group, n_pfs_quantiles] int cond_sample_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
 array[n_cond_group, n_pfs_quantiles] int cond_spop_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+
+// OS KM estimates
+array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_os_km_est, spop_os_km_est;
+array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_os_km_est, cond_spop_os_km_est;
+
+// OS quantiles
+array[n_trials] vector<lower = 0>[n_pfs_quantiles] sample_os_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+array[n_trials] vector<lower = 0>[n_pfs_quantiles] spop_os_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+array[n_trials, n_pfs_quantiles] int sample_os_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+array[n_trials, n_pfs_quantiles] int spop_os_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_sample_os_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_spop_os_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+array[n_cond_group, n_pfs_quantiles] int cond_sample_os_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+array[n_cond_group, n_pfs_quantiles] int cond_spop_os_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+
+// OS at timepoints
+array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] sample_os_n, spop_os_n;
+array[n_cond_group] vector<lower = 0, upper = 1>[n_pfs_timepoints] cond_sample_os_n, cond_spop_os_n;
 
 profile("gen_quant") {
   int right_censored_idx = 1;
@@ -166,18 +188,31 @@ profile("gen_quant") {
    spop_pfs, spop_right_censored,
    sample_target_confirmed_response, sample_target_unconfirmed_response,
    spop_target_confirmed_response, spop_target_unconfirmed_response,
-   forecast_target_pfs, forecast_target_right_censored
+   forecast_target_pfs, forecast_target_right_censored,
+   sample_os, sample_os_censored,
+   spop_os, spop_os_censored
   ) = calculate_all_patients_endpoints_rng(
     recist,
     rep_recist,
     forecast_recist,
-    ms_log_cond_surv_01,
+    log_cond_surv_01,
+    enable_ms_02,
+    enable_ms_12,
+    ms_time_scale_12,
+    log_cond_surv_02,
+    log_cond_surv_12_s,
+    log_cond_surv_12_t,
     pfs,
     interval_censored,
     right_censored,
     target_pfs,
     target_right_censored,
     ms_censored_01,
+    ms_final_state,
+    ms_time_02,
+    ms_censored_02,
+    ms_censored_12,
+    ms_time_12,
     patient_visit_pos,
     forecast_visits_pos,
     patient_last_obs_visit,
@@ -200,7 +235,11 @@ profile("gen_quant") {
    sample_quant_pfs_exceeds_max, spop_quant_pfs_exceeds_max,
    sample_target_pfs_n, spop_target_pfs_n,
    sample_ms_pfs_n, spop_ms_pfs_n,
-   sample_pfs_n, spop_pfs_n) =
+   sample_pfs_n, spop_pfs_n,
+   sample_os_km_est, spop_os_km_est,
+   sample_os_quant, spop_os_quant,
+   sample_os_quant_exceeds_max, spop_os_quant_exceeds_max,
+   sample_os_n, spop_os_n) =
     aggregate_trial_metrics(
       sample_target_confirmed_response,
       spop_target_confirmed_response,
@@ -218,6 +257,10 @@ profile("gen_quant") {
       sample_right_censored,
       spop_pfs,
       spop_right_censored,
+      sample_os,
+      sample_os_censored,
+      spop_os,
+      spop_os_censored,
       trial_patient_pos,
       max_all_t,
       pfs_quantiles,
@@ -237,7 +280,11 @@ profile("gen_quant") {
    cond_sample_quant_pfs_exceeds_max, cond_spop_quant_pfs_exceeds_max,
    cond_sample_target_pfs_n, cond_spop_target_pfs_n,
    cond_sample_ms_pfs_n, cond_spop_ms_pfs_n,
-   cond_sample_pfs_n, cond_spop_pfs_n) =
+   cond_sample_pfs_n, cond_spop_pfs_n,
+   cond_sample_os_km_est, cond_spop_os_km_est,
+   cond_sample_os_quant, cond_spop_os_quant,
+   cond_sample_os_quant_exceeds_max, cond_spop_os_quant_exceeds_max,
+   cond_sample_os_n, cond_spop_os_n) =
     aggregate_conditional_group_metrics(
       sample_target_confirmed_response,
       spop_target_confirmed_response,
@@ -255,6 +302,10 @@ profile("gen_quant") {
       sample_right_censored,
       spop_pfs,
       spop_right_censored,
+      sample_os,
+      sample_os_censored,
+      spop_os,
+      spop_os_censored,
       cond_group,
       cond_group_pos,
       max_all_t,

@@ -208,20 +208,24 @@ real calc_multistate_loglik(
               patient_ll += log1m_exp(log_cond_surv_12_t[i, t_death]);
             }
           } else if (ms_time_scale_12 == 2) {
-            // Extended: both GPs
+            // Extended: additive hazards from sojourn GP and clock-forward GP
+            // Survival contributions (additive in log-space, correct to sum separately)
             if (time_12[i] > 1) {
               patient_ll += sum(log_cond_surv_12_s[i, 1:(time_12[i] - 1)]);
             }
-            patient_ll += log1m_exp(log_cond_surv_12_s[i, time_12[i]]);
-
             int t_start = time_01[i] + 1;
             int t_death = time_01[i] + time_12[i];
             if (t_death - 1 >= t_start && t_death <= cols(log_cond_surv_12_t)) {
               patient_ll += sum(log_cond_surv_12_t[i, t_start:(t_death - 1)]);
             }
+
+            // Event contribution at death: must combine BEFORE log1m_exp
+            // P(event) = 1 - exp(lcs_s + lcs_t) where lcs = -hazard
+            real combined_lcs_at_death = log_cond_surv_12_s[i, time_12[i]];
             if (t_death <= cols(log_cond_surv_12_t)) {
-              patient_ll += log1m_exp(log_cond_surv_12_t[i, t_death]);
+              combined_lcs_at_death += log_cond_surv_12_t[i, t_death];
             }
+            patient_ll += log1m_exp(combined_lcs_at_death);
           }
         }
       }
@@ -231,4 +235,55 @@ real calc_multistate_loglik(
   }
 
   return total_ll;
+}
+
+/**
+ * Sample post-progression death time (1→2 transition) using the illness-death model.
+ * Supports three time scales:
+ *   0 = Markov (clock-forward only)
+ *   1 = semi-Markov (sojourn time only)
+ *   2 = extended (sojourn + clock-forward, additive)
+ *
+ * @param ms_time_scale_12    Time scale selector (0, 1, or 2)
+ * @param log_cond_surv_12_s  Sojourn log-conditional-survival (1 row)
+ * @param log_cond_surv_12_t  Clock-forward log-conditional-survival (1 row)
+ * @param pfs_week            PFS week (1-indexed, last clean assessment)
+ * @param sojourn_obs         Observed sojourn intervals to condition on (0 = unconditional)
+ * @return (os_week, censored) where os_week is 1-indexed calendar week of death
+ */
+tuple(int, int) sample_post_progression_death_rng(
+    int ms_time_scale_12,
+    row_vector log_cond_surv_12_s,
+    row_vector log_cond_surv_12_t,
+    int pfs_week,
+    int sojourn_obs) {
+
+  int max_s = cols(log_cond_surv_12_s);
+  int max_t = cols(log_cond_surv_12_t);
+
+  if (ms_time_scale_12 == 2) {
+    // Extended: sojourn + clock-forward combined additively
+    int max_post_prog = min(max_s, max_t - pfs_week);
+    if (max_post_prog > 0) {
+      row_vector[max_post_prog] combined;
+      for (s in 1:max_post_prog)
+        combined[s] = log_cond_surv_12_s[s] + log_cond_surv_12_t[pfs_week + s];
+      int t12_raw; int c12;
+      (t12_raw, c12) = survival_time_rng(combined, sojourn_obs, 1, 0);
+      return (pfs_week + t12_raw + 1, c12);
+    }
+    return (pfs_week, 1);  // No room → censored at progression
+
+  } else if (ms_time_scale_12 == 1) {
+    // Semi-Markov: sojourn time only
+    int t12_raw; int c12;
+    (t12_raw, c12) = survival_time_rng(log_cond_surv_12_s, sojourn_obs, 1, 0);
+    return (pfs_week + t12_raw + 1, c12);
+
+  } else {
+    // Markov: clock-forward time only
+    int t12_raw; int c12;
+    (t12_raw, c12) = survival_time_rng(log_cond_surv_12_t, pfs_week + sojourn_obs, 1, 0);
+    return (t12_raw + 1, c12);
+  }
 }
