@@ -54,9 +54,7 @@ vector[n_patients] baseline_obs_per_patient;
 // GP TIME GRID
 // ============================================================================
 // Array of absolute time points used for GP modeling in the multistate module.
-// Named all_tumor_measure_t for compatibility with modules/multistate/transformed_parameters.stan
-// which was originally written for the tumor model.
-array[max_all_t] real all_tumor_measure_t = linspaced_array(max_all_t, 1, max_all_t);
+array[max_all_t] real all_measure_t = linspaced_array(max_all_t, 1, max_all_t);
 
 // ============================================================================
 // PSA NORMALIZATION CONSTANTS FOR PROPORTIONAL HAZARDS
