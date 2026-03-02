@@ -121,3 +121,4 @@ presentation_pages/
 # From roger/FI_pipeline
 brads_code/
 output/
+.worktrees/
