@@ -380,36 +380,56 @@ if (need_12_t_gp) {
 }
 
 // ============================================================================
-// 0→3 TRANSITION: Constant hazard with N-level hierarchy
+// 0→3 TRANSITION: GP baseline hazard (clock-forward time) with N-level hierarchy
 // ============================================================================
-// Population intercept + per-level group shifts, no temporal GP.
-// log P(survive interval) = -exp(patient log hazard) per interval.
-vector[n_enabled_groups_ms_baseline_03] log_lambda_03_level_intercept;
+row_vector[enable_ms_03 ? max_all_t : 0] log_pop_lambda_03;
+matrix[n_enabled_groups_ms_baseline_03, enable_ms_03 ? max_all_t : 0] log_level_lambda_03_residual;
+vector[n_enabled_groups_ms_baseline_03] log_lambda_gp_03_level_intercept;
 matrix[enable_ms_03 ? n_patients : 0, enable_ms_03 ? max_all_t : 0] log_cond_surv_03;
 
 if (enable_ms_03) {
-  // Patient-level log hazard: population + sum of enabled level intercepts
-  vector[n_patients] log_lambda_03_patient = rep_vector(log_lambda_03_pop[1], n_patients);
+  // Compute population GP
+  log_pop_lambda_03 = calc_gp_pred(
+    all_tumor_measure_t,
+    log_lambda_gp_03_pop_intercept[1],
+    log_lambda_gp_03_pop_alpha[1],
+    log_lambda_gp_03_pop_rho[1],
+    delta,
+    log_lambda_gp_03_pop_eta
+  );
 
+  // Initialize patient hazards with population baseline
+  log_cond_surv_03 = rep_matrix(log_pop_lambda_03, n_patients);
+
+  // Add level-level GP residuals
   for (lv in 1:n_levels) {
     if (enable_ms_level_baseline_hazard[lv]) {
       int lv_start, lv_end;
       (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
 
-      log_lambda_03_level_intercept[lv_start:lv_end] =
-        raw_log_lambda_03_level_intercept[lv_start:lv_end] *
-        log_lambda_03_level_intercept_sd[lv];
+      log_lambda_gp_03_level_intercept[lv_start:lv_end] =
+        raw_log_lambda_gp_03_level_intercept[lv_start:lv_end] *
+        log_lambda_gp_03_level_intercept_sd[lv];
+
+      for (g in lv_start:lv_end) {
+        log_level_lambda_03_residual[g] = calc_gp_pred(
+          all_tumor_measure_t,
+          log_lambda_gp_03_level_intercept[g],
+          log_lambda_gp_03_level_alpha[lv],
+          log_lambda_gp_03_level_rho[lv],
+          delta,
+          log_lambda_gp_03_level_eta[g]
+        );
+      }
 
       for (i in 1:n_patients) {
-        log_lambda_03_patient[i] +=
-          log_lambda_03_level_intercept[patient_ms_baseline_flat_idx[i, lv]];
+        log_cond_surv_03[i] += log_level_lambda_03_residual[patient_ms_baseline_flat_idx[i, lv]];
       }
     }
   }
 
-  for (i in 1:n_patients) {
-    log_cond_surv_03[i] = rep_row_vector(-exp(log_lambda_03_patient[i]), max_all_t);
-  }
+  // Transform log-hazard to log conditional survival probability
+  log_cond_surv_03 = -exp(log_cond_surv_03);
 }
 
 // ============================================================================

@@ -664,14 +664,27 @@ create_tumor_ssls_initializer <- function(stan_data) {
           rnorm(n_enabled_groups_ms_baseline_12_t)
         },
 
-        # --- 0→3 Transition (Dropout: constant hazard with N-level hierarchy) ---
-        log_lambda_03_pop = if (enable_ms_03) {
-          array(rnorm(1, log_lambda_03_pop_mean, log_lambda_03_pop_sd), dim = 1)
+        # --- 0→3 Transition (Dropout: GP baseline hazard with N-level hierarchy) ---
+        log_lambda_gp_03_pop_intercept = if (enable_ms_03) {
+          array(rnorm(1, log_lambda_gp_03_pop_intercept_mean, log_lambda_gp_03_pop_intercept_sd), dim = 1)
         },
-        log_lambda_03_level_intercept_sd = if (enable_ms_03) {
-          abs(rnorm(n_levels, sd = log_lambda_03_level_intercept_sd_sd))
+        log_lambda_gp_03_pop_alpha = if (enable_ms_03) array(1.0, dim = 1),
+        log_lambda_gp_03_pop_rho = if (enable_ms_03) {
+          array(invgamma::rinvgamma(1, log_lambda_gp_03_pop_rho_alpha, log_lambda_gp_03_pop_rho_beta), dim = 1)
+        },
+        log_lambda_gp_03_pop_eta = if (enable_ms_03) rnorm(max_all_t),
+        log_lambda_gp_03_level_alpha = if (enable_ms_03) rep(1.0, n_levels) else numeric(0),
+        log_lambda_gp_03_level_rho = if (enable_ms_03) {
+          invgamma::rinvgamma(n_levels, log_lambda_gp_03_level_rho_alpha, log_lambda_gp_03_level_rho_beta)
         } else numeric(0),
-        raw_log_lambda_03_level_intercept = if (n_enabled_groups_ms_baseline_03 > 0) {
+        log_lambda_gp_03_level_intercept_sd = if (enable_ms_03) {
+          abs(rnorm(n_levels, sd = log_lambda_gp_03_level_intercept_sd_sd))
+        } else numeric(0),
+        log_lambda_gp_03_level_eta = if (enable_ms_03 && n_enabled_groups_ms_baseline_03 > 0) {
+          matrix(rnorm(n_enabled_groups_ms_baseline_03 * max_all_t),
+                 nrow = n_enabled_groups_ms_baseline_03, ncol = max_all_t)
+        },
+        raw_log_lambda_gp_03_level_intercept = if (n_enabled_groups_ms_baseline_03 > 0) {
           rnorm(n_enabled_groups_ms_baseline_03)
         },
 
