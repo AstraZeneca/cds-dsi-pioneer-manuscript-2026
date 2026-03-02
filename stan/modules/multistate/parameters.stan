@@ -97,11 +97,17 @@ array[n_levels] vector<lower=0>[enable_ms_12 ? n_time_invariant_covar : 0] sd_le
 matrix[enable_ms_12 ? n_enabled_groups_ms_slope : 0, n_time_invariant_covar] raw_level_slope_12;
 
 // ============================================================================
-// 0→3 TRANSITION PARAMETERS (constant hazard, N-level hierarchy)
+// 0→3 TRANSITION PARAMETERS (GP baseline hazard, N-level hierarchy)
 // ============================================================================
-array[enable_ms_03 ? 1 : 0] real log_lambda_03_pop;
-array[enable_ms_03 ? n_levels : 0] real<lower=0> log_lambda_03_level_intercept_sd;
-vector[n_enabled_groups_ms_baseline_03] raw_log_lambda_03_level_intercept;
+array[enable_ms_03 ? 1 : 0] real log_lambda_gp_03_pop_intercept;
+array[enable_ms_03 ? 1 : 0] real<lower=0> log_lambda_gp_03_pop_alpha;
+array[enable_ms_03 ? 1 : 0] real<lower=0> log_lambda_gp_03_pop_rho;
+row_vector[enable_ms_03 ? max_all_t : 0] log_lambda_gp_03_pop_eta;
+array[enable_ms_03 ? n_levels : 0] real<lower=0> log_lambda_gp_03_level_alpha;
+array[enable_ms_03 ? n_levels : 0] real<lower=0> log_lambda_gp_03_level_rho;
+array[enable_ms_03 ? n_levels : 0] real<lower=0> log_lambda_gp_03_level_intercept_sd;
+matrix[n_enabled_groups_ms_baseline_03, enable_ms_03 ? max_all_t : 0] log_lambda_gp_03_level_eta;
+vector[n_enabled_groups_ms_baseline_03] raw_log_lambda_gp_03_level_intercept;
 
 // ============================================================================
 // 3→2 TRANSITION PARAMETERS (Sojourn time GP baseline hazard, semi-Markov)
