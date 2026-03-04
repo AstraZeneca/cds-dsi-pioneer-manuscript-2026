@@ -15,12 +15,20 @@ ms_init_values_fixed <- function(env) {
     need_12_s_gp <- enable_ms_12 && (ms_time_scale_12 == 1 || ms_time_scale_12 == 2)
     need_12_t_gp <- enable_ms_12 && (ms_time_scale_12 == 0 || ms_time_scale_12 == 2)
 
-    # Multistate enabled group counts - SEPARATE for each transition
-    n_enabled_groups_ms_baseline_01 <- if (enable_ms_01) sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1]) else 0L
-    n_enabled_groups_ms_baseline_02 <- if (enable_ms_02) sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1]) else 0L
-    n_enabled_groups_ms_baseline_12_s <- if (need_12_s_gp) sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1]) else 0L
-    n_enabled_groups_ms_baseline_12_t <- if (need_12_t_gp) sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1]) else 0L
+    # Multistate enabled group counts - truthy (> 0) for both intercept-only and GP modes
+    n_enabled_groups_ms_baseline <- sum(n_groups_per_level[enable_ms_level_baseline_hazard > 0])
+    n_enabled_groups_ms_baseline_01 <- if (enable_ms_01) n_enabled_groups_ms_baseline else 0L
+    n_enabled_groups_ms_baseline_02 <- if (enable_ms_02) n_enabled_groups_ms_baseline else 0L
+    n_enabled_groups_ms_baseline_12_s <- if (need_12_s_gp) n_enabled_groups_ms_baseline else 0L
+    n_enabled_groups_ms_baseline_12_t <- if (need_12_t_gp) n_enabled_groups_ms_baseline else 0L
     n_enabled_groups_ms_slope <- sum(n_groups_per_level[enable_ms_level_cov == 1])
+
+    # GP-only group counts (mode == 2, for eta matrix sizing)
+    n_gp_groups_ms_baseline <- sum(n_groups_per_level[enable_ms_level_baseline_hazard == 2L])
+    n_gp_groups_ms_baseline_01 <- if (enable_ms_01) n_gp_groups_ms_baseline else 0L
+    n_gp_groups_ms_baseline_02 <- if (enable_ms_02) n_gp_groups_ms_baseline else 0L
+    n_gp_groups_ms_baseline_12_s <- if (need_12_s_gp) n_gp_groups_ms_baseline else 0L
+    n_gp_groups_ms_baseline_12_t <- if (need_12_t_gp) n_gp_groups_ms_baseline else 0L
 
     tibble::lst(
       # --- 0→1 Transition ---
@@ -31,9 +39,9 @@ ms_init_values_fixed <- function(env) {
       log_lambda_gp_01_level_alpha = rep(1.0, n_levels),
       log_lambda_gp_01_level_rho = rep(1.4, n_levels),
       log_lambda_gp_01_level_intercept_sd = rep(0.1, n_levels),
-      log_lambda_gp_01_level_eta = if (enable_ms_01 && n_enabled_groups_ms_baseline_01 > 0) {
-        matrix(rnorm(n_enabled_groups_ms_baseline_01 * max_all_t, sd = 0.1),
-               nrow = n_enabled_groups_ms_baseline_01, ncol = max_all_t)
+      log_lambda_gp_01_level_eta = if (enable_ms_01 && n_gp_groups_ms_baseline_01 > 0) {
+        matrix(rnorm(n_gp_groups_ms_baseline_01 * max_all_t, sd = 0.1),
+               nrow = n_gp_groups_ms_baseline_01, ncol = max_all_t)
       },
       raw_log_lambda_gp_01_level_intercept = if (n_enabled_groups_ms_baseline_01 > 0) rep(0, n_enabled_groups_ms_baseline_01),
 
@@ -45,9 +53,9 @@ ms_init_values_fixed <- function(env) {
       log_lambda_gp_02_level_alpha = if (enable_ms_02) rep(1.0, n_levels) else numeric(0),
       log_lambda_gp_02_level_rho = if (enable_ms_02) rep(1.4, n_levels) else numeric(0),
       log_lambda_gp_02_level_intercept_sd = if (enable_ms_02) rep(0.1, n_levels) else numeric(0),
-      log_lambda_gp_02_level_eta = if (enable_ms_02 && n_enabled_groups_ms_baseline_02 > 0) {
-        matrix(rnorm(n_enabled_groups_ms_baseline_02 * max_all_t, sd = 0.1),
-               nrow = n_enabled_groups_ms_baseline_02, ncol = max_all_t)
+      log_lambda_gp_02_level_eta = if (enable_ms_02 && n_gp_groups_ms_baseline_02 > 0) {
+        matrix(rnorm(n_gp_groups_ms_baseline_02 * max_all_t, sd = 0.1),
+               nrow = n_gp_groups_ms_baseline_02, ncol = max_all_t)
       },
       raw_log_lambda_gp_02_level_intercept = if (n_enabled_groups_ms_baseline_02 > 0) rep(0, n_enabled_groups_ms_baseline_02),
 
@@ -59,9 +67,9 @@ ms_init_values_fixed <- function(env) {
       log_lambda_gp_12_s_level_alpha = if (need_12_s_gp) rep(1.0, n_levels) else numeric(0),
       log_lambda_gp_12_s_level_rho = if (need_12_s_gp) rep(1.4, n_levels) else numeric(0),
       log_lambda_gp_12_s_level_intercept_sd = if (need_12_s_gp) rep(0.1, n_levels) else numeric(0),
-      log_lambda_gp_12_s_level_eta = if (need_12_s_gp && n_enabled_groups_ms_baseline_12_s > 0) {
-        matrix(rnorm(n_enabled_groups_ms_baseline_12_s * ms_max_sojourn_t, sd = 0.1),
-               nrow = n_enabled_groups_ms_baseline_12_s, ncol = ms_max_sojourn_t)
+      log_lambda_gp_12_s_level_eta = if (need_12_s_gp && n_gp_groups_ms_baseline_12_s > 0) {
+        matrix(rnorm(n_gp_groups_ms_baseline_12_s * ms_max_sojourn_t, sd = 0.1),
+               nrow = n_gp_groups_ms_baseline_12_s, ncol = ms_max_sojourn_t)
       },
       raw_log_lambda_gp_12_s_level_intercept = if (n_enabled_groups_ms_baseline_12_s > 0) rep(0, n_enabled_groups_ms_baseline_12_s),
 
@@ -73,9 +81,9 @@ ms_init_values_fixed <- function(env) {
       log_lambda_gp_12_t_level_alpha = if (need_12_t_gp) rep(1.0, n_levels) else numeric(0),
       log_lambda_gp_12_t_level_rho = if (need_12_t_gp) rep(1.4, n_levels) else numeric(0),
       log_lambda_gp_12_t_level_intercept_sd = if (need_12_t_gp) rep(0.1, n_levels) else numeric(0),
-      log_lambda_gp_12_t_level_eta = if (need_12_t_gp && n_enabled_groups_ms_baseline_12_t > 0) {
-        matrix(rnorm(n_enabled_groups_ms_baseline_12_t * max_all_t, sd = 0.1),
-               nrow = n_enabled_groups_ms_baseline_12_t, ncol = max_all_t)
+      log_lambda_gp_12_t_level_eta = if (need_12_t_gp && n_gp_groups_ms_baseline_12_t > 0) {
+        matrix(rnorm(n_gp_groups_ms_baseline_12_t * max_all_t, sd = 0.1),
+               nrow = n_gp_groups_ms_baseline_12_t, ncol = max_all_t)
       },
       raw_log_lambda_gp_12_t_level_intercept = if (n_enabled_groups_ms_baseline_12_t > 0) rep(0, n_enabled_groups_ms_baseline_12_t),
 

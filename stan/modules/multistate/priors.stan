@@ -33,9 +33,12 @@ if (enable_ms_01) {
     );
   }
 
-  // Group-level effects (only for enabled levels)
+  // Group-level intercepts (both intercept-only and GP modes)
   if (n_enabled_groups_ms_baseline_01 > 0) {
     raw_log_lambda_gp_01_level_intercept ~ std_normal();
+  }
+  // GP eta (GP mode only)
+  if (n_gp_groups_ms_baseline_01 > 0) {
     to_vector(log_lambda_gp_01_level_eta) ~ std_normal();
   }
 
@@ -93,6 +96,8 @@ if (enable_ms_02) {
   }
   if (n_enabled_groups_ms_baseline_02 > 0) {
     raw_log_lambda_gp_02_level_intercept ~ std_normal();
+  }
+  if (n_gp_groups_ms_baseline_02 > 0) {
     to_vector(log_lambda_gp_02_level_eta) ~ std_normal();
   }
 
@@ -148,6 +153,8 @@ if (need_12_s_gp) {
   }
   if (n_enabled_groups_ms_baseline_12_s > 0) {
     raw_log_lambda_gp_12_s_level_intercept ~ std_normal();
+  }
+  if (n_gp_groups_ms_baseline_12_s > 0) {
     to_vector(log_lambda_gp_12_s_level_eta) ~ std_normal();
   }
 }
@@ -181,6 +188,8 @@ if (need_12_t_gp) {
   }
   if (n_enabled_groups_ms_baseline_12_t > 0) {
     raw_log_lambda_gp_12_t_level_intercept ~ std_normal();
+  }
+  if (n_gp_groups_ms_baseline_12_t > 0) {
     to_vector(log_lambda_gp_12_t_level_eta) ~ std_normal();
   }
 }
@@ -214,6 +223,8 @@ if (enable_ms_03) {
 
   if (n_enabled_groups_ms_baseline_03 > 0) {
     raw_log_lambda_gp_03_level_intercept ~ std_normal();
+  }
+  if (n_gp_groups_ms_baseline_03 > 0) {
     to_vector(log_lambda_gp_03_level_eta) ~ std_normal();
   }
 }
@@ -248,6 +259,8 @@ if (enable_ms_32) {
   }
   if (n_enabled_groups_ms_baseline_32 > 0) {
     raw_log_lambda_gp_32_s_level_intercept ~ std_normal();
+  }
+  if (n_gp_groups_ms_baseline_32 > 0) {
     to_vector(log_lambda_gp_32_s_level_eta) ~ std_normal();
   }
 }

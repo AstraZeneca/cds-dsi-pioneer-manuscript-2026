@@ -30,27 +30,39 @@ if (enable_ms_01) {
   // Initialize patient hazards with population baseline
   log_cond_surv_01 = rep_matrix(log_pop_lambda_01, n_patients);
 
-  // Add level-level GP residuals
+  // Add level-level residuals (intercept-only or full GP)
   for (lv in 1:n_levels) {
     if (enable_ms_level_baseline_hazard[lv]) {
       int lv_start, lv_end;
       (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
 
-      // Scale intercepts
+      // Scale intercepts (shared by both intercept-only and GP modes)
       log_lambda_gp_01_level_intercept[lv_start:lv_end] =
         raw_log_lambda_gp_01_level_intercept[lv_start:lv_end] *
         log_lambda_gp_01_level_intercept_sd[lv];
 
-      // Compute level GP residuals
-      for (g in lv_start:lv_end) {
-        log_level_lambda_01_residual[g] = calc_gp_pred(
-          all_tumor_measure_t,
-          log_lambda_gp_01_level_intercept[g],
-          log_lambda_gp_01_level_alpha[lv],
-          log_lambda_gp_01_level_rho[lv],
-          delta,
-          log_lambda_gp_01_level_eta[g]
-        );
+      if (enable_ms_level_baseline_hazard[lv] == 2) {
+        // GP mode: full time-varying residual via calc_gp_pred
+        int gp_start, gp_end;
+        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
+        for (g in lv_start:lv_end) {
+          int g_gp = gp_start + (g - lv_start);
+          log_level_lambda_01_residual[g] = calc_gp_pred(
+            all_tumor_measure_t,
+            log_lambda_gp_01_level_intercept[g],
+            log_lambda_gp_01_level_alpha[lv],
+            log_lambda_gp_01_level_rho[lv],
+            delta,
+            log_lambda_gp_01_level_eta[g_gp]
+          );
+        }
+      } else {
+        // Intercept-only mode: constant shift across all time points
+        for (g in lv_start:lv_end) {
+          log_level_lambda_01_residual[g] = rep_row_vector(
+            log_lambda_gp_01_level_intercept[g], max_all_t
+          );
+        }
       }
 
       // Add level residuals to patient hazards
@@ -135,7 +147,7 @@ if (enable_ms_02) {
   // Initialize with population baseline
   log_cond_surv_02 = rep_matrix(log_pop_lambda_02, n_patients);
 
-  // Add level-level GP residuals (same pattern as 0→1)
+  // Add level-level residuals (intercept-only or full GP, same pattern as 0→1)
   for (lv in 1:n_levels) {
     if (enable_ms_level_baseline_hazard[lv]) {
       int lv_start, lv_end;
@@ -145,15 +157,26 @@ if (enable_ms_02) {
         raw_log_lambda_gp_02_level_intercept[lv_start:lv_end] *
         log_lambda_gp_02_level_intercept_sd[lv];
 
-      for (g in lv_start:lv_end) {
-        log_level_lambda_02_residual[g] = calc_gp_pred(
-          all_tumor_measure_t,
-          log_lambda_gp_02_level_intercept[g],
-          log_lambda_gp_02_level_alpha[lv],
-          log_lambda_gp_02_level_rho[lv],
-          delta,
-          log_lambda_gp_02_level_eta[g]
-        );
+      if (enable_ms_level_baseline_hazard[lv] == 2) {
+        int gp_start, gp_end;
+        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
+        for (g in lv_start:lv_end) {
+          int g_gp = gp_start + (g - lv_start);
+          log_level_lambda_02_residual[g] = calc_gp_pred(
+            all_tumor_measure_t,
+            log_lambda_gp_02_level_intercept[g],
+            log_lambda_gp_02_level_alpha[lv],
+            log_lambda_gp_02_level_rho[lv],
+            delta,
+            log_lambda_gp_02_level_eta[g_gp]
+          );
+        }
+      } else {
+        for (g in lv_start:lv_end) {
+          log_level_lambda_02_residual[g] = rep_row_vector(
+            log_lambda_gp_02_level_intercept[g], max_all_t
+          );
+        }
       }
 
       for (i in 1:n_patients) {
@@ -240,7 +263,7 @@ if (need_12_s_gp) {
 
   log_cond_surv_12_s = rep_matrix(log_pop_lambda_12_s, n_patients);
 
-  // Add level residuals (same pattern)
+  // Add level residuals (intercept-only or full GP)
   for (lv in 1:n_levels) {
     if (enable_ms_level_baseline_hazard[lv]) {
       int lv_start, lv_end;
@@ -250,15 +273,26 @@ if (need_12_s_gp) {
         raw_log_lambda_gp_12_s_level_intercept[lv_start:lv_end] *
         log_lambda_gp_12_s_level_intercept_sd[lv];
 
-      for (g in lv_start:lv_end) {
-        log_level_lambda_12_s_residual[g] = calc_gp_pred(
-          sojourn_time_grid,
-          log_lambda_gp_12_s_level_intercept[g],
-          log_lambda_gp_12_s_level_alpha[lv],
-          log_lambda_gp_12_s_level_rho[lv],
-          delta,
-          log_lambda_gp_12_s_level_eta[g]
-        );
+      if (enable_ms_level_baseline_hazard[lv] == 2) {
+        int gp_start, gp_end;
+        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
+        for (g in lv_start:lv_end) {
+          int g_gp = gp_start + (g - lv_start);
+          log_level_lambda_12_s_residual[g] = calc_gp_pred(
+            sojourn_time_grid,
+            log_lambda_gp_12_s_level_intercept[g],
+            log_lambda_gp_12_s_level_alpha[lv],
+            log_lambda_gp_12_s_level_rho[lv],
+            delta,
+            log_lambda_gp_12_s_level_eta[g_gp]
+          );
+        }
+      } else {
+        for (g in lv_start:lv_end) {
+          log_level_lambda_12_s_residual[g] = rep_row_vector(
+            log_lambda_gp_12_s_level_intercept[g], ms_max_sojourn_t
+          );
+        }
       }
 
       for (i in 1:n_patients) {
@@ -317,7 +351,7 @@ if (need_12_t_gp) {
 
   log_cond_surv_12_t = rep_matrix(log_pop_lambda_12_t, n_patients);
 
-  // Add level residuals
+  // Add level residuals (intercept-only or full GP)
   for (lv in 1:n_levels) {
     if (enable_ms_level_baseline_hazard[lv]) {
       int lv_start, lv_end;
@@ -327,16 +361,27 @@ if (need_12_t_gp) {
         raw_log_lambda_gp_12_t_level_intercept[lv_start:lv_end] *
         log_lambda_gp_12_t_level_intercept_sd[lv];
 
-      for (g in lv_start:lv_end) {
-        // In extended mode, level intercept is zero (sojourn GP carries it)
-        log_level_lambda_12_t_residual[g] = calc_gp_pred(
-          all_tumor_measure_t,
-          ms_12_t_has_intercept ? log_lambda_gp_12_t_level_intercept[g] : 0.0,
-          log_lambda_gp_12_t_level_alpha[lv],
-          log_lambda_gp_12_t_level_rho[lv],
-          delta,
-          log_lambda_gp_12_t_level_eta[g]
-        );
+      if (enable_ms_level_baseline_hazard[lv] == 2) {
+        int gp_start, gp_end;
+        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
+        for (g in lv_start:lv_end) {
+          int g_gp = gp_start + (g - lv_start);
+          // In extended mode, level intercept is zero (sojourn GP carries it)
+          log_level_lambda_12_t_residual[g] = calc_gp_pred(
+            all_tumor_measure_t,
+            ms_12_t_has_intercept ? log_lambda_gp_12_t_level_intercept[g] : 0.0,
+            log_lambda_gp_12_t_level_alpha[lv],
+            log_lambda_gp_12_t_level_rho[lv],
+            delta,
+            log_lambda_gp_12_t_level_eta[g_gp]
+          );
+        }
+      } else {
+        for (g in lv_start:lv_end) {
+          log_level_lambda_12_t_residual[g] = rep_row_vector(
+            ms_12_t_has_intercept ? log_lambda_gp_12_t_level_intercept[g] : 0.0, max_all_t
+          );
+        }
       }
 
       for (i in 1:n_patients) {
@@ -401,7 +446,7 @@ if (enable_ms_03) {
   // Initialize patient hazards with population baseline
   log_cond_surv_03 = rep_matrix(log_pop_lambda_03, n_patients);
 
-  // Add level-level GP residuals
+  // Add level-level residuals (intercept-only or full GP)
   for (lv in 1:n_levels) {
     if (enable_ms_level_baseline_hazard[lv]) {
       int lv_start, lv_end;
@@ -411,15 +456,26 @@ if (enable_ms_03) {
         raw_log_lambda_gp_03_level_intercept[lv_start:lv_end] *
         log_lambda_gp_03_level_intercept_sd[lv];
 
-      for (g in lv_start:lv_end) {
-        log_level_lambda_03_residual[g] = calc_gp_pred(
-          all_tumor_measure_t,
-          log_lambda_gp_03_level_intercept[g],
-          log_lambda_gp_03_level_alpha[lv],
-          log_lambda_gp_03_level_rho[lv],
-          delta,
-          log_lambda_gp_03_level_eta[g]
-        );
+      if (enable_ms_level_baseline_hazard[lv] == 2) {
+        int gp_start, gp_end;
+        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
+        for (g in lv_start:lv_end) {
+          int g_gp = gp_start + (g - lv_start);
+          log_level_lambda_03_residual[g] = calc_gp_pred(
+            all_tumor_measure_t,
+            log_lambda_gp_03_level_intercept[g],
+            log_lambda_gp_03_level_alpha[lv],
+            log_lambda_gp_03_level_rho[lv],
+            delta,
+            log_lambda_gp_03_level_eta[g_gp]
+          );
+        }
+      } else {
+        for (g in lv_start:lv_end) {
+          log_level_lambda_03_residual[g] = rep_row_vector(
+            log_lambda_gp_03_level_intercept[g], max_all_t
+          );
+        }
       }
 
       for (i in 1:n_patients) {
@@ -459,7 +515,7 @@ if (enable_ms_32) {
   // Initialize with population baseline
   log_cond_surv_32 = rep_matrix(log_pop_lambda_32, n_patients);
 
-  // Add level-level GP residuals (same pattern as 1→2 sojourn)
+  // Add level-level residuals (intercept-only or full GP)
   for (lv in 1:n_levels) {
     if (enable_ms_level_baseline_hazard[lv]) {
       int lv_start, lv_end;
@@ -469,15 +525,26 @@ if (enable_ms_32) {
         raw_log_lambda_gp_32_s_level_intercept[lv_start:lv_end] *
         log_lambda_gp_32_s_level_intercept_sd[lv];
 
-      for (g in lv_start:lv_end) {
-        log_level_lambda_32_residual[g] = calc_gp_pred(
-          sojourn_time_grid_32,
-          log_lambda_gp_32_s_level_intercept[g],
-          log_lambda_gp_32_s_level_alpha[lv],
-          log_lambda_gp_32_s_level_rho[lv],
-          delta,
-          log_lambda_gp_32_s_level_eta[g]
-        );
+      if (enable_ms_level_baseline_hazard[lv] == 2) {
+        int gp_start, gp_end;
+        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
+        for (g in lv_start:lv_end) {
+          int g_gp = gp_start + (g - lv_start);
+          log_level_lambda_32_residual[g] = calc_gp_pred(
+            sojourn_time_grid_32,
+            log_lambda_gp_32_s_level_intercept[g],
+            log_lambda_gp_32_s_level_alpha[lv],
+            log_lambda_gp_32_s_level_rho[lv],
+            delta,
+            log_lambda_gp_32_s_level_eta[g_gp]
+          );
+        }
+      } else {
+        for (g in lv_start:lv_end) {
+          log_level_lambda_32_residual[g] = rep_row_vector(
+            log_lambda_gp_32_s_level_intercept[g], ms_max_sojourn_t_32
+          );
+        }
       }
 
       for (i in 1:n_patients) {

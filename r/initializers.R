@@ -430,30 +430,25 @@ create_tumor_ssls_initializer <- function(stan_data) {
       need_12_t_gp <- enable_ms_12 && (ms_time_scale_12 == 0 || ms_time_scale_12 == 2)
 
       # Multistate enabled group counts - SEPARATE for each transition (matches Stan logic)
-      # Only count groups if the transition AND hierarchy are both enabled
-      n_enabled_groups_ms_baseline_01 <- if (enable_ms_01) {
-        sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1])
-      } else 0L
+      # Truthy check (> 0): both intercept-only (1) and GP (2) modes count as enabled
+      n_enabled_groups_ms_baseline <- sum(n_groups_per_level[enable_ms_level_baseline_hazard > 0])
 
-      n_enabled_groups_ms_baseline_02 <- if (enable_ms_02) {
-        sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1])
-      } else 0L
+      n_enabled_groups_ms_baseline_01 <- if (enable_ms_01) n_enabled_groups_ms_baseline else 0L
+      n_enabled_groups_ms_baseline_02 <- if (enable_ms_02) n_enabled_groups_ms_baseline else 0L
+      n_enabled_groups_ms_baseline_12_s <- if (need_12_s_gp) n_enabled_groups_ms_baseline else 0L
+      n_enabled_groups_ms_baseline_12_t <- if (need_12_t_gp) n_enabled_groups_ms_baseline else 0L
+      n_enabled_groups_ms_baseline_03 <- if (enable_ms_03) n_enabled_groups_ms_baseline else 0L
+      n_enabled_groups_ms_baseline_32 <- if (enable_ms_32) n_enabled_groups_ms_baseline else 0L
 
-      n_enabled_groups_ms_baseline_12_s <- if (need_12_s_gp) {
-        sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1])
-      } else 0L
+      # GP-only group counts (mode == 2 only, for eta matrix sizing)
+      n_gp_groups_ms_baseline <- sum(n_groups_per_level[enable_ms_level_baseline_hazard == 2L])
 
-      n_enabled_groups_ms_baseline_12_t <- if (need_12_t_gp) {
-        sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1])
-      } else 0L
-
-      n_enabled_groups_ms_baseline_03 <- if (enable_ms_03) {
-        sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1])
-      } else 0L
-
-      n_enabled_groups_ms_baseline_32 <- if (enable_ms_32) {
-        sum(n_groups_per_level[enable_ms_level_baseline_hazard == 1])
-      } else 0L
+      n_gp_groups_ms_baseline_01 <- if (enable_ms_01) n_gp_groups_ms_baseline else 0L
+      n_gp_groups_ms_baseline_02 <- if (enable_ms_02) n_gp_groups_ms_baseline else 0L
+      n_gp_groups_ms_baseline_12_s <- if (need_12_s_gp) n_gp_groups_ms_baseline else 0L
+      n_gp_groups_ms_baseline_12_t <- if (need_12_t_gp) n_gp_groups_ms_baseline else 0L
+      n_gp_groups_ms_baseline_03 <- if (enable_ms_03) n_gp_groups_ms_baseline else 0L
+      n_gp_groups_ms_baseline_32 <- if (enable_ms_32) n_gp_groups_ms_baseline else 0L
 
       # Covariate slope enabled groups (shared across transitions)
       n_enabled_groups_ms_slope <- sum(n_groups_per_level[enable_ms_level_cov == 1])
@@ -597,8 +592,8 @@ create_tumor_ssls_initializer <- function(stan_data) {
         log_lambda_gp_01_level_alpha = if (enable_ms_01) rep(1.0, n_levels) else numeric(0),
         log_lambda_gp_01_level_rho = if (enable_ms_01) invgamma::rinvgamma(n_levels, log_lambda_gp_01_level_rho_alpha, log_lambda_gp_01_level_rho_beta) else numeric(0),
         log_lambda_gp_01_level_intercept_sd = if (enable_ms_01) abs(rnorm(n_levels, sd = log_lambda_gp_01_level_intercept_sd_sd)) else numeric(0),
-        log_lambda_gp_01_level_eta = if (enable_ms_01 && n_enabled_groups_ms_baseline_01 > 0) {
-          matrix(rnorm(n_enabled_groups_ms_baseline_01 * max_all_t), nrow = n_enabled_groups_ms_baseline_01, ncol = max_all_t)
+        log_lambda_gp_01_level_eta = if (enable_ms_01 && n_gp_groups_ms_baseline_01 > 0) {
+          matrix(rnorm(n_gp_groups_ms_baseline_01 * max_all_t), nrow = n_gp_groups_ms_baseline_01, ncol = max_all_t)
         },
         raw_log_lambda_gp_01_level_intercept = if (n_enabled_groups_ms_baseline_01 > 0) {
           rnorm(n_enabled_groups_ms_baseline_01)
@@ -617,8 +612,8 @@ create_tumor_ssls_initializer <- function(stan_data) {
         log_lambda_gp_02_level_alpha = if (enable_ms_02) rep(1.0, n_levels) else numeric(0),
         log_lambda_gp_02_level_rho = if (enable_ms_02) invgamma::rinvgamma(n_levels, log_lambda_gp_02_level_rho_alpha, log_lambda_gp_02_level_rho_beta) else numeric(0),
         log_lambda_gp_02_level_intercept_sd = if (enable_ms_02) abs(rnorm(n_levels, sd = log_lambda_gp_02_level_intercept_sd_sd)) else numeric(0),
-        log_lambda_gp_02_level_eta = if (enable_ms_02 && n_enabled_groups_ms_baseline_02 > 0) {
-          matrix(rnorm(n_enabled_groups_ms_baseline_02 * max_all_t), nrow = n_enabled_groups_ms_baseline_02, ncol = max_all_t)
+        log_lambda_gp_02_level_eta = if (enable_ms_02 && n_gp_groups_ms_baseline_02 > 0) {
+          matrix(rnorm(n_gp_groups_ms_baseline_02 * max_all_t), nrow = n_gp_groups_ms_baseline_02, ncol = max_all_t)
         },
         raw_log_lambda_gp_02_level_intercept = if (n_enabled_groups_ms_baseline_02 > 0) {
           rnorm(n_enabled_groups_ms_baseline_02)
@@ -637,8 +632,8 @@ create_tumor_ssls_initializer <- function(stan_data) {
         log_lambda_gp_12_s_level_alpha = if (need_12_s_gp) rep(1.0, n_levels) else numeric(0),
         log_lambda_gp_12_s_level_rho = if (need_12_s_gp) invgamma::rinvgamma(n_levels, log_lambda_gp_12_s_level_rho_alpha, log_lambda_gp_12_s_level_rho_beta) else numeric(0),
         log_lambda_gp_12_s_level_intercept_sd = if (need_12_s_gp) abs(rnorm(n_levels, sd = log_lambda_gp_12_s_level_intercept_sd_sd)) else numeric(0),
-        log_lambda_gp_12_s_level_eta = if (need_12_s_gp && n_enabled_groups_ms_baseline_12_s > 0) {
-          matrix(rnorm(n_enabled_groups_ms_baseline_12_s * ms_max_sojourn_t), nrow = n_enabled_groups_ms_baseline_12_s, ncol = ms_max_sojourn_t)
+        log_lambda_gp_12_s_level_eta = if (need_12_s_gp && n_gp_groups_ms_baseline_12_s > 0) {
+          matrix(rnorm(n_gp_groups_ms_baseline_12_s * ms_max_sojourn_t), nrow = n_gp_groups_ms_baseline_12_s, ncol = ms_max_sojourn_t)
         },
         raw_log_lambda_gp_12_s_level_intercept = if (n_enabled_groups_ms_baseline_12_s > 0) {
           rnorm(n_enabled_groups_ms_baseline_12_s)
@@ -657,8 +652,8 @@ create_tumor_ssls_initializer <- function(stan_data) {
         log_lambda_gp_12_t_level_alpha = if (need_12_t_gp) rep(1.0, n_levels) else numeric(0),
         log_lambda_gp_12_t_level_rho = if (need_12_t_gp) invgamma::rinvgamma(n_levels, log_lambda_gp_12_t_level_rho_alpha, log_lambda_gp_12_t_level_rho_beta) else numeric(0),
         log_lambda_gp_12_t_level_intercept_sd = if (need_12_t_gp) abs(rnorm(n_levels, sd = log_lambda_gp_12_t_level_intercept_sd_sd)) else numeric(0),
-        log_lambda_gp_12_t_level_eta = if (need_12_t_gp && n_enabled_groups_ms_baseline_12_t > 0) {
-          matrix(rnorm(n_enabled_groups_ms_baseline_12_t * max_all_t), nrow = n_enabled_groups_ms_baseline_12_t, ncol = max_all_t)
+        log_lambda_gp_12_t_level_eta = if (need_12_t_gp && n_gp_groups_ms_baseline_12_t > 0) {
+          matrix(rnorm(n_gp_groups_ms_baseline_12_t * max_all_t), nrow = n_gp_groups_ms_baseline_12_t, ncol = max_all_t)
         },
         raw_log_lambda_gp_12_t_level_intercept = if (n_enabled_groups_ms_baseline_12_t > 0) {
           rnorm(n_enabled_groups_ms_baseline_12_t)
@@ -680,9 +675,9 @@ create_tumor_ssls_initializer <- function(stan_data) {
         log_lambda_gp_03_level_intercept_sd = if (enable_ms_03) {
           abs(rnorm(n_levels, sd = log_lambda_gp_03_level_intercept_sd_sd))
         } else numeric(0),
-        log_lambda_gp_03_level_eta = if (enable_ms_03 && n_enabled_groups_ms_baseline_03 > 0) {
-          matrix(rnorm(n_enabled_groups_ms_baseline_03 * max_all_t),
-                 nrow = n_enabled_groups_ms_baseline_03, ncol = max_all_t)
+        log_lambda_gp_03_level_eta = if (enable_ms_03 && n_gp_groups_ms_baseline_03 > 0) {
+          matrix(rnorm(n_gp_groups_ms_baseline_03 * max_all_t),
+                 nrow = n_gp_groups_ms_baseline_03, ncol = max_all_t)
         },
         raw_log_lambda_gp_03_level_intercept = if (n_enabled_groups_ms_baseline_03 > 0) {
           rnorm(n_enabled_groups_ms_baseline_03)
@@ -704,8 +699,8 @@ create_tumor_ssls_initializer <- function(stan_data) {
         log_lambda_gp_32_s_level_intercept_sd = if (enable_ms_32) {
           abs(rnorm(n_levels, sd = log_lambda_gp_32_s_level_intercept_sd_sd))
         } else numeric(0),
-        log_lambda_gp_32_s_level_eta = if (enable_ms_32 && n_enabled_groups_ms_baseline_32 > 0) {
-          matrix(rnorm(n_enabled_groups_ms_baseline_32 * ms_max_sojourn_t_32), nrow = n_enabled_groups_ms_baseline_32, ncol = ms_max_sojourn_t_32)
+        log_lambda_gp_32_s_level_eta = if (enable_ms_32 && n_gp_groups_ms_baseline_32 > 0) {
+          matrix(rnorm(n_gp_groups_ms_baseline_32 * ms_max_sojourn_t_32), nrow = n_gp_groups_ms_baseline_32, ncol = ms_max_sojourn_t_32)
         },
         raw_log_lambda_gp_32_s_level_intercept = if (n_enabled_groups_ms_baseline_32 > 0) {
           rnorm(n_enabled_groups_ms_baseline_32)

@@ -54,7 +54,32 @@ int n_enabled_groups_ms_baseline_32 = enable_ms_32 ? compute_n_enabled_groups(
   n_groups_per_level, enable_ms_level_baseline_hazard
 ) : 0;
 
+// --- GP-Only Boolean Mask and Group Counts ---
+// For intercept-only mode (mode==1), we don't need eta vectors.
+// GP-only arrays track which levels use full GP (mode==2).
+array[n_levels] int ms_level_baseline_is_gp;
+for (lv in 1:n_levels) {
+  ms_level_baseline_is_gp[lv] = (enable_ms_level_baseline_hazard[lv] == 2) ? 1 : 0;
+}
+
+int n_gp_groups_ms_baseline = compute_n_enabled_groups(
+  n_groups_per_level, ms_level_baseline_is_gp
+);
+
+int n_gp_groups_ms_baseline_01 = enable_ms_01 ? n_gp_groups_ms_baseline : 0;
+int n_gp_groups_ms_baseline_02 = enable_ms_02 ? n_gp_groups_ms_baseline : 0;
+int n_gp_groups_ms_baseline_12_s = need_12_s_gp ? n_gp_groups_ms_baseline : 0;
+int n_gp_groups_ms_baseline_12_t = need_12_t_gp ? n_gp_groups_ms_baseline : 0;
+int n_gp_groups_ms_baseline_03 = enable_ms_03 ? n_gp_groups_ms_baseline : 0;
+int n_gp_groups_ms_baseline_32 = enable_ms_32 ? n_gp_groups_ms_baseline : 0;
+
+// GP-only position array (for indexing into eta matrices)
+array[n_levels + 1] int gp_level_pos_ms_baseline = create_enabled_pos(
+  n_groups_per_level, ms_level_baseline_is_gp
+);
+
 // --- Position Arrays for Baseline Hazard Level Hierarchy ---
+// (includes both intercept-only and GP levels — any truthy flag)
 array[n_levels + 1] int enabled_level_pos_ms_baseline = create_enabled_pos(
   n_groups_per_level, enable_ms_level_baseline_hazard
 );
