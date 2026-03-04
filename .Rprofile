@@ -2,6 +2,17 @@ if (file.exists("~/.Rprofile")) {
   source("~/.Rprofile")
 }
 
+# On Domino, redirect renv's global package cache to a persistent per-user path on
+# /mnt/artifacts. This makes the cache available to both workspace sessions AND jobs,
+# so renv::restore() can hard-link from cache instead of re-downloading packages each run.
+if (nzchar(Sys.getenv("DOMINO_PROJECT_ID"))) {
+  Sys.setenv(RENV_PATHS_CACHE = file.path(
+    Sys.getenv("DOMINO_ARTIFACTS_DIR"),
+    Sys.getenv("DOMINO_STARTING_USERNAME"),
+    "renv", "cache"
+  ))
+}
+
 # Find and activate renv - try relative path first (when R starts from project root),
 # then fall back to here::here() for other cases (like Quarto subdirectories)
 if (file.exists("renv/activate.R")) {
