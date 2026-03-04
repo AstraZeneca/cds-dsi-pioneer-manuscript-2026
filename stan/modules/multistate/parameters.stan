@@ -17,7 +17,7 @@ row_vector[enable_ms_01 ? max_all_t : 0] log_lambda_gp_01_pop_eta;
 array[enable_ms_01 ? n_levels : 0] real<lower=0> log_lambda_gp_01_level_alpha;
 array[enable_ms_01 ? n_levels : 0] real<lower=0> log_lambda_gp_01_level_rho;
 array[enable_ms_01 ? n_levels : 0] real<lower=0> log_lambda_gp_01_level_intercept_sd;
-matrix[n_enabled_groups_ms_baseline_01, enable_ms_01 ? max_all_t : 0] log_lambda_gp_01_level_eta;
+matrix[n_gp_groups_ms_baseline_01, enable_ms_01 ? max_all_t : 0] log_lambda_gp_01_level_eta;
 vector[n_enabled_groups_ms_baseline_01] raw_log_lambda_gp_01_level_intercept;
 
 // --- Population-level Time-varying Covariates ---
@@ -45,7 +45,7 @@ row_vector[enable_ms_02 ? max_all_t : 0] log_lambda_gp_02_pop_eta;
 array[enable_ms_02 ? n_levels : 0] real<lower=0> log_lambda_gp_02_level_alpha;
 array[enable_ms_02 ? n_levels : 0] real<lower=0> log_lambda_gp_02_level_rho;
 array[enable_ms_02 ? n_levels : 0] real<lower=0> log_lambda_gp_02_level_intercept_sd;
-matrix[n_enabled_groups_ms_baseline_02, enable_ms_02 ? max_all_t : 0] log_lambda_gp_02_level_eta;
+matrix[n_gp_groups_ms_baseline_02, enable_ms_02 ? max_all_t : 0] log_lambda_gp_02_level_eta;
 vector[n_enabled_groups_ms_baseline_02] raw_log_lambda_gp_02_level_intercept;
 
 // --- Population-level Time-varying Covariates ---
@@ -72,7 +72,7 @@ row_vector[need_12_s_gp ? ms_max_sojourn_t : 0] log_lambda_gp_12_s_pop_eta;
 array[need_12_s_gp ? n_levels : 0] real<lower=0> log_lambda_gp_12_s_level_alpha;
 array[need_12_s_gp ? n_levels : 0] real<lower=0> log_lambda_gp_12_s_level_rho;
 array[need_12_s_gp ? n_levels : 0] real<lower=0> log_lambda_gp_12_s_level_intercept_sd;
-matrix[n_enabled_groups_ms_baseline_12_s, need_12_s_gp ? ms_max_sojourn_t : 0] log_lambda_gp_12_s_level_eta;
+matrix[n_gp_groups_ms_baseline_12_s, need_12_s_gp ? ms_max_sojourn_t : 0] log_lambda_gp_12_s_level_eta;
 vector[n_enabled_groups_ms_baseline_12_s] raw_log_lambda_gp_12_s_level_intercept;
 
 // --- Clock-forward Time GP (Markov or extended) ---
@@ -85,7 +85,7 @@ row_vector[need_12_t_gp ? max_all_t : 0] log_lambda_gp_12_t_pop_eta;
 array[need_12_t_gp ? n_levels : 0] real<lower=0> log_lambda_gp_12_t_level_alpha;
 array[need_12_t_gp ? n_levels : 0] real<lower=0> log_lambda_gp_12_t_level_rho;
 array[need_12_t_gp ? n_levels : 0] real<lower=0> log_lambda_gp_12_t_level_intercept_sd;
-matrix[n_enabled_groups_ms_baseline_12_t, need_12_t_gp ? max_all_t : 0] log_lambda_gp_12_t_level_eta;
+matrix[n_gp_groups_ms_baseline_12_t, need_12_t_gp ? max_all_t : 0] log_lambda_gp_12_t_level_eta;
 vector[n_enabled_groups_ms_baseline_12_t] raw_log_lambda_gp_12_t_level_intercept;
 
 // --- Population-level Covariates for 1→2 ---
@@ -106,7 +106,7 @@ row_vector[enable_ms_03 ? max_all_t : 0] log_lambda_gp_03_pop_eta;
 array[enable_ms_03 ? n_levels : 0] real<lower=0> log_lambda_gp_03_level_alpha;
 array[enable_ms_03 ? n_levels : 0] real<lower=0> log_lambda_gp_03_level_rho;
 array[enable_ms_03 ? n_levels : 0] real<lower=0> log_lambda_gp_03_level_intercept_sd;
-matrix[n_enabled_groups_ms_baseline_03, enable_ms_03 ? max_all_t : 0] log_lambda_gp_03_level_eta;
+matrix[n_gp_groups_ms_baseline_03, enable_ms_03 ? max_all_t : 0] log_lambda_gp_03_level_eta;
 vector[n_enabled_groups_ms_baseline_03] raw_log_lambda_gp_03_level_intercept;
 
 // ============================================================================
@@ -123,5 +123,5 @@ row_vector[enable_ms_32 ? ms_max_sojourn_t_32 : 0] log_lambda_gp_32_s_pop_eta;
 array[enable_ms_32 ? n_levels : 0] real<lower=0> log_lambda_gp_32_s_level_alpha;
 array[enable_ms_32 ? n_levels : 0] real<lower=0> log_lambda_gp_32_s_level_rho;
 array[enable_ms_32 ? n_levels : 0] real<lower=0> log_lambda_gp_32_s_level_intercept_sd;
-matrix[n_enabled_groups_ms_baseline_32, enable_ms_32 ? ms_max_sojourn_t_32 : 0] log_lambda_gp_32_s_level_eta;
+matrix[n_gp_groups_ms_baseline_32, enable_ms_32 ? ms_max_sojourn_t_32 : 0] log_lambda_gp_32_s_level_eta;
 vector[n_enabled_groups_ms_baseline_32] raw_log_lambda_gp_32_s_level_intercept;
