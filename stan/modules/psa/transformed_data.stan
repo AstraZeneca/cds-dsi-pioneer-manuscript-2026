@@ -19,8 +19,9 @@ vector[sum(n_patient_visits) - sum(n_patient_screening_visits)] post_treat_psa;
     int visit_start, visit_end;
     (visit_start, visit_end) = get_pos(patient_visit_pos, i);
 
-    // Baseline is first post-screening visit (at treatment start, week 0).
-    int baseline_idx = visit_start + n_patient_screening_visits[i];
+    // Baseline is the LAST screening visit (week 0, ADaM ABLFL=Y).
+    // Treatment visits (week > 0) start at visit_start + n_screening.
+    int baseline_idx = visit_start + n_patient_screening_visits[i] - 1;
     real baseline_psa = psa_values[baseline_idx];
     log_baseline_psa[i] = log(baseline_psa);
 
