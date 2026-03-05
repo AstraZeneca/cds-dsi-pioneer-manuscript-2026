@@ -21,15 +21,19 @@ for (i in 1:n_patients) {
   
   for (v in curr_patient_visit_pos:curr_patient_visit_end) {
     t_patient_visit_idx[v] = t_patient_visits[v] - first_visit + 1;
-    
-    if (t_patient_visits[v] <= 0) {
+
+    // Count visits strictly before week 0 (pre-screening).
+    // Week 0 is the ADaM baseline (ABLFL=Y) and is the first treatment-period visit.
+    if (t_patient_visits[v] < 0) {
       n_patient_screening_visits[i] += 1;
     }
   }
-  
-  if (n_patient_screening_visits[i] == 0) {
-    fatal_error("Patient ", i, " has no pre-screening visits.");
-  }
+
+  // Debug: confirm screening count and inferred baseline week per patient.
+  // treat_visit_start = visit_start + n_screening, so baseline is at offset n_screening.
+  int baseline_visit_idx = curr_patient_visit_pos + n_patient_screening_visits[i];
+  print("Patient ", i, ": n_screening=", n_patient_screening_visits[i],
+        " baseline_week=", t_patient_visits[baseline_visit_idx]);
 }
 
 // Time grid for full states computation: [1, 2, 3, ..., max_t_width]
