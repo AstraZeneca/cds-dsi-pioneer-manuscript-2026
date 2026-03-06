@@ -16,7 +16,10 @@ get_state_patients <- function(
     mutate(n = seq(n())) |>
     nest(visit_data = !c(trial, i, usubjid, selected, pfs, right_censored)) |>
     filter(selected) |>
-    mutate(baseline_value = map_dbl(visit_data, \(v) v |> pull({{ baseline_col }}) |> first())) |>
+    mutate(baseline_value = map_dbl(visit_data, \(v) {
+      bl_idx <- max(which(v$week <= 0))
+      v |> pull({{ baseline_col }}) |> _[bl_idx]
+    })) |>
     group_by({{ by }}) |>
     slicer(n = sample_size) |>
     ungroup() |>
@@ -162,7 +165,10 @@ get_subsample_forecast_data <- function(
   analysis_data |>
     mutate(
       i = seq(n()),
-      baseline_value = map_dbl(visit_data, \(v) v |> pull({{ baseline_col }}) |> first()),
+      baseline_value = map_dbl(visit_data, \(v) {
+        bl_idx <- max(which(v$week <= 0))
+        v |> pull({{ baseline_col }}) |> _[bl_idx]
+      }),
       actual_patient_max_t = map_int(visit_data, \(d) max(d$week)),
       n_forecast_visits = overall_max_t - actual_patient_max_t
     ) |>
