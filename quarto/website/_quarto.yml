@@ -27,6 +27,8 @@ website:
             href: analysis/survival-analysis.qmd
           - text: Overall Survival
             href: analysis/overall-survival.qmd
+          - text: Competing Risks
+            href: analysis/competing-risks.qmd
           - text: DCO Comparisons
             href: comparisons/dco-comparisons.qmd
           - text: "---"
@@ -105,6 +107,7 @@ website:
             - analysis/clinical-endpoints.qmd
             - analysis/survival-analysis.qmd
             - analysis/overall-survival.qmd
+            - analysis/competing-risks.qmd
             - comparisons/dco-comparisons.qmd
         - section: "Model Details"
           contents:

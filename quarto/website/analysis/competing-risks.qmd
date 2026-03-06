@@ -1,0 +1,106 @@
+---
+title: "Competing Risks"
+subtitle: "Cumulative incidence functions for state 0 exits: progression, on-trial death, and dropout"
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+source("_setup.R")
+
+# Standalone multistate model store
+ms_store <- "/mnt/data/analysis-results/karim_naguib/sclc/ms-trial-intercept/_targets"
+```
+
+This page validates the **4-state multistate model's** allocation of patients across competing exit routes from state 0 (on-treatment, pre-progression). From state 0, a patient can:
+
+- **0->1 Progression**: Tumor progression detected via RECIST
+- **0->2 On-trial death**: Death without prior progression while on trial
+- **0->3 Dropout**: Treatment discontinuation without progression or on-trial death
+
+The cumulative incidence function (CIF) measures the probability of each cause by time $t$, accounting for the fact that causes compete --- a patient who progresses can no longer drop out, and vice versa.
+
+::: {.callout-note}
+## CIF vs KM
+Unlike the Kaplan-Meier estimator (which estimates the marginal survival function), the CIF accounts for competing risks and always sums to at most 1 across all causes. The observed CIF is computed using the Aalen-Johansen estimator.
+:::
+
+## Standalone Multistate Model {#sec-standalone-cif}
+
+The standalone multistate model estimates transition hazards **without SLD tumor dynamics** --- all transitions are driven purely by baseline hazards and covariates. This provides a useful diagnostic: how well can the multistate component alone reproduce the observed competing risks structure?
+
+### Event Counts
+
+```{r}
+#| label: tbl-event-counts-standalone
+#| tbl-cap: "Observed competing risks event counts from state 0 (standalone model data)."
+
+stan_data <- tar_read(ms_standalone_stan_data_posterior_ctdna_jan26, store = ms_store)
+competing_risks_event_table(stan_data)
+```
+
+### CIF Validation
+
+```{r}
+#| label: fig-cif-standalone
+#| fig-cap: "Competing risks CIF: standalone multistate model (posterior predictive) vs observed Aalen-Johansen. Top panel shows per-cause CIF; bottom panel shows proportion of patients still in state 0."
+#| fig-width: 10
+#| fig-height: 9
+#| column: body-outset
+
+draws_cif <- tar_read(ms_standalone_draws_cif_posterior_ctdna_jan26, store = ms_store)
+plot_competing_risks_cif(stan_data, draws_cif)
+```
+
+::: {.callout-warning}
+## Known Issue: 0->3 Over-Prediction in Standalone Model
+The standalone model systematically **over-predicts dropout (0->3)** and **under-predicts progression (0->1)**. This is visible as:
+
+- HISTORICAL: observed progression CIF ~67%, model ~38%. Observed dropout CIF ~28%, model ~55%.
+- The state 0 retention panel (bottom) shows the model retains too many patients in state 0 at intermediate times.
+
+This is a **competing risks interaction**, not a bug in the 0->3 hazard:
+
+1. Without SLD data, the 0->1 hazard is too diffuse (progression times spread too broadly)
+2. Simulated patients remain in state 0 longer than observed
+3. This gives the 0->3 hazard more time to accumulate events, inflating the dropout CIF
+
+The full model (with SLD tumor dynamics) constrains when deterministic progressors exit state 0, dramatically reducing this effect. See [issue #76](https://github.com/azu-oncology-rd/cds-dsi-pioneer-sclc-01-2025/issues/76) for detailed analysis.
+:::
+
+## Prior Predictive Check {#sec-prior-predictive-cif}
+
+To assess whether the priors themselves drive the CIF miscalibration (per [Gabry et al. 2019](https://doi.org/10.1111/rssa.12378)), we compare the prior predictive CIF against the posterior predictive CIF and observed data. If the prior predictive CIF already shows inflated 0->3, the 0->1 prior is too diffuse for the standalone model.
+
+```{r}
+#| label: fig-cif-prior
+#| fig-cap: "Prior predictive competing risks CIF. If this already shows inflated 0->3, the prior on the 0->1 hazard is too diffuse."
+#| fig-width: 10
+#| fig-height: 9
+#| column: body-outset
+#| eval: !expr file.exists(file.path(ms_store, "meta", "meta"))
+
+stan_data_prior <- tryCatch(
+  tar_read(ms_standalone_stan_data_prior_ctdna_jan26, store = ms_store),
+  error = function(e) NULL
+)
+draws_cif_prior <- tryCatch(
+  tar_read(ms_standalone_draws_cif_prior_ctdna_jan26, store = ms_store),
+  error = function(e) NULL
+)
+
+if (!is.null(stan_data_prior) && !is.null(draws_cif_prior)) {
+  plot_competing_risks_cif(stan_data_prior, draws_cif_prior)
+} else {
+  cat("Prior predictive CIF targets not yet available. Run `ms_standalone_res_prior_ctdna_jan26` and `ms_standalone_draws_cif_prior_ctdna_jan26`.")
+}
+```
+
+::: {.related-pages}
+## Related Pages
+
+- [Overall Survival](overall-survival.qmd) - OS Kaplan-Meier curves and predictions
+- [Survival Analysis](survival-analysis.qmd) - PFS Kaplan-Meier curves
+- [Model Specification](../documentation/model-specification.qmd) - Multistate model details
+:::
