@@ -371,3 +371,5 @@ for (c in 1:n_cond_group) {
     cond_spop_os_n[c] = zeros_vector(n_pfs_timepoints);
   }
 }
+
+#include "modules/multistate/generated_quantities.stan"
