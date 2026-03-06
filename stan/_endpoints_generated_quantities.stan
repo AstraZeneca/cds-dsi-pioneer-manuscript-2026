@@ -320,3 +320,5 @@ profile("gen_quant") {
       pfs_timepoints
     );
 }
+
+#include "modules/multistate/generated_quantities.stan"
