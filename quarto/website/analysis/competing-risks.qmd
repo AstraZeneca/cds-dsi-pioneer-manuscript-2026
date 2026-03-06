@@ -79,22 +79,11 @@ To assess whether the priors themselves drive the CIF miscalibration (per [Gabry
 #| fig-width: 10
 #| fig-height: 9
 #| column: body-outset
-#| eval: !expr file.exists(file.path(ms_store, "meta", "meta"))
 
-stan_data_prior <- tryCatch(
-  tar_read(ms_standalone_stan_data_prior_ctdna_jan26, store = ms_store),
-  error = function(e) NULL
-)
-draws_cif_prior <- tryCatch(
-  tar_read(ms_standalone_draws_cif_prior_ctdna_jan26, store = ms_store),
-  error = function(e) NULL
-)
+stan_data_prior <- tar_read(ms_standalone_stan_data_prior_ctdna_jan26, store = ms_store)
+draws_cif_prior <- tar_read(ms_standalone_draws_cif_prior_ctdna_jan26, store = ms_store)
 
-if (!is.null(stan_data_prior) && !is.null(draws_cif_prior)) {
-  plot_competing_risks_cif(stan_data_prior, draws_cif_prior)
-} else {
-  cat("Prior predictive CIF targets not yet available. Run `ms_standalone_res_prior_ctdna_jan26` and `ms_standalone_draws_cif_prior_ctdna_jan26`.")
-}
+plot_competing_risks_cif(stan_data_prior, draws_cif_prior)
 ```
 
 ::: {.related-pages}
