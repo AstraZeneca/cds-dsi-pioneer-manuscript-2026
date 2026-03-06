@@ -4,7 +4,7 @@ RENV_CONFIG_SYNCHRONIZED_CHECK=false
 RENV_PATHS_CACHE=/home/ubuntu/.cache/R/renv
 
 TAR_PROJECT=pioneer
-TAR_BRANCH=trial-data
+TAR_BRANCH=psa
 
 
 LFO_SAVE_WARMUP=true
