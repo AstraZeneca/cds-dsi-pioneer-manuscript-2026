@@ -5,9 +5,6 @@ array[n_patients + 1] int<lower = 1, upper = sum(n_patient_visits) + 1> patient_
 int max_all_t = max(max(t_patient_visits) + 1, extend_max_all_t); // Latest measurement time or extended time, whichever is greater
 int<lower = 0> max_t_width = max_all_t - min(t_patient_visits) + 1;
 
-print("max(t_patient_visits) = ", max(t_patient_visits));
-print("max_all_t = ", max_all_t);
-print("max_t_width = ", max_t_width);
 
 array[sum(n_patient_visits)] int<lower = 1> t_patient_visit_idx; // Index of each patient visit relative to the first visit for each patient 
 
@@ -40,9 +37,6 @@ for (i in 1:n_patients) {
     t_patient_visit_idx[v] = raw_idx > 0 ? raw_idx : 1;
   }
 
-  // Debug: confirm baseline week per patient.
-  print("Patient ", i, ": n_screening=", n_patient_screening_visits[i],
-        " baseline_week=", baseline_week);
 }
 
 // Time grid for full states computation: [1, 2, 3, ..., max_t_width]
