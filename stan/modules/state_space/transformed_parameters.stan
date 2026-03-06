@@ -159,11 +159,25 @@ profile("states") {
       matrix[n_pop_unique_visits, n_patients] cumsum_d = visit_cumsum_mat * D_increments' + rep_matrix(init_log_decrease_patient', n_pop_unique_visits);
       matrix[n_pop_unique_visits, n_patients] cumsum_g = visit_cumsum_mat * G_increments' + rep_matrix(init_log_growth_patient', n_pop_unique_visits);
 
+      // Anchor states at each patient's clinical baseline (last screening visit).
+      // visit_cumsum_mat accumulates from global_min_week, but we want t=1 to correspond
+      // to the baseline so that log_sum_exp(init_d, init_g) = 0 at the baseline.
+      // Correction: shift each patient's states by rate * (baseline_week - global_min_week + 1).
+      int global_min_week = min(pop_unique_visits);
+
       for (i in 1:n_patients) {
         int visit_start, visit_end;
         (visit_start, visit_end) = get_pos(patient_visit_pos, i);
-        states[visit_start:visit_end, 1] = cumsum_d[patient2pop_unique_visit_idx[visit_start:visit_end], i];
-        states[visit_start:visit_end, 2] = cumsum_g[patient2pop_unique_visit_idx[visit_start:visit_end], i];
+
+        int baseline_visit_idx = visit_start + n_patient_screening_visits[i] - 1;
+        int patient_baseline_week = t_patient_visits[baseline_visit_idx];
+        int baseline_offset = patient_baseline_week - global_min_week + 1;
+
+        real d_correction = patient_decrease_rate[i, 1] * baseline_offset;
+        real g_correction = patient_growth_rate[i, 1] * baseline_offset;
+
+        states[visit_start:visit_end, 1] = cumsum_d[patient2pop_unique_visit_idx[visit_start:visit_end], i] + d_correction;
+        states[visit_start:visit_end, 2] = cumsum_g[patient2pop_unique_visit_idx[visit_start:visit_end], i] - g_correction;
       }
     }
   }
