@@ -36,7 +36,11 @@ Rscript -e 'targets::tar_make()'
 
 ### Stan Model Syntax Check (fast)
 ```bash
-~/.cmdstan/cmdstan-2.38.0/bin/stanc --include-paths=stan stan/sf-ssm-log-space.stan
+# Tumor models:
+~/.cmdstan/cmdstan-2.38.0/bin/stanc --include-paths=stan --include-paths=stan/tumor stan/tumor/sf-ssm-log-space.stan
+
+# PSA models:
+~/.cmdstan/cmdstan-2.38.0/bin/stanc --include-paths=stan --include-paths=stan/psa stan/psa/pioneer.stan
 ```
 
 ### Running Tests

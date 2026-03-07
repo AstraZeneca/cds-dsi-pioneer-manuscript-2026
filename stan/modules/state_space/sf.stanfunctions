@@ -1169,6 +1169,352 @@ tuple(
 
 
 /**
+ * Calculate patient-level endpoints (PFS and response indicators) for all patients.
+ *
+ * Biomarker-agnostic: accepts any progression category array where category 4 = confirmed
+ * progression. Compatible with both RECIST (CR=1, PR=2, SD=3, PD=4) and PCWG3
+ * (Undetectable=1, PSA50=2, Stable=3, PSA-PD=4) since both use category 4 for progression.
+ *
+ * @param biomarker_category Observed biomarker classifications (all visits including screening)
+ * @param rep_biomarker_category Replicated biomarker classifications (treatment visits only)
+ * @param forecast_biomarker_category Forecasted biomarker classifications
+ * @param ms_log_cond_surv Log conditional survival matrix [n_patients, max_all_t] for 0→1 transition
+ * @param pfs Observed PFS times (weeks after baseline, last clean assessment)
+ * @param interval_censored Interval censoring gap (weeks between last clean assessment and event)
+ * @param right_censored Combined right-censoring indicators
+ * @param target_pfs Biomarker-specific PFS (observed data)
+ * @param target_right_censored Censoring status for biomarker-specific PFS (observed data)
+ * @param ms_right_censored Censoring status for 0→1 multistate transition
+ */
+tuple(
+  array[] int,  // sample_target_pfs
+  array[] int,  // sample_target_right_censored
+  array[] int,  // spop_target_pfs
+  array[] int,  // spop_target_right_censored
+  array[] int,  // spop_target_obs_cens_pfs
+  array[] int,  // spop_target_obs_cens_right_censored
+  array[] int,  // sample_ms_pfs
+  array[] int,  // sample_ms_right_censored
+  array[] int,  // spop_ms_pfs
+  array[] int,  // spop_ms_right_censored
+  array[] int,  // sample_pfs
+  array[] int,  // sample_right_censored
+  array[] int,  // spop_pfs
+  array[] int,  // spop_right_censored
+  array[] int,  // sample_target_confirmed_response
+  array[] int,  // sample_target_unconfirmed_response
+  array[] int,  // spop_target_confirmed_response
+  array[] int,  // spop_target_unconfirmed_response
+  array[] int,  // forecast_target_pfs
+  array[] int,  // forecast_target_right_censored
+  array[] int,  // sample_os
+  array[] int,  // sample_os_censored
+  array[] int,  // spop_os
+  array[] int   // spop_os_censored
+) calculate_all_patients_endpoints_rng(
+  array[] int biomarker_category,
+  array[] int rep_biomarker_category,
+  array[] int forecast_biomarker_category,
+  matrix ms_log_cond_surv,  // matrix[n_patients, max_all_t] - log conditional survival probabilities (0→1)
+  int enable_ms_02,
+  int enable_ms_12,
+  int ms_time_scale_12,
+  matrix log_cond_surv_02,    // matrix[n_patients, max_all_t] or [0,0] - 0→2 log conditional survival
+  matrix log_cond_surv_12_s,  // matrix[n_patients, ms_max_sojourn_t] or [0,0] - 1→2 sojourn GP
+  matrix log_cond_surv_12_t,  // matrix[n_patients, max_all_t] or [0,0] - 1→2 clock-forward GP
+  array[] int pfs,
+  array[] int interval_censored,
+  array[] int right_censored,
+  array[] int target_pfs,             // PFS based on biomarker only (observed data)
+  array[] int target_right_censored,  // Censoring status for biomarker-only PFS (observed data)
+  array[] int ms_right_censored,  // Censoring status for multistate events
+  array[] int ms_final_state,  // Final state per patient: 0=censored, 1=progressed, 2=dead
+  array[] int ms_time_02,      // Observed time to death without progression
+  array[] int ms_censored_02,  // Censoring indicator for 0→2
+  array[] int ms_censored_12,  // Censoring indicator for 1→2
+  array[] int ms_time_12,      // Observed time to post-progression death (sojourn)
+  array[] int patient_visit_pos,
+  array[] int forecast_visits_pos,
+  array[] int patient_last_obs_visit,
+  int last_predict_visit,
+  array[] int t_patient_visits,
+  int max_all_t,
+  array[] int n_patient_screening_visits
+) {
+  int n_patients = size(patient_visit_pos) - 1;
+  int n_target_right_censored_patients = sum(target_right_censored);
+
+  // Progression category constants (compatible with both RECIST and PCWG3)
+  int CR = 1; int PR = 2; int SD = 3; int PD = 4;
+
+  // Initialize output arrays
+  array[n_patients] int sample_target_pfs;
+  array[n_patients] int sample_target_right_censored;
+  array[n_patients] int spop_target_pfs;
+  array[n_patients] int spop_target_right_censored;
+  array[n_patients] int spop_target_obs_cens_pfs;
+  array[n_patients] int spop_target_obs_cens_right_censored;
+  array[n_patients] int sample_target_confirmed_response;
+  array[n_patients] int sample_target_unconfirmed_response;
+  array[n_patients] int spop_target_confirmed_response;
+  array[n_patients] int spop_target_unconfirmed_response;
+  array[n_target_right_censored_patients] int forecast_target_pfs;
+  array[n_target_right_censored_patients] int forecast_target_right_censored;
+
+  // Multistate PFS
+  array[n_patients] int sample_ms_pfs;
+  array[n_patients] int sample_ms_right_censored;
+  array[n_patients] int spop_ms_pfs;
+  array[n_patients] int spop_ms_right_censored;
+
+  // Combined PFS (minimum of target and other events)
+  array[n_patients] int sample_pfs;
+  array[n_patients] int sample_right_censored;
+  array[n_patients] int spop_pfs;
+  array[n_patients] int spop_right_censored;
+
+  // OS (overall survival)
+  array[n_patients] int sample_os;
+  array[n_patients] int sample_os_censored;
+  array[n_patients] int spop_os;
+  array[n_patients] int spop_os_censored;
+
+  int right_censored_idx = 1;
+
+  // Process each patient
+  for (i in 1:n_patients) {
+    int visit_size = get_pos_size(patient_visit_pos, i);
+    int forecast_size = get_pos_size(forecast_visits_pos, i);
+    int n_obs_treat_visits = visit_size - n_patient_screening_visits[i];
+
+    int visit_start, screening_visit_end, treat_visit_start, visit_end;
+    (visit_start, screening_visit_end, treat_visit_start, visit_end) = get_visit_pos(
+      patient_visit_pos, i, n_patient_screening_visits[i]);
+
+    int forecast_visit_start, forecast_visit_end;
+    (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
+
+    array[visit_size] int curr_visits = get_int_sub_array(t_patient_visits, patient_visit_pos, i);
+    array[n_obs_treat_visits] int treat_curr_visits = curr_visits[(n_patient_screening_visits[i] + 1):];
+
+    // Build forecast time
+    array[forecast_size + 1] int forecast_time = linspaced_int_array(forecast_size + 1, patient_last_obs_visit[i], last_predict_visit);
+    array[forecast_size > 0 ? forecast_size : 0] int forecast_time_wo_anchor = forecast_size > 0 ? forecast_time[2:] : zeros_int_array(0);
+
+    // Get biomarker category for this patient
+    array[n_obs_treat_visits] int patient_rep_cat = rep_biomarker_category[treat_visit_start:visit_end];
+    array[forecast_size] int patient_forecast_cat = forecast_biomarker_category[forecast_visit_start:forecast_visit_end];
+    array[n_obs_treat_visits + forecast_size] int full_predict_cat = append_array(patient_rep_cat, patient_forecast_cat);
+
+    // Initialize response tracking variables
+    int sample_target_confirmed_response_week, sample_target_confirmed_response_censored;
+    int sample_target_unconfirmed_response_week, sample_target_unconfirmed_response_censored;
+    int spop_target_confirmed_response_week, spop_target_confirmed_response_censored;
+    int spop_target_unconfirmed_response_week, spop_target_unconfirmed_response_censored;
+
+    // Calculate posterior predictive target PFS
+    (spop_target_pfs[i], spop_target_right_censored[i]) = find_first_week(
+      full_predict_cat, { PD }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
+
+    // Calculate response weeks for posterior predictive (always use full prediction)
+    (spop_target_confirmed_response_week, spop_target_confirmed_response_censored) = find_first_week(
+      full_predict_cat, { PR, CR }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
+
+    (spop_target_unconfirmed_response_week, spop_target_unconfirmed_response_censored) = find_first_week(
+      full_predict_cat, { PR, CR }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
+
+    // Handle right-censored patients with forecast
+    if (forecast_size > 0 && target_right_censored[i]) {
+      // Combine observed + forecast categories for sample outcomes
+      array[n_obs_treat_visits + forecast_size] int combined_cat = append_array(biomarker_category[treat_visit_start:visit_end], patient_forecast_cat);
+
+      (sample_target_pfs[i], sample_target_right_censored[i]) =
+        find_first_week(combined_cat, { PD }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
+
+      forecast_target_pfs[right_censored_idx] = sample_target_pfs[i];
+      forecast_target_right_censored[right_censored_idx] = sample_target_right_censored[i];
+
+      (sample_target_confirmed_response_week, sample_target_confirmed_response_censored) = find_first_week(
+        combined_cat, { PR, CR }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
+
+      (sample_target_unconfirmed_response_week, sample_target_unconfirmed_response_censored) = find_first_week(
+        combined_cat, { PR, CR }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
+
+      right_censored_idx += 1;
+    } else {
+      sample_target_pfs[i] = target_pfs[i] + interval_censored[i] + 1;
+      sample_target_right_censored[i] = target_right_censored[i];
+
+      (sample_target_confirmed_response_week, sample_target_confirmed_response_censored) = find_first_week(
+        biomarker_category[treat_visit_start:visit_end], { PR, CR }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
+
+      (sample_target_unconfirmed_response_week, sample_target_unconfirmed_response_censored) = find_first_week(
+        biomarker_category[treat_visit_start:visit_end], { PR, CR }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
+    }
+
+    // Calculate observed-censored posterior PFS
+    spop_target_obs_cens_right_censored[i] = target_right_censored[i];
+    spop_target_obs_cens_pfs[i] = target_right_censored[i] ? min(spop_target_pfs[i], target_pfs[i]) : spop_target_pfs[i];
+
+    // Calculate response indicators
+    sample_target_confirmed_response[i] = !sample_target_confirmed_response_censored && sample_target_confirmed_response_week < sample_target_pfs[i];
+    sample_target_unconfirmed_response[i] = !sample_target_unconfirmed_response_censored && sample_target_unconfirmed_response_week <= sample_target_pfs[i];
+
+    spop_target_confirmed_response[i] = !spop_target_confirmed_response_censored && spop_target_confirmed_response_week < spop_target_pfs[i];
+    spop_target_unconfirmed_response[i] = !spop_target_unconfirmed_response_censored && spop_target_unconfirmed_response_week <= spop_target_pfs[i];
+
+    // Calculate multistate PFS using survival_time_rng
+    if (ms_right_censored[i]) {
+      (sample_ms_pfs[i], sample_ms_right_censored[i]) = survival_time_rng(ms_log_cond_surv[i], pfs[i], 1, 0);
+      sample_ms_pfs[i] += 1;
+    } else {
+      sample_ms_pfs[i] = pfs[i] + interval_censored[i] + 1;
+      sample_ms_right_censored[i] = 0;
+    }
+
+    // Unconditional posterior predictive (always sample from scratch)
+    (spop_ms_pfs[i], spop_ms_right_censored[i]) = survival_time_rng(ms_log_cond_surv[i]);
+    spop_ms_pfs[i] += 1;
+
+    // Combined PFS: minimum of target and multistate events
+    sample_pfs[i] = min(sample_target_pfs[i], sample_ms_pfs[i]);
+    sample_right_censored[i] = sample_target_right_censored[i] && sample_ms_right_censored[i];
+
+    spop_pfs[i] = min(spop_target_pfs[i], spop_ms_pfs[i]);
+    spop_right_censored[i] = spop_target_right_censored[i] && spop_ms_right_censored[i];
+
+    // =========================================================================
+    // OS SIMULATION: Competing risks (0→1 vs 0→2) + post-progression death (1→2)
+    // =========================================================================
+
+    // --- Unconditional (spop) OS ---
+    {
+      int spop_time_01 = spop_pfs[i];
+      int spop_cens_01 = spop_right_censored[i];
+
+      int spop_time_02 = max_all_t + 1;
+      int spop_cens_02 = 1;
+      if (enable_ms_02) {
+        int t02_raw; int c02_raw;
+        (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[i]);
+        spop_time_02 = t02_raw + 1;
+        spop_cens_02 = c02_raw;
+      }
+
+      int spop_progressed_first = !spop_cens_01 && (spop_cens_02 || spop_time_01 <= spop_time_02);
+      int spop_died_directly = enable_ms_02 && !spop_cens_02 && (spop_cens_01 || spop_time_02 < spop_time_01);
+
+      if (spop_died_directly) {
+        spop_os[i] = spop_time_02;
+        spop_os_censored[i] = 0;
+      } else if (spop_progressed_first && enable_ms_12) {
+        row_vector[cols(log_cond_surv_12_t)] surv_12_t_i =
+          cols(log_cond_surv_12_t) > 0 ? log_cond_surv_12_t[i] : rep_row_vector(0, 0);
+        (spop_os[i], spop_os_censored[i]) = sample_post_progression_death_rng(
+          ms_time_scale_12, log_cond_surv_12_s[i], surv_12_t_i,
+          spop_time_01, 0);
+      } else {
+        spop_os[i] = max(spop_time_01, spop_time_02);
+        spop_os_censored[i] = 1;
+      }
+
+      if (enable_ms_02) {
+        if (spop_died_directly) {
+          spop_ms_pfs[i] = spop_time_02;
+          spop_ms_right_censored[i] = 0;
+        }
+        spop_pfs[i] = min(spop_target_pfs[i], spop_ms_pfs[i]);
+        spop_right_censored[i] = spop_target_right_censored[i] && spop_ms_right_censored[i];
+      }
+    }
+
+    // --- Conditional (sample) OS ---
+    {
+      int sample_time_01 = sample_pfs[i];
+      int sample_cens_01 = sample_right_censored[i];
+
+      int sample_time_02 = max_all_t + 1;
+      int sample_cens_02 = 1;
+      if (enable_ms_02) {
+        if (!ms_censored_02[i]) {
+          sample_time_02 = ms_time_02[i];
+          sample_cens_02 = 0;
+        } else {
+          int t02_raw; int c02_raw;
+          (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[i], pfs[i], 1, 0);
+          sample_time_02 = t02_raw + 1;
+          sample_cens_02 = c02_raw;
+        }
+      }
+
+      int sample_died_directly = enable_ms_02 && !sample_cens_02
+        && (!ms_censored_02[i] || sample_cens_01 || sample_time_02 < sample_time_01);
+      int sample_progressed_first = !sample_died_directly && !sample_cens_01
+        && (sample_cens_02 || sample_time_01 <= sample_time_02);
+
+      if (sample_died_directly) {
+        sample_os[i] = sample_time_02;
+        sample_os_censored[i] = 0;
+      } else if (sample_progressed_first && enable_ms_12) {
+        if (!ms_censored_12[i]) {
+          sample_os[i] = pfs[i] + ms_time_12[i];
+          sample_os_censored[i] = 0;
+        } else {
+          row_vector[cols(log_cond_surv_12_t)] surv_12_t_i =
+            cols(log_cond_surv_12_t) > 0 ? log_cond_surv_12_t[i] : rep_row_vector(0, 0);
+          (sample_os[i], sample_os_censored[i]) = sample_post_progression_death_rng(
+            ms_time_scale_12, log_cond_surv_12_s[i], surv_12_t_i,
+            pfs[i], ms_time_12[i]);
+        }
+      } else {
+        sample_os[i] = max(sample_time_01, sample_time_02);
+        sample_os_censored[i] = 1;
+      }
+
+      if (enable_ms_02) {
+        if (sample_died_directly) {
+          sample_pfs[i] = sample_time_02;
+          sample_right_censored[i] = 0;
+          sample_ms_pfs[i] = sample_time_02;
+          sample_ms_right_censored[i] = 0;
+        } else {
+          sample_pfs[i] = min(sample_target_pfs[i], sample_ms_pfs[i]);
+          sample_right_censored[i] = sample_target_right_censored[i] && sample_ms_right_censored[i];
+        }
+      }
+    }
+  }
+
+  return (
+    sample_target_pfs,
+    sample_target_right_censored,
+    spop_target_pfs,
+    spop_target_right_censored,
+    spop_target_obs_cens_pfs,
+    spop_target_obs_cens_right_censored,
+    sample_ms_pfs,
+    sample_ms_right_censored,
+    spop_ms_pfs,
+    spop_ms_right_censored,
+    sample_pfs,
+    sample_right_censored,
+    spop_pfs,
+    spop_right_censored,
+    sample_target_confirmed_response,
+    sample_target_unconfirmed_response,
+    spop_target_confirmed_response,
+    spop_target_unconfirmed_response,
+    forecast_target_pfs,
+    forecast_target_right_censored,
+    sample_os,
+    sample_os_censored,
+    spop_os,
+    spop_os_censored
+  );
+}
+
+
+/**
  * Aggregate patient-level endpoints to trial-level metrics
  * This function processes all trials at once, computing trial-level ORR, 
  * Kaplan-Meier curves, median PFS, and PFS at specific timepoints.

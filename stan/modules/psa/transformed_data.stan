@@ -51,3 +51,37 @@ vector[n_patients] baseline_obs_per_patient;
     baseline_obs_per_patient[i] = exp(log_baseline_psa[i]);
   }
 }
+
+// ============================================================================
+// GP TIME GRID
+// ============================================================================
+// Array of absolute time points used for GP modeling in the multistate module.
+array[max_all_t] real all_measure_t = linspaced_array(max_all_t, 1, max_all_t);
+
+// ============================================================================
+// PSA NORMALIZATION CONSTANTS FOR PROPORTIONAL HAZARDS
+// ============================================================================
+// Robust normalization statistics (median and IQR) from observed log(PSA)
+// Used by multistate module for time-varying covariates
+// Only computed from measured PSA values (psa_measured == 1 and non-zero)
+
+real median_log_psa_obs;
+real iqr_log_psa_obs;
+
+{
+  int n_positive = 0;
+  for (i in 1:sum(n_patient_visits)) {
+    if (psa_measured[i] && log_psa_values[i] != 0) n_positive += 1;
+  }
+  vector[n_positive] obs_log_psa;
+  int obs_idx = 1;
+  for (i in 1:sum(n_patient_visits)) {
+    if (psa_measured[i] && log_psa_values[i] != 0) {
+      obs_log_psa[obs_idx] = log_psa_values[i];
+      obs_idx += 1;
+    }
+  }
+  array[3] real quantiles_obs = quantile(obs_log_psa, {0.25, 0.5, 0.75});
+  median_log_psa_obs = quantiles_obs[2];
+  iqr_log_psa_obs = quantiles_obs[3] - quantiles_obs[1];
+}

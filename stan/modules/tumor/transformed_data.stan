@@ -27,8 +27,8 @@ vector[sum(n_patient_visits) - sum(n_patient_screening_visits)] post_treat_sld;
   }
 }
 
-// Array of measurement times used for GP modeling
-array[max_all_t] real all_tumor_measure_t = linspaced_array(max_all_t, 1, max_all_t);
+// Array of time points used for GP modeling in the multistate module
+array[max_all_t] real all_measure_t = linspaced_array(max_all_t, 1, max_all_t);
 
 // ============================================================================
 // BASELINE SLD AND NORMALIZATION
