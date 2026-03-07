@@ -1,7 +1,5 @@
 project:
-  title: "PIONEER: SCLC-01"
-  render:
-    - quarto/website/ 
+  title: "PIONEER"
 code-fold: true
 code-tools: true
 toc: true

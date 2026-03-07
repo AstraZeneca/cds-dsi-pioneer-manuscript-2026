@@ -5,9 +5,6 @@ array[n_patients + 1] int<lower = 1, upper = sum(n_patient_visits) + 1> patient_
 int max_all_t = max(max(t_patient_visits) + 1, extend_max_all_t); // Latest measurement time or extended time, whichever is greater
 int<lower = 0> max_t_width = max_all_t - min(t_patient_visits) + 1;
 
-print("max(t_patient_visits) = ", max(t_patient_visits));
-print("max_all_t = ", max_all_t);
-print("max_t_width = ", max_t_width);
 
 array[sum(n_patient_visits)] int<lower = 1> t_patient_visit_idx; // Index of each patient visit relative to the first visit for each patient 
 
@@ -17,19 +14,29 @@ for (i in 1:n_patients) {
   int curr_patient_visit_pos, curr_patient_visit_end;
   (curr_patient_visit_pos, curr_patient_visit_end) = get_pos(patient_visit_pos, i);
   
-  int first_visit = t_patient_visits[curr_patient_visit_pos];
-  
+  // Count screening visits first to locate the baseline.
   for (v in curr_patient_visit_pos:curr_patient_visit_end) {
-    t_patient_visit_idx[v] = t_patient_visits[v] - first_visit + 1;
-    
     if (t_patient_visits[v] <= 0) {
       n_patient_screening_visits[i] += 1;
     }
   }
-  
+
   if (n_patient_screening_visits[i] == 0) {
     fatal_error("Patient ", i, " has no pre-screening visits.");
   }
+
+  // Baseline = last screening visit (latest visit with week <= 0).
+  int baseline_visit_idx = curr_patient_visit_pos + n_patient_screening_visits[i] - 1;
+  int baseline_week = t_patient_visits[baseline_visit_idx];
+
+  // Anchor t_patient_visit_idx at the baseline so that t=1 corresponds to
+  // the baseline for all patients. Pre-screening visits get idx <= 0 but are
+  // clamped to 1 since they are never used in the likelihood.
+  for (v in curr_patient_visit_pos:curr_patient_visit_end) {
+    int raw_idx = t_patient_visits[v] - baseline_week + 1;
+    t_patient_visit_idx[v] = raw_idx > 0 ? raw_idx : 1;
+  }
+
 }
 
 // Time grid for full states computation: [1, 2, 3, ..., max_t_width]
