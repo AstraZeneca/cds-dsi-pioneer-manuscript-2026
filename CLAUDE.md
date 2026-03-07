@@ -177,18 +177,20 @@ Analysis results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<ru
 - **Targets store**: `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/_targets`
 - **Fit CSVs**: `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/fit`
 
-### Store Selection via TAR_BRANCH
+### Store Selection via TAR_RUN
 
-Analysis results are organized by data cut-off (DCO) using the `TAR_BRANCH` environment variable:
-- `export TAR_BRANCH=dco3` - January 26, 2026 DCO (current, includes pdl1_central)
-- `export TAR_BRANCH=dco2` - August 2025 DCO
-- `export TAR_BRANCH=dco1` - April 2025 DCO
+Analysis results are organized by run name using the `TAR_RUN` environment variable. The default is `"main"` (set in `.Rprofile`), which can be overridden by exporting `TAR_RUN` in the shell before calling R — the shell value takes precedence.
 
-Store path: `/mnt/data/analysis-results/<user>/sclc/<TAR_BRANCH>/_targets`
+Common run names:
+- `export TAR_RUN=dco3` - January 26, 2026 DCO (current, includes pdl1_central)
+- `export TAR_RUN=dco2` - August 2025 DCO
+- `export TAR_RUN=dco1` - April 2025 DCO
+
+Store path: `/mnt/data/analysis-results/<user>/sclc/<TAR_RUN>/_targets`
 
 **Example:**
 ```bash
-export TAR_BRANCH=dco3
+export TAR_RUN=dco3
 Rscript -e 'targets::tar_make(sclc_patient_data_jan26)'
 ```
 
@@ -260,8 +262,8 @@ Plots always use `btype == "ub"`. For PFS, `interval_censored` captures visit-ga
 - **NEVER use `tar_config_set(store = ...)`** - it changes global state and causes conflicts
 - Always use explicit `store` argument: `tar_read(name, store = "path/_targets")`
 - Same applies to all targets functions: `tar_meta()`, `tar_load()`, etc.
-- **IMPORTANT**: `TAR_BRANCH` environment variable does NOT work with `tar_make()` - always use explicit `store="/path/_targets"` argument
-- `_targets.yaml` sclc store uses `!expr` with `DOMINO_STARTING_USERNAME` and `TAR_BRANCH` — never hardcode username or branch in this file
+- **IMPORTANT**: `TAR_RUN` environment variable does NOT work with `tar_make()` - always use explicit `store="/path/_targets"` argument
+- `_targets.yaml` sclc store uses `!expr` with `DOMINO_STARTING_USERNAME` and `TAR_RUN` — never hardcode username or run name in this file
 - `tumor_ssls_draws_pop` selection: `time_invariant_coef_qr_*` and `time_varying_coef_*` params don't follow the `_pop` suffix — they need `matches("^(time_invariant|time_varying)_coef")` added to the `select_draws` call
 - **NEVER inline complex code in targets** - extract to helper functions in `r/` directory
   - Target commands should be simple function calls, not multi-line code blocks

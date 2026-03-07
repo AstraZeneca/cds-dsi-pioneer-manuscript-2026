@@ -29,6 +29,11 @@ conflicts_prefer(
 
 options(yaml.eval.expr = TRUE)
 
+# Set default TAR_RUN if not provided by the shell environment
+if (Sys.getenv("TAR_RUN") == "") {
+  Sys.setenv(TAR_RUN = "main")
+}
+
 # Set AZ colour scheme
 AZ_plum <- "#830051"
 AZ_gold <- "#F0AB00"

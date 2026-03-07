@@ -32,9 +32,9 @@ endometrial_to_lung_june_impute:
   as_job: yes
 sclc:
   script: targets/sclc_targets.R
-  store: !expr file.path(output_path, "sclc", Sys.getenv("TAR_BRANCH", "main"), "_targets")
+  store: !expr file.path(output_path, "sclc", Sys.getenv("TAR_RUN", "main"), "_targets")
   as_job: no
 pioneer:
   script: targets/pioneer_targets.R
-  store: !expr file.path(output_path, "pioneer", Sys.getenv("TAR_BRANCH", "main"), "_targets")
+  store: !expr file.path(output_path, "pioneer", Sys.getenv("TAR_RUN", "main"), "_targets")
   as_job: no
