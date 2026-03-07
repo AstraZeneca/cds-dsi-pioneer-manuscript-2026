@@ -7,7 +7,27 @@ subtitle: "Cumulative incidence functions for state 0 exits: progression, on-tri
 #| label: setup
 #| include: false
 
-source("_setup.R")
+library(targets)
+library(posterior)
+library(tidyverse)
+library(ggdist)
+library(patchwork)
+library(cmprsk)
+
+here::i_am("quarto/website/_setup.R")
+source(here::here("r", "util.R"))
+source(here::here("r", "plot_functions.R"))
+source(here::here("r", "table_functions.R"))
+source(here::here("r", "sclc", "plot_functions.R"))
+source(here::here("r", "sclc", "table_functions.R"))
+
+ggplot2::theme_set(
+  ggplot2::theme_minimal(base_family = "Arial") +
+  ggplot2::theme(
+    plot.margin = ggplot2::margin(5, 10, 20, 20, "pt"),
+    plot.caption = ggplot2::element_text(hjust = 0, margin = ggplot2::margin(15, 0, 0, 0, "pt"))
+  )
+)
 
 # Standalone multistate model store
 ms_store <- "/mnt/data/analysis-results/karim_naguib/sclc/ms-trial-intercept/_targets"
@@ -53,29 +73,13 @@ draws_cif <- tar_read(ms_standalone_draws_cif_posterior_ctdna_jan26, store = ms_
 plot_competing_risks_cif(stan_data, draws_cif)
 ```
 
-::: {.callout-warning}
-## Known Issue: 0->3 Over-Prediction in Standalone Model
-The standalone model systematically **over-predicts dropout (0->3)** and **under-predicts progression (0->1)**. This is visible as:
-
-- HISTORICAL: observed progression CIF ~67%, model ~38%. Observed dropout CIF ~28%, model ~55%.
-- The state 0 retention panel (bottom) shows the model retains too many patients in state 0 at intermediate times.
-
-This is a **competing risks interaction**, not a bug in the 0->3 hazard:
-
-1. Without SLD data, the 0->1 hazard is too diffuse (progression times spread too broadly)
-2. Simulated patients remain in state 0 longer than observed
-3. This gives the 0->3 hazard more time to accumulate events, inflating the dropout CIF
-
-The full model (with SLD tumor dynamics) constrains when deterministic progressors exit state 0, dramatically reducing this effect. See [issue #76](https://github.com/azu-oncology-rd/cds-dsi-pioneer-sclc-01-2025/issues/76) for detailed analysis.
-:::
-
 ## Prior Predictive Check {#sec-prior-predictive-cif}
 
-To assess whether the priors themselves drive the CIF miscalibration (per [Gabry et al. 2019](https://doi.org/10.1111/rssa.12378)), we compare the prior predictive CIF against the posterior predictive CIF and observed data. If the prior predictive CIF already shows inflated 0->3, the 0->1 prior is too diffuse for the standalone model.
+Following [Gabry et al. (2019)](https://doi.org/10.1111/rssa.12378), we compare the prior predictive CIF against the observed data to assess whether the priors encode a reasonable competing risks structure before seeing data.
 
 ```{r}
 #| label: fig-cif-prior
-#| fig-cap: "Prior predictive competing risks CIF. If this already shows inflated 0->3, the prior on the 0->1 hazard is too diffuse."
+#| fig-cap: "Prior predictive competing risks CIF vs observed Aalen-Johansen. The prior spreads probability roughly equally across all causes rather than concentrating on progression."
 #| fig-width: 10
 #| fig-height: 9
 #| column: body-outset
@@ -85,6 +89,13 @@ draws_cif_prior <- tar_read(ms_standalone_draws_cif_prior_ctdna_jan26, store = m
 
 plot_competing_risks_cif(stan_data_prior, draws_cif_prior)
 ```
+
+The prior predictive reveals a different miscalibration pattern than the posterior:
+
+- **0→2 on-trial death** is massively over-predicted (~25--30% vs observed ~0--5%), while 0→3 dropout is roughly in the right range.
+- **0→1 progression** is under-predicted (~35--40% vs observed ~65--75%), consistent with the prior not encoding that progression is the dominant competing risk.
+
+Comparing this to the posterior (@sec-standalone-cif), the data *corrects* the 0→2 over-prediction but redistributes that probability to 0→3 dropout rather than 0→1 progression. This confirms the miscalibration is not purely prior-driven --- the data is doing work, but the standalone model (without SLD tumor dynamics) lacks the information to route events correctly to 0→1.
 
 ::: {.related-pages}
 ## Related Pages
