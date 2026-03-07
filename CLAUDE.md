@@ -244,6 +244,7 @@ Plots always use `btype == "ub"`. For PFS, `interval_censored` captures visit-ga
 - Prefer `purrr` and `dplyr` over base R loops
 - Use `testthat` for unit tests
 - **NEVER hardcode subject IDs** (usubjid, patient_id, etc.) - always use dynamic selection or filtering
+- **NO hardcoded subject IDs in GitHub issues** — describe the problem (e.g., "5 patients have NA pfs") without listing specific IDs. Add diagnostic R code as a comment on the issue instead.
 
 ### Targets
 - **NEVER use `tar_config_set(store = ...)`** - it changes global state and causes conflicts
