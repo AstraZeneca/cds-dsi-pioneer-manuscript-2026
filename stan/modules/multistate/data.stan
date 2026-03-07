@@ -45,6 +45,12 @@ int<lower=1> ms_max_sojourn_t;
 // Max sojourn time grid for 3→2 (only needed if enable_ms_32=1)
 int<lower=1> ms_max_sojourn_t_32;
 
+// --- GP Knot Grid Resolution ---
+// Number of weeks per GP knot (1 = weekly, 4 = 4-weekly, etc.)
+// Coarser grids dramatically reduce Cholesky cost (n_knots^3).
+// Recommended: 4 (48 knots from 191 weeks) for good performance.
+int<lower=1> ms_gp_grid_step;
+
 // --- Covariate Dimensions ---
 int<lower=0> n_time_varying_covar;    // Number of time-varying covariates
 int<lower=0> n_time_invariant_covar;  // Number of time-invariant covariates

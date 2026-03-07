@@ -30,18 +30,22 @@ ms_init_values_fixed <- function(env) {
     n_gp_groups_ms_baseline_12_s <- if (need_12_s_gp) n_gp_groups_ms_baseline else 0L
     n_gp_groups_ms_baseline_12_t <- if (need_12_t_gp) n_gp_groups_ms_baseline else 0L
 
+    # GP knot counts (matches Stan transformed_data ceiling division)
+    n_ms_gp_cal_knots     <- ceiling(max_all_t / ms_gp_grid_step)
+    n_ms_gp_sojourn_knots <- ceiling(ms_max_sojourn_t / ms_gp_grid_step)
+
     tibble::lst(
       # --- 0→1 Transition ---
       log_lambda_gp_01_pop_intercept = if (enable_ms_01) array(-4.5, dim = 1),
       log_lambda_gp_01_pop_alpha = if (enable_ms_01) array(1.0, dim = 1),
       log_lambda_gp_01_pop_rho = if (enable_ms_01) array(1.4, dim = 1),
-      log_lambda_gp_01_pop_eta = if (enable_ms_01) rnorm(max_all_t, sd = 0.1),
+      log_lambda_gp_01_pop_eta = if (enable_ms_01) rnorm(n_ms_gp_cal_knots, sd = 0.1),
       log_lambda_gp_01_level_alpha = rep(1.0, n_levels),
       log_lambda_gp_01_level_rho = rep(1.4, n_levels),
       log_lambda_gp_01_level_intercept_sd = rep(0.1, n_levels),
       log_lambda_gp_01_level_eta = if (enable_ms_01 && n_gp_groups_ms_baseline_01 > 0) {
-        matrix(rnorm(n_gp_groups_ms_baseline_01 * max_all_t, sd = 0.1),
-               nrow = n_gp_groups_ms_baseline_01, ncol = max_all_t)
+        matrix(rnorm(n_gp_groups_ms_baseline_01 * n_ms_gp_cal_knots, sd = 0.1),
+               nrow = n_gp_groups_ms_baseline_01, ncol = n_ms_gp_cal_knots)
       },
       raw_log_lambda_gp_01_level_intercept = if (n_enabled_groups_ms_baseline_01 > 0) rep(0, n_enabled_groups_ms_baseline_01),
 
@@ -49,13 +53,13 @@ ms_init_values_fixed <- function(env) {
       log_lambda_gp_02_pop_intercept = if (enable_ms_02) array(-4.5, dim = 1),
       log_lambda_gp_02_pop_alpha = if (enable_ms_02) array(1.0, dim = 1),
       log_lambda_gp_02_pop_rho = if (enable_ms_02) array(1.4, dim = 1),
-      log_lambda_gp_02_pop_eta = if (enable_ms_02) rnorm(max_all_t, sd = 0.1),
+      log_lambda_gp_02_pop_eta = if (enable_ms_02) rnorm(n_ms_gp_cal_knots, sd = 0.1),
       log_lambda_gp_02_level_alpha = if (enable_ms_02) rep(1.0, n_levels) else numeric(0),
       log_lambda_gp_02_level_rho = if (enable_ms_02) rep(1.4, n_levels) else numeric(0),
       log_lambda_gp_02_level_intercept_sd = if (enable_ms_02) rep(0.1, n_levels) else numeric(0),
       log_lambda_gp_02_level_eta = if (enable_ms_02 && n_gp_groups_ms_baseline_02 > 0) {
-        matrix(rnorm(n_gp_groups_ms_baseline_02 * max_all_t, sd = 0.1),
-               nrow = n_gp_groups_ms_baseline_02, ncol = max_all_t)
+        matrix(rnorm(n_gp_groups_ms_baseline_02 * n_ms_gp_cal_knots, sd = 0.1),
+               nrow = n_gp_groups_ms_baseline_02, ncol = n_ms_gp_cal_knots)
       },
       raw_log_lambda_gp_02_level_intercept = if (n_enabled_groups_ms_baseline_02 > 0) rep(0, n_enabled_groups_ms_baseline_02),
 
@@ -63,13 +67,13 @@ ms_init_values_fixed <- function(env) {
       log_lambda_gp_12_s_pop_intercept = if (need_12_s_gp) array(-4.5, dim = 1),
       log_lambda_gp_12_s_pop_alpha = if (need_12_s_gp) array(1.0, dim = 1),
       log_lambda_gp_12_s_pop_rho = if (need_12_s_gp) array(1.4, dim = 1),
-      log_lambda_gp_12_s_pop_eta = if (need_12_s_gp) rnorm(ms_max_sojourn_t, sd = 0.1),
+      log_lambda_gp_12_s_pop_eta = if (need_12_s_gp) rnorm(n_ms_gp_sojourn_knots, sd = 0.1),
       log_lambda_gp_12_s_level_alpha = if (need_12_s_gp) rep(1.0, n_levels) else numeric(0),
       log_lambda_gp_12_s_level_rho = if (need_12_s_gp) rep(1.4, n_levels) else numeric(0),
       log_lambda_gp_12_s_level_intercept_sd = if (need_12_s_gp) rep(0.1, n_levels) else numeric(0),
       log_lambda_gp_12_s_level_eta = if (need_12_s_gp && n_gp_groups_ms_baseline_12_s > 0) {
-        matrix(rnorm(n_gp_groups_ms_baseline_12_s * ms_max_sojourn_t, sd = 0.1),
-               nrow = n_gp_groups_ms_baseline_12_s, ncol = ms_max_sojourn_t)
+        matrix(rnorm(n_gp_groups_ms_baseline_12_s * n_ms_gp_sojourn_knots, sd = 0.1),
+               nrow = n_gp_groups_ms_baseline_12_s, ncol = n_ms_gp_sojourn_knots)
       },
       raw_log_lambda_gp_12_s_level_intercept = if (n_enabled_groups_ms_baseline_12_s > 0) rep(0, n_enabled_groups_ms_baseline_12_s),
 
@@ -77,13 +81,13 @@ ms_init_values_fixed <- function(env) {
       log_lambda_gp_12_t_pop_intercept = if (need_12_t_gp) array(-4.5, dim = 1),
       log_lambda_gp_12_t_pop_alpha = if (need_12_t_gp) array(1.0, dim = 1),
       log_lambda_gp_12_t_pop_rho = if (need_12_t_gp) array(1.4, dim = 1),
-      log_lambda_gp_12_t_pop_eta = if (need_12_t_gp) rnorm(max_all_t, sd = 0.1),
+      log_lambda_gp_12_t_pop_eta = if (need_12_t_gp) rnorm(n_ms_gp_cal_knots, sd = 0.1),
       log_lambda_gp_12_t_level_alpha = if (need_12_t_gp) rep(1.0, n_levels) else numeric(0),
       log_lambda_gp_12_t_level_rho = if (need_12_t_gp) rep(1.4, n_levels) else numeric(0),
       log_lambda_gp_12_t_level_intercept_sd = if (need_12_t_gp) rep(0.1, n_levels) else numeric(0),
       log_lambda_gp_12_t_level_eta = if (need_12_t_gp && n_gp_groups_ms_baseline_12_t > 0) {
-        matrix(rnorm(n_gp_groups_ms_baseline_12_t * max_all_t, sd = 0.1),
-               nrow = n_gp_groups_ms_baseline_12_t, ncol = max_all_t)
+        matrix(rnorm(n_gp_groups_ms_baseline_12_t * n_ms_gp_cal_knots, sd = 0.1),
+               nrow = n_gp_groups_ms_baseline_12_t, ncol = n_ms_gp_cal_knots)
       },
       raw_log_lambda_gp_12_t_level_intercept = if (n_enabled_groups_ms_baseline_12_t > 0) rep(0, n_enabled_groups_ms_baseline_12_t),
 
