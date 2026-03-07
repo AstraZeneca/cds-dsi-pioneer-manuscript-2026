@@ -450,6 +450,11 @@ create_tumor_ssls_initializer <- function(stan_data) {
       n_gp_groups_ms_baseline_03 <- if (enable_ms_03) n_gp_groups_ms_baseline else 0L
       n_gp_groups_ms_baseline_32 <- if (enable_ms_32) n_gp_groups_ms_baseline else 0L
 
+      # GP knot counts (matches Stan transformed_data ceiling division)
+      n_ms_gp_cal_knots       <- ceiling(max_all_t / ms_gp_grid_step)
+      n_ms_gp_sojourn_knots   <- ceiling(ms_max_sojourn_t / ms_gp_grid_step)
+      n_ms_gp_sojourn_32_knots <- ceiling(ms_max_sojourn_t_32 / ms_gp_grid_step)
+
       # Covariate slope enabled groups (shared across transitions)
       n_enabled_groups_ms_slope <- sum(n_groups_per_level[enable_ms_level_cov == 1])
 
@@ -588,12 +593,12 @@ create_tumor_ssls_initializer <- function(stan_data) {
         log_lambda_gp_01_pop_rho = if (enable_ms_01) {
           array(invgamma::rinvgamma(1, log_lambda_gp_01_pop_rho_alpha, log_lambda_gp_01_pop_rho_beta), dim = 1)
         },
-        log_lambda_gp_01_pop_eta = if (enable_ms_01) rnorm(max_all_t),
+        log_lambda_gp_01_pop_eta = if (enable_ms_01) rnorm(n_ms_gp_cal_knots),
         log_lambda_gp_01_level_alpha = if (enable_ms_01) rep(1.0, n_levels) else numeric(0),
         log_lambda_gp_01_level_rho = if (enable_ms_01) invgamma::rinvgamma(n_levels, log_lambda_gp_01_level_rho_alpha, log_lambda_gp_01_level_rho_beta) else numeric(0),
         log_lambda_gp_01_level_intercept_sd = if (enable_ms_01) abs(rnorm(n_levels, sd = log_lambda_gp_01_level_intercept_sd_sd)) else numeric(0),
         log_lambda_gp_01_level_eta = if (enable_ms_01 && n_gp_groups_ms_baseline_01 > 0) {
-          matrix(rnorm(n_gp_groups_ms_baseline_01 * max_all_t), nrow = n_gp_groups_ms_baseline_01, ncol = max_all_t)
+          matrix(rnorm(n_gp_groups_ms_baseline_01 * n_ms_gp_cal_knots), nrow = n_gp_groups_ms_baseline_01, ncol = n_ms_gp_cal_knots)
         },
         raw_log_lambda_gp_01_level_intercept = if (n_enabled_groups_ms_baseline_01 > 0) {
           rnorm(n_enabled_groups_ms_baseline_01)
@@ -607,13 +612,13 @@ create_tumor_ssls_initializer <- function(stan_data) {
         log_lambda_gp_02_pop_rho = if (enable_ms_02) {
           array(invgamma::rinvgamma(1, log_lambda_gp_02_pop_rho_alpha, log_lambda_gp_02_pop_rho_beta), dim = 1)
         },
-        log_lambda_gp_02_pop_eta = if (enable_ms_02) rnorm(max_all_t),
+        log_lambda_gp_02_pop_eta = if (enable_ms_02) rnorm(n_ms_gp_cal_knots),
         # Level hierarchy for 0→2 (conditional on enable_ms_02)
         log_lambda_gp_02_level_alpha = if (enable_ms_02) rep(1.0, n_levels) else numeric(0),
         log_lambda_gp_02_level_rho = if (enable_ms_02) invgamma::rinvgamma(n_levels, log_lambda_gp_02_level_rho_alpha, log_lambda_gp_02_level_rho_beta) else numeric(0),
         log_lambda_gp_02_level_intercept_sd = if (enable_ms_02) abs(rnorm(n_levels, sd = log_lambda_gp_02_level_intercept_sd_sd)) else numeric(0),
         log_lambda_gp_02_level_eta = if (enable_ms_02 && n_gp_groups_ms_baseline_02 > 0) {
-          matrix(rnorm(n_gp_groups_ms_baseline_02 * max_all_t), nrow = n_gp_groups_ms_baseline_02, ncol = max_all_t)
+          matrix(rnorm(n_gp_groups_ms_baseline_02 * n_ms_gp_cal_knots), nrow = n_gp_groups_ms_baseline_02, ncol = n_ms_gp_cal_knots)
         },
         raw_log_lambda_gp_02_level_intercept = if (n_enabled_groups_ms_baseline_02 > 0) {
           rnorm(n_enabled_groups_ms_baseline_02)
@@ -627,13 +632,13 @@ create_tumor_ssls_initializer <- function(stan_data) {
         log_lambda_gp_12_s_pop_rho = if (need_12_s_gp) {
           array(invgamma::rinvgamma(1, log_lambda_gp_12_s_pop_rho_alpha, log_lambda_gp_12_s_pop_rho_beta), dim = 1)
         },
-        log_lambda_gp_12_s_pop_eta = if (need_12_s_gp) rnorm(ms_max_sojourn_t),
+        log_lambda_gp_12_s_pop_eta = if (need_12_s_gp) rnorm(n_ms_gp_sojourn_knots),
         # Level hierarchy for 1→2 sojourn (conditional on need_12_s_gp)
         log_lambda_gp_12_s_level_alpha = if (need_12_s_gp) rep(1.0, n_levels) else numeric(0),
         log_lambda_gp_12_s_level_rho = if (need_12_s_gp) invgamma::rinvgamma(n_levels, log_lambda_gp_12_s_level_rho_alpha, log_lambda_gp_12_s_level_rho_beta) else numeric(0),
         log_lambda_gp_12_s_level_intercept_sd = if (need_12_s_gp) abs(rnorm(n_levels, sd = log_lambda_gp_12_s_level_intercept_sd_sd)) else numeric(0),
         log_lambda_gp_12_s_level_eta = if (need_12_s_gp && n_gp_groups_ms_baseline_12_s > 0) {
-          matrix(rnorm(n_gp_groups_ms_baseline_12_s * ms_max_sojourn_t), nrow = n_gp_groups_ms_baseline_12_s, ncol = ms_max_sojourn_t)
+          matrix(rnorm(n_gp_groups_ms_baseline_12_s * n_ms_gp_sojourn_knots), nrow = n_gp_groups_ms_baseline_12_s, ncol = n_ms_gp_sojourn_knots)
         },
         raw_log_lambda_gp_12_s_level_intercept = if (n_enabled_groups_ms_baseline_12_s > 0) {
           rnorm(n_enabled_groups_ms_baseline_12_s)
@@ -647,13 +652,13 @@ create_tumor_ssls_initializer <- function(stan_data) {
         log_lambda_gp_12_t_pop_rho = if (need_12_t_gp) {
           array(invgamma::rinvgamma(1, log_lambda_gp_12_t_pop_rho_alpha, log_lambda_gp_12_t_pop_rho_beta), dim = 1)
         },
-        log_lambda_gp_12_t_pop_eta = if (need_12_t_gp) rnorm(max_all_t),
+        log_lambda_gp_12_t_pop_eta = if (need_12_t_gp) rnorm(n_ms_gp_cal_knots),
         # Level hierarchy for 1→2 clock-forward (conditional on need_12_t_gp)
         log_lambda_gp_12_t_level_alpha = if (need_12_t_gp) rep(1.0, n_levels) else numeric(0),
         log_lambda_gp_12_t_level_rho = if (need_12_t_gp) invgamma::rinvgamma(n_levels, log_lambda_gp_12_t_level_rho_alpha, log_lambda_gp_12_t_level_rho_beta) else numeric(0),
         log_lambda_gp_12_t_level_intercept_sd = if (need_12_t_gp) abs(rnorm(n_levels, sd = log_lambda_gp_12_t_level_intercept_sd_sd)) else numeric(0),
         log_lambda_gp_12_t_level_eta = if (need_12_t_gp && n_gp_groups_ms_baseline_12_t > 0) {
-          matrix(rnorm(n_gp_groups_ms_baseline_12_t * max_all_t), nrow = n_gp_groups_ms_baseline_12_t, ncol = max_all_t)
+          matrix(rnorm(n_gp_groups_ms_baseline_12_t * n_ms_gp_cal_knots), nrow = n_gp_groups_ms_baseline_12_t, ncol = n_ms_gp_cal_knots)
         },
         raw_log_lambda_gp_12_t_level_intercept = if (n_enabled_groups_ms_baseline_12_t > 0) {
           rnorm(n_enabled_groups_ms_baseline_12_t)
@@ -667,7 +672,7 @@ create_tumor_ssls_initializer <- function(stan_data) {
         log_lambda_gp_03_pop_rho = if (enable_ms_03) {
           array(invgamma::rinvgamma(1, log_lambda_gp_03_pop_rho_alpha, log_lambda_gp_03_pop_rho_beta), dim = 1)
         },
-        log_lambda_gp_03_pop_eta = if (enable_ms_03) rnorm(max_all_t),
+        log_lambda_gp_03_pop_eta = if (enable_ms_03) rnorm(n_ms_gp_cal_knots),
         log_lambda_gp_03_level_alpha = if (enable_ms_03) rep(1.0, n_levels) else numeric(0),
         log_lambda_gp_03_level_rho = if (enable_ms_03) {
           invgamma::rinvgamma(n_levels, log_lambda_gp_03_level_rho_alpha, log_lambda_gp_03_level_rho_beta)
@@ -676,8 +681,8 @@ create_tumor_ssls_initializer <- function(stan_data) {
           abs(rnorm(n_levels, sd = log_lambda_gp_03_level_intercept_sd_sd))
         } else numeric(0),
         log_lambda_gp_03_level_eta = if (enable_ms_03 && n_gp_groups_ms_baseline_03 > 0) {
-          matrix(rnorm(n_gp_groups_ms_baseline_03 * max_all_t),
-                 nrow = n_gp_groups_ms_baseline_03, ncol = max_all_t)
+          matrix(rnorm(n_gp_groups_ms_baseline_03 * n_ms_gp_cal_knots),
+                 nrow = n_gp_groups_ms_baseline_03, ncol = n_ms_gp_cal_knots)
         },
         raw_log_lambda_gp_03_level_intercept = if (n_enabled_groups_ms_baseline_03 > 0) {
           rnorm(n_enabled_groups_ms_baseline_03)
@@ -691,7 +696,7 @@ create_tumor_ssls_initializer <- function(stan_data) {
         log_lambda_gp_32_s_pop_rho = if (enable_ms_32) {
           array(invgamma::rinvgamma(1, log_lambda_gp_32_s_pop_rho_alpha, log_lambda_gp_32_s_pop_rho_beta), dim = 1)
         },
-        log_lambda_gp_32_s_pop_eta = if (enable_ms_32) rnorm(ms_max_sojourn_t_32),
+        log_lambda_gp_32_s_pop_eta = if (enable_ms_32) rnorm(n_ms_gp_sojourn_32_knots),
         log_lambda_gp_32_s_level_alpha = if (enable_ms_32) rep(1.0, n_levels) else numeric(0),
         log_lambda_gp_32_s_level_rho = if (enable_ms_32) {
           invgamma::rinvgamma(n_levels, log_lambda_gp_32_s_level_rho_alpha, log_lambda_gp_32_s_level_rho_beta)
@@ -700,7 +705,7 @@ create_tumor_ssls_initializer <- function(stan_data) {
           abs(rnorm(n_levels, sd = log_lambda_gp_32_s_level_intercept_sd_sd))
         } else numeric(0),
         log_lambda_gp_32_s_level_eta = if (enable_ms_32 && n_gp_groups_ms_baseline_32 > 0) {
-          matrix(rnorm(n_gp_groups_ms_baseline_32 * ms_max_sojourn_t_32), nrow = n_gp_groups_ms_baseline_32, ncol = ms_max_sojourn_t_32)
+          matrix(rnorm(n_gp_groups_ms_baseline_32 * n_ms_gp_sojourn_32_knots), nrow = n_gp_groups_ms_baseline_32, ncol = n_ms_gp_sojourn_32_knots)
         },
         raw_log_lambda_gp_32_s_level_intercept = if (n_enabled_groups_ms_baseline_32 > 0) {
           rnorm(n_enabled_groups_ms_baseline_32)

@@ -94,6 +94,50 @@ array[n_levels + 1] int enabled_level_pos_ms_slope = create_enabled_pos(
   n_groups_per_level, enable_ms_level_cov
 );
 
+// --- GP Coarse Knot Grids ---
+// Knot counts per time domain
+int n_ms_gp_cal_knots      = (max_all_t          + ms_gp_grid_step - 1) %/% ms_gp_grid_step;
+int n_ms_gp_sojourn_knots  = (ms_max_sojourn_t   + ms_gp_grid_step - 1) %/% ms_gp_grid_step;
+int n_ms_gp_sojourn_32_knots = (ms_max_sojourn_t_32 + ms_gp_grid_step - 1) %/% ms_gp_grid_step;
+
+// Knot positions (real-valued, at j * ms_gp_grid_step for j=1..n_knots)
+array[n_ms_gp_cal_knots] real ms_gp_cal_t;
+for (j in 1:n_ms_gp_cal_knots)
+  ms_gp_cal_t[j] = j * ms_gp_grid_step * 1.0;
+
+array[n_ms_gp_sojourn_knots] real ms_gp_sojourn_t;
+for (j in 1:n_ms_gp_sojourn_knots)
+  ms_gp_sojourn_t[j] = j * ms_gp_grid_step * 1.0;
+
+array[n_ms_gp_sojourn_32_knots] real ms_gp_sojourn_32_t;
+for (j in 1:n_ms_gp_sojourn_32_knots)
+  ms_gp_sojourn_32_t[j] = j * ms_gp_grid_step * 1.0;
+
+// Week-to-nearest-knot mappings
+array[max_all_t] int knot_of_cal;
+for (t in 1:max_all_t) {
+  int idx = (t + ms_gp_grid_step %/% 2) %/% ms_gp_grid_step;
+  if (idx < 1) idx = 1;
+  if (idx > n_ms_gp_cal_knots) idx = n_ms_gp_cal_knots;
+  knot_of_cal[t] = idx;
+}
+
+array[ms_max_sojourn_t] int knot_of_sojourn;
+for (t in 1:ms_max_sojourn_t) {
+  int idx = (t + ms_gp_grid_step %/% 2) %/% ms_gp_grid_step;
+  if (idx < 1) idx = 1;
+  if (idx > n_ms_gp_sojourn_knots) idx = n_ms_gp_sojourn_knots;
+  knot_of_sojourn[t] = idx;
+}
+
+array[ms_max_sojourn_t_32] int knot_of_sojourn_32;
+for (t in 1:ms_max_sojourn_t_32) {
+  int idx = (t + ms_gp_grid_step %/% 2) %/% ms_gp_grid_step;
+  if (idx < 1) idx = 1;
+  if (idx > n_ms_gp_sojourn_32_knots) idx = n_ms_gp_sojourn_32_knots;
+  knot_of_sojourn_32[t] = idx;
+}
+
 // --- Pre-computed Flat Indices for Patient Lookups ---
 // Baseline hazard level indices
 array[n_patients, n_levels] int patient_ms_baseline_flat_idx;
