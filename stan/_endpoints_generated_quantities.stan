@@ -321,4 +321,14 @@ profile("gen_quant") {
     );
 }
 
+// For the CIF: use the combined PFS (spop_pfs = min(spop_target_pfs, spop_ms_pfs))
+// rather than the multistate-hazard-only component. In the full joint model,
+// SF-driven progressions (target PFS) and hazard-driven progressions compete; the
+// CIF must reflect all state-0 exits. spop_pfs and spop_right_censored already
+// encode the correct joint outcome.
+for (i in 1:n_patients) {
+  spop_ms_pfs[i] = spop_pfs[i];
+  spop_ms_right_censored[i] = spop_right_censored[i];
+}
+
 #include "modules/multistate/generated_quantities.stan"
