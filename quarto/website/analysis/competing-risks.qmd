@@ -29,53 +29,73 @@ ggplot2::theme_set(
   )
 )
 
-# Standalone multistate model store
-ms_store <- "/mnt/data/analysis-results/karim_naguib/sclc/ms-trial-intercept/_targets"
+full_store <- "/mnt/data/analysis-results/karim_naguib/sclc/ms-trial-intercept-full/_targets"
+ms_store   <- "/mnt/data/analysis-results/karim_naguib/sclc/ms-trial-intercept/_targets"
 ```
 
 This page validates the **4-state multistate model's** allocation of patients across competing exit routes from state 0 (on-treatment, pre-progression). From state 0, a patient can:
 
-- **0->1 Progression**: Tumor progression detected via RECIST
-- **0->2 On-trial death**: Death without prior progression while on trial
-- **0->3 Dropout**: Treatment discontinuation without progression or on-trial death
+- **0→1 Progression**: Tumor progression detected via RECIST
+- **0→2 On-trial death**: Death without prior progression while on trial
+- **0→3 Dropout**: Treatment discontinuation without progression or on-trial death
 
-The cumulative incidence function (CIF) measures the probability of each cause by time $t$, accounting for the fact that causes compete --- a patient who progresses can no longer drop out, and vice versa.
+The cumulative incidence function (CIF) measures the probability of each cause by time $t$, accounting for the fact that causes compete — a patient who progresses can no longer drop out, and vice versa.
 
 ::: {.callout-note}
 ## CIF vs KM
 Unlike the Kaplan-Meier estimator (which estimates the marginal survival function), the CIF accounts for competing risks and always sums to at most 1 across all causes. The observed CIF is computed using the Aalen-Johansen estimator.
 :::
 
-## Standalone Multistate Model {#sec-standalone-cif}
+## Full Model {#sec-full-model-cif}
 
-The standalone multistate model estimates transition hazards **without SLD tumor dynamics** --- all transitions are driven purely by baseline hazards and covariates. This provides a useful diagnostic: how well can the multistate component alone reproduce the observed competing risks structure?
+The full SCLC-01 model jointly estimates SLD tumor dynamics and multistate transition hazards. The CIF below reflects the complete posterior: transition hazards are informed by both the observed event times and the mechanistic SLD trajectories.
 
 ### Event Counts
 
 ```{r}
-#| label: tbl-event-counts-standalone
-#| tbl-cap: "Observed competing risks event counts from state 0 (standalone model data)."
+#| label: tbl-event-counts-full
+#| tbl-cap: "Observed competing risks event counts from state 0 (full model data)."
 
-stan_data <- tar_read(ms_standalone_stan_data_posterior_ctdna_jan26, store = ms_store)
-competing_risks_event_table(stan_data)
+stan_data_full <- tar_read(tumor_ssls_stan_data_posterior_ctdna_jan26, store = full_store)
+competing_risks_event_table(stan_data_full)
 ```
 
 ### CIF Validation
 
 ```{r}
-#| label: fig-cif-standalone
-#| fig-cap: "Competing risks CIF: standalone multistate model (posterior predictive) vs observed Aalen-Johansen. Top panel shows per-cause CIF; bottom panel shows proportion of patients still in state 0."
+#| label: fig-cif-full
+#| fig-cap: "Competing risks CIF: full model posterior predictive vs observed Aalen-Johansen. Top panel shows per-cause CIF; bottom panel shows proportion of patients still in state 0."
 #| fig-width: 10
 #| fig-height: 9
 #| column: body-outset
 
-draws_cif <- tar_read(ms_standalone_draws_cif_posterior_ctdna_jan26, store = ms_store)
-plot_competing_risks_cif(stan_data, draws_cif)
+draws_cif_full <- tar_read(tumor_ssls_draws_cif_posterior_ctdna_jan26, store = full_store)
+# Full model uses extend_max_all_t for the GQ forecast grid; max_all_t is unused
+stan_data_full$max_all_t <- stan_data_full$extend_max_all_t
+plot_competing_risks_cif(stan_data_full, draws_cif_full)
+```
+
+## Standalone Multistate Model {#sec-standalone-cif}
+
+The standalone multistate model estimates transition hazards **without SLD tumor dynamics** — all transitions are driven purely by baseline hazards and covariates. Comparing this to @sec-full-model-cif reveals how much the mechanistic SLD component contributes to the competing risks calibration.
+
+### CIF Validation
+
+```{r}
+#| label: fig-cif-standalone
+#| fig-cap: "Competing risks CIF: standalone multistate model (posterior predictive) vs observed Aalen-Johansen."
+#| fig-width: 10
+#| fig-height: 9
+#| column: body-outset
+
+stan_data_ms <- tar_read(ms_standalone_stan_data_posterior_ctdna_jan26, store = ms_store)
+draws_cif_ms <- tar_read(ms_standalone_draws_cif_posterior_ctdna_jan26, store = ms_store)
+plot_competing_risks_cif(stan_data_ms, draws_cif_ms)
 ```
 
 ## Prior Predictive Check {#sec-prior-predictive-cif}
 
-Following [Gabry et al. (2019)](https://doi.org/10.1111/rssa.12378), we compare the prior predictive CIF against the observed data to assess whether the priors encode a reasonable competing risks structure before seeing data.
+Following [Gabry et al. (2019)](https://doi.org/10.1111/rssa.12378), we compare the standalone prior predictive CIF against the observed data to assess whether the priors encode a reasonable competing risks structure before seeing data.
 
 ```{r}
 #| label: fig-cif-prior
@@ -90,12 +110,7 @@ draws_cif_prior <- tar_read(ms_standalone_draws_cif_prior_ctdna_jan26, store = m
 plot_competing_risks_cif(stan_data_prior, draws_cif_prior)
 ```
 
-The prior predictive reveals a different miscalibration pattern than the posterior:
-
-- **0→2 on-trial death** is massively over-predicted (~25--30% vs observed ~0--5%), while 0→3 dropout is roughly in the right range.
-- **0→1 progression** is under-predicted (~35--40% vs observed ~65--75%), consistent with the prior not encoding that progression is the dominant competing risk.
-
-Comparing this to the posterior (@sec-standalone-cif), the data *corrects* the 0→2 over-prediction but redistributes that probability to 0→3 dropout rather than 0→1 progression. This confirms the miscalibration is not purely prior-driven --- the data is doing work, but the standalone model (without SLD tumor dynamics) lacks the information to route events correctly to 0→1.
+The prior predictive reveals the prior spreads probability roughly equally across all causes rather than concentrating on progression, with 0→2 on-trial death massively over-predicted (~25--30% vs observed ~0--5%). The data corrects this, confirming the priors are diffuse but not pathological.
 
 ::: {.related-pages}
 ## Related Pages
