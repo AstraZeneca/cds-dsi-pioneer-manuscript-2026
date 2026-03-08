@@ -96,6 +96,7 @@ init_project <- function(output_path = output_path, artifacts_path = artifacts_p
   source(here("r", "priors.R"))
   source(here("r", "posterior.R"))
   source(here("r", "prepare_analysis_data.R"))
+  source(here("r", "initializers_ms.R"))
   source(here("r", "initializers.R"))
   source(here("r", "accuracy.R"))
   source(here("r", "state_space.R"))
@@ -105,6 +106,7 @@ init_project <- function(output_path = output_path, artifacts_path = artifacts_p
   source(here("r", "sclc", "priors.R"))
   source(here("r", "sclc", "prepare_analysis_data.R"))
   source(here("r", "sclc", "accuracy.R"))
+  source(here("r", "sclc", "initializers.R"))
   source(here("r", "sclc", "plot_functions.R"))
 
   source(here("r", "targets_tidyselect.R"))
