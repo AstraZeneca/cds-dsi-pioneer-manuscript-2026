@@ -268,14 +268,8 @@ compute_cif_from_draws <- function(fit, stan_data) {
     })
   }) |> purrr::list_cbind()
 
-  # chain_ids/iteration_ids return unique values, not per-draw vectors — expand manually
-  n_chains_val <- length(posterior::chain_ids(d_mat))
-  n_iters_val  <- length(posterior::iteration_ids(d_mat))
-  meta <- tibble::tibble(
-    .chain     = rep(seq_len(n_chains_val), each = n_iters_val),
-    .iteration = rep(seq_len(n_iters_val), times = n_chains_val),
-    .draw      = seq_len(n_draws)
-  )
+  meta <- posterior::as_draws_df(d_mat[, 1L, drop = FALSE]) |>
+    dplyr::select(.chain, .iteration, .draw)
 
   dplyr::bind_cols(meta, cif_cols) |> posterior::as_draws_df()
 }
