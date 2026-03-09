@@ -136,6 +136,144 @@ generate_quantities_from_fit <- function(
   )
 }
 
+#' Compute CIF draws from existing fit CSVs by applying the state-3 correction in R
+#'
+#' TEMPORARY workaround: the full model GQ has an expensive patient-state generation
+#' step that makes `generate_quantities_from_fit()` unreliable (37+ min/target, chain
+#' crashes). Instead, we read the pre-computed per-patient endpoint arrays directly
+#' from the fit CSVs and recompute only the CIF in R.
+#'
+#' The only correction needed is: for state-3 patients where T_SF < T_dropout
+#' (case 2), flip `spop_ms_right_censored` from 1 → 0. The timing (`spop_ms_pfs`)
+#' is already correct in the existing draws because
+#' `spop_ms_pfs = spop_pfs = min(T_SF, T_dropout) = T_SF` for these patients.
+#'
+#' @param fit CmdStanMCMC fit object (existing posterior draws)
+#' @param stan_data Stan data list (needs n_patients, n_trials, max_all_t,
+#'   trial_patient_pos)
+#' @return posterior::draws_df with spop/sample_cif_01/02/03[trial,time] variables
+compute_cif_from_draws <- function(fit, stan_data) {
+  n_patients <- stan_data$n_patients
+  n_trials   <- stan_data$n_trials
+  max_all_t  <- stan_data$max_all_t
+  T_len      <- max_all_t + 1L
+  tpp        <- stan_data$trial_patient_pos  # length n_trials + 1
+
+  pvars <- c(
+    "spop_ms_pfs", "spop_ms_right_censored",
+    "spop_right_censored", "spop_target_right_censored", "spop_target_pfs",
+    "spop_os", "spop_os_censored",
+    "sample_ms_pfs", "sample_ms_right_censored",
+    "sample_right_censored", "sample_target_right_censored", "sample_target_pfs",
+    "sample_os", "sample_os_censored"
+  )
+
+  d_mat <- posterior::as_draws_matrix(fit$draws(variables = pvars))
+  n_draws <- nrow(d_mat)
+
+  # Pre-build column index maps (1..n_patients per variable)
+  col_idx <- function(varname) {
+    match(paste0(varname, "[", seq_len(n_patients), "]"), colnames(d_mat))
+  }
+  ci <- list(
+    sms_pfs   = col_idx("spop_ms_pfs"),
+    sms_rc    = col_idx("spop_ms_right_censored"),
+    s_rc      = col_idx("spop_right_censored"),
+    st_rc     = col_idx("spop_target_right_censored"),
+    st_pfs    = col_idx("spop_target_pfs"),
+    s_os      = col_idx("spop_os"),
+    s_osc     = col_idx("spop_os_censored"),
+    sam_pfs   = col_idx("sample_ms_pfs"),
+    sam_rc    = col_idx("sample_ms_right_censored"),
+    sam_src   = col_idx("sample_right_censored"),
+    sam_strc  = col_idx("sample_target_right_censored"),
+    sam_stpfs = col_idx("sample_target_pfs"),
+    sam_os    = col_idx("sample_os"),
+    sam_osc   = col_idx("sample_os_censored")
+  )
+
+  # Output CIF arrays [n_draws, n_trials, T_len]
+  cif_arrs <- list(
+    spop_cif_01   = array(0, c(n_draws, n_trials, T_len)),
+    spop_cif_02   = array(0, c(n_draws, n_trials, T_len)),
+    spop_cif_03   = array(0, c(n_draws, n_trials, T_len)),
+    sample_cif_01 = array(0, c(n_draws, n_trials, T_len)),
+    sample_cif_02 = array(0, c(n_draws, n_trials, T_len)),
+    sample_cif_03 = array(0, c(n_draws, n_trials, T_len))
+  )
+
+  for (i in seq_len(n_draws)) {
+    row <- d_mat[i, ]
+    get_int <- function(idx) as.integer(round(row[idx]))
+
+    sms_pfs   <- get_int(ci$sms_pfs)
+    sms_rc    <- get_int(ci$sms_rc)
+    s_rc      <- get_int(ci$s_rc)
+    st_rc     <- get_int(ci$st_rc)
+    st_pfs    <- get_int(ci$st_pfs)
+    s_os      <- get_int(ci$s_os)
+    s_osc     <- get_int(ci$s_osc)
+    sam_pfs   <- get_int(ci$sam_pfs)
+    sam_rc    <- get_int(ci$sam_rc)
+    sam_src   <- get_int(ci$sam_src)
+    sam_strc  <- get_int(ci$sam_strc)
+    sam_stpfs <- get_int(ci$sam_stpfs)
+    sam_os    <- get_int(ci$sam_os)
+    sam_osc   <- get_int(ci$sam_osc)
+
+    # Case-2 correction: state-3 where T_SF < T_dropout → reclassify as 0→1
+    # spop_ms_pfs = spop_pfs = min(T_SF, T_dropout), so T_SF <= spop_ms_pfs ≡ T_SF <= T_dropout
+    case2_spop   <- s_rc == 1L & st_rc == 0L & st_pfs <= sms_pfs
+    case2_sample <- sam_src == 1L & sam_strc == 0L & sam_stpfs <= sam_pfs
+    sms_rc[case2_spop]    <- 0L
+    sam_rc[case2_sample]  <- 0L
+
+    for (s in seq_len(n_trials)) {
+      tr   <- seq(tpp[s], tpp[s + 1L] - 1L)
+      n_tr <- length(tr)
+      if (n_tr == 0L) next
+
+      # ── spop (unconditional posterior predictive) ──────────────────────────
+      pfs_e <- sms_rc[tr] == 0L
+      dd    <- pfs_e & s_osc[tr] == 0L & sms_pfs[tr] == s_os[tr]
+      prog  <- pfs_e & !dd
+      drop_ <- !pfs_e & sms_pfs[tr] <= max_all_t
+
+      cif_arrs$spop_cif_01[i, s, ] <- cumsum(tabulate(sms_pfs[tr][prog],  nbins = T_len)) / n_tr
+      cif_arrs$spop_cif_02[i, s, ] <- cumsum(tabulate(sms_pfs[tr][dd],    nbins = T_len)) / n_tr
+      cif_arrs$spop_cif_03[i, s, ] <- cumsum(tabulate(sms_pfs[tr][drop_], nbins = T_len)) / n_tr
+
+      # ── sample (conditional on observed data) ──────────────────────────────
+      pfs_e_s <- sam_rc[tr] == 0L
+      dd_s    <- pfs_e_s & sam_osc[tr] == 0L & sam_pfs[tr] == sam_os[tr]
+      prog_s  <- pfs_e_s & !dd_s
+      drop_s  <- !pfs_e_s & sam_pfs[tr] <= max_all_t
+
+      cif_arrs$sample_cif_01[i, s, ] <- cumsum(tabulate(sam_pfs[tr][prog_s], nbins = T_len)) / n_tr
+      cif_arrs$sample_cif_02[i, s, ] <- cumsum(tabulate(sam_pfs[tr][dd_s],   nbins = T_len)) / n_tr
+      cif_arrs$sample_cif_03[i, s, ] <- cumsum(tabulate(sam_pfs[tr][drop_s], nbins = T_len)) / n_tr
+    }
+  }
+
+  # Build draws_df with variable names matching the Stan output convention:
+  # spop_cif_01[trial,time], spop_cif_02[trial,time], spop_cif_03[trial,time], ...
+  cif_cols <- purrr::imap(cif_arrs, function(arr, nm) {
+    purrr::map_dfc(seq_len(n_trials), function(s) {
+      purrr::map_dfc(seq_len(T_len), function(t) {
+        tibble::tibble("{nm}[{s},{t}]" := arr[, s, t])
+      })
+    })
+  }) |> purrr::list_cbind()
+
+  meta <- tibble::tibble(
+    .chain     = posterior::chain_ids(d_mat),
+    .iteration = posterior::iteration_ids(d_mat),
+    .draw      = posterior::draw_ids(d_mat)
+  )
+
+  dplyr::bind_cols(meta, cif_cols) |> posterior::as_draws_df()
+}
+
 #' Select draws from CmdStanR fit using tidyselect patterns
 #'
 #' Uses cmdstanr::read_cmdstan_csv with variable selection to read only the
