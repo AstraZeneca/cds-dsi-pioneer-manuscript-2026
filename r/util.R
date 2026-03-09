@@ -268,8 +268,11 @@ compute_cif_from_draws <- function(fit, stan_data) {
     })
   }) |> purrr::list_cbind()
 
+  # Strip draws_df class before bind_cols — otherwise dplyr treats CIF columns
+  # as draws variables and stores them as lists rather than plain numerics.
   meta <- posterior::as_draws_df(d_mat[, 1L, drop = FALSE]) |>
-    dplyr::select(.chain, .iteration, .draw)
+    dplyr::select(.chain, .iteration, .draw) |>
+    tibble::as_tibble()
 
   dplyr::bind_cols(meta, cif_cols) |> posterior::as_draws_df()
 }
