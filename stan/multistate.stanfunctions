@@ -39,6 +39,23 @@ vector calc_ms_single_transition_loglik(
 }
 
 /**
+ * Sample off-trial death time (3→2 transition) from the sojourn time GP hazard.
+ *
+ * @param log_cond_surv_32  Patient row of log conditional survival for 3→2 [ms_max_sojourn_t_32]
+ * @param dropout_week      Calendar week of dropout (1-indexed)
+ * @param sojourn_obs       Observed sojourn intervals to condition on (0 = unconditional)
+ * @return (os_week, censored) where os_week is 1-indexed calendar week of death
+ */
+tuple(int, int) sample_dropout_death_rng(
+    row_vector log_cond_surv_32,
+    int dropout_week,
+    int sojourn_obs) {
+  int t32_raw; int c32;
+  (t32_raw, c32) = survival_time_rng(log_cond_surv_32, sojourn_obs, 1, 0);
+  return (dropout_week + t32_raw + 1, c32);
+}
+
+/**
  * Calculate multistate log-likelihood for the full illness-death model
  *
  * Handles all patient scenarios based on final state and enabled transitions.
@@ -67,14 +84,19 @@ vector calc_ms_single_transition_loglik(
  */
 real calc_multistate_loglik(
   int enable_01, int enable_02, int enable_12, int ms_time_scale_12,
+  int enable_03, int enable_32,
   array[] int final_state,
   array[] int time_01, array[] int time_02, array[] int time_12,
+  array[] int time_03, array[] int time_32,
   array[] int censored_01, array[] int censored_02, array[] int censored_12,
+  array[] int censored_32,
   array[] int prog_deterministic,
   matrix log_cond_surv_01,
   matrix log_cond_surv_02,
   matrix log_cond_surv_12_s,
-  matrix log_cond_surv_12_t
+  matrix log_cond_surv_12_t,
+  matrix log_cond_surv_03,
+  matrix log_cond_surv_32
 ) {
   int n_patients = size(final_state);
   real total_ll = 0;
@@ -98,6 +120,11 @@ real calc_multistate_loglik(
       if (enable_02 && time_02[i] > 0) {
         patient_ll += sum(log_cond_surv_02[i, 1:time_02[i]]);
       }
+
+      // 0→3 competing risk survival contribution
+      if (enable_03 && time_03[i] > 0) {
+        patient_ll += sum(log_cond_surv_03[i, 1:time_03[i]]);
+      }
     }
 
     // ========================================================================
@@ -115,6 +142,11 @@ real calc_multistate_loglik(
       // Competing risk: also survived 0→2 until progression
       if (enable_02 && time_01[i] > 1) {
         patient_ll += sum(log_cond_surv_02[i, 1:(time_01[i] - 1)]);
+      }
+
+      // Competing risk: also survived 0→3 until progression
+      if (enable_03 && time_01[i] > 1) {
+        patient_ll += sum(log_cond_surv_03[i, 1:(time_01[i] - 1)]);
       }
 
       // Hazard contribution at T_01 (only if progression was stochastic)
@@ -166,6 +198,9 @@ real calc_multistate_loglik(
         if (enable_02 && time_02[i] > 1) {
           patient_ll += sum(log_cond_surv_02[i, 1:(time_02[i] - 1)]);
         }
+        if (enable_03 && time_02[i] > 1) {
+          patient_ll += sum(log_cond_surv_03[i, 1:(time_02[i] - 1)]);
+        }
 
         // Hazard contribution at death time (0→2)
         if (enable_02 && time_02[i] > 0) {
@@ -181,6 +216,9 @@ real calc_multistate_loglik(
         }
         if (enable_02 && time_01[i] > 1) {
           patient_ll += sum(log_cond_surv_02[i, 1:(time_01[i] - 1)]);
+        }
+        if (enable_03 && time_01[i] > 1) {
+          patient_ll += sum(log_cond_surv_03[i, 1:(time_01[i] - 1)]);
         }
 
         // Hazard at progression (if stochastic)
@@ -227,6 +265,45 @@ real calc_multistate_loglik(
             }
             patient_ll += log1m_exp(combined_lcs_at_death);
           }
+        }
+      }
+    }
+
+    // ========================================================================
+    // STATE 3 CONTRIBUTIONS: dropped out (0→3), then died off-trial or censored
+    // ========================================================================
+
+    else if (final_state[i] == 3) {
+      // Patient dropped out of trial (0→3), then either died off-trial or censored in state 3
+
+      // Survival in state 0 until dropout (survived 0→1, 0→2, 0→3)
+      if (enable_01 && time_03[i] > 1) {
+        patient_ll += sum(log_cond_surv_01[i, 1:(time_03[i] - 1)]);
+      }
+      if (enable_02 && time_03[i] > 1) {
+        patient_ll += sum(log_cond_surv_02[i, 1:(time_03[i] - 1)]);
+      }
+      if (enable_03 && time_03[i] > 1) {
+        patient_ll += sum(log_cond_surv_03[i, 1:(time_03[i] - 1)]);
+      }
+
+      // Hazard contribution at dropout time (0→3 event)
+      if (enable_03 && time_03[i] > 0) {
+        patient_ll += log1m_exp(log_cond_surv_03[i, time_03[i]]);
+      }
+
+      // Post-dropout: 3→2 (off-trial death or censored in state 3)
+      // Sojourn time GP: indexed by sojourn time since dropout (1, 2, ...)
+      if (enable_32 && time_32[i] > 0) {
+        if (!censored_32[i]) {
+          // Off-trial death: survived sojourn intervals 1..time_32-1, then died
+          if (time_32[i] > 1) {
+            patient_ll += sum(log_cond_surv_32[i, 1:(time_32[i] - 1)]);
+          }
+          patient_ll += log1m_exp(log_cond_surv_32[i, time_32[i]]);
+        } else {
+          // Censored in state 3: survived sojourn intervals 1..time_32
+          patient_ll += sum(log_cond_surv_32[i, 1:time_32[i]]);
         }
       }
     }
