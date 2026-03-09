@@ -33,9 +33,12 @@ if (enable_ms_01) {
     );
   }
 
-  // Group-level effects (only for enabled levels)
+  // Group-level intercepts (both intercept-only and GP modes)
   if (n_enabled_groups_ms_baseline_01 > 0) {
     raw_log_lambda_gp_01_level_intercept ~ std_normal();
+  }
+  // GP eta (GP mode only)
+  if (n_gp_groups_ms_baseline_01 > 0) {
     to_vector(log_lambda_gp_01_level_eta) ~ std_normal();
   }
 
@@ -93,6 +96,8 @@ if (enable_ms_02) {
   }
   if (n_enabled_groups_ms_baseline_02 > 0) {
     raw_log_lambda_gp_02_level_intercept ~ std_normal();
+  }
+  if (n_gp_groups_ms_baseline_02 > 0) {
     to_vector(log_lambda_gp_02_level_eta) ~ std_normal();
   }
 
@@ -148,6 +153,8 @@ if (need_12_s_gp) {
   }
   if (n_enabled_groups_ms_baseline_12_s > 0) {
     raw_log_lambda_gp_12_s_level_intercept ~ std_normal();
+  }
+  if (n_gp_groups_ms_baseline_12_s > 0) {
     to_vector(log_lambda_gp_12_s_level_eta) ~ std_normal();
   }
 }
@@ -181,7 +188,80 @@ if (need_12_t_gp) {
   }
   if (n_enabled_groups_ms_baseline_12_t > 0) {
     raw_log_lambda_gp_12_t_level_intercept ~ std_normal();
+  }
+  if (n_gp_groups_ms_baseline_12_t > 0) {
     to_vector(log_lambda_gp_12_t_level_eta) ~ std_normal();
+  }
+}
+
+// ============================================================================
+// 0→3 TRANSITION PRIORS (Dropout, GP baseline hazard with N-level hierarchy)
+// ============================================================================
+if (enable_ms_03) {
+  log_lambda_gp_03_pop_alpha[1] ~ inv_gamma(
+    log_lambda_gp_03_pop_alpha_alpha, log_lambda_gp_03_pop_alpha_beta
+  );
+  log_lambda_gp_03_pop_rho[1] ~ inv_gamma(
+    log_lambda_gp_03_pop_rho_alpha, log_lambda_gp_03_pop_rho_beta
+  );
+  log_lambda_gp_03_pop_intercept[1] ~ normal(
+    log_lambda_gp_03_pop_intercept_mean, log_lambda_gp_03_pop_intercept_sd
+  );
+  to_vector(log_lambda_gp_03_pop_eta) ~ std_normal();
+
+  for (lv in 1:n_levels) {
+    log_lambda_gp_03_level_alpha[lv] ~ inv_gamma(
+      log_lambda_gp_03_level_alpha_alpha[lv], log_lambda_gp_03_level_alpha_beta[lv]
+    );
+    log_lambda_gp_03_level_rho[lv] ~ inv_gamma(
+      log_lambda_gp_03_level_rho_alpha[lv], log_lambda_gp_03_level_rho_beta[lv]
+    );
+    log_lambda_gp_03_level_intercept_sd[lv] ~ normal(
+      0, log_lambda_gp_03_level_intercept_sd_sd[lv]
+    );
+  }
+
+  if (n_enabled_groups_ms_baseline_03 > 0) {
+    raw_log_lambda_gp_03_level_intercept ~ std_normal();
+  }
+  if (n_gp_groups_ms_baseline_03 > 0) {
+    to_vector(log_lambda_gp_03_level_eta) ~ std_normal();
+  }
+}
+
+// ============================================================================
+// 3→2 TRANSITION PRIORS (Off-trial death, sojourn time GP baseline hazard)
+// ============================================================================
+if (enable_ms_32) {
+  // Population-level baseline hazard GP
+  log_lambda_gp_32_s_pop_alpha[1] ~ inv_gamma(
+    log_lambda_gp_32_s_pop_alpha_alpha, log_lambda_gp_32_s_pop_alpha_beta
+  );
+  log_lambda_gp_32_s_pop_rho[1] ~ inv_gamma(
+    log_lambda_gp_32_s_pop_rho_alpha, log_lambda_gp_32_s_pop_rho_beta
+  );
+  log_lambda_gp_32_s_pop_intercept[1] ~ normal(
+    log_lambda_gp_32_s_pop_intercept_mean, log_lambda_gp_32_s_pop_intercept_sd
+  );
+  to_vector(log_lambda_gp_32_s_pop_eta) ~ std_normal();
+
+  // Level-level baseline hazard GP
+  for (lv in 1:n_levels) {
+    log_lambda_gp_32_s_level_alpha[lv] ~ inv_gamma(
+      log_lambda_gp_32_s_level_alpha_alpha[lv], log_lambda_gp_32_s_level_alpha_beta[lv]
+    );
+    log_lambda_gp_32_s_level_rho[lv] ~ inv_gamma(
+      log_lambda_gp_32_s_level_rho_alpha[lv], log_lambda_gp_32_s_level_rho_beta[lv]
+    );
+    log_lambda_gp_32_s_level_intercept_sd[lv] ~ normal(
+      0, log_lambda_gp_32_s_level_intercept_sd_sd[lv]
+    );
+  }
+  if (n_enabled_groups_ms_baseline_32 > 0) {
+    raw_log_lambda_gp_32_s_level_intercept ~ std_normal();
+  }
+  if (n_gp_groups_ms_baseline_32 > 0) {
+    to_vector(log_lambda_gp_32_s_level_eta) ~ std_normal();
   }
 }
 

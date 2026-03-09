@@ -230,6 +230,34 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     log_lambda_gp_12_t_level_rho_alpha = rep(4.0, n_levels),
     log_lambda_gp_12_t_level_rho_beta = rep(4.0, n_levels),
 
+    # --- 0→3 Dropout GP (N-level hierarchy, clock-forward time) ---
+    log_lambda_gp_03_pop_intercept_mean = -4.5,
+    log_lambda_gp_03_pop_intercept_sd = 1.0,
+    log_lambda_gp_03_pop_alpha_alpha = 3.0,
+    log_lambda_gp_03_pop_alpha_beta = 1.0,
+    log_lambda_gp_03_pop_rho_alpha = 5.0,
+    log_lambda_gp_03_pop_rho_beta = 5.0,
+    log_lambda_gp_03_level_intercept_sd_sd = rep(2.0, n_levels),
+    log_lambda_gp_03_level_alpha_alpha = rep(3.0, n_levels),
+    log_lambda_gp_03_level_alpha_beta = rep(1.0, n_levels),
+    log_lambda_gp_03_level_rho_alpha = rep(5.0, n_levels),
+    log_lambda_gp_03_level_rho_beta = rep(5.0, n_levels),
+
+    # --- 3→2 Baseline Hazard GP: Population-level (sojourn time, semi-Markov) ---
+    log_lambda_gp_32_s_pop_intercept_mean = -4.5,
+    log_lambda_gp_32_s_pop_intercept_sd = 1.0,
+    log_lambda_gp_32_s_pop_alpha_alpha = 3.0,
+    log_lambda_gp_32_s_pop_alpha_beta = 1.0,
+    log_lambda_gp_32_s_pop_rho_alpha = 5.0,
+    log_lambda_gp_32_s_pop_rho_beta = 5.0,
+
+    # --- 3→2 Baseline Hazard GP: Level-level ---
+    log_lambda_gp_32_s_level_intercept_sd_sd = rep(0.5, n_levels),
+    log_lambda_gp_32_s_level_alpha_alpha = rep(3.0, n_levels),
+    log_lambda_gp_32_s_level_alpha_beta = rep(1.0, n_levels),
+    log_lambda_gp_32_s_level_rho_alpha = rep(4.0, n_levels),
+    log_lambda_gp_32_s_level_rho_beta = rep(4.0, n_levels),
+
     # --- Time-varying covariate coefficient hyperparameters ---
     time_varying_coef_01_mean = rep(0, n_time_varying_covar),
     time_varying_coef_01_sd = rep(0.5, n_time_varying_covar),
