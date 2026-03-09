@@ -157,7 +157,10 @@ compute_cif_from_draws <- function(fit, stan_data) {
   n_trials   <- stan_data$n_trials
   max_all_t  <- stan_data$max_all_t
   T_len      <- max_all_t + 1L
-  tpp        <- stan_data$trial_patient_pos  # length n_trials + 1
+  # trial_patient_pos is computed in Stan transformed_data — reconstruct it here
+  # from patient_trial (length n_patients, values 1..n_trials, sorted by trial)
+  n_trial_patients <- tabulate(stan_data$patient_trial, nbins = n_trials)
+  tpp <- c(1L, cumsum(n_trial_patients) + 1L)  # length n_trials + 1
 
   pvars <- c(
     "spop_ms_pfs", "spop_ms_right_censored",
