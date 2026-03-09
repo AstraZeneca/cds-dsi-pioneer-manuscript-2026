@@ -176,7 +176,7 @@ compute_cif_from_draws <- function(fit, stan_data) {
 
   # Pre-build column index maps (1..n_patients per variable)
   col_idx <- function(varname) {
-    match(paste0(varname, "[", seq_len(n_patients), "]"), colnames(d_mat))
+    base::match(paste0(varname, "[", seq_len(n_patients), "]"), colnames(d_mat))
   }
   ci <- list(
     sms_pfs   = col_idx("spop_ms_pfs"),
