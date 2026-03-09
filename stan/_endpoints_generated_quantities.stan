@@ -321,14 +321,29 @@ profile("gen_quant") {
     );
 }
 
-// For the CIF: use the combined PFS (spop_pfs = min(spop_target_pfs, spop_ms_pfs))
-// rather than the multistate-hazard-only component. In the full joint model,
-// SF-driven progressions (target PFS) and hazard-driven progressions compete; the
-// CIF must reflect all state-0 exits. spop_pfs and spop_right_censored already
-// encode the correct joint outcome.
+// For the CIF: classify each patient's first state-0 exit, accounting for both
+// SF-driven and hazard-driven progressions (spop_target_pfs vs spop_ms_pfs).
+//
+// Three cases:
+//   (1) spop_right_censored == 0 (ms event — state 1 or 2):
+//       Use combined PFS = min(SF, ms_hazard); keep as PFS event.
+//   (2) spop_right_censored == 1 AND SF event before dropout (T_SF < T_dropout):
+//       State-3 patient where SF progression precedes dropout. In the joint model
+//       this is a 0→1 progression, not a dropout. Reclassify as PFS event.
+//   (3) Otherwise (dropout with T_SF >= T_dropout, or fully censored):
+//       Leave spop_ms_pfs / spop_ms_right_censored at their original values so
+//       the CIF module classifies them as 0→3 or fully censored correctly.
 for (i in 1:n_patients) {
-  spop_ms_pfs[i] = spop_pfs[i];
-  spop_ms_right_censored[i] = spop_right_censored[i];
+  if (spop_right_censored[i] == 0) {
+    // State 1 (progression) or state 2 (direct death): use combined PFS time
+    spop_ms_pfs[i] = spop_pfs[i];
+    spop_ms_right_censored[i] = 0;
+  } else if (spop_target_right_censored[i] == 0 && spop_target_pfs[i] <= spop_ms_pfs[i]) {
+    // State 3 where SF progression precedes dropout: first exit is 0→1
+    spop_ms_pfs[i] = spop_target_pfs[i];
+    spop_ms_right_censored[i] = 0;
+  }
+  // else: leave spop_ms_pfs[i] and spop_ms_right_censored[i] unchanged
 }
 
 #include "modules/multistate/generated_quantities.stan"
