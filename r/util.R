@@ -155,10 +155,10 @@ generate_quantities_from_fit <- function(
 compute_cif_from_draws <- function(fit, stan_data) {
   n_patients <- stan_data$n_patients
   n_trials   <- stan_data$n_trials
-  max_all_t  <- stan_data$max_all_t
+  # max_all_t and trial_patient_pos are Stan transformed_data — reconstruct here.
+  # Stan: max_all_t = max(max(t_patient_visits) + 1, extend_max_all_t)
+  max_all_t  <- max(max(stan_data$t_patient_visits) + 1L, stan_data$extend_max_all_t)
   T_len      <- max_all_t + 1L
-  # trial_patient_pos is computed in Stan transformed_data — reconstruct it here
-  # from patient_trial (length n_patients, values 1..n_trials, sorted by trial)
   n_trial_patients <- tabulate(stan_data$patient_trial, nbins = n_trials)
   tpp <- c(1L, cumsum(n_trial_patients) + 1L)  # length n_trials + 1
 
