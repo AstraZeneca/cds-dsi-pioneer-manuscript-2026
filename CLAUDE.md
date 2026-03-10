@@ -265,6 +265,8 @@ Plots always use `btype == "ub"`. For PFS, `interval_censored` captures visit-ga
   - Example: Use `tar_target(name, my_function(arg))` not `tar_target(name, { ... complex code ... })`
   - Helper functions belong in appropriate `r/` subdirectories (e.g., `r/sclc/plot_functions.R`)
 - **`pattern = map()` dependencies**: When adding analysis-data-dependent post-processing to a mapped target (e.g., `cutoff_tumor_ssls_stan_data`), add the analysis data target to the `map()` pattern as well.
+- **Track `source()` files with `format = "file"`**: If a target calls `source("path/to/file.R")` inside its expression, targets does NOT detect changes to that file. Add a separate `tar_target(my_script, "path/to/file.R", format = "file")` and reference `my_script` in the `source()` call. See `initializers_fixed_file` and `prepare_ms_standalone_data_script` for the established pattern.
+- **`tar_invalidate` and `tar_map` naming**: Invalidation target names must include the full `tar_map` suffix. `tar_invalidate(base_foo)` is a no-op if the actual target is `base_foo_jan26` (inside `tar_map(dco_name)`). Always use the `tar-map-names` skill to get the correct full name before passing it to `-i`.
 
 ### Bash and Command Execution
 - **NEVER pipe long-running commands to `head`, `tail`, or similar** when running in background - it prevents real-time output monitoring
@@ -445,6 +447,7 @@ Issues across all PIONEER repos are tracked in the **PIONEER 2026** GitHub Proje
 - Key env vars auto-set by Domino: `DOMINO_USER_API_KEY`, `DOMINO_USER_HOST`, `DOMINO_PROJECT_ID`, `DOMINO_PROJECT_NAME`
 - Jobs API: list/get via `GET /api/jobs/beta/jobs`, logs via `GET /api/jobs/beta/jobs/{id}/logs`, start via `POST /v4/jobs/start`, stop via `POST /v4/jobs/stop`
 - `stop_job` requires both `projectId` AND `jobId` in the request body
+- **`get_job_logs` MUST always use `tail=N`** — never call without it; full logs are 700+ lines and will flood the context window. Use `tail=30` for status checks, `tail=50` for error diagnosis. See `pioneer-toolkit:read-job-logs` skill for the full pattern.
 
 ## Documentation
 
