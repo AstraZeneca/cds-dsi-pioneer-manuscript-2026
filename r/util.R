@@ -258,29 +258,28 @@ compute_cif_from_draws <- function(fit, stan_data) {
     }
   }
 
-  # Build draws_df with variable names matching the Stan output convention:
-  # spop_cif_01[trial,time], spop_cif_02[trial,time], spop_cif_03[trial,time], ...
-  cif_cols <- purrr::imap(cif_arrs, function(arr, nm) {
-    purrr::map_dfc(seq_len(n_trials), function(s) {
-      purrr::map_dfc(seq_len(T_len), function(t) {
-        tibble::tibble("{nm}[{s},{t}]" := arr[, s, t])
-      })
-    })
-  }) |> purrr::list_cbind()
-
-  # Return a plain tibble with .chain/.iteration/.draw + flat numeric CIF columns.
-  # Do NOT call posterior::as_draws_df() — it reconsolidates flat array columns
-  # (e.g. spop_cif_01[1,1], spop_cif_01[1,2]) into list-typed array variables,
-  # breaking as_draws_matrix() in plot_competing_risks_cif.
-  # as_draws_matrix() handles a plain data frame with metadata columns directly.
-  n_chains_val <- length(posterior::chain_ids(d_mat))
-  n_iters_val  <- length(posterior::iteration_ids(d_mat))
-  meta <- tibble::tibble(
-    .chain     = rep(seq_len(n_chains_val), each = n_iters_val),
-    .iteration = rep(seq_len(n_iters_val), times = n_chains_val),
-    .draw      = seq_len(n_draws)
-  )
-  dplyr::bind_cols(meta, cif_cols)
+  # Return a draws_matrix with column names matching Stan convention:
+  # spop_cif_01[trial,time], spop_cif_02[trial,time], etc.
+  # We build a plain numeric matrix first, then convert via as_draws_matrix().
+  # DO NOT return a tibble/data.frame — posterior::as_draws_matrix() on a
+  # data.frame routes through as_draws_df(), which reconsolidates bracket-named
+  # columns into list-typed array variables, breaking downstream as.numeric().
+  n_cif_cols <- length(cif_arrs) * n_trials * T_len
+  result_mat <- matrix(0, nrow = n_draws, ncol = n_cif_cols)
+  col_names  <- character(n_cif_cols)
+  k <- 0L
+  for (nm in names(cif_arrs)) {
+    arr <- cif_arrs[[nm]]
+    for (s in seq_len(n_trials)) {
+      for (t in seq_len(T_len)) {
+        k <- k + 1L
+        result_mat[, k] <- arr[, s, t]
+        col_names[k] <- paste0(nm, "[", s, ",", t, "]")
+      }
+    }
+  }
+  colnames(result_mat) <- col_names
+  posterior::as_draws_matrix(result_mat)
 }
 
 #' Select draws from CmdStanR fit using tidyselect patterns
