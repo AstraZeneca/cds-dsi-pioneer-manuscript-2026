@@ -268,13 +268,19 @@ compute_cif_from_draws <- function(fit, stan_data) {
     })
   }) |> purrr::list_cbind()
 
-  # Strip draws_df class before bind_cols — otherwise dplyr treats CIF columns
-  # as draws variables and stores them as lists rather than plain numerics.
-  meta <- posterior::as_draws_df(d_mat[, 1L, drop = FALSE]) |>
-    dplyr::select(.chain, .iteration, .draw) |>
-    tibble::as_tibble()
-
-  dplyr::bind_cols(meta, cif_cols) |> posterior::as_draws_df()
+  # Return a plain tibble with .chain/.iteration/.draw + flat numeric CIF columns.
+  # Do NOT call posterior::as_draws_df() — it reconsolidates flat array columns
+  # (e.g. spop_cif_01[1,1], spop_cif_01[1,2]) into list-typed array variables,
+  # breaking as_draws_matrix() in plot_competing_risks_cif.
+  # as_draws_matrix() handles a plain data frame with metadata columns directly.
+  n_chains_val <- length(posterior::chain_ids(d_mat))
+  n_iters_val  <- length(posterior::iteration_ids(d_mat))
+  meta <- tibble::tibble(
+    .chain     = rep(seq_len(n_chains_val), each = n_iters_val),
+    .iteration = rep(seq_len(n_iters_val), times = n_chains_val),
+    .draw      = seq_len(n_draws)
+  )
+  dplyr::bind_cols(meta, cif_cols)
 }
 
 #' Select draws from CmdStanR fit using tidyselect patterns
