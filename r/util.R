@@ -165,9 +165,8 @@ compute_cif_from_draws <- function(fit, stan_data) {
   pvars <- c(
     "spop_ms_pfs", "spop_ms_right_censored",
     "spop_right_censored", "spop_target_right_censored", "spop_target_pfs",
-    "spop_os", "spop_os_censored",
+    "spop_pfs", "spop_os", "spop_os_censored",
     "sample_ms_pfs", "sample_ms_right_censored",
-    "sample_right_censored", "sample_target_right_censored", "sample_target_pfs",
     "sample_os", "sample_os_censored"
   )
 
@@ -184,13 +183,11 @@ compute_cif_from_draws <- function(fit, stan_data) {
     s_rc      = col_idx("spop_right_censored"),
     st_rc     = col_idx("spop_target_right_censored"),
     st_pfs    = col_idx("spop_target_pfs"),
+    s_pfs     = col_idx("spop_pfs"),
     s_os      = col_idx("spop_os"),
     s_osc     = col_idx("spop_os_censored"),
     sam_pfs   = col_idx("sample_ms_pfs"),
     sam_rc    = col_idx("sample_ms_right_censored"),
-    sam_src   = col_idx("sample_right_censored"),
-    sam_strc  = col_idx("sample_target_right_censored"),
-    sam_stpfs = col_idx("sample_target_pfs"),
     sam_os    = col_idx("sample_os"),
     sam_osc   = col_idx("sample_os_censored")
   )
@@ -214,22 +211,26 @@ compute_cif_from_draws <- function(fit, stan_data) {
     s_rc      <- get_int(ci$s_rc)
     st_rc     <- get_int(ci$st_rc)
     st_pfs    <- get_int(ci$st_pfs)
+    s_pfs     <- get_int(ci$s_pfs)
     s_os      <- get_int(ci$s_os)
     s_osc     <- get_int(ci$s_osc)
     sam_pfs   <- get_int(ci$sam_pfs)
     sam_rc    <- get_int(ci$sam_rc)
-    sam_src   <- get_int(ci$sam_src)
-    sam_strc  <- get_int(ci$sam_strc)
-    sam_stpfs <- get_int(ci$sam_stpfs)
     sam_os    <- get_int(ci$sam_os)
     sam_osc   <- get_int(ci$sam_osc)
 
-    # Case-2 correction: state-3 where T_SF < T_dropout → reclassify as 0→1
-    # spop_ms_pfs = spop_pfs = min(T_SF, T_dropout), so T_SF <= spop_ms_pfs ≡ T_SF <= T_dropout
-    case2_spop   <- s_rc == 1L & st_rc == 0L & st_pfs <= sms_pfs
-    case2_sample <- sam_src == 1L & sam_strc == 0L & sam_stpfs <= sam_pfs
-    sms_rc[case2_spop]    <- 0L
-    sam_rc[case2_sample]  <- 0L
+    # Mirror the Stan GQ correction (_endpoints_generated_quantities.stan:336-347).
+    # This overwrites spop_ms_pfs/spop_ms_right_censored before the CIF module runs.
+    # Case 1: PFS event (combined) — use combined PFS time (min of target + ms)
+    case1 <- s_rc == 0L
+    sms_pfs[case1] <- s_pfs[case1]
+    sms_rc[case1]  <- 0L
+    # Case 2: dropout where SF progression precedes dropout — reclassify as 0→1
+    case2 <- s_rc == 1L & st_rc == 0L & st_pfs <= sms_pfs
+    sms_pfs[case2] <- st_pfs[case2]
+    sms_rc[case2]  <- 0L
+    # Case 3 (else): leave unchanged — dropout or fully censored
+    # Note: Stan GQ applies NO correction to sample_* variables.
 
     for (s in seq_len(n_trials)) {
       tr   <- seq(tpp[s], tpp[s + 1L] - 1L)
@@ -246,7 +247,7 @@ compute_cif_from_draws <- function(fit, stan_data) {
       cif_arrs$spop_cif_02[i, s, ] <- cumsum(tabulate(sms_pfs[tr][dd],    nbins = T_len)) / n_tr
       cif_arrs$spop_cif_03[i, s, ] <- cumsum(tabulate(sms_pfs[tr][drop_], nbins = T_len)) / n_tr
 
-      # ── sample (conditional on observed data) ──────────────────────────────
+      # ── sample (conditional on observed data, no correction — matches Stan GQ)
       pfs_e_s <- sam_rc[tr] == 0L
       dd_s    <- pfs_e_s & sam_osc[tr] == 0L & sam_pfs[tr] == sam_os[tr]
       prog_s  <- pfs_e_s & !dd_s
