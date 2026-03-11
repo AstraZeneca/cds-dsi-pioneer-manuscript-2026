@@ -100,19 +100,10 @@ model {
   #include "modules/multistate/priors.stan"
 
   // Multistate likelihood (skipped when fit_multistate_data = 0 for prior predictive)
-  if (fit_multistate_data && enable_ms_01 && !enable_ms_02 && !enable_ms_12) {
-    // Single transition mode (PFS-only)
-    target += sum(calc_ms_single_transition_loglik(
-      ms_time_01,
-      ms_censored_01,
-      log_cond_surv_01
-    ));
-  } else if (fit_multistate_data) {
-    // Full illness-death likelihood
-    target += calc_multistate_loglik(
+  if (fit_multistate_data) {
+    ms_final_state ~ multistate(
       enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
       enable_ms_03, enable_ms_32,
-      ms_final_state,
       ms_time_01, ms_time_02, ms_time_12,
       ms_time_03, ms_time_32,
       ms_censored_01, ms_censored_02, ms_censored_12,

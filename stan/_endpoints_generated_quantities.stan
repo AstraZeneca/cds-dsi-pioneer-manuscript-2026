@@ -118,6 +118,7 @@ profile("gen_quant") {
         t_patient_visit_idx,
         sum_tumor_size,
         measure_sd_sld,
+        measure_nu_sld,
         n_patient_screening_visits
       );
   } else {
@@ -157,7 +158,8 @@ profile("gen_quant") {
           negative_infinity(),  // growth lag (disabled)
           1.0,                  // growth transition
           rep_matrix(0.0, forecast_size, 2),  // No forecast process noise
-          measure_sd_sld
+          measure_sd_sld,
+          measure_nu_sld
         );
 
       // Store results
@@ -171,8 +173,8 @@ profile("gen_quant") {
   
   // Calculate RECIST classifications for all patients at once
   (rep_recist, forecast_recist) = calculate_all_patients_recist(
-    rep_mean_patient_log_sld,
-    forecast_mean_patient_log_sld,
+    rep_patient_log_sld,
+    forecast_patient_log_sld,
     patient_visit_pos,
     forecast_visits_pos,
     n_patient_screening_visits

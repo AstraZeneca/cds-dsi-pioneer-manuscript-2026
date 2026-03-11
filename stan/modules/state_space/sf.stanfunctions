@@ -130,31 +130,34 @@ tuple(row_vector, row_vector) sf_log_space_transition_ncp(row_vector current_x,
  *
  * This function calculates the log probability density of the observation given
  * the current state, and handles left-censoring for measurements below LOD.
+ * Uses a Student-t likelihood with fixed degrees of freedom to down-weight outlier
+ * SLD measurements without inflating the scale parameter measure_sd.
  *
  * @param y Observation (normalized)
  * @param x State values (log-space)
- * @param measure_sd Measurement noise standard deviation
+ * @param measure_sd Measurement noise scale (analogous to Gaussian SD)
  * @param log_lod Log of limit of detection (for censoring)
+ * @param measure_nu Degrees of freedom for Student-t (fixed; ~5 = robust, large → Gaussian)
  *
  * @return Log probability density
  */
-real sf_log_space_obs_lpdf(vector normalized_y, matrix x, real measure_sd, real log_normalized_lod) {
+real sf_log_space_obs_lpdf(vector normalized_y, matrix x, real measure_sd, real log_normalized_lod, real measure_nu) {
   assert_equal(rows(normalized_y), rows(x));
   int T = rows(normalized_y);
   real lp = 0;
-  
+
   for (t in 1:T) {
     // Expected log observation using log-sum-exp
     real log_pred = log_sum_exp(x[t]);
-    
+
     // Handle censoring
     if (normalized_y[t] > 0) {
-      lp += normal_lpdf(log(normalized_y[t]) | log_pred, measure_sd);
+      lp += student_t_lpdf(log(normalized_y[t]) | measure_nu, log_pred, measure_sd);
     } else {
-      lp += normal_lcdf(log_normalized_lod | log_pred, measure_sd);
+      lp += student_t_lcdf(log_normalized_lod | measure_nu, log_pred, measure_sd);
     }
   }
-  
+
   return lp;
 }
 
@@ -834,22 +837,23 @@ tuple(
   real forecast_growth_transition,    // growth transition for forecast (was hardcoded to 1)
   matrix forecast_process_noise,      // process noise for forecast (was generated internally)
   // Global parameters
-  real measure_sd
+  real measure_sd,
+  real measure_nu
 ) {
   int n_patient_visits = rows(patient_states);
   // Calculate replicated SLD for observed visits
   vector[n_patient_visits] rep_log_sld = zeros_vector(n_patient_visits);
-  
+
   // First visit uses baseline measurement
   rep_log_sld[1] = log(sum_tumor_size_baseline);
-  
-  // Subsequent visits are generated from states with measurement noise
+
+  // Subsequent visits are generated from states with measurement noise (Student-t)
   if (n_patient_visits > 1) {
-    rep_log_sld[2:] = to_vector(normal_rng(calc_log_sld_mean(patient_states[2:], sum_tumor_size_baseline), rep_vector(measure_sd, n_patient_visits - 1)));
+    rep_log_sld[2:] = to_vector(student_t_rng(measure_nu, calc_log_sld_mean(patient_states[2:], sum_tumor_size_baseline), measure_sd));
   }
 
   int forecast_size = size(forecast_time) - 1;
-  
+
   // Calculate forecast states using provided parameters
   matrix[forecast_size + 1, 2] forecast_expected_states, forecast_states;
   (forecast_expected_states, forecast_states) = sf_log_space_trajectory_ncp(
@@ -860,13 +864,13 @@ tuple(
     forecast_process_noise, // Use provided process noise
     0 // No debug
   );
-  
-  // Calculate forecast SLD with measurement noise
+
+  // Calculate forecast SLD with measurement noise (Student-t)
   vector[forecast_size] forecast_log_sld = zeros_vector(forecast_size);
   if (forecast_size > 0) {
-    forecast_log_sld = to_vector(normal_rng(calc_log_sld_mean(forecast_states[2:], sum_tumor_size_baseline), rep_vector(measure_sd, forecast_size)));
+    forecast_log_sld = to_vector(student_t_rng(measure_nu, calc_log_sld_mean(forecast_states[2:], sum_tumor_size_baseline), measure_sd));
   }
-  
+
   return (forecast_states[2:], rep_log_sld, forecast_log_sld);
 }
 
@@ -959,17 +963,18 @@ tuple(
   real forecast_growth_lag,
   real forecast_growth_transition,
   matrix forecast_process_noise,
-  real measure_sd
+  real measure_sd,
+  real measure_nu
 ) {
   int n_patient_visits = rows(patient_states);
   int forecast_size = size(forecast_time) - 1;
-  
+
   // Generate states and SLD using existing function
   matrix[forecast_size, 2] forecast_patient_states;
   vector[n_patient_visits] rep_patient_log_sld;
   vector[forecast_size] forecast_patient_log_sld;
-  
-  (forecast_patient_states, rep_patient_log_sld, forecast_patient_log_sld) = 
+
+  (forecast_patient_states, rep_patient_log_sld, forecast_patient_log_sld) =
     generate_patient_states_rng(
       patient_states,
       forecast_time,
@@ -979,7 +984,8 @@ tuple(
       forecast_growth_lag,
       forecast_growth_transition,
       forecast_process_noise,
-      measure_sd
+      measure_sd,
+      measure_nu
     );
   
   // Calculate mean log SLD (deterministic, no measurement noise)
@@ -1047,6 +1053,7 @@ tuple(
   array[] int t_patient_visit_idx,
   vector sum_tumor_size,
   real measure_sd,
+  real measure_nu,
   array[] int n_patient_screening_visits  // Number of screening visits per patient
 ) {
   // Calculate sizes from position arrays
@@ -1100,13 +1107,14 @@ tuple(
       temp_forecast_patient_states[, 2] = to_vector(states_full_grid[2][i, forecast_time_abs[2:]]);
     }
     
-    // Calculate replicated SLD for observed visits
+    // Calculate replicated SLD for observed visits (Student-t noise)
     vector[visit_size] temp_rep_patient_log_sld = zeros_vector(visit_size);
     temp_rep_patient_log_sld[1] = log(sum_tumor_size[visit_start]);
     if (visit_size > 1) {
-      temp_rep_patient_log_sld[2:] = to_vector(normal_rng(
+      temp_rep_patient_log_sld[2:] = to_vector(student_t_rng(
+        measure_nu,
         calc_log_sld_mean(patient_states[2:], sum_tumor_size[visit_start]),
-        rep_vector(measure_sd, visit_size - 1)
+        measure_sd
       ));
     }
     
@@ -1120,9 +1128,10 @@ tuple(
     if (forecast_size > 0) {
       temp_forecast_mean_patient_log_sld = 
         calc_log_sld_mean(temp_forecast_patient_states, sum_tumor_size[visit_start]);
-      temp_forecast_patient_log_sld = to_vector(normal_rng(
+      temp_forecast_patient_log_sld = to_vector(student_t_rng(
+        measure_nu,
         temp_forecast_mean_patient_log_sld,
-        rep_vector(measure_sd, forecast_size)
+        measure_sd
       ));
     }
     
@@ -1151,8 +1160,8 @@ tuple(
  * This function processes all patients at once, computing both observed (replicated)
  * and forecasted RECIST responses.
  * 
- * @param rep_mean_patient_log_sld Mean log SLD for observed visits (all patients)
- * @param forecast_mean_patient_log_sld Mean log SLD for forecast (all patients)
+ * @param rep_patient_log_sld Log SLD for observed visits (all patients; noisy or mean)
+ * @param forecast_patient_log_sld Log SLD for forecast (all patients; noisy or mean)
  * @param patient_visit_pos Position array for patient visits
  * @param forecast_visits_pos Position array for forecast visits
  * @param n_patient_visits Number of visits per patient
@@ -1167,8 +1176,8 @@ tuple(
   array[] int,  // rep_recist [sum(n_patient_visits)] - sized for ALL visits for direct indexing
   array[] int   // forecast_recist [sum(n_patient_forecast_visits)]
 ) calculate_all_patients_recist(
-  vector rep_mean_patient_log_sld,
-  vector forecast_mean_patient_log_sld,
+  vector rep_patient_log_sld,
+  vector forecast_patient_log_sld,
   array[] int patient_visit_pos,
   array[] int forecast_visits_pos,
   array[] int n_patient_screening_visits  // Number of screening visits per patient
@@ -1206,8 +1215,8 @@ tuple(
     // Calculate RECIST for observed + forecast SLD
     // calculate_target_recist drops screening visits, so output length = n_obs_treat_visits + forecast_size
     array[n_obs_treat_visits + forecast_size] int full_predict_recist = calculate_target_recist(
-      exp(append_row(rep_mean_patient_log_sld[visit_start:visit_end], 
-                    forecast_mean_patient_log_sld[forecast_visit_start:forecast_visit_end])) * 10,
+      exp(append_row(rep_patient_log_sld[visit_start:visit_end],
+                    forecast_patient_log_sld[forecast_visit_start:forecast_visit_end])) * 10,
       n_patient_screening_visits[i]
     );
     
