@@ -29,8 +29,7 @@ ggplot2::theme_set(
   )
 )
 
-full_store <- "/mnt/data/analysis-results/karim_naguib/sclc/ms-trial-intercept-full/_targets"
-ms_store   <- "/mnt/data/analysis-results/karim_naguib/sclc/ms-trial-intercept/_targets"
+ms_store <- "/mnt/data/analysis-results/karim_naguib/sclc/ms-trial-intercept/_targets"
 ```
 
 This page validates the **4-state multistate model's** allocation of patients across competing exit routes from state 0 (on-treatment, pre-progression). From state 0, a patient can:
@@ -56,7 +55,7 @@ The full SCLC-01 model jointly estimates SLD tumor dynamics and multistate trans
 #| label: tbl-event-counts-full
 #| tbl-cap: "Observed competing risks event counts from state 0 (full model data)."
 
-stan_data_full <- tar_read(tumor_ssls_stan_data_posterior_ctdna_apr25, store = full_store)
+stan_data_full <- tar_read(tumor_ssls_stan_data_posterior_ctdna_jan26)
 competing_risks_event_table(stan_data_full)
 ```
 
@@ -69,7 +68,7 @@ competing_risks_event_table(stan_data_full)
 #| fig-height: 9
 #| column: body-outset
 
-draws_cif_full <- tar_read(tumor_ssls_draws_cif_posterior_ctdna_apr25, store = full_store)
+draws_cif_full <- tar_read(tumor_ssls_draws_cif_posterior_ctdna_jan26)
 # Full model uses extend_max_all_t for the GQ forecast grid; max_all_t is unused
 stan_data_full$max_all_t <- stan_data_full$extend_max_all_t
 plot_competing_risks_cif(stan_data_full, draws_cif_full)
