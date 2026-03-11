@@ -1,0 +1,431 @@
+---
+title: "Clinical Endpoints Specification"
+subtitle: "PFS, OS, and derived endpoints from the joint model"
+number-sections: true
+---
+
+## Overview
+
+Clinical endpoints in the SCLC-01 model are not computed from a single submodel --- they emerge from the **joint** tumor dynamics and multistate illness-death model working together. Progression-free survival (PFS) combines target lesion progression detected by the [tumor dynamics model](tumor-dynamics-specification.qmd) with non-target events inferred by the [multistate model](multistate-specification.qmd). Overall survival (OS) uses the illness-death competing risks structure to route patients through direct death ($0 \to 2$) or post-progression death ($0 \to 1 \to 2$).
+
+This page specifies how PFS and OS are derived, how Kaplan-Meier curves are constructed, and how posterior inference is performed. For the underlying model components, see:
+
+- [Model Architecture](model-architecture.qmd) for a high-level overview of the joint model
+- [Tumor Dynamics Specification](tumor-dynamics-specification.qmd) for the state-space SLD model and RECIST classification
+- [Multistate Model Specification](multistate-specification.qmd) for transition hazards and the illness-death structure
+
+::: {.callout-tip}
+## Related Pages
+- See [Clinical Endpoints](../analysis/clinical-endpoints.qmd) for ORR and PFS results
+- See [Survival Analysis](../analysis/survival-analysis.qmd) for Kaplan-Meier survival curves
+- See [Overall Survival](../analysis/overall-survival.qmd) for OS predictions
+:::
+
+---
+
+## Progression-Free Survival (PFS) {#sec-pfs}
+
+The observed PFS data $T_i^{\text{PFS,obs}}$ combines progression from target lesions and other events (non-target progression, new lesions, death, etc.). The model decomposes this into two components that are inferred from the data via the [multistate model](multistate-specification.qmd#sec-multistate):
+
+### Target Lesion PFS
+
+Target lesion progression time is determined from the state-space model predictions:
+
+$$
+T_i^{\text{target}} = \min\{t: \text{RECIST}_i(t) = \text{PD}\}
+$$
+
+where $\text{RECIST}_i(t)$ is computed from the posterior predictive SLD trajectory ([RECIST classification](tumor-dynamics-specification.qmd#sec-recist)).
+
+**Relationship to observed data:**
+
+- If patient has **recorded target progression** in the clinical data: $T_i^{\text{target}}$ is set to the recorded time
+- If patient has **no recorded target progression**: $T_i^{\text{target}}$ is right-censored at the last observed visit $T_i$
+- The model uses **model-predicted RECIST** from SLD trajectories to estimate when target progression would occur beyond observed visits
+
+**Note:** Model-predicted RECIST may differ from recorded clinical RECIST assessments because:
+
+1. Clinical assessments include non-target lesions and new lesions
+2. Model predictions are based solely on target lesion SLD dynamics
+3. Measurement error and visit timing create uncertainty in exact progression time
+
+### Non-Target Progression (Multistate $0 \to 1$)
+
+Non-target progression time is inferred as the complement of target progression:
+
+$$
+T_i^{\text{ms}_{01}} = \begin{cases}
+T_i^{\text{PFS,obs}} & \text{if } T_i^{\text{PFS,obs}} < T_i^{\text{target}} \text{ (non-target event occurred first)} \\
+\text{right-censored at } T_i & \text{if } T_i^{\text{PFS,obs}} \geq T_i^{\text{target}} \text{ (target occurred first or both censored)}
+\end{cases}
+$$
+
+The model learns the transition hazard $\lambda_{01,i}(t)$ ([multistate model](multistate-specification.qmd#sec-multistate)) such that the predicted survival function matches the inferred non-target events data:
+
+$$
+\mathbb{P}(T_i^{\text{ms}_{01}} > t \mid \text{no non-target event by } t) = S_{01,i}(t) = \exp\left(-\int_0^t \lambda_{01,i}(u) \, du\right)
+$$
+
+**Relationship to observed data:**
+
+- If patient has **PFS event before target progression**: The event is attributed to non-target causes, so $T_i^{\text{ms}_{01}} = T_i^{\text{PFS,obs}}$
+- If patient has **target progression first**: Non-target events are right-censored at target progression time
+- If patient is **censored with no events**: Both target and non-target are right-censored at last visit
+
+**Training the multistate model:**
+
+The model observes:
+
+1. **Observed PFS** $T_i^{\text{PFS,obs}}$ and censoring indicator $\delta_i^{\text{PFS,obs}}$ from clinical data
+2. **Inferred target progression time** $T_i^{\text{target}}$ from model-predicted RECIST
+
+It learns the transition hazard $\lambda_{01,i}(t)$ by fitting to the complement: patients who had PFS events that cannot be explained by target progression alone must have experienced non-target events.
+
+### Combined PFS
+
+The combined PFS from the [multistate endpoints](multistate-specification.qmd#sec-multistate-endpoints) is:
+
+$$
+T_i^{\text{PFS}} = \min(T_i^{\text{target}}, T_i^{\text{ms}_{01}})
+$$
+
+**Censoring logic:**
+
+Let $\delta_i^{\text{target}}$ and $\delta_i^{\text{ms}_{01}}$ be event indicators (1 = event, 0 = censored). Then:
+
+$$
+\begin{aligned}
+T_i^{\text{PFS}} &= \min(T_i^{\text{target}}, T_i^{\text{ms}_{01}}) \\
+\delta_i^{\text{PFS}} &= \max(\delta_i^{\text{target}}, \delta_i^{\text{ms}_{01}}) = \begin{cases}
+1 & \text{if either event occurred} \\
+0 & \text{if both censored}
+\end{cases}
+\end{aligned}
+$$
+
+**Key insight:** A patient can experience:
+
+- Target progression only ($T_i^{\text{target}} < T_i^{\text{ms}_{01}}$)
+- Non-target event only ($T_i^{\text{ms}_{01}} < T_i^{\text{target}}$)
+- Either could be right-censored
+
+The model reconstructs the joint PFS distribution by combining predictions from both components, allowing it to separate the contributions of tumor dynamics versus non-target clinical events to overall survival outcomes.
+
+When OS modeling is enabled (transitions $0 \to 2$ and $1 \to 2$), the model additionally produces OS and PPS predictions as described in [multistate endpoints](multistate-specification.qmd#sec-multistate-endpoints).
+
+### Data Reconciliation
+
+**Observed vs. Predicted:**
+
+- **Input to model:** $T_i^{\text{PFS,obs}}$, $\delta_i^{\text{PFS,obs}}$ (from clinical trial data)
+- **Model decomposes into:** $T_i^{\text{target}}$ (from tumor model) and $T_i^{\text{ms}_{01}}$ (from multistate model)
+- **Model output:** $T_i^{\text{PFS}}$ (reconstructed from both components)
+
+**Right-censoring scenarios:**
+
+1. **No events observed:** Both $T_i^{\text{target}}$ and $T_i^{\text{ms}_{01}}$ are right-censored at last visit $T_i$
+2. **Target progression recorded:** $T_i^{\text{target}}$ is observed, $T_i^{\text{ms}_{01}}$ is right-censored at $T_i^{\text{target}}$
+3. **Non-target event inferred:** $T_i^{\text{ms}_{01}}$ is observed (because $T_i^{\text{PFS,obs}} < T_i^{\text{target}}$), $T_i^{\text{target}}$ continues beyond observation
+4. **Both may have occurred:** Model uses the minimum for $T_i^{\text{PFS}}$
+
+This decomposition allows the model to:
+
+- Learn tumor progression dynamics from SLD trajectories
+- Learn non-target event hazards from the complement of target-explained PFS events
+- Predict future PFS by combining both processes
+- When OS is enabled, additionally model death via transitions $0 \to 2$ and $1 \to 2$
+
+## Kaplan-Meier Estimation {#sec-kaplan-meier}
+
+For trial $s$, the Kaplan-Meier survival curve is:
+
+$$
+\hat{S}_s(t) = \prod_{t_j \leq t} \left(1 - \frac{d_j}{n_j}\right)
+$$
+
+where:
+
+- $t_j$: distinct event times
+- $d_j$: number of events at $t_j$
+- $n_j$: number at risk just before $t_j$
+
+::: {.callout-tip}
+## See Analysis Results
+For Kaplan-Meier survival curves, see [Survival Analysis](../analysis/survival-analysis.qmd).
+:::
+
+## Median PFS and Quantiles
+
+The median PFS is:
+
+$$
+\text{mPFS}_s = \inf\{t: \hat{S}_s(t) \leq 0.5\}
+$$
+
+More generally, the $q$-th quantile is:
+
+$$
+\text{PFS}_s^{(q)} = \inf\{t: \hat{S}_s(t) \leq 1-q\}
+$$
+
+## PFS at Fixed Timepoints (PFS-n)
+
+Survival probability at fixed timepoint $t^*$ (e.g., 6 months, 12 months):
+
+$$
+\text{PFS-}t^* = \hat{S}_s(t^*)
+$$
+
+## Overall Survival (OS) {#sec-os-computation}
+
+OS computation uses the illness-death model's competing risks structure. The implementation handles both **unconditional** (posterior predictive, `spop_*`) and **conditional** (sample-based, `sample_*`) modes, using the helper function `sample_post_progression_death_rng` for post-progression death simulation.
+
+### Competing Risks Routing
+
+For each patient, two competing events are evaluated:
+
+- **Transition $0 \to 2$**: Direct death without progression
+- **Transition $0 \to 1$**: Progression (which opens the $1 \to 2$ path)
+
+The routing determines which event fires first:
+
+| Scenario | OS Path |
+|----------|---------|
+| $T_{02} < T_{01}$ (death before progression) | Direct death: $\text{OS} = T_{02}$ |
+| $T_{01} \leq T_{02}$ (progression first) | Post-progression death: $\text{OS} = T_{01} + T_{12}$ |
+| Both censored | Censored: $\text{OS} = \max(T_{01}, T_{02})$ |
+
+**Conditional mode additional rule:** When the patient has an *observed* direct death (`ms_censored_02 = 0`), the observed path is always used regardless of simulated progression time. This ensures the conditional posterior predictive check (PPC) respects the observed illness-death trajectory. For *forecasted* direct deaths (patient was alive at data cutoff but the model samples a death), the standard timing comparison applies.
+
+### Post-Progression Death ($1 \to 2$) Simulation
+
+When progression fires first, post-progression death is simulated from the $1 \to 2$ transition hazard. The baseline hazard supports three time scales (see [1→2 time scales](multistate-specification.qmd#sec-transition-12-timescales)):
+
+::: {.callout-note}
+## Current Configuration
+SCLC-01 uses **semi-Markov** ($\text{ms\_time\_scale\_12} = 1$). All three modes are documented below for reference.
+:::
+
+**Semi-Markov** ($\text{ms\_time\_scale\_12} = 1$): Sojourn time only (current default):
+
+$$
+\log S_{12}^{\text{cond}}(s) = \sum_{u=1}^{s} \log S_{12,s}^{\text{cond}}(u)
+$$
+
+where $s$ is sojourn time (weeks since progression). This "clock reset" formulation models post-progression survival as a function of time since progression, independent of when progression occurred.
+
+**Markov** ($\text{ms\_time\_scale\_12} = 0$): Clock-forward time only, conditioned at calendar time $t_{\text{pfs}}$:
+
+$$
+S_{12}(t \mid t > t_{\text{pfs}}) = \frac{S_{12,t}(t)}{S_{12,t}(t_{\text{pfs}})}
+$$
+
+In this formulation, post-progression hazard depends on total time from treatment start, and progression is effectively a covariate.
+
+**Extended** ($\text{ms\_time\_scale\_12} = 2$): Combines sojourn and clock-forward GPs additively:
+
+$$
+\log h_{12}(s, t) = \log \lambda_{12,s}(s) + \log \lambda_{12,t}(t)
+$$
+
+where $s$ is sojourn time and $t$ is calendar time. The conditional survival is:
+
+$$
+\log S_{12}^{\text{cond}}(s \mid t_{\text{pfs}}) = \sum_{u=1}^{s} \left[ \log S_{12,s}^{\text{cond}}(u) + \log S_{12,t}^{\text{cond}}(t_{\text{pfs}} + u) \right]
+$$
+
+This mode exhibited non-identifiability in practice and is not currently used.
+
+### Sojourn Conditioning for Censored Patients
+
+In conditional mode, patients who have progressed but are still alive at data cutoff have an observed sojourn survival time:
+
+$$
+s_i^{\text{obs}} = t_i^{\text{max}} - t_i^{\text{pfs}}
+$$
+
+The forecast must condition on surviving this observed sojourn, using the conditional survival function from $s_i^{\text{obs}}$ onward. This applies to all three time scales:
+
+- **Semi-Markov**: Sample from $S_{12,s}(\cdot \mid s > s_i^{\text{obs}})$
+- **Markov**: Sample from $S_{12,t}(\cdot \mid t > t_i^{\text{pfs}} + s_i^{\text{obs}})$
+- **Extended**: Sample from the combined hazard conditioned on $s > s_i^{\text{obs}}$
+
+In unconditional mode, sojourn conditioning is not applied (equivalent to $s_i^{\text{obs}} = 0$).
+
+### PFS Update for Competing Risks
+
+When direct death ($0 \to 2$) fires before progression, PFS must be updated:
+
+$$
+\text{PFS}_i = T_{i,02}, \quad \text{censored} = 0
+$$
+
+Death without progression is a PFS event (the patient cannot progress after dying). This overrides the target-lesion and multistate PFS computations from @sec-pfs.
+
+When progression fires first, the combined PFS is unchanged:
+
+$$
+\text{PFS}_i = \min(\text{PFS}_{i,\text{target}}, \text{PFS}_{i,\text{multistate}})
+$$
+
+---
+
+## Posterior Inference {#sec-posterior}
+
+### Joint Posterior
+
+The joint posterior distribution is:
+
+$$
+\begin{aligned}
+p(\boldsymbol{\Theta}, \{\mathbf{x}_i\}_{i=1}^{n_{\text{patients}}} \mid \mathcal{D}) \propto &\, p(\boldsymbol{\Theta}) \\
+&\times \prod_{i=1}^{n_{\text{patients}}} \left[ p(\mathbf{x}_i(1) \mid \alpha_i) \prod_{t=2}^{T_i} p(\mathbf{x}_i(t) \mid \mathbf{x}_i(t-1), d_i(t-1), g_i(t-1)) \right] \\
+&\times \prod_{i=1}^{n_{\text{patients}}} \prod_{t=1}^{T_i} p(\text{SLD}_{i,\text{obs}}(t) \mid \mathbf{x}_i(t), \sigma_{\text{meas}}) \\
+&\times \prod_{i=1}^{n_{\text{patients}}} \prod_{j \to k \in \text{enabled}} p(T_{i,jk} \mid \lambda_{jk,i}(\cdot))
+\end{aligned}
+$$
+
+where:
+
+- $\boldsymbol{\Theta}$: all model parameters
+- $\mathcal{D}$: observed data (SLD measurements, event times, censoring indicators)
+
+### Sampling Algorithm
+
+The model is fit using Hamiltonian Monte Carlo (HMC) via Stan's No-U-Turn Sampler (NUTS):
+
+1. **Non-centered parameterization** for hierarchical effects
+2. **QR decomposition** for numerical stability in covariate effects
+3. **Cholesky decomposition** for correlation matrices
+4. **Vectorization** for state computation across patients
+
+::: {.callout-tip}
+## See Analysis Results
+For MCMC diagnostics, see [Diagnostics](../analysis/diagnostics.qmd).
+:::
+
+### Generated Quantities
+
+For each posterior sample, the following quantities are computed:
+
+**Patient-level:**
+
+- Posterior predictive SLD trajectories
+- Forecasted states beyond observed data
+- RECIST classifications at each timepoint
+- PFS times (target, multistate transitions, combined)
+- OS times (competing risks routing, post-progression death)
+- Response indicators (confirmed, unconfirmed)
+
+**Trial-level:**
+
+- Objective response rate (ORR)
+- Kaplan-Meier survival curves (PFS and OS)
+- Median PFS/OS and quantiles
+- PFS at fixed timepoints (PFS-6, PFS-12, etc.)
+
+**Conditional groups:**
+
+- Same metrics stratified by covariates (e.g., PD-L1 status, trial)
+
+### Sample-Based vs. Posterior Predictive Estimates {#sec-sample-vs-spop}
+
+When making predictions for a trial, we generate two types of estimates that differ in how they handle observed data:
+
+#### Sample-Based Estimates
+
+**Sample-based estimates** (`sample_*`) condition on observed outcomes whenever available. These predictions:
+
+- Use observed target PFS when progression has been recorded
+- Use observed other event times when events have occurred
+- Only forecast for right-censored patients (no observed event yet)
+- Reflect what actually happened to the enrolled patients
+- Answer: *"What outcomes did we observe, and what do we predict for censored patients?"*
+
+**Implementation:**
+
+For patient $i$ with observed outcome at time $t_i^{\text{obs}}$:
+
+$$
+y_i^{\text{sample}} = \begin{cases}
+t_i^{\text{obs}} & \text{if event observed} \\
+\text{forecast from model} \mid t > t_i^{\text{obs}} & \text{if right-censored}
+\end{cases}
+$$
+
+#### Posterior Predictive Estimates
+
+**Posterior predictive estimates** (`spop_*`) ignore observed outcomes and always use model predictions. These predictions:
+
+- Always use model-predicted RECIST for target PFS (never observed progression times)
+- Always sample from the multistate hazard model for non-target events
+- Generate unconditional predictions as if no outcomes were observed
+- Still condition on the **same patient-level parameters** from the posterior (including patient random effects $\eta_i^{\text{patient}}$ and covariates $\mathbf{X}_i$)
+- Answer: *"What would the model predict for these patients if we hadn't seen their outcomes?"*
+
+**Implementation:**
+
+For patient $i$:
+
+$$
+y_i^{\text{spop}} \sim p(y \mid \boldsymbol{\beta}_{\text{pop}}, \eta_{s(i)}^{\text{trial}}, \eta_{i}^{\text{patient}}, \mathbf{X}_i)
+$$
+
+where all parameters are the **same** posterior draws used for sample-based estimates.
+
+::: {.callout-important}
+## Not True Superpopulation Estimates
+The `spop_*` quantities are **not** true superpopulation estimates that integrate over patient-level variation. A true superpopulation prediction would require drawing **new** patient random effects from $\mathcal{N}(0, \tau_{\text{patient}}^2)$ and potentially new covariate values from their population distributions.
+
+Instead, `spop_*` represents the **posterior predictive distribution** for the enrolled patients, using their learned parameters but ignoring their observed outcomes. This is useful for model validation (comparing predictions to observations) but does not provide population-level inferences that marginalize over patient heterogeneity.
+:::
+
+#### When to Use Each
+
+**Sample-based estimates:**
+
+- Validating model fit against observed trial results
+- Posterior predictive checks (comparing replicated data to observed)
+- Understanding what the model learned from observed events
+- Forecasting only for patients without observed events
+
+**Posterior predictive estimates:**
+
+- Model checking: comparing unconditional predictions to observations
+- Assessing calibration: does the model's prior belief match observed outcomes?
+- Quantifying what the model expected before seeing the data
+- Evaluating surprise: large differences indicate the model didn't anticipate the observed pattern
+
+#### Interpretation Example
+
+For a patient who progressed at week 24:
+
+- **Sample-based PFS**: 24 weeks (uses observed progression)
+- **Posterior predictive PFS**: Sampled from model (e.g., 32 weeks, ignoring the observed event)
+
+For trial-level Kaplan-Meier curves:
+
+- **Sample-based**: Mixes observed events with forecasts for censored patients (best estimate of trial outcomes)
+- **Posterior predictive**: Pure model prediction for all patients as if no outcomes were observed (useful for validation)
+
+::: {.callout-note}
+## When Estimates Differ
+Large differences between sample-based and posterior predictive estimates indicate:
+
+- **If spop is better**: The observed data show worse outcomes than the model predicted (unexpected events, earlier progressions)
+- **If sample is better**: The observed data show better outcomes than the model predicted (fewer events, later progressions)
+- **If similar**: The model's predictions align well with observed outcomes (good calibration)
+
+This comparison is a key model validation diagnostic, not a population vs. sample inference.
+:::
+
+---
+
+## Related Pages
+
+- [Model Architecture](model-architecture.qmd) --- high-level overview of the joint model
+- [Tumor Dynamics Specification](tumor-dynamics-specification.qmd) --- state-space SLD model, RECIST classification, ORR
+- [Multistate Model Specification](multistate-specification.qmd) --- transition hazards and illness-death structure
+- [Clinical Endpoints](../analysis/clinical-endpoints.qmd) --- ORR and PFS analysis results
+- [Survival Analysis](../analysis/survival-analysis.qmd) --- Kaplan-Meier curves
+- [Overall Survival](../analysis/overall-survival.qmd) --- OS predictions and competing risks results

@@ -14,7 +14,7 @@ This page provides an overview of the data used in the SCLC-01 longitudinal tumo
 
 ::: {.callout-tip}
 ## Related Pages
-- See [Model Specification](../documentation/model-specification.qmd) for RECIST criteria definitions
+- See [Tumor Dynamics Specification](../documentation/tumor-dynamics-specification.qmd#sec-recist) for RECIST criteria definitions
 - See [Clinical Endpoints](clinical-endpoints.qmd) for ORR and PFS results
 :::
 
@@ -142,7 +142,7 @@ The model uses RECIST 1.1 criteria to classify tumor response based on target le
 
 ::: {.callout-note}
 ## Why do these differ?
-Clinical RECIST assessments include non-target lesions and new lesions, while our calculated response is based solely on target lesion SLD dynamics. See [Model Specification](../documentation/model-specification.qmd#sec-recist) for RECIST criteria details.
+Clinical RECIST assessments include non-target lesions and new lesions, while our calculated response is based solely on target lesion SLD dynamics. See [Tumor Dynamics Specification](../documentation/tumor-dynamics-specification.qmd#sec-recist) for RECIST criteria details.
 :::
 
 ```{r}
@@ -205,5 +205,5 @@ all_analysis_data |>
 - [Clinical Endpoints](clinical-endpoints.qmd) - ORR and PFS results
 - [Survival Analysis](survival-analysis.qmd) - Kaplan-Meier curves
 - [Patient Dynamics](patient-dynamics.qmd) - Individual tumor trajectories
-- [Model Specification](../documentation/model-specification.qmd) - RECIST criteria
+- [Tumor Dynamics Specification](../documentation/tumor-dynamics-specification.qmd#sec-recist) - RECIST criteria
 :::

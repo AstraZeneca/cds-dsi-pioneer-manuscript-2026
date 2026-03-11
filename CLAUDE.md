@@ -300,8 +300,12 @@ Plots always use `btype == "ub"`. For PFS, `interval_censored` captures visit-ga
 - Example: Write "SCLC-01 trial" in figure captions, but `filter(trial == "sclc")` in R code
 - **Use automatic section numbering**: Set `number-sections: true` in frontmatter, don't use manual numbers (1.1, 2.3) in headings
 - **Cross-references**: Use section IDs `{#sec-name}` and reference with `@sec-name`, never hardcode "Section X.Y.Z"
-- **Model specification is the blueprint**: `quarto/website/documentation/model-specification.qmd` is the authoritative specification for everything in the Stan model. Code and documentation must always match:
-  - When changing Stan code, update the model specification to reflect the change
+- **Model specification is the blueprint**: The model specification is split across three pages, each authoritative for its domain:
+  - `quarto/website/documentation/tumor-dynamics-specification.qmd` — tumor state-space model, RECIST, tumor priors
+  - `quarto/website/documentation/multistate-specification.qmd` — illness-death model, transitions, multistate priors
+  - `quarto/website/documentation/clinical-endpoints-specification.qmd` — PFS, OS, posterior inference
+  - `quarto/website/documentation/model-architecture.qmd` — overview, hierarchy, notation, feature flags
+  - When changing Stan code, update the relevant specification page to reflect the change
   - When the specification defines behavior (e.g., index conventions, endpoint formulas, routing logic), the code must not violate those definitions without updating the spec first
   - If a proposed code change contradicts the specification, flag the discrepancy before implementing
   - Treat the specification as a contract: it documents what the model *should* do, not just what it *happens* to do

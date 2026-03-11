@@ -19,7 +19,7 @@ Diagnostics on this page are from the **DCO3 (January 2026)** model fit.
 
 ::: {.callout-tip}
 ## Related Pages
-- See [Model Specification](../documentation/model-specification.qmd) for model details
+- See [Model Architecture](../documentation/model-architecture.qmd) for model overview
 - See [Architecture](../documentation/architecture.qmd) for computational optimization strategies
 :::
 

@@ -61,17 +61,19 @@
 };
 
 % ==================== MULTISTATE HAZARD MODEL ====================
-\node (events) [model, fill=white, draw=black, line width=1.5pt, text width=5.4cm] at (0,-2) {
+\node (events) [model, fill=white, draw=black, line width=1.5pt, text width=5.4cm, minimum height=5.5cm] at (0,-2) {
     \large\textbf{Multistate Hazard Model}\\[0.1cm]
     \noindent\rule{5.2cm}{0.4pt}\\[0.2cm]
     \small Illness-Death Structure\\[0.3cm]
     \begin{flushleft}\footnotesize
     • 0$\to$1: Progression\\
     • 0$\to$2: Death w/o prog.\\
-    • 1$\to$2: Post-prog. death
+    • 1$\to$2: Post-prog. death\\
+    • 0$\to$3: Dropout\\
+    • 3$\to$2: Off-trial death
     \end{flushleft}
     \vspace{0.1cm}
-    \footnotesize\fcolorbox{black}{gray!15}{\parbox{4.8cm}{\centering\textbf{Output:} $\lambda_{jk}(t) \rightarrow T_i^{01}, T_i^{12}$}}
+    \footnotesize\fcolorbox{black}{gray!15}{\parbox{4.8cm}{\centering\textbf{Output:} $\lambda_{jk}(t) \rightarrow T_i^{01}, T_i^{12}, T_i^{03}$}}
 };
 
 % ==================== COMPOSITE ENDPOINTS ====================
@@ -125,7 +127,7 @@
 
 % Models to Composite Endpoints
 \draw [arrow, black, line width=0.8pt] (mech.east) to[out=0,in=150] node[pos=0.6, outputbox, font=\small] {$T^{\text{target}}$} (pfs.west);
-\draw [arrow, black, line width=0.8pt] (events.east) to[out=0,in=210] node[pos=0.6, outputbox, font=\small] {$T^{01}, T^{12}$} (pfs.west);
+\draw [arrow, black, line width=0.8pt] (events.east) to[out=0,in=210] node[pos=0.6, outputbox, font=\small] {$T^{01}, T^{12}, T^{03}$} (pfs.west);
 
 % PFS to Outputs
 \draw [arrow, black, line width=0.8pt] (pfs.north) to[out=90,in=180] (out1.west);

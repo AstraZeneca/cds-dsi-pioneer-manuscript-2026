@@ -5,6 +5,7 @@ project:
   render:
     - "*.qmd"
     - "**/*.qmd"
+    - "!comparisons/dco-comparisons.qmd"
 
 website:
   title: "PIONEER: SCLC-01 Forecasting"
@@ -47,8 +48,15 @@ website:
         menu:
           - text: Model Architecture
             href: documentation/model-architecture.qmd
+          - text: "---"
           - text: Model Specification
-            href: documentation/model-specification.qmd
+          - text: Tumor Dynamics
+            href: documentation/tumor-dynamics-specification.qmd
+          - text: Multistate Model
+            href: documentation/multistate-specification.qmd
+          - text: Clinical Endpoints
+            href: documentation/clinical-endpoints-specification.qmd
+          - text: "---"
           - text: Analysis Subgroups
             href: documentation/analysis-subgroups.qmd
           - text: Onboarding Tutorial
@@ -83,8 +91,12 @@ website:
           contents:
             - documentation/onboarding-tutorial.qmd
             - documentation/model-architecture.qmd
-            - documentation/model-specification.qmd
             - documentation/analysis-subgroups.qmd
+        - section: "Model Specification"
+          contents:
+            - documentation/tumor-dynamics-specification.qmd
+            - documentation/multistate-specification.qmd
+            - documentation/clinical-endpoints-specification.qmd
         - section: "Technical Reference"
           contents:
             - documentation/targets-pipeline.qmd

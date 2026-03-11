@@ -19,7 +19,7 @@ Results on this page are based on **DCO3 (January 2026)**. For comparisons acros
 
 ::: {.callout-tip}
 ## Related Pages
-- See [Model Specification](../documentation/model-specification.qmd#sec-clinical-endpoints) for endpoint definitions
+- See [Clinical Endpoints Specification](../documentation/clinical-endpoints-specification.qmd) for endpoint definitions
 - See [Survival Analysis](survival-analysis.qmd) for Kaplan-Meier curves
 :::
 
@@ -292,5 +292,5 @@ create_pfs_n_table("spop", "part_e", jan26_pfs_n_data, jan26_cond_pfs_n_data)
 
 - [Survival Analysis](survival-analysis.qmd) - Kaplan-Meier curves
 - [DCO Comparisons](../comparisons/dco-comparisons.qmd) - Data cutoff comparisons
-- [Model Specification](../documentation/model-specification.qmd#sec-clinical-endpoints) - Endpoint definitions
+- [Clinical Endpoints Specification](../documentation/clinical-endpoints-specification.qmd) - Endpoint definitions
 :::
