@@ -19,7 +19,7 @@ Results on this page are based on **DCO3 (January 2026)**.
 
 ::: {.callout-tip}
 ## Related Pages
-- See [Model Specification](../documentation/model-specification.qmd#sec-tumor-dynamics) for mathematical details on the tumor dynamics model
+- See [Tumor Dynamics Specification](../documentation/tumor-dynamics-specification.qmd#sec-tumor-dynamics) for mathematical details on the tumor dynamics model
 - See [Architecture](../documentation/architecture.qmd#sec-hierarchical) for the hierarchical parameter structure
 :::
 
@@ -153,7 +153,7 @@ tar_read(all_tumor_ssls_coef_ctdna_jan26) |>
 ::: {.related-pages}
 ## Related Pages
 
-- [Model Specification](../documentation/model-specification.qmd) - Mathematical details
+- [Tumor Dynamics Specification](../documentation/tumor-dynamics-specification.qmd) - Mathematical details
 - [Architecture](../documentation/architecture.qmd#sec-hierarchical) - Hierarchical structure
 - [Patient Dynamics](patient-dynamics.qmd) - Individual patient trajectories
 - [Clinical Endpoints](clinical-endpoints.qmd) - ORR and PFS results

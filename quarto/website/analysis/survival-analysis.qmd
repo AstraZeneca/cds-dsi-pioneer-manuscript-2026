@@ -19,7 +19,7 @@ To see how results evolve across data cutoff dates, visit [DCO Comparisons](../c
 
 ::: {.callout-tip}
 ## Related Pages
-- See [Model Specification](../documentation/model-specification.qmd#sec-kaplan-meier) for KM estimation details
+- See [Clinical Endpoints Specification](../documentation/clinical-endpoints-specification.qmd#sec-kaplan-meier) for KM estimation details
 - See [Clinical Endpoints](clinical-endpoints.qmd) for median PFS estimates
 :::
 
@@ -139,5 +139,5 @@ plot_pdl1_km_by_estimate_type(
 - [Clinical Endpoints](clinical-endpoints.qmd) - ORR and median PFS results
 - [DCO Comparisons](../comparisons/dco-comparisons.qmd) - Data cutoff comparisons
 - [Model Validation](model-validation.qmd) - Cross-validation results
-- [Model Specification](../documentation/model-specification.qmd#sec-kaplan-meier) - KM estimation
+- [Clinical Endpoints Specification](../documentation/clinical-endpoints-specification.qmd#sec-kaplan-meier) - KM estimation
 :::

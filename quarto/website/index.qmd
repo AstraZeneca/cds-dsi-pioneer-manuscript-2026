@@ -68,8 +68,8 @@ New to the project? Start with our onboarding tutorial that guides you through t
 :::
 
 ::: {.feature-card}
-### [Model Specification](documentation/model-specification.qmd)
-Complete mathematical specification of the Bayesian hierarchical model including tumor dynamics, competing risks, and clinical endpoints.
+### [Model Architecture](documentation/model-architecture.qmd)
+Model overview and structure, with links to detailed specifications for [tumor dynamics](documentation/tumor-dynamics-specification.qmd), [multistate model](documentation/multistate-specification.qmd), and [clinical endpoints](documentation/clinical-endpoints-specification.qmd).
 :::
 
 ::: {.feature-card}
@@ -110,7 +110,10 @@ This website presents results from the SCLC-01 longitudinal tumor analysis using
 | Document | Description |
 |----------|-------------|
 | [Onboarding Tutorial](documentation/onboarding-tutorial.qmd) | Step-by-step guide for new team members |
-| [Model Specification](documentation/model-specification.qmd) | Complete mathematical specification |
+| [Model Architecture](documentation/model-architecture.qmd) | Model overview, notation, and structure |
+| [Tumor Dynamics](documentation/tumor-dynamics-specification.qmd) | Tumor state-space model specification |
+| [Multistate Model](documentation/multistate-specification.qmd) | Illness-death multistate model |
+| [Clinical Endpoints](documentation/clinical-endpoints-specification.qmd) | PFS, OS, and derived endpoints |
 | [Architecture](documentation/architecture.qmd) | System design and code organization |
 | [AR(1) Process Noise](documentation/ar1-process-noise.qmd) | Time-varying rate implementation |
 

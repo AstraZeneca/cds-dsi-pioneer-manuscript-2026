@@ -73,7 +73,7 @@ This is because dropout patients (who tend to have worse prognosis) are forced i
 ## Related Pages
 - See [Clinical Endpoints](clinical-endpoints.qmd) for ORR and median PFS results
 - See [Survival Analysis](survival-analysis.qmd) for PFS Kaplan-Meier curves
-- See [Model Specification](../documentation/model-specification.qmd) for endpoint definitions
+- See [Clinical Endpoints Specification](../documentation/clinical-endpoints-specification.qmd) for endpoint definitions
 :::
 
 ## SCLC-01 OS Forecasts {#sec-sclc-os-km}
@@ -680,5 +680,5 @@ plot_km_pdl1_by_dco(
 - [Clinical Endpoints](clinical-endpoints.qmd) - ORR and median PFS results
 - [Survival Analysis](survival-analysis.qmd) - PFS Kaplan-Meier curves
 - [DCO Comparisons](../comparisons/dco-comparisons.qmd) - Data cutoff comparisons
-- [Model Specification](../documentation/model-specification.qmd) - Endpoint definitions
+- [Clinical Endpoints Specification](../documentation/clinical-endpoints-specification.qmd) - Endpoint definitions
 :::

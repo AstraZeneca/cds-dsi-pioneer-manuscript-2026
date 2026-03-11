@@ -116,5 +116,5 @@ The prior predictive reveals the prior spreads probability roughly equally acros
 
 - [Overall Survival](overall-survival.qmd) - OS Kaplan-Meier curves and predictions
 - [Survival Analysis](survival-analysis.qmd) - PFS Kaplan-Meier curves
-- [Model Specification](../documentation/model-specification.qmd) - Multistate model details
+- [Multistate Model Specification](../documentation/multistate-specification.qmd) - Multistate model details
 :::

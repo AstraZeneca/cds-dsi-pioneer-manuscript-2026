@@ -9,7 +9,7 @@ subtitle: "Time-varying process noise implementation for tumor dynamics"
 
 ::: {.callout-tip}
 ## Related Pages
-- See [Model Specification](model-specification.qmd) Section 2.4.4 for mathematical context
+- See [Tumor Dynamics Specification](tumor-dynamics-specification.qmd#sec-ar1-process-noise) for mathematical context
 - See [Architecture](architecture.qmd) for code organization
 :::
 
@@ -510,7 +510,7 @@ ppc_plot <- bayesplot::ppc_dens_overlay(
 ::: {.related-pages}
 ## Related Pages
 
-- [Model Specification](model-specification.qmd) - Mathematical context (Section 2.4.4)
+- [Tumor Dynamics Specification](tumor-dynamics-specification.qmd#sec-ar1-process-noise) - Mathematical context
 - [Architecture](architecture.qmd) - Code organization
 - [Parameter Inference](../analysis/parameter-inference.qmd) - See rate estimates
 - [Diagnostics](../analysis/diagnostics.qmd) - MCMC diagnostics

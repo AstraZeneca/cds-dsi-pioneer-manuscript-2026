@@ -18,7 +18,7 @@ Sclc uses a modular Stan architecture with:
 
 ::: {.callout-tip}
 ## Related Pages
-- See [Model Specification](model-specification.qmd) for complete mathematical details
+- See [Model Architecture](model-architecture.qmd) for model overview, or the individual specification pages for complete mathematical details
 - See [Onboarding Tutorial](onboarding-tutorial.qmd) for a learning path
 :::
 
@@ -370,7 +370,10 @@ This standardization makes modules:
 
 ### Key Documentation
 
-- [Model Specification](model-specification.qmd) - Complete mathematical specification
+- [Model Architecture](model-architecture.qmd) - Model overview and structure
+- [Tumor Dynamics Specification](tumor-dynamics-specification.qmd) - Tumor state-space model
+- [Multistate Model Specification](multistate-specification.qmd) - Illness-death multistate model
+- [Clinical Endpoints Specification](clinical-endpoints-specification.qmd) - PFS, OS, derived endpoints
 - [AR(1) Process Noise](ar1-process-noise.qmd) - Detailed AR(1) implementation
 - [Onboarding Tutorial](onboarding-tutorial.qmd) - Learning path for newcomers
 
@@ -389,7 +392,7 @@ This standardization makes modules:
 ::: {.related-pages}
 ## Related Pages
 
-- [Model Specification](model-specification.qmd) - Complete mathematical specification
+- [Model Architecture](model-architecture.qmd) - Model overview and structure
 - [AR(1) Process Noise](ar1-process-noise.qmd) - Time-varying rate implementation
 - [Onboarding Tutorial](onboarding-tutorial.qmd) - Learning path
 - [Parameter Inference](../analysis/parameter-inference.qmd) - See parameters in practice
