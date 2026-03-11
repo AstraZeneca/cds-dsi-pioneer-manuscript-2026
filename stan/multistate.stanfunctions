@@ -56,7 +56,7 @@ tuple(int, int) sample_dropout_death_rng(
 }
 
 /**
- * Calculate multistate log-likelihood for the full illness-death model
+ * Multistate log-probability for the illness-death model
  *
  * Handles all patient scenarios based on final state and enabled transitions.
  * For each patient, accumulates likelihood contributions from:
@@ -64,11 +64,14 @@ tuple(int, int) sample_dropout_death_rng(
  *   - Transition hazard at event time (if not censored)
  *   - Post-progression survival (if applicable)
  *
+ * When only 0→1 is enabled (single-transition mode), delegates to the fast
+ * piecewise-constant hazard path via calc_ms_single_transition_loglik.
+ *
+ * @param final_state Observed final states (0=censored, 1=progressed, 2=dead, 3=dropout)
  * @param enable_01 Flag: is 0→1 transition enabled?
  * @param enable_02 Flag: is 0→2 transition enabled?
  * @param enable_12 Flag: is 1→2 transition enabled?
  * @param ms_time_scale_12 Time scale for 1→2: 0=Markov, 1=semi-Markov, 2=extended
- * @param final_state Array of final states (0, 1, or 2) for each patient
  * @param time_01 Array of 0→1 transition times (0 if not applicable)
  * @param time_02 Array of 0→2 transition times (0 if not applicable)
  * @param time_12 Array of sojourn times in state 1 (0 if not applicable)
@@ -80,12 +83,12 @@ tuple(int, int) sample_dropout_death_rng(
  * @param log_cond_surv_02 Matrix of log conditional survival for 0→2 [n_patients, max_t]
  * @param log_cond_surv_12_s Matrix of log conditional survival for 1→2 on sojourn time [n_patients, max_sojourn_t]
  * @param log_cond_surv_12_t Matrix of log conditional survival for 1→2 on clock-forward time [n_patients, max_t]
- * @return Total log-likelihood
+ * @return Log probability of observed final states
  */
-real calc_multistate_loglik(
+real multistate_lpmf(
+  array[] int final_state,
   int enable_01, int enable_02, int enable_12, int ms_time_scale_12,
   int enable_03, int enable_32,
-  array[] int final_state,
   array[] int time_01, array[] int time_02, array[] int time_12,
   array[] int time_03, array[] int time_32,
   array[] int censored_01, array[] int censored_02, array[] int censored_12,
@@ -98,6 +101,11 @@ real calc_multistate_loglik(
   matrix log_cond_surv_03,
   matrix log_cond_surv_32
 ) {
+  // Single-transition fast path (0→1 only, equivalent to old other_events)
+  if (enable_01 && !enable_02 && !enable_12) {
+    return sum(calc_ms_single_transition_loglik(time_01, censored_01, log_cond_surv_01));
+  }
+
   int n_patients = size(final_state);
   real total_ll = 0;
 

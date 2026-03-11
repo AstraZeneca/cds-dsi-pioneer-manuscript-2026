@@ -128,6 +128,7 @@ profile("gen_quant") {
         cutoff_t_patient_visit_idx,
         cutoff_sum_tumor_size,
         measure_sd_sld,
+        measure_nu_sld,
         cutoff_n_patient_screening_visits
       );
   } else {
@@ -177,7 +178,8 @@ profile("gen_quant") {
           negative_infinity(),
           1.0,
           rep_matrix(0.0, forecast_size, 2),
-          measure_sd_sld
+          measure_sd_sld,
+          measure_nu_sld
         );
 
       // Store results
@@ -191,8 +193,8 @@ profile("gen_quant") {
   
   // Calculate RECIST classifications for cutoff-observed patients (including forecasts)
   (cutoff_rep_recist, cutoff_forecast_recist) = calculate_all_patients_recist(
-    cutoff_rep_mean_patient_log_sld,
-    cutoff_forecast_mean_patient_log_sld,
+    cutoff_rep_patient_log_sld,
+    cutoff_forecast_patient_log_sld,
     cutoff_patient_visit_pos,
     cutoff_forecast_visits_pos,
     cutoff_n_patient_screening_visits
