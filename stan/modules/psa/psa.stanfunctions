@@ -42,9 +42,10 @@ vector calc_log_psa_mean(matrix patient_states, real psa_baseline) {
 /**
  * Calculate PCWG3 PSA response category with confirmation logic
  *
- * PCWG3 PSA Progression Criteria:
- * - Scenario A (after PSA decline): >= 25% AND >= 2 ng/mL rise from nadir, confirmed
- * - Scenario B (no decline): After 12 weeks, >= 25% AND >= 2 ng/mL rise from baseline, confirmed
+ * SAP Section 5.4.4 PSA Progression Criteria:
+ * - >= 25% AND >= 2 ng/mL rise from nadir, confirmed >= 3 weeks later
+ * - Trigger date = first qualifying visit; values not required to be consecutive
+ * - (Currently retains had_decline split; see issue #56 for Day-82 unification)
  *
  * @param psa_trajectory Absolute PSA values (ng/mL) at each visit
  * @param visit_weeks Week number for each visit (for 12-week rule)
@@ -118,7 +119,9 @@ array[] int calculate_psa_category(
         }
       }
     } else {
-      pending_pd_week = -1;  // Reset confirmation window
+      // SAP Section 5.4.4: values not required to be consecutive —
+      // a PSA dip between trigger and confirmation does NOT invalidate the trigger.
+      // Do NOT reset pending_pd_week here.
       if (psa_t < psa_undetectable_threshold) {
         psa_status[idx] = CR;
       } else if (baseline > 0 && (baseline - psa_t) / baseline >= 0.5) {
