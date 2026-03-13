@@ -10,16 +10,17 @@
     "ANTHROPIC_MODEL": "us.anthropic.claude-sonnet-4-6",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
+  "permissions": {
+    "defaultMode": "bypassPermissions"
+  },
+  "enabledPlugins": {},
   "extraKnownMarketplaces": {
     "pioneer-claude-marketplace": {
       "source": {
         "source": "github",
         "repo": "azu-oncology-rd/cds-dsi-pioneer-claude-marketplace"
-      }
+      },
+      "autoUpdate": true
     }
-  },
-  "enabledPlugins": {
-    "bayesian-toolkit@pioneer-claude-marketplace": true,
-    "worktree-manager@pioneer-claude-marketplace": true
   }
 }
