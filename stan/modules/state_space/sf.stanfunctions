@@ -1416,6 +1416,12 @@ tuple(
                                last_predict_visit);
     }
 
+    // Full assessment visit schedule for spop (unconditional):
+    // observed treatment visits + forecast assessment visits
+    int n_spop_visits = n_obs_treat_visits + n_assessment;
+    array[n_spop_visits] int spop_visit_weeks =
+      append_array(treat_curr_visits, obs_visit_time);
+
     // Assessment-visit forecast RECIST for this patient
     array[n_assessment] int patient_forecast_obs_recist =
       forecast_obs_recist[assess_start:assess_end];
@@ -1494,10 +1500,9 @@ tuple(
     // For ms-observed: use observed time with interval censoring
     if (ms_right_censored[i]) {
       // Multistate event is censored (either no event at all, or target progressed first)
-      // Forecast what WOULD happen with multistate events
-      // right_censored=1 forces forecast
-      (sample_ms_pfs[i], sample_ms_right_censored[i]) = survival_time_rng(ms_log_cond_surv[i], pfs[i], 1, 0);
-      sample_ms_pfs[i] += 1;
+      // Forecast from pfs[i]: use full visit schedule, skip visits before pfs[i]
+      (sample_ms_pfs[i], sample_ms_right_censored[i]) = assessment_gated_survival_time_rng(
+          ms_log_cond_surv[i], spop_visit_weeks, n_spop_visits, max_all_t, pfs[i], 1);
     } else {
       // Multistate event actually occurred - use observed time
       sample_ms_pfs[i] = pfs[i] + interval_censored[i] + 1;
@@ -1505,8 +1510,10 @@ tuple(
     }
 
     // Unconditional posterior predictive (always sample from scratch)
-    (spop_ms_pfs[i], spop_ms_right_censored[i]) = survival_time_rng(ms_log_cond_surv[i]);
-    spop_ms_pfs[i] += 1;  // Convert to conventional week (week of detection)
+    // Assessment-gated: accumulate hazard between visits, sample once per visit
+    (spop_ms_pfs[i], spop_ms_right_censored[i]) = assessment_gated_survival_time_rng(
+        ms_log_cond_surv[i], spop_visit_weeks, n_spop_visits, max_all_t);
+    // No +1: assessment_gated_survival_time_rng returns 1-indexed calendar week directly
     
     // Combined PFS: For independent events, these represent "first of any event"
     // Note: With independent events, both target AND multistate events can occur

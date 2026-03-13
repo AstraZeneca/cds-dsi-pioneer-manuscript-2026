@@ -632,6 +632,111 @@ tuple(int, int) survival_time_rng(row_vector log_cond_prob_surv, int obs_surv_ti
 }
 
 /**
+ * Sample a survival time gated by assessment visits.
+ *
+ * Instead of sampling bernoulli per-week, accumulates cumulative hazard
+ * between assessment visits and samples once per visit. Event time is the
+ * assessment visit week where the transition is detected.
+ *
+ * When visit_weeks has weekly spacing (interval=1), this is mathematically
+ * equivalent to survival_time_rng (single-week cumulative = single bernoulli).
+ *
+ * @param log_cond_prob_surv  Row vector [max_all_t] of log P(survive week t)
+ * @param visit_weeks         Array of assessment visit calendar weeks (1-indexed, ascending)
+ * @param n_visits            Number of visits in visit_weeks
+ * @param max_all_t           Maximum time (returned when censored)
+ * @return (event_week, censored) — event_week is 1-indexed calendar week or max_all_t
+ */
+tuple(int, int) assessment_gated_survival_time_rng(
+    row_vector log_cond_prob_surv,
+    array[] int visit_weeks,
+    int n_visits,
+    int max_all_t
+) {
+  int n_intervals = num_elements(log_cond_prob_surv);
+  int event_week = max_all_t;
+  int censored = 1;
+  int prev_week = 0;
+  int done = 0;
+
+  for (a in 1:n_visits) {
+    if (!done) {
+      int curr_week = visit_weeks[a];
+      int start_t = prev_week + 1;
+      int end_t = min(curr_week, n_intervals);
+
+      if (start_t > n_intervals) {
+        done = 1;
+      } else {
+        // Accumulate log P(survive interval) = sum of per-week log conditional survivals
+        real cum_log_surv = sum(log_cond_prob_surv[start_t:end_t]);
+        // P(no event in interval) = exp(cum_log_surv)
+        // Sample: survived this interval?
+        if (!bernoulli_rng(exp(cum_log_surv))) {
+          // Event detected at this assessment visit
+          event_week = curr_week;
+          censored = 0;
+          done = 1;
+        }
+      }
+      prev_week = curr_week;
+    }
+  }
+
+  return (event_week, censored);
+}
+
+/**
+ * Conditional overload: starts accumulating from obs_surv_time.
+ * Skips visits at or before obs_surv_time. If right_censored=0,
+ * returns observed time directly (no forecast needed).
+ */
+tuple(int, int) assessment_gated_survival_time_rng(
+    row_vector log_cond_prob_surv,
+    array[] int visit_weeks,
+    int n_visits,
+    int max_all_t,
+    int obs_surv_time,
+    int right_censored
+) {
+  if (!right_censored) {
+    return (obs_surv_time, 0);
+  }
+
+  int n_intervals = num_elements(log_cond_prob_surv);
+  int event_week = max_all_t;
+  int censored = 1;
+  int prev_week = obs_surv_time;  // Start from observed time
+  int done = 0;
+
+  for (a in 1:n_visits) {
+    if (!done) {
+      int curr_week = visit_weeks[a];
+      if (curr_week <= obs_surv_time) {
+        // Skip visits in the observed region
+      } else {
+        int start_t = prev_week + 1;
+        int end_t = min(curr_week, n_intervals);
+
+        if (start_t > n_intervals) {
+          done = 1;
+        } else {
+          real cum_log_surv = sum(log_cond_prob_surv[start_t:end_t]);
+          if (!bernoulli_rng(exp(cum_log_surv))) {
+            event_week = curr_week;
+            censored = 0;
+            done = 1;
+          }
+        }
+        prev_week = curr_week;
+      }
+    }
+  }
+
+  return (event_week, censored);
+}
+
+/**
  * Generate a survival time within the range of interval censored intervals
  *
  * Have to be careful using this; it is not in the log space. I don't want to touch it right now because I don't want to break something critical.
