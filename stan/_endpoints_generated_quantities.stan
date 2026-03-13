@@ -171,7 +171,7 @@ profile("gen_quant") {
     }
   }
   
-  // Calculate RECIST classifications for all patients at once
+  // Weekly RECIST from noisy SLD (for visualization/diagnostics)
   (rep_recist, forecast_recist) = calculate_all_patients_recist(
     rep_patient_log_sld,
     forecast_patient_log_sld,
@@ -179,6 +179,44 @@ profile("gen_quant") {
     forecast_visits_pos,
     n_patient_screening_visits
   );
+
+  // Assessment-visit noisy SLD for RECIST endpoint computation
+  vector[n_total_forecast_obs_visits] forecast_obs_log_sld;
+  array[n_total_forecast_obs_visits] int forecast_obs_recist;
+  for (i in 1:n_patients) {
+    int n_assessment = get_pos_size(forecast_obs_visits_pos, i);
+    if (n_assessment > 0) {
+      int assess_start, assess_end;
+      (assess_start, assess_end) = get_pos(forecast_obs_visits_pos, i);
+
+      int forecast_visit_start, forecast_visit_end;
+      (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
+      int forecast_size = forecast_visit_end - forecast_visit_start + 1;
+
+      // Extract mean SLD at assessment weeks (subsample from weekly mean grid)
+      vector[n_assessment] obs_visit_mean;
+      for (a in 1:n_assessment) {
+        int forecast_idx = min(a * forecast_observation_interval, forecast_size);
+        obs_visit_mean[a] = forecast_mean_patient_log_sld[forecast_visit_start + forecast_idx - 1];
+      }
+
+      // Apply measurement noise at assessment visits only
+      forecast_obs_log_sld[assess_start:assess_end] =
+        to_vector(student_t_rng(measure_nu_sld, obs_visit_mean, measure_sd_sld));
+    }
+  }
+
+  // Assessment-visit RECIST from noisy SLD (for endpoint computation)
+  {
+    array[sum(n_patient_visits)] int unused_rep_recist;
+    (unused_rep_recist, forecast_obs_recist) = calculate_all_patients_recist(
+        rep_patient_log_sld,
+        forecast_obs_log_sld,
+        patient_visit_pos,
+        forecast_obs_visits_pos,
+        n_patient_screening_visits
+    );
+  }
   
   // Calculate patient-level endpoints (PFS, response) for all patients at once
   (sample_target_pfs, sample_target_right_censored,
@@ -197,6 +235,9 @@ profile("gen_quant") {
     recist,
     rep_recist,
     forecast_recist,
+    forecast_obs_recist,
+    forecast_obs_visits_pos,
+    forecast_observation_interval,
     log_cond_surv_01,
     enable_ms_02,
     enable_ms_03,

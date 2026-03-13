@@ -1293,6 +1293,9 @@ tuple(
   array[] int recist,
   array[] int rep_recist,
   array[] int forecast_recist,
+  array[] int forecast_obs_recist,
+  array[] int forecast_obs_visits_pos,
+  int forecast_observation_interval,
   matrix ms_log_cond_surv,  // matrix[n_patients, max_all_t] - log conditional survival probabilities (0→1)
   int enable_ms_02,
   int enable_ms_03,
@@ -1401,49 +1404,65 @@ tuple(
     array[visit_size] int curr_visits = get_int_sub_array(t_patient_visits, patient_visit_pos, i);
     array[n_obs_treat_visits] int treat_curr_visits = curr_visits[(n_patient_screening_visits[i] + 1):];
     
-    // Build forecast time
-    array[forecast_size + 1] int forecast_time = linspaced_int_array(forecast_size + 1, patient_last_obs_visit[i], last_predict_visit);
-    array[forecast_size > 0 ? forecast_size : 0] int forecast_time_wo_anchor = forecast_size > 0 ? forecast_time[2:] : zeros_int_array(0);
-    
-    // Get RECIST for this patient
+    // Build assessment-visit forecast time and RECIST
+    int n_assessment = get_pos_size(forecast_obs_visits_pos, i);
+    int assess_start, assess_end;
+    (assess_start, assess_end) = get_pos(forecast_obs_visits_pos, i);
+
+    // Assessment visit calendar weeks (subsampled from weekly grid)
+    array[n_assessment] int obs_visit_time;
+    for (a in 1:n_assessment) {
+      obs_visit_time[a] = min(patient_last_obs_visit[i] + a * forecast_observation_interval,
+                               last_predict_visit);
+    }
+
+    // Assessment-visit forecast RECIST for this patient
+    array[n_assessment] int patient_forecast_obs_recist =
+      forecast_obs_recist[assess_start:assess_end];
+
+    // Concatenate observed RECIST + assessment-visit forecast RECIST
     array[n_obs_treat_visits] int patient_rep_recist = rep_recist[treat_visit_start:visit_end];
+    array[n_obs_treat_visits + n_assessment] int full_predict_recist =
+      append_array(patient_rep_recist, patient_forecast_obs_recist);
+
+    // Weekly forecast RECIST (used by weekly forecast_recist for visualization)
     array[forecast_size] int patient_forecast_recist = forecast_recist[forecast_visit_start:forecast_visit_end];
-    array[n_obs_treat_visits + forecast_size] int full_predict_recist = append_array(patient_rep_recist, patient_forecast_recist);
-    
+
     // Initialize response tracking variables
     int sample_target_confirmed_response_week, sample_target_confirmed_response_censored;
     int sample_target_unconfirmed_response_week, sample_target_unconfirmed_response_censored;
     int spop_target_confirmed_response_week, spop_target_confirmed_response_censored;
     int spop_target_unconfirmed_response_week, spop_target_unconfirmed_response_censored;
-    
-    // Calculate posterior predictive target PFS
+
+    // Calculate posterior predictive target PFS (using assessment-visit RECIST)
     (spop_target_pfs[i], spop_target_right_censored[i]) = find_first_week(
-      full_predict_recist, { PD }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
-    
+      full_predict_recist, { PD }, 1, treat_curr_visits, obs_visit_time, max_all_t);
+
     // Calculate response weeks for posterior predictive (always use full prediction)
     (spop_target_confirmed_response_week, spop_target_confirmed_response_censored) = find_first_week(
-      full_predict_recist, { PR, CR }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
-    
+      full_predict_recist, { PR, CR }, 2, treat_curr_visits, obs_visit_time, max_all_t);
+
     (spop_target_unconfirmed_response_week, spop_target_unconfirmed_response_censored) = find_first_week(
-      full_predict_recist, { PR, CR }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
-    
+      full_predict_recist, { PR, CR }, 1, treat_curr_visits, obs_visit_time, max_all_t);
+
     // Handle right-censored patients with forecast
     if (forecast_size > 0 && target_right_censored[i]) {
-      // Combine observed + forecast RECIST for sample outcomes
-      array[n_obs_treat_visits + forecast_size] int combined_recist = append_array(recist[treat_visit_start:visit_end], patient_forecast_recist);
-      
-      (sample_target_pfs[i], sample_target_right_censored[i]) = 
-        find_first_week(combined_recist, { PD }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
-      
+      // Combine observed + assessment-visit forecast RECIST for sample outcomes
+      array[n_obs_treat_visits + n_assessment] int combined_recist =
+        append_array(recist[treat_visit_start:visit_end], patient_forecast_obs_recist);
+
+      (sample_target_pfs[i], sample_target_right_censored[i]) =
+        find_first_week(combined_recist, { PD }, 1, treat_curr_visits, obs_visit_time, max_all_t);
+
       forecast_target_pfs[right_censored_idx] = sample_target_pfs[i];
       forecast_target_right_censored[right_censored_idx] = sample_target_right_censored[i];
-      
+
       (sample_target_confirmed_response_week, sample_target_confirmed_response_censored) = find_first_week(
-        combined_recist, { PR, CR }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
-      
+        combined_recist, { PR, CR }, 2, treat_curr_visits, obs_visit_time, max_all_t);
+
       (sample_target_unconfirmed_response_week, sample_target_unconfirmed_response_censored) = find_first_week(
-        combined_recist, { PR, CR }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
-      
+        combined_recist, { PR, CR }, 1, treat_curr_visits, obs_visit_time, max_all_t);
+
       right_censored_idx += 1;
     } else {
       // Calculate sample target PFS from observed target-lesion data
@@ -1453,10 +1472,10 @@ tuple(
 
       // Calculate response weeks for observed data (will be updated with forecast if censored)
       (sample_target_confirmed_response_week, sample_target_confirmed_response_censored) = find_first_week(
-        recist[treat_visit_start:visit_end], { PR, CR }, 2, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
-      
+        recist[treat_visit_start:visit_end], { PR, CR }, 2, treat_curr_visits, obs_visit_time, max_all_t);
+
       (sample_target_unconfirmed_response_week, sample_target_unconfirmed_response_censored) = find_first_week(
-        recist[treat_visit_start:visit_end], { PR, CR }, 1, treat_curr_visits, forecast_time_wo_anchor, max_all_t);
+        recist[treat_visit_start:visit_end], { PR, CR }, 1, treat_curr_visits, obs_visit_time, max_all_t);
     }
     
     // Calculate observed-censored posterior PFS
