@@ -13,12 +13,6 @@ real log_lod = log(0.1);
 vector[sum(n_patient_visits)] log_sum_tumor_size = log(sum_tumor_size); // cm
 vector[sum(n_patient_visits) - sum(n_patient_screening_visits)] post_treat_sld;
 
-// Population indices ////
-
-int<lower = 1> last_predict_visit = max_all_t; // max(pop_unique_visits);
-
-print("last_predict_visit = ", last_predict_visit);
-
 // Patient indices ////
 
 // Note: patient2pop_unique_visit_idx maps patient visit indices to population-level unique visit times
@@ -35,9 +29,6 @@ print("pop_unique_visits = ", pop_unique_visits);
 array[sum(n_patient_visits)] int<lower = 1> patient2pop_unique_visit_idx =
   get_level2level_idx(pop_unique_visits, t_patient_visits, patient_visit_pos);
 
-array[n_patients] int<lower = 1> patient_last_obs_visit = get_max_pos(t_patient_visits, patient_visit_pos);
-array[n_patients] int<lower = 0, upper = last_predict_visit> n_patient_forecast_visits;
-
 // Extract post-treatment SLD values
 {
   int post_treat_pos = 1;
@@ -47,8 +38,6 @@ array[n_patients] int<lower = 0, upper = last_predict_visit> n_patient_forecast_
     (curr_patient_pos, curr_patient_end) = get_pos(trial_patient_pos, s);
 
     for (i in curr_patient_pos:curr_patient_end) {
-      n_patient_forecast_visits[i] = last_predict_visit - patient_last_obs_visit[i];
-
       int curr_patient_visits_pos, curr_patient_visits_end;
       (curr_patient_visits_pos, curr_patient_visits_end) = get_pos(patient_visit_pos, i);
 
@@ -61,8 +50,6 @@ array[n_patients] int<lower = 0, upper = last_predict_visit> n_patient_forecast_
     }
   }
 }
-
-array[n_patients + 1] int<lower = 1> forecast_visits_pos = create_pos(n_patient_forecast_visits);
 
 // Array of measurement times used for GP modeling
 array[max_all_t] real all_tumor_measure_t = linspaced_array(max_all_t, 1, max_all_t);

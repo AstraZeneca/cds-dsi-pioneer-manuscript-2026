@@ -278,6 +278,16 @@ for (obs_idx in 1:n_cutoff_observed_patients) {
 int n_cutoff_total_forecast_visits = sum(cutoff_n_patient_forecast_visits);
 array[n_cutoff_observed_patients + 1] int cutoff_forecast_visits_pos = create_pos(cutoff_n_patient_forecast_visits);
 
+// Assessment-visit grid for cutoff patients
+array[n_cutoff_observed_patients] int cutoff_n_patient_forecast_obs_visits;
+for (obs_idx in 1:n_cutoff_observed_patients) {
+  cutoff_n_patient_forecast_obs_visits[obs_idx] = cutoff_n_patient_forecast_visits[obs_idx] > 0
+    ? (cutoff_n_patient_forecast_visits[obs_idx] - 1 + forecast_observation_interval) %/% forecast_observation_interval
+    : 0;
+}
+int n_cutoff_total_forecast_obs_visits = sum(cutoff_n_patient_forecast_obs_visits);
+array[n_cutoff_observed_patients + 1] int cutoff_forecast_obs_visits_pos = create_pos(cutoff_n_patient_forecast_obs_visits);
+
 // Create mapping from cutoff visits to original state indices for subsetting in generated quantities
 // Include ALL visits (including first visit per patient) - the function expects full visit states
 array[n_cutoff_visits] int cutoff_state_indices;

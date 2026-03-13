@@ -12,6 +12,7 @@ functions {
 data {
   #include "_base_data.stan"
   #include "modules/tumor/data.stan"
+  #include "modules/visits/data.stan"
   #include "modules/tumor/hyperparams.stan"
   #include "modules/state_space/data.stan"
   #include "modules/multistate/flags.stan"
@@ -33,6 +34,7 @@ transformed data {
   print("cutoff_calendar_day = ", cutoff_calendar_day);
 
   #include "_base_transformed_data.stan"
+  #include "modules/visits/transformed_data.stan"
   #include "modules/tumor/transformed_data.stan"
   #include "modules/tr/transformed_data.stan"
   #include "modules/frac/transformed_data.stan"
