@@ -127,3 +127,4 @@ output/
 
 # Git worktrees
 /worktrees/
+.worktrees/
