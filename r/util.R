@@ -548,14 +548,11 @@ km_to_tibble <- function(
   survfit_objs <- rlang::inject(
     lst(
       lb = ggsurvfit::survfit2(
-        Surv(!!pfs_sym + 1 - !!censored_sym, 1 - !!censored_sym) ~ 1,
+        Surv(!!pfs_sym, 1 - !!censored_sym) ~ 1,
         trt_data
       ),
       ub = ggsurvfit::survfit2(
-        Surv(
-          !!pfs_sym + interval_censored + 1 - !!censored_sym,
-          1 - !!censored_sym
-        ) ~ 1,
+        Surv(!!pfs_sym, 1 - !!censored_sym) ~ 1,
         trt_data
       ),
     )
@@ -630,7 +627,7 @@ get_km_res <- function(
 #'   visits (week > 0) at the cutoff. This filters out retroactively-added patients who weren't
 #'   in the original DCO. Default is FALSE for backwards compatibility.
 #'
-#' @return A modified tibble with adjusted PFS, right_censored, and interval_censored values
+#' @return A modified tibble with adjusted PFS and right_censored values
 #'
 #' @details
 #' For each patient, the function:
@@ -708,29 +705,11 @@ apply_calendar_cutoff <- function(
         right_censored
       ),
 
-      # Adjust interval censoring: calculate gap from last visit to cutoff
-      # Only applies if we're now right-censored due to cutoff
-      cutoff_interval_censored = if_else(
-        last_obs_week < {{ pfs_var }},
-        pmax(
-          0L,
-          as.integer(cutoff_calendar_day - last_obs_calendar_day) %/% 7L
-        ),
-        if_else(
-          cutoff_right_censored == 1L,
-          pmax(
-            0L,
-            as.integer(cutoff_calendar_day - last_obs_calendar_day) %/% 7L
-          ),
-          interval_censored
-        )
-      )
     ) |>
     # Replace original variables with cutoff versions
     mutate(
       {{ pfs_var }} := cutoff_pfs,
       right_censored = cutoff_right_censored,
-      interval_censored = cutoff_interval_censored
     ) |>
     # Clean up temporary columns
     select(!c(starts_with("cutoff_"), last_obs_week, last_obs_calendar_day))

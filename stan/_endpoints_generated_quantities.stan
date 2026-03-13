@@ -250,7 +250,6 @@ profile("gen_quant") {
     log_cond_surv_12_s,
     log_cond_surv_12_t,
     pfs,
-    interval_censored,
     right_censored,
     target_pfs,
     target_right_censored,

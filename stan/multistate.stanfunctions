@@ -13,10 +13,16 @@
 /**
  * Calculate log-likelihood for a single transition using piecewise constant hazard
  *
- * This is a simplified version for Phase 1 that handles a single transition.
- * Wraps the existing calc_pch_loglik function.
+ * Wraps calc_pch_loglik for the detection-week convention.
  *
- * @param event_time Array of event times for each patient
+ * event_time uses detection-week convention: the event IS at event_time[i].
+ * calc_pch_loglik uses last-surviving-week convention: survived 1..last_surv_week,
+ * event at last_surv_week+1. To align: last_surv_week = event_time - 1 for events.
+ *
+ * For censored patients (censored[i]=1), event_time is the censoring time and
+ * calc_pch_loglik accumulates survival through that time, so no adjustment needed.
+ *
+ * @param event_time Array of event/censoring times (detection-week convention, 1-indexed)
  * @param censored Array indicating if each patient is censored (1) or event observed (0)
  * @param log_cond_surv Matrix of log conditional survival probabilities [n_patients, max_t]
  * @return Vector of log-likelihoods, one for each patient
@@ -28,9 +34,16 @@ vector calc_ms_single_transition_loglik(
 ) {
   int n_patients = size(event_time);
 
-  // Use existing pch_loglik with no interval censoring
+  // Convert detection-week to last-surviving-week for calc_pch_loglik:
+  // For event patients: last_surv_week = event_time - 1 (survived up to week before detection)
+  // For censored patients: last_surv_week = event_time (survived through censoring time)
+  array[n_patients] int last_surv_week;
+  for (i in 1:n_patients) {
+    last_surv_week[i] = censored[i] ? event_time[i] : event_time[i] - 1;
+  }
+
   return calc_pch_loglik(
-    event_time,
+    last_surv_week,
     censored,
     zeros_int_array(n_patients),  // no interval censoring
     0,                             // ignore_interval_censoring
