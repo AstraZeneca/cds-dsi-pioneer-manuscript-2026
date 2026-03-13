@@ -61,7 +61,7 @@ transformed data {
   // TIME GRID (needed by multistate GP; in the full model this lives in
   // modules/tumor/transformed_data.stan)
   // =========================================================================
-  array[max_all_t] real all_tumor_measure_t = linspaced_array(max_all_t, 1, max_all_t);
+  array[max_all_t] real all_measure_t = linspaced_array(max_all_t, 1, max_all_t);
 
   // =========================================================================
   // QR DECOMPOSITION (shared with full model)

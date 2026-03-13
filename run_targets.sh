@@ -30,7 +30,7 @@ usage() {
     echo "  -D: Include downstream dependents (wrap selection in depends_on())"
     echo "  -b: Specify branch name (default: main)"
     echo "  -p: Set SCLC_EXP_SUBDIR path for custom data directory"
-    echo "  -u: Specify custom username (default: \$DOMINO_USER_NAME)"
+    echo "  -u: Specify custom username (default: \$DOMINO_STARTING_USERNAME)"
     echo "  -k: Skip renv::restore()"
     echo ""
     echo "Arguments:"
@@ -90,8 +90,8 @@ if [ -z "$project_name" ]; then
     usage
 fi
 
-# Use custom username if provided, otherwise use DOMINO_USER_NAME
-username="${custom_username:-$DOMINO_USER_NAME}"
+# Use custom username if provided, otherwise use DOMINO_STARTING_USERNAME
+username="${custom_username:-$DOMINO_STARTING_USERNAME}"
 
 target_store_dir="$DOMINO_DATASETS_DIR/analysis-results/$username/$project_name/$tar_branch/_targets"
 
