@@ -19,7 +19,7 @@ matrix[enable_ms_01 ? n_patients : 0, enable_ms_01 ? max_all_t : 0] log_cond_sur
 if (enable_ms_01) {
   // Compute population GP
   log_pop_lambda_01 = calc_gp_pred(
-    all_tumor_measure_t,
+    all_measure_t,
     log_lambda_gp_01_pop_intercept[1],
     log_lambda_gp_01_pop_alpha[1],
     log_lambda_gp_01_pop_rho[1],
@@ -44,7 +44,7 @@ if (enable_ms_01) {
       // Compute level GP residuals
       for (g in lv_start:lv_end) {
         log_level_lambda_01_residual[g] = calc_gp_pred(
-          all_tumor_measure_t,
+          all_measure_t,
           log_lambda_gp_01_level_intercept[g],
           log_lambda_gp_01_level_alpha[lv],
           log_lambda_gp_01_level_rho[lv],
@@ -124,7 +124,7 @@ matrix[enable_ms_02 ? n_patients : 0, enable_ms_02 ? max_all_t : 0] log_cond_sur
 if (enable_ms_02) {
   // Compute population GP
   log_pop_lambda_02 = calc_gp_pred(
-    all_tumor_measure_t,
+    all_measure_t,
     log_lambda_gp_02_pop_intercept[1],
     log_lambda_gp_02_pop_alpha[1],
     log_lambda_gp_02_pop_rho[1],
@@ -147,7 +147,7 @@ if (enable_ms_02) {
 
       for (g in lv_start:lv_end) {
         log_level_lambda_02_residual[g] = calc_gp_pred(
-          all_tumor_measure_t,
+          all_measure_t,
           log_lambda_gp_02_level_intercept[g],
           log_lambda_gp_02_level_alpha[lv],
           log_lambda_gp_02_level_rho[lv],
@@ -307,7 +307,7 @@ if (need_12_t_gp) {
   // Clock-forward time GP
   // In extended mode, intercept is zero (sojourn GP carries it) to avoid non-identifiability
   log_pop_lambda_12_t = calc_gp_pred(
-    all_tumor_measure_t,
+    all_measure_t,
     ms_12_t_has_intercept ? log_lambda_gp_12_t_pop_intercept[1] : 0.0,
     log_lambda_gp_12_t_pop_alpha[1],
     log_lambda_gp_12_t_pop_rho[1],
@@ -330,7 +330,7 @@ if (need_12_t_gp) {
       for (g in lv_start:lv_end) {
         // In extended mode, level intercept is zero (sojourn GP carries it)
         log_level_lambda_12_t_residual[g] = calc_gp_pred(
-          all_tumor_measure_t,
+          all_measure_t,
           ms_12_t_has_intercept ? log_lambda_gp_12_t_level_intercept[g] : 0.0,
           log_lambda_gp_12_t_level_alpha[lv],
           log_lambda_gp_12_t_level_rho[lv],
