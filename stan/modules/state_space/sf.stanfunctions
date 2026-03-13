@@ -1237,8 +1237,7 @@ tuple(
  * @param recist Observed RECIST classifications (all visits including screening)
  * @param rep_recist Replicated RECIST classifications (treatment visits only)
  * @param forecast_recist Forecasted RECIST classifications
- * @param pfs Observed PFS times
- * @param interval_censored Interval censored indicators
+ * @param pfs Observed PFS detection weeks (1-indexed; = patient_max_t for censored patients)
  * @param right_censored Right censored indicators
  * @param patient_visit_pos Position array for patient visits
  * @param forecast_visits_pos Position array for forecast visits
@@ -1308,7 +1307,6 @@ tuple(
   matrix log_cond_surv_12_s,  // matrix[n_patients, ms_max_sojourn_t] or [0,0] - 1→2 sojourn GP
   matrix log_cond_surv_12_t,  // matrix[n_patients, max_all_t] or [0,0] - 1→2 clock-forward GP
   array[] int pfs,
-  array[] int interval_censored,
   array[] int right_censored,
   array[] int target_pfs,  // PFS based on target lesions only (observed data)
   array[] int target_right_censored,  // Censoring status for target lesions only (observed data)
@@ -1338,11 +1336,12 @@ tuple(
   //              0→3 (dropout), 3→2 (off-trial death)
   //
   // Key data conventions:
-  //   pfs[i]         = last clean assessment week (1-indexed)
+  //   pfs[i]         = detection week (1-indexed; week progression was detected)
+  //                     for censored patients: pfs = patient_max_t
   //   ms_time_02[i]  = death_week for observed 0→2 deaths (1-indexed, exact)
   //   ms_time_12[i]  = sojourn time post-progression:
-  //                     observed death: death_week - pfs (exact sojourn)
-  //                     censored alive: patient_max_t - pfs (observed sojourn survival)
+  //                     observed death: death_week - detection_week (exact sojourn)
+  //                     censored alive: patient_max_t - detection_week (observed sojourn survival)
   //                     never progressed: 0
   //   ms_time_03[i]  = calendar dropout week (1-indexed, patient_max_t for dropout patients)
   //   ms_time_32[i]  = sojourn from dropout to off-trial death (0 if not observed)
@@ -1473,7 +1472,7 @@ tuple(
     } else {
       // Calculate sample target PFS from observed target-lesion data
       // Use target_pfs (deterministic PFS from target lesions only) not overall pfs
-      sample_target_pfs[i] = target_pfs[i] + interval_censored[i] + 1;
+      sample_target_pfs[i] = target_pfs[i];
       sample_target_right_censored[i] = target_right_censored[i];
 
       // Calculate response weeks for observed data (will be updated with forecast if censored)
@@ -1505,7 +1504,7 @@ tuple(
           ms_log_cond_surv[i], spop_visit_weeks, n_spop_visits, max_all_t, pfs[i], 1);
     } else {
       // Multistate event actually occurred - use observed time
-      sample_ms_pfs[i] = pfs[i] + interval_censored[i] + 1;
+      sample_ms_pfs[i] = pfs[i];
       sample_ms_right_censored[i] = 0;  // Not censored
     }
 

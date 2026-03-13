@@ -40,11 +40,6 @@ data {
   #include "modules/multistate/data.stan"
   #include "modules/multistate/hyperparams.stan"
 
-  // Interval censoring gap — weeks between last clean assessment and detection
-  // visit. Used to place observed PFS events at detection time in GQ.
-  // (In the full model this lives in modules/tumor/data.stan.)
-  array[n_patients] int<lower=0> interval_censored;
-
   // =========================================================================
   // ENDPOINT COMPUTATION DATA (shared with full model)
   // =========================================================================

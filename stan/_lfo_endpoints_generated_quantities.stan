@@ -268,7 +268,6 @@ profile("gen_quant") {
       need_12_s_gp ? log_cond_surv_12_s[cutoff_observed_patients] : log_cond_surv_12_s,
       need_12_t_gp ? log_cond_surv_12_t[cutoff_observed_patients] : log_cond_surv_12_t,
       cutoff_pfs,
-      cutoff_interval_censored,
       cutoff_right_censored,
       cutoff_target_pfs,
       cutoff_target_right_censored,
