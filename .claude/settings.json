@@ -1,7 +1,7 @@
 {
   "statusLine": {
     "type": "command",
-    "command": "input=$(cat); model_id=$(echo \"$input\" | jq -r '.model.id'); short_model=$(echo \"$model_id\" | sed 's|.*claude-||' | rev | sed 's/-/./' | rev); cwd=$(echo \"$input\" | jq -r '.workspace.current_dir'); project_root=$(echo \"$input\" | jq -r '.workspace.project_dir'); branch=$(git -C \"$cwd\" branch --show-current 2>/dev/null || echo \"no-git\"); tar_project=$(grep -m1 '^TAR_PROJECT=' \"$project_root/.Renviron\" 2>/dev/null | cut -d= -f2); project_suffix=$([ -n \"$tar_project\" ] && echo \" {$tar_project}\" || echo \"\"); wt_marker=$([ \"$cwd\" = \"$project_root\" ] && echo \"\" || echo \"*\"); echo \"$short_model [$branch$wt_marker]$project_suffix\""
+    "command": "input=$(cat); model_id=$(echo \"$input\" | jq -r '.model.id'); short_model=$(echo \"$model_id\" | sed 's|.*claude-||' | rev | sed 's/-/./' | rev); cwd=$(echo \"$input\" | jq -r '.workspace.current_dir'); project_root=$(echo \"$input\" | jq -r '.workspace.project_dir'); branch=$(git -C \"$cwd\" branch --show-current 2>/dev/null || echo \"no-git\"); tar_project=$(grep -m1 '^TAR_PROJECT=' \"$project_root/.Renviron\" 2>/dev/null | cut -d= -f2); project_suffix=$([ -n \"$tar_project\" ] && echo \" {$tar_project}\" || echo \"\"); git_dir=$(git -C \"$cwd\" rev-parse --git-dir 2>/dev/null); git_common=$(git -C \"$cwd\" rev-parse --git-common-dir 2>/dev/null); wt_marker=$([ \"$git_dir\" = \"$git_common\" ] && echo \"\" || echo \"*\"); echo \"$short_model [$branch$wt_marker]$project_suffix\""
   },
   "env": {
     "CLAUDE_CODE_USE_BEDROCK": "1",
