@@ -1,4 +1,8 @@
 {
+  "statusLine": {
+    "type": "command",
+    "command": "input=$(cat); model_id=$(echo \"$input\" | jq -r '.model.id'); short_model=$(echo \"$model_id\" | sed 's|.*profile/||'); cwd=$(echo \"$input\" | jq -r '.workspace.current_dir'); branch=$(git -C \"$cwd\" branch --show-current 2>/dev/null || echo \"no-git\"); session_id=$(echo \"$input\" | jq -r '.session_id'); project_dir=$(echo \"$input\" | jq -r '.workspace.project_dir' | sed 's|/|-|g'); session_name=$(jq -r --arg sid \"$session_id\" '.entries[] | select(.sessionId == $sid) | .customTitle // empty' ~/.claude/projects/\"$project_dir\"/sessions-index.json 2>/dev/null); tar_project=$(grep -m1 '^TAR_PROJECT=' \"$(echo \"$input\" | jq -r '.workspace.project_dir')/.Renviron\" 2>/dev/null | cut -d= -f2); project_suffix=$([ -n \"$tar_project\" ] && echo \" {$tar_project}\" || echo \"\"); if [ -n \"$session_name\" ]; then echo \"[$session_name] $short_model in $cwd [$branch]$project_suffix\"; else echo \"$short_model in $cwd [$branch]$project_suffix\"; fi"
+  },
   "env": {
     "CLAUDE_CODE_USE_BEDROCK": "1",
     "CLAUDE_CODE_SKIP_BEDROCK_AUTH": "1",
