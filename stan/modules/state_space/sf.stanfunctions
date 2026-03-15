@@ -1602,11 +1602,19 @@ tuple(
       }
 
       // Dropout (0→3) censors PFS at dropout time (not a PFS event)
+      // SLD-predicted PD only counts if it occurs BEFORE dropout
       if (enable_ms_03 && spop_dropped_out) {
         spop_ms_pfs[i] = spop_time_03;
         spop_ms_right_censored[i] = 1;
-        spop_pfs[i] = min(spop_target_pfs[i], spop_time_03);
-        spop_right_censored[i] = 1;
+        if (!spop_target_right_censored[i] && spop_target_pfs[i] <= spop_time_03) {
+          // SLD predicted PD before dropout — real progression event
+          spop_pfs[i] = spop_target_pfs[i];
+          spop_right_censored[i] = 0;
+        } else {
+          // SLD PD after dropout or no PD — censor at dropout time
+          spop_pfs[i] = spop_time_03;
+          spop_right_censored[i] = 1;
+        }
       }
     }
 
@@ -1699,11 +1707,19 @@ tuple(
       }
 
       // Dropout (0→3) censors PFS at dropout time (not a PFS event)
+      // SLD-predicted PD only counts if it occurs BEFORE dropout
       if (sample_dropped_out) {
         sample_ms_pfs[i] = ms_time_03[i];
         sample_ms_right_censored[i] = 1;
-        sample_pfs[i] = min(sample_target_pfs[i], ms_time_03[i]);
-        sample_right_censored[i] = sample_target_right_censored[i];
+        if (!sample_target_right_censored[i] && sample_target_pfs[i] <= ms_time_03[i]) {
+          // SLD predicted PD before dropout — real progression event
+          sample_pfs[i] = sample_target_pfs[i];
+          sample_right_censored[i] = 0;
+        } else {
+          // SLD PD after dropout or no PD — censor at dropout time
+          sample_pfs[i] = ms_time_03[i];
+          sample_right_censored[i] = 1;
+        }
       }
     }
   }
