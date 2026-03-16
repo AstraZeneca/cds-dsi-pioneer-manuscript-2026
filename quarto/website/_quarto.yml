@@ -56,6 +56,8 @@ website:
             href: documentation/multistate-specification.qmd
           - text: Clinical Endpoints
             href: documentation/clinical-endpoints-specification.qmd
+          - text: GQ Endpoint Flowchart
+            href: documentation/gq-endpoint-flowchart.qmd
           - text: "---"
           - text: Analysis Subgroups
             href: documentation/analysis-subgroups.qmd
@@ -97,6 +99,7 @@ website:
             - documentation/tumor-dynamics-specification.qmd
             - documentation/multistate-specification.qmd
             - documentation/clinical-endpoints-specification.qmd
+            - documentation/gq-endpoint-flowchart.qmd
         - section: "Technical Reference"
           contents:
             - documentation/targets-pipeline.qmd
