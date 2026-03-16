@@ -1514,13 +1514,18 @@ tuple(
         ms_log_cond_surv[i], spop_visit_weeks, n_spop_visits, max_all_t);
     // No +1: assessment_gated_survival_time_rng returns 1-indexed calendar week directly
     
-    // Combined PFS: For independent events, these represent "first of any event"
-    // Note: With independent events, both target AND multistate events can occur
-    // Combined variables represent whichever happened first
-    sample_pfs[i] = min(sample_target_pfs[i], sample_ms_pfs[i]);
-    // Censored only if BOTH event types are censored
-    sample_right_censored[i] = sample_target_right_censored[i] && sample_ms_right_censored[i];
+    // Combined sample PFS: condition on observed data
+    if (!right_censored[i]) {
+      // Observed PFS event (progression or on-trial death) — use directly
+      sample_pfs[i] = pfs[i];
+      sample_right_censored[i] = 0;
+    } else {
+      // Censored — combine SLD and ms forecasts
+      sample_pfs[i] = min(sample_target_pfs[i], sample_ms_pfs[i]);
+      sample_right_censored[i] = sample_target_right_censored[i] && sample_ms_right_censored[i];
+    }
 
+    // Combined spop PFS: both components are unconditional draws
     spop_pfs[i] = min(spop_target_pfs[i], spop_ms_pfs[i]);
     spop_right_censored[i] = spop_target_right_censored[i] && spop_ms_right_censored[i];
 
@@ -1589,14 +1594,11 @@ tuple(
         spop_os_censored[i] = 1;
       }
 
-      // Update multistate PFS using competing risks: PFS = min(time_01, time_02)
-      if (enable_ms_02) {
-        if (spop_died_directly) {
-          // Death without progression counts as PFS event
-          spop_ms_pfs[i] = spop_time_02;
-          spop_ms_right_censored[i] = 0;
-        }
-        // Recompute combined PFS with possible 0→2 event
+      // Update PFS if direct death (0→2) occurred before progression
+      if (enable_ms_02 && spop_died_directly) {
+        spop_ms_pfs[i] = spop_time_02;
+        spop_ms_right_censored[i] = 0;
+        // Recompute combined PFS with death event
         spop_pfs[i] = min(spop_target_pfs[i], spop_ms_pfs[i]);
         spop_right_censored[i] = spop_target_right_censored[i] && spop_ms_right_censored[i];
       }
@@ -1683,7 +1685,7 @@ tuple(
             cols(log_cond_surv_12_t) > 0 ? log_cond_surv_12_t[i] : rep_row_vector(0, 0);
           (sample_os[i], sample_os_censored[i]) = sample_post_progression_death_rng(
             ms_time_scale_12, log_cond_surv_12_s[i], surv_12_t_i,
-            pfs[i], ms_time_12[i]);
+            sample_time_01, ms_time_12[i]);
         }
       } else {
         // All censored
@@ -1691,19 +1693,13 @@ tuple(
         sample_os_censored[i] = 1;
       }
 
-      // Update multistate PFS for competing risks
-      if (enable_ms_02) {
-        if (sample_died_directly) {
-          // Direct death (observed or forecasted before progression).
-          // PFS = death_week (death is a PFS event).
-          sample_pfs[i] = sample_time_02;
-          sample_right_censored[i] = 0;
-          sample_ms_pfs[i] = sample_time_02;
-          sample_ms_right_censored[i] = 0;
-        } else {
-          sample_pfs[i] = min(sample_target_pfs[i], sample_ms_pfs[i]);
-          sample_right_censored[i] = sample_target_right_censored[i] && sample_ms_right_censored[i];
-        }
+      // Update PFS if direct death (0→2) occurred — only for censored patients
+      // (observed progressors already have sample_pfs = pfs[i] set above)
+      if (enable_ms_02 && sample_died_directly) {
+        sample_pfs[i] = sample_time_02;
+        sample_right_censored[i] = 0;
+        sample_ms_pfs[i] = sample_time_02;
+        sample_ms_right_censored[i] = 0;
       }
 
       // Dropout (0→3) censors PFS at dropout time (not a PFS event)

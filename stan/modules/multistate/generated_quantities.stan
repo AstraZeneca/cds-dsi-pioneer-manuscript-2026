@@ -1,8 +1,8 @@
 // ============================================================================
 // Multistate Competing Risks CIF (per-trial, empirical subdistribution)
 // ============================================================================
-// Requires: spop_ms_pfs, spop_ms_right_censored, spop_os, spop_os_censored,
-//           sample_ms_pfs, sample_ms_right_censored, sample_os, sample_os_censored
+// Requires: spop_pfs, spop_right_censored, spop_os, spop_os_censored,
+//           sample_pfs, sample_right_censored, sample_os, sample_os_censored
 //           (declared and computed in the enclosing GQ block before this include),
 //           plus trial_patient_pos, max_all_t, n_trials from transformed data / data.
 //
@@ -44,27 +44,28 @@ for (s in 1:n_trials) {
     for (j in tr_start:tr_end) {
 
       // ── spop (unconditional posterior predictive) ─────────────────────────
-      if (spop_ms_right_censored[j] == 0) {
+      // Uses combined PFS = min(target_pfs, ms_pfs) to include SLD-driven progression
+      if (spop_right_censored[j] == 0) {
         // PFS event: distinguish direct death (0→2) from progression (0→1)
-        if (spop_os_censored[j] == 0 && spop_ms_pfs[j] == spop_os[j]) {
-          cnt_s02[spop_ms_pfs[j]] += 1;   // 0→2: died without progressing
+        if (spop_os_censored[j] == 0 && spop_pfs[j] == spop_os[j]) {
+          cnt_s02[spop_pfs[j]] += 1;   // 0→2: died without progressing
         } else {
-          cnt_s01[spop_ms_pfs[j]] += 1;   // 0→1: progressed
+          cnt_s01[spop_pfs[j]] += 1;   // 0→1: progressed (SLD or ms-driven)
         }
-      } else if (spop_ms_pfs[j] <= max_all_t) {
-        cnt_s03[spop_ms_pfs[j]] += 1;     // 0→3: dropped out within window
+      } else if (spop_pfs[j] <= max_all_t) {
+        cnt_s03[spop_pfs[j]] += 1;     // 0→3: dropped out within window
       }
       // else: fully censored (pfs_time > max_all_t) — no CIF contribution
 
       // ── sample (conditional on observed data) ─────────────────────────────
-      if (sample_ms_right_censored[j] == 0) {
-        if (sample_os_censored[j] == 0 && sample_ms_pfs[j] == sample_os[j]) {
-          cnt_sm02[sample_ms_pfs[j]] += 1;
+      if (sample_right_censored[j] == 0) {
+        if (sample_os_censored[j] == 0 && sample_pfs[j] == sample_os[j]) {
+          cnt_sm02[sample_pfs[j]] += 1;
         } else {
-          cnt_sm01[sample_ms_pfs[j]] += 1;
+          cnt_sm01[sample_pfs[j]] += 1;
         }
-      } else if (sample_ms_pfs[j] <= max_all_t) {
-        cnt_sm03[sample_ms_pfs[j]] += 1;
+      } else if (sample_pfs[j] <= max_all_t) {
+        cnt_sm03[sample_pfs[j]] += 1;
       }
     }
 
