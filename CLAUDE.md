@@ -173,18 +173,35 @@ Parameters follow a population → trial → patient hierarchy:
 
 ## Analysis Results Storage
 
-Analysis results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/`:
-- **Targets store**: `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/_targets`
-- **Fit CSVs**: `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/fit`
+### Project and Store Context (ALWAYS CHECK FIRST)
+
+**NEVER assume a project or store path without confirming.** This codebase supports multiple projects — do not default to sclc.
+
+The active project is set via `TAR_PROJECT` (see `_targets.yaml`). Store paths by project:
+- **sclc**: `/mnt/data/analysis-results/<user>/sclc/<TAR_BRANCH>/_targets`
+- **pioneer**: `/mnt/data/analysis-results/<user>/pioneer/<TAR_BRANCH>/_targets`
+
+When the project or store name is ambiguous, list available stores first:
+```bash
+ls /mnt/data/analysis-results/karim_naguib/<project>/
+```
 
 ### Store Selection via TAR_BRANCH
 
-Analysis results are organized by data cut-off (DCO) using the `TAR_BRANCH` environment variable:
+`TAR_BRANCH` selects the analysis run (named by data cut-off or feature branch). For sclc:
 - `export TAR_BRANCH=dco3` - January 26, 2026 DCO (current, includes pdl1_central)
 - `export TAR_BRANCH=dco2` - August 2025 DCO
 - `export TAR_BRANCH=dco1` - April 2025 DCO
 
-Store path: `/mnt/data/analysis-results/<user>/sclc/<TAR_BRANCH>/_targets`
+For pioneer, common branches include: `main`, `rwd-filtered-1`, `laplace`, `multistate`, etc.
+
+Full store path pattern: `/mnt/data/analysis-results/<user>/<TAR_PROJECT>/<TAR_BRANCH>/_targets`
+
+### Sclc Fit Output
+
+Sclc results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/`:
+- **Targets store**: `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/_targets`
+- **Fit CSVs**: `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/fit`
 
 **Example:**
 ```bash
