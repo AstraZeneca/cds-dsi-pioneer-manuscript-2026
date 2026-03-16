@@ -362,8 +362,13 @@ cd /mnt/code && git merge feature-x
 - **All multistate parameters MUST use N-level hierarchy** — never hardcode per-trial (e.g., `log_lambda[patient_trial[i]]`). Use population intercept + `patient_ms_baseline_flat_idx[i, lv]` level shifts instead.
 - **Conditional parameter sizing**: Level GP arrays must be `array[enable_ms_XX ? n_levels : 0]` (not unconditionally `array[n_levels]`). The 0→1 transition had this bug — verify every new transition is consistent.
 - **`no_oe` model**: Sets `fit_multistate_data=FALSE` — multistate state fields are irrelevant for it. No separate SLD-only state variable needed.
-- **`update_dropout_state()`**: Call in targets pipeline after assembling stan data to swap `ms_final_state` → `ms_final_state_dropout` when `enable_ms_03=TRUE`.
-- **Pattern E patients**: `death & !progression_before_death & (death_week - patient_max_t > admin_censor_buffer)` — died off-trial; classified as state 3 when `enable_ms_03=TRUE`.
+- **Classification-first routing** (`r/sclc/multistate.R`): All multistate Stan fields are derived via a two-step pipeline — never compute `ms_final_state` or transition times inline anywhere else.
+  1. `classify_ms_patients(analysis_data)` → adds `ms_pattern` column (factor, 6 levels); called in `prepare_analysis_data()`
+  2. `derive_ms_fields(analysis_data, ms_mode)` → named list of all Stan ms fields; called in the targets pipeline as `c(derive_ms_fields(all_analysis_data, ms_mode))`
+- **Six patient patterns** (what happened, objective): `admin_censored`, `true_dropout`, `progressed_alive`, `progressed_died`, `died_on_trial`, `died_off_trial`
+- **ms_mode** (how model treats it, subjective): `"none"`, `"pfs"`, `"illness_death"`, `"full"` — the pattern→state mapping table is in `multistate.R`
+- **`prepare_tumor_stan_data()` does NOT include ms fields** — they are added by `derive_ms_fields()` in the targets pipeline
+- **`ms_prog_deterministic`**: Computed in `prepare_analysis_data()` mutate (needs `visit_data`); stored as a column in `analysis_data` and consumed by `derive_ms_fields()`
 
 ## Pull Request Checklist
 
