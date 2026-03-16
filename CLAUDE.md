@@ -183,7 +183,7 @@ The active project is set via `TAR_PROJECT` (see `_targets.yaml`). Store paths b
 
 When the project or store name is ambiguous, list available stores first:
 ```bash
-ls /mnt/data/analysis-results/karim_naguib/<project>/
+ls /mnt/data/analysis-results/$DOMINO_STARTING_USERNAME/<project>/
 ```
 
 ### Store Selection via TAR_BRANCH
@@ -199,9 +199,9 @@ Full store path pattern: `/mnt/data/analysis-results/<user>/<TAR_PROJECT>/<TAR_B
 
 ### Sclc Fit Output
 
-Sclc results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/`:
-- **Targets store**: `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/_targets`
-- **Fit CSVs**: `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/fit`
+Sclc results are stored in `/mnt/data/analysis-results/<username>/sclc/<run_name>/`:
+- **Targets store**: `/mnt/data/analysis-results/<username>/sclc/<run_name>/_targets`
+- **Fit CSVs**: `/mnt/data/analysis-results/<username>/sclc/<run_name>/fit`
 
 **Example:**
 ```bash
@@ -211,7 +211,7 @@ Rscript -e 'targets::tar_make(sclc_patient_data_jan26)'
 
 When working with stored targets directly (e.g., in standalone scripts), always specify the store path explicitly:
 ```r
-tar_read(sclc_patient_data_jan26, store = "/mnt/data/analysis-results/karim_naguib/sclc/dco3/_targets")
+tar_read(sclc_patient_data_jan26, store = file.path("/mnt/data/analysis-results", Sys.getenv("DOMINO_STARTING_USERNAME"), "sclc/dco3/_targets"))
 ```
 
 **Verifying fit versions**: `tar_outdated()` can be unreliable for `*_res_*` targets. Check timestamps directly:
