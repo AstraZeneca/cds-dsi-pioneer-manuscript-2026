@@ -138,13 +138,24 @@ $$
 
 The 0→3 transition uses a **baseline-hazard-only** model without covariate effects. This is a simplification reflecting the fact that dropout reasons are heterogeneous and often unrelated to measurable tumor dynamics.
 
-**Patient classification for state 3:**
+**Patient classification:**
 
-The `update_dropout_state()` pipeline function reclassifies patients into state 3 when `enable_ms_03` is enabled. Two patient categories are assigned to state 3:
+The pipeline uses a classification-first approach implemented in `r/sclc/multistate.R`. Each patient is first assigned to one of six mutually exclusive patterns by `classify_ms_patients()`, which records what *happened* clinically. The function `derive_ms_fields()` then maps these patterns to Stan fields given the `ms_mode` (what the model *treats* them as).
 
-1. **True dropout:** Patients who are right-censored (no progression, no death) but whose last visit occurred well before the data cutoff date. Formally: right-censored AND potential follow-up $-$ last visit $>$ `admin_censor_buffer` (default: 6 weeks).
+| Pattern | Condition | State in `"full"` mode |
+|---|---|:---:|
+| `admin_censored` | Right-censored; follow-up exhausted near DCO | 0 |
+| `true_dropout` | Right-censored; left well before DCO | 3 |
+| `progressed_alive` | RECIST progression, still alive | 1 |
+| `progressed_died` | RECIST progression, then died | 2 |
+| `died_on_trial` | Died without progression, within `admin_censor_buffer` of last visit | 2 |
+| `died_off_trial` | Died without progression, more than `admin_censor_buffer` weeks after last visit | 3 |
 
-2. **Pattern E patients:** Patients who died off-trial without prior progression, with death occurring more than `admin_censor_buffer` weeks after their last on-trial visit. Formally: death AND no progression before death AND $T_{\text{death}} - T_{\text{max visit}} >$ `admin_censor_buffer`. These patients left the trial while stable or responding and later died under unknown subsequent therapy.
+Two patient categories are assigned to state 3:
+
+1. **True dropout** (`true_dropout`): Right-censored patients whose last visit occurred well before the data cutoff date — potential follow-up $-$ last visit $>$ `admin_censor_buffer` (default: 6 weeks).
+
+2. **Died off-trial** (`died_off_trial`): Patients who died without prior progression, with death occurring more than `admin_censor_buffer` weeks after their last on-trial visit. These patients left the trial while stable or responding and later died under unknown subsequent therapy.
 
 For Pattern E patients, both the dropout event (0→3 at $T_{\text{max visit}}$) and the off-trial death (3→2 at sojourn time $T_{\text{death}} - T_{\text{max visit}}$) are observed. For true dropout patients, the 3→2 transition is right-censored.
 
@@ -172,7 +183,7 @@ Like the 0→3 transition, the 3→2 transition uses a **baseline-hazard-only** 
 
 **Likelihood contribution (for state 3 patients with 3→2 enabled):**
 
-If off-trial death is observed (Pattern E, not censored):
+If off-trial death is observed (`died_off_trial` pattern, not censored):
 
 $$
 \ell_i^{3 \to 2} = \sum_{u=1}^{T_{32,i}-1} \log S_{32,i}(u) + \log(1 - S_{32,i}(T_{32,i}))
@@ -184,7 +195,7 @@ $$
 \ell_i^{3 \to 2} = \sum_{u=1}^{T_{32,i}} \log S_{32,i}(u)
 $$
 
-where $T_{32,i} = T_{\text{death}} - T_{03,i}$ for Pattern E patients, or the available follow-up sojourn time for censored patients.
+where $T_{32,i} = T_{\text{death}} - T_{03,i}$ for `died_off_trial` patients, or the available follow-up sojourn time for censored (`true_dropout`) patients.
 
 ::: {.callout-note}
 ## Generated Quantities
