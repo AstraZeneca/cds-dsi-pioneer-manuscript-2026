@@ -271,6 +271,7 @@ Plots always use `btype == "ub"`. For PFS, `interval_censored` captures visit-ga
 - Prefer `purrr` and `dplyr` over base R loops
 - Use `testthat` for unit tests
 - **NEVER hardcode subject IDs** (usubjid, patient_id, etc.) - always use dynamic selection or filtering
+- **NO hardcoded subject IDs in GitHub issues** — describe the problem (e.g., "5 patients have NA pfs") without listing specific IDs. Add diagnostic R code as a comment on the issue instead.
 
 ### Targets
 - **NEVER use `tar_config_set(store = ...)`** - it changes global state and causes conflicts
@@ -283,6 +284,7 @@ Plots always use `btype == "ub"`. For PFS, `interval_censored` captures visit-ga
   - Target commands should be simple function calls, not multi-line code blocks
   - Example: Use `tar_target(name, my_function(arg))` not `tar_target(name, { ... complex code ... })`
   - Helper functions belong in appropriate `r/` subdirectories (e.g., `r/sclc/plot_functions.R`)
+- **`pattern = map()` dependencies**: When adding analysis-data-dependent post-processing to a mapped target (e.g., `cutoff_tumor_ssls_stan_data`), add the analysis data target to the `map()` pattern as well.
 
 ### Bash and Command Execution
 - **NEVER pipe long-running commands to `head`, `tail`, or similar** when running in background - it prevents real-time output monitoring
@@ -359,6 +361,13 @@ cd /mnt/code/worktrees/code-feature-x && edit file && git commit  # Duplicate!
 cd /mnt/code/worktrees/code-feature-x && edit file && git commit
 cd /mnt/code && git merge feature-x
 ```
+
+### Multistate Architecture Rules
+- **All multistate parameters MUST use N-level hierarchy** — never hardcode per-trial (e.g., `log_lambda[patient_trial[i]]`). Use population intercept + `patient_ms_baseline_flat_idx[i, lv]` level shifts instead.
+- **Conditional parameter sizing**: Level GP arrays must be `array[enable_ms_XX ? n_levels : 0]` (not unconditionally `array[n_levels]`). The 0→1 transition had this bug — verify every new transition is consistent.
+- **`no_oe` model**: Sets `fit_multistate_data=FALSE` — multistate state fields are irrelevant for it. No separate SLD-only state variable needed.
+- **`update_dropout_state()`**: Call in targets pipeline after assembling stan data to swap `ms_final_state` → `ms_final_state_dropout` when `enable_ms_03=TRUE`.
+- **Pattern E patients**: `death & !progression_before_death & (death_week - patient_max_t > admin_censor_buffer)` — died off-trial; classified as state 3 when `enable_ms_03=TRUE`.
 
 ### Adding Module Parameters
 1. Add feature flag in `modules/<module>/flags.stan`
