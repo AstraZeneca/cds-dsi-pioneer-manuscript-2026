@@ -650,7 +650,6 @@ tuple(int, int) survival_time_rng(row_vector log_cond_prob_surv, int obs_surv_ti
 tuple(int, int) assessment_gated_survival_time_rng(
     row_vector log_cond_prob_surv,
     array[] int visit_weeks,
-    int n_visits,
     int max_all_t
 ) {
   int n_intervals = num_elements(log_cond_prob_surv);
@@ -659,7 +658,7 @@ tuple(int, int) assessment_gated_survival_time_rng(
   int prev_week = 0;
   int done = 0;
 
-  for (a in 1:n_visits) {
+  for (a in 1:size(visit_weeks)) {
     if (!done) {
       int curr_week = visit_weeks[a];
       int start_t = prev_week + 1;
@@ -694,7 +693,6 @@ tuple(int, int) assessment_gated_survival_time_rng(
 tuple(int, int) assessment_gated_survival_time_rng(
     row_vector log_cond_prob_surv,
     array[] int visit_weeks,
-    int n_visits,
     int max_all_t,
     int obs_surv_time,
     int right_censored
@@ -709,7 +707,7 @@ tuple(int, int) assessment_gated_survival_time_rng(
   int prev_week = obs_surv_time;  // Start from observed time
   int done = 0;
 
-  for (a in 1:n_visits) {
+  for (a in 1:size(visit_weeks)) {
     if (!done) {
       int curr_week = visit_weeks[a];
       if (curr_week <= obs_surv_time) {

@@ -1501,7 +1501,7 @@ tuple(
       // Multistate event is censored (either no event at all, or target progressed first)
       // Forecast from pfs[i]: use full visit schedule, skip visits before pfs[i]
       (sample_ms_pfs[i], sample_ms_right_censored[i]) = assessment_gated_survival_time_rng(
-          ms_log_cond_surv[i], spop_visit_weeks, n_spop_visits, max_all_t, pfs[i], 1);
+          ms_log_cond_surv[i], spop_visit_weeks, max_all_t, pfs[i], 1);
     } else {
       // Multistate event actually occurred - use observed time
       sample_ms_pfs[i] = pfs[i];
@@ -1511,7 +1511,7 @@ tuple(
     // Unconditional posterior predictive (always sample from scratch)
     // Assessment-gated: accumulate hazard between visits, sample once per visit
     (spop_ms_pfs[i], spop_ms_right_censored[i]) = assessment_gated_survival_time_rng(
-        ms_log_cond_surv[i], spop_visit_weeks, n_spop_visits, max_all_t);
+        ms_log_cond_surv[i], spop_visit_weeks, max_all_t);
     // No +1: assessment_gated_survival_time_rng returns 1-indexed calendar week directly
     
     // Combined sample PFS: condition on observed data

@@ -7,29 +7,7 @@ subtitle: "Cumulative incidence functions for state 0 exits: progression, on-tri
 #| label: setup
 #| include: false
 
-library(targets)
-library(posterior)
-library(tidyverse)
-library(ggdist)
-library(patchwork)
-library(cmprsk)
-
-here::i_am("quarto/website/_setup.R")
-source(here::here("r", "util.R"))
-source(here::here("r", "plot_functions.R"))
-source(here::here("r", "table_functions.R"))
-source(here::here("r", "sclc", "plot_functions.R"))
-source(here::here("r", "sclc", "table_functions.R"))
-
-ggplot2::theme_set(
-  ggplot2::theme_minimal(base_family = "Arial") +
-  ggplot2::theme(
-    plot.margin = ggplot2::margin(5, 10, 20, 20, "pt"),
-    plot.caption = ggplot2::element_text(hjust = 0, margin = ggplot2::margin(15, 0, 0, 0, "pt"))
-  )
-)
-
-ms_store <- "/mnt/data/analysis-results/karim_naguib/sclc/ms-trial-intercept/_targets"
+source("_setup.R")
 ```
 
 This page validates the **4-state multistate model's** allocation of patients across competing exit routes from state 0 (on-treatment, pre-progression). From state 0, a patient can:
@@ -59,11 +37,11 @@ stan_data_full <- tar_read(tumor_ssls_stan_data_posterior_ctdna_jan26)
 competing_risks_event_table(stan_data_full)
 ```
 
-### CIF Validation
+### Super-population CIF
 
 ```{r}
 #| label: fig-cif-full
-#| fig-cap: "Competing risks CIF: full model posterior predictive vs observed Aalen-Johansen. Top panel shows per-cause CIF; bottom panel shows proportion of patients still in state 0."
+#| fig-cap: "Super-population CIF: independent draws from the joint posterior (spop). Each simulated patient is an independent draw; non-progressors may still receive phantom progression events because the bi-exponential SLD model guarantees eventual growth."
 #| fig-width: 10
 #| fig-height: 9
 #| column: body-outset
@@ -71,7 +49,19 @@ competing_risks_event_table(stan_data_full)
 draws_cif_full <- tar_read(tumor_ssls_draws_cif_posterior_ctdna_jan26)
 # Full model uses extend_max_all_t for the GQ forecast grid; max_all_t is unused
 stan_data_full$max_all_t <- stan_data_full$extend_max_all_t
-plot_competing_risks_cif(stan_data_full, draws_cif_full)
+plot_competing_risks_cif(stan_data_full, draws_cif_full, cif_prefix = "spop")
+```
+
+### Sample CIF
+
+```{r}
+#| label: fig-cif-full-sample
+#| fig-cap: "Sample CIF: posterior predictive conditioned on observed data. For patients who progressed, the observed progression time is used. For censored/dropout patients, progression is forecasted from last observation. This calibration check accounts for the fact that observed non-progressors are unlikely to progress soon."
+#| fig-width: 10
+#| fig-height: 9
+#| column: body-outset
+
+plot_competing_risks_cif(stan_data_full, draws_cif_full, cif_prefix = "sample")
 ```
 
 ## Standalone Multistate Model {#sec-standalone-cif}
@@ -87,8 +77,8 @@ The standalone multistate model estimates transition hazards **without SLD tumor
 #| fig-height: 9
 #| column: body-outset
 
-stan_data_ms <- tar_read(ms_standalone_stan_data_posterior_ctdna_jan26, store = ms_store)
-draws_cif_ms <- tar_read(ms_standalone_draws_cif_posterior_ctdna_jan26, store = ms_store)
+stan_data_ms <- tar_read(ms_standalone_stan_data_posterior_ctdna_jan26, store = ms_standalone_store)
+draws_cif_ms <- tar_read(ms_standalone_draws_cif_posterior_ctdna_jan26, store = ms_standalone_store)
 plot_competing_risks_cif(stan_data_ms, draws_cif_ms)
 ```
 
@@ -103,8 +93,8 @@ Following [Gabry et al. (2019)](https://doi.org/10.1111/rssa.12378), we compare 
 #| fig-height: 9
 #| column: body-outset
 
-stan_data_prior <- tar_read(ms_standalone_stan_data_prior_ctdna_jan26, store = ms_store)
-draws_cif_prior <- tar_read(ms_standalone_draws_cif_prior_ctdna_jan26, store = ms_store)
+stan_data_prior <- tar_read(ms_standalone_stan_data_prior_ctdna_jan26, store = ms_standalone_store)
+draws_cif_prior <- tar_read(ms_standalone_draws_cif_prior_ctdna_jan26, store = ms_standalone_store)
 
 plot_competing_risks_cif(stan_data_prior, draws_cif_prior)
 ```
