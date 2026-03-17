@@ -363,29 +363,7 @@ profile("gen_quant") {
     );
 }
 
-// For the CIF: classify each patient's first state-0 exit, accounting for both
-// SF-driven and hazard-driven progressions (spop_target_pfs vs spop_ms_pfs).
-//
-// Three cases:
-//   (1) spop_right_censored == 0 (ms event — state 1 or 2):
-//       Use combined PFS = min(SF, ms_hazard); keep as PFS event.
-//   (2) spop_right_censored == 1 AND SF event before dropout (T_SF < T_dropout):
-//       State-3 patient where SF progression precedes dropout. In the joint model
-//       this is a 0→1 progression, not a dropout. Reclassify as PFS event.
-//   (3) Otherwise (dropout with T_SF >= T_dropout, or fully censored):
-//       Leave spop_ms_pfs / spop_ms_right_censored at their original values so
-//       the CIF module classifies them as 0→3 or fully censored correctly.
-for (i in 1:n_patients) {
-  if (spop_right_censored[i] == 0) {
-    // State 1 (progression) or state 2 (direct death): use combined PFS time
-    spop_ms_pfs[i] = spop_pfs[i];
-    spop_ms_right_censored[i] = 0;
-  } else if (spop_target_right_censored[i] == 0 && spop_target_pfs[i] <= spop_ms_pfs[i]) {
-    // State 3 where SF progression precedes dropout: first exit is 0→1
-    spop_ms_pfs[i] = spop_target_pfs[i];
-    spop_ms_right_censored[i] = 0;
-  }
-  // else: leave spop_ms_pfs[i] and spop_ms_right_censored[i] unchanged
-}
+// Note: spop_ms_pfs / spop_ms_right_censored are set correctly by derive_spop_pfs()
+// in sf.stanfunctions (Issue 79 classify-first refactor). No reclassification needed.
 
 #include "modules/multistate/generated_quantities.stan"
