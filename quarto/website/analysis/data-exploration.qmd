@@ -8,6 +8,7 @@ subtitle: "Overview of the analysis dataset and exploratory visualizations"
 #| include: false
 
 source("_setup.R")
+all_analysis_data <- tar_read(all_analysis_data_ctdna_jan26)
 ```
 
 This page provides an overview of the data used in the SCLC-01 longitudinal tumor analysis.

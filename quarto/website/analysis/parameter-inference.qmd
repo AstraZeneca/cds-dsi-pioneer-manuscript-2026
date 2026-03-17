@@ -8,6 +8,7 @@ subtitle: "Population and patient-level parameter estimates"
 #| include: false
 
 source("_setup.R")
+all_stan_data <- tar_read(all_stan_data_ctdna_jan26)
 ```
 
 This page presents the inferred parameter estimates from the Bayesian hierarchical model, comparing prior predictions with posterior estimates.

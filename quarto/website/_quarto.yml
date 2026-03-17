@@ -5,7 +5,6 @@ project:
   render:
     - "*.qmd"
     - "**/*.qmd"
-    - "!comparisons/dco-comparisons.qmd"
 
 website:
   title: "PIONEER: SCLC-01 Forecasting"

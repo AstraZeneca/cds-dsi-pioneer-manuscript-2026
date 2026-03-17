@@ -8,6 +8,15 @@ subtitle: "Overall Response Rate (ORR) and Progression-Free Survival (PFS) resul
 #| include: false
 
 source("_setup.R")
+
+# ORR and PFS endpoint data
+jan26_orr_data            <- tar_read(all_tumor_ssls_orr_rvar_ctdna_jan26)
+jan26_cond_orr_data       <- tar_read(all_tumor_ssls_cond_orr_rvar_ctdna_jan26)
+jan26_quant_pfs_data      <- tar_read(all_tumor_ssls_trial_quant_pfs_ctdna_jan26)
+jan26_cond_quant_pfs_data <- tar_read(all_tumor_ssls_cond_quant_pfs_ctdna_jan26)
+jan26_pfs_n_data          <- tar_read(all_tumor_ssls_forecast_target_pfs_n_rvar_ctdna_jan26)
+jan26_cond_pfs_n_data     <- tar_read(all_tumor_ssls_cond_forecast_target_pfs_n_rvar_ctdna_jan26)
+pfs_timepoints            <- tar_read(pfs_timepoints)
 ```
 
 This page presents the key clinical endpoint results from the SCLC-01 analysis.
