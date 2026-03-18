@@ -243,7 +243,7 @@ real multistate_lpmf(
             int tau_s = time_12[i] + kk;  // tau_s = time_12 + (T_d - s) = time_12 + kk
 
             // Update incremental sojourn: prepend one survival week
-            if (kk > 0 && enable_12 && tau_s > 1)
+            if (kk > 0 && enable_12 && tau_s > 0)
               sojourn_ll += log_cond_surv_12_s[i, tau_s];
 
             real alpha = (k > 1 ? cum_01[k - 1] : 0.0)
@@ -391,7 +391,7 @@ real multistate_lpmf(
               int tau_s = time_12[i] + kk;  // = time_12 + (T_d - s)
 
               // Update incremental sojourn: shift death one week forward
-              if (kk > 0 && enable_12 && tau_s > 0) {
+              if (kk > 0 && enable_12 && tau_s > 1) {
                 sojourn_ll -= log1m_exp(log_cond_surv_12_s[i, tau_s - 1]);
                 sojourn_ll += log_cond_surv_12_s[i, tau_s - 1];
                 sojourn_ll += log1m_exp(log_cond_surv_12_s[i, tau_s]);
