@@ -1,6 +1,7 @@
 library(testthat)
 library(cmdstanr)
 source(here::here("tests/testthat/helper-stan.R"))
+source(here::here("tests/testthat/helper-lfo.R"))
 
 test_that("get_testing_visit_week_bounds stress test - all edge cases and failure modes", {
   # Comprehensive stress test cases covering all potential failure modes
@@ -20,12 +21,7 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
       t_patient_visits = c(1L, 3L),
       t_patient_visits_day = c(7L, 21L),
       patient_visit_pos = c(1L, 3L),
-      should_error = FALSE,
-      expected_first_testing_visit_week = matrix(c(3L), nrow = 1, ncol = 1),
-      expected_testing_start_idx = matrix(c(2L), nrow = 1, ncol = 1),
-      # Note: last_testing_visit_week and testing_end_idx would depend on all cutoffs
-      expected_last_testing_visit_week = NULL, # [n_cutoffs, n_cutoffs, n_patients]
-      expected_testing_end_idx = NULL
+      should_error = FALSE
     ),
 
     # Case 2: Multiple patients, multiple cutoffs - normal case
@@ -41,24 +37,7 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
       t_patient_visits = c(1L, 2L, 4L, 1L, 3L, 5L, 2L, 4L, 6L),
       t_patient_visits_day = c(7L, 14L, 28L, 7L, 21L, 35L, 14L, 28L, 42L),
       patient_visit_pos = c(1L, 4L, 7L, 10L),
-      should_error = FALSE,
-      # Cutoff 1 (cal=120): P1 study_day=21→week4,idx3; P2 sd=16→week3,idx5; P3 sd=11→week2,idx7
-      # Cutoff 2 (cal=140, oos_idx=2 so P2,P3 only): P1 not tested→0; P2 sd=36,days≤36→0; P3 sd=31,42>31→wk6,idx9
-      expected_first_testing_visit_week = matrix(
-        c(4L, 3L, 2L, 0L, 0L, 6L),
-        nrow = 2,
-        ncol = 3,
-        byrow = TRUE
-      ),
-      expected_testing_start_idx = matrix(
-        c(3L, 5L, 7L, 0L, 0L, 9L),
-        nrow = 2,
-        ncol = 3,
-        byrow = TRUE
-      ),
-      # 3D expected arrays not yet computed — skip last/end assertions for this case
-      expected_last_testing_visit_week = NULL,
-      expected_testing_end_idx = NULL
+      should_error = FALSE
     ),
 
     # === BOUNDARY CONDITION TESTS ===
@@ -76,11 +55,7 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
       t_patient_visits = c(1L, 3L, 5L),
       t_patient_visits_day = c(7L, 21L, 35L), # Day 21 exactly at cutoff
       patient_visit_pos = c(1L, 4L),
-      should_error = FALSE,
-      expected_first_testing_visit_week = matrix(c(5L), nrow = 1, ncol = 1), # Next visit after cutoff
-      expected_testing_start_idx = matrix(c(3L), nrow = 1, ncol = 1),
-      expected_last_testing_visit_week = NULL,
-      expected_testing_end_idx = NULL
+      should_error = FALSE
     ),
 
     # Case 4: Visit one day before cutoff
@@ -96,11 +71,7 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
       t_patient_visits = c(1L, 3L, 5L),
       t_patient_visits_day = c(7L, 21L, 35L),
       patient_visit_pos = c(1L, 4L),
-      should_error = FALSE,
-      expected_first_testing_visit_week = matrix(c(5L), nrow = 1, ncol = 1),
-      expected_testing_start_idx = matrix(c(3L), nrow = 1, ncol = 1),
-      expected_last_testing_visit_week = NULL,
-      expected_testing_end_idx = NULL
+      should_error = FALSE
     ),
 
     # Case 5: Visit one day after cutoff
@@ -116,11 +87,7 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
       t_patient_visits = c(1L, 3L, 5L),
       t_patient_visits_day = c(7L, 21L, 35L),
       patient_visit_pos = c(1L, 4L),
-      should_error = FALSE,
-      expected_first_testing_visit_week = matrix(c(3L), nrow = 1, ncol = 1), # Visit at day 21 is first after cutoff
-      expected_testing_start_idx = matrix(c(2L), nrow = 1, ncol = 1),
-      expected_last_testing_visit_week = NULL, # Last visit for this window
-      expected_testing_end_idx = NULL
+      should_error = FALSE
     ),
 
     # === ERROR CONDITIONS TESTS ===
@@ -174,11 +141,7 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
       t_patient_visits = c(1L, 3L),
       t_patient_visits_day = c(7L, 21L), # Days 7, 21 relative to entry
       patient_visit_pos = c(1L, 3L),
-      should_error = FALSE,
-      expected_first_testing_visit_week = matrix(c(1L), nrow = 1, ncol = 1), # First visit after cutoff day 0
-      expected_testing_start_idx = matrix(c(1L), nrow = 1, ncol = 1),
-      expected_last_testing_visit_week = NULL,
-      expected_testing_end_idx = NULL
+      should_error = FALSE
     ),
 
     # === EXTREME VALUES TESTS ===
@@ -196,11 +159,7 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
       t_patient_visits = c(1L, 2L),
       t_patient_visits_day = c(7L, 200L), # Large day offset
       patient_visit_pos = c(1L, 3L),
-      should_error = FALSE,
-      expected_first_testing_visit_week = matrix(c(2L), nrow = 1, ncol = 1),
-      expected_testing_start_idx = matrix(c(2L), nrow = 1, ncol = 1),
-      expected_last_testing_visit_week = NULL,
-      expected_testing_end_idx = NULL
+      should_error = FALSE
     ),
 
     # Case 10: Zero and negative days (edge case testing)
@@ -216,11 +175,7 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
       t_patient_visits = c(0L, 1L, 2L), # Week 0 (baseline)
       t_patient_visits_day = c(-1L, 0L, 7L), # Negative day, day 0, day 7
       patient_visit_pos = c(1L, 4L),
-      should_error = FALSE,
-      expected_first_testing_visit_week = matrix(c(2L), nrow = 1, ncol = 1), # First visit after cutoff day 5
-      expected_testing_start_idx = matrix(c(3L), nrow = 1, ncol = 1),
-      expected_last_testing_visit_week = NULL,
-      expected_testing_end_idx = NULL
+      should_error = FALSE
     ),
 
     # === EXTREME STRESS CASES ===
@@ -241,11 +196,7 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
       t_patient_visits = 1:50, # Weeks 1-50
       t_patient_visits_day = seq(7, by = 7, length.out = 50), # Days 7,14,...,350
       patient_visit_pos = c(1L, 51L),
-      should_error = FALSE,
-      expected_first_testing_visit_week = matrix(c(50L), nrow = 1, ncol = 1),
-      expected_testing_start_idx = matrix(c(50L), nrow = 1, ncol = 1),
-      expected_last_testing_visit_week = NULL,
-      expected_testing_end_idx = NULL
+      should_error = FALSE
     ),
 
     # Case 12: Pathological case - visits with huge gaps
@@ -261,12 +212,7 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
       t_patient_visits = c(1L, 100L, 200L), # Huge gaps between visits
       t_patient_visits_day = c(7L, 700L, 1400L), # Corresponding huge day gaps
       patient_visit_pos = c(1L, 4L),
-      should_error = FALSE,
-      # Cutoff at day 1000 = patient day 900, first visit after is week 200
-      expected_first_testing_visit_week = matrix(c(200L), nrow = 1, ncol = 1),
-      expected_testing_start_idx = matrix(c(3L), nrow = 1, ncol = 1),
-      expected_last_testing_visit_week = NULL,
-      expected_testing_end_idx = NULL
+      should_error = FALSE
     ),
 
     # Case 13: Multiple patients with vastly different visit patterns
@@ -283,19 +229,7 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
       t_patient_visits = c(5L, 1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 10L),
       t_patient_visits_day = c(35L, 7L, 14L, 21L, 28L, 35L, 42L, 49L, 56L, 70L),
       patient_visit_pos = c(1L, 2L, 10L, 11L), # P1: 1 visit, P2: 8 visits, P3: 1 visit
-      should_error = FALSE,
-      # oos_patient_idx=2: tests sort positions 2+ → patients 1 and 3 (by last_visit_sort=[2,1,3])
-      # P1 (entry=100): study_day=51, visit at day 35≤51 → no testing visit → 0
-      # P2 (entry=110): not in curr_patients (sort pos 1 excluded) → stays at 0
-      # P3 (entry=120): study_day=31, visit at day 70>31 → week 10, global idx=10
-      expected_first_testing_visit_week = matrix(
-        c(0L, 0L, 10L),
-        nrow = 1,
-        ncol = 3
-      ),
-      expected_testing_start_idx = matrix(c(0L, 0L, 10L), nrow = 1, ncol = 3),
-      expected_last_testing_visit_week = NULL,
-      expected_testing_end_idx = NULL
+      should_error = FALSE
     ),
 
     # Case 14: Cutoff exactly between two consecutive visits
@@ -311,12 +245,7 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
       t_patient_visits = c(1L, 2L, 3L, 4L, 5L),
       t_patient_visits_day = c(7L, 14L, 21L, 28L, 35L), # Days 107, 114, 121, 128, 135
       patient_visit_pos = c(1L, 6L),
-      should_error = FALSE,
-      # Cutoff at day 125 = patient day 25, first visit after is day 28 (week 4)
-      expected_first_testing_visit_week = matrix(c(4L), nrow = 1, ncol = 1),
-      expected_testing_start_idx = matrix(c(4L), nrow = 1, ncol = 1),
-      expected_last_testing_visit_week = NULL,
-      expected_testing_end_idx = NULL
+      should_error = FALSE
     ),
 
     # Case 15: Integer overflow boundary test
@@ -332,11 +261,7 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
       t_patient_visits = c(100L, 200L),
       t_patient_visits_day = c(500L, 1500L), # Large but safe offsets
       patient_visit_pos = c(1L, 3L),
-      should_error = FALSE,
-      expected_first_testing_visit_week = matrix(c(200L), nrow = 1, ncol = 1),
-      expected_testing_start_idx = matrix(c(2L), nrow = 1, ncol = 1),
-      expected_last_testing_visit_week = NULL,
-      expected_testing_end_idx = NULL
+      should_error = FALSE
     ),
 
     # Case 16: Multiple cutoffs with overlapping testing windows
@@ -352,18 +277,7 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
       t_patient_visits = c(1L, 2L, 3L, 4L, 5L, 6L),
       t_patient_visits_day = c(7L, 14L, 21L, 28L, 35L, 42L),
       patient_visit_pos = c(1L, 7L),
-      should_error = FALSE,
-      # calendar_date_to_study_date(100, cutoff) = cutoff-100+1
-      # Cutoff 1: sd=11, day14>11 → week2 idx2; Cutoff 2: sd=16, day21>16 → week3 idx3; Cutoff 3: sd=21, day28>21 → week4 idx4
-      expected_first_testing_visit_week = matrix(
-        c(2L, 3L, 4L),
-        nrow = 3,
-        ncol = 1
-      ),
-      expected_testing_start_idx = matrix(c(2L, 3L, 4L), nrow = 3, ncol = 1),
-      # Last visit weeks depend on the window bounds - complex 3D array
-      expected_last_testing_visit_week = NULL,
-      expected_testing_end_idx = NULL
+      should_error = FALSE
     ),
 
     # Case 17: Edge case with only one visit after cutoff
@@ -379,12 +293,7 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
       t_patient_visits = c(1L, 2L, 3L, 4L, 5L),
       t_patient_visits_day = c(7L, 14L, 21L, 28L, 35L), # Last visit at day 35
       patient_visit_pos = c(1L, 6L),
-      should_error = FALSE,
-      # Only one visit after cutoff
-      expected_first_testing_visit_week = matrix(c(5L), nrow = 1, ncol = 1),
-      expected_testing_start_idx = matrix(c(5L), nrow = 1, ncol = 1),
-      expected_last_testing_visit_week = NULL,
-      expected_testing_end_idx = NULL
+      should_error = FALSE
     ),
 
     # Case 18: Stress test with many patients and cutoffs
@@ -453,37 +362,7 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
         91L # Patient 5
       ),
       patient_visit_pos = c(1L, 6L, 11L, 16L, 21L, 26L),
-      should_error = FALSE,
-      # Correct expected values derived from calendar_date_to_study_date = cutoff - entry + 1
-      # oos_patient_idx = c(1,2,3,4,5) -> cutoff n tests patients at sort positions n..5 only
-      # P1 entry=100, P2=105, P3=110, P4=115, P5=120; visits days & weeks per patient
-      expected_first_testing_visit_week = matrix(
-        c(
-          5L, 4L, 2L, 3L, 6L,  # cutoff 1 (sd=21,16,11,6,1  -> day35wk5, day28wk4, day14wk2, day21wk3, day42wk6)
-          0L, 4L, 8L, 3L, 6L,  # cutoff 2 (P1 not tested; sd=26,21,16,11 -> wk4,wk8,wk3,wk6)
-          0L, 0L, 8L, 4L, 6L,  # cutoff 3 (P1,P2 not tested; sd=31,26,21 -> wk8,wk4,wk6)
-          0L, 0L, 0L, 11L, 6L, # cutoff 4 (P1-P3 not tested; sd=36,31 -> wk11,wk6)
-          0L, 0L, 0L, 0L, 6L   # cutoff 5 (P1-P4 not tested; sd=41 -> wk6)
-        ),
-        nrow = 5,
-        ncol = 5,
-        byrow = TRUE
-      ),
-      expected_testing_start_idx = matrix(
-        c(
-          3L,  7L, 12L, 16L, 21L, # cutoff 1
-          0L,  7L, 13L, 16L, 21L, # cutoff 2
-          0L,  0L, 13L, 17L, 21L, # cutoff 3
-          0L,  0L,  0L, 19L, 21L, # cutoff 4
-          0L,  0L,  0L,  0L, 21L  # cutoff 5
-        ),
-        nrow = 5,
-        ncol = 5,
-        byrow = TRUE
-      ),
-      # 3D expected arrays not yet computed — skip last/end assertions for this case
-      expected_last_testing_visit_week = NULL,
-      expected_testing_end_idx = NULL
+      should_error = FALSE
     )
   )
 
@@ -590,6 +469,22 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
   cat("Expected valid cases:", length(valid_cases), "\n")
   cat("*** This test pushes the function to its absolute limits! ***\n")
 
+  # Compute expected values using the R reference implementation.
+  # This is the authoritative source of truth — not hand-computed matrices.
+  expected_by_case <- lapply(seq_len(N_cases), function(ci) {
+    case <- test_cases[[ci]]
+    if (case$should_error) return(NULL)
+    r_get_testing_visit_week_bounds(
+      oos_patient_idx                  = case$oos_patient_idx,
+      last_visit_calendar_day_sort_idx = case$last_visit_calendar_day_sort_idx,
+      cutoff_calendar_day              = case$cutoff_calendar_day,
+      patient_calendar_day             = case$patient_calendar_day,
+      t_patient_visits_week            = case$t_patient_visits,
+      t_patient_visits_day             = case$t_patient_visits_day,
+      patient_visit_pos                = case$patient_visit_pos
+    )
+  })
+
   # Execute the comprehensive stress test
   cat("Executing comprehensive stress test...\n")
 
@@ -600,59 +495,43 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
         data = stan_data
       )
 
-      # Use named variable access to avoid dimension-ordering ambiguity.
-      # draws_array is always 3D [iterations, chains, variables] where
-      # multi-dim Stan arrays are stored as named scalars: x[1,2,3].
       draws_df <- posterior::as_draws_df(fit$draws())
-      get_val <- function(var, ...) {
-        vname <- sprintf("%s[%s]", var, paste(c(...), collapse = ","))
-        as.numeric(draws_df[[vname]][1])
-      }
+      get_val  <- function(var, ...) get_stan_val(draws_df, var, ...)
 
       cat("Successfully extracted test results\n")
 
-      # Validate all valid cases
+      # Validate all valid cases — all 4 output arrays
       for (case_idx in valid_cases) {
-        case <- test_cases[[case_idx]]
-        cat("Validating case", case_idx, ":", case$case_name, "\n")
+        case     <- test_cases[[case_idx]]
+        expected <- expected_by_case[[case_idx]]
+        lbl      <- paste("Case", case_idx, case$case_name)
 
-        # Check that case didn't error
-        expect_equal(
-          get_val("case_status", case_idx),
-          0,
-          label = paste("Case", case_idx, case$case_name, "should not error")
-        )
+        expect_equal(get_val("case_status", case_idx), 0, label = paste(lbl, "no error"))
 
-        # Validate first_testing_visit_week and testing_start_idx
         for (n in 1:case$n_cutoffs) {
           for (i in 1:case$n_patients) {
             expect_equal(
               get_val("first_testing_visit_week", case_idx, n, i),
-              case$expected_first_testing_visit_week[n, i],
-              label = paste(
-                "Case",
-                case_idx,
-                case$case_name,
-                "first_testing_visit_week n",
-                n,
-                "i",
-                i
-              )
+              expected$first_testing_visit_week[n, i],
+              label = paste(lbl, "first_testing_visit_week n", n, "i", i)
             )
-
             expect_equal(
               get_val("testing_start_idx", case_idx, n, i),
-              case$expected_testing_start_idx[n, i],
-              label = paste(
-                "Case",
-                case_idx,
-                case$case_name,
-                "testing_start_idx n",
-                n,
-                "i",
-                i
-              )
+              expected$testing_start_idx[n, i],
+              label = paste(lbl, "testing_start_idx n", n, "i", i)
             )
+            for (m in 1:case$n_cutoffs) {
+              expect_equal(
+                get_val("last_testing_visit_week", case_idx, n, m, i),
+                expected$last_testing_visit_week[n, m, i],
+                label = paste(lbl, "last_testing_visit_week n", n, "m", m, "i", i)
+              )
+              expect_equal(
+                get_val("testing_end_idx", case_idx, n, m, i),
+                expected$testing_end_idx[n, m, i],
+                label = paste(lbl, "testing_end_idx n", n, "m", m, "i", i)
+              )
+            }
           }
         }
       }
