@@ -107,6 +107,7 @@ real multistate_lpmf(
   array[] int censored_01, array[] int censored_02, array[] int censored_12,
   array[] int censored_32,
   array[] int prog_deterministic,
+  array[] int ms_ic_gap_01,          // <-- NEW: IC gap per patient
   matrix log_cond_surv_01,
   matrix log_cond_surv_02,
   matrix log_cond_surv_12_s,
