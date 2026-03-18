@@ -49,7 +49,7 @@ vector calc_log_psa_mean(matrix patient_states, real psa_baseline) {
  * - nadir initialised to baseline, so no PSA decline is required to trigger PD
  *
  * @param psa_trajectory Absolute PSA values (ng/mL) at each visit
- * @param visit_weeks Week number for each visit (for 12-week rule)
+ * @param visit_days Study day for each visit (Day 82 gate per SAP Section 5.4.4 and Appendix D)
  * @param pre_nadir Pre-existing nadir from previous visits (0 if none)
  * @param n_screening Number of screening visits before treatment
  * @param psa_undetectable_threshold Threshold for undetectable (typically 0.1 ng/mL)
@@ -57,7 +57,7 @@ vector calc_log_psa_mean(matrix patient_states, real psa_baseline) {
  */
 array[] int calculate_psa_category(
   vector psa_trajectory,
-  array[] int visit_weeks,
+  array[] int visit_days,
   real pre_nadir,
   int n_screening,
   real psa_undetectable_threshold
@@ -72,13 +72,13 @@ array[] int calculate_psa_category(
   // so the single nadir-based rule covers both the "decline" and "no decline"
   // cases without special-casing (SAP Section 5.4.4, Issue #56).
   real nadir = pre_nadir <= 0 ? baseline : pre_nadir;
-  int pending_pd_week = -1;
+  int pending_pd_day = -1;
 
   int CR = 1; int PSA50 = 2; int STABLE = 3; int PSA_PD = 4;
 
   for (t in (n_screening + 1):n) {
     real psa_t = psa_trajectory[t];
-    int week_t = visit_weeks[t];
+    int day_t = visit_days[t];
     int idx = t - n_screening;
 
     // Update nadir
@@ -86,21 +86,22 @@ array[] int calculate_psa_category(
       nadir = psa_t;
     }
 
-    // SAP Section 5.4.4: single nadir-based rule with Day 82 gate (>12 weeks)
-    // applied universally — no Scenario A/B split.
-    int meets_pd_criteria = (week_t > 12) &&
+    // SAP Section 5.4.4: single nadir-based rule with Day 82 gate applied
+    // universally — no Scenario A/B split. SAP Appendix D: Day 82 = start of
+    // the Week 13 visit window.
+    int meets_pd_criteria = (day_t >= 82) &&
                             (nadir > 0) &&
                             ((psa_t - nadir) / nadir >= 0.25) &&
                             ((psa_t - nadir) >= 2.0);
 
-    // Handle confirmation requirement (>= 3 weeks between measurements)
+    // Handle confirmation requirement (>= 21 days between trigger and confirmer)
     if (meets_pd_criteria) {
-      if (pending_pd_week > 0 && (week_t - pending_pd_week) >= 3) {
+      if (pending_pd_day > 0 && (day_t - pending_pd_day) >= 21) {
         // Confirmed progression
         psa_status[idx] = PSA_PD;
       } else {
-        if (pending_pd_week < 0) {
-          pending_pd_week = week_t;
+        if (pending_pd_day < 0) {
+          pending_pd_day = day_t;
         }
         // Not yet confirmed - assign based on other criteria
         if (psa_t < psa_undetectable_threshold) {
@@ -114,7 +115,7 @@ array[] int calculate_psa_category(
     } else {
       // SAP Section 5.4.4: values not required to be consecutive —
       // a PSA dip between trigger and confirmation does NOT invalidate the trigger.
-      // Do NOT reset pending_pd_week here.
+      // Do NOT reset pending_pd_day here.
       if (psa_t < psa_undetectable_threshold) {
         psa_status[idx] = CR;
       } else if (baseline > 0 && (baseline - psa_t) / baseline >= 0.5) {
@@ -132,9 +133,9 @@ array[] int calculate_psa_category(
  */
 array[] int calculate_psa_category(
   vector psa_trajectory,
-  array[] int visit_weeks,
+  array[] int visit_days,
   int n_screening,
   real psa_undetectable_threshold
 ) {
-  return calculate_psa_category(psa_trajectory, visit_weeks, 0, n_screening, psa_undetectable_threshold);
+  return calculate_psa_category(psa_trajectory, visit_days, 0, n_screening, psa_undetectable_threshold);
 }

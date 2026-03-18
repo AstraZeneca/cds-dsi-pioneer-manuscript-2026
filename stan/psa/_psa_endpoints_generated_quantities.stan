@@ -23,7 +23,7 @@ profile("psa_endpoints") {
     if (n_treat > 0) {
       array[n_treat] int rep_cats = calculate_psa_category(
         rep_psa_abs,
-        t_patient_visits[visit_start:visit_end],
+        t_patient_visits_day[visit_start:visit_end],
         n_screening,
         psa_undetectable_threshold
       );
@@ -46,6 +46,13 @@ profile("psa_endpoints") {
       combined_weeks[2:] = linspaced_int_array(
         forecast_size, patient_last_obs_visit[i] + 1, last_predict_visit);
 
+      // Forecast visits have no actual day data; approximate as week midpoint: (week-1)*7+4.
+      // consecutive weeks → consecutive days with step 7, so linspaced_int_array suffices.
+      array[1 + forecast_size] int combined_days = linspaced_int_array(
+        1 + forecast_size,
+        (patient_last_obs_visit[i] - 1) * 7 + 4,
+        (last_predict_visit - 1) * 7 + 4);
+
       // Get nadir from observed post-treatment period for continuity
       real obs_nadir = n_treat > 0
         ? min(rep_psa_abs[(n_screening + 1):visit_size])
@@ -53,7 +60,7 @@ profile("psa_endpoints") {
 
       array[forecast_size] int forecast_cats = calculate_psa_category(
         combined_psa,
-        combined_weeks,
+        combined_days,
         obs_nadir,
         1, // 1 "screening" visit = the anchor
         psa_undetectable_threshold

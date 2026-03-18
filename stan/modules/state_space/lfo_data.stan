@@ -1,5 +1,3 @@
-array[sum(n_patient_visits)] int t_patient_visits_day; // Days (used for LFO calendar-day cutoffs)
-
 // --- LFO CV specific ---
 int<lower = 1> n_cutoffs;
 array[n_cutoffs] int<lower = 1> cutoff_calendar_day;

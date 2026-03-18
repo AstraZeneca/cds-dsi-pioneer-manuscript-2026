@@ -25,6 +25,7 @@
 array[n_patients] int<lower = 1> n_patient_visits;
 
 array[sum(n_patient_visits)] int t_patient_visits;
+array[sum(n_patient_visits)] int t_patient_visits_day; // Study days (for Day 82 gate and LFO calendar-day cutoffs)
 
 // Calendar Information. These are the days/weeks each patient started treatment relative
 // to all the patients in the trials modeled.
