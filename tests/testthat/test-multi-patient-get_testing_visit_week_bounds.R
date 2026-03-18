@@ -1,5 +1,6 @@
 library(testthat)
 library(cmdstanr)
+library(posterior)
 source(here::here("tests/testthat/helper-stan.R"))
 
 test_that("get_testing_visit_week_bounds - multi-patient comprehensive test", {
@@ -156,23 +157,13 @@ test_that("get_testing_visit_week_bounds - multi-patient comprehensive test", {
       data = stan_data
     )
 
-    # Extract results
-    first_testing_visit_week_draws <- fit$draws(
-      "first_testing_visit_week",
-      format = "draws_array"
-    )
-    testing_start_idx_draws <- fit$draws(
-      "testing_start_idx",
-      format = "draws_array"
-    )
+    # Extract results as a data frame for named variable access.
+    # draws_array is always 3D [iterations, chains, variables]; multi-dim Stan
+    # arrays are flattened using last-index-fastest naming (e.g. x[1,2,3]).
+    draws_df <- posterior::as_draws_df(fit$draws())
     case_status_draws <- fit$draws("case_status", format = "draws_array")
 
     cat("Stan execution successful!\n")
-    cat(
-      "Result dimensions - first_testing_visit_week:",
-      dim(first_testing_visit_week_draws),
-      "\n"
-    )
 
     # Extract the actual results based on actual dimensions
     case_status <- as.numeric(case_status_draws[1, 1, 1])
@@ -185,33 +176,13 @@ test_that("get_testing_visit_week_bounds - multi-patient comprehensive test", {
     # Validate specific results for each cutoff and patient
     for (n in 1:case$n_cutoffs) {
       for (i in 1:case$n_patients) {
-        # For multi-patient and/or multi-cutoff, extract based on dimensions
-        if (case$n_cutoffs > 1 && case$n_patients > 1) {
-          # Both dimensions present: [draws, chains, cutoffs, patients]
-          first_week_actual <- as.numeric(first_testing_visit_week_draws[
-            1,
-            1,
-            n,
-            i
-          ])
-          start_idx_actual <- as.numeric(testing_start_idx_draws[1, 1, n, i])
-        } else if (case$n_cutoffs > 1) {
-          # Multiple cutoffs, single patient: [draws, chains, cutoffs]
-          first_week_actual <- as.numeric(first_testing_visit_week_draws[
-            1,
-            1,
-            n
-          ])
-          start_idx_actual <- as.numeric(testing_start_idx_draws[1, 1, n])
-        } else {
-          # Single cutoff, multiple patients: [draws, chains, patients]
-          first_week_actual <- as.numeric(first_testing_visit_week_draws[
-            1,
-            1,
-            i
-          ])
-          start_idx_actual <- as.numeric(testing_start_idx_draws[1, 1, i])
-        }
+        # N_cases=1 for each iteration, so Stan variable is first_testing_visit_week[1,n,i]
+        first_week_actual <- as.numeric(
+          draws_df[[sprintf("first_testing_visit_week[1,%d,%d]", n, i)]][1]
+        )
+        start_idx_actual <- as.numeric(
+          draws_df[[sprintf("testing_start_idx[1,%d,%d]", n, i)]][1]
+        )
 
         expect_equal(
           first_week_actual,
