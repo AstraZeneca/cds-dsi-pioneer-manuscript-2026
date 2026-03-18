@@ -91,6 +91,7 @@ real sum_03_at_visits_below(
   (v_start, v_end) = get_pos(patient_visit_pos, i);
   for (v in v_start:v_end) {
     int wk = t_patient_visits[v];
+    if (wk < 1) continue;   // skip baseline (week 0) visits
     if (wk >= limit) break;
     ll += log_cond_surv_03[i, wk];
   }
