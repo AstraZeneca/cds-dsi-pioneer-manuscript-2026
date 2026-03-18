@@ -1,5 +1,5 @@
 library(testthat)
-source(here::here("testthat/helper-lfo.R"))
+source(here::here("tests/testthat/helper-lfo.R"))
 
 test_that("r_get_testing_visit_week_bounds matches manually verified results", {
   # ── Case A: single patient, single cutoff ─────────────────────────────────
