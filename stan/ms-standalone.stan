@@ -104,6 +104,7 @@ model {
       ms_censored_01, ms_censored_02, ms_censored_12,
       ms_censored_32,
       ms_prog_deterministic,
+      ms_ic_gap_01,
       log_cond_surv_01,
       log_cond_surv_02,
       log_cond_surv_12_s,
