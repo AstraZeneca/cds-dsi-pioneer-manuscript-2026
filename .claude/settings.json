@@ -17,7 +17,9 @@
   "permissions": {
     "defaultMode": "bypassPermissions"
   },
-  "enabledPlugins": {},
+  "enabledPlugins": {
+    "bayesian-toolkit@pioneer-claude-marketplace": true
+  },
   "extraKnownMarketplaces": {
     "pioneer-claude-marketplace": {
       "source": {

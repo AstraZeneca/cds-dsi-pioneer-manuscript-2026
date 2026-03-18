@@ -101,6 +101,41 @@ sample_and_save <- function(
   return(fit)
 }
 
+#' Re-run generated quantities block against existing posterior draws
+#'
+#' Uses CmdStanR's generate_quantities() to re-execute only the GQ block of a
+#' compiled Stan model against an existing fit's parameter draws, without
+#' re-running MCMC sampling. This is used when only GQ code has changed.
+#'
+#' @param exe_file Path to compiled Stan executable (with updated GQ code)
+#' @param fit CmdStanMCMC fit object providing existing posterior draws
+#' @param data Stan data list
+#' @param output_dir Directory to save GQ CSV output files
+#' @param parallel_chains Number of chains to run in parallel (default 4)
+#' @return CmdStanGQ fit object
+generate_quantities_from_fit <- function(
+  exe_file,
+  fit,
+  data,
+  output_dir,
+  parallel_chains = 4
+) {
+  model <- cmdstan_model(exe_file = exe_file)
+
+  if (fs::file_exists(exe_file)) {
+    fs::file_chmod(exe_file, "u+x")
+  }
+
+  fs::dir_create(output_dir, recurse = TRUE)
+
+  model$generate_quantities(
+    fitted_params = fit,
+    data = data,
+    output_dir = output_dir,
+    parallel_chains = parallel_chains
+  )
+}
+
 #' Select draws from CmdStanR fit using tidyselect patterns
 #'
 #' Uses cmdstanr::read_cmdstan_csv with variable selection to read only the

@@ -28,7 +28,7 @@ usage() {
     echo "  -r: Target regex pattern(s) (can be combined with -m)"
     echo "  -n: Negate target regex (only affects -r patterns)"
     echo "  -D: Include downstream dependents (wrap selection in depends_on())"
-    echo "  -b: Specify branch name (default: main)"
+    echo "  -b: Specify run/store name (default: main)"
     echo "  -p: Set SCLC_EXP_SUBDIR path for custom data directory"
     echo "  -u: Specify custom username (default: \$DOMINO_STARTING_USERNAME)"
     echo "  -k: Skip renv::restore()"
@@ -42,7 +42,7 @@ usage() {
 project_name=""
 targets=""
 use_crew="TRUE"
-tar_branch="main"
+tar_run="main"
 target_regex_negate="FALSE"
 use_depends_on="FALSE"
 shortcut="FALSE"
@@ -64,7 +64,7 @@ while getopts "i:m:r:b:p:u:h:sncdvkD" flag; do
         c) shortcut="TRUE";;
         d) dry_run="TRUE";;
         v) use_cue_never="TRUE";;
-        b) tar_branch=${OPTARG};;
+        b) tar_run=${OPTARG};;
         p) sclc_exp_subdir=${OPTARG};;
         u) custom_username=${OPTARG};;
         k) skip_restore="TRUE";;
@@ -93,7 +93,7 @@ fi
 # Use custom username if provided, otherwise use DOMINO_STARTING_USERNAME
 username="${custom_username:-$DOMINO_STARTING_USERNAME}"
 
-target_store_dir="$DOMINO_DATASETS_DIR/analysis-results/$username/$project_name/$tar_branch/_targets"
+target_store_dir="$DOMINO_DATASETS_DIR/analysis-results/$username/$project_name/$tar_run/_targets"
 
 # Print diagnostic information about memory limits
 echo "=========================================="
