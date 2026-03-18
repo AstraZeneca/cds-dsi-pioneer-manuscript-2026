@@ -87,6 +87,8 @@ model {
           ms_censored_32,
           ms_prog_deterministic,
           ms_ic_gap_01,
+          t_patient_visits,
+          patient_visit_pos,
           log_cond_surv_01,
           log_cond_surv_02,
           log_cond_surv_12_s,

@@ -33,6 +33,13 @@ data {
   // here it is passed directly since there are no tumor visits.
   int<lower=1> max_all_t;
 
+  // Assessment visit arrays — needed for visit-conditioned 0→3 dropout hazard.
+  // In the joint model these come from _base_data.stan/_base_transformed_data.stan;
+  // here they are passed directly.
+  int<lower=0> n_total_visits;
+  array[n_total_visits] int<lower=1> t_patient_visits;     // flat visit-week array
+  array[n_patients + 1] int<lower=1> patient_visit_pos;   // position array (n_patients+1)
+
   // =========================================================================
   // MULTISTATE MODULE DATA
   // =========================================================================
@@ -105,6 +112,8 @@ model {
       ms_censored_32,
       ms_prog_deterministic,
       ms_ic_gap_01,
+      t_patient_visits,
+      patient_visit_pos,
       log_cond_surv_01,
       log_cond_surv_02,
       log_cond_surv_12_s,

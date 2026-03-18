@@ -24,6 +24,11 @@ data {
   array[n_patients] int prog_deterministic;
   array[n_patients] int ms_ic_gap_01;
 
+  // Visit arrays for visit-conditioned 0→3 dropout hazard
+  int n_total_visits;
+  array[n_total_visits] int t_patient_visits;
+  array[n_patients + 1] int patient_visit_pos;
+
   // Constant log-conditional-survival (for tractable hand-computed expected values)
   real log_surv_val;   // single value — all hazards identical, all patients identical
 }
@@ -54,6 +59,8 @@ generated quantities {
     rep_array(1, n_patients),    // censored_32 unused
     prog_deterministic,
     ms_ic_gap_01,
+    t_patient_visits,
+    patient_visit_pos,
     lcs_01, lcs_02, lcs_12_s, lcs_12_t, lcs_03, lcs_32
   );
 
@@ -67,6 +74,8 @@ generated quantities {
     rep_array(1, n_patients),
     prog_deterministic,
     rep_array(0, n_patients),    // gaps all zero -> no-IC path
+    t_patient_visits,
+    patient_visit_pos,
     lcs_01, lcs_02, lcs_12_s, lcs_12_t, lcs_03, lcs_32
   );
 }
