@@ -42,9 +42,11 @@ vector calc_log_psa_mean(matrix patient_states, real psa_baseline) {
 /**
  * Calculate PCWG3 PSA response category with confirmation logic
  *
- * PCWG3 PSA Progression Criteria:
- * - Scenario A (after PSA decline): >= 25% AND >= 2 ng/mL rise from nadir, confirmed
- * - Scenario B (no decline): After 12 weeks, >= 25% AND >= 2 ng/mL rise from baseline, confirmed
+ * SAP Section 5.4.4 PSA Progression Criteria:
+ * - Single nadir-based rule: >= 25% AND >= 2 ng/mL rise from nadir, after week 12
+ * - Day 82 gate applied universally (no Scenario A/B split)
+ * - Trigger date = first qualifying visit; values not required to be consecutive
+ * - nadir initialised to baseline, so no PSA decline is required to trigger PD
  *
  * @param psa_trajectory Absolute PSA values (ng/mL) at each visit
  * @param visit_weeks Week number for each visit (for 12-week rule)
@@ -66,9 +68,11 @@ array[] int calculate_psa_category(
   array[n_treat] int psa_status;
 
   real baseline = psa_trajectory[n_screening];
+  // nadir initialised to baseline; when PSA never declines, nadir == baseline,
+  // so the single nadir-based rule covers both the "decline" and "no decline"
+  // cases without special-casing (SAP Section 5.4.4, Issue #56).
   real nadir = pre_nadir <= 0 ? baseline : pre_nadir;
   int pending_pd_week = -1;
-  int had_decline = 0;  // Track if PSA ever declined below baseline
 
   int CR = 1; int PSA50 = 2; int STABLE = 3; int PSA_PD = 4;
 
@@ -77,27 +81,17 @@ array[] int calculate_psa_category(
     int week_t = visit_weeks[t];
     int idx = t - n_screening;
 
-    // Update nadir and check if we've had a decline
+    // Update nadir
     if (psa_t < nadir) {
       nadir = psa_t;
-      had_decline = 1;
     }
 
-    // Check PCWG3 progression criteria
-    int meets_pd_criteria = 0;
-
-    if (had_decline) {
-      // Scenario A: After PSA decline - use nadir as reference
-      meets_pd_criteria = (nadir > 0) &&
-                         ((psa_t - nadir) / nadir >= 0.25) &&
-                         ((psa_t - nadir) >= 2.0);
-    } else {
-      // Scenario B: No decline - use baseline as reference, only after 12 weeks
-      meets_pd_criteria = (week_t > 12) &&
-                         (baseline > 0) &&
-                         ((psa_t - baseline) / baseline >= 0.25) &&
-                         ((psa_t - baseline) >= 2.0);
-    }
+    // SAP Section 5.4.4: single nadir-based rule with Day 82 gate (>12 weeks)
+    // applied universally — no Scenario A/B split.
+    int meets_pd_criteria = (week_t > 12) &&
+                            (nadir > 0) &&
+                            ((psa_t - nadir) / nadir >= 0.25) &&
+                            ((psa_t - nadir) >= 2.0);
 
     // Handle confirmation requirement (>= 3 weeks between measurements)
     if (meets_pd_criteria) {
@@ -118,7 +112,9 @@ array[] int calculate_psa_category(
         }
       }
     } else {
-      pending_pd_week = -1;  // Reset confirmation window
+      // SAP Section 5.4.4: values not required to be consecutive —
+      // a PSA dip between trigger and confirmation does NOT invalidate the trigger.
+      // Do NOT reset pending_pd_week here.
       if (psa_t < psa_undetectable_threshold) {
         psa_status[idx] = CR;
       } else if (baseline > 0 && (baseline - psa_t) / baseline >= 0.5) {
