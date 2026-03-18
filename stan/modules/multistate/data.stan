@@ -38,6 +38,12 @@ array[n_patients] int<lower=0, upper=1> ms_censored_32; // 1 = censored in state
 // If 1, no hazard contribution at T₀₁ from the stochastic 0→1 component
 array[n_patients] int<lower=0, upper=1> ms_prog_deterministic;
 
+// --- Interval Censoring Gap (0→1 transition) ---
+// Weeks between last clean assessment and progression detection.
+// = 0 for: censored patients, RECIST-determined PD, death-without-PD.
+// Used in transformed data to derive ms_ic_gap_01.
+array[n_patients] int<lower=0> interval_censored;
+
 // --- Time Grid Dimensions ---
 // max_all_t is already defined in base data
 // Max sojourn time grid (only needed if enable_ms_12=1)
