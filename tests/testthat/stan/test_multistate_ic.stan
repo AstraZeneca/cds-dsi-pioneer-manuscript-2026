@@ -18,11 +18,16 @@ data {
   array[n_patients] int time_01;
   array[n_patients] int time_02;
   array[n_patients] int time_12;
+  array[n_patients] int time_03;
+  array[n_patients] int time_32;
   array[n_patients] int censored_01;
   array[n_patients] int censored_02;
   array[n_patients] int censored_12;
   array[n_patients] int prog_deterministic;
   array[n_patients] int ms_ic_gap_01;
+
+  // Feature flags
+  int enable_03;
 
   // Visit arrays for visit-conditioned 0→3 dropout hazard
   int n_total_visits;
@@ -52,9 +57,9 @@ model { dummy ~ normal(0, 1); }
 generated quantities {
   real ll_ic = multistate_lpmf(
     final_state | 1, 1, 1, 1,   // enable_01, 02, 12, time_scale=semi-Markov
-    0, 0,                         // enable_03=0, enable_32=0
+    enable_03, 0,                 // enable_03 (data), enable_32=0
     time_01, time_02, time_12,
-    rep_array(0, n_patients), rep_array(0, n_patients),  // time_03, time_32 unused
+    time_03, time_32,
     censored_01, censored_02, censored_12,
     rep_array(1, n_patients),    // censored_32 unused
     prog_deterministic,
@@ -67,9 +72,9 @@ generated quantities {
   // Reference: same call with all gaps zeroed (current no-IC behavior)
   real ll_no_ic = multistate_lpmf(
     final_state | 1, 1, 1, 1,
-    0, 0,
+    enable_03, 0,
     time_01, time_02, time_12,
-    rep_array(0, n_patients), rep_array(0, n_patients),
+    time_03, time_32,
     censored_01, censored_02, censored_12,
     rep_array(1, n_patients),
     prog_deterministic,
