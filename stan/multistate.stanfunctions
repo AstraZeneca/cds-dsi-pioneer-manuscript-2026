@@ -69,6 +69,35 @@ tuple(int, int) sample_dropout_death_rng(
 }
 
 /**
+ * Sum log_cond_surv_03 at assessment visit weeks strictly before `limit`.
+ * Visit weeks are sorted ascending; iteration stops at the first week >= limit.
+ *
+ * @param log_cond_surv_03  Matrix of log conditional survival for 0→3 [n_patients, max_t]
+ * @param i                 Patient index (1-indexed)
+ * @param t_patient_visits  Flat array of all patients' visit weeks
+ * @param patient_visit_pos Position array (length n_patients + 1)
+ * @param limit             Only accumulate visits with week < limit
+ * @return Sum of log_cond_surv_03[i, wk] for all visit weeks wk < limit
+ */
+real sum_03_at_visits_below(
+    matrix log_cond_surv_03,
+    int i,
+    array[] int t_patient_visits,
+    array[] int patient_visit_pos,
+    int limit
+) {
+  real ll = 0;
+  int v_start; int v_end;
+  (v_start, v_end) = get_pos(patient_visit_pos, i);
+  for (v in v_start:v_end) {
+    int wk = t_patient_visits[v];
+    if (wk >= limit) break;
+    ll += log_cond_surv_03[i, wk];
+  }
+  return ll;
+}
+
+/**
  * Multistate log-probability for the illness-death model
  *
  * Handles all patient scenarios based on final state and enabled transitions.
@@ -79,6 +108,11 @@ tuple(int, int) sample_dropout_death_rng(
  *
  * When only 0→1 is enabled (single-transition mode), delegates to the fast
  * piecewise-constant hazard path via calc_ms_single_transition_loglik.
+ *
+ * The 0→3 (dropout) transition is visit-conditioned: dropout can only be
+ * observed at assessment visit weeks, so the 0→3 hazard accumulates only
+ * at visit weeks (not every calendar week). Admin-censored patients (state 0)
+ * contribute nothing to the 0→3 hazard.
  *
  * @param final_state Observed final states (0=censored, 1=progressed, 2=dead, 3=dropout)
  * @param enable_01 Flag: is 0→1 transition enabled?
@@ -92,6 +126,8 @@ tuple(int, int) sample_dropout_death_rng(
  * @param censored_02 Array of censoring indicators for 0→2
  * @param censored_12 Array of censoring indicators for 1→2
  * @param prog_deterministic Array indicating if progression was deterministic (from SF model)
+ * @param t_patient_visits Flat array of all patients' assessment visit weeks
+ * @param patient_visit_pos Position array into t_patient_visits (length n_patients + 1)
  * @param log_cond_surv_01 Matrix of log conditional survival for 0→1 [n_patients, max_t]
  * @param log_cond_surv_02 Matrix of log conditional survival for 0→2 [n_patients, max_t]
  * @param log_cond_surv_12_s Matrix of log conditional survival for 1→2 on sojourn time [n_patients, max_sojourn_t]
@@ -107,7 +143,9 @@ real multistate_lpmf(
   array[] int censored_01, array[] int censored_02, array[] int censored_12,
   array[] int censored_32,
   array[] int prog_deterministic,
-  array[] int ms_ic_gap_01,          // <-- NEW: IC gap per patient
+  array[] int ms_ic_gap_01,
+  array[] int t_patient_visits,      // flat visit-week array (all patients)
+  array[] int patient_visit_pos,     // position array (length n_patients + 1)
   matrix log_cond_surv_01,
   matrix log_cond_surv_02,
   matrix log_cond_surv_12_s,
@@ -143,10 +181,8 @@ real multistate_lpmf(
         patient_ll += sum(log_cond_surv_02[i, 1:time_02[i]]);
       }
 
-      // 0→3 competing risk survival contribution
-      if (enable_03 && time_03[i] > 0) {
-        patient_ll += sum(log_cond_surv_03[i, 1:time_03[i]]);
-      }
+      // State-0 patients are admin-censored at DCO — they are NOT dropouts.
+      // No 0→3 hazard contribution for admin-censored patients.
     }
 
     // ========================================================================
@@ -155,13 +191,14 @@ real multistate_lpmf(
 
     else if (final_state[i] == 1) {
       int T_d  = time_01[i];
-      int gap  = ms_ic_gap_01[i];
+      int gap  = prog_deterministic[i] ? 0 : ms_ic_gap_01[i];
       int T_c  = T_d - gap;
 
       // Base survival through last clean assessment (certain for all candidates)
       if (enable_01 && T_c > 0) patient_ll += sum(log_cond_surv_01[i, 1:T_c]);
       if (enable_02 && T_c > 0) patient_ll += sum(log_cond_surv_02[i, 1:T_c]);
-      if (enable_03 && T_c > 0) patient_ll += sum(log_cond_surv_03[i, 1:T_c]);
+      // NOTE: 0→3 is visit-conditioned and handled separately in each path below
+      // (no-IC path covers the full [1, T_d) range; IC path splits at T_c).
 
       if (gap == 0 || prog_deterministic[i]) {
         // ── No-IC path (gap=0 or deterministic PD) ──────────────────────────
@@ -170,8 +207,11 @@ real multistate_lpmf(
           patient_ll += sum(log_cond_surv_01[i, (T_c + 1):(T_d - 1)]);
         if (enable_02 && T_d > T_c + 1)
           patient_ll += sum(log_cond_surv_02[i, (T_c + 1):(T_d - 1)]);
-        if (enable_03 && T_d > T_c + 1)
-          patient_ll += sum(log_cond_surv_03[i, (T_c + 1):(T_d - 1)]);
+        // 0→3 competing risk: visit-conditioned, all visits before progression
+        if (enable_03) {
+          patient_ll += sum_03_at_visits_below(
+            log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_d);
+        }
         if (enable_01 && !prog_deterministic[i] && T_d > 0)
           patient_ll += log1m_exp(log_cond_surv_01[i, T_d]);
         // Post-progression sojourn (censored)
@@ -203,8 +243,11 @@ real multistate_lpmf(
             patient_ll += sum(log_cond_surv_01[i, (T_c + 1):(T_d - 1)]);
           if (enable_02 && T_d > T_c + 1)
             patient_ll += sum(log_cond_surv_02[i, (T_c + 1):(T_d - 1)]);
-          if (enable_03 && T_d > T_c + 1)
-            patient_ll += sum(log_cond_surv_03[i, (T_c + 1):(T_d - 1)]);
+          // 0→3 competing risk: visit-conditioned, all visits before progression
+          if (enable_03) {
+            patient_ll += sum_03_at_visits_below(
+              log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_d);
+          }
           if (enable_01 && !prog_deterministic[i] && T_d > 0)
             patient_ll += log1m_exp(log_cond_surv_01[i, T_d]);
           if (enable_12 && time_12[i] > 0) {
@@ -223,12 +266,30 @@ real multistate_lpmf(
           }
         } else {
           // Semi-Markov IC path
+          // 0→3 base survival at visits strictly before T_c+1 (certain for all candidates)
+          if (enable_03 && T_c > 0) {
+            patient_ll += sum_03_at_visits_below(
+              log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_c + 1);
+          }
+
           vector[gap] cum_01 = cumulative_sum(
             to_vector(log_cond_surv_01[i, (T_c + 1):T_d]));
           vector[gap] cum_02 = enable_02 ? cumulative_sum(
             to_vector(log_cond_surv_02[i, (T_c + 1):T_d])) : rep_vector(0.0, gap);
-          vector[gap] cum_03 = enable_03 ? cumulative_sum(
-            to_vector(log_cond_surv_03[i, (T_c + 1):T_d])) : rep_vector(0.0, gap);
+
+          // Visit-conditioned 0→3 cumulative sums over IC interval [T_c+1, T_d]
+          vector[gap] inc_03 = rep_vector(0.0, gap);
+          if (enable_03) {
+            int v_start; int v_end;
+            (v_start, v_end) = get_pos(patient_visit_pos, i);
+            for (v in v_start:v_end) {
+              int wk = t_patient_visits[v];
+              if (wk <= T_c) continue;
+              if (wk > T_d) break;
+              inc_03[wk - T_c] = log_cond_surv_03[i, wk];
+            }
+          }
+          vector[gap] cum_03 = cumulative_sum(inc_03);
 
           vector[gap] terms;
 
@@ -275,8 +336,10 @@ real multistate_lpmf(
         if (enable_02 && time_02[i] > 1) {
           patient_ll += sum(log_cond_surv_02[i, 1:(time_02[i] - 1)]);
         }
-        if (enable_03 && time_02[i] > 1) {
-          patient_ll += sum(log_cond_surv_03[i, 1:(time_02[i] - 1)]);
+        // 0→3 competing risk: visit-conditioned, all visits before death
+        if (enable_03) {
+          patient_ll += sum_03_at_visits_below(
+            log_cond_surv_03, i, t_patient_visits, patient_visit_pos, time_02[i]);
         }
 
         // Hazard contribution at death time (0→2)
@@ -287,12 +350,12 @@ real multistate_lpmf(
       } else {
         // ── Progressed then died (0→1→2) ────────────────────────────────────
         int T_d  = time_01[i];
-        int gap  = ms_ic_gap_01[i];
+        int gap  = prog_deterministic[i] ? 0 : ms_ic_gap_01[i];
         int T_c  = T_d - gap;
 
         if (enable_01 && T_c > 0) patient_ll += sum(log_cond_surv_01[i, 1:T_c]);
         if (enable_02 && T_c > 0) patient_ll += sum(log_cond_surv_02[i, 1:T_c]);
-        if (enable_03 && T_c > 0) patient_ll += sum(log_cond_surv_03[i, 1:T_c]);
+        // NOTE: 0→3 is visit-conditioned and handled separately in each path below
 
         if (gap == 0 || prog_deterministic[i]) {
           // ── No-IC path ───────────────────────────────────────────────────
@@ -300,8 +363,11 @@ real multistate_lpmf(
             patient_ll += sum(log_cond_surv_01[i, (T_c + 1):(T_d - 1)]);
           if (enable_02 && T_d > T_c + 1)
             patient_ll += sum(log_cond_surv_02[i, (T_c + 1):(T_d - 1)]);
-          if (enable_03 && T_d > T_c + 1)
-            patient_ll += sum(log_cond_surv_03[i, (T_c + 1):(T_d - 1)]);
+          // 0→3 competing risk: visit-conditioned, all visits before progression
+          if (enable_03) {
+            patient_ll += sum_03_at_visits_below(
+              log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_d);
+          }
           if (enable_01 && !prog_deterministic[i] && T_d > 0)
             patient_ll += log1m_exp(log_cond_surv_01[i, T_d]);
           // Post-progression sojourn (event)
@@ -341,8 +407,11 @@ real multistate_lpmf(
               patient_ll += sum(log_cond_surv_01[i, (T_c + 1):(T_d - 1)]);
             if (enable_02 && T_d > T_c + 1)
               patient_ll += sum(log_cond_surv_02[i, (T_c + 1):(T_d - 1)]);
-            if (enable_03 && T_d > T_c + 1)
-              patient_ll += sum(log_cond_surv_03[i, (T_c + 1):(T_d - 1)]);
+            // 0→3 competing risk: visit-conditioned, all visits before progression
+            if (enable_03) {
+              patient_ll += sum_03_at_visits_below(
+                log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_d);
+            }
             if (enable_01 && !prog_deterministic[i] && T_d > 0)
               patient_ll += log1m_exp(log_cond_surv_01[i, T_d]);
             if (enable_12 && time_12[i] > 0) {
@@ -368,12 +437,30 @@ real multistate_lpmf(
             }
           } else {
             // Semi-Markov IC path
+            // 0→3 base survival at visits strictly before T_c+1 (certain for all candidates)
+            if (enable_03 && T_c > 0) {
+              patient_ll += sum_03_at_visits_below(
+                log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_c + 1);
+            }
+
             vector[gap] cum_01 = cumulative_sum(
               to_vector(log_cond_surv_01[i, (T_c + 1):T_d]));
             vector[gap] cum_02 = enable_02 ? cumulative_sum(
               to_vector(log_cond_surv_02[i, (T_c + 1):T_d])) : rep_vector(0.0, gap);
-            vector[gap] cum_03 = enable_03 ? cumulative_sum(
-              to_vector(log_cond_surv_03[i, (T_c + 1):T_d])) : rep_vector(0.0, gap);
+
+            // Visit-conditioned 0→3 cumulative sums over IC interval [T_c+1, T_d]
+            vector[gap] inc_03 = rep_vector(0.0, gap);
+            if (enable_03) {
+              int v_start; int v_end;
+              (v_start, v_end) = get_pos(patient_visit_pos, i);
+              for (v in v_start:v_end) {
+                int wk = t_patient_visits[v];
+                if (wk <= T_c) continue;
+                if (wk > T_d) break;
+                inc_03[wk - T_c] = log_cond_surv_03[i, wk];
+              }
+            }
+            vector[gap] cum_03 = cumulative_sum(inc_03);
 
             vector[gap] terms;
 
@@ -417,19 +504,19 @@ real multistate_lpmf(
     else if (final_state[i] == 3) {
       // Patient dropped out of trial (0→3), then either died off-trial or censored in state 3
 
-      // Survival in state 0 until dropout (survived 0→1, 0→2, 0→3)
+      // Survival in state 0 until dropout
+      // 0→1 and 0→2 risks accumulate at ALL calendar weeks (can die/progress any time)
       if (enable_01 && time_03[i] > 1) {
         patient_ll += sum(log_cond_surv_01[i, 1:(time_03[i] - 1)]);
       }
       if (enable_02 && time_03[i] > 1) {
         patient_ll += sum(log_cond_surv_02[i, 1:(time_03[i] - 1)]);
       }
-      if (enable_03 && time_03[i] > 1) {
-        patient_ll += sum(log_cond_surv_03[i, 1:(time_03[i] - 1)]);
-      }
-
-      // Hazard contribution at dropout time (0→3 event)
-      if (enable_03 && time_03[i] > 0) {
+      // 0→3 risk accumulates only at assessment visit weeks (dropout observed at visits)
+      if (enable_03) {
+        patient_ll += sum_03_at_visits_below(
+          log_cond_surv_03, i, t_patient_visits, patient_visit_pos, time_03[i]);
+        // Dropout event at time_03[i] — always a visit week
         patient_ll += log1m_exp(log_cond_surv_03[i, time_03[i]]);
       }
 
