@@ -1,7 +1,6 @@
 library(testthat)
 library(cmdstanr)
 library(posterior)
-source(here::here("tests/testthat/helper-stan.R"))
 
 test_that("get_oos_patients_idx: all cases produce correct OOS start indices", {
   cases <- list(
