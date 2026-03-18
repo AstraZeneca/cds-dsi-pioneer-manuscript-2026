@@ -1,8 +1,5 @@
 library(testthat)
 library(cmdstanr)
-library(posterior)
-source(here::here("tests/testthat/helper-stan.R"))
-source(here::here("tests/testthat/helper-pfs.R"))
 
 test_that("truncate_at_max_time: all cases produce correct truncated pfs and right_censored", {
   cases <- list(

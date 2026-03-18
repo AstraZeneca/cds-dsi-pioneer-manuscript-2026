@@ -33,6 +33,7 @@ r_find_first <- function(all, what, n_succ) {
   n <- length(all)
   if (n < n_succ) return(0L)
   if (length(what) == 0L) stop("r_find_first: 'what' cannot be empty")
+  if (n_succ <= 0L) stop("r_find_first: 'n_succ' must be >= 1")
   for (i in seq_len(n - n_succ + 1L)) {
     matches <- 0L
     for (j in seq_len(n_succ)) {
