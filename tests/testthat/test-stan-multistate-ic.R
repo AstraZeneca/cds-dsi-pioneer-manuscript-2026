@@ -17,11 +17,17 @@ test_that("gap=0 IC likelihood matches no-IC likelihood", {
     time_01       = 12L,
     time_02       = 0L,
     time_12       = 8L,
+    time_03       = 0L,
+    time_32       = 0L,
     censored_01   = 0L,
     censored_02   = 1L,
     censored_12   = 0L,
     prog_deterministic = 0L,
     ms_ic_gap_01  = 0L,     # no IC
+    enable_03     = 0L,
+    n_total_visits  = 1L,
+    t_patient_visits = 1L,
+    patient_visit_pos = c(1L, 2L),
     log_surv_val  = log_surv_val
   )
 
@@ -66,11 +72,17 @@ test_that("IC marginalization matches hand-computed expected value", {
     time_01       = 6L,
     time_02       = 0L,
     time_12       = 4L,
+    time_03       = 0L,
+    time_32       = 0L,
     censored_01   = 0L,
     censored_02   = 1L,
     censored_12   = 0L,
     prog_deterministic = 0L,
     ms_ic_gap_01  = 2L,
+    enable_03     = 0L,
+    n_total_visits  = 1L,
+    t_patient_visits = 1L,
+    patient_visit_pos = c(1L, 2L),
     log_surv_val  = c_val
   )
 
@@ -87,15 +99,119 @@ test_that("IC disabled for deterministic progression (prog_deterministic=1)", {
   # (ll_no_ic always zeroes gaps, so it gives the gap=0 path).
   # With the fix, both paths use T_c = T_d = 6 and produce identical likelihoods.
   c_val <- -0.1
-  data_ic <- list(n_patients=1L, max_t=30L, max_sojourn_t=15L,
-    final_state=2L, time_01=6L, time_02=0L, time_12=4L,
-    censored_01=0L, censored_02=1L, censored_12=0L,
-    prog_deterministic=1L, ms_ic_gap_01=2L, log_surv_val=c_val)
+  data_ic <- list(
+    n_patients = 1L, max_t = 30L, max_sojourn_t = 15L,
+    final_state = 2L, time_01 = 6L, time_02 = 0L, time_12 = 4L,
+    time_03 = 0L, time_32 = 0L,
+    censored_01 = 0L, censored_02 = 1L, censored_12 = 0L,
+    prog_deterministic = 1L, ms_ic_gap_01 = 2L,
+    enable_03 = 0L,
+    n_total_visits  = 1L,
+    t_patient_visits = 1L,
+    patient_visit_pos = c(1L, 2L),
+    log_surv_val = c_val
+  )
 
   fit_ic <- test_stan_function("tests/testthat/stan/test_multistate_ic.stan", data_ic)
-  draws  <- fit_ic$draws(format="df")
+  draws  <- fit_ic$draws(format = "df")
 
   ll_ic   <- draws$ll_ic[1]
   ll_noop <- draws$ll_no_ic[1]
   expect_equal(ll_ic, ll_noop, tolerance = 1e-8)
+})
+
+test_that("State-0 (admin-censored) contributes no 0->3 hazard", {
+  # A patient right-censored in state 0 at week 10, weekly visits
+  # With enable_03, their presence should not affect the 0->3 log-lik
+  c_val <- -0.1
+  visits <- 1:10
+
+  data <- list(
+    n_patients = 1L, max_t = 15L, max_sojourn_t = 15L,
+    final_state = 0L,
+    time_01 = 10L, time_02 = 10L, time_12 = 0L,
+    time_03 = 0L, time_32 = 0L,
+    censored_01 = 1L, censored_02 = 1L, censored_12 = 1L,
+    prog_deterministic = 0L,
+    ms_ic_gap_01 = 0L,
+    enable_03 = 1L,
+    n_total_visits = length(visits),
+    t_patient_visits = visits,
+    patient_visit_pos = c(1L, length(visits) + 1L),
+    log_surv_val = c_val
+  )
+
+  fit <- test_stan_function("tests/testthat/stan/test_multistate_ic.stan", data)
+  draws <- fit$draws(format = "df")
+
+  # Expected: survived 0->1 and 0->2 at all 10 weeks; zero 0->3 contribution
+  expected_ll <- 2 * 10 * c_val  # only 0->1 and 0->2
+  expect_equal(draws$ll_ic[1], expected_ll, tolerance = 1e-6)
+})
+
+test_that("State-3 0->3 survival sums only at visit weeks", {
+  # Patient drops out at week 12 (visit), visits at weeks 6 and 12
+  # 0->3 hazard should accumulate only at week 6 (survival) and week 12 (event)
+  c_val <- -0.1
+  c_h   <- log1p(-exp(c_val))  # log(1 - exp(-0.1))
+  visits <- c(6L, 12L)
+
+  data <- list(
+    n_patients = 1L, max_t = 20L, max_sojourn_t = 5L,
+    final_state = 3L,
+    time_01 = 0L, time_02 = 0L, time_12 = 0L,
+    time_03 = 12L, time_32 = 0L,
+    censored_01 = 1L, censored_02 = 1L, censored_12 = 1L,
+    prog_deterministic = 0L,
+    ms_ic_gap_01 = 0L,
+    enable_03 = 1L,
+    n_total_visits = length(visits),
+    t_patient_visits = visits,
+    patient_visit_pos = c(1L, length(visits) + 1L),
+    log_surv_val = c_val
+  )
+
+  fit <- test_stan_function("tests/testthat/stan/test_multistate_ic.stan", data)
+  draws <- fit$draws(format = "df")
+
+  # 0->1 survival: weeks 1..11   = 11 * c_val
+  # 0->2 survival: weeks 1..11   = 11 * c_val
+  # 0->3 survival: only week 6   = 1  * c_val  (NOT all of weeks 1..11)
+  # 0->3 event at week 12        = c_h
+  expected_ll <- 11 * c_val + 11 * c_val + c_val + c_h
+  expect_equal(draws$ll_ic[1], expected_ll, tolerance = 1e-6)
+})
+
+test_that("State-1 competing-risk 0->3 sums only at visit weeks before progression", {
+  # Patient progresses at week 12, visits at weeks 6 and 12
+  # 0->3 competing risk: only week 6 contributes (< 12)
+  c_val <- -0.1
+  c_h   <- log1p(-exp(c_val))
+  visits <- c(6L, 12L)
+
+  data <- list(
+    n_patients = 1L, max_t = 20L, max_sojourn_t = 10L,
+    final_state = 1L,
+    time_01 = 12L, time_02 = 0L, time_12 = 5L,
+    time_03 = 0L, time_32 = 0L,
+    censored_01 = 0L, censored_02 = 1L, censored_12 = 1L,
+    prog_deterministic = 0L,
+    ms_ic_gap_01 = 0L,
+    enable_03 = 1L,
+    n_total_visits = length(visits),
+    t_patient_visits = visits,
+    patient_visit_pos = c(1L, length(visits) + 1L),
+    log_surv_val = c_val
+  )
+
+  fit <- test_stan_function("tests/testthat/stan/test_multistate_ic.stan", data)
+  draws <- fit$draws(format = "df")
+
+  # gap=0 no-IC path, T_c = T_d = 12
+  # 0->1: sum(lcs_01[1:T_c]) + event at T_d = 12*c_val + c_h
+  # 0->2: sum(lcs_02[1:T_c])                = 12*c_val
+  # 0->3: visits below T_d=12: only week 6  = 1*c_val
+  # sojourn censored 1..5                   = 5*c_val
+  expected_ll <- (12 * c_val + c_h) + 12 * c_val + c_val + 5 * c_val
+  expect_equal(draws$ll_ic[1], expected_ll, tolerance = 1e-6)
 })
