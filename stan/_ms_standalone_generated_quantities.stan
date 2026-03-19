@@ -93,8 +93,8 @@ for (i in 1:n_patients) {
       survival_time_rng(log_cond_surv_01[i], ms_time_01[i], 1, 0);
     sample_ms_pfs[i] += 1;
   } else {
-    // Event observed: use detection week from data (pfs = detection week in new convention)
-    sample_ms_pfs[i] = ms_time_01[i];
+    // Event observed: use data (pfs + interval_censored + 1 = detection week)
+    sample_ms_pfs[i] = ms_time_01[i] + interval_censored[i] + 1;
     sample_ms_right_censored[i] = 0;
   }
 
@@ -371,5 +371,11 @@ for (c in 1:n_cond_group) {
     cond_spop_os_n[c] = zeros_vector(n_pfs_timepoints);
   }
 }
+
+// Alias ms-specific names to generic names expected by the CIF include
+array[n_patients] int spop_pfs = spop_ms_pfs;
+array[n_patients] int spop_right_censored = spop_ms_right_censored;
+array[n_patients] int sample_pfs = sample_ms_pfs;
+array[n_patients] int sample_right_censored = sample_ms_right_censored;
 
 #include "modules/multistate/generated_quantities.stan"

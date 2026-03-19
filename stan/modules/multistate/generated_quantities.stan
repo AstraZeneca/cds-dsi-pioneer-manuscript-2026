@@ -1,8 +1,8 @@
 // ============================================================================
 // Multistate Competing Risks CIF (per-trial, empirical subdistribution)
 // ============================================================================
-// Requires: spop_pfs, spop_right_censored, spop_os, spop_os_censored,
-//           sample_pfs, sample_right_censored, sample_os, sample_os_censored
+// Requires: spop_ms_pfs, spop_ms_right_censored, spop_os, spop_os_censored,
+//           sample_ms_pfs, sample_ms_right_censored, sample_os, sample_os_censored
 //           (declared and computed in the enclosing GQ block before this include),
 //           plus trial_patient_pos, max_all_t, n_trials from transformed data / data.
 //
@@ -30,13 +30,13 @@ for (s in 1:n_trials) {
     (tr_start, tr_end) = get_pos(trial_patient_pos, s);
 
     (spop_cif_01[s], spop_cif_02[s], spop_cif_03[s]) = compute_trial_cif(
-      spop_pfs[tr_start:tr_end], spop_right_censored[tr_start:tr_end],
+      spop_ms_pfs[tr_start:tr_end], spop_ms_right_censored[tr_start:tr_end],
       spop_os[tr_start:tr_end],  spop_os_censored[tr_start:tr_end],
       max_all_t
     );
 
     (sample_cif_01[s], sample_cif_02[s], sample_cif_03[s]) = compute_trial_cif(
-      sample_pfs[tr_start:tr_end], sample_right_censored[tr_start:tr_end],
+      sample_ms_pfs[tr_start:tr_end], sample_ms_right_censored[tr_start:tr_end],
       sample_os[tr_start:tr_end],  sample_os_censored[tr_start:tr_end],
       max_all_t
     );
