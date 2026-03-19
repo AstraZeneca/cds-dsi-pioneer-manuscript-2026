@@ -37,8 +37,53 @@ get_testing_visit_week_bounds_cases <- list(
 # (already fixed above, no duplicate or stray lists)
 
 # Inline all test cases for fine_cutoff_visits
+# fine_cutoff_visits is like cutoff_visits but operates on tumor measurements
+# (t_measure / t_day_measure / patient_tumor_measure_pos) instead of visit arrays.
+# Expected values derived by: for each patient i, find last measure j where
+#   patient_calendar_day[i] + t_day_measure[j] <= cutoff_calendar_day
 fine_cutoff_visits_cases <- list(
-  # ... (copy all fine_cutoff_visits test cases here, as in your previous code) ...
+  # Case 1: single patient, 3 measures all before cutoff
+  list(
+    cutoff_calendar_day = 30,
+    patient_calendar_day = c(0),
+    t_measure = c(1, 2, 3),
+    t_day_measure = c(7, 14, 21),        # absolute days: 7, 14, 21 — all <= 30
+    patient_tumor_measure_pos = c(1, 4),
+    expected_last_visit_day = c(21),
+    expected_last_visit_week = c(3)
+  ),
+  # Case 2: single patient, no measures before cutoff
+  list(
+    cutoff_calendar_day = 5,
+    patient_calendar_day = c(0),
+    t_measure = c(1, 2),
+    t_day_measure = c(10, 20),           # absolute days: 10, 20 — none <= 5
+    patient_tumor_measure_pos = c(1, 3),
+    expected_last_visit_day = c(0),
+    expected_last_visit_week = c(0)
+  ),
+  # Case 3: single patient, last measure exactly at cutoff boundary
+  list(
+    cutoff_calendar_day = 10,
+    patient_calendar_day = c(0),
+    t_measure = c(1, 2),
+    t_day_measure = c(7, 10),            # day 10 exactly at cutoff — should be included
+    patient_tumor_measure_pos = c(1, 3),
+    expected_last_visit_day = c(10),
+    expected_last_visit_week = c(2)
+  ),
+  # Case 4: two patients with different entry dates
+  list(
+    cutoff_calendar_day = 20,
+    patient_calendar_day = c(0, 5),
+    # Patient 1 (entry=0): relative cutoff=20, measures at days 7,14 — both qualify, last=14 wk2
+    # Patient 2 (entry=5): relative cutoff=15, measures at days 8,18 — day 8 qualifies, last=8 wk1
+    t_measure = c(1, 2, 1, 2),
+    t_day_measure = c(7, 14, 8, 18),
+    patient_tumor_measure_pos = c(1, 3, 5),
+    expected_last_visit_day = c(14, 8),
+    expected_last_visit_week = c(2, 1)
+  )
 )
 
 # Inline all test cases for get_oos_patients_idx
@@ -422,15 +467,6 @@ test_that("cutoff_visits and fine_cutoff_visits handle all edge cases and bounda
     }
     # Check fine_cutoff_visits outputs if expected values are not NA
     if (!all(is.na(expected_fine_last_visit_day[i, 1:np]))) {
-      # Diagnostic print for cutoff-only cases
-      if (all(expected_fine_last_visit_day[i, 1:np] == 0)) {
-        cat(sprintf(
-          "[DIAG] Case %d: expected fine_last_visit_day = %s, actual = %s\n",
-          i,
-          paste(expected_fine_last_visit_day[i, 1:np], collapse = ","),
-          paste(as.integer(df$fine_last_visit_day), collapse = ",")
-        ))
-      }
       expect_equal(
         as.integer(df$fine_last_visit_day),
         expected_fine_last_visit_day[i, 1:np],
@@ -444,47 +480,7 @@ test_that("cutoff_visits and fine_cutoff_visits handle all edge cases and bounda
     }
   }
 
-  # Test get_testing_visit_week_bounds outputs if we have test cases
-  if (n_testing_bounds_cases > 0) {
-    bounds_draws_df <- spread_draws(
-      fit$draws(),
-      first_testing_visit_week_out[case, n, i],
-      testing_start_idx_out[case, n, i]
-    )
-
-    for (i in seq_len(n_testing_bounds_cases)) {
-      case <- get_testing_visit_week_bounds_cases[[i]]
-      case_draws <- bounds_draws_df[
-        bounds_draws_df$.iteration == 1 &
-          bounds_draws_df$.chain == 1 &
-          bounds_draws_df$case == i,
-      ]
-
-      for (n in 1:case$n_cutoffs) {
-        for (p in 1:case$n_patients) {
-          # Check first_testing_visit_week
-          actual_first <- case_draws[
-            case_draws$n == n & case_draws$i == p,
-          ]$first_testing_visit_week_out
-          expected_first <- case$expected_first_testing_visit_week[n, p]
-          expect_equal(
-            actual_first,
-            expected_first,
-            label = paste("first_testing_visit_week case", i, "n", n, "i", p)
-          )
-
-          # Check testing_start_idx
-          actual_idx <- case_draws[
-            case_draws$n == n & case_draws$i == p,
-          ]$testing_start_idx_out
-          expected_idx <- case$expected_testing_start_idx[n, p]
-          expect_equal(
-            actual_idx,
-            expected_idx,
-            label = paste("testing_start_idx case", i, "n", n, "i", p)
-          )
-        }
-      }
-    }
-  }
+  # get_testing_visit_week_bounds is exercised by the Stan run above but not
+  # asserted here — see test-stan-get_testing_visit_week_bounds.R for dedicated
+  # coverage of that function.
 })

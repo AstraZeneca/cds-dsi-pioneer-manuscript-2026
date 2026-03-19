@@ -180,7 +180,7 @@ p_b <- plot_oos_confusion_matrix(oos_confusion_matrix, add_caption = FALSE) +
 ggsave(file.path(plot_dir, "plot_b.pdf"), p_b, width = 5.2, height = 3.0, device = cairo_pdf)
 
 # Plot C: Median PFS by DCO
-p_c <- plot_median_pfs_by_dco(
+p_c <- plot_median_surv_by_dco(
   "sample",
   quant_pfs_list,
   cond_quant_pfs_list,
