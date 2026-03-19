@@ -93,8 +93,8 @@ for (i in 1:n_patients) {
       survival_time_rng(log_cond_surv_01[i], ms_time_01[i], 1, 0);
     sample_ms_pfs[i] += 1;
   } else {
-    // Event observed: use data (pfs + interval_censored + 1 = detection week)
-    sample_ms_pfs[i] = ms_time_01[i] + interval_censored[i] + 1;
+    // Event observed: use detection week from data (pfs = detection week in new convention)
+    sample_ms_pfs[i] = ms_time_01[i];
     sample_ms_right_censored[i] = 0;
   }
 
@@ -372,10 +372,33 @@ for (c in 1:n_cond_group) {
   }
 }
 
-// Alias ms-specific names to generic names expected by the CIF include
-array[n_patients] int spop_pfs = spop_ms_pfs;
-array[n_patients] int spop_right_censored = spop_ms_right_censored;
-array[n_patients] int sample_pfs = sample_ms_pfs;
-array[n_patients] int sample_right_censored = sample_ms_right_censored;
+// ── Competing Risks CIF (per-trial, empirical subdistribution) ───────────────
+// Standalone model only has multistate PFS (no SLD/RECIST pathway).
 
-#include "modules/multistate/generated_quantities.stan"
+array[n_trials] vector<lower=0, upper=1>[max_all_t + 1]
+  spop_cif_01   = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  spop_cif_02   = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  spop_cif_03   = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  sample_cif_01 = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  sample_cif_02 = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  sample_cif_03 = rep_array(zeros_vector(max_all_t + 1), n_trials);
+
+for (s in 1:n_trials) {
+  int n_tr = get_pos_size(trial_patient_pos, s);
+  if (n_tr > 0) {
+    int tr_start; int tr_end;
+    (tr_start, tr_end) = get_pos(trial_patient_pos, s);
+
+    (spop_cif_01[s], spop_cif_02[s], spop_cif_03[s]) = compute_trial_cif(
+      spop_ms_pfs[tr_start:tr_end], spop_ms_right_censored[tr_start:tr_end],
+      spop_os[tr_start:tr_end],  spop_os_censored[tr_start:tr_end],
+      max_all_t
+    );
+
+    (sample_cif_01[s], sample_cif_02[s], sample_cif_03[s]) = compute_trial_cif(
+      sample_ms_pfs[tr_start:tr_end], sample_ms_right_censored[tr_start:tr_end],
+      sample_os[tr_start:tr_end],  sample_os_censored[tr_start:tr_end],
+      max_all_t
+    );
+  }
+}
