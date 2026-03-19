@@ -130,38 +130,35 @@ array[n_patients] int patient_to_cutoff_idx;
 // Create cutoff-censored data ONLY for observed patients (compact arrays)
 array[n_cutoff_observed_patients] int cutoff_pfs;
 array[n_cutoff_observed_patients] int cutoff_right_censored;
-array[n_cutoff_observed_patients] int cutoff_interval_censored;
 
 for (obs_idx in 1:n_cutoff_observed_patients) {
   int i = cutoff_observed_patients[obs_idx];  // Original patient ID
-  
+
   // If patient's observed PFS is after the cutoff, censor them at cutoff
   // cutoff_last_visit_week[i] is the last week observed for patient i at cutoff
   if (pfs[i] > cutoff_last_visit_week[i]) {
     cutoff_pfs[obs_idx] = cutoff_last_visit_week[i];
     cutoff_right_censored[obs_idx] = 1;  // Censored at cutoff
-    cutoff_interval_censored[obs_idx] = 0;  // No interval censoring for cutoff-censored patients
   } else {
     // Event occurred before cutoff, use actual observed data
     cutoff_pfs[obs_idx] = pfs[i];
     cutoff_right_censored[obs_idx] = right_censored[i];
-    cutoff_interval_censored[obs_idx] = interval_censored[i];
   }
 }
 
-// Create cutoff-censored multistate 0→1 data
+// Create cutoff-censored multistate 0→1 data (detection-week convention)
 array[n_cutoff_observed_patients] int cutoff_ms_time_01;
 array[n_cutoff_observed_patients] int cutoff_ms_censored_01;
 
 for (obs_idx in 1:n_cutoff_observed_patients) {
   int i = cutoff_observed_patients[obs_idx];  // Original patient ID
 
-  // If patient's multistate 0→1 time is after the cutoff, censor them at cutoff
+  // Compare detection_week (not ms_time_01) against cutoff
   if (ms_time_01[i] > cutoff_last_visit_week[i]) {
     cutoff_ms_time_01[obs_idx] = cutoff_last_visit_week[i];
     cutoff_ms_censored_01[obs_idx] = 1;  // Censored at cutoff
   } else {
-    // Event occurred before cutoff, use actual observed data
+    // Event occurred before cutoff, use detection-week data
     cutoff_ms_time_01[obs_idx] = ms_time_01[i];
     cutoff_ms_censored_01[obs_idx] = ms_censored_01[i];
   }
@@ -277,6 +274,16 @@ for (obs_idx in 1:n_cutoff_observed_patients) {
 
 int n_cutoff_total_forecast_visits = sum(cutoff_n_patient_forecast_visits);
 array[n_cutoff_observed_patients + 1] int cutoff_forecast_visits_pos = create_pos(cutoff_n_patient_forecast_visits);
+
+// Assessment-visit grid for cutoff patients
+array[n_cutoff_observed_patients] int cutoff_n_patient_forecast_obs_visits;
+for (obs_idx in 1:n_cutoff_observed_patients) {
+  cutoff_n_patient_forecast_obs_visits[obs_idx] = cutoff_n_patient_forecast_visits[obs_idx] > 0
+    ? (cutoff_n_patient_forecast_visits[obs_idx] - 1 + forecast_observation_interval) %/% forecast_observation_interval
+    : 0;
+}
+int n_cutoff_total_forecast_obs_visits = sum(cutoff_n_patient_forecast_obs_visits);
+array[n_cutoff_observed_patients + 1] int cutoff_forecast_obs_visits_pos = create_pos(cutoff_n_patient_forecast_obs_visits);
 
 // Create mapping from cutoff visits to original state indices for subsetting in generated quantities
 // Include ALL visits (including first visit per patient) - the function expects full visit states

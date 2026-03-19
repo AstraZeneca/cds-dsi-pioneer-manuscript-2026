@@ -17,40 +17,52 @@ vector[n_enabled_groups_ms_baseline_01] log_lambda_gp_01_level_intercept;
 matrix[enable_ms_01 ? n_patients : 0, enable_ms_01 ? max_all_t : 0] log_cond_surv_01;
 
 if (enable_ms_01) {
-  // Compute population GP
+  // Compute population GP on coarse grid then expand to weekly
   log_pop_lambda_01 = calc_gp_pred(
-    all_tumor_measure_t,
+    ms_gp_cal_t,
     log_lambda_gp_01_pop_intercept[1],
     log_lambda_gp_01_pop_alpha[1],
     log_lambda_gp_01_pop_rho[1],
     delta,
     log_lambda_gp_01_pop_eta
-  );
+  )[knot_of_cal];
 
   // Initialize patient hazards with population baseline
   log_cond_surv_01 = rep_matrix(log_pop_lambda_01, n_patients);
 
-  // Add level-level GP residuals
+  // Add level-level residuals (intercept-only or full GP)
   for (lv in 1:n_levels) {
     if (enable_ms_level_baseline_hazard[lv]) {
       int lv_start, lv_end;
       (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
 
-      // Scale intercepts
+      // Scale intercepts (shared by both intercept-only and GP modes)
       log_lambda_gp_01_level_intercept[lv_start:lv_end] =
         raw_log_lambda_gp_01_level_intercept[lv_start:lv_end] *
         log_lambda_gp_01_level_intercept_sd[lv];
 
-      // Compute level GP residuals
-      for (g in lv_start:lv_end) {
-        log_level_lambda_01_residual[g] = calc_gp_pred(
-          all_tumor_measure_t,
-          log_lambda_gp_01_level_intercept[g],
-          log_lambda_gp_01_level_alpha[lv],
-          log_lambda_gp_01_level_rho[lv],
-          delta,
-          log_lambda_gp_01_level_eta[g]
-        );
+      if (enable_ms_level_baseline_hazard[lv] == 2) {
+        // GP mode: full time-varying residual via calc_gp_pred
+        int gp_start, gp_end;
+        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
+        for (g in lv_start:lv_end) {
+          int g_gp = gp_start + (g - lv_start);
+          log_level_lambda_01_residual[g] = calc_gp_pred(
+            ms_gp_cal_t,
+            log_lambda_gp_01_level_intercept[g],
+            log_lambda_gp_01_level_alpha[lv],
+            log_lambda_gp_01_level_rho[lv],
+            delta,
+            log_lambda_gp_01_level_eta[g_gp]
+          )[knot_of_cal];
+        }
+      } else {
+        // Intercept-only mode: constant shift across all time points
+        for (g in lv_start:lv_end) {
+          log_level_lambda_01_residual[g] = rep_row_vector(
+            log_lambda_gp_01_level_intercept[g], max_all_t
+          );
+        }
       }
 
       // Add level residuals to patient hazards
@@ -122,20 +134,20 @@ vector[n_enabled_groups_ms_baseline_02] log_lambda_gp_02_level_intercept;
 matrix[enable_ms_02 ? n_patients : 0, enable_ms_02 ? max_all_t : 0] log_cond_surv_02;
 
 if (enable_ms_02) {
-  // Compute population GP
+  // Compute population GP on coarse grid then expand to weekly
   log_pop_lambda_02 = calc_gp_pred(
-    all_tumor_measure_t,
+    ms_gp_cal_t,
     log_lambda_gp_02_pop_intercept[1],
     log_lambda_gp_02_pop_alpha[1],
     log_lambda_gp_02_pop_rho[1],
     delta,
     log_lambda_gp_02_pop_eta
-  );
+  )[knot_of_cal];
 
   // Initialize with population baseline
   log_cond_surv_02 = rep_matrix(log_pop_lambda_02, n_patients);
 
-  // Add level-level GP residuals (same pattern as 0→1)
+  // Add level-level residuals (intercept-only or full GP, same pattern as 0→1)
   for (lv in 1:n_levels) {
     if (enable_ms_level_baseline_hazard[lv]) {
       int lv_start, lv_end;
@@ -145,15 +157,26 @@ if (enable_ms_02) {
         raw_log_lambda_gp_02_level_intercept[lv_start:lv_end] *
         log_lambda_gp_02_level_intercept_sd[lv];
 
-      for (g in lv_start:lv_end) {
-        log_level_lambda_02_residual[g] = calc_gp_pred(
-          all_tumor_measure_t,
-          log_lambda_gp_02_level_intercept[g],
-          log_lambda_gp_02_level_alpha[lv],
-          log_lambda_gp_02_level_rho[lv],
-          delta,
-          log_lambda_gp_02_level_eta[g]
-        );
+      if (enable_ms_level_baseline_hazard[lv] == 2) {
+        int gp_start, gp_end;
+        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
+        for (g in lv_start:lv_end) {
+          int g_gp = gp_start + (g - lv_start);
+          log_level_lambda_02_residual[g] = calc_gp_pred(
+            ms_gp_cal_t,
+            log_lambda_gp_02_level_intercept[g],
+            log_lambda_gp_02_level_alpha[lv],
+            log_lambda_gp_02_level_rho[lv],
+            delta,
+            log_lambda_gp_02_level_eta[g_gp]
+          )[knot_of_cal];
+        }
+      } else {
+        for (g in lv_start:lv_end) {
+          log_level_lambda_02_residual[g] = rep_row_vector(
+            log_lambda_gp_02_level_intercept[g], max_all_t
+          );
+        }
       }
 
       for (i in 1:n_patients) {
@@ -224,23 +247,19 @@ vector[n_enabled_groups_ms_baseline_12_t] log_lambda_gp_12_t_level_intercept;
 matrix[need_12_t_gp ? n_patients : 0, need_12_t_gp ? max_all_t : 0] log_cond_surv_12_t;
 
 if (need_12_s_gp) {
-  // Sojourn time GP
-  // Create sojourn time grid
-  array[ms_max_sojourn_t] int sojourn_time_grid;
-  for (s in 1:ms_max_sojourn_t) sojourn_time_grid[s] = s;
-
+  // Sojourn time GP on coarse grid then expand to weekly
   log_pop_lambda_12_s = calc_gp_pred(
-    sojourn_time_grid,
+    ms_gp_sojourn_t,
     log_lambda_gp_12_s_pop_intercept[1],
     log_lambda_gp_12_s_pop_alpha[1],
     log_lambda_gp_12_s_pop_rho[1],
     delta,
     log_lambda_gp_12_s_pop_eta
-  );
+  )[knot_of_sojourn];
 
   log_cond_surv_12_s = rep_matrix(log_pop_lambda_12_s, n_patients);
 
-  // Add level residuals (same pattern)
+  // Add level residuals (intercept-only or full GP)
   for (lv in 1:n_levels) {
     if (enable_ms_level_baseline_hazard[lv]) {
       int lv_start, lv_end;
@@ -250,15 +269,26 @@ if (need_12_s_gp) {
         raw_log_lambda_gp_12_s_level_intercept[lv_start:lv_end] *
         log_lambda_gp_12_s_level_intercept_sd[lv];
 
-      for (g in lv_start:lv_end) {
-        log_level_lambda_12_s_residual[g] = calc_gp_pred(
-          sojourn_time_grid,
-          log_lambda_gp_12_s_level_intercept[g],
-          log_lambda_gp_12_s_level_alpha[lv],
-          log_lambda_gp_12_s_level_rho[lv],
-          delta,
-          log_lambda_gp_12_s_level_eta[g]
-        );
+      if (enable_ms_level_baseline_hazard[lv] == 2) {
+        int gp_start, gp_end;
+        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
+        for (g in lv_start:lv_end) {
+          int g_gp = gp_start + (g - lv_start);
+          log_level_lambda_12_s_residual[g] = calc_gp_pred(
+            ms_gp_sojourn_t,
+            log_lambda_gp_12_s_level_intercept[g],
+            log_lambda_gp_12_s_level_alpha[lv],
+            log_lambda_gp_12_s_level_rho[lv],
+            delta,
+            log_lambda_gp_12_s_level_eta[g_gp]
+          )[knot_of_sojourn];
+        }
+      } else {
+        for (g in lv_start:lv_end) {
+          log_level_lambda_12_s_residual[g] = rep_row_vector(
+            log_lambda_gp_12_s_level_intercept[g], ms_max_sojourn_t  // output is weekly-size
+          );
+        }
       }
 
       for (i in 1:n_patients) {
@@ -304,20 +334,20 @@ if (need_12_s_gp) {
 }
 
 if (need_12_t_gp) {
-  // Clock-forward time GP
+  // Clock-forward time GP on coarse grid then expand to weekly
   // In extended mode, intercept is zero (sojourn GP carries it) to avoid non-identifiability
   log_pop_lambda_12_t = calc_gp_pred(
-    all_tumor_measure_t,
+    ms_gp_cal_t,
     ms_12_t_has_intercept ? log_lambda_gp_12_t_pop_intercept[1] : 0.0,
     log_lambda_gp_12_t_pop_alpha[1],
     log_lambda_gp_12_t_pop_rho[1],
     delta,
     log_lambda_gp_12_t_pop_eta
-  );
+  )[knot_of_cal];
 
   log_cond_surv_12_t = rep_matrix(log_pop_lambda_12_t, n_patients);
 
-  // Add level residuals
+  // Add level residuals (intercept-only or full GP)
   for (lv in 1:n_levels) {
     if (enable_ms_level_baseline_hazard[lv]) {
       int lv_start, lv_end;
@@ -327,16 +357,27 @@ if (need_12_t_gp) {
         raw_log_lambda_gp_12_t_level_intercept[lv_start:lv_end] *
         log_lambda_gp_12_t_level_intercept_sd[lv];
 
-      for (g in lv_start:lv_end) {
-        // In extended mode, level intercept is zero (sojourn GP carries it)
-        log_level_lambda_12_t_residual[g] = calc_gp_pred(
-          all_tumor_measure_t,
-          ms_12_t_has_intercept ? log_lambda_gp_12_t_level_intercept[g] : 0.0,
-          log_lambda_gp_12_t_level_alpha[lv],
-          log_lambda_gp_12_t_level_rho[lv],
-          delta,
-          log_lambda_gp_12_t_level_eta[g]
-        );
+      if (enable_ms_level_baseline_hazard[lv] == 2) {
+        int gp_start, gp_end;
+        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
+        for (g in lv_start:lv_end) {
+          int g_gp = gp_start + (g - lv_start);
+          // In extended mode, level intercept is zero (sojourn GP carries it)
+          log_level_lambda_12_t_residual[g] = calc_gp_pred(
+            ms_gp_cal_t,
+            ms_12_t_has_intercept ? log_lambda_gp_12_t_level_intercept[g] : 0.0,
+            log_lambda_gp_12_t_level_alpha[lv],
+            log_lambda_gp_12_t_level_rho[lv],
+            delta,
+            log_lambda_gp_12_t_level_eta[g_gp]
+          )[knot_of_cal];
+        }
+      } else {
+        for (g in lv_start:lv_end) {
+          log_level_lambda_12_t_residual[g] = rep_row_vector(
+            ms_12_t_has_intercept ? log_lambda_gp_12_t_level_intercept[g] : 0.0, max_all_t
+          );
+        }
       }
 
       for (i in 1:n_patients) {
@@ -377,5 +418,136 @@ if (need_12_t_gp) {
   }
 
   log_cond_surv_12_t = -exp(log_cond_surv_12_t);
+}
+
+// ============================================================================
+// 0→3 TRANSITION: GP baseline hazard (clock-forward time) with N-level hierarchy
+// ============================================================================
+row_vector[enable_ms_03 ? max_all_t : 0] log_pop_lambda_03;
+matrix[n_enabled_groups_ms_baseline_03, enable_ms_03 ? max_all_t : 0] log_level_lambda_03_residual;
+vector[n_enabled_groups_ms_baseline_03] log_lambda_gp_03_level_intercept;
+matrix[enable_ms_03 ? n_patients : 0, enable_ms_03 ? max_all_t : 0] log_cond_surv_03;
+
+if (enable_ms_03) {
+  // Compute population GP on coarse grid then expand to weekly
+  log_pop_lambda_03 = calc_gp_pred(
+    ms_gp_cal_t,
+    log_lambda_gp_03_pop_intercept[1],
+    log_lambda_gp_03_pop_alpha[1],
+    log_lambda_gp_03_pop_rho[1],
+    delta,
+    log_lambda_gp_03_pop_eta
+  )[knot_of_cal];
+
+  // Initialize patient hazards with population baseline
+  log_cond_surv_03 = rep_matrix(log_pop_lambda_03, n_patients);
+
+  // Add level-level residuals (intercept-only or full GP)
+  for (lv in 1:n_levels) {
+    if (enable_ms_level_baseline_hazard[lv]) {
+      int lv_start, lv_end;
+      (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
+
+      log_lambda_gp_03_level_intercept[lv_start:lv_end] =
+        raw_log_lambda_gp_03_level_intercept[lv_start:lv_end] *
+        log_lambda_gp_03_level_intercept_sd[lv];
+
+      if (enable_ms_level_baseline_hazard[lv] == 2) {
+        int gp_start, gp_end;
+        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
+        for (g in lv_start:lv_end) {
+          int g_gp = gp_start + (g - lv_start);
+          log_level_lambda_03_residual[g] = calc_gp_pred(
+            ms_gp_cal_t,
+            log_lambda_gp_03_level_intercept[g],
+            log_lambda_gp_03_level_alpha[lv],
+            log_lambda_gp_03_level_rho[lv],
+            delta,
+            log_lambda_gp_03_level_eta[g_gp]
+          )[knot_of_cal];
+        }
+      } else {
+        for (g in lv_start:lv_end) {
+          log_level_lambda_03_residual[g] = rep_row_vector(
+            log_lambda_gp_03_level_intercept[g], max_all_t
+          );
+        }
+      }
+
+      for (i in 1:n_patients) {
+        log_cond_surv_03[i] += log_level_lambda_03_residual[patient_ms_baseline_flat_idx[i, lv]];
+      }
+    }
+  }
+
+  // Transform log-hazard to log conditional survival probability
+  log_cond_surv_03 = -exp(log_cond_surv_03);
+}
+
+// ============================================================================
+// 3→2 TRANSITION: Sojourn time GP baseline hazard (semi-Markov)
+// ============================================================================
+
+row_vector[enable_ms_32 ? ms_max_sojourn_t_32 : 0] log_pop_lambda_32;
+matrix[n_enabled_groups_ms_baseline_32, enable_ms_32 ? ms_max_sojourn_t_32 : 0] log_level_lambda_32_residual;
+vector[n_enabled_groups_ms_baseline_32] log_lambda_gp_32_s_level_intercept;
+matrix[enable_ms_32 ? n_patients : 0, enable_ms_32 ? ms_max_sojourn_t_32 : 0] log_cond_surv_32;
+
+if (enable_ms_32) {
+  // Compute population GP on coarse grid then expand to weekly
+  log_pop_lambda_32 = calc_gp_pred(
+    ms_gp_sojourn_32_t,
+    log_lambda_gp_32_s_pop_intercept[1],
+    log_lambda_gp_32_s_pop_alpha[1],
+    log_lambda_gp_32_s_pop_rho[1],
+    delta,
+    log_lambda_gp_32_s_pop_eta
+  )[knot_of_sojourn_32];
+
+  // Initialize with population baseline
+  log_cond_surv_32 = rep_matrix(log_pop_lambda_32, n_patients);
+
+  // Add level-level residuals (intercept-only or full GP)
+  for (lv in 1:n_levels) {
+    if (enable_ms_level_baseline_hazard[lv]) {
+      int lv_start, lv_end;
+      (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
+
+      log_lambda_gp_32_s_level_intercept[lv_start:lv_end] =
+        raw_log_lambda_gp_32_s_level_intercept[lv_start:lv_end] *
+        log_lambda_gp_32_s_level_intercept_sd[lv];
+
+      if (enable_ms_level_baseline_hazard[lv] == 2) {
+        int gp_start, gp_end;
+        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
+        for (g in lv_start:lv_end) {
+          int g_gp = gp_start + (g - lv_start);
+          log_level_lambda_32_residual[g] = calc_gp_pred(
+            ms_gp_sojourn_32_t,
+            log_lambda_gp_32_s_level_intercept[g],
+            log_lambda_gp_32_s_level_alpha[lv],
+            log_lambda_gp_32_s_level_rho[lv],
+            delta,
+            log_lambda_gp_32_s_level_eta[g_gp]
+          )[knot_of_sojourn_32];
+        }
+      } else {
+        for (g in lv_start:lv_end) {
+          log_level_lambda_32_residual[g] = rep_row_vector(
+            log_lambda_gp_32_s_level_intercept[g], ms_max_sojourn_t_32  // output is weekly-size
+          );
+        }
+      }
+
+      for (i in 1:n_patients) {
+        log_cond_surv_32[i] += log_level_lambda_32_residual[patient_ms_baseline_flat_idx[i, lv]];
+      }
+    }
+  }
+
+  // No covariates for 3→2 in v1
+
+  // Transform to log conditional survival
+  log_cond_surv_32 = -exp(log_cond_surv_32);
 }
 
