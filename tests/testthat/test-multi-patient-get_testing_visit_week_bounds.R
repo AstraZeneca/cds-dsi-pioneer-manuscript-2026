@@ -1,6 +1,8 @@
 library(testthat)
 library(cmdstanr)
+library(posterior)
 source(here::here("tests/testthat/helper-stan.R"))
+source(here::here("tests/testthat/helper-lfo.R"))
 
 test_that("get_testing_visit_week_bounds - multi-patient comprehensive test", {
   # Multi-patient test cases to validate the function handles multiple patients correctly
@@ -20,12 +22,7 @@ test_that("get_testing_visit_week_bounds - multi-patient comprehensive test", {
       t_patient_visits = c(1L, 2L, 3L, 1L, 2L, 4L),
       t_patient_visits_day = c(7L, 14L, 21L, 7L, 14L, 28L),
       patient_visit_pos = c(1L, 4L, 7L), # Patient 1: visits 1-3, Patient 2: visits 4-6
-      should_error = FALSE,
-      # Cutoff at day 115: Patient 1 cutoff at study day 16, Patient 2 cutoff at study day 11
-      # Patient 1: first visit after day 16 should be day 21 (week 3) at global index 3
-      # Patient 2: first visit after day 11 should be day 14 (week 2) at global index 5
-      expected_first_testing_visit_week = matrix(c(3L, 2L), nrow = 1, ncol = 2),
-      expected_testing_start_idx = matrix(c(3L, 5L), nrow = 1, ncol = 2)
+      should_error = FALSE
     ),
 
     # Case 2: Two patients, multiple cutoffs - complex scenario
@@ -43,21 +40,7 @@ test_that("get_testing_visit_week_bounds - multi-patient comprehensive test", {
       t_patient_visits = c(1L, 2L, 3L, 5L, 1L, 2L, 3L, 4L),
       t_patient_visits_day = c(7L, 14L, 21L, 35L, 7L, 14L, 21L, 28L),
       patient_visit_pos = c(1L, 5L, 9L), # Patient 1: visits 1-4, Patient 2: visits 5-8
-      should_error = FALSE,
-      # Cutoff 1 (day 115): P1 study day 16 -> week 3, P2 study day 11 -> week 2
-      # Cutoff 2 (day 125): P1 study day 26 -> week 5, P2 study day 21 -> week 4
-      expected_first_testing_visit_week = matrix(
-        c(3L, 2L, 5L, 4L),
-        nrow = 2,
-        ncol = 2,
-        byrow = TRUE
-      ),
-      expected_testing_start_idx = matrix(
-        c(3L, 6L, 4L, 8L),
-        nrow = 2,
-        ncol = 2,
-        byrow = TRUE
-      )
+      should_error = FALSE
     ),
 
     # Case 3: Three patients, single cutoff - stress test with more patients
@@ -76,14 +59,7 @@ test_that("get_testing_visit_week_bounds - multi-patient comprehensive test", {
       t_patient_visits = c(2L, 4L, 1L, 3L, 5L, 1L, 2L, 3L, 6L),
       t_patient_visits_day = c(14L, 28L, 7L, 21L, 35L, 7L, 14L, 21L, 42L),
       patient_visit_pos = c(1L, 3L, 6L, 10L), # Patient 1: 1-2, Patient 2: 3-5, Patient 3: 6-9
-      should_error = FALSE,
-      # Cutoff at day 120: P1 study day 21 -> week 4, P2 study day 11 -> week 3, P3 study day 16 -> week 3
-      expected_first_testing_visit_week = matrix(
-        c(4L, 3L, 3L),
-        nrow = 1,
-        ncol = 3
-      ),
-      expected_testing_start_idx = matrix(c(2L, 4L, 8L), nrow = 1, ncol = 3)
+      should_error = FALSE
     )
   )
 
@@ -156,102 +132,49 @@ test_that("get_testing_visit_week_bounds - multi-patient comprehensive test", {
       data = stan_data
     )
 
-    # Extract results
-    first_testing_visit_week_draws <- fit$draws(
-      "first_testing_visit_week",
-      format = "draws_array"
+    # Compute expected values from R reference
+    expected <- r_get_testing_visit_week_bounds(
+      oos_patient_idx                  = case$oos_patient_idx,
+      last_visit_calendar_day_sort_idx = case$last_visit_calendar_day_sort_idx,
+      cutoff_calendar_day              = case$cutoff_calendar_day,
+      patient_calendar_day             = case$patient_calendar_day,
+      t_patient_visits_week            = case$t_patient_visits,
+      t_patient_visits_day             = case$t_patient_visits_day,
+      patient_visit_pos                = case$patient_visit_pos
     )
-    testing_start_idx_draws <- fit$draws(
-      "testing_start_idx",
-      format = "draws_array"
-    )
-    case_status_draws <- fit$draws("case_status", format = "draws_array")
+
+    draws_df <- posterior::as_draws_df(fit$draws())
+    get_val  <- function(var, ...) get_stan_val(draws_df, var, ...)
 
     cat("Stan execution successful!\n")
-    cat(
-      "Result dimensions - first_testing_visit_week:",
-      dim(first_testing_visit_week_draws),
-      "\n"
-    )
 
-    # Extract the actual results based on actual dimensions
-    case_status <- as.numeric(case_status_draws[1, 1, 1])
-    expect_equal(
-      case_status,
-      0,
-      label = paste("Case", case_idx, "should not error")
-    )
+    case_status <- get_val("case_status", 1)
+    expect_equal(case_status, 0, label = paste("Case", case_idx, "should not error"))
 
-    # Validate specific results for each cutoff and patient
     for (n in 1:case$n_cutoffs) {
       for (i in 1:case$n_patients) {
-        # For multi-patient and/or multi-cutoff, extract based on dimensions
-        if (case$n_cutoffs > 1 && case$n_patients > 1) {
-          # Both dimensions present: [draws, chains, cutoffs, patients]
-          first_week_actual <- as.numeric(first_testing_visit_week_draws[
-            1,
-            1,
-            n,
-            i
-          ])
-          start_idx_actual <- as.numeric(testing_start_idx_draws[1, 1, n, i])
-        } else if (case$n_cutoffs > 1) {
-          # Multiple cutoffs, single patient: [draws, chains, cutoffs]
-          first_week_actual <- as.numeric(first_testing_visit_week_draws[
-            1,
-            1,
-            n
-          ])
-          start_idx_actual <- as.numeric(testing_start_idx_draws[1, 1, n])
-        } else {
-          # Single cutoff, multiple patients: [draws, chains, patients]
-          first_week_actual <- as.numeric(first_testing_visit_week_draws[
-            1,
-            1,
-            i
-          ])
-          start_idx_actual <- as.numeric(testing_start_idx_draws[1, 1, i])
+        expect_equal(
+          get_val("first_testing_visit_week", 1L, n, i),
+          expected$first_testing_visit_week[n, i],
+          label = paste("Case", case_idx, case$case_name, "first_testing_visit_week n=", n, "i=", i)
+        )
+        expect_equal(
+          get_val("testing_start_idx", 1L, n, i),
+          expected$testing_start_idx[n, i],
+          label = paste("Case", case_idx, case$case_name, "testing_start_idx n=", n, "i=", i)
+        )
+        for (m in 1:case$n_cutoffs) {
+          expect_equal(
+            get_val("last_testing_visit_week", 1L, n, m, i),
+            expected$last_testing_visit_week[n, m, i],
+            label = paste("Case", case_idx, case$case_name, "last_testing_visit_week n=", n, "m=", m, "i=", i)
+          )
+          expect_equal(
+            get_val("testing_end_idx", 1L, n, m, i),
+            expected$testing_end_idx[n, m, i],
+            label = paste("Case", case_idx, case$case_name, "testing_end_idx n=", n, "m=", m, "i=", i)
+          )
         }
-
-        expect_equal(
-          first_week_actual,
-          case$expected_first_testing_visit_week[n, i],
-          label = paste(
-            "Case",
-            case_idx,
-            case$case_name,
-            "first_testing_visit_week n=",
-            n,
-            "i=",
-            i
-          )
-        )
-
-        expect_equal(
-          start_idx_actual,
-          case$expected_testing_start_idx[n, i],
-          label = paste(
-            "Case",
-            case_idx,
-            case$case_name,
-            "testing_start_idx n=",
-            n,
-            "i=",
-            i
-          )
-        )
-
-        cat(
-          "✓ Cutoff",
-          n,
-          "Patient",
-          i,
-          ": first_week =",
-          first_week_actual,
-          ", start_idx =",
-          start_idx_actual,
-          "\n"
-        )
       }
     }
 

@@ -40,11 +40,6 @@ data {
   #include "modules/multistate/data.stan"
   #include "modules/multistate/hyperparams.stan"
 
-  // Interval censoring gap — weeks between last clean assessment and detection
-  // visit. Used to place observed PFS events at detection time in GQ.
-  // (In the full model this lives in modules/tumor/data.stan.)
-  array[n_patients] int<lower=0> interval_censored;
-
   // =========================================================================
   // ENDPOINT COMPUTATION DATA (shared with full model)
   // =========================================================================
@@ -100,25 +95,21 @@ model {
   #include "modules/multistate/priors.stan"
 
   // Multistate likelihood (skipped when fit_multistate_data = 0 for prior predictive)
-  if (fit_multistate_data && enable_ms_01 && !enable_ms_02 && !enable_ms_12) {
-    // Single transition mode (PFS-only)
-    target += sum(calc_ms_single_transition_loglik(
-      ms_time_01,
-      ms_censored_01,
-      log_cond_surv_01
-    ));
-  } else if (fit_multistate_data) {
-    // Full illness-death likelihood
-    target += calc_multistate_loglik(
+  if (fit_multistate_data) {
+    ms_final_state ~ multistate(
       enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
-      ms_final_state,
+      enable_ms_03, enable_ms_32,
       ms_time_01, ms_time_02, ms_time_12,
+      ms_time_03, ms_time_32,
       ms_censored_01, ms_censored_02, ms_censored_12,
+      ms_censored_32,
       ms_prog_deterministic,
       log_cond_surv_01,
       log_cond_surv_02,
       log_cond_surv_12_s,
-      log_cond_surv_12_t
+      log_cond_surv_12_t,
+      log_cond_surv_03,
+      log_cond_surv_32
     );
   }
 }

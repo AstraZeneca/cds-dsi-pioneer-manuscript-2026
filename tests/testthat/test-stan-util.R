@@ -145,42 +145,25 @@ first_draw <- list(
   sd_tumor = extract_scalar_nocase("sd_tumor"),
   std_vals = extract_vec_nocase("std_vals", 3)
 )
-test_that("debug column names", {
-  draws_df <- fit$draws() %>%
-    spread_draws(
-      max_t_out[N_CASES, MAX_LEN],
-      num_unique_out[N_CASES],
-      unique_out[N_CASES, MAX_LEN],
-      find_first_out[N_CASES],
-      min_eig,
-      max_eig,
-      cond_num,
-      n_missing_measures[2],
-      idx0[2],
-      idx1[3],
-      uniq_vals[4],
-      uniq_pos[3],
-      idx_dict[7],
-      mean_tumor,
-      sd_tumor,
-      std_vals[3]
-    )
-  first_draw <- draws_df[draws_df$.draw == 1, ]
-  print(colnames(first_draw))
+test_that("util: max_t, unique, and find_first utilities for all cases", {
+  for (i in seq_along(cases)) {
+    actual_max_t <- as.numeric(first_draw$max_t_out[[i]])
+    actual_max_t <- actual_max_t[actual_max_t != 0]
+    expect_equal(actual_max_t, cases[[i]]$expect_max_t,
+                 label = sprintf("max_t case %d", i))
+
+    expect_equal(first_draw$num_unique_out[[i]], cases[[i]]$expect_num_unique,
+                 label = sprintf("num_unique case %d", i))
+
+    actual_unique <- as.numeric(first_draw$unique_out[[i]])
+    actual_unique <- actual_unique[actual_unique != 0]
+    expect_equal(actual_unique, cases[[i]]$expect_unique,
+                 label = sprintf("unique values case %d", i))
+
+    expect_equal(first_draw$find_first_out[[i]], cases[[i]]$expect_find_first,
+                 label = sprintf("find_first case %d", i))
+  }
 })
-for (i in seq_along(cases)) {
-  actual_max_t <- as.numeric(first_draw$max_t_out[[i]])
-  actual_max_t <- actual_max_t[actual_max_t != 0]
-  expect_equal(actual_max_t, cases[[i]]$expect_max_t)
-
-  expect_equal(first_draw$num_unique_out[[i]], cases[[i]]$expect_num_unique)
-
-  actual_unique <- as.numeric(first_draw$unique_out[[i]])
-  actual_unique <- actual_unique[actual_unique != 0]
-  expect_equal(actual_unique, cases[[i]]$expect_unique)
-
-  expect_equal(first_draw$find_first_out[[i]], cases[[i]]$expect_find_first)
-}
 
 # Expanded util function checks
 test_that("summarize_matrix_eigenvalues returns correct values", {

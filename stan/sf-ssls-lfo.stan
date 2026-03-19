@@ -12,6 +12,7 @@ functions {
 data {
   #include "_base_data.stan"
   #include "modules/tumor/data.stan"
+  #include "modules/visits/data.stan"
   #include "modules/tumor/hyperparams.stan"
   #include "modules/state_space/data.stan"
   #include "modules/multistate/flags.stan"
@@ -33,6 +34,7 @@ transformed data {
   print("cutoff_calendar_day = ", cutoff_calendar_day);
 
   #include "_base_transformed_data.stan"
+  #include "modules/visits/transformed_data.stan"
   #include "modules/tumor/transformed_data.stan"
   #include "modules/tr/transformed_data.stan"
   #include "modules/frac/transformed_data.stan"
@@ -75,7 +77,7 @@ model {
 
         int cutoff_idx = cutoff_last_visit_idx[i];
 
-        normalized_sld[visit_start:cutoff_idx] ~ sf_log_space_obs(states[visit_start:cutoff_idx], measure_sd_sld, log_lod - log_baseline_sld[i]);
+        normalized_sld[visit_start:cutoff_idx] ~ sf_log_space_obs(states[visit_start:cutoff_idx], measure_sd_sld, log_lod - log_baseline_sld[i], measure_nu_sld);
       }
     }
 
@@ -289,7 +291,7 @@ generated quantities {
           // Component 1: Tumor model log-likelihood using observed SLD
           real tumor_ll = sf_log_space_obs_lpdf(
               normalized_sld[start_idx:end_idx] | states[start_idx:end_idx],
-              measure_sd_sld, log_lod - log_baseline_sld[i]);
+              measure_sd_sld, log_lod - log_baseline_sld[i], measure_nu_sld);
 
           patient_log_lik_tumor[n, m_rel, patient_idx] = tumor_ll;
 
