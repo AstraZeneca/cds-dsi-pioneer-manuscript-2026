@@ -1,7 +1,7 @@
 functions {
-#include "util.stan"
-#include "pos.stan"
-#include "lfo.stan"
+#include "util.stanfunctions"
+#include "pos.stanfunctions"
+#include "lfo.stanfunctions"
   // ...include any other dependencies if needed...
 }
 

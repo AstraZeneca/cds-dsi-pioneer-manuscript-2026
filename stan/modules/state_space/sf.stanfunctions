@@ -1494,230 +1494,130 @@ tuple(
     spop_target_confirmed_response[i] = !spop_target_confirmed_response_censored && spop_target_confirmed_response_week < spop_target_pfs[i];
     spop_target_unconfirmed_response[i] = !spop_target_unconfirmed_response_censored && spop_target_unconfirmed_response_week <= spop_target_pfs[i];
     
-    // Calculate multistate PFS using survival_time_rng
-    // For ms-censored (either admin or competing target): forecast from observed time
-    // For ms-observed: use observed time with interval censoring
+    // =========================================================================
+    // MULTISTATE PFS + OS: Classify-first competing-risks approach (Issue 79)
+    //
+    // Per-patient RNG call sequence (preserved for bitwise equivalence):
+    //   Step 1: assessment_gated_survival_time_rng  — sample ms01 (conditional)
+    //   Step 2: assessment_gated_survival_time_rng  — spop  ms01 (unconditional)
+    //   Step 3: survival_time_rng                   — spop  0→2  (if enable_ms_02)
+    //   Step 4: survival_time_rng                   — spop  0→3  (if enable_ms_03)
+    //   Step 5: derive_spop_os RNG                  — spop post-event death
+    //   Step 6: survival_time_rng                   — sample 0→2 (if enable_ms_02 && ms_censored)
+    //   Step 7: derive_sample_os RNG                — sample post-event death
+    // =========================================================================
+
+    // --- RNG Step 1: sample ms01 (conditional on observed data) ---
     if (ms_right_censored[i]) {
-      // Multistate event is censored (either no event at all, or target progressed first)
-      // Forecast from pfs[i]: use full visit schedule, skip visits before pfs[i]
       (sample_ms_pfs[i], sample_ms_right_censored[i]) = assessment_gated_survival_time_rng(
           ms_log_cond_surv[i], spop_visit_weeks, max_all_t, pfs[i], 1);
     } else {
-      // Multistate event actually occurred - use observed time
       sample_ms_pfs[i] = pfs[i];
-      sample_ms_right_censored[i] = 0;  // Not censored
+      sample_ms_right_censored[i] = 0;
     }
 
-    // Unconditional posterior predictive (always sample from scratch)
-    // Assessment-gated: accumulate hazard between visits, sample once per visit
-    (spop_ms_pfs[i], spop_ms_right_censored[i]) = assessment_gated_survival_time_rng(
-        ms_log_cond_surv[i], spop_visit_weeks, max_all_t);
+    // --- RNG Step 2: spop ms01 (unconditional) ---
     // No +1: assessment_gated_survival_time_rng returns 1-indexed calendar week directly
-    
-    // Combined sample PFS: condition on observed data
-    if (!right_censored[i]) {
-      // Observed PFS event (progression or on-trial death) — use directly
-      sample_pfs[i] = pfs[i];
-      sample_right_censored[i] = 0;
-    } else {
-      // Censored — combine SLD and ms forecasts
-      sample_pfs[i] = min(sample_target_pfs[i], sample_ms_pfs[i]);
-      sample_right_censored[i] = sample_target_right_censored[i] && sample_ms_right_censored[i];
+    int t_ms01_spop; int c_ms01_spop;
+    (t_ms01_spop, c_ms01_spop) = assessment_gated_survival_time_rng(
+        ms_log_cond_surv[i], spop_visit_weeks, max_all_t);
+
+    // --- RNG Steps 3–4: spop 0→2 and 0→3 competing risks ---
+    int spop_time_02 = max_all_t + 1; int spop_cens_02 = 1;
+    if (enable_ms_02) {
+      int t02_raw; int c02_raw;
+      (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[i]);
+      spop_time_02 = t02_raw + 1;  // Convert to 1-indexed week
+      spop_cens_02 = c02_raw;
     }
 
-    // Combined spop PFS: both components are unconditional draws
-    spop_pfs[i] = min(spop_target_pfs[i], spop_ms_pfs[i]);
-    spop_right_censored[i] = spop_target_right_censored[i] && spop_ms_right_censored[i];
+    int spop_time_03 = max_all_t + 1; int spop_cens_03 = 1;
+    if (enable_ms_03) {
+      int t03_raw; int c03_raw;
+      (t03_raw, c03_raw) = survival_time_rng(log_cond_surv_03[i]);
+      spop_time_03 = t03_raw + 1;  // Convert to 1-indexed week
+      spop_cens_03 = c03_raw;
+    }
 
-    // =========================================================================
-    // OS SIMULATION: Competing risks (0→1 vs 0→2 vs 0→3) + post-event death
-    // =========================================================================
+    // --- Classify and derive spop PFS atomically (no RNG) ---
+    int t_01_spop = min(spop_target_pfs[i], t_ms01_spop);
+    int c_01_spop = spop_target_right_censored[i] && c_ms01_spop;
+    int spop_cause; int spop_exit;
+    (spop_cause, spop_exit) = classify_spop_exit(
+        t_01_spop, c_01_spop,
+        spop_time_02, spop_cens_02,
+        spop_time_03, spop_cens_03,
+        enable_ms_02, enable_ms_03);
 
-    // --- Unconditional (spop) OS ---
-    {
-      int spop_time_01 = spop_pfs[i];  // Combined PFS: first progression by any mechanism (target or multistate)
-      int spop_cens_01 = spop_right_censored[i];
+    (spop_pfs[i], spop_right_censored[i], spop_ms_pfs[i], spop_ms_right_censored[i]) =
+        derive_spop_pfs(spop_cause, spop_exit,
+                        spop_target_pfs[i], spop_target_right_censored[i],
+                        t_ms01_spop, c_ms01_spop,
+                        spop_time_03,
+                        enable_ms_02, enable_ms_03);
 
-      int spop_time_02 = max_all_t + 1;
-      int spop_cens_02 = 1;
-      if (enable_ms_02) {
+    // --- RNG Step 5: spop OS ---
+    // Guard: clock-forward matrix is [0,0] when ms_time_scale_12==1 (semi-Markov)
+    row_vector[cols(log_cond_surv_12_t)] surv_12_t_i =
+      cols(log_cond_surv_12_t) > 0 ? log_cond_surv_12_t[i] : rep_row_vector(0, 0);
+    (spop_os[i], spop_os_censored[i]) = derive_spop_os_rng(
+        spop_cause, spop_exit,
+        enable_ms_12, enable_ms_32, ms_time_scale_12,
+        log_cond_surv_12_s[i], surv_12_t_i,
+        log_cond_surv_32[i],
+        t_01_spop, spop_time_02, spop_time_03);
+
+    // --- RNG Step 6: sample 0→2 (use observed data if available) ---
+    int sample_time_02 = max_all_t + 1; int sample_cens_02 = 1;
+    if (enable_ms_02) {
+      if (!ms_censored_02[i]) {
+        // Death without progression was observed (death_week is exact, 1-indexed)
+        sample_time_02 = ms_time_02[i];
+        sample_cens_02 = 0;
+      } else {
+        // Censored for 0→2: forecast from observed time
         int t02_raw; int c02_raw;
-        (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[i]);
-        spop_time_02 = t02_raw + 1;  // Convert to 1-indexed week
-        spop_cens_02 = c02_raw;
-      }
-
-      int spop_time_03 = max_all_t + 1;
-      int spop_cens_03 = 1;
-      if (enable_ms_03) {
-        int t03_raw; int c03_raw;
-        (t03_raw, c03_raw) = survival_time_rng(log_cond_surv_03[i]);
-        spop_time_03 = t03_raw + 1;  // Convert to 1-indexed week
-        spop_cens_03 = c03_raw;
-      }
-
-      // Determine which transition fires first in state 0
-      // Priority on ties: progression (0→1) > direct death (0→2) > dropout (0→3)
-      int spop_progressed_first = !spop_cens_01
-        && (spop_cens_02 || spop_time_01 <= spop_time_02)
-        && (spop_cens_03 || spop_time_01 <= spop_time_03);
-      int spop_died_directly = enable_ms_02 && !spop_cens_02
-        && (spop_cens_01 || spop_time_02 < spop_time_01)
-        && (spop_cens_03 || spop_time_02 <= spop_time_03);
-      int spop_dropped_out = enable_ms_03 && !spop_cens_03
-        && (spop_cens_01 || spop_time_03 < spop_time_01)
-        && (spop_cens_02 || spop_time_03 < spop_time_02);
-
-      if (spop_died_directly) {
-        // Death without progression
-        spop_os[i] = spop_time_02;
-        spop_os_censored[i] = 0;
-      } else if (spop_dropped_out && enable_ms_32) {
-        // Dropped out → sample post-dropout death (3→2) unconditionally
-        (spop_os[i], spop_os_censored[i]) = sample_dropout_death_rng(
-          log_cond_surv_32[i], spop_time_03, 0);  // sojourn_obs=0: unconditional
-      } else if (spop_dropped_out) {
-        // Dropped out but 3→2 not modeled: censor OS at dropout
-        spop_os[i] = spop_time_03;
-        spop_os_censored[i] = 1;
-      } else if (spop_progressed_first && enable_ms_12) {
-        // Progressed first → sample post-progression death (1→2)
-        // Guard: clock-forward matrix is [0,0] when ms_time_scale_12==1 (semi-Markov)
-        row_vector[cols(log_cond_surv_12_t)] surv_12_t_i =
-          cols(log_cond_surv_12_t) > 0 ? log_cond_surv_12_t[i] : rep_row_vector(0, 0);
-        (spop_os[i], spop_os_censored[i]) = sample_post_progression_death_rng(
-          ms_time_scale_12, log_cond_surv_12_s[i], surv_12_t_i,
-          spop_time_01, 0);  // sojourn_obs=0: unconditional
-      } else {
-        // All censored (no death observed)
-        spop_os[i] = max({spop_time_01, spop_time_02, spop_time_03});
-        spop_os_censored[i] = 1;
-      }
-
-      // Update PFS if direct death (0→2) occurred before progression
-      if (enable_ms_02 && spop_died_directly) {
-        spop_ms_pfs[i] = spop_time_02;
-        spop_ms_right_censored[i] = 0;
-        // Recompute combined PFS with death event
-        spop_pfs[i] = min(spop_target_pfs[i], spop_ms_pfs[i]);
-        spop_right_censored[i] = spop_target_right_censored[i] && spop_ms_right_censored[i];
-      }
-
-      // Dropout (0→3) censors PFS at dropout time (not a PFS event)
-      // SLD-predicted PD only counts if it occurs BEFORE dropout
-      if (enable_ms_03 && spop_dropped_out) {
-        spop_ms_pfs[i] = spop_time_03;
-        spop_ms_right_censored[i] = 1;
-        if (!spop_target_right_censored[i] && spop_target_pfs[i] <= spop_time_03) {
-          // SLD predicted PD before dropout — real progression event
-          spop_pfs[i] = spop_target_pfs[i];
-          spop_right_censored[i] = 0;
-        } else {
-          // SLD PD after dropout or no PD — censor at dropout time
-          spop_pfs[i] = spop_time_03;
-          spop_right_censored[i] = 1;
-        }
+        (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[i], pfs[i], 1, 0);
+        sample_time_02 = t02_raw + 1;
+        sample_cens_02 = c02_raw;
       }
     }
 
-    // --- Conditional (sample) OS ---
-    {
-      int sample_time_01 = sample_pfs[i];  // Combined PFS: first progression by any mechanism (target or multistate)
-      int sample_cens_01 = sample_right_censored[i];
-
-      int sample_time_02 = max_all_t + 1;
-      int sample_cens_02 = 1;
-      if (enable_ms_02) {
-        // Use observed 0→2 data when available
-        if (!ms_censored_02[i]) {
-          // Death without progression was observed (death_week is exact, 1-indexed)
-          sample_time_02 = ms_time_02[i];
-          sample_cens_02 = 0;
-        } else {
-          // Censored for 0→2: forecast from observed time
-          int t02_raw; int c02_raw;
-          (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[i], pfs[i], 1, 0);
-          sample_time_02 = t02_raw + 1;
-          sample_cens_02 = c02_raw;
-        }
-      }
-
-      // State 3: observed dropout is ground truth — takes priority over forecasts
-      int sample_dropped_out = enable_ms_03 && ms_final_state[i] == 3;
-
-      // Routing truth table for competing risks:
-      //   Observed state 3 (ms_final_state==3) → dropout path, OS via 3→2
-      //   Observed 0→2 death (!ms_censored_02) → always direct death (conditional PPC)
-      //   Forecasted 0→2 before progression    → direct death
-      //   Forecasted 0→2 after progression     → progression first, then 1→2 path
-      //   All censored                         → censored OS = max(time_01, time_02)
-      int sample_died_directly = !sample_dropped_out && enable_ms_02 && !sample_cens_02
-        && (!ms_censored_02[i] || sample_cens_01 || sample_time_02 < sample_time_01);
-      int sample_progressed_first = !sample_dropped_out && !sample_died_directly && !sample_cens_01
-        && (sample_cens_02 || sample_time_01 <= sample_time_02);
-
-      if (sample_dropped_out) {
-        if (!ms_censored_32[i]) {
-          // Off-trial death was observed: use exact calendar time
-          sample_os[i] = ms_time_03[i] + ms_time_32[i];
-          sample_os_censored[i] = 0;
-        } else if (enable_ms_32) {
-          // Forecast post-dropout death conditioning on observed sojourn survival
-          (sample_os[i], sample_os_censored[i]) = sample_dropout_death_rng(
-            log_cond_surv_32[i], ms_time_03[i], ms_time_32[i]);
-        } else {
-          // 3→2 not modeled: censor at last off-trial observation time
-          sample_os[i] = ms_time_03[i] + ms_time_32[i];
-          sample_os_censored[i] = 1;
-        }
-      } else if (sample_died_directly) {
-        sample_os[i] = sample_time_02;
-        sample_os_censored[i] = 0;
-      } else if (sample_progressed_first && enable_ms_12) {
-        if (!ms_censored_12[i]) {
-          // Observed death: use exact time (pfs + sojourn = death_week)
-          sample_os[i] = pfs[i] + ms_time_12[i];
-          sample_os_censored[i] = 0;
-        } else {
-          // Forecast: condition on observed sojourn survival
-          // Guard: clock-forward matrix is [0,0] when ms_time_scale_12==1 (semi-Markov)
-          row_vector[cols(log_cond_surv_12_t)] surv_12_t_i =
-            cols(log_cond_surv_12_t) > 0 ? log_cond_surv_12_t[i] : rep_row_vector(0, 0);
-          (sample_os[i], sample_os_censored[i]) = sample_post_progression_death_rng(
-            ms_time_scale_12, log_cond_surv_12_s[i], surv_12_t_i,
-            sample_time_01, ms_time_12[i]);
-        }
-      } else {
-        // All censored
-        sample_os[i] = max(sample_time_01, sample_time_02);
-        sample_os_censored[i] = 1;
-      }
-
-      // Update PFS if direct death (0→2) occurred — only for censored patients
-      // (observed progressors already have sample_pfs = pfs[i] set above)
-      if (enable_ms_02 && sample_died_directly) {
-        sample_pfs[i] = sample_time_02;
-        sample_right_censored[i] = 0;
-        sample_ms_pfs[i] = sample_time_02;
-        sample_ms_right_censored[i] = 0;
-      }
-
-      // Dropout (0→3) censors PFS at dropout time (not a PFS event)
-      // SLD-predicted PD only counts if it occurs BEFORE dropout
-      if (sample_dropped_out) {
-        sample_ms_pfs[i] = ms_time_03[i];
-        sample_ms_right_censored[i] = 1;
-        if (!sample_target_right_censored[i] && sample_target_pfs[i] <= ms_time_03[i]) {
-          // SLD predicted PD before dropout — real progression event
-          sample_pfs[i] = sample_target_pfs[i];
-          sample_right_censored[i] = 0;
-        } else {
-          // SLD PD after dropout or no PD — censor at dropout time
-          sample_pfs[i] = ms_time_03[i];
-          sample_right_censored[i] = 1;
-        }
-      }
+    // --- Classify and derive sample PFS atomically (no RNG) ---
+    int sample_t01; int sample_c01;
+    if (!right_censored[i]) {
+      sample_t01 = pfs[i];
+      sample_c01 = 0;
+    } else {
+      sample_t01 = min(sample_target_pfs[i], sample_ms_pfs[i]);
+      sample_c01 = sample_target_right_censored[i] && sample_ms_right_censored[i];
     }
+
+    int sample_cause; int sample_exit;
+    (sample_cause, sample_exit) = classify_sample_exit(
+        sample_t01, sample_c01,
+        sample_time_02, sample_cens_02,
+        ms_final_state[i], ms_censored_02[i],
+        ms_time_03[i],
+        enable_ms_02, enable_ms_03);
+
+    (sample_pfs[i], sample_right_censored[i], sample_ms_pfs[i], sample_ms_right_censored[i]) =
+        derive_sample_pfs(sample_cause, sample_exit,
+                          sample_target_pfs[i], sample_target_right_censored[i],
+                          sample_ms_pfs[i], sample_ms_right_censored[i],
+                          ms_time_03[i],
+                          enable_ms_02, enable_ms_03);
+
+    // --- RNG Step 7: sample OS ---
+    (sample_os[i], sample_os_censored[i]) = derive_sample_os_rng(
+        sample_cause, sample_exit,
+        enable_ms_12, enable_ms_32, ms_time_scale_12,
+        log_cond_surv_12_s[i], surv_12_t_i,
+        log_cond_surv_32[i],
+        sample_t01, sample_time_02,
+        pfs[i],
+        ms_censored_12[i], ms_time_12[i],
+        ms_censored_32[i], ms_time_03[i], ms_time_32[i]);
   }
 
   return (
