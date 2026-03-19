@@ -128,6 +128,7 @@ profile("gen_quant") {
         cutoff_t_patient_visit_idx,
         cutoff_sum_tumor_size,
         measure_sd_sld,
+        measure_nu_sld,
         cutoff_n_patient_screening_visits
       );
   } else {
@@ -177,7 +178,8 @@ profile("gen_quant") {
           negative_infinity(),
           1.0,
           rep_matrix(0.0, forecast_size, 2),
-          measure_sd_sld
+          measure_sd_sld,
+          measure_nu_sld
         );
 
       // Store results
@@ -191,13 +193,49 @@ profile("gen_quant") {
   
   // Calculate RECIST classifications for cutoff-observed patients (including forecasts)
   (cutoff_rep_recist, cutoff_forecast_recist) = calculate_all_patients_recist(
-    cutoff_rep_mean_patient_log_sld,
-    cutoff_forecast_mean_patient_log_sld,
+    cutoff_rep_patient_log_sld,
+    cutoff_forecast_patient_log_sld,
     cutoff_patient_visit_pos,
     cutoff_forecast_visits_pos,
     cutoff_n_patient_screening_visits
   );
-  
+
+  // Assessment-visit noisy SLD for cutoff patients
+  vector[n_cutoff_total_forecast_obs_visits] cutoff_forecast_obs_log_sld;
+  array[n_cutoff_total_forecast_obs_visits] int cutoff_forecast_obs_recist;
+  for (i in 1:n_cutoff_observed_patients) {
+    int n_assessment = get_pos_size(cutoff_forecast_obs_visits_pos, i);
+    if (n_assessment > 0) {
+      int assess_start, assess_end;
+      (assess_start, assess_end) = get_pos(cutoff_forecast_obs_visits_pos, i);
+
+      int forecast_visit_start, forecast_visit_end;
+      (forecast_visit_start, forecast_visit_end) = get_pos(cutoff_forecast_visits_pos, i);
+      int forecast_size = forecast_visit_end - forecast_visit_start + 1;
+
+      vector[n_assessment] obs_visit_mean;
+      for (a in 1:n_assessment) {
+        int forecast_idx = min(a * forecast_observation_interval, forecast_size);
+        obs_visit_mean[a] = cutoff_forecast_mean_patient_log_sld[forecast_visit_start + forecast_idx - 1];
+      }
+
+      cutoff_forecast_obs_log_sld[assess_start:assess_end] =
+        to_vector(student_t_rng(measure_nu_sld, obs_visit_mean, measure_sd_sld));
+    }
+  }
+
+  // Assessment-visit RECIST from noisy SLD (for endpoint computation)
+  {
+    array[n_cutoff_visits] int unused_rep_recist;
+    (unused_rep_recist, cutoff_forecast_obs_recist) = calculate_all_patients_recist(
+        cutoff_rep_patient_log_sld,
+        cutoff_forecast_obs_log_sld,
+        cutoff_patient_visit_pos,
+        cutoff_forecast_obs_visits_pos,
+        cutoff_n_patient_screening_visits
+    );
+  }
+
   // Calculate patient-level endpoints for cutoff-observed patients (including forecasts)
   (sample_target_pfs, sample_target_right_censored,
    spop_target_pfs, spop_target_right_censored,
@@ -215,15 +253,21 @@ profile("gen_quant") {
       cutoff_recist,
       cutoff_rep_recist,
       cutoff_forecast_recist,
+      cutoff_forecast_obs_recist,
+      cutoff_forecast_obs_visits_pos,
+      forecast_observation_interval,
       log_cond_surv_01[cutoff_observed_patients],
       enable_ms_02,
+      enable_ms_03,
+      enable_ms_32,
       enable_ms_12,
       ms_time_scale_12,
       enable_ms_02 ? log_cond_surv_02[cutoff_observed_patients] : log_cond_surv_02,
+      enable_ms_03 ? log_cond_surv_03[cutoff_observed_patients] : log_cond_surv_03,
+      enable_ms_32 ? log_cond_surv_32[cutoff_observed_patients] : log_cond_surv_32,
       need_12_s_gp ? log_cond_surv_12_s[cutoff_observed_patients] : log_cond_surv_12_s,
       need_12_t_gp ? log_cond_surv_12_t[cutoff_observed_patients] : log_cond_surv_12_t,
       cutoff_pfs,
-      cutoff_interval_censored,
       cutoff_right_censored,
       cutoff_target_pfs,
       cutoff_target_right_censored,
@@ -233,6 +277,9 @@ profile("gen_quant") {
       ms_censored_02[cutoff_observed_patients],
       ms_censored_12[cutoff_observed_patients],
       ms_time_12[cutoff_observed_patients],
+      ms_time_03[cutoff_observed_patients],
+      ms_time_32[cutoff_observed_patients],
+      ms_censored_32[cutoff_observed_patients],
       cutoff_patient_visit_pos,
       cutoff_forecast_visits_pos,
       cutoff_patient_last_obs_visit,
