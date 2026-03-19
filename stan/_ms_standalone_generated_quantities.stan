@@ -372,4 +372,33 @@ for (c in 1:n_cond_group) {
   }
 }
 
-#include "modules/multistate/generated_quantities.stan"
+// ── Competing Risks CIF (per-trial, empirical subdistribution) ───────────────
+// Standalone model only has multistate PFS (no SLD/RECIST pathway).
+
+array[n_trials] vector<lower=0, upper=1>[max_all_t + 1]
+  spop_cif_01   = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  spop_cif_02   = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  spop_cif_03   = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  sample_cif_01 = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  sample_cif_02 = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  sample_cif_03 = rep_array(zeros_vector(max_all_t + 1), n_trials);
+
+for (s in 1:n_trials) {
+  int n_tr = get_pos_size(trial_patient_pos, s);
+  if (n_tr > 0) {
+    int tr_start; int tr_end;
+    (tr_start, tr_end) = get_pos(trial_patient_pos, s);
+
+    (spop_cif_01[s], spop_cif_02[s], spop_cif_03[s]) = compute_trial_cif(
+      spop_ms_pfs[tr_start:tr_end], spop_ms_right_censored[tr_start:tr_end],
+      spop_os[tr_start:tr_end],  spop_os_censored[tr_start:tr_end],
+      max_all_t
+    );
+
+    (sample_cif_01[s], sample_cif_02[s], sample_cif_03[s]) = compute_trial_cif(
+      sample_ms_pfs[tr_start:tr_end], sample_ms_right_censored[tr_start:tr_end],
+      sample_os[tr_start:tr_end],  sample_os_censored[tr_start:tr_end],
+      max_all_t
+    );
+  }
+}
