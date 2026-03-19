@@ -1,6 +1,6 @@
 functions {
-  #include "util.stan"
-  #include "pos.stan"
+  #include "util.stanfunctions"
+  #include "pos.stanfunctions"
 }
 
 data {
