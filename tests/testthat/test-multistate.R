@@ -2,7 +2,7 @@ library(testthat)
 library(dplyr)
 library(here)
 
-source(here("r", "sclc", "multistate.R"))
+source(here("r", "multistate.R"))
 
 # =============================================================================
 # Test helpers
