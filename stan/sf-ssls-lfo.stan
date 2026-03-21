@@ -113,7 +113,7 @@ generated quantities {
     // 1) Have post-cutoff visits at the first cutoff (start_idx > 0), AND
     // 2) Were observed before/at the cutoff (cutoff_observed_mask[i] == 1)
     // This excludes newly enrolled patients who entered the study after the cutoff.
-    if (start_idx > 0 && cutoff_observed_mask[i] == 1) {
+    if (start_idx > 0 && cutoff_observed_mask[i]) {
       int n_oos_visits = visit_end - start_idx + 1; 
     
       array[n_oos_visits + 1] int forecast_time = get_int_sub_array(t_patient_visits, patient_visit_pos, i)[visit_size:];      
@@ -196,7 +196,7 @@ generated quantities {
       // Mark all forecast visits as PD if:
       // 1) Patient had PD in the in-sample period (had_insample_pd == 1), OR
       // 2) Other events cause PD in the forecast period
-      if (had_insample_pd == 1) {
+      if (had_insample_pd) {
         // All forecast visits are PD since patient already had PD before cutoff
         full_predict_overall_recist[(treat_visit_size + 1):] = rep_array(PD, n_oos_visits);
       } else {
@@ -285,7 +285,7 @@ generated quantities {
 
         // Only evaluate patients who were observed at cutoff (exclude newly enrolled patients)
         // cutoff_observed_mask[i] == 1 means patient had at least one visit before/at cutoff
-        if (start_idx > 0 && end_idx >= start_idx && cutoff_observed_mask[i] == 1) {
+        if (start_idx > 0 && end_idx >= start_idx && cutoff_observed_mask[i]) {
           int patient_idx = curr_first_testing_patient_idx + i_idx - 1;
 
           // Component 1: Tumor model log-likelihood using observed SLD

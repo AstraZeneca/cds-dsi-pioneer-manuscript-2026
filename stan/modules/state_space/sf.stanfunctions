@@ -1287,7 +1287,9 @@ tuple(
   array[] int,  // sample_os
   array[] int,  // sample_os_censored
   array[] int,  // spop_os
-  array[] int   // spop_os_censored
+  array[] int,  // spop_os_censored
+  array[] int,  // spop_is_dropout
+  array[] int   // sample_is_dropout
 ) calculate_all_patients_endpoints_rng(
   array[] int recist,
   array[] int rep_recist,
@@ -1383,6 +1385,10 @@ tuple(
   array[n_patients] int sample_os_censored;
   array[n_patients] int spop_os;
   array[n_patients] int spop_os_censored;
+
+  // Dropout flags (1 if patient exited via cause 3; used for CIF computation)
+  array[n_patients] int spop_is_dropout;
+  array[n_patients] int sample_is_dropout;
 
   int right_censored_idx = 1;
   
@@ -1549,6 +1555,8 @@ tuple(
         spop_time_03, spop_cens_03,
         enable_ms_02, enable_ms_03);
 
+    spop_is_dropout[i] = (spop_cause == 3);
+
     (spop_pfs[i], spop_right_censored[i], spop_ms_pfs[i], spop_ms_right_censored[i]) =
         derive_spop_pfs(spop_cause, spop_exit,
                         spop_target_pfs[i], spop_target_right_censored[i],
@@ -1601,6 +1609,8 @@ tuple(
         ms_time_03[i],
         enable_ms_02, enable_ms_03);
 
+    sample_is_dropout[i] = (sample_cause == 3);
+
     (sample_pfs[i], sample_right_censored[i], sample_ms_pfs[i], sample_ms_right_censored[i]) =
         derive_sample_pfs(sample_cause, sample_exit,
                           sample_target_pfs[i], sample_target_right_censored[i],
@@ -1644,7 +1654,9 @@ tuple(
     sample_os,
     sample_os_censored,
     spop_os,
-    spop_os_censored
+    spop_os_censored,
+    spop_is_dropout,
+    sample_is_dropout
   );
 }
 
