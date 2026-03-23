@@ -155,7 +155,7 @@ real multistate_lpmf(
   matrix log_cond_surv_32
 ) {
   // Single-transition fast path (0→1 only, equivalent to old other_events)
-  if (enable_01 && !enable_02 && !enable_12) {
+  if (enable_01 && !enable_02 && !enable_12 && !enable_03) {
     return sum(calc_ms_single_transition_loglik(time_01, censored_01, log_cond_surv_01));
   }
 
@@ -182,8 +182,15 @@ real multistate_lpmf(
         patient_ll += sum(log_cond_surv_02[i, 1:time_02[i]]);
       }
 
-      // State-0 patients are admin-censored at DCO — they are NOT dropouts.
-      // No 0→3 hazard contribution for admin-censored patients.
+      // 0→3 survival: admin-censored patients attended assessment visits without
+      // dropping out — this is informative about the dropout hazard even though
+      // their censoring is protocol-driven (DCO). Use time_01[i] + 1 as limit
+      // so visits AT the censoring week are included (no event excludes them).
+      if (enable_03) {
+        patient_ll += sum_03_at_visits_below(
+          log_cond_surv_03, i, t_patient_visits, patient_visit_pos,
+          time_01[i] + 1);
+      }
     }
 
     // ========================================================================
@@ -662,9 +669,11 @@ tuple(int, int) derive_spop_os_rng(
  * @param log_cond_surv_32   Log conditional survival for 3→2 (patient row)
  * @param sample_time_01    Combined 0→1 sample PFS (for censored OS)
  * @param sample_time_02    0→2 time used in race (for censored OS)
- * @param pfs_i             Observed PFS week — used for observed 1→2 death: pfs[i] + sojourn
+ * @param pfs_i             Observed PFS week — used as anchor for forecasted 1→2 death
  * @param ms_censored_12_i  Censoring indicator for 1→2
  * @param ms_time_12_i      Observed sojourn in state 1
+ * @param ms_os_event_12_i  Exact death calendar week for observed 1→2 deaths (0 if censored);
+ *                          avoids round-trip through pfs + pmax(1, death - pfs)
  * @param ms_censored_32_i  Censoring indicator for 3→2
  * @param ms_time_03_i      Calendar week of dropout
  * @param ms_time_32_i      Observed sojourn from dropout to death
@@ -677,7 +686,7 @@ tuple(int, int) derive_sample_os_rng(
     row_vector log_cond_surv_32,
     int sample_time_01, int sample_time_02,
     int pfs_i,
-    int ms_censored_12_i, int ms_time_12_i,
+    int ms_censored_12_i, int ms_time_12_i, int ms_os_event_12_i,
     int ms_censored_32_i, int ms_time_03_i, int ms_time_32_i) {
 
   if (cause == 3) {
@@ -700,8 +709,8 @@ tuple(int, int) derive_sample_os_rng(
   } else if (cause == 1 && enable_ms_12) {
     // Progressed first → post-progression death
     if (!ms_censored_12_i) {
-      // Observed death: use exact calendar time (pfs_i + sojourn)
-      return (pfs_i + ms_time_12_i, 0);
+      // Observed death: use exact calendar week (avoids pfs + pmax(1, death - pfs) overshoot)
+      return (ms_os_event_12_i, 0);
     } else {
       // Forecast: condition on observed sojourn survival
       // Guard: clock-forward matrix is [0,0] when ms_time_scale_12==1 (semi-Markov)

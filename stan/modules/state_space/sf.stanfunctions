@@ -1318,6 +1318,7 @@ tuple(
   array[] int ms_censored_02,  // Censoring indicator for 0→2
   array[] int ms_censored_12,  // Censoring indicator for 1→2
   array[] int ms_time_12,      // Observed time to post-progression death (sojourn)
+  array[] int ms_os_event_12,  // Exact death calendar week for observed 1→2 deaths (0 if censored)
   array[] int ms_time_03,      // Calendar week of dropout (= patient_max_t; 1-indexed)
   array[] int ms_time_32,      // Observed sojourn from dropout to death (0 if not observed)
   array[] int ms_censored_32,  // Censoring indicator for 3→2
@@ -1642,7 +1643,7 @@ tuple(
         log_cond_surv_32[i],
         sample_t01, sample_time_02,
         pfs[i],
-        ms_censored_12[i], ms_time_12[i],
+        ms_censored_12[i], ms_time_12[i], ms_os_event_12[i],
         ms_censored_32[i], sample_time_03, ms_time_32[i]);
   }
 

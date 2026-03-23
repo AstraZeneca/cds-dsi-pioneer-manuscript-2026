@@ -281,6 +281,7 @@ profile("gen_quant") {
       ms_censored_02[cutoff_observed_patients],
       ms_censored_12[cutoff_observed_patients],
       ms_time_12[cutoff_observed_patients],
+      ms_os_event_12[cutoff_observed_patients],
       ms_time_03[cutoff_observed_patients],
       ms_time_32[cutoff_observed_patients],
       ms_censored_32[cutoff_observed_patients],
