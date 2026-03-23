@@ -31,6 +31,7 @@ usage() {
     echo "  -b: Specify run/store name (default: main)"
     echo "  -p: Set SCLC_EXP_SUBDIR path for custom data directory"
     echo "  -u: Specify custom username (default: \$DOMINO_STARTING_USERNAME)"
+    echo "  -l: Enable Laplace marginalization (sets ENABLE_LAPLACE=TRUE)"
     echo "  -k: Skip renv::restore()"
     echo ""
     echo "Arguments:"
@@ -51,9 +52,10 @@ use_cue_never="FALSE"
 sclc_exp_subdir=""
 skip_restore="FALSE"
 custom_username=""
+enable_laplace="FALSE"
 
 # Parse command-line options
-while getopts "i:m:r:b:p:u:h:sncdvkD" flag; do
+while getopts "i:m:r:b:p:u:h:sncdvklD" flag; do
     case "${flag}" in
         i) targets=${OPTARG};;
         m) make_targets=${OPTARG};;
@@ -67,6 +69,7 @@ while getopts "i:m:r:b:p:u:h:sncdvkD" flag; do
         b) tar_run=${OPTARG};;
         p) sclc_exp_subdir=${OPTARG};;
         u) custom_username=${OPTARG};;
+        l) enable_laplace="TRUE";;
         k) skip_restore="TRUE";;
         h) usage;;
         *) usage;;
@@ -160,10 +163,18 @@ if [ -n "$sclc_exp_subdir" ]; then
     rscript_cmd+=" -e \"Sys.setenv(SCLC_EXP_SUBDIR = '$sclc_exp_subdir')\""
 fi
 
+# Enable Laplace marginalization if -l flag set
+if [ "$enable_laplace" = "TRUE" ]; then
+    rscript_cmd+=" -e \"Sys.setenv(ENABLE_LAPLACE = 'TRUE')\""
+fi
+
 # Add project name if provided
 if [ -n "$project_name" ]; then
     rscript_cmd+=" -e \"Sys.setenv(TAR_PROJECT = '$project_name')\""
 fi
+
+# Set TAR_RUN so _targets.yaml store expression and tar_path_store() inside scripts reflect the correct store
+rscript_cmd+=" -e \"Sys.setenv(TAR_RUN = '$tar_run')\""
 
 # Process targets if provided
 if [ -n "$targets" ]; then

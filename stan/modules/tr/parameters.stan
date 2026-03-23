@@ -25,13 +25,13 @@ array[n_levels] vector<lower=0>[n_covar] tr_sd_level_slope;
 matrix[n_enabled_groups_tr_slope, n_covar] tr_raw_level_slope;
 
 // Patient-level process noise parameters - only declared when feature is enabled
-matrix[enable_patient_process_noise_tr ? n_patients : 0, max_t_width] tr_raw_patient_process_noise;
+matrix[enable_patient_process_noise_tr ? n_hmc_patients : 0, max_t_width] tr_raw_patient_process_noise;
 array[enable_patient_process_noise_tr ? 1 : 0] real tr_log_sd_pop_process_noise;
 array[enable_patient_process_noise_tr ? 1 : 0] real<lower=0> tr_sd_patient_log_sd_process_noise;
-vector[enable_patient_process_noise_sd_tr ? n_patients : 0] tr_raw_patient_log_sd_process_noise;
+vector[enable_patient_process_noise_sd_tr ? n_hmc_patients : 0] tr_raw_patient_log_sd_process_noise;
 array[enable_patient_process_noise_tr ? 1 : 0] real tr_logit_phi_pop_process_noise;
 array[enable_patient_process_noise_tr ? 1 : 0] real<lower=0> tr_sd_patient_phi_process_noise;
-vector[enable_patient_process_noise_phi_tr ? n_patients : 0] tr_raw_patient_phi_process_noise;
+vector[enable_patient_process_noise_phi_tr ? n_hmc_patients : 0] tr_raw_patient_phi_process_noise;
 
 // Population-level time-varying process noise parameters (shared AR(1) across all patients)
 array[enable_pop_process_noise_tr ? 1 : 0] real tr_log_sd_pop_process_noise_pop;

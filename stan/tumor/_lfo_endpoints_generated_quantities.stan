@@ -138,7 +138,7 @@ profile("gen_quant") {
         cutoff_t_patient_visit_idx,
         cutoff_baseline_obs_per_patient,
         measure_sd_sld,
-        measure_nu_sld,
+        measure_nu,
         cutoff_n_patient_screening_visits
       );
   } else {
@@ -189,7 +189,7 @@ profile("gen_quant") {
           1.0,
           rep_matrix(0.0, forecast_size, 2),
           measure_sd_sld,
-          measure_nu_sld
+          measure_nu
         );
 
       // Store results
@@ -230,7 +230,7 @@ profile("gen_quant") {
       }
 
       cutoff_forecast_obs_log_sld[assess_start:assess_end] =
-        to_vector(student_t_rng(measure_nu_sld, obs_visit_mean, measure_sd_sld));
+        to_vector(student_t_rng(measure_nu, obs_visit_mean, measure_sd_sld));
     }
   }
 
@@ -261,6 +261,7 @@ profile("gen_quant") {
    spop_os, spop_os_censored,
    spop_is_dropout, sample_is_dropout) =
     calculate_all_patients_endpoints_rng(
+      linspaced_int_array(n_cutoff_observed_patients, 1, n_cutoff_observed_patients),
       cutoff_recist,
       cutoff_rep_recist,
       cutoff_forecast_recist,

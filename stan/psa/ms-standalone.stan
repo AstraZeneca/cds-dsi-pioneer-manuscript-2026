@@ -1,0 +1,129 @@
+// Standalone Multistate Illness-Death Model (Pioneer)
+//
+// A self-contained illness-death model with GP baseline hazards and optional
+// time-invariant covariates. No PSA dynamics or time-varying covariates.
+//
+// All patients (trial + RWD) contribute survival data directly — no Laplace
+// marginalization needed since there are no per-patient PSA parameters.
+//
+// Transitions:
+//   0→1: Progression / PFS event
+//   0→2: Death without progression
+//   1→2: Post-progression death (semi-Markov, Markov, or extended)
+
+functions {
+  #include "util.stanfunctions"
+  #include "pos.stanfunctions"
+  #include "gp.stanfunctions"
+  #include "pfs.stanfunctions"
+  #include "multistate.stanfunctions"
+}
+
+data {
+  // =========================================================================
+  // BASE HIERARCHY DATA (shared with full model)
+  // =========================================================================
+  #include "_base_hierarchy_data.stan"
+
+  // Fit control — set to 0 for prior predictive, 1 for posterior
+  int<lower=0, upper=1> fit_multistate_data;
+
+  // Time grid length — in the joint model this is computed from visit times;
+  // here it is passed directly since there are no PSA visits.
+  int<lower=1> max_all_t;
+
+  // =========================================================================
+  // MULTISTATE MODULE DATA
+  // =========================================================================
+  #include "modules/multistate/flags.stan"
+  #include "modules/multistate/data.stan"
+  #include "modules/multistate/hyperparams.stan"
+
+  // Interval censoring gap — weeks between last clean assessment and detection
+  // visit. Used to place observed PFS events at detection time in GQ.
+  array[n_patients] int<lower=0> interval_censored;
+
+  // =========================================================================
+  // ENDPOINT COMPUTATION DATA (shared with full model)
+  // =========================================================================
+  #include "modules/endpoints/data.stan"
+}
+
+transformed data {
+  // =========================================================================
+  // HIERARCHY VALIDATION + TRIAL POSITION ARRAYS (shared with full model)
+  // =========================================================================
+  #include "_base_hierarchy_transformed_data.stan"
+
+  // =========================================================================
+  // TIME GRID (needed by multistate GP; in the full model this lives in
+  // modules/tumor/transformed_data.stan)
+  // =========================================================================
+  array[max_all_t] real all_measure_t = linspaced_array(max_all_t, 1, max_all_t);
+
+  // =========================================================================
+  // QR DECOMPOSITION (shared with full model)
+  // =========================================================================
+  #include "_qr_decomposition.stan"
+
+  // =========================================================================
+  // ENDPOINT POSITION ARRAYS (shared with full model)
+  // =========================================================================
+  #include "modules/endpoints/transformed_data.stan"
+
+  // =========================================================================
+  // MULTISTATE MODULE TRANSFORMED DATA
+  // =========================================================================
+  #include "modules/multistate/transformed_data.stan"
+}
+
+parameters {
+  #include "modules/multistate/parameters.stan"
+}
+
+transformed parameters {
+  // No time-varying covariates — time-varying covariate arrays are PSA-derived
+  // and only exist in the full joint model. The multistate module references
+  // ms_time_varying_covar_01 inside a runtime guard, so we declare a
+  // zero-sized placeholder to satisfy the Stan compiler.
+  array[enable_ms_01 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 ? n_time_varying_covar : 0]
+    matrix[n_patients, max_all_t] ms_time_varying_covar_01;
+
+  #include "modules/multistate/transformed_parameters.stan"
+}
+
+model {
+  #include "modules/multistate/priors.stan"
+
+  // Multistate likelihood (skipped when fit_multistate_data = 0 for prior predictive)
+  if (fit_multistate_data && enable_ms_01 && !enable_ms_02 && !enable_ms_12) {
+    // Single transition mode (PFS-only)
+    target += sum(calc_ms_single_transition_loglik(
+      ms_time_01,
+      ms_censored_01,
+      log_cond_surv_01
+    ));
+  } else if (fit_multistate_data) {
+    // Full illness-death likelihood
+    target += calc_multistate_loglik(
+      enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
+      enable_ms_03, enable_ms_32,
+      ms_final_state,
+      ms_time_01, ms_time_02, ms_time_12,
+      ms_time_03, ms_time_32,
+      ms_censored_01, ms_censored_02, ms_censored_12,
+      ms_censored_32,
+      ms_prog_deterministic,
+      log_cond_surv_01,
+      log_cond_surv_02,
+      log_cond_surv_12_s,
+      log_cond_surv_12_t,
+      log_cond_surv_03,
+      log_cond_surv_32
+    );
+  }
+}
+
+generated quantities {
+  #include "tumor/_ms_standalone_generated_quantities.stan"
+}

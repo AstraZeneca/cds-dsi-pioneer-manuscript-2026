@@ -8,16 +8,16 @@ array[n_total_forecast_visits] int<lower = CR, upper = PD> forecast_recist;
   
 // Endpoints (PFS, ORR, Median PFS, PFSn, ...) ////////////
 
-array[n_patients] int<lower = 0> sample_target_pfs, spop_target_pfs, sample_ms_pfs, spop_ms_pfs, spop_target_obs_cens_pfs,
+array[n_hmc_patients] int<lower = 0> sample_target_pfs, spop_target_pfs, sample_ms_pfs, spop_ms_pfs, spop_target_obs_cens_pfs,
                                  sample_pfs, spop_pfs;
-array[n_patients] int<lower = 0, upper = 1>
+array[n_hmc_patients] int<lower = 0, upper = 1>
   sample_target_right_censored, spop_target_right_censored, spop_target_obs_cens_right_censored,
   sample_ms_right_censored, spop_ms_right_censored,
   sample_right_censored, spop_right_censored;
 
 // OS endpoints
-array[n_patients] int<lower = 0> sample_os, spop_os;
-array[n_patients] int<lower = 0, upper = 1> sample_os_censored, spop_os_censored;
+array[n_hmc_patients] int<lower = 0> sample_os, spop_os;
+array[n_hmc_patients] int<lower = 0, upper = 1> sample_os_censored, spop_os_censored;
 
 // Dropout flags — 1 if patient exited via cause 3 in this draw (for CIF computation)
 array[n_patients] int<lower = 0, upper = 1> spop_is_dropout, sample_is_dropout;
@@ -43,8 +43,8 @@ array[n_cond_group] vector<lower = 0, upper = 1>[n_pfs_timepoints] cond_sample_t
                                                                    cond_sample_ms_pfs_n, cond_spop_ms_pfs_n,
                                                                    cond_sample_pfs_n, cond_spop_pfs_n;
 
-array[n_patients] int<lower = 0, upper = 1> sample_target_confirmed_response, spop_target_confirmed_response;
-array[n_patients] int<lower = 0, upper = 1> sample_target_unconfirmed_response, spop_target_unconfirmed_response;
+array[n_hmc_patients] int<lower = 0, upper = 1> sample_target_confirmed_response, spop_target_confirmed_response;
+array[n_hmc_patients] int<lower = 0, upper = 1> sample_target_unconfirmed_response, spop_target_unconfirmed_response;
 
 vector<lower = 0, upper = 1>[n_trials] sample_target_orr, spop_target_orr;
 vector<lower = 0, upper = 1>[n_cond_group] cond_sample_target_orr = zeros_vector(n_cond_group), cond_spop_target_orr = zeros_vector(n_cond_group);
@@ -110,6 +110,7 @@ profile("gen_quant") {
      forecast_patient_log_sld, forecast_mean_patient_log_sld) =
       generate_all_patients_states_with_means_rng(
         states_full_grid,
+        hmc_patient_idx,
         patient_visit_pos,
         patient_visit_m1_pos,
         forecast_visits_pos,
@@ -119,7 +120,7 @@ profile("gen_quant") {
         t_patient_visit_idx,
         sum_tumor_size,
         measure_sd_sld,
-        measure_nu_sld,
+        measure_nu,
         n_patient_screening_visits
       );
   } else {
@@ -160,7 +161,7 @@ profile("gen_quant") {
           1.0,                  // growth transition
           rep_matrix(0.0, forecast_size, 2),  // No forecast process noise
           measure_sd_sld,
-          measure_nu_sld
+          measure_nu
         );
 
       // Store results
@@ -203,7 +204,7 @@ profile("gen_quant") {
 
       // Apply measurement noise at assessment visits only
       forecast_obs_log_sld[assess_start:assess_end] =
-        to_vector(student_t_rng(measure_nu_sld, obs_visit_mean, measure_sd_sld));
+        to_vector(student_t_rng(measure_nu, obs_visit_mean, measure_sd_sld));
     }
   }
 
@@ -234,6 +235,7 @@ profile("gen_quant") {
    spop_os, spop_os_censored,
    spop_is_dropout, sample_is_dropout
   ) = calculate_all_patients_endpoints_rng(
+    hmc_patient_idx,
     recist,
     rep_recist,
     forecast_recist,
@@ -313,7 +315,7 @@ profile("gen_quant") {
       sample_os_censored,
       spop_os,
       spop_os_censored,
-      trial_patient_pos,
+      hmc_trial_patient_pos,
       max_all_t,
       pfs_quantiles,
       pfs_timepoints

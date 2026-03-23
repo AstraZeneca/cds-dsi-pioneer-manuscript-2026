@@ -18,6 +18,7 @@ profile("gen_quant_trajectories") {
      forecast_patient_log_obs, forecast_mean_patient_log_obs) =
       generate_all_patients_states_with_means_rng(
         states_full_grid,
+        hmc_patient_idx,
         patient_visit_pos,
         patient_visit_m1_pos,
         forecast_visits_pos,
@@ -33,19 +34,27 @@ profile("gen_quant_trajectories") {
   } else {
     // Process noise OFF: Compute states on-the-fly using constant rates (original approach)
     // This avoids needing states_full_grid which is not computed when process noise is off
-    for (i in 1:n_patients) {
-      int visit_start, visit_end;
-      (visit_start, visit_end) = get_pos(patient_visit_pos, i);
-      int visit_size = get_pos_size(patient_visit_pos, i);
+    // Dual indexing: data arrays use unified patient_visit_pos[p]; states use hmc_visit_pos[j].
+    for (j in 1:n_hmc_patients) {
+      int p = hmc_patient_idx[j];  // unified patient index
+
+      // Data positions (unified — index into visit-flat data arrays)
+      int data_start, data_end;
+      (data_start, data_end) = get_pos(patient_visit_pos, p);
+      int visit_size = data_end - data_start + 1;
+
+      // State positions (HMC-local — index into states[n_hmc_visits, 2])
+      int state_start, state_end;
+      (state_start, state_end) = get_pos(hmc_visit_pos, j);
 
       int forecast_visit_start, forecast_visit_end;
-      (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
-      int forecast_size = get_pos_size(forecast_visits_pos, i);
+      (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, p);
+      int forecast_size = forecast_visit_end - forecast_visit_start + 1;
 
       // Build forecast time WITH anchor (duplicate last observed week as element 1)
       array[forecast_size + 1] real forecast_time = linspaced_array(
         forecast_size + 1,
-        patient_last_obs_visit[i],
+        patient_last_obs_visit[p],
         last_predict_visit);
 
       // Generate states using constant rates (computed on-the-fly, not from grid)
@@ -59,11 +68,11 @@ profile("gen_quant_trajectories") {
       (temp_forecast_patient_states, temp_rep_patient_log_obs, temp_rep_mean_patient_log_obs,
        temp_forecast_patient_log_obs, temp_forecast_mean_patient_log_obs, temp_obs_process_noise) =
         generate_patient_states_with_means_rng(
-          states[visit_start:visit_end],  // Use states computed in transformed_parameters
+          states[state_start:state_end],    // HMC-local positions
           forecast_time,
-          patient_log_decrease_rate[i, 1],  // Scalar rate (constant)
-          patient_log_growth_rate[i, 1],    // Scalar rate (constant)
-          baseline_obs_per_patient[i],
+          patient_log_decrease_rate[j, 1],  // HMC-local j
+          patient_log_growth_rate[j, 1],    // HMC-local j
+          baseline_obs_per_patient[p],      // unified
           negative_infinity(),  // growth lag (disabled)
           1.0,                  // growth transition
           rep_matrix(0.0, forecast_size, 2),  // No forecast process noise
@@ -71,10 +80,10 @@ profile("gen_quant_trajectories") {
           measure_nu_obs
         );
 
-      // Store results
+      // Store results at unified data positions
       forecast_patient_states[forecast_visit_start:forecast_visit_end] = temp_forecast_patient_states;
-      rep_patient_log_obs[visit_start:visit_end] = temp_rep_patient_log_obs;
-      rep_mean_patient_log_obs[visit_start:visit_end] = temp_rep_mean_patient_log_obs;
+      rep_patient_log_obs[data_start:data_end] = temp_rep_patient_log_obs;
+      rep_mean_patient_log_obs[data_start:data_end] = temp_rep_mean_patient_log_obs;
       forecast_patient_log_obs[forecast_visit_start:forecast_visit_end] = temp_forecast_patient_log_obs;
       forecast_mean_patient_log_obs[forecast_visit_start:forecast_visit_end] = temp_forecast_mean_patient_log_obs;
     }
