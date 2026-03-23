@@ -15,6 +15,8 @@ functions {
     array[] int censored_01, array[] int censored_02, array[] int censored_12,
     array[] int censored_32,
     array[] int prog_deterministic,
+    array[] int ms_ic_gap_01,
+    array[] int t_patient_visits, array[] int patient_visit_pos,
     matrix log_cond_surv_01, matrix log_cond_surv_02,
     matrix log_cond_surv_12_s, matrix log_cond_surv_12_t,
     matrix log_cond_surv_03, matrix log_cond_surv_32
@@ -26,6 +28,8 @@ functions {
       time_01, time_02, time_12, time_03, time_32,
       censored_01, censored_02, censored_12, censored_32,
       prog_deterministic,
+      ms_ic_gap_01,
+      t_patient_visits, patient_visit_pos,
       log_cond_surv_01, log_cond_surv_02,
       log_cond_surv_12_s, log_cond_surv_12_t,
       log_cond_surv_03, log_cond_surv_32
@@ -48,6 +52,11 @@ data {
   matrix[N, MAX_T] log_cond_surv_12_s;
   matrix[N, MAX_T] log_cond_surv_12_t;
   array[N] int prog_deterministic;
+  array[N] int ms_ic_gap_01;         // IC gap (0 = no interval censoring)
+  // Visit arrays for 0→3 visit-conditioning (dummy when enable_03=0)
+  int N_visits;
+  array[N_visits] int t_patient_visits;
+  array[N + 1] int patient_visit_pos;
   // Unused transitions (pass as sentinel)
   array[N] int time_03;
   array[N] int censored_32;
@@ -67,6 +76,8 @@ generated quantities {
     event_time_01, time_02, time_12, time_03, time_03,
     censored_01, censored_02, censored_12, censored_32,
     prog_deterministic,
+    ms_ic_gap_01,
+    t_patient_visits, patient_visit_pos,
     log_cond_surv_01, log_cond_surv_02,
     log_cond_surv_12_s, log_cond_surv_12_t,
     log_cond_surv_03, log_cond_surv_32
@@ -79,6 +90,8 @@ generated quantities {
     event_time_01, time_02, time_12, time_03, time_03,
     censored_01, censored_02, censored_12, censored_32,
     prog_deterministic,
+    ms_ic_gap_01,
+    t_patient_visits, patient_visit_pos,
     log_cond_surv_01, log_cond_surv_02,
     log_cond_surv_12_s, log_cond_surv_12_t,
     log_cond_surv_03, log_cond_surv_32

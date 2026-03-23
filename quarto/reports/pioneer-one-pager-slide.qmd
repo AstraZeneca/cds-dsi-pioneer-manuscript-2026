@@ -269,7 +269,7 @@ plot_oos_confusion_matrix(oos_confusion_matrix, add_caption = FALSE) +
 #| fig-width: 7.5
 #| fig-height: 3.5
 
-plot_median_pfs_by_dco(
+plot_median_surv_by_dco(
   "sample",
   quant_pfs_list,
   cond_quant_pfs_list,

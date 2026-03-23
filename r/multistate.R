@@ -389,6 +389,16 @@ derive_ms_fields <- function(
   )
   ms_censored_12 <- as.integer(pat != "progressed_died")
 
+  # Exact death calendar week for observed 1→2 deaths — avoids round-trip
+
+  # through pfs + pmax(1, death_week - pfs) which can overshoot when the
+  # detection-adjustment pushes pfs past death_week.
+  ms_os_event_12 <- dplyr::if_else(
+    pat == "progressed_died",
+    as.integer(analysis_data$death_week),
+    0L
+  )
+
   # -------------------------------------------------------------------------
   # 0→3 and 3→2 transitions (dropout / off-trial)
   # -------------------------------------------------------------------------
@@ -415,7 +425,11 @@ derive_ms_fields <- function(
   # -------------------------------------------------------------------------
   # GP grid sizing: max sojourn times + buffer for extrapolation
   # -------------------------------------------------------------------------
-  ms_max_sojourn_t <- max(1L, max(ms_time_12, na.rm = TRUE) + 10L)
+  # IC expands sojourn: tau_max = time_12 + (gap - 1) = time_12 + interval_censored
+  ms_max_sojourn_t <- max(
+    1L,
+    max(ms_time_12 + analysis_data$interval_censored, na.rm = TRUE) + 10L
+  )
   ms_max_sojourn_t_32 <- max(1L, max(ms_time_32, na.rm = TRUE) + 10L)
 
   stan_fields <- list(
@@ -426,10 +440,12 @@ derive_ms_fields <- function(
     ms_censored_01        = ms_censored_01,
     ms_censored_02        = ms_censored_02,
     ms_censored_12        = ms_censored_12,
+    ms_os_event_12        = ms_os_event_12,
     ms_time_03            = ms_time_03,
     ms_time_32            = ms_time_32,
     ms_censored_32        = ms_censored_32,
     ms_prog_deterministic = analysis_data$ms_prog_deterministic,
+    interval_censored     = analysis_data$interval_censored,
     ms_max_sojourn_t      = ms_max_sojourn_t,
     ms_max_sojourn_t_32   = ms_max_sojourn_t_32,
     ms_gp_grid_step       = 4L

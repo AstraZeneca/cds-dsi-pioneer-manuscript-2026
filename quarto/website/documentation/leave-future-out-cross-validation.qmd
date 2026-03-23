@@ -17,7 +17,7 @@ source("_setup.R")
 ::: {.callout-tip}
 ## Related Pages
 - See [Model Validation](../analysis/model-validation.qmd) for LFO results and ELPD comparisons
-- See [Model Specification](model-specification.qmd) for the underlying tumor dynamics model
+- See [Tumor Dynamics Specification](tumor-dynamics-specification.qmd) for the underlying tumor dynamics model
 - See [Architecture](architecture.qmd) for code organization
 :::
 
@@ -474,7 +474,7 @@ LFO is more practical for clinical data where observations are naturally grouped
 ## Related Pages
 
 - [Model Validation](../analysis/model-validation.qmd) - LFO results and ELPD comparisons
-- [Model Specification](model-specification.qmd) - Underlying model details
+- [Tumor Dynamics Specification](tumor-dynamics-specification.qmd) - Underlying tumor model details
 - [Architecture](architecture.qmd) - Code organization
 - [Diagnostics](../analysis/diagnostics.qmd) - MCMC convergence checks
 :::

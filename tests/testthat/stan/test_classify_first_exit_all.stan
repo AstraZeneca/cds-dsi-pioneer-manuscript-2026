@@ -191,24 +191,26 @@ generated quantities {
   // ===========================================================================
   // classify_sample_exit(sample_time_01, sample_cens_01,
   //                      sample_time_02, sample_cens_02,
-  //                      ms_final_state_i, ms_censored_02_i, ms_time_03_i,
+  //                      sample_time_03, sample_cens_03,
+  //                      ms_censored_02_i,
   //                      enable_ms_02, enable_ms_03)
-  // Uses observed ground truth: state=3 overrides all forecasts
+  // Symmetric with classify_spop_exit: pure competing-risks on (time, cens) tuples.
+  // Caller sets t_03/c_03 from observed data or forecasted simulation.
   // ===========================================================================
 
-  // C1: Observed dropout (ms_final_state=3) — overrides direct death and progression
+  // C1: Dropout wins — t_03=5 < t_01=15 and t_03=5 < t_02=10
   {
-    tuple(int, int) r = classify_sample_exit(15, 0, 5, 0, 3, 0, 20, 1, 1);
-    if (r.1 != 3 || r.2 != 20) {
-      print("FAIL C1 classify_sample_exit dropout overrides: got (", r.1, ",", r.2, ") expected (3,20)");
+    tuple(int, int) r = classify_sample_exit(15, 0, 10, 0, 5, 0, 1, 1, 1);
+    if (r.1 != 3 || r.2 != 5) {
+      print("FAIL C1 classify_sample_exit dropout wins: got (", r.1, ",", r.2, ") expected (3,5)");
       n_failures += 1;
     }
   }
 
-  // C2: Observed direct death (ms_censored_02=0, ms_final_state=2) beats progression
-  //     (t_02=8 < t_01=15)
+  // C2: Observed direct death (ms_censored_02=0) beats progression
+  //     (t_02=8 < t_01=15, t_03 censored)
   {
-    tuple(int, int) r = classify_sample_exit(15, 0, 8, 0, 2, 0, 50, 1, 1);
+    tuple(int, int) r = classify_sample_exit(15, 0, 8, 0, 50, 1, 0, 1, 1);
     if (r.1 != 2 || r.2 != 8) {
       print("FAIL C2 classify_sample_exit observed death: got (", r.1, ",", r.2, ") expected (2,8)");
       n_failures += 1;
@@ -218,37 +220,36 @@ generated quantities {
   // C3: Forecasted direct death (ms_censored_02=1 but sample_cens_02=0 and
   //     sample_time_02=5 < sample_time_01=15) — died_directly fires
   {
-    tuple(int, int) r = classify_sample_exit(15, 0, 5, 0, 0, 1, 50, 1, 1);
+    tuple(int, int) r = classify_sample_exit(15, 0, 5, 0, 50, 1, 1, 1, 1);
     if (r.1 != 2 || r.2 != 5) {
       print("FAIL C3 classify_sample_exit forecasted death beats progression: got (", r.1, ",", r.2, ") expected (2,5)");
       n_failures += 1;
     }
   }
 
-  // C4: Progression first — 0→1 fires before 0→2 (t_01=10 < t_02=20)
+  // C4: Progression first — 0→1 fires before 0→2 (t_01=10 < t_02=20, t_03 censored)
   {
-    tuple(int, int) r = classify_sample_exit(10, 0, 20, 0, 1, 1, 50, 1, 1);
+    tuple(int, int) r = classify_sample_exit(10, 0, 20, 0, 50, 1, 1, 1, 1);
     if (r.1 != 1 || r.2 != 10) {
       print("FAIL C4 classify_sample_exit progression first: got (", r.1, ",", r.2, ") expected (1,10)");
       n_failures += 1;
     }
   }
 
-  // C5: All censored — cause=0, exit=max(sample_time_01, sample_time_02)
+  // C5: All censored — cause=0, exit=max(t_01, t_02, t_03)
   {
-    tuple(int, int) r = classify_sample_exit(20, 1, 25, 1, 0, 1, 50, 1, 1);
-    if (r.1 != 0 || r.2 != 25) {
-      print("FAIL C5 classify_sample_exit all censored: got (", r.1, ",", r.2, ") expected (0,25)");
+    tuple(int, int) r = classify_sample_exit(20, 1, 25, 1, 50, 1, 1, 1, 1);
+    if (r.1 != 0 || r.2 != 50) {
+      print("FAIL C5 classify_sample_exit all censored: got (", r.1, ",", r.2, ") expected (0,50)");
       n_failures += 1;
     }
   }
 
-  // C6: Progression wins over later direct death (t_01=10 <= t_02=20)
-  //     — no dropout, 02 fires after 01
+  // C6: Progression wins over later direct death and dropout (t_01=10 <= t_02=20, t_03=30)
   {
-    tuple(int, int) r = classify_sample_exit(10, 0, 20, 0, 0, 1, 50, 1, 1);
+    tuple(int, int) r = classify_sample_exit(10, 0, 20, 0, 30, 0, 1, 1, 1);
     if (r.1 != 1 || r.2 != 10) {
-      print("FAIL C6 classify_sample_exit progression over later death: got (", r.1, ",", r.2, ") expected (1,10)");
+      print("FAIL C6 classify_sample_exit progression over later death and dropout: got (", r.1, ",", r.2, ") expected (1,10)");
       n_failures += 1;
     }
   }
@@ -256,9 +257,27 @@ generated quantities {
   // C7: enable_ms_02=0 suppresses direct death — progression wins despite simultaneous
   //     0→2 event (sample_cens_02=0), because died_directly is gated by enable_ms_02
   {
-    tuple(int, int) r = classify_sample_exit(10, 0, 10, 0, 0, 1, 50, 0, 1);
+    tuple(int, int) r = classify_sample_exit(10, 0, 10, 0, 50, 1, 1, 0, 1);
     if (r.1 != 1 || r.2 != 10) {
       print("FAIL C7 classify_sample_exit enable_ms_02=0 suppresses: got (", r.1, ",", r.2, ") expected (1,10)");
+      n_failures += 1;
+    }
+  }
+
+  // C8: Dropout wins even when progression and death also occurred (t_03=3 < t_01=10 < t_02=20)
+  {
+    tuple(int, int) r = classify_sample_exit(10, 0, 20, 0, 3, 0, 1, 1, 1);
+    if (r.1 != 3 || r.2 != 3) {
+      print("FAIL C8 classify_sample_exit dropout earliest: got (", r.1, ",", r.2, ") expected (3,3)");
+      n_failures += 1;
+    }
+  }
+
+  // C9: enable_ms_03=0 — caller passes (max_all_t+1, 1) for t_03 → direct death wins
+  {
+    tuple(int, int) r = classify_sample_exit(50, 1, 10, 0, 101, 1, 0, 1, 0);
+    if (r.1 != 2 || r.2 != 10) {
+      print("FAIL C9 classify_sample_exit enable_ms_03=0 suppresses dropout: got (", r.1, ",", r.2, ") expected (2,10)");
       n_failures += 1;
     }
   }
@@ -267,7 +286,7 @@ generated quantities {
   // derive_sample_pfs(cause, exit_time,
   //                   sample_target_pfs_i, sample_target_right_cens_i,
   //                   sample_ms_pfs_raw, sample_ms_right_cens_raw,
-  //                   ms_time_03_i, enable_ms_02, enable_ms_03)
+  //                   sample_time_03_i, enable_ms_02, enable_ms_03)
   // Returns (pfs, right_censored, ms_pfs, ms_right_censored)
   // ===========================================================================
 
@@ -405,7 +424,7 @@ generated quantities {
     {
       tuple(int, int) r = derive_sample_os_rng(2, 10, 0, 0, 0,
           dummy_rv, dummy_rv, dummy_rv,
-          10, 25, 10, 1, 0, 1, 0, 0);
+          10, 25, 10, 1, 0, 0, 1, 0, 0);
       if (r.1 != 10 || r.2 != 0) {
         print("FAIL Q1 derive_sample_os_rng cause=2: got (", r.1, ",", r.2, ") expected (10,0)");
         n_failures += 1;
@@ -417,7 +436,7 @@ generated quantities {
     {
       tuple(int, int) r = derive_sample_os_rng(3, 20, 0, 0, 0,
           dummy_rv, dummy_rv, dummy_rv,
-          20, 50, 20, 1, 0, 0, 20, 15);
+          20, 50, 20, 1, 0, 0, 0, 20, 15);
       if (r.1 != 35 || r.2 != 0) {
         print("FAIL Q2 derive_sample_os_rng cause=3 observed death: got (", r.1, ",", r.2, ") expected (35,0)");
         n_failures += 1;
@@ -429,7 +448,7 @@ generated quantities {
     {
       tuple(int, int) r = derive_sample_os_rng(3, 20, 0, 0, 0,
           dummy_rv, dummy_rv, dummy_rv,
-          20, 50, 20, 1, 0, 1, 20, 10);
+          20, 50, 20, 1, 0, 0, 1, 20, 10);
       if (r.1 != 30 || r.2 != 1) {
         print("FAIL Q3 derive_sample_os_rng cause=3 censored no 3->2: got (", r.1, ",", r.2, ") expected (30,1)");
         n_failures += 1;
@@ -437,11 +456,11 @@ generated quantities {
     }
 
     // Q4: cause=1, observed post-progression death (!ms_censored_12=0)
-    //     — returns (pfs_i + ms_time_12, 0) = (10+8, 0) = (18, 0)
+    //     — returns (ms_os_event_12_i, 0) = (18, 0)
     {
       tuple(int, int) r = derive_sample_os_rng(1, 10, 1, 0, 0,
           dummy_rv, dummy_rv, dummy_rv,
-          10, 50, 10, 0, 8, 1, 0, 0);
+          10, 50, 10, 0, 8, 18, 1, 0, 0);
       if (r.1 != 18 || r.2 != 0) {
         print("FAIL Q4 derive_sample_os_rng cause=1 observed PPD: got (", r.1, ",", r.2, ") expected (18,0)");
         n_failures += 1;
@@ -453,7 +472,7 @@ generated quantities {
     {
       tuple(int, int) r = derive_sample_os_rng(1, 10, 0, 0, 0,
           dummy_rv, dummy_rv, dummy_rv,
-          10, 15, 10, 1, 0, 1, 0, 0);
+          10, 15, 10, 1, 0, 0, 1, 0, 0);
       if (r.1 != 15 || r.2 != 1) {
         print("FAIL Q5 derive_sample_os_rng cause=1 no 1->2: got (", r.1, ",", r.2, ") expected (15,1)");
         n_failures += 1;
@@ -464,7 +483,7 @@ generated quantities {
     {
       tuple(int, int) r = derive_sample_os_rng(0, 20, 0, 0, 0,
           dummy_rv, dummy_rv, dummy_rv,
-          10, 20, 10, 1, 0, 1, 0, 0);
+          10, 20, 10, 1, 0, 0, 1, 0, 0);
       if (r.1 != 20 || r.2 != 1) {
         print("FAIL Q6 derive_sample_os_rng cause=0: got (", r.1, ",", r.2, ") expected (20,1)");
         n_failures += 1;

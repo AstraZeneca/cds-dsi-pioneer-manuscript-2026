@@ -24,6 +24,11 @@ make_ms_data <- function(n, max_t, event_time, censored, final_state,
     log_cond_surv_12_s = matrix(-0.05, n, max_t),
     log_cond_surv_12_t = matrix(-0.05, n, max_t),
     prog_deterministic = rep(0L, n),
+    ms_ic_gap_01       = rep(1L, n),  # 1-week gap: T_c = T_d - 1, matches detection-week convention
+    # Dummy visit arrays — enable_03=0 in all tests, so these are never accessed
+    N_visits           = n,
+    t_patient_visits   = rep(1L, n),
+    patient_visit_pos  = seq_len(n + 1L),
     time_03     = rep(BIG, n),
     censored_32 = rep(1L, n),
     log_cond_surv_03  = matrix(-0.05, n, max_t),

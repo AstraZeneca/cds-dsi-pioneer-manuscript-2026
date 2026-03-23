@@ -24,6 +24,9 @@ array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_right_censore
 array[n_cutoff_observed_patients] int<lower = 0> sample_os, spop_os;
 array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_os_censored, spop_os_censored;
 
+// Dropout flags — unused in LFO (no CIF), but required to match calculate_all_patients_endpoints_rng return type
+array[n_cutoff_observed_patients] int<lower = 0, upper = 1> spop_is_dropout, sample_is_dropout;
+
 array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_target_km_est, spop_target_km_est, spop_target_obs_cens_km_est;
 array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_target_km_est, cond_spop_target_km_est, cond_spop_target_obs_cens_km_est;
 
@@ -248,7 +251,8 @@ profile("gen_quant") {
    spop_target_confirmed_response, spop_target_unconfirmed_response,
    forecast_target_pfs, forecast_target_right_censored,
    sample_os, sample_os_censored,
-   spop_os, spop_os_censored) =
+   spop_os, spop_os_censored,
+   spop_is_dropout, sample_is_dropout) =
     calculate_all_patients_endpoints_rng(
       cutoff_recist,
       cutoff_rep_recist,
@@ -277,6 +281,7 @@ profile("gen_quant") {
       ms_censored_02[cutoff_observed_patients],
       ms_censored_12[cutoff_observed_patients],
       ms_time_12[cutoff_observed_patients],
+      ms_os_event_12[cutoff_observed_patients],
       ms_time_03[cutoff_observed_patients],
       ms_time_32[cutoff_observed_patients],
       ms_censored_32[cutoff_observed_patients],
