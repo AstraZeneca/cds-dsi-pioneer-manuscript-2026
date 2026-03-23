@@ -125,6 +125,12 @@ presentation_pages/
 brads_code/
 output/
 
+# Core dump files
+core.*
+
+# Scratch files for ad-hoc analysis
+/scratch/
+
 # Git worktrees
 /worktrees/
 .worktrees/

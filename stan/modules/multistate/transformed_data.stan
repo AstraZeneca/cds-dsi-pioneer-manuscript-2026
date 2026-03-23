@@ -169,3 +169,16 @@ array[n_patients, n_levels] int patient_ms_slope_flat_idx;
   }
 }
 
+// --- IC Gap for 0→1 Marginalization ---
+// ms_ic_gap_01[i] = number of candidate weeks in (T_c, T_d] for patient i.
+// = interval_censored[i] + 1 for stochastic-progression patients (gap > 0).
+// = 0 otherwise → IC code is bypassed, reducing to the no-IC likelihood.
+array[n_patients] int ms_ic_gap_01;
+for (i in 1:n_patients) {
+  if (ms_censored_01[i] || ms_prog_deterministic[i]) {
+    ms_ic_gap_01[i] = 0;
+  } else {
+    ms_ic_gap_01[i] = interval_censored[i] + 1;
+  }
+}
+

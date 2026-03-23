@@ -1,7 +1,7 @@
 
 functions {
-  #include "util.stan"
-  #include "pos.stan" // Always include pos.stan for utility functions
+  #include "util.stanfunctions"
+  #include "pos.stanfunctions" // Always include pos.stan for utility functions
   // #include other required Stan files here
 }
 

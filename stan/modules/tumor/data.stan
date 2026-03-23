@@ -25,7 +25,6 @@ array[sum(n_patient_visits)] int<lower = 1, upper = 5> recist;
 // Progression-free survival based on tumor measurements
 array[n_patients] int<lower = 0> pfs; // How many weeks after baseline did patient survive without progression
 array[n_patients] int<lower = 0, upper = 1> right_censored;
-array[n_patients] int<lower = 0> interval_censored; // Weeks after `pfs` that actual progression could have occurred
 
 // Progression-free survival based on target lesions only (excluding non-target and new lesions)
 array[n_patients] int<lower = 0> target_pfs;
