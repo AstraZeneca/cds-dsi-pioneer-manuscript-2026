@@ -39,6 +39,7 @@ data {
   int<lower=0> n_total_visits;
   array[n_total_visits] int<lower=1> t_patient_visits;     // flat visit-week array
   array[n_patients + 1] int<lower=1> patient_visit_pos;   // position array (n_patients+1)
+  int<lower=1> forecast_observation_interval;              // weeks between forecast assessments (typically 6)
 
   // =========================================================================
   // MULTISTATE MODULE DATA

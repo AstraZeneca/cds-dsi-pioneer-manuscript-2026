@@ -87,6 +87,15 @@ for (i in 1:n_patients) {
   row_vector[cols(log_cond_surv_12_t)] surv_12_t_i =
     cols(log_cond_surv_12_t) > 0 ? log_cond_surv_12_t[i] : rep_row_vector(0, 0);
 
+  // ── Build visit schedule (shared by spop and sample 0→3) ────────────────
+  int v_start = patient_visit_pos[i];
+  int v_end = patient_visit_pos[i + 1] - 1;
+  int n_obs_v = v_end - v_start + 1;
+  int last_obs_wk = t_patient_visits[v_end];
+  int n_fc_v = max(0, (max_all_t - last_obs_wk) %/% forecast_observation_interval);
+  array[n_obs_v + n_fc_v] int patient_visits = build_spop_visit_schedule(
+      t_patient_visits[v_start:v_end], forecast_observation_interval, max_all_t);
+
   // ── Unconditional (spop) pathway ─────────────────────────────────────────
 
   // Draw individual competing times (raw 0-indexed → +1 for 1-based detection week)
@@ -103,9 +112,9 @@ for (i in 1:n_patients) {
 
   int spop_t03 = max_all_t + 1; int spop_c03 = 1;
   if (enable_ms_03) {
-    int t03_raw; int c03_raw;
-    (t03_raw, c03_raw) = survival_time_rng(log_cond_surv_03[i]);
-    spop_t03 = t03_raw + 1; spop_c03 = c03_raw;
+    // Visit-only sampling: dropout can only occur AT visits, not between them.
+    (spop_t03, spop_c03) = visit_only_survival_time_rng(
+        log_cond_surv_03[i], patient_visits, max_all_t);
   }
 
   int spop_cause; int spop_exit;
@@ -152,10 +161,26 @@ for (i in 1:n_patients) {
     }
   }
 
+  // 0→3: use observed data or forecast for admin-censored patients
+  int sample_t03 = max_all_t + 1; int sample_c03 = 1;
+  if (enable_ms_03) {
+    if (ms_final_state[i] == 3) {
+      // Observed dropout — use ground truth
+      sample_t03 = ms_time_03[i]; sample_c03 = 0;
+    } else if (ms_final_state[i] == 0) {
+      // Admin-censored — forecast 0→3 from last observation
+      (sample_t03, sample_c03) = visit_only_survival_time_rng(
+          log_cond_surv_03[i], patient_visits, max_all_t,
+          ms_time_03[i], 1);
+    }
+    // States 1, 2: event observed → dropout didn't happen; leave as (max_all_t+1, 1)
+  }
+
   int sample_cause; int sample_exit;
   (sample_cause, sample_exit) = classify_sample_exit(
     sample_t01, sample_c01, sample_t02, sample_c02,
-    ms_final_state[i], ms_censored_02[i], ms_time_03[i],
+    sample_t03, sample_c03,
+    ms_censored_02[i],
     enable_ms_02, enable_ms_03);
   sample_is_dropout[i] = (sample_cause == 3);
 
@@ -164,7 +189,7 @@ for (i in 1:n_patients) {
     (unused_pfs, unused_cens, sample_ms_pfs[i], sample_ms_right_censored[i]) =
       derive_sample_pfs(sample_cause, sample_exit,
         max_all_t + 1, 1,    // no RECIST component
-        sample_t01, sample_c01, ms_time_03[i], enable_ms_02, enable_ms_03);
+        sample_t01, sample_c01, sample_t03, enable_ms_02, enable_ms_03);
   }
 
   (sample_os[i], sample_os_censored[i]) = derive_sample_os_rng(
@@ -174,7 +199,7 @@ for (i in 1:n_patients) {
     sample_t01, sample_t02,
     ms_time_01[i],
     ms_censored_12[i], ms_time_12[i],
-    ms_censored_32[i], ms_time_03[i], ms_time_32[i]);
+    ms_censored_32[i], sample_t03, ms_time_32[i]);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
