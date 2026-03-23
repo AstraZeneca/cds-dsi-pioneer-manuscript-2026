@@ -1,0 +1,391 @@
+**Last Updated:** November 14, 2025
+
+## Overview {#sec-arch-overview}
+
+This document describes the architectural design patterns and computational optimization strategies used in the PIONEER Bayesian hierarchical modeling system for oncology trial analysis.
+
+The modeling system uses a modular Stan architecture with:
+
+- **Three-level hierarchical parameters** (population → trial → patient)
+- **Optimized state-space computations** for biomarker dynamics
+- **Flexible feature flags** for incremental model complexity
+- **QR decomposition** for numerical stability
+
+::: {.callout-tip}
+## Related Pages
+- See [Model Specification](model-specification.qmd) for complete mathematical details
+- See [Onboarding Tutorial](onboarding-tutorial.qmd) for a learning path
+:::
+
+---
+
+## Multi-Level Hierarchical Parameter Design {#sec-hierarchical}
+
+### Design Philosophy
+
+The model uses a **three-level hierarchy** for most parameters:
+
+1. **Population level** - Shared across all trials and patients
+2. **Trial level** - Shared within a trial, varying between trials
+3. **Patient level** - Individual patient effects
+
+This design allows:
+
+- **Information sharing** across trials while respecting trial-specific effects
+- **Shrinkage toward population means** when data is sparse
+- **Explicit modeling** of between-trial and within-trial variation
+- **Interpretable hyperparameters** that control shrinkage strength
+
+### Hierarchical Structure Pattern
+
+#### Standard Three-Level Hierarchy
+
+For a parameter like tumor regression rate intercept:
+
+```stan
+// Population level (global mean)
+real tr_intercept_pop;
+
+// Trial level (trial-specific deviations)
+real<lower=0> tr_sd_trial_intercept;           // Between-trial SD
+vector[n_trials] tr_raw_trial_intercept;       // Raw trial effects (std normal)
+vector[n_trials] tr_trial_intercept;           // Centered trial effects
+
+// Patient level (patient-specific deviations)
+real<lower=0> tr_sd_patient_intercept;         // Within-trial SD
+vector[n_patients] tr_raw_patient_intercept;   // Raw patient effects (std normal)
+vector[n_patients] tr_patient_intercept;       // Final patient-level parameters
+```
+
+#### Centering Computation
+
+```stan
+// Trial effects centered on population mean
+tr_trial_intercept = tr_intercept_pop + tr_sd_trial_intercept * tr_raw_trial_intercept;
+
+// Patient effects centered on their trial mean
+tr_patient_intercept = tr_trial_intercept[patient_trial] +
+                       tr_sd_patient_intercept * tr_raw_patient_intercept;
+```
+
+### Module-Specific Naming Conventions {#sec-naming}
+
+All parameters follow consistent prefixes based on their module:
+
+| Module | Prefix | Example |
+|--------|--------|---------|
+| Tumor Regression | `tr_` | `tr_intercept_pop`, `tr_sd_trial_intercept` |
+| Growth Fraction | `frac_` | `frac_intercept_pop`, `frac_sd_patient_intercept` |
+| Initial State | `init_` | `init_intercept_pop`, `init_sd_trial_intercept` |
+| Multistate Hazard | `ms_` | `ms_log_lambda_gp_01_pop_intercept`, `ms_time_varying_coef_01` |
+
+### Parameter Naming Template
+
+```
+<module>_<quantity>_<level>_<detail>
+```
+
+**Examples:**
+
+- `tr_intercept_pop` - Tumor regression intercept at population level
+- `tr_sd_trial_intercept` - Standard deviation of trial-level tumor regression intercepts
+- `tr_raw_trial_intercept` - Raw (non-centered) trial-level effects
+- `frac_sd_patient_intercept` - Standard deviation of patient-level growth fraction intercepts
+
+### Covariate Effects with QR Decomposition
+
+For numerical stability, covariate effects use QR decomposition:
+
+```stan
+// Population-level coefficients (in QR space)
+vector[n_covars] tr_coef_qr_pop;
+
+// Trial-level coefficient SDs (in QR space)
+vector<lower=0>[n_covars] tr_sd_trial_coef_qr;
+
+// Trial-level raw effects (in QR space)
+matrix[n_trials, n_covars] tr_raw_trial_coef_qr;
+
+// Transform back to original covariate space
+matrix[n_trials, n_covars] tr_trial_coef =
+  tr_raw_trial_coef_qr * diag_matrix(tr_sd_trial_coef_qr);
+```
+
+### Feature Flags for Optional Parameters
+
+Each module uses feature flags to enable/disable hierarchical levels:
+
+```stan
+// flags.stan
+int<lower=0, upper=1> enable_trial_intercept_tr;
+int<lower=0, upper=1> enable_trial_coef_tr;
+```
+
+This allows:
+
+- **Baseline models** with all flags disabled (population-level only)
+- **Incremental complexity** by enabling features one at a time
+- **Model comparison** to assess value of additional hierarchy
+
+### Hyperparameter Specifications
+
+Hyperparameters control the strength of shrinkage:
+
+```stan
+// hyperparams.stan
+real tr_mean_intercept_pop;                   // Prior mean for population intercept
+real<lower=0> tr_sd_intercept_pop;            // Prior SD for population intercept
+real<lower=0> tr_sd_trial_intercept_hp;       // Prior scale for between-trial SD
+real<lower=0> tr_sd_patient_intercept_hp;     // Prior scale for within-trial SD
+```
+
+**Naming convention:**
+
+- Suffix `_hp` indicates a hyperparameter (prior specification)
+- Hyperparameters are passed as data, not estimated
+
+### Priors
+
+Standard priors follow this pattern:
+
+```stan
+// priors.stan
+
+// Population level
+tr_intercept_pop ~ normal(tr_mean_intercept_pop, tr_sd_intercept_pop);
+
+// Trial level (when enabled)
+if (enable_trial_intercept_tr) {
+    tr_sd_trial_intercept ~ normal(0, tr_sd_trial_intercept_hp);
+    tr_raw_trial_intercept ~ std_normal();
+}
+
+// Patient level
+tr_sd_patient_intercept ~ normal(0, tr_sd_patient_intercept_hp);
+tr_raw_patient_intercept ~ std_normal();
+```
+
+---
+
+## Stan Optimization for State-Space Models {#sec-optimization}
+
+### Performance Challenge
+
+State-space models typically have sequential dependencies where state $t$ depends on state $t-1$, preventing vectorization. The biomarker dynamics model faces this bottleneck.
+
+### Mathematical Foundation
+
+The Stein-Fojo tumor growth model has linear state transitions:
+
+$$
+\begin{aligned}
+x_d[t] &= x_d[t-1] - d \cdot \Delta t + \epsilon_{d,t} \\
+x_g[t] &= x_g[t-1] + g \cdot \Delta t + \epsilon_{g,t}
+\end{aligned}
+$$
+
+This can be rewritten as a cumulative sum:
+
+$$
+x[t] = x[0] + \sum_{k=1}^{t} \delta[k]
+$$
+
+### Optimization Strategy: Vectorized Cumulative Sum
+
+Replace sequential loop with Stan's `cumulative_sum()`:
+
+```stan
+// BEFORE (slow)
+for (t in 2:T) {
+  states[t, 1] = states[t-1, 1] + increment_d[t];
+  states[t, 2] = states[t-1, 2] + increment_g[t];
+}
+
+// AFTER (fast)
+vector[T-1] d_cumsum = cumulative_sum(d_increments);
+vector[T-1] g_cumsum = cumulative_sum(g_increments);
+
+for (t in 2:T) {
+  states[t, 1] = initial_state_d + d_cumsum[t-1];
+  states[t, 2] = initial_state_g + g_cumsum[t-1];
+}
+```
+
+**Benefits:**
+
+- **2-10x speedup** from eliminating sequential dependencies
+- Better CPU cache utilization
+- Enables SIMD vectorization
+
+### GPU-Ready Matrix Formulation
+
+For future GPU acceleration, a matrix-based approach eliminates `map_rect`:
+
+**Step 1:** Create cumulative sum indicator matrix (computed once in transformed data):
+
+```stan
+// Lower triangular matrix of 1's for cumulative sums
+matrix[n_unique_visits, time_range] visit_cumsum_mat;
+```
+
+**Step 2:** Batched computation across all patients:
+
+```stan
+// All patients at once
+matrix[n_unique_visits, n_patients] R_d = visit_cumsum_mat * D_increments';
+matrix[n_unique_visits, n_patients] R_g = visit_cumsum_mat * G_increments';
+```
+
+**Expected speedup:** 10-40x with GPU hardware
+
+**Trade-offs:**
+
+- Computes states at all time points (not just visits)
+- ~2% utilization in sparse visit scenarios
+- But GPU matrix multiply is so fast that this is still faster overall
+
+---
+
+## Time-Varying Process Noise (AR(1) Model) {#sec-ar1-brief}
+
+**Added:** November 19, 2025
+**Status:** Implemented for tumor regression (`tr` module)
+
+The model includes **AR(1) time-varying process noise** to capture smooth, systematic deviations in biomarker dynamics beyond the mechanistic mean trajectory. This separates:
+
+- **Measurement error** (white noise): Independent observation-level noise
+- **Process noise** (colored noise): Smoothly correlated temporal deviations in underlying rates
+
+::: {.callout-tip}
+## Detailed Documentation
+For complete details on the AR(1) implementation, see [AR(1) Process Noise](ar1-process-noise.qmd).
+:::
+
+### Quick Reference
+
+**AR(1) Process:**
+```
+deviation[1] ~ normal(0, σ)
+deviation[t] ~ normal(φ * deviation[t-1], σ * sqrt(1 - φ²))
+```
+
+**Applied to Rates (multiplicative in log-space):**
+```
+patient_rate[t] = exp(log(base_rate) + deviation[t])
+```
+
+**Parameters:**
+
+- `φ` (phi): AR(1) coefficient (0 ≤ φ < 1)
+- `σ` (sigma): Innovation standard deviation
+
+**Feature Flags:**
+```r
+# Enable/disable in stan_data
+enable_patient_process_noise_tr = 1    # Implemented
+enable_patient_process_noise_frac = 0  # Not yet implemented
+```
+
+---
+
+## Module Structure {#sec-modules}
+
+### Stan Module System
+
+The Stan code uses a modular architecture with `#include` directives. Modules are organized by feature in `stan/modules/`:
+
+- **`state_space/`** - State-space infrastructure (orchestrates computation)
+- **`tr/`** - Tumor regression (decrease) dynamics
+- **`frac/`** - Growth fraction dynamics
+- **`init/`** - Initial state modeling
+- **`tumor/`** - Tumor-specific functions (SLD conversions, RECIST)
+- **`multistate/`** - Multistate hazard model (PFS events, death, post-progression)
+- **`measurement/`** - Observation model
+
+### Module File Pattern
+
+Each parameter module (tr, frac, init, etc.) typically follows a 7-file structure:
+
+| File | Purpose |
+|------|---------|
+| `flags.stan` | Feature switches (e.g., `enable_trial_intercept_tr`) |
+| `data.stan` | Data declarations specific to module |
+| `hyperparams.stan` | Prior hyperparameters |
+| `transformed_data.stan` | Data preprocessing |
+| `parameters.stan` | Parameter declarations |
+| `transformed_parameters.stan` | Derived quantities |
+| `priors.stan` | Prior distributions |
+
+Infrastructure modules (state_space, tumor) may have different files based on their needs:
+- `state_space/` - Contains functions, data, transformed_data, transformed_parameters, checks, generated_quantities
+- `tumor/` - Contains data, transformed_data, and tumor.stanfunctions
+
+### File Naming Conventions
+
+**Extensions:**
+
+- **`.stanfunctions`** - Files containing ONLY function definitions (e.g., `util.stanfunctions`, `gp.stanfunctions`)
+- **`.stan`** - Files with data/parameters/model blocks, or block fragments
+
+**Prefixes:**
+
+- **Underscore `_`** - Include fragments (e.g., `_base_data.stan`, `_base_transformed_data.stan`)
+- **No underscore** - Complete model files (e.g., `sf-ssm-log-space.stan`) or module files
+
+**Examples:**
+- `util.stanfunctions` - Utility function library
+- `_base_data.stan` - Base data fragment (included in data block)
+- `modules/tumor/tumor.stanfunctions` - Tumor-specific functions
+- `sf-ssm-log-space.stan` - Complete model file
+
+This standardization makes modules:
+
+- **Self-contained** - Each module includes all its dependencies
+- **Composable** - Modules can be enabled/disabled independently
+- **Maintainable** - Consistent structure across all modules
+- **Clear at a glance** - File type evident from extension/prefix
+
+### Code Organization Best Practices
+
+**Stan Guidelines:**
+
+- Use built-in zero constructors: `zeros_vector()`, `zeros_int_array()`
+- Don't pass array/vector sizes as arguments - use `size()` internally
+- Ignore linter warnings about code section placement (modular `#include` architecture)
+
+**R Guidelines:**
+
+- Follow tidyverse style guide
+- Use modern pipe operator `|>` (not `%>%`)
+- Use `testthat` framework for unit tests
+
+---
+
+## References
+
+### Key Documentation
+
+- [Model Specification](model-specification.qmd) - Complete mathematical specification
+- [AR(1) Process Noise](ar1-process-noise.qmd) - Detailed AR(1) implementation
+- [Onboarding Tutorial](onboarding-tutorial.qmd) - Learning path for newcomers
+
+### Configuration Files
+
+- **Quarto config:** `_quarto.yml` for documentation generation
+- **Targets config:** `_targets.yaml` for workflow configuration
+- **R environment:** `renv.lock` for package versions
+
+---
+
+**Document Version:** 2.0 (Consolidated)
+**Status:** Active Reference
+**Maintainer:** Update when architectural patterns change
+
+::: {.related-pages}
+## Related Pages
+
+- [Model Specification](model-specification.qmd) - Complete mathematical specification
+- [AR(1) Process Noise](ar1-process-noise.qmd) - Time-varying rate implementation
+- [Onboarding Tutorial](onboarding-tutorial.qmd) - Learning path
+- [Parameter Inference](../analysis/parameter-inference.qmd) - See parameters in practice
+:::

@@ -114,6 +114,7 @@ init_project <- function(output_path = output_path, artifacts_path = artifacts_p
     source(here("r", "sclc", "plot_functions.R"))
   } else if (tar_project == "pioneer") {
     source(here("r", "pioneer", "prepare_analysis_data.R"))
+    source(here("r", "pioneer", "prepare_laplace_data.R"))
     source(here("r", "pioneer", "priors.R"))
     source(here("r", "pioneer", "initializers.R"))
   }

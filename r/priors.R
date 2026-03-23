@@ -47,83 +47,87 @@ get_multistate_priors <- function(n_levels, n_time_varying_covar, n_time_invaria
     log_lambda_gp_01_pop_intercept_sd = 1.0,
     log_lambda_gp_01_pop_alpha_alpha = 3.0,
     log_lambda_gp_01_pop_alpha_beta = 1.0,
-    log_lambda_gp_01_pop_rho_alpha = 5.0,
-    log_lambda_gp_01_pop_rho_beta = 5.0,
+    # Pop-level rho: invgamma(3, 60) → mode=15w, mean=30w, P(rho<4)=0.004%
+    # Shifted from (5,5) [mode=0.83w, P(rho<4)=99%] to keep prior mass above
+    # ms_gp_grid_step=4. Hard constraint lower=ms_gp_grid_step was rejected:
+    # it removes 99% of prior mass and creates log-barrier geometry near boundary.
+    log_lambda_gp_01_pop_rho_alpha = 3.0,
+    log_lambda_gp_01_pop_rho_beta = 60.0,
 
     # 0→2 transition
     log_lambda_gp_02_pop_intercept_mean = -4.5,
     log_lambda_gp_02_pop_intercept_sd = 1.0,
     log_lambda_gp_02_pop_alpha_alpha = 3.0,
     log_lambda_gp_02_pop_alpha_beta = 1.0,
-    log_lambda_gp_02_pop_rho_alpha = 5.0,
-    log_lambda_gp_02_pop_rho_beta = 5.0,
+    log_lambda_gp_02_pop_rho_alpha = 3.0,
+    log_lambda_gp_02_pop_rho_beta = 60.0,
 
     # 1→2 transition (sojourn time GP)
     log_lambda_gp_12_s_pop_intercept_mean = -4.5,
     log_lambda_gp_12_s_pop_intercept_sd = 1.0,
     log_lambda_gp_12_s_pop_alpha_alpha = 3.0,
     log_lambda_gp_12_s_pop_alpha_beta = 1.0,
-    log_lambda_gp_12_s_pop_rho_alpha = 5.0,
-    log_lambda_gp_12_s_pop_rho_beta = 5.0,
+    log_lambda_gp_12_s_pop_rho_alpha = 3.0,
+    log_lambda_gp_12_s_pop_rho_beta = 60.0,
 
     # 1→2 transition (clock-forward time GP)
     log_lambda_gp_12_t_pop_intercept_mean = -4.5,
     log_lambda_gp_12_t_pop_intercept_sd = 1.0,
     log_lambda_gp_12_t_pop_alpha_alpha = 3.0,
     log_lambda_gp_12_t_pop_alpha_beta = 1.0,
-    log_lambda_gp_12_t_pop_rho_alpha = 5.0,
-    log_lambda_gp_12_t_pop_rho_beta = 5.0,
+    log_lambda_gp_12_t_pop_rho_alpha = 3.0,
+    log_lambda_gp_12_t_pop_rho_beta = 60.0,
 
-    # Level-level baseline hazard GP hyperparameters
+    # Level-level rho: invgamma(3, 40) → mode=10w, mean=20w, P(rho<4)=0.3%
     log_lambda_gp_01_level_intercept_sd_sd = rep(0.5, n_levels),
     log_lambda_gp_01_level_alpha_alpha = rep(3.0, n_levels),
     log_lambda_gp_01_level_alpha_beta = rep(1.0, n_levels),
-    log_lambda_gp_01_level_rho_alpha = rep(4.0, n_levels),
-    log_lambda_gp_01_level_rho_beta = rep(4.0, n_levels),
+    log_lambda_gp_01_level_rho_alpha = rep(3.0, n_levels),
+    log_lambda_gp_01_level_rho_beta = rep(40.0, n_levels),
 
     log_lambda_gp_02_level_intercept_sd_sd = rep(0.5, n_levels),
     log_lambda_gp_02_level_alpha_alpha = rep(3.0, n_levels),
     log_lambda_gp_02_level_alpha_beta = rep(1.0, n_levels),
-    log_lambda_gp_02_level_rho_alpha = rep(4.0, n_levels),
-    log_lambda_gp_02_level_rho_beta = rep(4.0, n_levels),
+    log_lambda_gp_02_level_rho_alpha = rep(3.0, n_levels),
+    log_lambda_gp_02_level_rho_beta = rep(40.0, n_levels),
 
     log_lambda_gp_12_s_level_intercept_sd_sd = rep(0.5, n_levels),
     log_lambda_gp_12_s_level_alpha_alpha = rep(3.0, n_levels),
     log_lambda_gp_12_s_level_alpha_beta = rep(1.0, n_levels),
-    log_lambda_gp_12_s_level_rho_alpha = rep(4.0, n_levels),
-    log_lambda_gp_12_s_level_rho_beta = rep(4.0, n_levels),
+    log_lambda_gp_12_s_level_rho_alpha = rep(3.0, n_levels),
+    log_lambda_gp_12_s_level_rho_beta = rep(40.0, n_levels),
 
     log_lambda_gp_12_t_level_intercept_sd_sd = rep(0.5, n_levels),
     log_lambda_gp_12_t_level_alpha_alpha = rep(3.0, n_levels),
     log_lambda_gp_12_t_level_alpha_beta = rep(1.0, n_levels),
-    log_lambda_gp_12_t_level_rho_alpha = rep(4.0, n_levels),
-    log_lambda_gp_12_t_level_rho_beta = rep(4.0, n_levels),
+    log_lambda_gp_12_t_level_rho_alpha = rep(3.0, n_levels),
+    log_lambda_gp_12_t_level_rho_beta = rep(40.0, n_levels),
 
     # 0→3 Dropout GP
     log_lambda_gp_03_pop_intercept_mean = -4.5,
     log_lambda_gp_03_pop_intercept_sd = 1.0,
     log_lambda_gp_03_pop_alpha_alpha = 3.0,
     log_lambda_gp_03_pop_alpha_beta = 1.0,
-    log_lambda_gp_03_pop_rho_alpha = 5.0,
-    log_lambda_gp_03_pop_rho_beta = 5.0,
+    log_lambda_gp_03_pop_rho_alpha = 3.0,
+    log_lambda_gp_03_pop_rho_beta = 60.0,
     log_lambda_gp_03_level_intercept_sd_sd = rep(2.0, n_levels),
     log_lambda_gp_03_level_alpha_alpha = rep(3.0, n_levels),
     log_lambda_gp_03_level_alpha_beta = rep(1.0, n_levels),
-    log_lambda_gp_03_level_rho_alpha = rep(5.0, n_levels),
-    log_lambda_gp_03_level_rho_beta = rep(5.0, n_levels),
+    log_lambda_gp_03_level_rho_alpha = rep(3.0, n_levels),
+    log_lambda_gp_03_level_rho_beta = rep(40.0, n_levels),
 
     # 3→2 Off-trial death GP (sojourn time, semi-Markov)
     log_lambda_gp_32_s_pop_intercept_mean = -4.5,
     log_lambda_gp_32_s_pop_intercept_sd = 1.0,
     log_lambda_gp_32_s_pop_alpha_alpha = 3.0,
     log_lambda_gp_32_s_pop_alpha_beta = 1.0,
-    log_lambda_gp_32_s_pop_rho_alpha = 5.0,
-    log_lambda_gp_32_s_pop_rho_beta = 5.0,
+    log_lambda_gp_32_s_pop_rho_alpha = 3.0,
+    log_lambda_gp_32_s_pop_rho_beta = 60.0,
     log_lambda_gp_32_s_level_intercept_sd_sd = rep(0.5, n_levels),
     log_lambda_gp_32_s_level_alpha_alpha = rep(3.0, n_levels),
     log_lambda_gp_32_s_level_alpha_beta = rep(1.0, n_levels),
-    log_lambda_gp_32_s_level_rho_alpha = rep(4.0, n_levels),
-    log_lambda_gp_32_s_level_rho_beta = rep(4.0, n_levels),
+    log_lambda_gp_32_s_level_rho_alpha = rep(3.0, n_levels),
+    log_lambda_gp_32_s_level_rho_beta = rep(40.0, n_levels),
 
     # Time-varying covariate coefficient hyperparameters
     time_varying_coef_01_mean = rep(0, n_time_varying_covar),
@@ -208,10 +212,10 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     # mode = beta/(alpha+1) = 0.75/6 = 0.125 (at typical posterior)
     measure_sd_sld_alpha = 5,
     measure_sd_sld_beta = 0.75,
-    # Student-t degrees of freedom for SLD observation model (fixed, not estimated)
+    # Student-t degrees of freedom for measurement noise (fixed, not estimated; shared across biomarkers)
     # nu=5: robust against outliers, enough tail weight to downweight erratic measurements
     # without being as heavy-tailed as nu=3. Increase toward 30+ to approach Gaussian.
-    measure_nu_sld = 5,
+    measure_nu = 5,
 
     # Process parameters
     decrease_process_alpha = 9.7,

@@ -80,3 +80,76 @@ for (i in 1:n_patients) {
 
 array[n_patients + 1] int<lower = 1> forecast_visits_pos = create_pos(n_patient_forecast_visits);
 
+// ============================================================================
+// PATIENT ROUTING: HMC vs Laplace index arrays
+// ============================================================================
+// Derived from n_hmc_patients, laplace_split_level, laplace_target_group
+// (all declared in _base_hierarchy_data.stan).
+// Lives here (not laplace/transformed_data.stan) because state_space and
+// multistate transformed_parameters are shared across all models.
+//
+// When Laplace is disabled (laplace_split_level = 0):
+//   hmc_patient_idx = [1, 2, ..., n_patients]  (all patients are HMC)
+//   laplace_patient_idx is empty
+
+int n_laplace_patients = n_patients - n_hmc_patients;
+array[n_hmc_patients] int hmc_patient_idx;
+array[n_laplace_patients] int laplace_patient_idx;
+
+{
+  int j_hmc = 0;
+  int j_lap = 0;
+  for (p in 1:n_patients) {
+    if (laplace_split_level > 0 &&
+        patient_level_groups[p, laplace_split_level] != laplace_target_group) {
+      j_lap += 1;
+      laplace_patient_idx[j_lap] = p;
+    } else {
+      j_hmc += 1;
+      hmc_patient_idx[j_hmc] = p;
+    }
+  }
+  if (j_hmc != n_hmc_patients)
+    fatal_error("n_hmc_patients=", n_hmc_patients,
+                " but found ", j_hmc, " HMC patients via routing key");
+}
+
+// HMC-local visit position array — parallel to patient_visit_pos but for HMC patients only.
+// create_pos uses fancy indexing: n_patient_visits[hmc_patient_idx] selects HMC visit counts.
+int n_hmc_visits = sum(n_patient_visits[hmc_patient_idx]);
+array[n_hmc_patients + 1] int hmc_visit_pos = create_pos(n_patient_visits[hmc_patient_idx]);
+
+// HMC-patient position array: like trial_patient_pos but counts only HMC patients
+// per trial. Used to slice n_hmc_patients-sized endpoint arrays in GQ by trial.
+array[n_trials + 1] int hmc_trial_patient_pos;
+{
+  array[n_trials] int n_hmc_per_trial = rep_array(0, n_trials);
+  for (j in 1:n_hmc_patients) {
+    n_hmc_per_trial[patient_trial[hmc_patient_idx[j]]] += 1;
+  }
+  hmc_trial_patient_pos = create_pos(n_hmc_per_trial);
+}
+
+if (hmc_visit_pos[n_hmc_patients + 1] - 1 != n_hmc_visits)
+  fatal_error("n_hmc_visits=", n_hmc_visits, " inconsistent with hmc_visit_pos sum");
+
+// ============================================================================
+// DUAL INDEXING CONVENTION
+// ============================================================================
+// Two visit position systems coexist after this point:
+//
+//   UNIFIED positions  — patient_visit_pos[p]  where p = hmc_patient_idx[j]
+//                                                    or p = laplace_patient_idx[i]
+//     Used for: all data arrays (normalized_psa, t_patient_visit_idx,
+//               ms_final_state, ms_time_*, psa_values, log_baseline_psa, ...)
+//
+//   HMC-LOCAL positions — hmc_visit_pos[j]  where j = 1..n_hmc_patients
+//     Used for: states[n_hmc_visits, 2] only
+//
+// Pattern in every HMC patient loop:
+//   for (j in 1:n_hmc_patients) {
+//     int p = hmc_patient_idx[j];               // unified patient index
+//     int data_start = patient_visit_pos[p];    // → data arrays
+//     int state_start = hmc_visit_pos[j];       // → states matrix
+//   }
+

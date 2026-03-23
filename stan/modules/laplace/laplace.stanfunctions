@@ -1,0 +1,554 @@
+// laplace.stanfunctions — Hand-coded per-patient Laplace approximation
+//
+// Replaces the built-in laplace_marginal_tol with an explicit Newton solver
+// that exploits the block-diagonal structure (2050 independent 3D problems).
+// Each patient's NCP intercepts z_i = (z_tr, z_frac, z_init) are integrated
+// out analytically using Laplace's method.
+//
+// The joint log-density for patient i decomposes as:
+//   ℓ(z_i) = loglik_psa(z_i) + loglik_ms(z_i) + logprior(z_i)
+// where logprior(z_i) = -0.5 * z_i' * z_i  (standard normal NCP prior).
+
+/**
+ * Partial sum for reduce_sum parallelism over non-target patients.
+ * patient_slice: subset of [1..n_laplace_patients] patient indices.
+ * All arrays indexed by unified patient index p = laplace_patient_idx[i].
+ * Uses start:end directly (laplace_patient_range[i] = i, so values == positions).
+ */
+real laplace_partial_sum(
+    array[] int patient_slice, int start, int end,
+    // PSA data (unified indexing)
+    vector normalized_psa,
+    array[] int patient_visit_pos,
+    array[] int n_patient_screening_visits,
+    array[] int t_patient_visit_idx,
+    array[] int laplace_patient_idx_arg,
+    // Per-patient offsets (AD-active)
+    vector lap_tr_offset, vector lap_frac_offset, vector lap_init_offset,
+    // SDs and measurement noise
+    real tr_sd, real frac_sd, real init_sd, real measure_sd,
+    // Pre-computed base log-hazards [n_laplace_patients x max_all_t] or [n x 0]
+    matrix base_lh_01, matrix base_lh_02,
+    // Time-varying covariate coefficients
+    vector tv_coef_01, vector tv_coef_02, int n_tv,
+    // PSA scale factors
+    array[] real log_baseline_psa,
+    real median_log_psa, real iqr_log_psa,
+    // MS event data (unified indexing)
+    array[] int ms_final_state,
+    array[] int ms_time_01, array[] int ms_time_02,
+    array[] int ms_censored_01, array[] int ms_censored_02,
+    array[] int ms_prog_deterministic,
+    int enable_ms_01, int enable_ms_02,
+    real newton_tol, int max_iter) {
+
+  real ll = 0;
+  for (i in start:end) {   // laplace_patient_range[i] = i, so start:end == patient_slice values
+    int p = laplace_patient_idx_arg[i];
+    int v_start = patient_visit_pos[p];
+    int v_end   = patient_visit_pos[p + 1] - 1;
+    int treat_start = v_start + n_patient_screening_visits[p];
+    int n_obs = v_end - treat_start + 1;
+
+    ll += laplace_patient_marginal(
+      normalized_psa[treat_start:v_end],
+      t_patient_visit_idx[treat_start:v_end], n_obs,
+      lap_tr_offset[i], lap_frac_offset[i], lap_init_offset[i],
+      tr_sd, frac_sd, init_sd, measure_sd,
+      log_baseline_psa[p], median_log_psa, iqr_log_psa,
+      base_lh_01[i], base_lh_02[i],   // zero-col row_vector when disabled
+      tv_coef_01, tv_coef_02, n_tv,
+      ms_final_state[p], ms_time_01[p], ms_time_02[p],
+      ms_censored_01[p], ms_censored_02[p],
+      ms_prog_deterministic[p],
+      enable_ms_01, enable_ms_02,
+      newton_tol, max_iter
+    );
+  }
+  return ll;
+}
+
+/**
+ * Per-patient Laplace marginal: integrates out 3D NCP vector z_i.
+ *
+ * Computes log ∫ exp(ℓ(z)) dz ≈ ℓ(ẑ) + 1.5·log(2π) - 0.5·log|H(ẑ)|
+ * where ẑ is found by Newton's method.
+ *
+ * Currently uses identity Hessian approximation (log|H| = 0) while the
+ * diagonal Hessian implementation is being debugged for AD tape safety.
+ * The ℓ(ẑ) term provides the main contribution; the Hessian correction
+ * is a secondary accuracy improvement.
+ */
+real laplace_patient_marginal(
+    vector obs, array[] int time_idx, int n_obs,
+    real tr_offset, real frac_offset, real init_offset,
+    real tr_sd, real frac_sd, real init_sd, real measure_sd,
+    real log_bpsa, real med_log_psa, real iqr_log_psa,
+    row_vector base_lh_01, row_vector base_lh_02,
+    vector tv_coef_01, vector tv_coef_02, int n_tv,
+    int final_state, int t_01, int t_02,
+    int cens_01, int cens_02, int prog_det,
+    int do_01, int do_02,
+    real newton_tol, int max_iter) {
+
+  int max_t_01 = cols(base_lh_01);
+  int max_t_02 = cols(base_lh_02);
+
+  // ========================================================================
+  // Phase 1: Newton solver to find mode ẑ
+  // ========================================================================
+  vector[3] z = rep_vector(0.0, 3);
+
+  // Precision for PSA likelihood
+  real inv_sigma2 = 1.0 / fmax(square(measure_sd), 1e-10);
+
+  for (iter in 1:max_iter) {
+    // --- NCP → constrained parameters ---
+    real tr_loc = tr_offset + tr_sd * z[1];
+    real frac_logit = frac_offset + frac_sd * z[2];
+    real init_logit = init_offset + init_sd * z[3];
+
+    real tr_loc_clamped = fmax(fmin(tr_loc, 20.0), -20.0);
+    real log_dec_frac = log_inv_logit(frac_logit);
+    real log_gro_frac = log1m_inv_logit(frac_logit);
+    real dec_rate = exp(fmin(fmax(tr_loc_clamped + log_dec_frac, -20.0), 10.0));
+    real gro_rate = exp(fmin(fmax(tr_loc_clamped + log_gro_frac, -20.0), 10.0));
+    real init_log_dec = log_inv_logit(init_logit);
+    real init_log_gro = log1m_inv_logit(init_logit);
+
+    real dec_frac = inv_logit(frac_logit);
+    real gro_frac = 1.0 - dec_frac;
+    real init_dec = inv_logit(init_logit);
+    real init_gro = 1.0 - init_dec;
+
+    // --- Initialize gradient and neg-Hessian with prior ---
+    vector[3] grad = -z;
+    matrix[3, 3] neg_H = identity_matrix(3);
+
+    // --- PSA gradient + Gauss-Newton Hessian ---
+    for (v in 1:n_obs) {
+      real dt = time_idx[v] - 1.0;
+      real state_dec = init_log_dec - dec_rate * dt;
+      real state_gro = fmin(init_log_gro + gro_rate * dt, 500.0);
+      real log_pred = log_sum_exp(state_dec, state_gro);
+
+      if (obs[v] > 0) {
+        real r_v = log(obs[v]) - log_pred;
+        real w_dec = exp(state_dec - log_pred);
+        real w_gro = 1.0 - w_dec;
+
+        vector[3] J;
+        J[1] = tr_sd * dt * (w_gro * gro_rate - w_dec * dec_rate);
+        J[2] = -frac_sd * dt * (w_dec * dec_rate * gro_frac + w_gro * gro_rate * dec_frac);
+        J[3] = init_sd * (w_dec * init_gro - w_gro * init_dec);
+
+        // Hard cap Jacobian norm for Newton (Newton is not differentiable)
+        real J_norm_sq = dot_self(J);
+        if (J_norm_sq > 1e8) J *= 1e4 / sqrt(J_norm_sq);
+
+        grad += inv_sigma2 * r_v * J;
+        neg_H += inv_sigma2 * J * J';
+      }
+    }
+
+    // --- MS gradient + outer-product Hessian (0→1 and 0→2) ---
+    real log_dec_rate_val = tr_loc_clamped + log_dec_frac;
+    real log_gro_rate_val = tr_loc_clamped + log_gro_frac;
+    vector[3] d_log_dec_dz = [tr_sd, frac_sd * gro_frac, 0.0]';
+    vector[3] d_log_gro_dz = [tr_sd, -frac_sd * dec_frac, 0.0]';
+
+    for (trans in 1:2) {
+      int do_trans = (trans == 1) ? do_01 : do_02;
+      if (!do_trans) continue;
+
+      int max_t_trans = (trans == 1) ? max_t_01 : max_t_02;
+      if (max_t_trans == 0) continue;
+
+      int surv_end;
+      int event_t = 0;
+
+      if (final_state == 0) {
+        surv_end = (trans == 1) ? t_01 : t_02;
+      } else if (final_state == 1) {
+        if (trans == 1) {
+          surv_end = t_01 > 1 ? t_01 - 1 : 0;
+          if (!prog_det && t_01 > 0) event_t = t_01;
+        } else {
+          surv_end = t_01 > 1 ? t_01 - 1 : 0;
+        }
+      } else if (final_state == 2) {
+        if (t_01 == 0) {
+          if (trans == 1) {
+            surv_end = t_02 > 1 ? t_02 - 1 : 0;
+          } else {
+            surv_end = t_02 > 1 ? t_02 - 1 : 0;
+            if (t_02 > 0) event_t = t_02;
+          }
+        } else {
+          if (trans == 1) {
+            surv_end = t_01 > 1 ? t_01 - 1 : 0;
+            if (!prog_det && t_01 > 0) event_t = t_01;
+          } else {
+            surv_end = t_01 > 1 ? t_01 - 1 : 0;
+          }
+        }
+      } else {
+        surv_end = 0;
+      }
+
+      if (surv_end > max_t_trans) surv_end = max_t_trans;
+
+      for (t in 1:surv_end) {
+        real dt_t = t - 1.0;
+        real sd_t = init_log_dec - dec_rate * dt_t;
+        real sg_t = fmin(init_log_gro + gro_rate * dt_t, 500.0);
+        real lp_t = log_sum_exp(sd_t, sg_t);
+
+        real eta_tv = 0;
+        vector[3] d_eta_dz = rep_vector(0.0, 3);
+
+        if (n_tv >= 1) {
+          real feat1 = (log_bpsa + lp_t - med_log_psa) / iqr_log_psa;
+          real coef1 = (trans == 1) ? tv_coef_01[1] : tv_coef_02[1];
+          eta_tv += coef1 * feat1;
+
+          real wd_t = exp(sd_t - lp_t);
+          real wg_t = 1.0 - wd_t;
+          vector[3] d_lp_dz;
+          d_lp_dz[1] = tr_sd * dt_t * (wg_t * gro_rate - wd_t * dec_rate);
+          d_lp_dz[2] = -frac_sd * dt_t * (wd_t * dec_rate * gro_frac + wg_t * gro_rate * dec_frac);
+          d_lp_dz[3] = init_sd * (wd_t * init_gro - wg_t * init_dec);
+          d_eta_dz += coef1 / iqr_log_psa * d_lp_dz;
+        }
+        if (n_tv >= 2) {
+          real coef2 = (trans == 1) ? tv_coef_01[2] : tv_coef_02[2];
+          eta_tv += coef2 * log_dec_rate_val;
+          d_eta_dz += coef2 * d_log_dec_dz;
+        }
+        if (n_tv >= 3) {
+          real coef3 = (trans == 1) ? tv_coef_01[3] : tv_coef_02[3];
+          eta_tv += coef3 * log_gro_rate_val;
+          d_eta_dz += coef3 * d_log_gro_dz;
+        }
+
+        real d_norm_sq = dot_self(d_eta_dz);
+        if (d_norm_sq > 1e8) d_eta_dz *= 1e4 / sqrt(d_norm_sq);
+
+        real base_h = (trans == 1) ? base_lh_01[t] : base_lh_02[t];
+        real hazard = exp(fmin(base_h + eta_tv, 30.0));
+
+        grad -= hazard * d_eta_dz;
+        neg_H += hazard * d_eta_dz * d_eta_dz';
+      }
+
+      if (event_t > 0 && event_t <= max_t_trans) {
+        real dt_e = event_t - 1.0;
+        real sd_e = init_log_dec - dec_rate * dt_e;
+        real sg_e = fmin(init_log_gro + gro_rate * dt_e, 500.0);
+        real lp_e = log_sum_exp(sd_e, sg_e);
+
+        real eta_tv_e = 0;
+        vector[3] d_eta_dz_e = rep_vector(0.0, 3);
+
+        if (n_tv >= 1) {
+          real log_abs_psa_e = log_bpsa + lp_e;
+          real feat1_e = (log_abs_psa_e - med_log_psa) / iqr_log_psa;
+          real coef1 = (trans == 1) ? tv_coef_01[1] : tv_coef_02[1];
+          eta_tv_e += coef1 * feat1_e;
+
+          real wd_e = exp(sd_e - lp_e);
+          real wg_e = 1.0 - wd_e;
+          vector[3] d_lp_dz_e;
+          d_lp_dz_e[1] = tr_sd * dt_e * (wg_e * gro_rate - wd_e * dec_rate);
+          d_lp_dz_e[2] = -frac_sd * dt_e * (wd_e * dec_rate * gro_frac + wg_e * gro_rate * dec_frac);
+          d_lp_dz_e[3] = init_sd * (wd_e * init_gro - wg_e * init_dec);
+          d_eta_dz_e += coef1 / iqr_log_psa * d_lp_dz_e;
+        }
+        if (n_tv >= 2) {
+          real coef2 = (trans == 1) ? tv_coef_01[2] : tv_coef_02[2];
+          eta_tv_e += coef2 * log_dec_rate_val;
+          d_eta_dz_e += coef2 * d_log_dec_dz;
+        }
+        if (n_tv >= 3) {
+          real coef3 = (trans == 1) ? tv_coef_01[3] : tv_coef_02[3];
+          eta_tv_e += coef3 * log_gro_rate_val;
+          d_eta_dz_e += coef3 * d_log_gro_dz;
+        }
+
+        real base_h_e = (trans == 1) ? base_lh_01[event_t] : base_lh_02[event_t];
+        real h_e = exp(fmax(fmin(base_h_e + eta_tv_e, 30.0), -35.0));
+
+        real de_norm_sq = dot_self(d_eta_dz_e);
+        if (de_norm_sq > 1e8) d_eta_dz_e *= 1e4 / sqrt(de_norm_sq);
+
+        real log_event = log1m_exp(-h_e);
+        real w_event;
+        if (h_e < 1e-4) {
+          w_event = 1.0 - 0.5 * h_e;
+        } else {
+          w_event = h_e / expm1(h_e);
+        }
+        grad += w_event * d_eta_dz_e;
+        neg_H += fmin(w_event, 1e15) * d_eta_dz_e * d_eta_dz_e';
+      }
+    }
+
+    // --- Full Newton step via Cholesky solve ---
+    // neg_H is always PD (identity_matrix(3) + accumulated non-negative outer products).
+    // Force symmetry: large entries (~1e7) can lose bit-exact symmetry from
+    // floating-point accumulation, causing mdivide_left_spd to reject.
+    neg_H = 0.5 * (neg_H + neg_H');
+    vector[3] step = mdivide_left_spd(neg_H, grad);
+
+    // Trust-region: cap step norm at 2 to avoid overshooting on first iteration.
+    real step_norm_sq = dot_self(step);
+    if (step_norm_sq > 4.0) step *= 2.0 / sqrt(step_norm_sq);
+    z += step;
+
+    if (max(abs(grad)) < newton_tol) break;
+  }
+
+  // IFT: detach z from Stan's AD tape before Phase 2.
+  // At the mode, ∂ℓ/∂z = 0 (by definition), so the total gradient w.r.t.
+  // population parameters through z is mathematically zero. However, Stan's
+  // reverse-mode AD propagates through all Newton iterations, amplifying
+  // gradients via the chain rule and producing NaN/Inf. round() has zero AD
+  // derivative in Stan Math (piecewise-constant → adjoint = 0), so
+  // round(z * 1e6) / 1e6 has the correct forward value (within 1e-6) but
+  // zero gradient — Phase 2 sees z_mode as data, giving the correct IFT result.
+  vector[3] z_mode;
+  for (k in 1:3)
+    z_mode[k] = round(z[k] * 1e6) / 1e6;
+
+  // ========================================================================
+  // Phase 2: Evaluate ℓ(ẑ) at converged z (log-likelihood only, no Hessian)
+  // ========================================================================
+  real ll = -0.5 * dot_self(z_mode);  // Prior
+  matrix[3, 3] neg_H_mode = identity_matrix(3);  // Start with prior Hessian = I
+  real inv_sigma2_f = 1.0 / fmax(square(measure_sd), 1e-10);
+
+  // Constrained params at mode
+  real tr_loc_f = tr_offset + tr_sd * z_mode[1];
+  real frac_logit_f = frac_offset + frac_sd * z_mode[2];
+  real init_logit_f = init_offset + init_sd * z_mode[3];
+
+  real tr_loc_f_clamped = fmax(fmin(tr_loc_f, 20.0), -20.0);
+  real log_dec_frac_f = log_inv_logit(frac_logit_f);
+  real log_gro_frac_f = log1m_inv_logit(frac_logit_f);
+  real dec_rate_f = exp(fmin(fmax(tr_loc_f_clamped + log_dec_frac_f, -20.0), 10.0));
+  real gro_rate_f = exp(fmin(fmax(tr_loc_f_clamped + log_gro_frac_f, -20.0), 10.0));
+  real init_log_dec_f = log_inv_logit(init_logit_f);
+  real init_log_gro_f = log1m_inv_logit(init_logit_f);
+
+  // Extra derived quantities needed for Hessian accumulation
+  real dec_frac_f = exp(log_dec_frac_f);
+  real gro_frac_f = exp(log_gro_frac_f);
+  real init_dec_f = exp(init_log_dec_f);
+  real init_gro_f = exp(init_log_gro_f);
+
+  // PSA log-likelihood
+  for (v in 1:n_obs) {
+    real dt = time_idx[v] - 1.0;
+    real state_dec = init_log_dec_f - dec_rate_f * dt;
+    real state_gro = fmin(init_log_gro_f + gro_rate_f * dt, 500.0);
+    real log_pred = log_sum_exp(state_dec, state_gro);
+
+    if (obs[v] > 0) {
+      ll += normal_lpdf(log(obs[v]) | log_pred, measure_sd);
+
+      // Accumulate Gauss-Newton Hessian for Laplace correction
+      real w_dec_f = exp(state_dec - log_pred);
+      real w_gro_f = 1.0 - w_dec_f;
+      vector[3] J_f;
+      J_f[1] = tr_sd * dt * (w_gro_f * gro_rate_f - w_dec_f * dec_rate_f);
+      J_f[2] = -frac_sd * dt * (w_dec_f * dec_rate_f * gro_frac_f + w_gro_f * gro_rate_f * dec_frac_f);
+      J_f[3] = init_sd * (w_dec_f * init_gro_f - w_gro_f * init_dec_f);
+      // Cap J_f norm (same guard as Phase 1 Newton)
+      real J_f_norm_sq = dot_self(J_f);
+      if (J_f_norm_sq > 1e8) J_f *= 1e4 / sqrt(J_f_norm_sq);
+      neg_H_mode += inv_sigma2_f * J_f * J_f';
+    }
+  }
+
+  // MS log-likelihood (0→1 and 0→2 z-dependent transitions)
+  real log_dec_rate_f_val = tr_loc_f_clamped + log_dec_frac_f;
+  real log_gro_rate_f_val = tr_loc_f_clamped + log_gro_frac_f;
+  // Derivatives of log-rates w.r.t. z (for Hessian accumulation in MS loops)
+  vector[3] d_log_dec_dz_f = [tr_sd, frac_sd * gro_frac_f, 0.0]';
+  vector[3] d_log_gro_dz_f = [tr_sd, -frac_sd * dec_frac_f, 0.0]';
+
+  for (trans in 1:2) {
+    int do_trans = (trans == 1) ? do_01 : do_02;
+    if (!do_trans) continue;
+
+    int max_t_trans = (trans == 1) ? max_t_01 : max_t_02;
+    if (max_t_trans == 0) continue;
+
+    int surv_end;
+    int event_t = 0;
+
+    if (final_state == 0) {
+      surv_end = (trans == 1) ? t_01 : t_02;
+    } else if (final_state == 1) {
+      if (trans == 1) {
+        surv_end = t_01 > 1 ? t_01 - 1 : 0;
+        if (!prog_det && t_01 > 0) event_t = t_01;
+      } else {
+        surv_end = t_01 > 1 ? t_01 - 1 : 0;
+      }
+    } else if (final_state == 2) {
+      if (t_01 == 0) {
+        if (trans == 1) {
+          surv_end = t_02 > 1 ? t_02 - 1 : 0;
+        } else {
+          surv_end = t_02 > 1 ? t_02 - 1 : 0;
+          if (t_02 > 0) event_t = t_02;
+        }
+      } else {
+        if (trans == 1) {
+          surv_end = t_01 > 1 ? t_01 - 1 : 0;
+          if (!prog_det && t_01 > 0) event_t = t_01;
+        } else {
+          surv_end = t_01 > 1 ? t_01 - 1 : 0;
+        }
+      }
+    } else {
+      surv_end = 0;
+    }
+
+    if (surv_end > max_t_trans) surv_end = max_t_trans;
+
+    for (t in 1:surv_end) {
+      real dt_t = t - 1.0;
+      real sd_t = init_log_dec_f - dec_rate_f * dt_t;
+      real sg_t = fmin(init_log_gro_f + gro_rate_f * dt_t, 500.0);
+      real lp_t = log_sum_exp(sd_t, sg_t);
+
+      real eta_tv = 0;
+      vector[3] d_eta_dz_t = rep_vector(0.0, 3);
+      if (n_tv >= 1) {
+        real coef1_t = (trans == 1) ? tv_coef_01[1] : tv_coef_02[1];
+        real feat1 = (log_bpsa + lp_t - med_log_psa) / iqr_log_psa;
+        eta_tv += coef1_t * feat1;
+
+        real wd_t = exp(sd_t - lp_t);
+        real wg_t = 1.0 - wd_t;
+        vector[3] d_lp_dz_t;
+        d_lp_dz_t[1] = tr_sd * dt_t * (wg_t * gro_rate_f - wd_t * dec_rate_f);
+        d_lp_dz_t[2] = -frac_sd * dt_t * (wd_t * dec_rate_f * gro_frac_f + wg_t * gro_rate_f * dec_frac_f);
+        d_lp_dz_t[3] = init_sd * (wd_t * init_gro_f - wg_t * init_dec_f);
+        d_eta_dz_t += coef1_t / iqr_log_psa * d_lp_dz_t;
+      }
+      if (n_tv >= 2)
+        d_eta_dz_t += ((trans == 1) ? tv_coef_01[2] : tv_coef_02[2]) * d_log_dec_dz_f;
+      if (n_tv >= 3)
+        d_eta_dz_t += ((trans == 1) ? tv_coef_01[3] : tv_coef_02[3]) * d_log_gro_dz_f;
+      if (n_tv >= 2)
+        eta_tv += ((trans == 1) ? tv_coef_01[2] : tv_coef_02[2]) * log_dec_rate_f_val;
+      if (n_tv >= 3)
+        eta_tv += ((trans == 1) ? tv_coef_01[3] : tv_coef_02[3]) * log_gro_rate_f_val;
+
+      real base_h = (trans == 1) ? base_lh_01[t] : base_lh_02[t];
+      real hazard_t = exp(fmin(base_h + eta_tv, 30.0));
+      ll -= hazard_t;
+      real d_norm_sq_t = dot_self(d_eta_dz_t);
+      if (d_norm_sq_t > 1e8) d_eta_dz_t *= 1e4 / sqrt(d_norm_sq_t);
+      neg_H_mode += hazard_t * d_eta_dz_t * d_eta_dz_t';
+    }
+
+    if (event_t > 0 && event_t <= max_t_trans) {
+      real dt_e = event_t - 1.0;
+      real sd_e = init_log_dec_f - dec_rate_f * dt_e;
+      real sg_e = fmin(init_log_gro_f + gro_rate_f * dt_e, 500.0);
+      real lp_e = log_sum_exp(sd_e, sg_e);
+
+      real eta_tv_e = 0;
+      vector[3] d_eta_dz_e_f = rep_vector(0.0, 3);
+      if (n_tv >= 1) {
+        real coef1_e = (trans == 1) ? tv_coef_01[1] : tv_coef_02[1];
+        real feat1_e = (log_bpsa + lp_e - med_log_psa) / iqr_log_psa;
+        eta_tv_e += coef1_e * feat1_e;
+
+        real wd_e = exp(sd_e - lp_e);
+        real wg_e = 1.0 - wd_e;
+        vector[3] d_lp_dz_e_f;
+        d_lp_dz_e_f[1] = tr_sd * dt_e * (wg_e * gro_rate_f - wd_e * dec_rate_f);
+        d_lp_dz_e_f[2] = -frac_sd * dt_e * (wd_e * dec_rate_f * gro_frac_f + wg_e * gro_rate_f * dec_frac_f);
+        d_lp_dz_e_f[3] = init_sd * (wd_e * init_gro_f - wg_e * init_dec_f);
+        d_eta_dz_e_f += coef1_e / iqr_log_psa * d_lp_dz_e_f;
+      }
+      if (n_tv >= 2)
+        d_eta_dz_e_f += ((trans == 1) ? tv_coef_01[2] : tv_coef_02[2]) * d_log_dec_dz_f;
+      if (n_tv >= 3)
+        d_eta_dz_e_f += ((trans == 1) ? tv_coef_01[3] : tv_coef_02[3]) * d_log_gro_dz_f;
+      if (n_tv >= 2)
+        eta_tv_e += ((trans == 1) ? tv_coef_01[2] : tv_coef_02[2]) * log_dec_rate_f_val;
+      if (n_tv >= 3)
+        eta_tv_e += ((trans == 1) ? tv_coef_01[3] : tv_coef_02[3]) * log_gro_rate_f_val;
+
+      real base_h_e = (trans == 1) ? base_lh_01[event_t] : base_lh_02[event_t];
+      real h_e = exp(fmax(fmin(base_h_e + eta_tv_e, 30.0), -35.0));
+      ll += log1m_exp(-h_e);
+
+      // Event Hessian contribution
+      real w_event_f;
+      if (h_e < 1e-4)
+        w_event_f = 1.0 - 0.5 * h_e;
+      else
+        w_event_f = h_e / expm1(h_e);
+      real de_norm_sq_f = dot_self(d_eta_dz_e_f);
+      if (de_norm_sq_f > 1e8) d_eta_dz_e_f *= 1e4 / sqrt(de_norm_sq_f);
+      neg_H_mode += fmin(w_event_f, 1e15) * d_eta_dz_e_f * d_eta_dz_e_f';
+    }
+  }
+
+  // ========================================================================
+  // Laplace correction: Cholesky of Gauss-Newton Hessian at mode
+  // ========================================================================
+  // Regularize for numerical stability (neg_H_mode starts at identity so
+  // always PD, but small epsilon guards against degenerate edge cases)
+  neg_H_mode = 0.5 * (neg_H_mode + neg_H_mode');
+  matrix[3, 3] L_mode = cholesky_decompose(
+    neg_H_mode + diag_matrix(rep_vector(1e-6, 3))
+  );
+  real log_det = 2.0 * sum(log(diagonal(L_mode)));
+
+  return ll + 1.5 * log(2.0 * pi()) - 0.5 * log_det;
+}
+
+/**
+ * z-independent multistate log-likelihood for non-target patients.
+ *
+ * Computes contributions from transitions that don't depend on PSA dynamics:
+ * - 1→2 (post-progression death): hazard depends only on time, not on z_i
+ */
+real laplace_ms_zi_independent_ll(
+    int n_pat,
+    array[] int final_state,
+    array[] int time_01, array[] int time_12,
+    array[] int censored_12,
+    matrix log_cond_surv_12_s,
+    int enable_12, int ts_12) {
+
+  if (!enable_12) return 0.0;
+
+  real total_ll = 0;
+
+  for (i in 1:n_pat) {
+    if (final_state[i] == 1) {
+      if (time_12[i] > 0 && ts_12 == 1) {
+        total_ll += sum(log_cond_surv_12_s[i, 1:time_12[i]]);
+      }
+    } else if (final_state[i] == 2 && time_01[i] > 0) {
+      if (time_12[i] > 0 && ts_12 == 1) {
+        if (time_12[i] > 1) {
+          total_ll += sum(log_cond_surv_12_s[i, 1:(time_12[i] - 1)]);
+        }
+        // Guard: floor at -1e-8 to prevent log1m_exp(0) = -Inf (gradient = -Inf → NaN)
+        total_ll += log1m_exp(fmin(log_cond_surv_12_s[i, time_12[i]], -1e-8));
+      }
+    }
+  }
+
+  return total_ll;
+}

@@ -71,7 +71,7 @@ model {
         for (i in 1:n_patients) {
           int visit_start, visit_end;
           (visit_start, visit_end) = get_pos(patient_visit_pos, i);
-          normalized_sld[visit_start:visit_end] ~ sf_log_space_obs(states[visit_start:visit_end], measure_sd_sld, log_lod - log_baseline_sld[i], measure_nu_sld);
+          normalized_sld[visit_start:visit_end] ~ sf_log_space_obs(states[visit_start:visit_end], measure_sd_sld, log_lod - log_baseline_sld[i], measure_nu);
         }
       }
     }
@@ -110,10 +110,10 @@ generated quantities {
   // Compute scaled intercept effects for all levels (flattened structure)
   // Note: tr_raw_level_intercept is sized by enabled groups only, so we use
   // enabled_level_pos_tr_intercept for indexing into it
-  vector[n_total_groups] tr_effect_level_intercept;
+  vector[n_hmc_total_groups] tr_effect_level_intercept;
   for (lv in 1:n_levels) {
-    int lv_start_output = level_pos[lv];
-    int lv_end_output = level_pos[lv + 1] - 1;
+    int lv_start_output = n_hmc_level_pos[lv];
+    int lv_end_output = n_hmc_level_pos[lv + 1] - 1;
     if (enable_level_intercept_tr[lv]) {
       // Index into compacted parameter array using enabled position array
       int lv_start_param = enabled_level_pos_tr_intercept[lv];
@@ -122,19 +122,19 @@ generated quantities {
         tr_sd_level_intercept[lv] * tr_raw_level_intercept[lv_start_param:lv_end_param];
     } else {
       tr_effect_level_intercept[lv_start_output:lv_end_output] =
-        rep_vector(0, n_groups_per_level[lv]);
+        rep_vector(0, n_hmc_groups_per_level[lv]);
     }
   }
 
   // Log rates for all groups at all levels (flattened structure)
   // Each group's rate = population rate + that group's intercept effect
-  vector[n_total_groups] level_log_total_rate = tr_loc_pop + tr_effect_level_intercept;
-  vector[n_total_groups] level_log_decrease_rate = level_log_total_rate + pop_log_decrease_frac;
-  vector[n_total_groups] level_log_growth_rate = level_log_total_rate + pop_log_growth_frac;
+  vector[n_hmc_total_groups] level_log_total_rate = tr_loc_pop + tr_effect_level_intercept;
+  vector[n_hmc_total_groups] level_log_decrease_rate = level_log_total_rate + pop_log_decrease_frac;
+  vector[n_hmc_total_groups] level_log_growth_rate = level_log_total_rate + pop_log_growth_frac;
 
   // Residuals for all groups at all levels (vs population)
-  vector[n_total_groups] level_log_growth_rate_residual = level_log_growth_rate - pop_log_growth_rate;
-  vector[n_total_groups] level_log_decrease_rate_residual = level_log_decrease_rate - pop_log_decrease_rate;
+  vector[n_hmc_total_groups] level_log_growth_rate_residual = level_log_growth_rate - pop_log_growth_rate;
+  vector[n_hmc_total_groups] level_log_decrease_rate_residual = level_log_decrease_rate - pop_log_decrease_rate;
 
   // Patient-level residuals: compare to parent level (level n_levels - 1, or population if n_levels == 1)
   matrix[n_patients, max_t_width] patient_log_growth_rate_residual;
@@ -149,11 +149,11 @@ generated quantities {
       // Parent is level n_levels - 1
       int parent_lv = n_levels - 1;
       int parent_lv_start, parent_lv_end;
-      (parent_lv_start, parent_lv_end) = get_pos(level_pos, parent_lv);
+      (parent_lv_start, parent_lv_end) = get_pos(n_hmc_level_pos, parent_lv);
 
       // Extract parent level rates, then index by patient's group membership
-      vector[n_groups_per_level[parent_lv]] parent_level_growth = level_log_growth_rate[parent_lv_start:parent_lv_end];
-      vector[n_groups_per_level[parent_lv]] parent_level_decrease = level_log_decrease_rate[parent_lv_start:parent_lv_end];
+      vector[n_hmc_groups_per_level[parent_lv]] parent_level_growth = level_log_growth_rate[parent_lv_start:parent_lv_end];
+      vector[n_hmc_groups_per_level[parent_lv]] parent_level_decrease = level_log_decrease_rate[parent_lv_start:parent_lv_end];
       parent_log_growth_rate = parent_level_growth[patient_level_groups[, parent_lv]];
       parent_log_decrease_rate = parent_level_decrease[patient_level_groups[, parent_lv]];
     } else {
@@ -175,7 +175,7 @@ generated quantities {
 
   // Set generic measure_sd for state_space module
   real measure_sd_obs = measure_sd_sld;
-  real measure_nu_obs = measure_nu_sld;
+  real measure_nu_obs = measure_nu;
 
   // Biomarker-agnostic trajectory generation
   #include "modules/state_space/generated_quantities.stan"

@@ -91,6 +91,34 @@ ms_init_values_fixed <- function(env) {
       },
       raw_log_lambda_gp_12_t_level_intercept = if (n_enabled_groups_ms_baseline_12_t > 0) rep(0, n_enabled_groups_ms_baseline_12_t),
 
+      # --- 0→3 Transition (Dropout: GP baseline hazard) ---
+      log_lambda_gp_03_pop_intercept = if (enable_ms_03) array(-4.5, dim = 1),
+      log_lambda_gp_03_pop_alpha = if (enable_ms_03) array(1.0, dim = 1),
+      log_lambda_gp_03_pop_rho = if (enable_ms_03) array(1.4, dim = 1),
+      log_lambda_gp_03_pop_eta = if (enable_ms_03) rnorm(n_ms_gp_cal_knots, sd = 0.1),
+      log_lambda_gp_03_level_alpha = if (enable_ms_03) rep(1.0, n_levels) else numeric(0),
+      log_lambda_gp_03_level_rho = if (enable_ms_03) rep(1.4, n_levels) else numeric(0),
+      log_lambda_gp_03_level_intercept_sd = if (enable_ms_03) rep(0.1, n_levels) else numeric(0),
+      log_lambda_gp_03_level_eta = if (enable_ms_03 && n_gp_groups_ms_baseline_03 > 0) {
+        matrix(rnorm(n_gp_groups_ms_baseline_03 * n_ms_gp_cal_knots, sd = 0.1),
+               nrow = n_gp_groups_ms_baseline_03, ncol = n_ms_gp_cal_knots)
+      },
+      raw_log_lambda_gp_03_level_intercept = if (n_enabled_groups_ms_baseline_03 > 0) rep(0, n_enabled_groups_ms_baseline_03),
+
+      # --- 3→2 Transition (Off-trial death: sojourn time GP) ---
+      log_lambda_gp_32_s_pop_intercept = if (enable_ms_32) array(-4.5, dim = 1),
+      log_lambda_gp_32_s_pop_alpha = if (enable_ms_32) array(1.0, dim = 1),
+      log_lambda_gp_32_s_pop_rho = if (enable_ms_32) array(1.4, dim = 1),
+      log_lambda_gp_32_s_pop_eta = if (enable_ms_32) rnorm(n_ms_gp_sojourn_32_knots, sd = 0.1),
+      log_lambda_gp_32_s_level_alpha = if (enable_ms_32) rep(1.0, n_levels) else numeric(0),
+      log_lambda_gp_32_s_level_rho = if (enable_ms_32) rep(1.4, n_levels) else numeric(0),
+      log_lambda_gp_32_s_level_intercept_sd = if (enable_ms_32) rep(0.1, n_levels) else numeric(0),
+      log_lambda_gp_32_s_level_eta = if (enable_ms_32 && n_gp_groups_ms_baseline_32 > 0) {
+        matrix(rnorm(n_gp_groups_ms_baseline_32 * n_ms_gp_sojourn_32_knots, sd = 0.1),
+               nrow = n_gp_groups_ms_baseline_32, ncol = n_ms_gp_sojourn_32_knots)
+      },
+      raw_log_lambda_gp_32_s_level_intercept = if (n_enabled_groups_ms_baseline_32 > 0) rep(0, n_enabled_groups_ms_baseline_32),
+
       # --- Time-varying covariate coefficients ---
       time_varying_coef_01 = if (enable_ms_01 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
         rep(0, n_time_varying_covar)

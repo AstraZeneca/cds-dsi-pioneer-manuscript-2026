@@ -47,17 +47,17 @@ ms_init_values <- function(env) {
       },
       log_lambda_gp_01_pop_alpha = if (enable_ms_01) array(1.0, dim = 1),
       log_lambda_gp_01_pop_rho = if (enable_ms_01) {
-        array(invgamma::rinvgamma(1, log_lambda_gp_01_pop_rho_alpha, log_lambda_gp_01_pop_rho_beta), dim = 1)
+        array(max(invgamma::rinvgamma(1, log_lambda_gp_01_pop_rho_alpha, log_lambda_gp_01_pop_rho_beta), ms_gp_grid_step), dim = 1)
       },
       log_lambda_gp_01_pop_eta = if (enable_ms_01) rnorm(n_ms_gp_cal_knots),
       log_lambda_gp_01_level_alpha = if (enable_ms_01) rep(1.0, n_levels) else numeric(0),
-      log_lambda_gp_01_level_rho = if (enable_ms_01) invgamma::rinvgamma(n_levels, log_lambda_gp_01_level_rho_alpha, log_lambda_gp_01_level_rho_beta) else numeric(0),
+      log_lambda_gp_01_level_rho = if (enable_ms_01) pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_01_level_rho_alpha, log_lambda_gp_01_level_rho_beta), ms_gp_grid_step) else numeric(0),
       log_lambda_gp_01_level_intercept_sd = if (enable_ms_01) abs(rnorm(n_levels, sd = log_lambda_gp_01_level_intercept_sd_sd)) else numeric(0),
       log_lambda_gp_01_level_eta = if (enable_ms_01 && n_gp_groups_ms_baseline_01 > 0) {
         matrix(rnorm(n_gp_groups_ms_baseline_01 * n_ms_gp_cal_knots), nrow = n_gp_groups_ms_baseline_01, ncol = n_ms_gp_cal_knots)
       },
       raw_log_lambda_gp_01_level_intercept = if (n_enabled_groups_ms_baseline_01 > 0) {
-        rnorm(n_enabled_groups_ms_baseline_01)
+        as.array(rnorm(n_enabled_groups_ms_baseline_01))
       },
 
       # --- 0→2 Transition (Death without progression) ---
@@ -66,17 +66,17 @@ ms_init_values <- function(env) {
       },
       log_lambda_gp_02_pop_alpha = if (enable_ms_02) array(1.0, dim = 1),
       log_lambda_gp_02_pop_rho = if (enable_ms_02) {
-        array(invgamma::rinvgamma(1, log_lambda_gp_02_pop_rho_alpha, log_lambda_gp_02_pop_rho_beta), dim = 1)
+        array(max(invgamma::rinvgamma(1, log_lambda_gp_02_pop_rho_alpha, log_lambda_gp_02_pop_rho_beta), ms_gp_grid_step), dim = 1)
       },
       log_lambda_gp_02_pop_eta = if (enable_ms_02) rnorm(n_ms_gp_cal_knots),
       log_lambda_gp_02_level_alpha = if (enable_ms_02) rep(1.0, n_levels) else numeric(0),
-      log_lambda_gp_02_level_rho = if (enable_ms_02) invgamma::rinvgamma(n_levels, log_lambda_gp_02_level_rho_alpha, log_lambda_gp_02_level_rho_beta) else numeric(0),
+      log_lambda_gp_02_level_rho = if (enable_ms_02) pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_02_level_rho_alpha, log_lambda_gp_02_level_rho_beta), ms_gp_grid_step) else numeric(0),
       log_lambda_gp_02_level_intercept_sd = if (enable_ms_02) abs(rnorm(n_levels, sd = log_lambda_gp_02_level_intercept_sd_sd)) else numeric(0),
       log_lambda_gp_02_level_eta = if (enable_ms_02 && n_gp_groups_ms_baseline_02 > 0) {
         matrix(rnorm(n_gp_groups_ms_baseline_02 * n_ms_gp_cal_knots), nrow = n_gp_groups_ms_baseline_02, ncol = n_ms_gp_cal_knots)
       },
       raw_log_lambda_gp_02_level_intercept = if (n_enabled_groups_ms_baseline_02 > 0) {
-        rnorm(n_enabled_groups_ms_baseline_02)
+        as.array(rnorm(n_enabled_groups_ms_baseline_02))
       },
 
       # --- 1→2 Transition: Sojourn Time GP ---
@@ -85,17 +85,17 @@ ms_init_values <- function(env) {
       },
       log_lambda_gp_12_s_pop_alpha = if (need_12_s_gp) array(1.0, dim = 1),
       log_lambda_gp_12_s_pop_rho = if (need_12_s_gp) {
-        array(invgamma::rinvgamma(1, log_lambda_gp_12_s_pop_rho_alpha, log_lambda_gp_12_s_pop_rho_beta), dim = 1)
+        array(max(invgamma::rinvgamma(1, log_lambda_gp_12_s_pop_rho_alpha, log_lambda_gp_12_s_pop_rho_beta), ms_gp_grid_step), dim = 1)
       },
       log_lambda_gp_12_s_pop_eta = if (need_12_s_gp) rnorm(n_ms_gp_sojourn_knots),
       log_lambda_gp_12_s_level_alpha = if (need_12_s_gp) rep(1.0, n_levels) else numeric(0),
-      log_lambda_gp_12_s_level_rho = if (need_12_s_gp) invgamma::rinvgamma(n_levels, log_lambda_gp_12_s_level_rho_alpha, log_lambda_gp_12_s_level_rho_beta) else numeric(0),
+      log_lambda_gp_12_s_level_rho = if (need_12_s_gp) pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_12_s_level_rho_alpha, log_lambda_gp_12_s_level_rho_beta), ms_gp_grid_step) else numeric(0),
       log_lambda_gp_12_s_level_intercept_sd = if (need_12_s_gp) abs(rnorm(n_levels, sd = log_lambda_gp_12_s_level_intercept_sd_sd)) else numeric(0),
       log_lambda_gp_12_s_level_eta = if (need_12_s_gp && n_gp_groups_ms_baseline_12_s > 0) {
         matrix(rnorm(n_gp_groups_ms_baseline_12_s * n_ms_gp_sojourn_knots), nrow = n_gp_groups_ms_baseline_12_s, ncol = n_ms_gp_sojourn_knots)
       },
       raw_log_lambda_gp_12_s_level_intercept = if (n_enabled_groups_ms_baseline_12_s > 0) {
-        rnorm(n_enabled_groups_ms_baseline_12_s)
+        as.array(rnorm(n_enabled_groups_ms_baseline_12_s))
       },
 
       # --- 1→2 Transition: Clock-forward Time GP ---
@@ -104,17 +104,17 @@ ms_init_values <- function(env) {
       },
       log_lambda_gp_12_t_pop_alpha = if (need_12_t_gp) array(1.0, dim = 1),
       log_lambda_gp_12_t_pop_rho = if (need_12_t_gp) {
-        array(invgamma::rinvgamma(1, log_lambda_gp_12_t_pop_rho_alpha, log_lambda_gp_12_t_pop_rho_beta), dim = 1)
+        array(max(invgamma::rinvgamma(1, log_lambda_gp_12_t_pop_rho_alpha, log_lambda_gp_12_t_pop_rho_beta), ms_gp_grid_step), dim = 1)
       },
       log_lambda_gp_12_t_pop_eta = if (need_12_t_gp) rnorm(n_ms_gp_cal_knots),
       log_lambda_gp_12_t_level_alpha = if (need_12_t_gp) rep(1.0, n_levels) else numeric(0),
-      log_lambda_gp_12_t_level_rho = if (need_12_t_gp) invgamma::rinvgamma(n_levels, log_lambda_gp_12_t_level_rho_alpha, log_lambda_gp_12_t_level_rho_beta) else numeric(0),
+      log_lambda_gp_12_t_level_rho = if (need_12_t_gp) pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_12_t_level_rho_alpha, log_lambda_gp_12_t_level_rho_beta), ms_gp_grid_step) else numeric(0),
       log_lambda_gp_12_t_level_intercept_sd = if (need_12_t_gp) abs(rnorm(n_levels, sd = log_lambda_gp_12_t_level_intercept_sd_sd)) else numeric(0),
       log_lambda_gp_12_t_level_eta = if (need_12_t_gp && n_gp_groups_ms_baseline_12_t > 0) {
         matrix(rnorm(n_gp_groups_ms_baseline_12_t * n_ms_gp_cal_knots), nrow = n_gp_groups_ms_baseline_12_t, ncol = n_ms_gp_cal_knots)
       },
       raw_log_lambda_gp_12_t_level_intercept = if (n_enabled_groups_ms_baseline_12_t > 0) {
-        rnorm(n_enabled_groups_ms_baseline_12_t)
+        as.array(rnorm(n_enabled_groups_ms_baseline_12_t))
       },
 
       # --- 0→3 Transition (Dropout: GP baseline hazard with N-level hierarchy) ---
@@ -123,12 +123,12 @@ ms_init_values <- function(env) {
       },
       log_lambda_gp_03_pop_alpha = if (enable_ms_03) array(1.0, dim = 1),
       log_lambda_gp_03_pop_rho = if (enable_ms_03) {
-        array(invgamma::rinvgamma(1, log_lambda_gp_03_pop_rho_alpha, log_lambda_gp_03_pop_rho_beta), dim = 1)
+        array(max(invgamma::rinvgamma(1, log_lambda_gp_03_pop_rho_alpha, log_lambda_gp_03_pop_rho_beta), ms_gp_grid_step), dim = 1)
       },
       log_lambda_gp_03_pop_eta = if (enable_ms_03) rnorm(n_ms_gp_cal_knots),
       log_lambda_gp_03_level_alpha = if (enable_ms_03) rep(1.0, n_levels) else numeric(0),
       log_lambda_gp_03_level_rho = if (enable_ms_03) {
-        invgamma::rinvgamma(n_levels, log_lambda_gp_03_level_rho_alpha, log_lambda_gp_03_level_rho_beta)
+        pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_03_level_rho_alpha, log_lambda_gp_03_level_rho_beta), ms_gp_grid_step)
       } else numeric(0),
       log_lambda_gp_03_level_intercept_sd = if (enable_ms_03) {
         abs(rnorm(n_levels, sd = log_lambda_gp_03_level_intercept_sd_sd))
@@ -138,7 +138,7 @@ ms_init_values <- function(env) {
                nrow = n_gp_groups_ms_baseline_03, ncol = n_ms_gp_cal_knots)
       },
       raw_log_lambda_gp_03_level_intercept = if (n_enabled_groups_ms_baseline_03 > 0) {
-        rnorm(n_enabled_groups_ms_baseline_03)
+        as.array(rnorm(n_enabled_groups_ms_baseline_03))
       },
 
       # --- 3→2 Transition (Off-trial death: sojourn time GP, semi-Markov) ---
@@ -147,12 +147,12 @@ ms_init_values <- function(env) {
       },
       log_lambda_gp_32_s_pop_alpha = if (enable_ms_32) array(1.0, dim = 1),
       log_lambda_gp_32_s_pop_rho = if (enable_ms_32) {
-        array(invgamma::rinvgamma(1, log_lambda_gp_32_s_pop_rho_alpha, log_lambda_gp_32_s_pop_rho_beta), dim = 1)
+        array(max(invgamma::rinvgamma(1, log_lambda_gp_32_s_pop_rho_alpha, log_lambda_gp_32_s_pop_rho_beta), ms_gp_grid_step), dim = 1)
       },
       log_lambda_gp_32_s_pop_eta = if (enable_ms_32) rnorm(n_ms_gp_sojourn_32_knots),
       log_lambda_gp_32_s_level_alpha = if (enable_ms_32) rep(1.0, n_levels) else numeric(0),
       log_lambda_gp_32_s_level_rho = if (enable_ms_32) {
-        invgamma::rinvgamma(n_levels, log_lambda_gp_32_s_level_rho_alpha, log_lambda_gp_32_s_level_rho_beta)
+        pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_32_s_level_rho_alpha, log_lambda_gp_32_s_level_rho_beta), ms_gp_grid_step)
       } else numeric(0),
       log_lambda_gp_32_s_level_intercept_sd = if (enable_ms_32) {
         abs(rnorm(n_levels, sd = log_lambda_gp_32_s_level_intercept_sd_sd))
@@ -162,10 +162,11 @@ ms_init_values <- function(env) {
                nrow = n_gp_groups_ms_baseline_32, ncol = n_ms_gp_sojourn_32_knots)
       },
       raw_log_lambda_gp_32_s_level_intercept = if (n_enabled_groups_ms_baseline_32 > 0) {
-        rnorm(n_enabled_groups_ms_baseline_32)
+        as.array(rnorm(n_enabled_groups_ms_baseline_32))
       },
 
       # --- Time-varying Covariate Coefficients ---
+      # Q entries scale as sqrt(n_patients); scale coef draws down so eta = Q*coef stays bounded.
       time_varying_coef_01 = if (enable_ms_01 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
         rnorm(n_time_varying_covar, time_varying_coef_01_mean, time_varying_coef_01_sd)
       },
