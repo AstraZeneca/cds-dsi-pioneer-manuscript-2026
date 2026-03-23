@@ -1,3 +1,6 @@
+library(purrr)
+library(tibble)
+
 test_that("transform_priors_to_qr_space round-trips correctly", {
   source(here::here("r/priors.R"))
 
