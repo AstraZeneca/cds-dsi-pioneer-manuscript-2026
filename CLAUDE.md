@@ -173,30 +173,45 @@ Parameters follow a population → trial → patient hierarchy:
 
 ## Analysis Results Storage
 
-Analysis results are stored in `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/`:
-- **Targets store**: `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/_targets`
-- **Fit CSVs**: `/mnt/data/analysis-results/karim_naguib/sclc/<run_name>/fit`
+### Project and Store Context (ALWAYS CHECK FIRST)
 
-### Store Selection via TAR_RUN
+**NEVER assume a project or store path without confirming.** This codebase supports multiple projects — do not default to sclc.
 
-Analysis results are organized by run name using the `TAR_RUN` environment variable. The default is `"main"` (set in `.Rprofile`), which can be overridden by exporting `TAR_RUN` in the shell before calling R — the shell value takes precedence.
+The active project is set via `TAR_PROJECT` (see `_targets.yaml`). Store paths by project:
+- **sclc**: `/mnt/data/analysis-results/<user>/sclc/<TAR_BRANCH>/_targets`
+- **pioneer**: `/mnt/data/analysis-results/<user>/pioneer/<TAR_BRANCH>/_targets`
 
-Common run names:
-- `export TAR_RUN=dco3` - January 26, 2026 DCO (current, includes pdl1_central)
-- `export TAR_RUN=dco2` - August 2025 DCO
-- `export TAR_RUN=dco1` - April 2025 DCO
+When the project or store name is ambiguous, list available stores first:
+```bash
+ls /mnt/data/analysis-results/$DOMINO_STARTING_USERNAME/<project>/
+```
 
-Store path: `/mnt/data/analysis-results/<user>/sclc/<TAR_RUN>/_targets`
+### Store Selection via TAR_BRANCH
+
+`TAR_BRANCH` selects the analysis run (named by data cut-off or feature branch). For sclc:
+- `export TAR_BRANCH=dco3` - January 26, 2026 DCO (current, includes pdl1_central)
+- `export TAR_BRANCH=dco2` - August 2025 DCO
+- `export TAR_BRANCH=dco1` - April 2025 DCO
+
+For pioneer, common branches include: `main`, `rwd-filtered-1`, `laplace`, `multistate`, etc.
+
+Full store path pattern: `/mnt/data/analysis-results/<user>/<TAR_PROJECT>/<TAR_BRANCH>/_targets`
+
+### Sclc Fit Output
+
+Sclc results are stored in `/mnt/data/analysis-results/<username>/sclc/<run_name>/`:
+- **Targets store**: `/mnt/data/analysis-results/<username>/sclc/<run_name>/_targets`
+- **Fit CSVs**: `/mnt/data/analysis-results/<username>/sclc/<run_name>/fit`
 
 **Example:**
 ```bash
-export TAR_RUN=dco3
+export TAR_BRANCH=dco3
 Rscript -e 'targets::tar_make(sclc_patient_data_jan26)'
 ```
 
 When working with stored targets directly (e.g., in standalone scripts), always specify the store path explicitly:
 ```r
-tar_read(sclc_patient_data_jan26, store = "/mnt/data/analysis-results/karim_naguib/sclc/dco3/_targets")
+tar_read(sclc_patient_data_jan26, store = file.path("/mnt/data/analysis-results", Sys.getenv("DOMINO_STARTING_USERNAME"), "sclc/dco3/_targets"))
 ```
 
 **Verifying fit versions**: `tar_outdated()` can be unreliable for `*_res_*` targets. Check timestamps directly:
@@ -262,14 +277,16 @@ Plots always use `btype == "ub"`. For PFS, `interval_censored` captures visit-ga
 - **NEVER use `tar_config_set(store = ...)`** - it changes global state and causes conflicts
 - Always use explicit `store` argument: `tar_read(name, store = "path/_targets")`
 - Same applies to all targets functions: `tar_meta()`, `tar_load()`, etc.
-- **IMPORTANT**: `TAR_RUN` environment variable does NOT work with `tar_make()` - always use explicit `store="/path/_targets"` argument
-- `_targets.yaml` sclc store uses `!expr` with `DOMINO_STARTING_USERNAME` and `TAR_RUN` — never hardcode username or run name in this file
+- **IMPORTANT**: `TAR_BRANCH` environment variable does NOT work with `tar_make()` - always use explicit `store="/path/_targets"` argument
+- `_targets.yaml` sclc store uses `!expr` with `DOMINO_STARTING_USERNAME` and `TAR_BRANCH` — never hardcode username or branch in this file
 - `tumor_ssls_draws_pop` selection: `time_invariant_coef_qr_*` and `time_varying_coef_*` params don't follow the `_pop` suffix — they need `matches("^(time_invariant|time_varying)_coef")` added to the `select_draws` call
 - **NEVER inline complex code in targets** - extract to helper functions in `r/` directory
   - Target commands should be simple function calls, not multi-line code blocks
   - Example: Use `tar_target(name, my_function(arg))` not `tar_target(name, { ... complex code ... })`
   - Helper functions belong in appropriate `r/` subdirectories (e.g., `r/sclc/plot_functions.R`)
 - **`pattern = map()` dependencies**: When adding analysis-data-dependent post-processing to a mapped target (e.g., `cutoff_tumor_ssls_stan_data`), add the analysis data target to the `map()` pattern as well.
+- **Track `source()` files with `format = "file"`**: If a target calls `source("path/to/file.R")` inside its expression, targets does NOT detect changes to that file. Add a separate `tar_target(my_script, "path/to/file.R", format = "file")` and reference `my_script` in the `source()` call. See `initializers_fixed_file` and `prepare_ms_standalone_data_script` for the established pattern.
+- **`tar_invalidate` and `tar_map` naming**: Invalidation target names must include the full `tar_map` suffix. `tar_invalidate(base_foo)` is a no-op if the actual target is `base_foo_jan26` (inside `tar_map(dco_name)`). Always use the `tar-map-names` skill to get the correct full name before passing it to `-i`.
 
 ### Bash and Command Execution
 - **NEVER pipe long-running commands to `head`, `tail`, or similar** when running in background - it prevents real-time output monitoring
@@ -303,8 +320,12 @@ Plots always use `btype == "ub"`. For PFS, `interval_censored` captures visit-ga
 - Example: Write "SCLC-01 trial" in figure captions, but `filter(trial == "sclc")` in R code
 - **Use automatic section numbering**: Set `number-sections: true` in frontmatter, don't use manual numbers (1.1, 2.3) in headings
 - **Cross-references**: Use section IDs `{#sec-name}` and reference with `@sec-name`, never hardcode "Section X.Y.Z"
-- **Model specification is the blueprint**: `quarto/sclc/website/documentation/model-specification.qmd` is the authoritative specification for everything in the Stan model. Code and documentation must always match:
-  - When changing Stan code, update the model specification to reflect the change
+- **Model specification is the blueprint**: The model specification is split across three pages, each authoritative for its domain:
+  - `quarto/sclc/website/documentation/tumor-dynamics-specification.qmd` — tumor state-space model, RECIST, tumor priors
+  - `quarto/sclc/website/documentation/multistate-specification.qmd` — illness-death model, transitions, multistate priors
+  - `quarto/sclc/website/documentation/clinical-endpoints-specification.qmd` — PFS, OS, posterior inference
+  - `quarto/sclc/website/documentation/model-architecture.qmd` — overview, hierarchy, notation, feature flags
+  - When changing Stan code, update the relevant specification page to reflect the change
   - When the specification defines behavior (e.g., index conventions, endpoint formulas, routing logic), the code must not violate those definitions without updating the spec first
   - If a proposed code change contradicts the specification, flag the discrepancy before implementing
   - Treat the specification as a contract: it documents what the model *should* do, not just what it *happens* to do
@@ -347,6 +368,13 @@ cd /mnt/code/worktrees/code-feature-x && edit file && git commit
 cd /mnt/code && git merge feature-x
 ```
 
+### Multistate Architecture Rules
+- **All multistate parameters MUST use N-level hierarchy** — never hardcode per-trial (e.g., `log_lambda[patient_trial[i]]`). Use population intercept + `patient_ms_baseline_flat_idx[i, lv]` level shifts instead.
+- **Conditional parameter sizing**: Level GP arrays must be `array[enable_ms_XX ? n_levels : 0]` (not unconditionally `array[n_levels]`). The 0→1 transition had this bug — verify every new transition is consistent.
+- **`no_oe` model**: Sets `fit_multistate_data=FALSE` — multistate state fields are irrelevant for it. No separate SLD-only state variable needed.
+- **`update_dropout_state()`**: Call in targets pipeline after assembling stan data to swap `ms_final_state` → `ms_final_state_dropout` when `enable_ms_03=TRUE`.
+- **Pattern E patients**: `death & !progression_before_death & (death_week - patient_max_t > admin_censor_buffer)` — died off-trial; classified as state 3 when `enable_ms_03=TRUE`.
+
 ### Adding Module Parameters
 1. Add feature flag in `modules/<module>/flags.stan`
 2. Add hyperparameters in `modules/<module>/hyperparams.stan`
@@ -361,8 +389,13 @@ cd /mnt/code && git merge feature-x
 - **All multistate parameters MUST use N-level hierarchy** — never hardcode per-trial (e.g., `log_lambda[patient_trial[i]]`). Use population intercept + `patient_ms_baseline_flat_idx[i, lv]` level shifts instead.
 - **Conditional parameter sizing**: Level GP arrays must be `array[enable_ms_XX ? n_levels : 0]` (not unconditionally `array[n_levels]`). The 0→1 transition had this bug — verify every new transition is consistent.
 - **`no_oe` model**: Sets `fit_multistate_data=FALSE` — multistate state fields are irrelevant for it. No separate SLD-only state variable needed.
-- **`update_dropout_state()`**: Call in targets pipeline after assembling stan data to swap `ms_final_state` → `ms_final_state_dropout` when `enable_ms_03=TRUE`.
-- **Pattern E patients**: `death & !progression_before_death & (death_week - patient_max_t > admin_censor_buffer)` — died off-trial; classified as state 3 when `enable_ms_03=TRUE`.
+- **Classification-first routing** (`r/sclc/multistate.R`): All multistate Stan fields are derived via a two-step pipeline — never compute `ms_final_state` or transition times inline anywhere else.
+  1. `classify_ms_patients(analysis_data)` → adds `ms_pattern` column (factor, 6 levels); called in `prepare_analysis_data()`
+  2. `derive_ms_fields(analysis_data, ms_mode)` → named list of all Stan ms fields; called in the targets pipeline as `c(derive_ms_fields(all_analysis_data, ms_mode))`
+- **Six patient patterns** (what happened, objective): `admin_censored`, `true_dropout`, `progressed_alive`, `progressed_died`, `died_on_trial`, `died_off_trial`
+- **ms_mode** (how model treats it, subjective): `"none"`, `"pfs"`, `"illness_death"`, `"full"` — the pattern→state mapping table is in `multistate.R`
+- **`prepare_tumor_stan_data()` does NOT include ms fields** — they are added by `derive_ms_fields()` in the targets pipeline
+- **`ms_prog_deterministic`**: Computed in `prepare_analysis_data()` mutate (needs `visit_data`); stored as a column in `analysis_data` and consumed by `derive_ms_fields()`
 
 ## Pull Request Checklist
 
@@ -450,6 +483,7 @@ Issues across all PIONEER repos are tracked in the **PIONEER 2026** GitHub Proje
 - Key env vars auto-set by Domino: `DOMINO_USER_API_KEY`, `DOMINO_USER_HOST`, `DOMINO_PROJECT_ID`, `DOMINO_PROJECT_NAME`
 - Jobs API: list/get via `GET /api/jobs/beta/jobs`, logs via `GET /api/jobs/beta/jobs/{id}/logs`, start via `POST /v4/jobs/start`, stop via `POST /v4/jobs/stop`
 - `stop_job` requires both `projectId` AND `jobId` in the request body
+- **`get_job_logs` MUST always use `tail=N`** — never call without it; full logs are 700+ lines and will flood the context window. Use `tail=30` for status checks, `tail=50` for error diagnosis. See `pioneer-toolkit:read-job-logs` skill for the full pattern.
 
 ## Documentation
 
