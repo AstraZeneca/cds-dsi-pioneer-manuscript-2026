@@ -155,6 +155,7 @@ for (i in 1:n_patients) {
     if (!ms_censored_02[i]) {
       sample_t02 = ms_time_02[i]; sample_c02 = 0;
     } else {
+      int t02_raw; int c02_raw;
       (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[i], ms_time_01[i], 1, 0);
       sample_t02 = t02_raw + 1; sample_c02 = c02_raw;
     }

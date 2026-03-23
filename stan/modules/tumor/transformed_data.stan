@@ -10,21 +10,6 @@ real log_lod = log(0.1);
 vector[sum(n_patient_visits)] log_sum_tumor_size = log(sum_tumor_size); // cm
 vector[sum(n_patient_visits) - sum(n_patient_screening_visits)] post_treat_sld;
 
-// Patient indices ////
-
-// Note: patient2pop_unique_visit_idx maps patient visit indices to population-level unique visit times
-// This is needed for hierarchical GP modeling
-
-// Compute unique visits at population level (needed by _sf_transformed_data.stan for visit_cumsum_mat)
-int n_pop_unique_visits = num_unique(t_patient_visits, 0);
-array[n_pop_unique_visits] int pop_unique_visits = unique(t_patient_visits, 0);
-
-print("n_pop_unique_visits = ", n_pop_unique_visits);
-print("pop_unique_visits = ", pop_unique_visits);
-
-// Map patient visits to population unique visits
-array[sum(n_patient_visits)] int<lower = 1> patient2pop_unique_visit_idx =
-  get_level2level_idx(pop_unique_visits, t_patient_visits, patient_visit_pos);
 
 
 // Extract post-treatment SLD values

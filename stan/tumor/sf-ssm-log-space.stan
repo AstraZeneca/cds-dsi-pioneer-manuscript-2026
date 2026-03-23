@@ -175,6 +175,7 @@ generated quantities {
 
   // Set generic measure_sd for state_space module
   real measure_sd_obs = measure_sd_sld;
+  real measure_nu_obs = measure_nu_sld;
 
   // Biomarker-agnostic trajectory generation
   #include "modules/state_space/generated_quantities.stan"
