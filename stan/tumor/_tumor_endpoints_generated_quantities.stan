@@ -19,6 +19,9 @@ array[n_patients] int<lower = 0, upper = 1>
 array[n_patients] int<lower = 0> sample_os, spop_os;
 array[n_patients] int<lower = 0, upper = 1> sample_os_censored, spop_os_censored;
 
+// Dropout flags — 1 if patient exited via cause 3 in this draw (for CIF computation)
+array[n_patients] int<lower = 0, upper = 1> spop_is_dropout, sample_is_dropout;
+
 // Forecasting for right censored patients 
 array[sum(target_right_censored)] int<lower = 0> forecast_target_pfs;
 array[sum(target_right_censored)] int<lower = 0, upper = 1> forecast_target_right_censored; 
@@ -116,6 +119,7 @@ profile("gen_quant") {
         t_patient_visit_idx,
         sum_tumor_size,
         measure_sd_sld,
+        measure_nu_sld,
         n_patient_screening_visits
       );
   } else {
@@ -155,7 +159,8 @@ profile("gen_quant") {
           negative_infinity(),  // growth lag (disabled)
           1.0,                  // growth transition
           rep_matrix(0.0, forecast_size, 2),  // No forecast process noise
-          measure_sd_sld
+          measure_sd_sld,
+          measure_nu_sld
         );
 
       // Store results
@@ -167,14 +172,52 @@ profile("gen_quant") {
     }
   }
   
-  // Calculate RECIST classifications for all patients at once
+  // Weekly RECIST from noisy SLD (for visualization/diagnostics)
   (rep_recist, forecast_recist) = calculate_all_patients_recist(
-    rep_mean_patient_log_sld,
-    forecast_mean_patient_log_sld,
+    rep_patient_log_sld,
+    forecast_patient_log_sld,
     patient_visit_pos,
     forecast_visits_pos,
     n_patient_screening_visits
   );
+
+  // Assessment-visit noisy SLD for RECIST endpoint computation
+  vector[n_total_forecast_obs_visits] forecast_obs_log_sld;
+  array[n_total_forecast_obs_visits] int forecast_obs_recist;
+  for (i in 1:n_patients) {
+    int n_assessment = get_pos_size(forecast_obs_visits_pos, i);
+    if (n_assessment > 0) {
+      int assess_start, assess_end;
+      (assess_start, assess_end) = get_pos(forecast_obs_visits_pos, i);
+
+      int forecast_visit_start, forecast_visit_end;
+      (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
+      int forecast_size = forecast_visit_end - forecast_visit_start + 1;
+
+      // Extract mean SLD at assessment weeks (subsample from weekly mean grid)
+      vector[n_assessment] obs_visit_mean;
+      for (a in 1:n_assessment) {
+        int forecast_idx = min(a * forecast_observation_interval, forecast_size);
+        obs_visit_mean[a] = forecast_mean_patient_log_sld[forecast_visit_start + forecast_idx - 1];
+      }
+
+      // Apply measurement noise at assessment visits only
+      forecast_obs_log_sld[assess_start:assess_end] =
+        to_vector(student_t_rng(measure_nu_sld, obs_visit_mean, measure_sd_sld));
+    }
+  }
+
+  // Assessment-visit RECIST from noisy SLD (for endpoint computation)
+  {
+    array[sum(n_patient_visits)] int unused_rep_recist;
+    (unused_rep_recist, forecast_obs_recist) = calculate_all_patients_recist(
+        rep_patient_log_sld,
+        forecast_obs_log_sld,
+        patient_visit_pos,
+        forecast_obs_visits_pos,
+        n_patient_screening_visits
+    );
+  }
   
   // Calculate patient-level endpoints (PFS, response) for all patients at once
   (sample_target_pfs, sample_target_right_censored,
@@ -188,11 +231,15 @@ profile("gen_quant") {
    spop_target_confirmed_response, spop_target_unconfirmed_response,
    forecast_target_pfs, forecast_target_right_censored,
    sample_os, sample_os_censored,
-   spop_os, spop_os_censored
+   spop_os, spop_os_censored,
+   spop_is_dropout, sample_is_dropout
   ) = calculate_all_patients_endpoints_rng(
     recist,
     rep_recist,
     forecast_recist,
+    forecast_obs_recist,
+    forecast_obs_visits_pos,
+    forecast_observation_interval,
     log_cond_surv_01,
     enable_ms_02,
     enable_ms_03,
@@ -205,7 +252,6 @@ profile("gen_quant") {
     log_cond_surv_12_s,
     log_cond_surv_12_t,
     pfs,
-    interval_censored,
     right_censored,
     target_pfs,
     target_right_censored,
@@ -215,6 +261,7 @@ profile("gen_quant") {
     ms_censored_02,
     ms_censored_12,
     ms_time_12,
+    ms_os_event_12,
     ms_time_03,
     ms_time_32,
     ms_censored_32,
@@ -319,29 +366,36 @@ profile("gen_quant") {
     );
 }
 
-// For the CIF: classify each patient's first state-0 exit, accounting for both
-// SF-driven and hazard-driven progressions (spop_target_pfs vs spop_ms_pfs).
-//
-// Three cases:
-//   (1) spop_right_censored == 0 (ms event — state 1 or 2):
-//       Use combined PFS = min(SF, ms_hazard); keep as PFS event.
-//   (2) spop_right_censored == 1 AND SF event before dropout (T_SF < T_dropout):
-//       State-3 patient where SF progression precedes dropout. In the joint model
-//       this is a 0→1 progression, not a dropout. Reclassify as PFS event.
-//   (3) Otherwise (dropout with T_SF >= T_dropout, or fully censored):
-//       Leave spop_ms_pfs / spop_ms_right_censored at their original values so
-//       the CIF module classifies them as 0→3 or fully censored correctly.
-for (i in 1:n_patients) {
-  if (spop_right_censored[i] == 0) {
-    // State 1 (progression) or state 2 (direct death): use combined PFS time
-    spop_ms_pfs[i] = spop_pfs[i];
-    spop_ms_right_censored[i] = 0;
-  } else if (spop_target_right_censored[i] == 0 && spop_target_pfs[i] <= spop_ms_pfs[i]) {
-    // State 3 where SF progression precedes dropout: first exit is 0→1
-    spop_ms_pfs[i] = spop_target_pfs[i];
-    spop_ms_right_censored[i] = 0;
-  }
-  // else: leave spop_ms_pfs[i] and spop_ms_right_censored[i] unchanged
-}
+// ── Competing Risks CIF (per-trial, empirical subdistribution) ───────────────
+// Uses combined PFS (spop_pfs = min(target_recist, ms_hazard)) so that
+// RECIST-detected progressions are included in the 0→1 cause.
 
-#include "modules/multistate/generated_quantities.stan"
+array[n_trials] vector<lower=0, upper=1>[max_all_t + 1]
+  spop_cif_01   = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  spop_cif_02   = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  spop_cif_03   = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  sample_cif_01 = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  sample_cif_02 = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  sample_cif_03 = rep_array(zeros_vector(max_all_t + 1), n_trials);
+
+for (s in 1:n_trials) {
+  int n_tr = get_pos_size(trial_patient_pos, s);
+  if (n_tr > 0) {
+    int tr_start; int tr_end;
+    (tr_start, tr_end) = get_pos(trial_patient_pos, s);
+
+    (spop_cif_01[s], spop_cif_02[s], spop_cif_03[s]) = compute_trial_cif(
+      spop_pfs[tr_start:tr_end], spop_right_censored[tr_start:tr_end],
+      spop_is_dropout[tr_start:tr_end],
+      spop_os[tr_start:tr_end],  spop_os_censored[tr_start:tr_end],
+      max_all_t
+    );
+
+    (sample_cif_01[s], sample_cif_02[s], sample_cif_03[s]) = compute_trial_cif(
+      sample_pfs[tr_start:tr_end], sample_right_censored[tr_start:tr_end],
+      sample_is_dropout[tr_start:tr_end],
+      sample_os[tr_start:tr_end],  sample_os_censored[tr_start:tr_end],
+      max_all_t
+    );
+  }
+}

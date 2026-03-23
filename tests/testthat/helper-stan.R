@@ -64,3 +64,20 @@ create_mock_km_data <- function(n_patients = 20, max_t = 100, pfs_offset = 0) {
     pfs_offset = pfs_offset
   )
 }
+
+#' Extract a scalar value from a posterior draws data frame by named Stan variable.
+#'
+#' draws_array is always 3D [iterations, chains, variables]. Multi-dimensional
+#' Stan arrays are stored as named scalars, e.g. x[1,2,3]. Use this helper
+#' instead of numeric indexing which breaks when variable names sort
+#' alphabetically (e.g. x[10,1] sorts before x[2,1]).
+#'
+#' @param draws_df A draws_df from posterior::as_draws_df(fit$draws())
+#' @param var Stan variable name (string)
+#' @param ... Integer indices (one per dimension); omit for scalar variables
+#' @return Numeric scalar (first iteration value)
+get_stan_val <- function(draws_df, var, ...) {
+  indices <- c(...)
+  vname   <- if (length(indices) == 0) var else sprintf("%s[%s]", var, paste(indices, collapse = ","))
+  as.numeric(draws_df[[vname]][1])
+}

@@ -1,6 +1,6 @@
 functions {
-  #include "util.stan"
-  #include "pos.stan"
+  #include "util.stanfunctions"
+  #include "pos.stanfunctions"
 }
 
 data {
@@ -47,7 +47,7 @@ generated quantities {
         max_idx_out[case, i] = get_max_idx(x, pos)[i];
         min_pos_out[case, i] = get_min_pos(x, pos, i);
         max_pos_out[case, i] = get_max_pos(x, pos, i);
-        last_int_out[case, i] = get_last_int(x, pos, i);
+        last_int_out[case, i] = get_int(x, pos, i, get_pos_size(pos, i));
       } else {
         max_out[case, i] = -9999;
         min_out[case, i] = -9999;

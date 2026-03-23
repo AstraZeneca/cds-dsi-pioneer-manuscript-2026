@@ -70,75 +70,66 @@ stan_data <- list(
   interval_censored = vapply(cases, function(x) x$interval_censored, integer(1))
 )
 
-stan_file_path <- here::here(
-  "tests",
-  "testthat",
-  "stan",
-  "test_survival_time_rng.stan"
-)
-cat("Resolved Stan file path: ", stan_file_path, "\n")
-cat("File exists? ", file.exists(stan_file_path), "\n")
+test_that("survival_time_rng: empirical distribution properties are correct", {
+  stan_file_path <- here::here(
+    "tests",
+    "testthat",
+    "stan",
+    "test_survival_time_rng.stan"
+  )
 
-# Run Stan model with a fixed seed for reproducibility
-mod <- cmdstan_model(stan_file_path, include_paths = here::here("stan"))
-fit <- mod$sample(
-  data = stan_data,
-  seed = 12345,
-  chains = 1,
-  iter_sampling = 1000, # Number of RNG draws for empirical checks
-  iter_warmup = 0,
-  fixed_param = TRUE
-)
+  # Run with 1000 fixed_param draws to accumulate empirical RNG distribution
+  mod <- cmdstan_model(stan_file_path, include_paths = here::here("stan"))
+  fit <- mod$sample(
+    data = stan_data,
+    seed = 12345,
+    chains = 1,
+    iter_sampling = 1000,
+    iter_warmup = 0,
+    fixed_param = TRUE
+  )
 
+  draws <- fit$draws()
 
-draws <- fit$draws()
+  # Extract [case, draw] matrix for a given output variable
+  get_draw_matrix <- function(varname, n_cases, n_draws) {
+    df <- posterior::as_draws_df(draws)
+    mat <- matrix(NA_integer_, nrow = n_cases, ncol = n_draws)
+    for (i in seq_len(n_cases)) {
+      for (j in seq_len(n_draws)) {
+        vname <- sprintf("%s[%d,%d]", varname, i, j)
+        mat[i, j] <- as.numeric(df[[vname]])[1]
+      }
+    }
+    mat
+  }
 
-# Extract outputs as [case, draw] arrays
-get_draw_matrix <- function(varname, n_cases, n_draws) {
-  # Extracts [case, draw] matrix from draws_df
-  df <- posterior::as_draws_df(draws)
-  mat <- matrix(NA_integer_, nrow = n_cases, ncol = n_draws)
-  for (i in seq_len(n_cases)) {
-    for (j in seq_len(n_draws)) {
-      vname <- sprintf("%s[%d,%d]", varname, i, j)
-      # Each row in df is a draw, so use the column for this [i,j]
-      mat[i, j] <- as.numeric(df[[vname]])[1] # Only one draw per row in fixed_param
+  sampled_time     <- get_draw_matrix("sampled_time",     N_CASES, N_DRAWS)
+  sampled_censored <- get_draw_matrix("sampled_censored", N_CASES, N_DRAWS)
+
+  for (i in seq_len(N_CASES)) {
+    times <- sampled_time[i, ]
+    cens  <- sampled_censored[i, ]
+
+    expect_true(
+      all(times >= 0 & times <= stan_data$T[i]),
+      label = sprintf("Case %d: sampled times within [0, T]", i)
+    )
+    expect_true(
+      all(cens %in% c(0L, 1L)),
+      label = sprintf("Case %d: censored flag is binary", i)
+    )
+
+    # Degenerate case: survival prob ≈ 1 → event always at time 0
+    if (abs(stan_data$log_cond_prob_surv[i, 1] - log(1 - 1e-5)) < 1e-8) {
+      expect_true(all(times == 0),   label = sprintf("Case %d: degenerate high-surv → time==0", i))
+      expect_true(all(cens  == 0L),  label = sprintf("Case %d: degenerate high-surv → not censored", i))
+    }
+
+    # Edge case: survival prob ≈ 0 → event always at max time T
+    if (abs(stan_data$log_cond_prob_surv[i, 1] - log(1e-5)) < 1e-8) {
+      expect_true(all(times == stan_data$T[i]),
+                  label = sprintf("Case %d: near-zero surv → time==T", i))
     }
   }
-  mat
-}
-
-n_draws <- N_DRAWS
-sampled_time <- get_draw_matrix("sampled_time", N_CASES, n_draws)
-sampled_censored <- get_draw_matrix("sampled_censored", N_CASES, n_draws)
-
-# Test: empirical mean and quantiles for each case
-for (i in seq_len(N_CASES)) {
-  times <- sampled_time[i, ]
-  cens <- sampled_censored[i, ]
-  # Print unique values for debugging
-  cat(sprintf(
-    "Case %d: unique censored values: %s\n",
-    i,
-    paste(unique(cens), collapse = ", ")
-  ))
-  # Check that all times are within [0, T[i]]
-  expect_true(all(times >= 0 & times <= stan_data$T[i]))
-  # Check that censored is always 0 or 1
-  expect_true(all(cens %in% c(0, 1)))
-  # For degenerate case (log(1-1e-5)), time should always be 0
-  if (abs(stan_data$log_cond_prob_surv[i, 1] - log(1 - 1e-5)) < 1e-8) {
-    expect_true(all(times == 0))
-    expect_true(all(cens == 0))
-  }
-  # For edge case (log(1e-5)), time should always be T[i]
-  if (abs(stan_data$log_cond_prob_surv[i, 1] - log(1e-5)) < 1e-8) {
-    expect_true(all(times == stan_data$T[i]))
-  }
-}
-
-# Optionally, print empirical means for manual inspection
-cat("Empirical means for sampled_time per case:\n")
-print(rowMeans(sampled_time))
-cat("Empirical means for sampled_censored per case:\n")
-print(rowMeans(sampled_censored))
+})
