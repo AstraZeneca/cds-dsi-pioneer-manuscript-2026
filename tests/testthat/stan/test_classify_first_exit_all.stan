@@ -424,7 +424,7 @@ generated quantities {
     {
       tuple(int, int) r = derive_sample_os_rng(2, 10, 0, 0, 0,
           dummy_rv, dummy_rv, dummy_rv,
-          10, 25, 10, 1, 0, 1, 0, 0);
+          10, 25, 10, 1, 0, 0, 1, 0, 0);
       if (r.1 != 10 || r.2 != 0) {
         print("FAIL Q1 derive_sample_os_rng cause=2: got (", r.1, ",", r.2, ") expected (10,0)");
         n_failures += 1;
@@ -436,7 +436,7 @@ generated quantities {
     {
       tuple(int, int) r = derive_sample_os_rng(3, 20, 0, 0, 0,
           dummy_rv, dummy_rv, dummy_rv,
-          20, 50, 20, 1, 0, 0, 20, 15);
+          20, 50, 20, 1, 0, 0, 0, 20, 15);
       if (r.1 != 35 || r.2 != 0) {
         print("FAIL Q2 derive_sample_os_rng cause=3 observed death: got (", r.1, ",", r.2, ") expected (35,0)");
         n_failures += 1;
@@ -448,7 +448,7 @@ generated quantities {
     {
       tuple(int, int) r = derive_sample_os_rng(3, 20, 0, 0, 0,
           dummy_rv, dummy_rv, dummy_rv,
-          20, 50, 20, 1, 0, 1, 20, 10);
+          20, 50, 20, 1, 0, 0, 1, 20, 10);
       if (r.1 != 30 || r.2 != 1) {
         print("FAIL Q3 derive_sample_os_rng cause=3 censored no 3->2: got (", r.1, ",", r.2, ") expected (30,1)");
         n_failures += 1;
@@ -456,11 +456,11 @@ generated quantities {
     }
 
     // Q4: cause=1, observed post-progression death (!ms_censored_12=0)
-    //     — returns (pfs_i + ms_time_12, 0) = (10+8, 0) = (18, 0)
+    //     — returns (ms_os_event_12_i, 0) = (18, 0)
     {
       tuple(int, int) r = derive_sample_os_rng(1, 10, 1, 0, 0,
           dummy_rv, dummy_rv, dummy_rv,
-          10, 50, 10, 0, 8, 1, 0, 0);
+          10, 50, 10, 0, 8, 18, 1, 0, 0);
       if (r.1 != 18 || r.2 != 0) {
         print("FAIL Q4 derive_sample_os_rng cause=1 observed PPD: got (", r.1, ",", r.2, ") expected (18,0)");
         n_failures += 1;
@@ -472,7 +472,7 @@ generated quantities {
     {
       tuple(int, int) r = derive_sample_os_rng(1, 10, 0, 0, 0,
           dummy_rv, dummy_rv, dummy_rv,
-          10, 15, 10, 1, 0, 1, 0, 0);
+          10, 15, 10, 1, 0, 0, 1, 0, 0);
       if (r.1 != 15 || r.2 != 1) {
         print("FAIL Q5 derive_sample_os_rng cause=1 no 1->2: got (", r.1, ",", r.2, ") expected (15,1)");
         n_failures += 1;
@@ -483,7 +483,7 @@ generated quantities {
     {
       tuple(int, int) r = derive_sample_os_rng(0, 20, 0, 0, 0,
           dummy_rv, dummy_rv, dummy_rv,
-          10, 20, 10, 1, 0, 1, 0, 0);
+          10, 20, 10, 1, 0, 0, 1, 0, 0);
       if (r.1 != 20 || r.2 != 1) {
         print("FAIL Q6 derive_sample_os_rng cause=0: got (", r.1, ",", r.2, ") expected (20,1)");
         n_failures += 1;

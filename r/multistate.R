@@ -389,6 +389,16 @@ derive_ms_fields <- function(
   )
   ms_censored_12 <- as.integer(pat != "progressed_died")
 
+  # Exact death calendar week for observed 1→2 deaths — avoids round-trip
+
+  # through pfs + pmax(1, death_week - pfs) which can overshoot when the
+  # detection-adjustment pushes pfs past death_week.
+  ms_os_event_12 <- dplyr::if_else(
+    pat == "progressed_died",
+    as.integer(analysis_data$death_week),
+    0L
+  )
+
   # -------------------------------------------------------------------------
   # 0→3 and 3→2 transitions (dropout / off-trial)
   # -------------------------------------------------------------------------
@@ -430,6 +440,7 @@ derive_ms_fields <- function(
     ms_censored_01        = ms_censored_01,
     ms_censored_02        = ms_censored_02,
     ms_censored_12        = ms_censored_12,
+    ms_os_event_12        = ms_os_event_12,
     ms_time_03            = ms_time_03,
     ms_time_32            = ms_time_32,
     ms_censored_32        = ms_censored_32,

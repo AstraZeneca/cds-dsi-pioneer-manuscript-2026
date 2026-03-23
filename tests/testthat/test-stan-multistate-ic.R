@@ -120,9 +120,10 @@ test_that("IC disabled for deterministic progression (prog_deterministic=1)", {
   expect_equal(ll_ic, ll_noop, tolerance = 1e-8)
 })
 
-test_that("State-0 (admin-censored) contributes no 0->3 hazard", {
+test_that("State-0 (admin-censored) contributes 0->3 survival at visit weeks", {
   # A patient right-censored in state 0 at week 10, weekly visits
-  # With enable_03, their presence should not affect the 0->3 log-lik
+  # With enable_03, state-0 patients contribute 0→3 survival at all visit weeks
+  # below time_01 + 1 = 11 (i.e., visits 1–10 are all included)
   c_val <- -0.1
   visits <- 1:10
 
@@ -144,8 +145,9 @@ test_that("State-0 (admin-censored) contributes no 0->3 hazard", {
   fit <- test_stan_function("tests/testthat/stan/test_multistate_ic.stan", data)
   draws <- fit$draws(format = "df")
 
-  # Expected: survived 0->1 and 0->2 at all 10 weeks; zero 0->3 contribution
-  expected_ll <- 2 * 10 * c_val  # only 0->1 and 0->2
+  # Expected: 0→1 survival (10 weeks) + 0→2 survival (10 weeks)
+  #         + 0→3 survival at 10 visit weeks (all below time_01 + 1 = 11)
+  expected_ll <- 3 * 10 * c_val  # 0->1, 0->2, and 0->3
   expect_equal(draws$ll_ic[1], expected_ll, tolerance = 1e-6)
 })
 

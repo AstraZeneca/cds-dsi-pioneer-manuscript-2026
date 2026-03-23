@@ -198,7 +198,7 @@ for (i in 1:n_patients) {
     log_cond_surv_12_s[i], surv_12_t_i, log_cond_surv_32[i],
     sample_t01, sample_t02,
     ms_time_01[i],
-    ms_censored_12[i], ms_time_12[i],
+    ms_censored_12[i], ms_time_12[i], ms_os_event_12[i],
     ms_censored_32[i], sample_t03, ms_time_32[i]);
 }
 
