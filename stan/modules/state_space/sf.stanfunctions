@@ -1287,7 +1287,9 @@ tuple(
   array[] int,  // sample_os
   array[] int,  // sample_os_censored
   array[] int,  // spop_os
-  array[] int   // spop_os_censored
+  array[] int,  // spop_os_censored
+  array[] int,  // spop_is_dropout
+  array[] int   // sample_is_dropout
 ) calculate_all_patients_endpoints_rng(
   array[] int recist,
   array[] int rep_recist,
@@ -1316,6 +1318,7 @@ tuple(
   array[] int ms_censored_02,  // Censoring indicator for 0→2
   array[] int ms_censored_12,  // Censoring indicator for 1→2
   array[] int ms_time_12,      // Observed time to post-progression death (sojourn)
+  array[] int ms_os_event_12,  // Exact death calendar week for observed 1→2 deaths (0 if censored)
   array[] int ms_time_03,      // Calendar week of dropout (= patient_max_t; 1-indexed)
   array[] int ms_time_32,      // Observed sojourn from dropout to death (0 if not observed)
   array[] int ms_censored_32,  // Censoring indicator for 3→2
@@ -1383,6 +1386,10 @@ tuple(
   array[n_patients] int sample_os_censored;
   array[n_patients] int spop_os;
   array[n_patients] int spop_os_censored;
+
+  // Dropout flags (1 if patient exited via cause 3; used for CIF computation)
+  array[n_patients] int spop_is_dropout;
+  array[n_patients] int sample_is_dropout;
 
   int right_censored_idx = 1;
   
@@ -1510,7 +1517,7 @@ tuple(
     // --- RNG Step 1: sample ms01 (conditional on observed data) ---
     if (ms_right_censored[i]) {
       (sample_ms_pfs[i], sample_ms_right_censored[i]) = assessment_gated_survival_time_rng(
-          ms_log_cond_surv[i], spop_visit_weeks, n_spop_visits, max_all_t, pfs[i], 1);
+          ms_log_cond_surv[i], spop_visit_weeks, max_all_t, pfs[i], 1);
     } else {
       sample_ms_pfs[i] = pfs[i];
       sample_ms_right_censored[i] = 0;
@@ -1520,7 +1527,7 @@ tuple(
     // No +1: assessment_gated_survival_time_rng returns 1-indexed calendar week directly
     int t_ms01_spop; int c_ms01_spop;
     (t_ms01_spop, c_ms01_spop) = assessment_gated_survival_time_rng(
-        ms_log_cond_surv[i], spop_visit_weeks, n_spop_visits, max_all_t);
+        ms_log_cond_surv[i], spop_visit_weeks, max_all_t);
 
     // --- RNG Steps 3–4: spop 0→2 and 0→3 competing risks ---
     int spop_time_02 = max_all_t + 1; int spop_cens_02 = 1;
@@ -1533,10 +1540,11 @@ tuple(
 
     int spop_time_03 = max_all_t + 1; int spop_cens_03 = 1;
     if (enable_ms_03) {
-      int t03_raw; int c03_raw;
-      (t03_raw, c03_raw) = survival_time_rng(log_cond_surv_03[i]);
-      spop_time_03 = t03_raw + 1;  // Convert to 1-indexed week
-      spop_cens_03 = c03_raw;
+      // Visit-only sampling: dropout can only occur AT visits, not between them.
+      // Matches the likelihood's sum_03_at_visits_below() which evaluates one
+      // log_cond_surv_03 term per visit week.
+      (spop_time_03, spop_cens_03) = visit_only_survival_time_rng(
+          log_cond_surv_03[i], spop_visit_weeks, max_all_t);
     }
 
     // --- Classify and derive spop PFS atomically (no RNG) ---
@@ -1548,6 +1556,8 @@ tuple(
         spop_time_02, spop_cens_02,
         spop_time_03, spop_cens_03,
         enable_ms_02, enable_ms_03);
+
+    spop_is_dropout[i] = (spop_cause == 3);
 
     (spop_pfs[i], spop_right_censored[i], spop_ms_pfs[i], spop_ms_right_censored[i]) =
         derive_spop_pfs(spop_cause, spop_exit,
@@ -1583,6 +1593,21 @@ tuple(
       }
     }
 
+    // --- RNG Step 6b: sample 0→3 (use observed data or forecast) ---
+    int sample_time_03 = max_all_t + 1; int sample_cens_03 = 1;
+    if (enable_ms_03) {
+      if (ms_final_state[i] == 3) {
+        // Observed dropout — use ground truth
+        sample_time_03 = ms_time_03[i]; sample_cens_03 = 0;
+      } else if (ms_final_state[i] == 0) {
+        // Admin-censored — forecast 0→3 from last observation
+        (sample_time_03, sample_cens_03) = visit_only_survival_time_rng(
+            log_cond_surv_03[i], spop_visit_weeks, max_all_t,
+            ms_time_03[i], 1);
+      }
+      // States 1, 2: event observed → dropout didn't happen; leave as (max_all_t+1, 1)
+    }
+
     // --- Classify and derive sample PFS atomically (no RNG) ---
     int sample_t01; int sample_c01;
     if (!right_censored[i]) {
@@ -1597,15 +1622,17 @@ tuple(
     (sample_cause, sample_exit) = classify_sample_exit(
         sample_t01, sample_c01,
         sample_time_02, sample_cens_02,
-        ms_final_state[i], ms_censored_02[i],
-        ms_time_03[i],
+        sample_time_03, sample_cens_03,
+        ms_censored_02[i],
         enable_ms_02, enable_ms_03);
+
+    sample_is_dropout[i] = (sample_cause == 3);
 
     (sample_pfs[i], sample_right_censored[i], sample_ms_pfs[i], sample_ms_right_censored[i]) =
         derive_sample_pfs(sample_cause, sample_exit,
                           sample_target_pfs[i], sample_target_right_censored[i],
                           sample_ms_pfs[i], sample_ms_right_censored[i],
-                          ms_time_03[i],
+                          sample_time_03,
                           enable_ms_02, enable_ms_03);
 
     // --- RNG Step 7: sample OS ---
@@ -1616,8 +1643,8 @@ tuple(
         log_cond_surv_32[i],
         sample_t01, sample_time_02,
         pfs[i],
-        ms_censored_12[i], ms_time_12[i],
-        ms_censored_32[i], ms_time_03[i], ms_time_32[i]);
+        ms_censored_12[i], ms_time_12[i], ms_os_event_12[i],
+        ms_censored_32[i], sample_time_03, ms_time_32[i]);
   }
 
   return (
@@ -1644,7 +1671,9 @@ tuple(
     sample_os,
     sample_os_censored,
     spop_os,
-    spop_os_censored
+    spop_os_censored,
+    spop_is_dropout,
+    sample_is_dropout
   );
 }
 
