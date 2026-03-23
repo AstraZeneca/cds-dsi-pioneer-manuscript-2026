@@ -28,7 +28,7 @@ Leave-future-out cross-validation results on this page are based on **DCO2 (Augu
 ::: {.callout-tip}
 ## Related Pages
 - See [Leave-Future-Out Cross-Validation](../documentation/leave-future-out-cross-validation.qmd) for LFO methodology details
-- See [Model Specification](../documentation/model-specification.qmd) for model details
+- See [Model Architecture](../documentation/model-architecture.qmd) for model overview
 - See [Architecture](../documentation/architecture.qmd) for computational optimization strategies
 :::
 
@@ -340,5 +340,5 @@ tar_read(full_oos_confusion_matrix_ctdna_jan26, store = lfo_store) |>
 - [Survival Analysis](survival-analysis.qmd#sec-cutoff-km) - Cutoff KM comparisons
 - [DCO Comparisons](../comparisons/dco-comparisons.qmd) - Data cutoff analyses
 - [Diagnostics](diagnostics.qmd) - Sampling diagnostics
-- [Model Specification](../documentation/model-specification.qmd) - Model details
+- [Model Architecture](../documentation/model-architecture.qmd) - Model overview
 :::
