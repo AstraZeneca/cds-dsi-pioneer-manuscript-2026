@@ -405,4 +405,355 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
 
 # NOTE: create_tumor_ssls_initializer() has been moved to r/sclc/initializers.R
 
+    # Initialize on TRANSFORMED scale, then back-calculate raw values
+    # This gives direct control over actual parameter values and prevents state explosion
+    # Formula: actual = mean + sd * raw  =>  raw = (actual - mean) / sd
+
+    with(stan_data, {
+      # Multi-level hierarchy: n_levels, n_groups_per_level
+      # Compute enabled group counts for each module (matches Stan transformed_data)
+      n_enabled_groups_tr_intercept <- sum(n_groups_per_level[enable_level_intercept_tr == 1])
+      n_enabled_groups_tr_slope <- sum(n_groups_per_level[enable_level_cov_tr == 1])
+      n_enabled_groups_frac_intercept <- sum(n_groups_per_level[enable_level_intercept_frac == 1])
+      n_enabled_groups_frac_slope <- sum(n_groups_per_level[enable_level_cov_frac == 1])
+      n_enabled_groups_init_intercept <- sum(n_groups_per_level[enable_level_intercept_init == 1])
+      n_enabled_groups_init_slope <- sum(n_groups_per_level[enable_level_cov_init == 1])
+
+      # Derived flags for 1→2 GPs (which time scales need which GPs)
+      need_12_s_gp <- enable_ms_12 && (ms_time_scale_12 == 1 || ms_time_scale_12 == 2)
+      need_12_t_gp <- enable_ms_12 && (ms_time_scale_12 == 0 || ms_time_scale_12 == 2)
+
+      # Multistate enabled group counts - SEPARATE for each transition (matches Stan logic)
+      # Truthy check (> 0): both intercept-only (1) and GP (2) modes count as enabled
+      n_enabled_groups_ms_baseline <- sum(n_groups_per_level[enable_ms_level_baseline_hazard > 0])
+
+      n_enabled_groups_ms_baseline_01 <- if (enable_ms_01) n_enabled_groups_ms_baseline else 0L
+      n_enabled_groups_ms_baseline_02 <- if (enable_ms_02) n_enabled_groups_ms_baseline else 0L
+      n_enabled_groups_ms_baseline_12_s <- if (need_12_s_gp) n_enabled_groups_ms_baseline else 0L
+      n_enabled_groups_ms_baseline_12_t <- if (need_12_t_gp) n_enabled_groups_ms_baseline else 0L
+      n_enabled_groups_ms_baseline_03 <- if (enable_ms_03) n_enabled_groups_ms_baseline else 0L
+      n_enabled_groups_ms_baseline_32 <- if (enable_ms_32) n_enabled_groups_ms_baseline else 0L
+
+      # GP-only group counts (mode == 2 only, for eta matrix sizing)
+      n_gp_groups_ms_baseline <- sum(n_groups_per_level[enable_ms_level_baseline_hazard == 2L])
+
+      n_gp_groups_ms_baseline_01 <- if (enable_ms_01) n_gp_groups_ms_baseline else 0L
+      n_gp_groups_ms_baseline_02 <- if (enable_ms_02) n_gp_groups_ms_baseline else 0L
+      n_gp_groups_ms_baseline_12_s <- if (need_12_s_gp) n_gp_groups_ms_baseline else 0L
+      n_gp_groups_ms_baseline_12_t <- if (need_12_t_gp) n_gp_groups_ms_baseline else 0L
+      n_gp_groups_ms_baseline_03 <- if (enable_ms_03) n_gp_groups_ms_baseline else 0L
+      n_gp_groups_ms_baseline_32 <- if (enable_ms_32) n_gp_groups_ms_baseline else 0L
+
+      # GP knot counts (matches Stan transformed_data ceiling division)
+      n_ms_gp_cal_knots       <- ceiling(max_all_t / ms_gp_grid_step)
+      n_ms_gp_sojourn_knots   <- ceiling(ms_max_sojourn_t / ms_gp_grid_step)
+      n_ms_gp_sojourn_32_knots <- ceiling(ms_max_sojourn_t_32 / ms_gp_grid_step)
+
+      # Covariate slope enabled groups (shared across transitions)
+      n_enabled_groups_ms_slope <- sum(n_groups_per_level[enable_ms_level_cov == 1])
+
+      # Helper to draw truncated normal on actual scale
+      rtruncnorm_actual <- function(n, sd, max_dev = 1.5) {
+        raw <- rnorm(n, sd = sd * 0.6)
+        pmax(-max_dev * sd, pmin(max_dev * sd, raw))
+      }
+
+      # Draw hierarchical SDs for each level (truncate at 0.05 to avoid numerical issues)
+      # tr_sd_level_intercept_sd is array[n_levels] from priors
+      tr_sd_level <- pmax(0.05, abs(rnorm(n_levels, sd = tr_sd_level_intercept_sd)))
+      frac_sd_level <- pmax(0.05, abs(rnorm(n_levels, sd = frac_sd_level_intercept_sd)))
+      init_sd_level <- pmax(0.05, abs(rnorm(n_levels, sd = init_sd_level_intercept_sd)))
+
+      # Draw actual deviations for ENABLED levels only, then back-calculate raw
+      # These are flattened: groups from enabled level 1, then enabled level 2, etc.
+      tr_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
+        if (enable_level_intercept_tr[lv]) rtruncnorm_actual(n_groups_per_level[lv], tr_sd_level[lv]) else NULL
+      }))
+      frac_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
+        if (enable_level_intercept_frac[lv]) rtruncnorm_actual(n_groups_per_level[lv], frac_sd_level[lv]) else NULL
+      }))
+      init_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
+        if (enable_level_intercept_init[lv]) rtruncnorm_actual(n_groups_per_level[lv], init_sd_level[lv]) else NULL
+      }))
+
+      # Back-calculate raw values (raw = dev / sd for each group's level)
+      # Build enabled_level_pos for indexing (1-based start positions, only enabled levels)
+      enabled_level_pos_tr <- c(1L, cumsum(n_groups_per_level * enable_level_intercept_tr) + 1L)
+      tr_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
+        if (!enable_level_intercept_tr[lv]) return(NULL)
+        idx <- enabled_level_pos_tr[lv]:(enabled_level_pos_tr[lv + 1] - 1)
+        tr_level_dev[idx] / tr_sd_level[lv]
+      }))
+
+      enabled_level_pos_frac <- c(1L, cumsum(n_groups_per_level * enable_level_intercept_frac) + 1L)
+      frac_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
+        if (!enable_level_intercept_frac[lv]) return(NULL)
+        idx <- enabled_level_pos_frac[lv]:(enabled_level_pos_frac[lv + 1] - 1)
+        frac_level_dev[idx] / frac_sd_level[lv]
+      }))
+
+      enabled_level_pos_init <- c(1L, cumsum(n_groups_per_level * enable_level_intercept_init) + 1L)
+      init_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
+        if (!enable_level_intercept_init[lv]) return(NULL)
+        idx <- enabled_level_pos_init[lv]:(enabled_level_pos_init[lv + 1] - 1)
+        init_level_dev[idx] / init_sd_level[lv]
+      }))
+
+      # Slope SDs for each level (list of vectors, one per level)
+      # tr_sd_level_slope_sd is list of n_levels vectors from priors
+      tr_sd_level_slope <- lapply(seq_len(n_levels), function(lv) {
+        pmax(0.01, abs(rnorm(n_covar, sd = tr_sd_level_slope_sd[[lv]])))
+      })
+      frac_sd_level_slope <- lapply(seq_len(n_levels), function(lv) {
+        pmax(0.01, abs(rnorm(n_covar, sd = frac_sd_level_slope_sd[[lv]])))
+      })
+      init_sd_level_slope <- lapply(seq_len(n_levels), function(lv) {
+        pmax(0.01, abs(rnorm(n_covar, sd = init_sd_level_slope_sd[[lv]])))
+      })
+
+      # Raw slope effects: matrix[n_enabled_groups_*, n_covar]
+      # Use narrow distribution (sd=0.5) to avoid extreme initializations
+      # Sized by ENABLED groups only
+      tr_raw_level_slope <- matrix(rnorm(n_enabled_groups_tr_slope * n_covar, sd = 0.5),
+                                    nrow = n_enabled_groups_tr_slope, ncol = n_covar)
+      frac_raw_level_slope <- matrix(rnorm(n_enabled_groups_frac_slope * n_covar, sd = 0.5),
+                                      nrow = n_enabled_groups_frac_slope, ncol = n_covar)
+      init_raw_level_slope <- matrix(rnorm(n_enabled_groups_init_slope * n_covar, sd = 0.5),
+                                      nrow = n_enabled_groups_init_slope, ncol = n_covar)
+
+      lst(
+        # Population intercepts (unconditional - always required)
+        tr_loc_pop = rnorm(1, tr_loc_pop_mean, tr_loc_pop_sd),
+        frac_logit_loc_pop = rnorm(1, frac_logit_loc_pop_mean, frac_logit_loc_pop_sd),
+        init_logit_loc_pop = rnorm(1, init_logit_loc_pop_mean, init_logit_loc_pop_sd),
+
+        # Level-indexed intercept SDs and raw values
+        tr_sd_level_intercept = tr_sd_level,
+        tr_raw_level_intercept = tr_raw_level,
+        frac_sd_level_intercept = frac_sd_level,
+        frac_raw_level_intercept = frac_raw_level,
+        init_sd_level_intercept = init_sd_level,
+        init_raw_level_intercept = init_raw_level,
+
+        # Population covariate coefficients (QR space)
+        tr_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_tr) array(rnorm(n_covar, tr_coef_qr_pop_mean, tr_coef_qr_pop_sd), dim = n_covar),
+        frac_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_frac) array(rnorm(n_covar, frac_coef_qr_pop_mean, frac_coef_qr_pop_sd), dim = n_covar),
+        init_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_init) array(rnorm(n_covar, init_coef_qr_pop_mean, init_coef_qr_pop_sd), dim = n_covar),
+
+        # Level-indexed slope SDs and raw values
+        tr_sd_level_slope = if (n_covar > 0) tr_sd_level_slope,
+        tr_raw_level_slope = if (n_covar > 0) tr_raw_level_slope,
+        frac_sd_level_slope = if (n_covar > 0) frac_sd_level_slope,
+        frac_raw_level_slope = if (n_covar > 0) frac_raw_level_slope,
+        init_sd_level_slope = if (n_covar > 0) init_sd_level_slope,
+        init_raw_level_slope = if (n_covar > 0) init_raw_level_slope,
+
+        # Patient-level process noise (AR(1) time-varying deviations per patient)
+        # Initialize at ZERO - safest starting point for process noise
+        # The sampler will find the right values during warmup
+        tr_raw_patient_process_noise = if (enable_patient_process_noise_tr) {
+          matrix(0, nrow = n_patients, ncol = max_t_width)
+        },
+        tr_log_sd_pop_process_noise = if (enable_patient_process_noise_tr) array(rnorm(1, mean = log(0.05), sd = 0.5)),
+        tr_sd_patient_log_sd_process_noise = if (enable_patient_process_noise_tr) array(abs(rnorm(1, sd = 0.3))),
+        tr_raw_patient_log_sd_process_noise = if (enable_patient_process_noise_sd_tr) rep(0, n_patients),
+        tr_logit_phi_pop_process_noise = if (enable_patient_process_noise_tr) array(rnorm(1, mean = 2, sd = 1)),
+        tr_sd_patient_phi_process_noise = if (enable_patient_process_noise_tr) array(abs(rnorm(1, sd = 0.1))),
+        tr_raw_patient_phi_process_noise = if (enable_patient_process_noise_phi_tr) rep(0, n_patients),
+
+        # Population-level process noise (shared AR(1) temporal trend)
+        tr_raw_pop_process_noise = if (enable_pop_process_noise_tr) {
+          rnorm(max_t_width, 0, 0.1)  # Small random starts instead of zeros
+        },
+        tr_log_sd_pop_process_noise_pop = if (enable_pop_process_noise_tr) array(rnorm(1, mean = log(0.05), sd = 0.5)),
+        tr_logit_phi_pop_process_noise_pop = if (enable_pop_process_noise_tr) array(rnorm(1, mean = 1.4, sd = 0.3)),  # Match prior mean
+
+        # Measurement error - draw from inv_gamma prior (keeps mass away from zero)
+        measure_sd_sld = invgamma::rinvgamma(1, measure_sd_sld_alpha, measure_sd_sld_beta),
+
+        # =====================================================================
+        # MULTISTATE HAZARD MODEL PARAMETERS
+        # =====================================================================
+        # Supports configurable transitions:
+        #   - 0→1: Progression / PFS event
+        #   - 0→2: Death without progression
+        #   - 1→2: Post-progression death (sojourn _s and clock-forward _t GPs)
+
+        # --- 0→1 Transition (Progression / PFS event) ---
+        log_lambda_gp_01_pop_intercept = if (enable_ms_01) {
+          array(rnorm(1, log_lambda_gp_01_pop_intercept_mean, log_lambda_gp_01_pop_intercept_sd), dim = 1)
+        },
+        log_lambda_gp_01_pop_alpha = if (enable_ms_01) array(1.0, dim = 1),  # Start at 1.0 to avoid boundary
+        log_lambda_gp_01_pop_rho = if (enable_ms_01) {
+          array(invgamma::rinvgamma(1, log_lambda_gp_01_pop_rho_alpha, log_lambda_gp_01_pop_rho_beta), dim = 1)
+        },
+        log_lambda_gp_01_pop_eta = if (enable_ms_01) rnorm(n_ms_gp_cal_knots),
+        log_lambda_gp_01_level_alpha = if (enable_ms_01) rep(1.0, n_levels) else numeric(0),
+        log_lambda_gp_01_level_rho = if (enable_ms_01) invgamma::rinvgamma(n_levels, log_lambda_gp_01_level_rho_alpha, log_lambda_gp_01_level_rho_beta) else numeric(0),
+        log_lambda_gp_01_level_intercept_sd = if (enable_ms_01) abs(rnorm(n_levels, sd = log_lambda_gp_01_level_intercept_sd_sd)) else numeric(0),
+        log_lambda_gp_01_level_eta = if (enable_ms_01 && n_gp_groups_ms_baseline_01 > 0) {
+          matrix(rnorm(n_gp_groups_ms_baseline_01 * n_ms_gp_cal_knots), nrow = n_gp_groups_ms_baseline_01, ncol = n_ms_gp_cal_knots)
+        },
+        raw_log_lambda_gp_01_level_intercept = if (n_enabled_groups_ms_baseline_01 > 0) {
+          rnorm(n_enabled_groups_ms_baseline_01)
+        },
+
+        # --- 0→2 Transition (Death without progression) ---
+        log_lambda_gp_02_pop_intercept = if (enable_ms_02) {
+          array(rnorm(1, log_lambda_gp_02_pop_intercept_mean, log_lambda_gp_02_pop_intercept_sd), dim = 1)
+        },
+        log_lambda_gp_02_pop_alpha = if (enable_ms_02) array(1.0, dim = 1),
+        log_lambda_gp_02_pop_rho = if (enable_ms_02) {
+          array(invgamma::rinvgamma(1, log_lambda_gp_02_pop_rho_alpha, log_lambda_gp_02_pop_rho_beta), dim = 1)
+        },
+        log_lambda_gp_02_pop_eta = if (enable_ms_02) rnorm(n_ms_gp_cal_knots),
+        # Level hierarchy for 0→2 (conditional on enable_ms_02)
+        log_lambda_gp_02_level_alpha = if (enable_ms_02) rep(1.0, n_levels) else numeric(0),
+        log_lambda_gp_02_level_rho = if (enable_ms_02) invgamma::rinvgamma(n_levels, log_lambda_gp_02_level_rho_alpha, log_lambda_gp_02_level_rho_beta) else numeric(0),
+        log_lambda_gp_02_level_intercept_sd = if (enable_ms_02) abs(rnorm(n_levels, sd = log_lambda_gp_02_level_intercept_sd_sd)) else numeric(0),
+        log_lambda_gp_02_level_eta = if (enable_ms_02 && n_gp_groups_ms_baseline_02 > 0) {
+          matrix(rnorm(n_gp_groups_ms_baseline_02 * n_ms_gp_cal_knots), nrow = n_gp_groups_ms_baseline_02, ncol = n_ms_gp_cal_knots)
+        },
+        raw_log_lambda_gp_02_level_intercept = if (n_enabled_groups_ms_baseline_02 > 0) {
+          rnorm(n_enabled_groups_ms_baseline_02)
+        },
+
+        # --- 1→2 Transition: Sojourn Time GP (semi-Markov or extended) ---
+        log_lambda_gp_12_s_pop_intercept = if (need_12_s_gp) {
+          array(rnorm(1, log_lambda_gp_12_s_pop_intercept_mean, log_lambda_gp_12_s_pop_intercept_sd), dim = 1)
+        },
+        log_lambda_gp_12_s_pop_alpha = if (need_12_s_gp) array(1.0, dim = 1),
+        log_lambda_gp_12_s_pop_rho = if (need_12_s_gp) {
+          array(invgamma::rinvgamma(1, log_lambda_gp_12_s_pop_rho_alpha, log_lambda_gp_12_s_pop_rho_beta), dim = 1)
+        },
+        log_lambda_gp_12_s_pop_eta = if (need_12_s_gp) rnorm(n_ms_gp_sojourn_knots),
+        # Level hierarchy for 1→2 sojourn (conditional on need_12_s_gp)
+        log_lambda_gp_12_s_level_alpha = if (need_12_s_gp) rep(1.0, n_levels) else numeric(0),
+        log_lambda_gp_12_s_level_rho = if (need_12_s_gp) invgamma::rinvgamma(n_levels, log_lambda_gp_12_s_level_rho_alpha, log_lambda_gp_12_s_level_rho_beta) else numeric(0),
+        log_lambda_gp_12_s_level_intercept_sd = if (need_12_s_gp) abs(rnorm(n_levels, sd = log_lambda_gp_12_s_level_intercept_sd_sd)) else numeric(0),
+        log_lambda_gp_12_s_level_eta = if (need_12_s_gp && n_gp_groups_ms_baseline_12_s > 0) {
+          matrix(rnorm(n_gp_groups_ms_baseline_12_s * n_ms_gp_sojourn_knots), nrow = n_gp_groups_ms_baseline_12_s, ncol = n_ms_gp_sojourn_knots)
+        },
+        raw_log_lambda_gp_12_s_level_intercept = if (n_enabled_groups_ms_baseline_12_s > 0) {
+          rnorm(n_enabled_groups_ms_baseline_12_s)
+        },
+
+        # --- 1→2 Transition: Clock-forward Time GP (Markov or extended) ---
+        log_lambda_gp_12_t_pop_intercept = if (need_12_t_gp) {
+          array(rnorm(1, log_lambda_gp_12_t_pop_intercept_mean, log_lambda_gp_12_t_pop_intercept_sd), dim = 1)
+        },
+        log_lambda_gp_12_t_pop_alpha = if (need_12_t_gp) array(1.0, dim = 1),
+        log_lambda_gp_12_t_pop_rho = if (need_12_t_gp) {
+          array(invgamma::rinvgamma(1, log_lambda_gp_12_t_pop_rho_alpha, log_lambda_gp_12_t_pop_rho_beta), dim = 1)
+        },
+        log_lambda_gp_12_t_pop_eta = if (need_12_t_gp) rnorm(n_ms_gp_cal_knots),
+        # Level hierarchy for 1→2 clock-forward (conditional on need_12_t_gp)
+        log_lambda_gp_12_t_level_alpha = if (need_12_t_gp) rep(1.0, n_levels) else numeric(0),
+        log_lambda_gp_12_t_level_rho = if (need_12_t_gp) invgamma::rinvgamma(n_levels, log_lambda_gp_12_t_level_rho_alpha, log_lambda_gp_12_t_level_rho_beta) else numeric(0),
+        log_lambda_gp_12_t_level_intercept_sd = if (need_12_t_gp) abs(rnorm(n_levels, sd = log_lambda_gp_12_t_level_intercept_sd_sd)) else numeric(0),
+        log_lambda_gp_12_t_level_eta = if (need_12_t_gp && n_gp_groups_ms_baseline_12_t > 0) {
+          matrix(rnorm(n_gp_groups_ms_baseline_12_t * n_ms_gp_cal_knots), nrow = n_gp_groups_ms_baseline_12_t, ncol = n_ms_gp_cal_knots)
+        },
+        raw_log_lambda_gp_12_t_level_intercept = if (n_enabled_groups_ms_baseline_12_t > 0) {
+          rnorm(n_enabled_groups_ms_baseline_12_t)
+        },
+
+        # --- 0→3 Transition (Dropout: GP baseline hazard with N-level hierarchy) ---
+        log_lambda_gp_03_pop_intercept = if (enable_ms_03) {
+          array(rnorm(1, log_lambda_gp_03_pop_intercept_mean, log_lambda_gp_03_pop_intercept_sd), dim = 1)
+        },
+        log_lambda_gp_03_pop_alpha = if (enable_ms_03) array(1.0, dim = 1),
+        log_lambda_gp_03_pop_rho = if (enable_ms_03) {
+          array(invgamma::rinvgamma(1, log_lambda_gp_03_pop_rho_alpha, log_lambda_gp_03_pop_rho_beta), dim = 1)
+        },
+        log_lambda_gp_03_pop_eta = if (enable_ms_03) rnorm(n_ms_gp_cal_knots),
+        log_lambda_gp_03_level_alpha = if (enable_ms_03) rep(1.0, n_levels) else numeric(0),
+        log_lambda_gp_03_level_rho = if (enable_ms_03) {
+          invgamma::rinvgamma(n_levels, log_lambda_gp_03_level_rho_alpha, log_lambda_gp_03_level_rho_beta)
+        } else numeric(0),
+        log_lambda_gp_03_level_intercept_sd = if (enable_ms_03) {
+          abs(rnorm(n_levels, sd = log_lambda_gp_03_level_intercept_sd_sd))
+        } else numeric(0),
+        log_lambda_gp_03_level_eta = if (enable_ms_03 && n_gp_groups_ms_baseline_03 > 0) {
+          matrix(rnorm(n_gp_groups_ms_baseline_03 * n_ms_gp_cal_knots),
+                 nrow = n_gp_groups_ms_baseline_03, ncol = n_ms_gp_cal_knots)
+        },
+        raw_log_lambda_gp_03_level_intercept = if (n_enabled_groups_ms_baseline_03 > 0) {
+          rnorm(n_enabled_groups_ms_baseline_03)
+        },
+
+        # --- 3→2 Transition (Off-trial death: sojourn time GP, semi-Markov) ---
+        log_lambda_gp_32_s_pop_intercept = if (enable_ms_32) {
+          array(rnorm(1, log_lambda_gp_32_s_pop_intercept_mean, log_lambda_gp_32_s_pop_intercept_sd), dim = 1)
+        },
+        log_lambda_gp_32_s_pop_alpha = if (enable_ms_32) array(1.0, dim = 1),
+        log_lambda_gp_32_s_pop_rho = if (enable_ms_32) {
+          array(invgamma::rinvgamma(1, log_lambda_gp_32_s_pop_rho_alpha, log_lambda_gp_32_s_pop_rho_beta), dim = 1)
+        },
+        log_lambda_gp_32_s_pop_eta = if (enable_ms_32) rnorm(n_ms_gp_sojourn_32_knots),
+        log_lambda_gp_32_s_level_alpha = if (enable_ms_32) rep(1.0, n_levels) else numeric(0),
+        log_lambda_gp_32_s_level_rho = if (enable_ms_32) {
+          invgamma::rinvgamma(n_levels, log_lambda_gp_32_s_level_rho_alpha, log_lambda_gp_32_s_level_rho_beta)
+        } else numeric(0),
+        log_lambda_gp_32_s_level_intercept_sd = if (enable_ms_32) {
+          abs(rnorm(n_levels, sd = log_lambda_gp_32_s_level_intercept_sd_sd))
+        } else numeric(0),
+        log_lambda_gp_32_s_level_eta = if (enable_ms_32 && n_gp_groups_ms_baseline_32 > 0) {
+          matrix(rnorm(n_gp_groups_ms_baseline_32 * n_ms_gp_sojourn_32_knots), nrow = n_gp_groups_ms_baseline_32, ncol = n_ms_gp_sojourn_32_knots)
+        },
+        raw_log_lambda_gp_32_s_level_intercept = if (n_enabled_groups_ms_baseline_32 > 0) {
+          rnorm(n_enabled_groups_ms_baseline_32)
+        },
+
+        # --- Time-varying Covariate Coefficients ---
+        time_varying_coef_01 = if (enable_ms_01 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
+          rnorm(n_time_varying_covar, time_varying_coef_01_mean, time_varying_coef_01_sd)
+        },
+        time_varying_coef_02 = if (enable_ms_02 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
+          rnorm(n_time_varying_covar, time_varying_coef_02_mean, time_varying_coef_02_sd)
+        },
+        time_varying_coef_12 = if (enable_ms_12 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
+          rnorm(n_time_varying_covar, time_varying_coef_12_mean, time_varying_coef_12_sd)
+        },
+
+        # --- Time-invariant Covariate Coefficients (QR space) ---
+        time_invariant_coef_qr_01 = if (enable_ms_01 && enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0) {
+          rnorm(n_time_invariant_covar, time_invariant_coef_01_mean, time_invariant_coef_01_sd)
+        },
+        time_invariant_coef_qr_02 = if (enable_ms_02 && enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0) {
+          rnorm(n_time_invariant_covar, time_invariant_coef_02_mean, time_invariant_coef_02_sd)
+        },
+        time_invariant_coef_qr_12 = if (enable_ms_12 && enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0) {
+          rnorm(n_time_invariant_covar, time_invariant_coef_12_mean, time_invariant_coef_12_sd)
+        },
+
+        # --- Multi-level Random Slope SDs (array[n_levels] vector[n_time_invariant_covar]) ---
+        sd_level_slope_01 = if (enable_ms_01 && n_time_invariant_covar > 0) {
+          lapply(seq_len(n_levels), function(lv) abs(rnorm(n_time_invariant_covar, sd = sd_level_slope_01_sd[[lv]])))
+        },
+        sd_level_slope_02 = if (enable_ms_02 && n_time_invariant_covar > 0) {
+          lapply(seq_len(n_levels), function(lv) abs(rnorm(n_time_invariant_covar, sd = sd_level_slope_02_sd[[lv]])))
+        },
+        sd_level_slope_12 = if (enable_ms_12 && n_time_invariant_covar > 0) {
+          lapply(seq_len(n_levels), function(lv) abs(rnorm(n_time_invariant_covar, sd = sd_level_slope_12_sd[[lv]])))
+        },
+
+        # --- Multi-level Raw Random Slopes (matrix[n_enabled_groups_ms_slope, n_time_invariant_covar]) ---
+        raw_level_slope_01 = if (enable_ms_01 && n_time_invariant_covar > 0) {
+          matrix(rnorm(n_enabled_groups_ms_slope * n_time_invariant_covar, sd = 0.5),
+                 nrow = n_enabled_groups_ms_slope, ncol = n_time_invariant_covar)
+        },
+        raw_level_slope_02 = if (enable_ms_02 && n_time_invariant_covar > 0) {
+          matrix(rnorm(n_enabled_groups_ms_slope * n_time_invariant_covar, sd = 0.5),
+                 nrow = n_enabled_groups_ms_slope, ncol = n_time_invariant_covar)
+        },
+        raw_level_slope_12 = if (enable_ms_12 && n_time_invariant_covar > 0) {
+          matrix(rnorm(n_enabled_groups_ms_slope * n_time_invariant_covar, sd = 0.5),
+                 nrow = n_enabled_groups_ms_slope, ncol = n_time_invariant_covar)
+        },
+      )
+    }) |> compact()
+  }
+}
+
 # nolint end: object_usage_linter

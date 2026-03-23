@@ -1,7 +1,8 @@
 functions {
-  #include "pos.stan"
-  #include "util.stan"
-  #include "tumor/recist.stanfunctions"
+  #include "pos.stanfunctions"
+  #include "util.stanfunctions"
+  #include "pfs.stanfunctions"
+  #include "modules/tumor/tumor.stanfunctions"
 }
 
 data {

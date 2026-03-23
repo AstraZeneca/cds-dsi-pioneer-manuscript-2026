@@ -10,6 +10,8 @@ real log_lod = log(0.1);
 vector[sum(n_patient_visits)] log_sum_tumor_size = log(sum_tumor_size); // cm
 vector[sum(n_patient_visits) - sum(n_patient_screening_visits)] post_treat_sld;
 
+
+
 // Extract post-treatment SLD values
 {
   int post_treat_pos = 1;

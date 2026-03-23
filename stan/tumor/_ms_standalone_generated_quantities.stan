@@ -16,6 +16,9 @@ array[n_patients] int<lower=0, upper=1> sample_ms_right_censored, spop_ms_right_
 array[n_patients] int<lower=0> sample_os, spop_os;
 array[n_patients] int<lower=0, upper=1> sample_os_censored, spop_os_censored;
 
+// Dropout flags — 1 if patient exited via cause 3 in this draw (for CIF computation)
+array[n_patients] int<lower=0, upper=1> spop_is_dropout, sample_is_dropout;
+
 // ── Trial-level PFS KM ───────────────────────────────────────────────────
 array[n_trials] vector<lower=0, upper=1>[max_all_t + 1] sample_ms_km_est, spop_ms_km_est;
 
@@ -80,165 +83,123 @@ array[n_cond_group] vector<lower=0, upper=1>[n_pfs_timepoints]
 
 for (i in 1:n_patients) {
 
-  // ── 1. PFS via 0→1 transition ────────────────────────────────────────
-
-  // Unconditional: full posterior predictive from time 0
-  (spop_ms_pfs[i], spop_ms_right_censored[i]) = survival_time_rng(log_cond_surv_01[i]);
-  spop_ms_pfs[i] += 1;  // Convert to 1-based detection week
-
-  // Conditional: respect observed data, forecast only censored patients
-  if (ms_censored_01[i]) {
-    // Censored for 0→1: forecast from observed time
-    (sample_ms_pfs[i], sample_ms_right_censored[i]) =
-      survival_time_rng(log_cond_surv_01[i], ms_time_01[i], 1, 0);
-    sample_ms_pfs[i] += 1;
-  } else {
-    // Event observed: use data (pfs + interval_censored + 1 = detection week)
-    sample_ms_pfs[i] = ms_time_01[i] + interval_censored[i] + 1;
-    sample_ms_right_censored[i] = 0;
-  }
-
-  // ── 2. OS via competing risks (0→1 vs 0→2 vs 0→3) + illness-death routing ──
-
   // Guard: clock-forward matrix is [0,0] when ms_time_scale_12==1 (semi-Markov)
   row_vector[cols(log_cond_surv_12_t)] surv_12_t_i =
     cols(log_cond_surv_12_t) > 0 ? log_cond_surv_12_t[i] : rep_row_vector(0, 0);
 
-  // --- Unconditional (spop) OS ---
-  {
-    int spop_time_01 = spop_ms_pfs[i];
-    int spop_cens_01 = spop_ms_right_censored[i];
+  // ── Build visit schedule (shared by spop and sample 0→3) ────────────────
+  int v_start = patient_visit_pos[i];
+  int v_end = patient_visit_pos[i + 1] - 1;
+  int n_obs_v = v_end - v_start + 1;
+  int last_obs_wk = t_patient_visits[v_end];
+  int n_fc_v = max(0, (max_all_t - last_obs_wk) %/% forecast_observation_interval);
+  array[n_obs_v + n_fc_v] int patient_visits = build_spop_visit_schedule(
+      t_patient_visits[v_start:v_end], forecast_observation_interval, max_all_t);
 
-    int spop_time_02 = max_all_t + 1;
-    int spop_cens_02 = 1;
-    if (enable_ms_02) {
+  // ── Unconditional (spop) pathway ─────────────────────────────────────────
+
+  // Draw individual competing times (raw 0-indexed → +1 for 1-based detection week)
+  int spop_t01_raw; int spop_c01;
+  (spop_t01_raw, spop_c01) = survival_time_rng(log_cond_surv_01[i]);
+  int spop_t01 = spop_t01_raw + 1;
+
+  int spop_t02 = max_all_t + 1; int spop_c02 = 1;
+  if (enable_ms_02) {
+    int t02_raw; int c02_raw;
+    (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[i]);
+    spop_t02 = t02_raw + 1; spop_c02 = c02_raw;
+  }
+
+  int spop_t03 = max_all_t + 1; int spop_c03 = 1;
+  if (enable_ms_03) {
+    // Visit-only sampling: dropout can only occur AT visits, not between them.
+    (spop_t03, spop_c03) = visit_only_survival_time_rng(
+        log_cond_surv_03[i], patient_visits, max_all_t);
+  }
+
+  int spop_cause; int spop_exit;
+  (spop_cause, spop_exit) = classify_spop_exit(
+    spop_t01, spop_c01, spop_t02, spop_c02, spop_t03, spop_c03,
+    enable_ms_02, enable_ms_03);
+  spop_is_dropout[i] = (spop_cause == 3);
+
+  // PFS: no RECIST in standalone — pass dummy target (max_all_t+1, censored=1)
+  { int unused_pfs; int unused_cens;
+    (unused_pfs, unused_cens, spop_ms_pfs[i], spop_ms_right_censored[i]) =
+      derive_spop_pfs(spop_cause, spop_exit,
+        max_all_t + 1, 1,    // no RECIST component
+        spop_t01, spop_c01, spop_t03, enable_ms_02, enable_ms_03);
+  }
+
+  (spop_os[i], spop_os_censored[i]) = derive_spop_os_rng(
+    spop_cause, spop_exit,
+    enable_ms_12, enable_ms_32, ms_time_scale_12,
+    log_cond_surv_12_s[i], surv_12_t_i, log_cond_surv_32[i],
+    spop_t01, spop_t02, spop_t03);
+
+  // ── Conditional (sample) pathway ─────────────────────────────────────────
+
+  // 0→1: respect observed data; forecast only censored patients
+  int sample_t01; int sample_c01;
+  if (ms_censored_01[i]) {
+    int t01_raw; int c01_raw;
+    (t01_raw, c01_raw) = survival_time_rng(log_cond_surv_01[i], ms_time_01[i], 1, 0);
+    sample_t01 = t01_raw + 1; sample_c01 = c01_raw;
+  } else {
+    sample_t01 = ms_time_01[i]; sample_c01 = 0;
+  }
+
+  // 0→2: use observed event or forecast from observed censoring time
+  int sample_t02 = max_all_t + 1; int sample_c02 = 1;
+  if (enable_ms_02) {
+    if (!ms_censored_02[i]) {
+      sample_t02 = ms_time_02[i]; sample_c02 = 0;
+    } else {
       int t02_raw; int c02_raw;
-      (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[i]);
-      spop_time_02 = t02_raw + 1;
-      spop_cens_02 = c02_raw;
-    }
-
-    int spop_time_03 = max_all_t + 1;
-    int spop_cens_03 = 1;
-    if (enable_ms_03) {
-      int t03_raw; int c03_raw;
-      (t03_raw, c03_raw) = survival_time_rng(log_cond_surv_03[i]);
-      spop_time_03 = t03_raw + 1;
-      spop_cens_03 = c03_raw;
-    }
-
-    // Competing risks truth table
-    // Priority on ties: progression (0→1) > direct death (0→2) > dropout (0→3)
-    int spop_progressed_first = !spop_cens_01
-      && (spop_cens_02 || spop_time_01 <= spop_time_02)
-      && (spop_cens_03 || spop_time_01 <= spop_time_03);
-    int spop_died_directly = enable_ms_02 && !spop_cens_02
-      && (spop_cens_01 || spop_time_02 < spop_time_01)
-      && (spop_cens_03 || spop_time_02 <= spop_time_03);
-    int spop_dropped_out = enable_ms_03 && !spop_cens_03
-      && (spop_cens_01 || spop_time_03 < spop_time_01)
-      && (spop_cens_02 || spop_time_03 < spop_time_02);
-
-    if (spop_died_directly) {
-      spop_os[i] = spop_time_02;
-      spop_os_censored[i] = 0;
-      // Death without progression is a PFS event
-      spop_ms_pfs[i] = spop_time_02;
-      spop_ms_right_censored[i] = 0;
-    } else if (spop_dropped_out && enable_ms_32) {
-      // Dropped out: sample post-dropout death (3→2) unconditionally
-      (spop_os[i], spop_os_censored[i]) = sample_dropout_death_rng(
-        log_cond_surv_32[i], spop_time_03, 0);  // sojourn_obs=0: unconditional
-      // Dropout censors PFS at dropout time
-      spop_ms_pfs[i] = spop_time_03;
-      spop_ms_right_censored[i] = 1;
-    } else if (spop_dropped_out) {
-      // Dropped out but 3→2 not modeled: censor OS at dropout
-      spop_os[i] = spop_time_03;
-      spop_os_censored[i] = 1;
-      spop_ms_pfs[i] = spop_time_03;
-      spop_ms_right_censored[i] = 1;
-    } else if (spop_progressed_first && enable_ms_12) {
-      (spop_os[i], spop_os_censored[i]) = sample_post_progression_death_rng(
-        ms_time_scale_12, log_cond_surv_12_s[i], surv_12_t_i,
-        spop_time_01, 0);  // sojourn_obs=0: unconditional
-    } else {
-      // All censored
-      spop_os[i] = max({spop_time_01, spop_time_02, spop_time_03});
-      spop_os_censored[i] = 1;
+      (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[i], ms_time_01[i], 1, 0);
+      sample_t02 = t02_raw + 1; sample_c02 = c02_raw;
     }
   }
 
-  // --- Conditional (sample) OS ---
-  {
-    int sample_time_01 = sample_ms_pfs[i];
-    int sample_cens_01 = sample_ms_right_censored[i];
-
-    int sample_time_02 = max_all_t + 1;
-    int sample_cens_02 = 1;
-    if (enable_ms_02) {
-      if (!ms_censored_02[i]) {
-        // Death without progression was observed
-        sample_time_02 = ms_time_02[i];
-        sample_cens_02 = 0;
-      } else {
-        // Censored for 0→2: forecast from observed time
-        int t02_raw; int c02_raw;
-        (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[i], ms_time_01[i], 1, 0);
-        sample_time_02 = t02_raw + 1;
-        sample_cens_02 = c02_raw;
-      }
+  // 0→3: use observed data or forecast for admin-censored patients
+  int sample_t03 = max_all_t + 1; int sample_c03 = 1;
+  if (enable_ms_03) {
+    if (ms_final_state[i] == 3) {
+      // Observed dropout — use ground truth
+      sample_t03 = ms_time_03[i]; sample_c03 = 0;
+    } else if (ms_final_state[i] == 0) {
+      // Admin-censored — forecast 0→3 from last observation
+      (sample_t03, sample_c03) = visit_only_survival_time_rng(
+          log_cond_surv_03[i], patient_visits, max_all_t,
+          ms_time_03[i], 1);
     }
-
-    // State 3: observed dropout is ground truth — takes priority over forecasts
-    int sample_dropped_out = enable_ms_03 && ms_final_state[i] == 3;
-
-    // Routing truth table
-    int sample_died_directly = !sample_dropped_out && enable_ms_02 && !sample_cens_02
-      && (!ms_censored_02[i] || sample_cens_01 || sample_time_02 < sample_time_01);
-    int sample_progressed_first = !sample_dropped_out && !sample_died_directly && !sample_cens_01
-      && (sample_cens_02 || sample_time_01 <= sample_time_02);
-
-    if (sample_dropped_out) {
-      if (!ms_censored_32[i]) {
-        // Off-trial death was observed: use exact calendar time
-        sample_os[i] = ms_time_03[i] + ms_time_32[i];
-        sample_os_censored[i] = 0;
-      } else if (enable_ms_32) {
-        // Forecast post-dropout death conditioning on observed sojourn survival
-        (sample_os[i], sample_os_censored[i]) = sample_dropout_death_rng(
-          log_cond_surv_32[i], ms_time_03[i], ms_time_32[i]);
-      } else {
-        // 3→2 not modeled: censor at last off-trial observation
-        sample_os[i] = ms_time_03[i] + ms_time_32[i];
-        sample_os_censored[i] = 1;
-      }
-      // Dropout censors PFS at dropout time
-      sample_ms_pfs[i] = ms_time_03[i];
-      sample_ms_right_censored[i] = 1;
-    } else if (sample_died_directly) {
-      sample_os[i] = sample_time_02;
-      sample_os_censored[i] = 0;
-      // Death without progression is a PFS event
-      sample_ms_pfs[i] = sample_time_02;
-      sample_ms_right_censored[i] = 0;
-    } else if (sample_progressed_first && enable_ms_12) {
-      if (!ms_censored_12[i]) {
-        // Observed post-progression death: use exact time
-        sample_os[i] = ms_time_01[i] + ms_time_12[i];
-        sample_os_censored[i] = 0;
-      } else {
-        // Forecast post-progression death, conditioning on observed sojourn survival
-        (sample_os[i], sample_os_censored[i]) = sample_post_progression_death_rng(
-          ms_time_scale_12, log_cond_surv_12_s[i], surv_12_t_i,
-          sample_time_01, ms_time_12[i]);
-      }
-    } else {
-      // All censored
-      sample_os[i] = max(sample_time_01, sample_time_02);
-      sample_os_censored[i] = 1;
-    }
+    // States 1, 2: event observed → dropout didn't happen; leave as (max_all_t+1, 1)
   }
+
+  int sample_cause; int sample_exit;
+  (sample_cause, sample_exit) = classify_sample_exit(
+    sample_t01, sample_c01, sample_t02, sample_c02,
+    sample_t03, sample_c03,
+    ms_censored_02[i],
+    enable_ms_02, enable_ms_03);
+  sample_is_dropout[i] = (sample_cause == 3);
+
+  // PFS: no RECIST in standalone — pass dummy target (max_all_t+1, censored=1)
+  { int unused_pfs; int unused_cens;
+    (unused_pfs, unused_cens, sample_ms_pfs[i], sample_ms_right_censored[i]) =
+      derive_sample_pfs(sample_cause, sample_exit,
+        max_all_t + 1, 1,    // no RECIST component
+        sample_t01, sample_c01, sample_t03, enable_ms_02, enable_ms_03);
+  }
+
+  (sample_os[i], sample_os_censored[i]) = derive_sample_os_rng(
+    sample_cause, sample_exit,
+    enable_ms_12, enable_ms_32, ms_time_scale_12,
+    log_cond_surv_12_s[i], surv_12_t_i, log_cond_surv_32[i],
+    sample_t01, sample_t02,
+    ms_time_01[i],
+    ms_censored_12[i], ms_time_12[i], ms_os_event_12[i],
+    ms_censored_32[i], sample_t03, ms_time_32[i]);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -372,4 +333,35 @@ for (c in 1:n_cond_group) {
   }
 }
 
-#include "modules/multistate/generated_quantities.stan"
+// ── Competing Risks CIF (per-trial, empirical subdistribution) ───────────────
+// Standalone model only has multistate PFS (no SLD/RECIST pathway).
+
+array[n_trials] vector<lower=0, upper=1>[max_all_t + 1]
+  spop_cif_01   = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  spop_cif_02   = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  spop_cif_03   = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  sample_cif_01 = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  sample_cif_02 = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  sample_cif_03 = rep_array(zeros_vector(max_all_t + 1), n_trials);
+
+for (s in 1:n_trials) {
+  int n_tr = get_pos_size(trial_patient_pos, s);
+  if (n_tr > 0) {
+    int tr_start; int tr_end;
+    (tr_start, tr_end) = get_pos(trial_patient_pos, s);
+
+    (spop_cif_01[s], spop_cif_02[s], spop_cif_03[s]) = compute_trial_cif(
+      spop_ms_pfs[tr_start:tr_end], spop_ms_right_censored[tr_start:tr_end],
+      spop_is_dropout[tr_start:tr_end],
+      spop_os[tr_start:tr_end],  spop_os_censored[tr_start:tr_end],
+      max_all_t
+    );
+
+    (sample_cif_01[s], sample_cif_02[s], sample_cif_03[s]) = compute_trial_cif(
+      sample_ms_pfs[tr_start:tr_end], sample_ms_right_censored[tr_start:tr_end],
+      sample_is_dropout[tr_start:tr_end],
+      sample_os[tr_start:tr_end],  sample_os_censored[tr_start:tr_end],
+      max_all_t
+    );
+  }
+}
