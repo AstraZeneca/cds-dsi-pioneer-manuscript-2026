@@ -27,6 +27,8 @@ website:
             href: analysis/survival-analysis.qmd
           - text: Overall Survival
             href: analysis/overall-survival.qmd
+          - text: Competing Risks
+            href: analysis/competing-risks.qmd
           - text: DCO Comparisons
             href: comparisons/dco-comparisons.qmd
           - text: "---"
@@ -45,8 +47,17 @@ website:
         menu:
           - text: Model Architecture
             href: documentation/model-architecture.qmd
+          - text: "---"
           - text: Model Specification
-            href: documentation/model-specification.qmd
+          - text: Tumor Dynamics
+            href: documentation/tumor-dynamics-specification.qmd
+          - text: Multistate Model
+            href: documentation/multistate-specification.qmd
+          - text: Clinical Endpoints
+            href: documentation/clinical-endpoints-specification.qmd
+          - text: GQ Endpoint Flowchart
+            href: documentation/gq-endpoint-flowchart.qmd
+          - text: "---"
           - text: Analysis Subgroups
             href: documentation/analysis-subgroups.qmd
           - text: Onboarding Tutorial
@@ -81,8 +92,13 @@ website:
           contents:
             - documentation/onboarding-tutorial.qmd
             - documentation/model-architecture.qmd
-            - documentation/model-specification.qmd
             - documentation/analysis-subgroups.qmd
+        - section: "Model Specification"
+          contents:
+            - documentation/tumor-dynamics-specification.qmd
+            - documentation/multistate-specification.qmd
+            - documentation/clinical-endpoints-specification.qmd
+            - documentation/gq-endpoint-flowchart.qmd
         - section: "Technical Reference"
           contents:
             - documentation/targets-pipeline.qmd
@@ -105,6 +121,7 @@ website:
             - analysis/clinical-endpoints.qmd
             - analysis/survival-analysis.qmd
             - analysis/overall-survival.qmd
+            - analysis/competing-risks.qmd
             - comparisons/dco-comparisons.qmd
         - section: "Model Details"
           contents:

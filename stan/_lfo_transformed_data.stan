@@ -111,7 +111,7 @@ for (i in 1:n_patients) {
   // 1) Have post-cutoff visits (start_idx > 0), AND
   // 2) Were observed before/at the cutoff (cutoff_observed_mask[i] == 1)
   // This matches the condition in sf-ssls-lfo.stan where predictions are generated
-  n_patient_testing_visits[i] = (start_idx > 0 && cutoff_observed_mask[i] == 1) ? (visit_end - start_idx + 1) : 0;
+  n_patient_testing_visits[i] = (start_idx > 0 && cutoff_observed_mask[i]) ? (visit_end - start_idx + 1) : 0;
 }
 
 print("n_cutoff_observed_patients = ", n_cutoff_observed_patients);
@@ -243,7 +243,7 @@ array[n_trials + 1] int cutoff_trial_patient_pos = create_compact_group_pos(
 // First compute the size by counting observed entries
 int n_cutoff_cond_group_entries = 0;
 for (g_idx in 1:size(cond_group)) {
-  if (cutoff_observed_mask[cond_group[g_idx]] == 1) {
+  if (cutoff_observed_mask[cond_group[g_idx]]) {
     n_cutoff_cond_group_entries += 1;
   }
 }
@@ -267,7 +267,7 @@ for (obs_idx in 1:n_cutoff_observed_patients) {
   cutoff_n_patient_forecast_visits[obs_idx] = max_all_t - last_obs_time;
   
   // Count right-censored patients (either truly censored or their event/next visit is after cutoff)
-  if (cutoff_right_censored[obs_idx] == 1) {
+  if (cutoff_right_censored[obs_idx]) {
     n_cutoff_right_censored_patients += 1;
   }
 }

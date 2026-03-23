@@ -19,7 +19,7 @@ This page shows results across all data cutoffs: **April 2025**, **August 2025**
 
 ::: {.callout-tip}
 ## Related Pages
-- See [Model Specification](../documentation/model-specification.qmd#sec-tumor-dynamics) for the bi-exponential tumor model
+- See [Tumor Dynamics Specification](../documentation/tumor-dynamics-specification.qmd#sec-tumor-dynamics) for the bi-exponential tumor model
 - See [Data Exploration](data-exploration.qmd) for observed tumor dynamics
 :::
 
@@ -137,5 +137,5 @@ tar_read(tumor_ssls_staged_recist_rvar_right_censored_posterior_ctdna_jan26) |>
 - [Data Exploration](data-exploration.qmd) - Observed tumor dynamics
 - [Clinical Endpoints](clinical-endpoints.qmd) - ORR and PFS results
 - [Survival Analysis](survival-analysis.qmd) - Kaplan-Meier curves
-- [Model Specification](../documentation/model-specification.qmd#sec-recist) - RECIST criteria
+- [Tumor Dynamics Specification](../documentation/tumor-dynamics-specification.qmd#sec-recist) - RECIST criteria
 :::

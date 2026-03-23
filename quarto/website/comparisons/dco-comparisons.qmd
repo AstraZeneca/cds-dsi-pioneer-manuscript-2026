@@ -9,6 +9,19 @@ subtitle: "Comparing results across data cutoff dates"
 
 source("_setup.R")
 
+# Jan26 PFS endpoint data
+jan26_orr_data            <- tar_read(all_tumor_ssls_orr_rvar_ctdna_jan26)
+jan26_cond_orr_data       <- tar_read(all_tumor_ssls_cond_orr_rvar_ctdna_jan26)
+jan26_quant_pfs_data      <- tar_read(all_tumor_ssls_trial_quant_pfs_ctdna_jan26)
+jan26_cond_quant_pfs_data <- tar_read(all_tumor_ssls_cond_quant_pfs_ctdna_jan26)
+jan26_pfs_n_data          <- tar_read(all_tumor_ssls_forecast_target_pfs_n_rvar_ctdna_jan26)
+jan26_cond_pfs_n_data     <- tar_read(all_tumor_ssls_cond_forecast_target_pfs_n_rvar_ctdna_jan26)
+pfs_timepoints            <- tar_read(pfs_timepoints)
+jan26_obs_km_all          <- tar_read(km_trial_pfs_ctdna_jan26)
+jan26_obs_km_first_line   <- tar_read(km_trial_pfs_naive_ctdna_jan26)
+jan26_obs_km_pdl1         <- tar_read(km_trial_pfs_pdl1_ctdna_jan26)
+jan26_obs_km_pdl1_naive   <- tar_read(km_trial_pfs_pdl1_naive_ctdna_jan26)
+
 # Load multi-DCO data for comparisons
 orr_list <- list(
   apr25 = tar_read(all_tumor_ssls_orr_rvar_ctdna_apr25),
@@ -175,7 +188,7 @@ input:checked + .toggle-slider:before {
 #| fig-width: 10
 #| fig-height: 6
 
-plot_median_pfs_by_dco("sample", quant_pfs_list, cond_quant_pfs_list, obs_km_list, show_observed = TRUE)
+plot_median_surv_by_dco("sample", quant_pfs_list, cond_quant_pfs_list, obs_km_list, show_observed = TRUE)
 ```
 :::
 
@@ -186,7 +199,7 @@ plot_median_pfs_by_dco("sample", quant_pfs_list, cond_quant_pfs_list, obs_km_lis
 #| fig-width: 10
 #| fig-height: 6
 
-plot_median_pfs_by_dco("sample", quant_pfs_list, cond_quant_pfs_list, obs_km_list, show_observed = FALSE)
+plot_median_surv_by_dco("sample", quant_pfs_list, cond_quant_pfs_list, obs_km_list, show_observed = FALSE)
 ```
 :::
 
@@ -199,7 +212,7 @@ plot_median_pfs_by_dco("sample", quant_pfs_list, cond_quant_pfs_list, obs_km_lis
 #| fig-width: 10
 #| fig-height: 6
 
-plot_median_pfs_by_dco("spop", quant_pfs_list, cond_quant_pfs_list, obs_km_list, show_observed = TRUE)
+plot_median_surv_by_dco("spop", quant_pfs_list, cond_quant_pfs_list, obs_km_list, show_observed = TRUE)
 ```
 :::
 
@@ -210,7 +223,7 @@ plot_median_pfs_by_dco("spop", quant_pfs_list, cond_quant_pfs_list, obs_km_list,
 #| fig-width: 10
 #| fig-height: 6
 
-plot_median_pfs_by_dco("spop", quant_pfs_list, cond_quant_pfs_list, obs_km_list, show_observed = FALSE)
+plot_median_surv_by_dco("spop", quant_pfs_list, cond_quant_pfs_list, obs_km_list, show_observed = FALSE)
 ```
 :::
 
@@ -247,7 +260,7 @@ Comparing PFS at fixed timepoints across data cutoffs.
 #| fig-cap: Sample-based progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC-01 trial, shown for all DCOs.
 #| fig-width: 10
 
-plot_pfs_n_by_dco("sample", pfs_n_list, cond_pfs_n_list, pfs_timepoints)
+plot_surv_n_by_dco("sample", pfs_n_list, cond_pfs_n_list, pfs_timepoints)
 ```
 
 ### Superpopulation
@@ -257,7 +270,7 @@ plot_pfs_n_by_dco("sample", pfs_n_list, cond_pfs_n_list, pfs_timepoints)
 #| fig-cap: Superpopulation progression-free survival (PFS) at different time points, split by PDL1 status and treatment line for the SCLC-01 trial, shown for all DCOs.
 #| fig-width: 10
 
-plot_pfs_n_by_dco("spop", pfs_n_list, cond_pfs_n_list, pfs_timepoints)
+plot_surv_n_by_dco("spop", pfs_n_list, cond_pfs_n_list, pfs_timepoints)
 ```
 
 :::
