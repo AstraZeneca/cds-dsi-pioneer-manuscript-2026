@@ -32,7 +32,8 @@ functions {
       t_patient_visits, patient_visit_pos,
       log_cond_surv_01, log_cond_surv_02,
       log_cond_surv_12_s, log_cond_surv_12_t,
-      log_cond_surv_03, log_cond_surv_32
+      log_cond_surv_03, log_cond_surv_32,
+      0, rep_vector(0.0, 0), 0.0    // enable_ms_visit_gated_01=0, no covariate
     );
   }
 }
