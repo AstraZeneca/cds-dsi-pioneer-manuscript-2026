@@ -184,3 +184,11 @@ for (i in 1:n_patients) {
   }
 }
 
+// Flat visit-indexed observed-PSA covariate for visit-gated 0->1 mode.
+// Declared here so ALL models have the symbol in scope.
+// Zero-sized when not in visit-gated mode — never accessed.
+// Populated by _psa_observed_covar_transformed_data.stan (PSA models only).
+// Indexed identically to log_psa_values[v]: visit v in [1, sum(n_patient_visits)].
+// Only psa_measured[v]==1 entries are meaningful; others are 0 (never used).
+vector[enable_ms_visit_gated_01 ? sum(n_patient_visits) : 0] ms_obs_psa_covar_flat;
+
