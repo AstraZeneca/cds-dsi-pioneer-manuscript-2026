@@ -100,13 +100,8 @@ real sum_at_visits_below(
     int wk = t_patient_visits[v];
     if (wk < 1) continue;
     if (wk >= limit) break;
-    if (has_covar) {
-      // Apply covariate at log-hazard level (consistent with transformed_parameters.stan).
-      // log_cond_surv = -exp(log_hazard), so log_hazard = log(-log_cond_surv).
-      ll += -exp(log(-log_cond_surv[i, wk]) + coef * obs_covar[v]);
-    } else {
-      ll += log_cond_surv[i, wk];
-    }
+    ll += log_cond_surv[i, wk];
+    if (has_covar) ll += coef * obs_covar[v];
   }
   return ll;
 }
@@ -259,10 +254,12 @@ real multistate_lpmf(
             T_d, ms_obs_psa_covar_flat, tv_coef_01);
           if (!prog_deterministic[i] && T_d > 0) {
             int v_det = find_visit_idx(i, T_d, t_patient_visits, patient_visit_pos);
-            real log_surv_det = (v_det > 0)
-              ? -exp(log(-log_cond_surv_01[i, T_d]) + tv_coef_01 * ms_obs_psa_covar_flat[v_det])
-              : log_cond_surv_01[i, T_d];
-            patient_ll += log1m_exp(log_surv_det);
+            real log_surv_det = log_cond_surv_01[i, T_d]
+              + (v_det > 0 ? tv_coef_01 * ms_obs_psa_covar_flat[v_det] : 0.0);
+            // log1m_exp requires x < 0; clamp here because adding the covariate
+            // to the baseline-only log_cond_surv can push it to >= 0 (covariate
+            // dominates a small baseline hazard). Clamping is correct: P(event) -> 1.
+            patient_ll += log1m_exp(fmin(log_surv_det, -1e-9));
           }
         }
         // 0->2 continuous (unchanged) — uses all calendar weeks
