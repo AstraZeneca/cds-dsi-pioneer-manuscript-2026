@@ -173,13 +173,13 @@ ms_init_values <- function(env) {
       time_varying_coef_01 = {
         n_tv_01 <- if (isTRUE(enable_ms_visit_gated_01 == 1L)) 1L else n_time_varying_covar
         if (enable_ms_01 && enable_ms_pop_time_varying_cov && n_tv_01 > 0)
-          rnorm(n_tv_01, time_varying_coef_01_mean, time_varying_coef_01_sd * qr_init_scale)
+          as.array(rnorm(n_tv_01, time_varying_coef_01_mean, time_varying_coef_01_sd * qr_init_scale))
         else NULL
       },
       time_varying_coef_02 = {
         n_tv_02 <- if (isTRUE(enable_ms_02_time_varying_cov == 1L)) n_time_varying_covar else 0L
         if (enable_ms_02 && enable_ms_pop_time_varying_cov && n_tv_02 > 0)
-          rnorm(n_tv_02, time_varying_coef_02_mean, time_varying_coef_02_sd * qr_init_scale)
+          as.array(rnorm(n_tv_02, time_varying_coef_02_mean, time_varying_coef_02_sd * qr_init_scale))
         else NULL
       },
       time_varying_coef_12 = if (enable_ms_12 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
