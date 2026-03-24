@@ -127,7 +127,10 @@ model {
       log_cond_surv_12_s,
       log_cond_surv_12_t,
       log_cond_surv_03,
-      log_cond_surv_32
+      log_cond_surv_32,
+      0,
+      rep_vector(0.0, 0),
+      0.0
     );
   }
 }
