@@ -1240,7 +1240,6 @@ tuple(
   array[] int patient_idx,         // maps loop index j -> unified patient index p
   array[] int biomarker_category,
   array[] int rep_biomarker_category,
-  array[] int forecast_biomarker_category,
   array[] int forecast_obs_biomarker_category,
   array[] int forecast_obs_visits_pos,
   int forecast_observation_interval,
@@ -1383,9 +1382,6 @@ tuple(
     array[n_obs_treat_visits] int patient_rep_cat = rep_biomarker_category[treat_visit_start:visit_end];
     array[n_obs_treat_visits + n_assessment] int full_predict_cat =
       append_array(patient_rep_cat, patient_forecast_obs_cat);
-
-    // Weekly forecast biomarker category (used for visualization)
-    array[forecast_size] int patient_forecast_cat = forecast_biomarker_category[forecast_visit_start:forecast_visit_end];
 
     // Initialize response tracking variables
     int sample_target_confirmed_response_week, sample_target_confirmed_response_censored;

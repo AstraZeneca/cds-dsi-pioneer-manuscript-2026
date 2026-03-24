@@ -180,8 +180,96 @@ generated quantities {
   // Biomarker-agnostic trajectory generation
   #include "modules/state_space/generated_quantities.stan"
 
-  // SLD-specific: RECIST classification + PFS endpoints
-  #include "_tumor_endpoints_generated_quantities.stan"
+  // SLD-specific: aliases + RECIST categorization at assessment visits
+  #include "_tumor_categorization.stan"
+
+  // Endpoint output declarations (GQ scope — saved to CSV)
+  array[n_hmc_patients] int<lower = 0> sample_target_pfs, spop_target_pfs, sample_ms_pfs, spop_ms_pfs,
+                                       spop_target_obs_cens_pfs, sample_pfs, spop_pfs;
+  array[n_hmc_patients] int<lower = 0, upper = 1>
+    sample_target_right_censored, spop_target_right_censored, spop_target_obs_cens_right_censored,
+    sample_ms_right_censored, spop_ms_right_censored,
+    sample_right_censored, spop_right_censored;
+  array[n_hmc_patients] int<lower = 0> sample_os, spop_os;
+  array[n_hmc_patients] int<lower = 0, upper = 1> sample_os_censored, spop_os_censored;
+  array[n_patients] int<lower = 0, upper = 1> spop_is_dropout, sample_is_dropout;
+  array[sum(target_right_censored)] int<lower = 0> forecast_target_pfs;
+  array[sum(target_right_censored)] int<lower = 0, upper = 1> forecast_target_right_censored;
+  array[n_hmc_patients] int<lower = 0, upper = 1> sample_target_confirmed_response, spop_target_confirmed_response;
+  array[n_hmc_patients] int<lower = 0, upper = 1> sample_target_unconfirmed_response, spop_target_unconfirmed_response;
+  vector<lower = 0, upper = 1>[n_trials] sample_target_orr, spop_target_orr;
+  vector<lower = 0, upper = 1>[n_cond_group] cond_sample_target_orr = zeros_vector(n_cond_group),
+                                              cond_spop_target_orr = zeros_vector(n_cond_group);
+  array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_target_km_est, spop_target_km_est,
+                                                               spop_target_obs_cens_km_est,
+                                                               sample_ms_km_est, spop_ms_km_est,
+                                                               sample_km_est, spop_km_est;
+  array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_target_km_est, cond_spop_target_km_est,
+                                                                   cond_spop_target_obs_cens_km_est,
+                                                                   cond_sample_ms_km_est, cond_spop_ms_km_est,
+                                                                   cond_sample_km_est, cond_spop_km_est;
+  array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] sample_target_pfs_n, spop_target_pfs_n,
+                                                                  sample_ms_pfs_n, spop_ms_pfs_n,
+                                                                  sample_pfs_n, spop_pfs_n;
+  array[n_cond_group] vector<lower = 0, upper = 1>[n_pfs_timepoints] cond_sample_target_pfs_n, cond_spop_target_pfs_n,
+                                                                      cond_sample_ms_pfs_n, cond_spop_ms_pfs_n,
+                                                                      cond_sample_pfs_n, cond_spop_pfs_n;
+  array[n_trials] vector<lower = 0>[n_pfs_quantiles] sample_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
+                                                      spop_target_quant_pfs   = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
+                                                      sample_ms_quant_pfs     = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
+                                                      spop_ms_quant_pfs       = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
+                                                      sample_quant_pfs        = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
+                                                      spop_quant_pfs          = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+  array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_sample_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
+                                                          cond_spop_target_quant_pfs   = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
+                                                          cond_sample_ms_quant_pfs     = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
+                                                          cond_spop_ms_quant_pfs       = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
+                                                          cond_sample_quant_pfs        = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
+                                                          cond_spop_quant_pfs          = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+  array[n_trials, n_pfs_quantiles] int sample_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
+                                       spop_target_quant_pfs_exceeds_max   = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
+                                       sample_ms_quant_pfs_exceeds_max     = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
+                                       spop_ms_quant_pfs_exceeds_max       = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
+                                       sample_quant_pfs_exceeds_max        = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
+                                       spop_quant_pfs_exceeds_max          = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+  array[n_cond_group, n_pfs_quantiles] int cond_sample_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group),
+                                           cond_spop_target_quant_pfs_exceeds_max   = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group),
+                                           cond_sample_ms_quant_pfs_exceeds_max     = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group),
+                                           cond_spop_ms_quant_pfs_exceeds_max       = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group),
+                                           cond_sample_quant_pfs_exceeds_max        = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group),
+                                           cond_spop_quant_pfs_exceeds_max          = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+  array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_os_km_est, spop_os_km_est;
+  array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_os_km_est, cond_spop_os_km_est;
+  array[n_trials] vector<lower = 0>[n_pfs_quantiles] sample_os_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
+                                                      spop_os_quant   = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+  array[n_trials, n_pfs_quantiles] int sample_os_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
+                                       spop_os_quant_exceeds_max   = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+  array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_sample_os_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
+                                                          cond_spop_os_quant   = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group, n_pfs_quantiles] int cond_sample_os_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group),
+                                           cond_spop_os_quant_exceeds_max   = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+  array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] sample_os_n, spop_os_n;
+  array[n_cond_group] vector<lower = 0, upper = 1>[n_pfs_timepoints] cond_sample_os_n, cond_spop_os_n;
+  array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1]
+    spop_cif_01   = rep_array(zeros_vector(max_all_t + 1), n_trials),
+    spop_cif_02   = rep_array(zeros_vector(max_all_t + 1), n_trials),
+    spop_cif_03   = rep_array(zeros_vector(max_all_t + 1), n_trials),
+    sample_cif_01 = rep_array(zeros_vector(max_all_t + 1), n_trials),
+    sample_cif_02 = rep_array(zeros_vector(max_all_t + 1), n_trials),
+    sample_cif_03 = rep_array(zeros_vector(max_all_t + 1), n_trials);
+
+  // Shared endpoint computation (contract vars are local — not saved to CSV)
+  {
+    array[n_total_visits] int obs_biomarker_cat = recist;
+    array[n_total_visits] int rep_biomarker_cat = rep_recist;
+    array[n_total_forecast_obs_visits] int forecast_obs_biomarker_cat = forecast_obs_recist;
+    array[n_patients] int burden_pfs = pfs;
+    array[n_patients] int burden_right_censored = right_censored;
+    array[n_patients] int burden_target_pfs = target_pfs;
+    array[n_patients] int burden_target_right_censored = target_right_censored;
+
+    #include "modules/state_space/burden_endpoints.stan"
+  }
 
   // RECIST accuracy metrics
   #include "modules/tumor/generated_quantities.stan"

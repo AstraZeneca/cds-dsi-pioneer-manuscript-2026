@@ -8,7 +8,6 @@ vector[n_cutoff_visits] cutoff_rep_mean_patient_log_sld, cutoff_rep_patient_log_
 vector[n_cutoff_total_forecast_visits] cutoff_forecast_mean_patient_log_sld, cutoff_forecast_patient_log_sld;
 
 array[n_cutoff_visits] int<lower = CR, upper = PD + 1> cutoff_rep_recist = rep_array(PD + 1, n_cutoff_visits);
-array[n_cutoff_total_forecast_visits] int<lower = CR, upper = PD> cutoff_forecast_recist;
   
 // Endpoints (PFS, ORR, Median PFS, PFSn, ...) - sized for cutoff-observed patients
 array[n_cutoff_observed_patients] int<lower = 0> sample_target_pfs, spop_target_pfs, spop_target_obs_cens_pfs;
@@ -129,6 +128,7 @@ profile("gen_quant") {
      cutoff_forecast_patient_log_sld, cutoff_forecast_mean_patient_log_sld) =
       generate_all_patients_states_with_means_rng(
         states_full_grid,
+        linspaced_int_array(n_cutoff_observed_patients, 1, n_cutoff_observed_patients),
         cutoff_patient_visit_pos,
         cutoff_patient_visit_m1_pos,
         cutoff_forecast_visits_pos,
@@ -201,50 +201,17 @@ profile("gen_quant") {
     }
   }
   
-  // Calculate RECIST classifications for cutoff-observed patients (including forecasts)
-  (cutoff_rep_recist, cutoff_forecast_recist) = calculate_all_patients_recist(
+  // RECIST classification for cutoff patients: rep + assessment-visit forecast
+  array[n_cutoff_total_forecast_obs_visits] int cutoff_forecast_obs_recist;
+  (cutoff_rep_recist, cutoff_forecast_obs_recist) = calculate_all_patients_recist(
     cutoff_rep_patient_log_sld,
     cutoff_forecast_patient_log_sld,
     cutoff_patient_visit_pos,
     cutoff_forecast_visits_pos,
+    cutoff_forecast_obs_visits_pos,
+    forecast_observation_interval,
     cutoff_n_patient_screening_visits
   );
-
-  // Assessment-visit noisy SLD for cutoff patients
-  vector[n_cutoff_total_forecast_obs_visits] cutoff_forecast_obs_log_sld;
-  array[n_cutoff_total_forecast_obs_visits] int cutoff_forecast_obs_recist;
-  for (i in 1:n_cutoff_observed_patients) {
-    int n_assessment = get_pos_size(cutoff_forecast_obs_visits_pos, i);
-    if (n_assessment > 0) {
-      int assess_start, assess_end;
-      (assess_start, assess_end) = get_pos(cutoff_forecast_obs_visits_pos, i);
-
-      int forecast_visit_start, forecast_visit_end;
-      (forecast_visit_start, forecast_visit_end) = get_pos(cutoff_forecast_visits_pos, i);
-      int forecast_size = forecast_visit_end - forecast_visit_start + 1;
-
-      vector[n_assessment] obs_visit_mean;
-      for (a in 1:n_assessment) {
-        int forecast_idx = min(a * forecast_observation_interval, forecast_size);
-        obs_visit_mean[a] = cutoff_forecast_mean_patient_log_sld[forecast_visit_start + forecast_idx - 1];
-      }
-
-      cutoff_forecast_obs_log_sld[assess_start:assess_end] =
-        to_vector(student_t_rng(measure_nu, obs_visit_mean, measure_sd_sld));
-    }
-  }
-
-  // Assessment-visit RECIST from noisy SLD (for endpoint computation)
-  {
-    array[n_cutoff_visits] int unused_rep_recist;
-    (unused_rep_recist, cutoff_forecast_obs_recist) = calculate_all_patients_recist(
-        cutoff_rep_patient_log_sld,
-        cutoff_forecast_obs_log_sld,
-        cutoff_patient_visit_pos,
-        cutoff_forecast_obs_visits_pos,
-        cutoff_n_patient_screening_visits
-    );
-  }
 
   // Calculate patient-level endpoints for cutoff-observed patients (including forecasts)
   (sample_target_pfs, sample_target_right_censored,
@@ -264,7 +231,6 @@ profile("gen_quant") {
       linspaced_int_array(n_cutoff_observed_patients, 1, n_cutoff_observed_patients),
       cutoff_recist,
       cutoff_rep_recist,
-      cutoff_forecast_recist,
       cutoff_forecast_obs_recist,
       cutoff_forecast_obs_visits_pos,
       forecast_observation_interval,
