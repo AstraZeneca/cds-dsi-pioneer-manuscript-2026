@@ -265,7 +265,12 @@ profile("gen_quant") {
       max_all_t,
       cutoff_t_patient_visits,
       max_all_t,
-      cutoff_n_patient_screening_visits
+      cutoff_n_patient_screening_visits,
+      0,               // enable_ms_visit_gated_01 = 0 (tumor/LFO model does not use visit-gated 0->1)
+      0.0,             // tv_coef_01_val
+      zeros_vector(0), // forecast_obs_log_psa (unused)
+      0.0,             // median_log_psa_obs (unused)
+      0.0              // iqr_log_psa_obs (unused)
     );
 
   // Expand patient-level endpoints to include ALL enrolled patients (not just cutoff-observed)
