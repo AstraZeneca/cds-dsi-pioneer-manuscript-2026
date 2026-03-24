@@ -79,6 +79,7 @@ model {
     if (fit_multistate_data) {
       profile("multistate loglik") {
         ms_final_state ~ multistate(
+          ones_vector(n_patients),   // no propensity weighting in tumor model
           enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
           enable_ms_03, enable_ms_32,
           ms_time_01, ms_time_02, ms_time_12,
