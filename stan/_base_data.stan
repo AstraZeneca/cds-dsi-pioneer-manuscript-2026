@@ -22,6 +22,11 @@
 
 #include "_base_hierarchy_data.stan"
 
+// HMC/Laplace routing (full models only; standalones define n_hmc_patients as constant)
+int<lower=0> n_hmc_patients;
+int<lower=0> laplace_split_level;
+int<lower=0> laplace_target_group;
+
 array[n_patients] int<lower = 1> n_patient_visits;
 
 array[sum(n_patient_visits)] int t_patient_visits;

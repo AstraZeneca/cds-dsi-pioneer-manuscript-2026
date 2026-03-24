@@ -38,13 +38,17 @@ data {
 }
 
 transformed data {
-  #include "_base_hierarchy_transformed_data.stan"
-
   // patient_visit_pos — computed from n_patient_visits (mirrors _base_transformed_data.stan)
   array[n_patients + 1] int<lower=1> patient_visit_pos = create_pos(n_patient_visits);
 
-  // hmc_patient_idx and hmc_trial_patient_pos — defined in _base_transformed_data.stan
-  // for the full model; reproduced here since all standalone patients are HMC.
+  // Standalone: all patients are HMC (no Laplace). Define before the includes
+  // that compute HMC-dependent group sizes and position arrays.
+  int n_hmc_patients = n_patients;
+
+  #include "_base_hierarchy_transformed_data.stan"
+  #include "_hmc_routing_transformed_data.stan"
+
+  // hmc_patient_idx: trivial identity mapping (all patients are HMC)
   array[n_hmc_patients] int hmc_patient_idx = linspaced_int_array(n_hmc_patients, 1, n_hmc_patients);
   array[n_trials + 1] int hmc_trial_patient_pos = trial_patient_pos;
 
