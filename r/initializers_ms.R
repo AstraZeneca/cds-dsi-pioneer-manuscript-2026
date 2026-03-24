@@ -166,26 +166,28 @@ ms_init_values <- function(env) {
       },
 
       # --- Time-varying Covariate Coefficients ---
-      # Q entries scale as sqrt(n_patients); scale coef draws down so eta = Q*coef stays bounded.
+      # Use a conservative init scale: Q row norms ~ sqrt(n_patients), so even
+      # prior-SD draws can produce Q*coef >> hazard cap. Scale to keep Q*coef < 10.
+      qr_init_scale = min(1.0, 10.0 / (sqrt(n_patients - 1) * sqrt(max(n_time_invariant_covar, 1L)))),
       time_varying_coef_01 = if (enable_ms_01 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
-        rnorm(n_time_varying_covar, time_varying_coef_01_mean, time_varying_coef_01_sd)
+        rnorm(n_time_varying_covar, time_varying_coef_01_mean, time_varying_coef_01_sd * qr_init_scale)
       },
       time_varying_coef_02 = if (enable_ms_02 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
-        rnorm(n_time_varying_covar, time_varying_coef_02_mean, time_varying_coef_02_sd)
+        rnorm(n_time_varying_covar, time_varying_coef_02_mean, time_varying_coef_02_sd * qr_init_scale)
       },
       time_varying_coef_12 = if (enable_ms_12 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
-        rnorm(n_time_varying_covar, time_varying_coef_12_mean, time_varying_coef_12_sd)
+        rnorm(n_time_varying_covar, time_varying_coef_12_mean, time_varying_coef_12_sd * qr_init_scale)
       },
 
       # --- Time-invariant Covariate Coefficients (QR space) ---
       time_invariant_coef_qr_01 = if (enable_ms_01 && enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0) {
-        rnorm(n_time_invariant_covar, time_invariant_coef_01_mean, time_invariant_coef_01_sd)
+        rnorm(n_time_invariant_covar, time_invariant_coef_01_mean, time_invariant_coef_01_sd * qr_init_scale)
       },
       time_invariant_coef_qr_02 = if (enable_ms_02 && enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0) {
-        rnorm(n_time_invariant_covar, time_invariant_coef_02_mean, time_invariant_coef_02_sd)
+        rnorm(n_time_invariant_covar, time_invariant_coef_02_mean, time_invariant_coef_02_sd * qr_init_scale)
       },
       time_invariant_coef_qr_12 = if (enable_ms_12 && enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0) {
-        rnorm(n_time_invariant_covar, time_invariant_coef_12_mean, time_invariant_coef_12_sd)
+        rnorm(n_time_invariant_covar, time_invariant_coef_12_mean, time_invariant_coef_12_sd * qr_init_scale)
       },
 
       # --- Multi-level Random Slope SDs ---
