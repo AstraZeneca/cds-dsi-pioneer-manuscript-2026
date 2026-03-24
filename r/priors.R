@@ -40,7 +40,11 @@ transform_priors_to_qr_space <- function(coef_mean, coef_sd, design_matrix) {
 #' @param n_time_varying_covar Number of time-varying covariates
 #' @param n_time_invariant_covar Number of time-invariant covariates
 #' @return Named list of multistate hyperparameter values
-get_multistate_priors <- function(n_levels, n_time_varying_covar, n_time_invariant_covar) {
+get_multistate_priors <- function(n_levels, n_time_varying_covar, n_time_invariant_covar,
+                                   enable_ms_visit_gated_01 = 0L,
+                                   enable_ms_02_time_varying_cov = 1L) {
+  n_tv_01 <- if (enable_ms_visit_gated_01) 1L else n_time_varying_covar
+  n_tv_02 <- if (enable_ms_02_time_varying_cov) n_time_varying_covar else 0L
   lst(
     # 0→1 transition
     log_lambda_gp_01_pop_intercept_mean = -4.5,
@@ -131,10 +135,10 @@ get_multistate_priors <- function(n_levels, n_time_varying_covar, n_time_invaria
     log_lambda_gp_32_s_level_rho_beta = rep(90.0, n_levels),
 
     # Time-varying covariate coefficient hyperparameters
-    time_varying_coef_01_mean = rep(0, n_time_varying_covar),
-    time_varying_coef_01_sd = rep(0.5, n_time_varying_covar),
-    time_varying_coef_02_mean = rep(0, n_time_varying_covar),
-    time_varying_coef_02_sd = rep(0.5, n_time_varying_covar),
+    time_varying_coef_01_mean = rep(0, n_tv_01),
+    time_varying_coef_01_sd = rep(0.5, n_tv_01),
+    time_varying_coef_02_mean = rep(0, n_tv_02),
+    time_varying_coef_02_sd = rep(0.5, n_tv_02),
     time_varying_coef_12_mean = rep(0, n_time_varying_covar),
     time_varying_coef_12_sd = rep(0.5, n_time_varying_covar),
 

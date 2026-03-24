@@ -169,11 +169,18 @@ ms_init_values <- function(env) {
       # Use a conservative init scale: Q row norms ~ sqrt(n_patients), so even
       # prior-SD draws can produce Q*coef >> hazard cap. Scale to keep Q*coef < 10.
       qr_init_scale = min(1.0, 10.0 / (sqrt(n_patients - 1) * sqrt(max(n_time_invariant_covar, 1L)))),
-      time_varying_coef_01 = if (enable_ms_01 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
-        rnorm(n_time_varying_covar, time_varying_coef_01_mean, time_varying_coef_01_sd * qr_init_scale)
+      # Compute sizes locally from flags
+      time_varying_coef_01 = {
+        n_tv_01 <- if (isTRUE(enable_ms_visit_gated_01 == 1L)) 1L else n_time_varying_covar
+        if (enable_ms_01 && enable_ms_pop_time_varying_cov && n_tv_01 > 0)
+          rnorm(n_tv_01, time_varying_coef_01_mean, time_varying_coef_01_sd * qr_init_scale)
+        else NULL
       },
-      time_varying_coef_02 = if (enable_ms_02 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
-        rnorm(n_time_varying_covar, time_varying_coef_02_mean, time_varying_coef_02_sd * qr_init_scale)
+      time_varying_coef_02 = {
+        n_tv_02 <- if (isTRUE(enable_ms_02_time_varying_cov == 1L)) n_time_varying_covar else 0L
+        if (enable_ms_02 && enable_ms_pop_time_varying_cov && n_tv_02 > 0)
+          rnorm(n_tv_02, time_varying_coef_02_mean, time_varying_coef_02_sd * qr_init_scale)
+        else NULL
       },
       time_varying_coef_12 = if (enable_ms_12 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
         rnorm(n_time_varying_covar, time_varying_coef_12_mean, time_varying_coef_12_sd * qr_init_scale)
