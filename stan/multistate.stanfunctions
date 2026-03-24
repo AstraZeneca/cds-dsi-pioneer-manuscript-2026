@@ -116,6 +116,7 @@ real sum_03_at_visits_below(
  * contribute nothing to the 0→3 hazard.
  *
  * @param final_state Observed final states (0=censored, 1=progressed, 2=dead, 3=dropout)
+ * @param weight Vector of per-patient likelihood weights in [0,1]. Trial/target patients use 1.0; RWD patients use their propensity score P(trial|covariates).
  * @param enable_01 Flag: is 0→1 transition enabled?
  * @param enable_02 Flag: is 0→2 transition enabled?
  * @param enable_12 Flag: is 1→2 transition enabled?
