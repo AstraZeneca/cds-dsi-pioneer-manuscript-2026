@@ -1,15 +1,14 @@
-// Standalone Multistate Illness-Death Model (Pioneer)
+// ============================================================================
+// PIONEER STANDALONE MULTISTATE MODEL
+// ============================================================================
+// Full model minus PSA state-space: multistate illness-death model only.
+// Fits the survival structure (0→1, 0→2, 1→2, 0→3, 3→2) independently
+// of PSA dynamics, using the same data and hierarchy as pioneer.stan.
 //
-// A self-contained illness-death model with GP baseline hazards and optional
-// time-invariant covariates. No PSA dynamics or time-varying covariates.
-//
-// All patients (trial + RWD) contribute survival data directly — no Laplace
-// marginalization needed since there are no per-patient PSA parameters.
-//
-// Transitions:
-//   0→1: Progression / PFS event
-//   0→2: Death without progression
-//   1→2: Post-progression death (semi-Markov, Markov, or extended)
+// Uses _base_hierarchy_{data,transformed_data}.stan instead of the full
+// _base_{data,transformed_data}.stan because the latter assumes all modules
+// (tr, frac, init, state_space) are present. The few extra fields those
+// files compute that are needed by shared modules are declared explicitly.
 
 functions {
   #include "util.stanfunctions"
@@ -20,73 +19,41 @@ functions {
 }
 
 data {
-  // =========================================================================
-  // BASE HIERARCHY DATA (shared with full model)
-  // =========================================================================
   #include "_base_hierarchy_data.stan"
-
-  // Fit control — set to 0 for prior predictive, 1 for posterior
-  int<lower=0, upper=1> fit_multistate_data;
-
-  // Time grid length — in the joint model this is computed from visit times;
-  // here it is passed directly since there are no PSA visits.
-  int<lower=1> max_all_t;
-
-  // =========================================================================
-  // MULTISTATE MODULE DATA
-  // =========================================================================
+  #include "modules/visits/data.stan"
   #include "modules/multistate/flags.stan"
   #include "modules/multistate/data.stan"
   #include "modules/multistate/hyperparams.stan"
+  #include "modules/state_space/data.stan"
 
-  // interval_censored is declared in modules/multistate/data.stan
-
-  // Visit schedule — passed from the full PSA stan data; needed by the
-  // multistate likelihood (0→3 IC gap and visit-gated dropout hazard)
-  // and GQ (spop visit schedule construction).
+  // Visit schedule — needed by multistate likelihood (0→3 IC gap, visit-gated
+  // dropout hazard) and GQ. Passed from the full PSA stan data.
   array[n_patients] int<lower=0> n_patient_visits;
   array[sum(n_patient_visits)] int<lower=1> t_patient_visits;
-  array[n_patients + 1] int<lower=1> patient_visit_pos;
-  int<lower=1> forecast_observation_interval;
 
-  // =========================================================================
-  // ENDPOINT COMPUTATION DATA (shared with full model)
-  // =========================================================================
-  #include "modules/endpoints/data.stan"
+  // max_all_t: passed as extend_max_all_t from the full PSA stan data
+  int<lower=1> max_all_t;
+
+  int<lower=0, upper=1> fit_multistate_data;
 }
 
 transformed data {
-  // =========================================================================
-  // HIERARCHY VALIDATION + TRIAL POSITION ARRAYS (shared with full model)
-  // =========================================================================
   #include "_base_hierarchy_transformed_data.stan"
 
-  // In the standalone model all patients are HMC (no Laplace-marginalized patients).
-  // hmc_patient_idx is defined in _base_transformed_data.stan for the full model;
-  // reproduce it here for the subset of transformed data the standalone uses.
+  // patient_visit_pos — computed from n_patient_visits (mirrors _base_transformed_data.stan)
+  array[n_patients + 1] int<lower=1> patient_visit_pos = create_pos(n_patient_visits);
+
+  // hmc_patient_idx and hmc_trial_patient_pos — defined in _base_transformed_data.stan
+  // for the full model; reproduced here since all standalone patients are HMC.
   array[n_hmc_patients] int hmc_patient_idx = linspaced_int_array(n_hmc_patients, 1, n_hmc_patients);
   array[n_trials + 1] int hmc_trial_patient_pos = trial_patient_pos;
 
-  // =========================================================================
-  // TIME GRID (needed by multistate GP; in the full model this lives in
-  // modules/tumor/transformed_data.stan)
-  // =========================================================================
+  // Time grid for multistate GP (in the full model from psa/transformed_data.stan)
   array[max_all_t] real all_measure_t = linspaced_array(max_all_t, 1, max_all_t);
 
-  // =========================================================================
-  // QR DECOMPOSITION (shared with full model)
-  // =========================================================================
   #include "_qr_decomposition.stan"
-
-  // =========================================================================
-  // ENDPOINT POSITION ARRAYS (shared with full model)
-  // =========================================================================
-  #include "modules/endpoints/transformed_data.stan"
-
-  // =========================================================================
-  // MULTISTATE MODULE TRANSFORMED DATA
-  // =========================================================================
   #include "modules/multistate/transformed_data.stan"
+  #include "modules/endpoints/transformed_data.stan"
 }
 
 parameters {
@@ -94,10 +61,8 @@ parameters {
 }
 
 transformed parameters {
-  // No time-varying covariates — time-varying covariate arrays are PSA-derived
-  // and only exist in the full joint model. The multistate module references
-  // ms_time_varying_covar_01 inside a runtime guard, so we declare a
-  // zero-sized placeholder to satisfy the Stan compiler.
+  // No time-varying covariates: PSA-derived and only in the full joint model.
+  // Declare zero-sized placeholder to satisfy the compiler's dimension check.
   array[enable_ms_01 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 ? n_time_varying_covar : 0]
     matrix[n_patients, max_all_t] ms_time_varying_covar_01;
 
@@ -107,34 +72,35 @@ transformed parameters {
 model {
   #include "modules/multistate/priors.stan"
 
-  // Multistate likelihood (skipped when fit_multistate_data = 0 for prior predictive)
-  if (fit_multistate_data && enable_ms_01 && !enable_ms_02 && !enable_ms_12) {
-    // Single transition mode (PFS-only)
-    target += sum(calc_ms_single_transition_loglik(
-      ms_time_01,
-      ms_censored_01,
-      log_cond_surv_01
-    ));
-  } else if (fit_multistate_data) {
-    // Full illness-death likelihood
-    ms_final_state ~ multistate(
-      enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
-      enable_ms_03, enable_ms_32,
-      ms_time_01, ms_time_02, ms_time_12,
-      ms_time_03, ms_time_32,
-      ms_censored_01, ms_censored_02, ms_censored_12,
-      ms_censored_32,
-      ms_prog_deterministic,
-      ms_ic_gap_01,
-      t_patient_visits,
-      patient_visit_pos,
-      log_cond_surv_01,
-      log_cond_surv_02,
-      log_cond_surv_12_s,
-      log_cond_surv_12_t,
-      log_cond_surv_03,
-      log_cond_surv_32
-    );
+  if (fit_multistate_data) {
+    profile("multistate loglik") {
+      if (enable_ms_01 && !enable_ms_02 && !enable_ms_12) {
+        target += sum(calc_ms_single_transition_loglik(
+          ms_time_01[hmc_patient_idx],
+          ms_censored_01[hmc_patient_idx],
+          log_cond_surv_01
+        ));
+      } else {
+        ms_final_state[hmc_patient_idx] ~ multistate(
+          enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
+          enable_ms_03, enable_ms_32,
+          ms_time_01[hmc_patient_idx], ms_time_02[hmc_patient_idx], ms_time_12[hmc_patient_idx],
+          ms_time_03[hmc_patient_idx], ms_time_32[hmc_patient_idx],
+          ms_censored_01[hmc_patient_idx], ms_censored_02[hmc_patient_idx], ms_censored_12[hmc_patient_idx],
+          ms_censored_32[hmc_patient_idx],
+          ms_prog_deterministic[hmc_patient_idx],
+          ms_ic_gap_01[hmc_patient_idx],
+          t_patient_visits,
+          patient_visit_pos,
+          log_cond_surv_01,
+          log_cond_surv_02,
+          log_cond_surv_12_s,
+          log_cond_surv_12_t,
+          log_cond_surv_03,
+          log_cond_surv_32
+        );
+      }
+    }
   }
 }
 
