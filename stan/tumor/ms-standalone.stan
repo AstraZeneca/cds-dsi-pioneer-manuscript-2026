@@ -58,7 +58,14 @@ transformed data {
   // =========================================================================
   // HIERARCHY VALIDATION + TRIAL POSITION ARRAYS (shared with full model)
   // =========================================================================
+  // Standalone: all patients are HMC (no Laplace)
+  int n_hmc_patients = n_patients;
+
   #include "_base_hierarchy_transformed_data.stan"
+  #include "_hmc_routing_transformed_data.stan"
+
+  array[n_hmc_patients] int hmc_patient_idx = linspaced_int_array(n_hmc_patients, 1, n_hmc_patients);
+  array[n_trials + 1] int hmc_trial_patient_pos = trial_patient_pos;
 
   // =========================================================================
   // TIME GRID (needed by multistate GP; in the full model this lives in

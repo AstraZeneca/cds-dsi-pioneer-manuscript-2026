@@ -63,16 +63,4 @@ array[n_trials + 1] int<lower=1, upper=n_patients + 1> trial_patient_pos;
 }
 
 
-// Parameter-sizing groups: mirrors n_groups_per_level but substitutes n_hmc_patients
-// at the patient level (level n_levels). This ensures patient-level NCP parameters
-// (tr_raw_level_intercept etc.) are sized by HMC patients only — Laplace-marginalized
-// patients have no explicit parameters and must not inflate the HMC parameter space.
-array[n_levels] int n_hmc_groups_per_level = n_groups_per_level;
-n_hmc_groups_per_level[n_levels] = n_hmc_patients;
-
-// Derived: total groups and position array for parameter-space indexing.
-// Use n_hmc_level_pos (not level_pos) when indexing into parameter-sized arrays.
-int n_hmc_total_groups = sum(n_hmc_groups_per_level);
-array[n_levels + 1] int n_hmc_level_pos = create_pos(n_hmc_groups_per_level);
-
 real delta = 1e-5; // Small value used for GP modeling to avoid numerical issues

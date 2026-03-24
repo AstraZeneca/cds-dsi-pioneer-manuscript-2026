@@ -1,4 +1,5 @@
 #include "_base_hierarchy_transformed_data.stan"
+#include "_hmc_routing_transformed_data.stan"
 
 array[n_patients + 1] int<lower = 1, upper = sum(n_patient_visits) + 1> patient_visit_pos = create_pos(n_patient_visits);
 
