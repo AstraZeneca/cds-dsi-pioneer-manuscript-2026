@@ -164,11 +164,13 @@ profile("burden_endpoints") {
   );
 
 // Competing Risks CIF (per-trial, empirical subdistribution)
+// Uses hmc_trial_patient_pos — endpoint arrays are n_hmc_patients-sized,
+// not n_patients-sized (differs when RWD patients are Laplace-marginalized).
 for (s in 1:n_trials) {
-  int n_tr = get_pos_size(trial_patient_pos, s);
+  int n_tr = get_pos_size(hmc_trial_patient_pos, s);
   if (n_tr > 0) {
     int tr_start; int tr_end;
-    (tr_start, tr_end) = get_pos(trial_patient_pos, s);
+    (tr_start, tr_end) = get_pos(hmc_trial_patient_pos, s);
 
     (spop_cif_01[s], spop_cif_02[s], spop_cif_03[s]) = compute_trial_cif(
       spop_pfs[tr_start:tr_end], spop_right_censored[tr_start:tr_end],
