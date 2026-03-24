@@ -137,6 +137,7 @@ real sum_03_at_visits_below(
  */
 real multistate_lpmf(
   array[] int final_state,
+  vector weight,              // per-patient likelihood weight [0, 1]
   int enable_01, int enable_02, int enable_12, int ms_time_scale_12,
   int enable_03, int enable_32,
   array[] int time_01, array[] int time_02, array[] int time_12,
@@ -156,7 +157,7 @@ real multistate_lpmf(
 ) {
   // Single-transition fast path (0→1 only, equivalent to old other_events)
   if (enable_01 && !enable_02 && !enable_12 && !enable_03) {
-    return sum(calc_ms_single_transition_loglik(time_01, censored_01, log_cond_surv_01));
+    return dot_product(weight, calc_ms_single_transition_loglik(time_01, censored_01, log_cond_surv_01));
   }
 
   int n_patients = size(final_state);
@@ -583,7 +584,7 @@ real multistate_lpmf(
       }
     }
 
-    total_ll += patient_ll;
+    total_ll += weight[i] * patient_ll;
   }
 
   return total_ll;

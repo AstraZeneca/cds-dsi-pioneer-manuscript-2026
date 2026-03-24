@@ -32,7 +32,8 @@ make_ms_data <- function(n, max_t, event_time, censored, final_state,
     time_03     = rep(BIG, n),
     censored_32 = rep(1L, n),
     log_cond_surv_03  = matrix(-0.05, n, max_t),
-    log_cond_surv_32  = matrix(-0.05, n, max_t)
+    log_cond_surv_32  = matrix(-0.05, n, max_t),
+    weight      = rep(1.0, n)
   )
 }
 
@@ -132,4 +133,29 @@ test_that("multistate_lpmf 01+02: progressed patient (state 1) accumulates 01+02
               sum(lcs_02[1, 1:(t01 - 1)]) +
               log1p(-exp(lcs_01[1, t01]))
   expect_equal(get_stan_val(d, "ms_lpmf_01_02"), expected, tolerance = 1e-6)
+})
+
+test_that("multistate_lpmf: weight=0.5 halves patient contribution", {
+  n <- 2L; max_t <- 8L
+  lcs <- matrix(-0.08, nrow = n, ncol = max_t)
+  data_full <- make_ms_data(n, max_t, c(4L, 6L), c(0L, 1L),
+                            final_state = c(1L, 0L), lcs_01 = lcs)
+  data_half <- modifyList(data_full, list(weight = c(0.5, 1.0)))
+
+  fit_full <- test_stan_function(
+    here("tests", "testthat", "stan", "test_multistate_loglik_all.stan"),
+    data_full
+  )
+  fit_half <- test_stan_function(
+    here("tests", "testthat", "stan", "test_multistate_loglik_all.stan"),
+    data_half
+  )
+
+  d_full <- posterior::as_draws_df(fit_full$draws())
+  d_half <- posterior::as_draws_df(fit_half$draws())
+
+  full_ll  <- get_stan_val(d_full, "ms_lpmf_01only")
+  half_ll  <- get_stan_val(d_half, "ms_lpmf_01only")
+  p1_ll    <- get_stan_val(d_full, "st_llik", 1)
+  expect_equal(full_ll - half_ll, 0.5 * p1_ll, tolerance = 1e-6)
 })
