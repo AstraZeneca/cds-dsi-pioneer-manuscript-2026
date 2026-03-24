@@ -47,87 +47,88 @@ get_multistate_priors <- function(n_levels, n_time_varying_covar, n_time_invaria
     log_lambda_gp_01_pop_intercept_sd = 1.0,
     log_lambda_gp_01_pop_alpha_alpha = 3.0,
     log_lambda_gp_01_pop_alpha_beta = 1.0,
-    # Pop-level rho: invgamma(3, 60) → mode=15w, mean=30w, P(rho<4)=0.004%
-    # Shifted from (5,5) [mode=0.83w, P(rho<4)=99%] to keep prior mass above
-    # ms_gp_grid_step=4. Hard constraint lower=ms_gp_grid_step was rejected:
-    # it removes 99% of prior mass and creates log-barrier geometry near boundary.
-    log_lambda_gp_01_pop_rho_alpha = 3.0,
-    log_lambda_gp_01_pop_rho_beta = 60.0,
+    # Pop-level rho: invgamma(8, 135) → mode=15w, median≈18w, P(rho>50)=0.7%
+    # Raised alpha from 3→8 to tame the heavy right tail of invgamma.
+    # With alpha=3 and ~16 rho params, P(any rho>50)≈87% → GP kernel overflow
+    # at init. alpha=8 preserves the mode and boundary-avoiding behavior while
+    # keeping P(any rho>50)≈3%.
+    log_lambda_gp_01_pop_rho_alpha = 8.0,
+    log_lambda_gp_01_pop_rho_beta = 135.0,
 
     # 0→2 transition
     log_lambda_gp_02_pop_intercept_mean = -4.5,
     log_lambda_gp_02_pop_intercept_sd = 1.0,
     log_lambda_gp_02_pop_alpha_alpha = 3.0,
     log_lambda_gp_02_pop_alpha_beta = 1.0,
-    log_lambda_gp_02_pop_rho_alpha = 3.0,
-    log_lambda_gp_02_pop_rho_beta = 60.0,
+    log_lambda_gp_02_pop_rho_alpha = 8.0,
+    log_lambda_gp_02_pop_rho_beta = 135.0,
 
     # 1→2 transition (sojourn time GP)
     log_lambda_gp_12_s_pop_intercept_mean = -4.5,
     log_lambda_gp_12_s_pop_intercept_sd = 1.0,
     log_lambda_gp_12_s_pop_alpha_alpha = 3.0,
     log_lambda_gp_12_s_pop_alpha_beta = 1.0,
-    log_lambda_gp_12_s_pop_rho_alpha = 3.0,
-    log_lambda_gp_12_s_pop_rho_beta = 60.0,
+    log_lambda_gp_12_s_pop_rho_alpha = 8.0,
+    log_lambda_gp_12_s_pop_rho_beta = 135.0,
 
     # 1→2 transition (clock-forward time GP)
     log_lambda_gp_12_t_pop_intercept_mean = -4.5,
     log_lambda_gp_12_t_pop_intercept_sd = 1.0,
     log_lambda_gp_12_t_pop_alpha_alpha = 3.0,
     log_lambda_gp_12_t_pop_alpha_beta = 1.0,
-    log_lambda_gp_12_t_pop_rho_alpha = 3.0,
-    log_lambda_gp_12_t_pop_rho_beta = 60.0,
+    log_lambda_gp_12_t_pop_rho_alpha = 8.0,
+    log_lambda_gp_12_t_pop_rho_beta = 135.0,
 
-    # Level-level rho: invgamma(3, 40) → mode=10w, mean=20w, P(rho<4)=0.3%
+    # Level-level rho: invgamma(8, 90) → mode=10w, median≈12w, P(rho>50)=0.05%
     log_lambda_gp_01_level_intercept_sd_sd = rep(0.5, n_levels),
     log_lambda_gp_01_level_alpha_alpha = rep(3.0, n_levels),
     log_lambda_gp_01_level_alpha_beta = rep(1.0, n_levels),
-    log_lambda_gp_01_level_rho_alpha = rep(3.0, n_levels),
-    log_lambda_gp_01_level_rho_beta = rep(40.0, n_levels),
+    log_lambda_gp_01_level_rho_alpha = rep(8.0, n_levels),
+    log_lambda_gp_01_level_rho_beta = rep(90.0, n_levels),
 
     log_lambda_gp_02_level_intercept_sd_sd = rep(0.5, n_levels),
     log_lambda_gp_02_level_alpha_alpha = rep(3.0, n_levels),
     log_lambda_gp_02_level_alpha_beta = rep(1.0, n_levels),
-    log_lambda_gp_02_level_rho_alpha = rep(3.0, n_levels),
-    log_lambda_gp_02_level_rho_beta = rep(40.0, n_levels),
+    log_lambda_gp_02_level_rho_alpha = rep(8.0, n_levels),
+    log_lambda_gp_02_level_rho_beta = rep(90.0, n_levels),
 
     log_lambda_gp_12_s_level_intercept_sd_sd = rep(0.5, n_levels),
     log_lambda_gp_12_s_level_alpha_alpha = rep(3.0, n_levels),
     log_lambda_gp_12_s_level_alpha_beta = rep(1.0, n_levels),
-    log_lambda_gp_12_s_level_rho_alpha = rep(3.0, n_levels),
-    log_lambda_gp_12_s_level_rho_beta = rep(40.0, n_levels),
+    log_lambda_gp_12_s_level_rho_alpha = rep(8.0, n_levels),
+    log_lambda_gp_12_s_level_rho_beta = rep(90.0, n_levels),
 
     log_lambda_gp_12_t_level_intercept_sd_sd = rep(0.5, n_levels),
     log_lambda_gp_12_t_level_alpha_alpha = rep(3.0, n_levels),
     log_lambda_gp_12_t_level_alpha_beta = rep(1.0, n_levels),
-    log_lambda_gp_12_t_level_rho_alpha = rep(3.0, n_levels),
-    log_lambda_gp_12_t_level_rho_beta = rep(40.0, n_levels),
+    log_lambda_gp_12_t_level_rho_alpha = rep(8.0, n_levels),
+    log_lambda_gp_12_t_level_rho_beta = rep(90.0, n_levels),
 
     # 0→3 Dropout GP
     log_lambda_gp_03_pop_intercept_mean = -4.5,
     log_lambda_gp_03_pop_intercept_sd = 1.0,
     log_lambda_gp_03_pop_alpha_alpha = 3.0,
     log_lambda_gp_03_pop_alpha_beta = 1.0,
-    log_lambda_gp_03_pop_rho_alpha = 3.0,
-    log_lambda_gp_03_pop_rho_beta = 60.0,
+    log_lambda_gp_03_pop_rho_alpha = 8.0,
+    log_lambda_gp_03_pop_rho_beta = 135.0,
     log_lambda_gp_03_level_intercept_sd_sd = rep(2.0, n_levels),
     log_lambda_gp_03_level_alpha_alpha = rep(3.0, n_levels),
     log_lambda_gp_03_level_alpha_beta = rep(1.0, n_levels),
-    log_lambda_gp_03_level_rho_alpha = rep(3.0, n_levels),
-    log_lambda_gp_03_level_rho_beta = rep(40.0, n_levels),
+    log_lambda_gp_03_level_rho_alpha = rep(8.0, n_levels),
+    log_lambda_gp_03_level_rho_beta = rep(90.0, n_levels),
 
     # 3→2 Off-trial death GP (sojourn time, semi-Markov)
     log_lambda_gp_32_s_pop_intercept_mean = -4.5,
     log_lambda_gp_32_s_pop_intercept_sd = 1.0,
     log_lambda_gp_32_s_pop_alpha_alpha = 3.0,
     log_lambda_gp_32_s_pop_alpha_beta = 1.0,
-    log_lambda_gp_32_s_pop_rho_alpha = 3.0,
-    log_lambda_gp_32_s_pop_rho_beta = 60.0,
+    log_lambda_gp_32_s_pop_rho_alpha = 8.0,
+    log_lambda_gp_32_s_pop_rho_beta = 135.0,
     log_lambda_gp_32_s_level_intercept_sd_sd = rep(0.5, n_levels),
     log_lambda_gp_32_s_level_alpha_alpha = rep(3.0, n_levels),
     log_lambda_gp_32_s_level_alpha_beta = rep(1.0, n_levels),
-    log_lambda_gp_32_s_level_rho_alpha = rep(3.0, n_levels),
-    log_lambda_gp_32_s_level_rho_beta = rep(40.0, n_levels),
+    log_lambda_gp_32_s_level_rho_alpha = rep(8.0, n_levels),
+    log_lambda_gp_32_s_level_rho_beta = rep(90.0, n_levels),
 
     # Time-varying covariate coefficient hyperparameters
     time_varying_coef_01_mean = rep(0, n_time_varying_covar),
