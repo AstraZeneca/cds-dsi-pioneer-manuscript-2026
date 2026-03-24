@@ -300,29 +300,73 @@ get_forecast_biomarker <- function(
 # Backward compatibility alias
 get_forecast_sld <- get_forecast_biomarker
 
+get_subsample_forecast_obs_data <- function(
+  analysis_data,
+  patient_states_data,
+  forecast_extent = 0,
+  observation_interval = 6L,
+  baseline_col = mmsumdiam
+) {
+  max_obs_visit <- analysis_data |>
+    unnest(visit_data) |>
+    pull(week) |>
+    max()
+  overall_max_t <- max(max_obs_visit + 1, forecast_extent)
+
+  analysis_data |>
+    mutate(
+      i = seq(n()),
+      baseline_value = map_dbl(visit_data, \(v) {
+        bl_idx <- max(which(v$week <= 0))
+        v |> pull({{ baseline_col }}) |> _[bl_idx]
+      }),
+      actual_patient_max_t = map_int(visit_data, \(d) max(d$week)),
+      n_forecast_visits = overall_max_t - actual_patient_max_t
+    ) |>
+    filter(n_forecast_visits > 0) |>
+    rowwise() |>
+    reframe(
+      trial,
+      i,
+      usubjid,
+      actual_patient_max_t,
+      patient_max_t,
+      baseline_value,
+      # Assessment weeks: every observation_interval from last obs, capped at overall_max_t
+      # Matches Stan: min(a * interval, n_forecast_visits) for a = 1,...,ceil(n/interval)
+      week = actual_patient_max_t + pmin(
+        seq_len(ceiling(n_forecast_visits / observation_interval)) * observation_interval,
+        n_forecast_visits
+      )
+    ) |>
+    mutate(n = seq(n())) |>
+    semi_join(patient_states_data, by = c("trial", "usubjid"))
+}
+
 get_forecast_recist <- function(
   res,
   analysis_data,
   patient_states_data = analysis_data,
   forecast_extent = 0,
   ndraws = NULL,
+  observation_interval = 6L,
   baseline_col = mmsumdiam
 ) {
-  subsample_forecast_data <- get_subsample_forecast_data(
+  subsample_forecast_data <- get_subsample_forecast_obs_data(
     analysis_data,
     patient_states_data,
     forecast_extent = forecast_extent,
+    observation_interval = observation_interval,
     baseline_col = {{ baseline_col }}
   )
 
-  spread_rvars(res, forecast_recist[n], ndraws = ndraws) |>
+  spread_rvars(res, forecast_obs_recist[n], ndraws = ndraws) |>
     right_join(
       subsample_forecast_data,
       by = "n",
       relationship = "one-to-one"
     ) |>
-    # mutate(rh = posterior::rhat(forecast_recist), ess_b = posterior::ess_bulk(forecast_recist), ess_t = posterior::ess_tail(forecast_recist)) |>
-    prepare_recist_data(forecast_recist)
+    prepare_recist_data(forecast_obs_recist)
 }
 
 bin_point_intervals <- function(data, dist, breaks, ...) {

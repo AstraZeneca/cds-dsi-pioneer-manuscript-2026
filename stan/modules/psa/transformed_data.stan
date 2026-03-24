@@ -1,4 +1,15 @@
 // ============================================================================
+// PCWG3 RESPONSE CATEGORY CONSTANTS
+// ============================================================================
+// Same 1-4 encoding as RECIST (compatible with shared endpoint functions).
+// NE (Not Evaluable) = 5 is PSA-specific (screening visits, no RECIST equivalent).
+int UNDETECTABLE = 1;  // PSA below detection threshold (CR equivalent)
+int PSA50        = 2;  // >= 50% PSA reduction from baseline (PR equivalent)
+int STABLE       = 3;  // Neither undetectable nor PSA-PD (SD equivalent)
+int PSA_PD       = 4;  // PSA progression by PCWG3 criteria (PD equivalent)
+int NE           = 5;  // Not Evaluable (screening visits)
+
+// ============================================================================
 // PSA NORMALIZATION AND PREPROCESSING
 // ============================================================================
 

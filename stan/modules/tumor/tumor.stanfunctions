@@ -642,59 +642,81 @@ tuple(
 }
 
 /**
- * Calculate RECIST categories for all patients across observed and forecast SLD trajectories.
- * Wraps calculate_target_recist() for batch processing over the full patient array.
+ * Calculate RECIST categories for all patients across observed and assessment-visit
+ * forecast SLD trajectories. Subsamples the weekly forecast internally at
+ * assessment-visit intervals before classification.
  *
  * @param rep_patient_log_sld Log SLD replicated from model (all visits, all patients, flat)
- * @param forecast_patient_log_sld Log SLD forecast (all forecast visits, all patients, flat)
- * @param patient_visit_pos Position array for patient visits
- * @param forecast_visits_pos Position array for forecast visits
+ * @param forecast_patient_log_sld Log SLD weekly forecast (all forecast visits, flat)
+ * @param patient_visit_pos Position array for observed visits
+ * @param forecast_visits_pos Position array for weekly forecast visits
+ * @param forecast_obs_visits_pos Position array for assessment-visit forecast
+ * @param forecast_observation_interval Weeks between assessments (typically 6)
  * @param n_patient_screening_visits Number of screening visits per patient
- * @return Tuple of (rep_recist, forecast_recist) category arrays
+ * @return Tuple of (rep_recist [n_total_visits], forecast_obs_recist [n_total_forecast_obs_visits])
  */
 tuple(
-  array[] int,  // rep_recist [sum(n_patient_visits)] - sized for ALL visits for direct indexing
-  array[] int   // forecast_recist [sum(n_patient_forecast_visits)]
+  array[] int,  // rep_recist [n_total_visits] - ALL visits including screening (NE for screening)
+  array[] int   // forecast_obs_recist [n_total_forecast_obs_visits]
 ) calculate_all_patients_recist(
   vector rep_patient_log_sld,
   vector forecast_patient_log_sld,
   array[] int patient_visit_pos,
   array[] int forecast_visits_pos,
+  array[] int forecast_obs_visits_pos,
+  int forecast_observation_interval,
   array[] int n_patient_screening_visits
 ) {
   int n_patients = size(patient_visit_pos) - 1;
-
   int n_total_visits = get_pos_total_size(patient_visit_pos);
-  int n_total_forecast_visits = get_pos_total_size(forecast_visits_pos);
+  int n_total_forecast_obs_visits = get_pos_total_size(forecast_obs_visits_pos);
 
   int CR = 1; int PR = 2; int SD = 3; int PD = 4;
 
-  // rep_recist is sized for ALL visits (including screening) to allow direct indexing with treat_visit_start:visit_end
+  // rep_recist sized for ALL visits (including screening) for direct indexing
   array[n_total_visits] int rep_recist = rep_array(PD + 1, n_total_visits);
-  array[n_total_forecast_visits] int forecast_recist;
+  array[n_total_forecast_obs_visits] int forecast_obs_recist;
 
   for (i in 1:n_patients) {
     int visit_size = get_pos_size(patient_visit_pos, i);
-    int forecast_size = get_pos_size(forecast_visits_pos, i);
+    int n_assessment = get_pos_size(forecast_obs_visits_pos, i);
     int n_obs_treat_visits = visit_size - n_patient_screening_visits[i];
 
     int visit_start, screening_visit_end, treat_visit_start, visit_end;
     (visit_start, screening_visit_end, treat_visit_start, visit_end) = get_visit_pos(
       patient_visit_pos, i, n_patient_screening_visits[i]);
 
-    int forecast_visit_start, forecast_visit_end;
-    (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
+    if (n_assessment > 0) {
+      int fcast_start, fcast_end;
+      (fcast_start, fcast_end) = get_pos(forecast_visits_pos, i);
 
-    // calculate_target_recist drops screening visits, so output length = n_obs_treat_visits + forecast_size
-    array[n_obs_treat_visits + forecast_size] int full_predict_recist = calculate_target_recist(
-      exp(append_row(rep_patient_log_sld[visit_start:visit_end],
-                    forecast_patient_log_sld[forecast_visit_start:forecast_visit_end])) * 10,
-      n_patient_screening_visits[i]
-    );
+      // Subsample weekly forecast at assessment-visit indices
+      array[n_assessment] int obs_indices = linspaced_int_array(
+        n_assessment,
+        fcast_start + forecast_observation_interval - 1,
+        fcast_start + n_assessment * forecast_observation_interval - 1
+      );
+      obs_indices[n_assessment] = fcast_end;
 
-    rep_recist[treat_visit_start:visit_end] = full_predict_recist[:n_obs_treat_visits];
-    forecast_recist[forecast_visit_start:forecast_visit_end] = full_predict_recist[(n_obs_treat_visits + 1):];
+      int assess_start, assess_end;
+      (assess_start, assess_end) = get_pos(forecast_obs_visits_pos, i);
+
+      // calculate_target_recist drops screening visits: output = n_obs_treat + n_assessment
+      array[n_obs_treat_visits + n_assessment] int full_predict_recist = calculate_target_recist(
+        exp(append_row(rep_patient_log_sld[visit_start:visit_end],
+                       forecast_patient_log_sld[obs_indices])) * 10,
+        n_patient_screening_visits[i]
+      );
+
+      rep_recist[treat_visit_start:visit_end] = full_predict_recist[:n_obs_treat_visits];
+      forecast_obs_recist[assess_start:assess_end] = full_predict_recist[(n_obs_treat_visits + 1):];
+    } else if (n_obs_treat_visits > 0) {
+      rep_recist[treat_visit_start:visit_end] = calculate_target_recist(
+        exp(rep_patient_log_sld[visit_start:visit_end]) * 10,
+        n_patient_screening_visits[i]
+      );
+    }
   }
 
-  return (rep_recist, forecast_recist);
+  return (rep_recist, forecast_obs_recist);
 }
