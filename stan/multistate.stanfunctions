@@ -88,20 +88,16 @@ real sum_at_visits_below(
     int i,
     array[] int t_patient_visits,
     array[] int patient_visit_pos,
-    int limit,
-    vector obs_covar,
-    real coef
+    int limit
 ) {
   real ll = 0;
   int v_start; int v_end;
   (v_start, v_end) = get_pos(patient_visit_pos, i);
-  int has_covar = size(obs_covar) > 0;
   for (v in v_start:v_end) {
     int wk = t_patient_visits[v];
     if (wk < 1) continue;
     if (wk >= limit) break;
     ll += log_cond_surv[i, wk];
-    if (has_covar) ll += coef * obs_covar[v];
   }
   return ll;
 }
@@ -114,8 +110,7 @@ real sum_03_at_visits_below(
     array[] int patient_visit_pos,
     int limit
 ) {
-  return sum_at_visits_below(log_cond_surv_03, i, t_patient_visits, patient_visit_pos,
-                              limit, rep_vector(0.0, 0), 0.0);
+  return sum_at_visits_below(log_cond_surv_03, i, t_patient_visits, patient_visit_pos, limit);
 }
 
 /**
@@ -187,9 +182,7 @@ real multistate_lpmf(
   matrix log_cond_surv_12_t,
   matrix log_cond_surv_03,
   matrix log_cond_surv_32,
-  int enable_ms_visit_gated_01,
-  vector ms_obs_psa_covar_flat,  // flat PSA covariate (zero-sized if not visit-gated)
-  real tv_coef_01                // time_varying_coef_01[1] (0.0 if not visit-gated)
+  int enable_ms_visit_gated_01
 ) {
   // Single-transition fast path (0→1 only, equivalent to old other_events)
   if (enable_01 && !enable_02 && !enable_12 && !enable_03 && !enable_ms_visit_gated_01) {
@@ -214,7 +207,7 @@ real multistate_lpmf(
         if (enable_ms_visit_gated_01) {
           patient_ll += sum_at_visits_below(
             log_cond_surv_01, i, t_patient_visits, patient_visit_pos,
-            time_01[i] + 1, ms_obs_psa_covar_flat, tv_coef_01);
+            time_01[i] + 1);
         } else {
           patient_ll += sum(log_cond_surv_01[i, 1:time_01[i]]);
         }
@@ -250,28 +243,17 @@ real multistate_lpmf(
         // Survival at measured visits before T_d; event hazard at T_d.
         if (enable_01) {
           patient_ll += sum_at_visits_below(
-            log_cond_surv_01, i, t_patient_visits, patient_visit_pos,
-            T_d, ms_obs_psa_covar_flat, tv_coef_01);
-          if (!prog_deterministic[i] && T_d > 0) {
-            int v_det = find_visit_idx(i, T_d, t_patient_visits, patient_visit_pos);
-            // Apply covariate at log-hazard level: log_cond_surv = -exp(log_hazard),
-            // so log_hazard = log(-log_cond_surv). Result -exp(log_hazard_total) is
-            // always negative, so log1m_exp is always valid — same as non-visit-gated.
-            real lcs_det = log_cond_surv_01[i, T_d];
-            real log_surv_det = (v_det > 0)
-              ? -exp(log(-lcs_det) + tv_coef_01 * ms_obs_psa_covar_flat[v_det])
-              : lcs_det;
-            patient_ll += log1m_exp(log_surv_det);
-          }
+            log_cond_surv_01, i, t_patient_visits, patient_visit_pos, T_d);
+          if (!prog_deterministic[i] && T_d > 0)
+            patient_ll += log1m_exp(log_cond_surv_01[i, T_d]);
         }
         // 0->2 continuous (unchanged) — uses all calendar weeks
         if (enable_02 && T_d > 0)
           patient_ll += sum(log_cond_surv_02[i, 1:(T_d - 1)]);
-        // 0->3 visit-gated — same generic function, no covariate
+        // 0->3 visit-gated
         if (enable_03)
           patient_ll += sum_at_visits_below(
-            log_cond_surv_03, i, t_patient_visits, patient_visit_pos,
-            T_d, rep_vector(0.0, 0), 0.0);
+            log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_d);
         // Post-progression 1->2 sojourn (censored, same as no-IC path)
         if (enable_12 && time_12[i] > 0) {
           if (ms_time_scale_12 == 1) {
@@ -432,7 +414,7 @@ real multistate_lpmf(
         if (enable_01 && time_02[i] > 1) {
           if (enable_ms_visit_gated_01)
             patient_ll += sum_at_visits_below(log_cond_surv_01, i, t_patient_visits, patient_visit_pos,
-              time_02[i], ms_obs_psa_covar_flat, tv_coef_01);
+              time_02[i]);
           else
             patient_ll += sum(log_cond_surv_01[i, 1:(time_02[i] - 1)]);
         }
@@ -457,26 +439,17 @@ real multistate_lpmf(
         int T_c  = T_d - gap;
 
         if (enable_ms_visit_gated_01) {
-          // ── Visit-gated 0->1 (same as state 1 visit-gated, but T_c/gap are irrelevant) ──
           if (enable_01) {
             patient_ll += sum_at_visits_below(
-              log_cond_surv_01, i, t_patient_visits, patient_visit_pos,
-              T_d, ms_obs_psa_covar_flat, tv_coef_01);
-            if (!prog_deterministic[i] && T_d > 0) {
-              int v_det = find_visit_idx(i, T_d, t_patient_visits, patient_visit_pos);
-              real lcs_det = log_cond_surv_01[i, T_d];
-              real log_surv_det = (v_det > 0)
-                ? -exp(log(-lcs_det) + tv_coef_01 * ms_obs_psa_covar_flat[v_det])
-                : lcs_det;
-              patient_ll += log1m_exp(log_surv_det);
-            }
+              log_cond_surv_01, i, t_patient_visits, patient_visit_pos, T_d);
+            if (!prog_deterministic[i] && T_d > 0)
+              patient_ll += log1m_exp(log_cond_surv_01[i, T_d]);
           }
           if (enable_02 && T_d > 0)
             patient_ll += sum(log_cond_surv_02[i, 1:(T_d - 1)]);
           if (enable_03)
             patient_ll += sum_at_visits_below(
-              log_cond_surv_03, i, t_patient_visits, patient_visit_pos,
-              T_d, rep_vector(0.0, 0), 0.0);
+              log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_d);
           // Post-progression 1->2 sojourn (event)
           if (enable_12 && time_12[i] > 0) {
             if (ms_time_scale_12 == 1) {
@@ -662,7 +635,7 @@ real multistate_lpmf(
       if (enable_01 && time_03[i] > 1) {
         if (enable_ms_visit_gated_01)
           patient_ll += sum_at_visits_below(log_cond_surv_01, i, t_patient_visits, patient_visit_pos,
-            time_03[i], ms_obs_psa_covar_flat, tv_coef_01);
+            time_03[i]);
         else
           patient_ll += sum(log_cond_surv_01[i, 1:(time_03[i] - 1)]);
       }

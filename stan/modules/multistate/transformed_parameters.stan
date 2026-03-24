@@ -74,13 +74,26 @@ if (enable_ms_01) {
   }
 
   // -------------------------------------------------------------------------
-  // Time-varying covariate effects (generic - no feature knowledge)
+  // Time-varying covariate effects
   // -------------------------------------------------------------------------
-  // 0->1 time-varying covariate: add to log_cond_surv_01 ONLY in continuous mode.
-  // In visit-gated mode, the covariate is applied per-visit in multistate_lpmf.
+  // Continuous mode: dense matrix addition across all weeks.
   if (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 && !enable_ms_visit_gated_01) {
     for (k in 1:n_time_varying_covar) {
       log_cond_surv_01 += time_varying_coef_01[k] * ms_time_varying_covar_01[k];
+    }
+  }
+  // Visit-gated mode: sparse update at observed visit weeks only (before -exp,
+  // same log-hazard-level addition as continuous mode — no special handling needed).
+  if (enable_ms_pop_time_varying_cov && enable_ms_visit_gated_01) {
+    for (j in 1:n_hmc_patients) {
+      int p = hmc_patient_idx[j];
+      int v_start; int v_end;
+      (v_start, v_end) = get_pos(patient_visit_pos, p);
+      for (v in v_start:v_end) {
+        int wk = t_patient_visits[v];
+        if (wk >= 1 && wk <= max_all_t)
+          log_cond_surv_01[j, wk] += time_varying_coef_01[1] * ms_obs_psa_covar_flat[v];
+      }
     }
   }
 
