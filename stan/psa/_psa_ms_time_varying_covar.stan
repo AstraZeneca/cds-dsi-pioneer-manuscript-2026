@@ -15,10 +15,15 @@
 // Only allocated when both multistate and time-varying covariates are enabled.
 // Rows correspond to HMC patients (j = 1..n_hmc_patients); data arrays are
 // accessed via hmc_patient_idx[j] to map to the unified patient arrays.
-array[enable_ms_01 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 ? n_time_varying_covar : 0]
+// Build modeled-PSA covariate matrix only when needed:
+// - 0->1 continuous mode (not visit-gated), OR
+// - 0->2 with time-varying covariate enabled
+array[enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
+    (enable_ms_01 && !enable_ms_visit_gated_01 || enable_ms_02_time_varying_cov) ? n_time_varying_covar : 0]
   matrix[n_hmc_patients, max_all_t] ms_time_varying_covar_01;
 
-if (enable_ms_01 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
+if (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
+    (enable_ms_01 && !enable_ms_visit_gated_01 || enable_ms_02_time_varying_cov)) {
   for (j in 1:n_hmc_patients) {
     int p = hmc_patient_idx[j];  // Unified patient index
     int visit_start, visit_end;
