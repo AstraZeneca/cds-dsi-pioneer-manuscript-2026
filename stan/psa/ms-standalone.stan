@@ -29,7 +29,7 @@ data {
   // Visit schedule — needed by multistate likelihood (0→3 IC gap, visit-gated
   // dropout hazard) and GQ. Passed from the full PSA stan data.
   array[n_patients] int<lower=0> n_patient_visits;
-  array[sum(n_patient_visits)] int<lower=1> t_patient_visits;
+  array[sum(n_patient_visits)] int t_patient_visits;  // includes pre-baseline (negative) weeks
 
   // max_all_t: passed as extend_max_all_t from the full PSA stan data
   int<lower=1> max_all_t;
