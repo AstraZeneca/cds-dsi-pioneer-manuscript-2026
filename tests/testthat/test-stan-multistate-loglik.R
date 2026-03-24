@@ -159,3 +159,44 @@ test_that("multistate_lpmf: weight=0.5 halves patient contribution", {
   p1_ll    <- get_stan_val(d_full, "st_llik", 1)
   expect_equal(full_ll - half_ll, 0.5 * p1_ll, tolerance = 1e-6)
 })
+
+test_that("multistate_lpmf: weight=0.5 halves patient contribution in full illness-death loop", {
+  n <- 2L; max_t <- 8L
+  lcs <- matrix(-0.08, nrow = n, ncol = max_t)
+  # Both patients progress (state 1): exercises the full multi-transition loop
+  data_full <- make_ms_data(n, max_t,
+    event_time = c(4L, 6L), censored = c(0L, 0L),
+    final_state = c(1L, 1L), lcs_01 = lcs,
+    lcs_02 = matrix(-0.02, nrow = n, ncol = max_t),
+    time_02 = c(8L, 8L), censored_02 = c(1L, 1L)
+  )
+  data_half <- modifyList(data_full, list(weight = c(0.5, 1.0)))
+
+  fit_full <- test_stan_function(
+    here("tests", "testthat", "stan", "test_multistate_loglik_all.stan"),
+    data_full
+  )
+  fit_half <- test_stan_function(
+    here("tests", "testthat", "stan", "test_multistate_loglik_all.stan"),
+    data_half
+  )
+
+  d_full <- posterior::as_draws_df(fit_full$draws())
+  d_half <- posterior::as_draws_df(fit_half$draws())
+
+  # ms_lpmf_01_02 uses the general loop (both 0->1 and 0->2 enabled)
+  full_ll <- get_stan_val(d_full, "ms_lpmf_01_02")
+  half_ll <- get_stan_val(d_half, "ms_lpmf_01_02")
+
+  # The difference should equal 0.5 * patient_1's contribution
+  # Compute patient 1's contribution with weight=1 by running with weight=(1,0)
+  data_p1_only <- modifyList(data_full, list(weight = c(1.0, 0.0)))
+  fit_p1 <- test_stan_function(
+    here("tests", "testthat", "stan", "test_multistate_loglik_all.stan"),
+    data_p1_only
+  )
+  d_p1 <- posterior::as_draws_df(fit_p1$draws())
+  p1_only_ll <- get_stan_val(d_p1, "ms_lpmf_01_02")
+
+  expect_equal(full_ll - half_ll, 0.5 * p1_only_ll, tolerance = 1e-6)
+})
