@@ -866,13 +866,10 @@ tuple(int, int) sample_at_visits_rng(
     int wk = visit_weeks[a];
     if (wk < 1 || wk > n_intervals) continue;
 
-    // Apply covariate at log-hazard level (consistent with transformed_parameters.stan).
-    // log_cond_surv = -exp(log_hazard), so log_hazard = log(-log_cond_surv).
-    real log_surv = has_covar
-      ? -exp(log(-log_cond_surv_base[wk]) + coef * obs_covar[a])
-      : log_cond_surv_base[wk];
-
-    if (bernoulli_rng(1 - exp(log_surv))) {
+    real log_surv = log_cond_surv_base[wk]
+                    + (has_covar ? coef * obs_covar[a] : 0.0);
+    // log_surv >= 0 means covariate dominated baseline: P(survive) >= 1, no event.
+    if (log_surv < 0 && bernoulli_rng(1 - exp(log_surv))) {
       return (wk, 0);
     }
   }
@@ -904,11 +901,9 @@ tuple(int, int) sample_at_visits_rng(
     if (wk <= obs_time) continue;
     if (wk < 1 || wk > n_intervals) continue;
 
-    real log_surv = has_covar
-      ? -exp(log(-log_cond_surv_base[wk]) + coef * obs_covar[a])
-      : log_cond_surv_base[wk];
-
-    if (bernoulli_rng(1 - exp(log_surv))) {
+    real log_surv = log_cond_surv_base[wk]
+                    + (has_covar ? coef * obs_covar[a] : 0.0);
+    if (log_surv < 0 && bernoulli_rng(1 - exp(log_surv))) {
       return (wk, 0);
     }
   }
