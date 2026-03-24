@@ -93,10 +93,14 @@ array[n_levels] real<lower=0> log_lambda_gp_32_s_level_rho_beta;
 
 // --- Covariate Coefficient Hyperparameters ---
 // Time-varying coefficients (population-level)
-vector[n_time_varying_covar] time_varying_coef_01_mean;
-vector<lower=0>[n_time_varying_covar] time_varying_coef_01_sd;
-vector[n_time_varying_covar] time_varying_coef_02_mean;
-vector<lower=0>[n_time_varying_covar] time_varying_coef_02_sd;
+vector[enable_ms_pop_time_varying_cov
+    ? (enable_ms_visit_gated_01 ? 1 : n_time_varying_covar) : 0] time_varying_coef_01_mean;
+vector<lower=0>[enable_ms_pop_time_varying_cov
+    ? (enable_ms_visit_gated_01 ? 1 : n_time_varying_covar) : 0] time_varying_coef_01_sd;
+vector[enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov
+    ? n_time_varying_covar : 0] time_varying_coef_02_mean;
+vector<lower=0>[enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov
+    ? n_time_varying_covar : 0] time_varying_coef_02_sd;
 vector[n_time_varying_covar] time_varying_coef_12_mean;
 vector<lower=0>[n_time_varying_covar] time_varying_coef_12_sd;
 

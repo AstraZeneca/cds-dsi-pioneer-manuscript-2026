@@ -21,7 +21,9 @@ matrix[n_gp_groups_ms_baseline_01, enable_ms_01 ? n_ms_gp_cal_knots : 0] log_lam
 vector[n_enabled_groups_ms_baseline_01] raw_log_lambda_gp_01_level_intercept;
 
 // --- Population-level Time-varying Covariates ---
-vector[enable_ms_01 && enable_ms_pop_time_varying_cov ? n_time_varying_covar : 0] time_varying_coef_01;
+// 0->1: 1 feature in visit-gated mode, n_time_varying_covar in continuous mode
+vector[enable_ms_01 && enable_ms_pop_time_varying_cov
+    ? (enable_ms_visit_gated_01 ? 1 : n_time_varying_covar) : 0] time_varying_coef_01;
 
 // --- Population-level Time-invariant Covariates (QR space) ---
 vector[enable_ms_01 && enable_ms_pop_time_invariant_cov ? n_time_invariant_covar : 0] time_invariant_coef_qr_01;
@@ -49,7 +51,9 @@ matrix[n_gp_groups_ms_baseline_02, enable_ms_02 ? n_ms_gp_cal_knots : 0] log_lam
 vector[n_enabled_groups_ms_baseline_02] raw_log_lambda_gp_02_level_intercept;
 
 // --- Population-level Time-varying Covariates ---
-vector[enable_ms_02 && enable_ms_pop_time_varying_cov ? n_time_varying_covar : 0] time_varying_coef_02;
+// 0->2: n_time_varying_covar features if enabled, 0 otherwise
+vector[enable_ms_02 && enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov
+    ? n_time_varying_covar : 0] time_varying_coef_02;
 
 // --- Population-level Time-invariant Covariates (QR space) ---
 vector[enable_ms_02 && enable_ms_pop_time_invariant_cov ? n_time_invariant_covar : 0] time_invariant_coef_qr_02;
