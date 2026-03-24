@@ -39,9 +39,15 @@ data {
   #include "modules/multistate/data.stan"
   #include "modules/multistate/hyperparams.stan"
 
-  // Interval censoring gap — weeks between last clean assessment and detection
-  // visit. Used to place observed PFS events at detection time in GQ.
-  array[n_patients] int<lower=0> interval_censored;
+  // interval_censored is declared in modules/multistate/data.stan
+
+  // Visit schedule — passed from the full PSA stan data; needed by the
+  // multistate likelihood (0→3 IC gap and visit-gated dropout hazard)
+  // and GQ (spop visit schedule construction).
+  array[n_patients] int<lower=0> n_patient_visits;
+  array[sum(n_patient_visits)] int<lower=1> t_patient_visits;
+  array[n_patients + 1] int<lower=1> patient_visit_pos;
+  int<lower=1> forecast_observation_interval;
 
   // =========================================================================
   // ENDPOINT COMPUTATION DATA (shared with full model)
@@ -54,6 +60,12 @@ transformed data {
   // HIERARCHY VALIDATION + TRIAL POSITION ARRAYS (shared with full model)
   // =========================================================================
   #include "_base_hierarchy_transformed_data.stan"
+
+  // In the standalone model all patients are HMC (no Laplace-marginalized patients).
+  // hmc_patient_idx is defined in _base_transformed_data.stan for the full model;
+  // reproduce it here for the subset of transformed data the standalone uses.
+  array[n_hmc_patients] int hmc_patient_idx = linspaced_int_array(n_hmc_patients, 1, n_hmc_patients);
+  array[n_trials + 1] int hmc_trial_patient_pos = trial_patient_pos;
 
   // =========================================================================
   // TIME GRID (needed by multistate GP; in the full model this lives in
@@ -105,15 +117,17 @@ model {
     ));
   } else if (fit_multistate_data) {
     // Full illness-death likelihood
-    target += calc_multistate_loglik(
+    ms_final_state ~ multistate(
       enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
       enable_ms_03, enable_ms_32,
-      ms_final_state,
       ms_time_01, ms_time_02, ms_time_12,
       ms_time_03, ms_time_32,
       ms_censored_01, ms_censored_02, ms_censored_12,
       ms_censored_32,
       ms_prog_deterministic,
+      ms_ic_gap_01,
+      t_patient_visits,
+      patient_visit_pos,
       log_cond_surv_01,
       log_cond_surv_02,
       log_cond_surv_12_s,
