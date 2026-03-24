@@ -283,7 +283,6 @@ compute_cif_from_draws <- function(fit, stan_data) {
   posterior::as_draws_matrix(result_mat)
 }
 
->>>>>>> main
 #' Select draws from CmdStanR fit using tidyselect patterns
 #'
 #' Uses cmdstanr::read_cmdstan_csv with variable selection to read only the
