@@ -8,6 +8,7 @@ functions {
   // (which is rejected in generated quantities).
   real multistate_loglik(
     array[] int final_state,
+    vector weight,
     int enable_01, int enable_02, int enable_12, int ms_time_scale_12,
     int enable_03, int enable_32,
     array[] int time_01, array[] int time_02, array[] int time_12,
@@ -23,6 +24,7 @@ functions {
   ) {
     return multistate_lpmf(
       final_state |
+      weight,
       enable_01, enable_02, enable_12, ms_time_scale_12,
       enable_03, enable_32,
       time_01, time_02, time_12, time_03, time_32,
@@ -39,6 +41,7 @@ functions {
 data {
   int<lower=1> N;
   int<lower=1> MAX_T;
+  vector[N] weight;
   array[N] int event_time_01;
   array[N] int censored_01;
   matrix[N, MAX_T] log_cond_surv_01;
@@ -71,6 +74,7 @@ generated quantities {
   // multistate_lpmf: 01-only fast path
   real ms_lpmf_01only = multistate_loglik(
     final_state,
+    weight,
     1, 0, 0, 0,
     0, 0,
     event_time_01, time_02, time_12, time_03, time_03,
@@ -85,6 +89,7 @@ generated quantities {
   // multistate_lpmf: 01+02 (full illness-death, no 12)
   real ms_lpmf_01_02 = multistate_loglik(
     final_state,
+    weight,
     1, 1, 0, 0,
     0, 0,
     event_time_01, time_02, time_12, time_03, time_03,
