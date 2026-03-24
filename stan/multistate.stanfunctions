@@ -254,12 +254,14 @@ real multistate_lpmf(
             T_d, ms_obs_psa_covar_flat, tv_coef_01);
           if (!prog_deterministic[i] && T_d > 0) {
             int v_det = find_visit_idx(i, T_d, t_patient_visits, patient_visit_pos);
-            real log_surv_det = log_cond_surv_01[i, T_d]
-              + (v_det > 0 ? tv_coef_01 * ms_obs_psa_covar_flat[v_det] : 0.0);
-            // log1m_exp requires x < 0; clamp here because adding the covariate
-            // to the baseline-only log_cond_surv can push it to >= 0 (covariate
-            // dominates a small baseline hazard). Clamping is correct: P(event) -> 1.
-            patient_ll += log1m_exp(fmin(log_surv_det, -1e-9));
+            // Apply covariate at log-hazard level: log_cond_surv = -exp(log_hazard),
+            // so log_hazard = log(-log_cond_surv). Result -exp(log_hazard_total) is
+            // always negative, so log1m_exp is always valid — same as non-visit-gated.
+            real lcs_det = log_cond_surv_01[i, T_d];
+            real log_surv_det = (v_det > 0)
+              ? -exp(log(-lcs_det) + tv_coef_01 * ms_obs_psa_covar_flat[v_det])
+              : lcs_det;
+            patient_ll += log1m_exp(log_surv_det);
           }
         }
         // 0->2 continuous (unchanged) — uses all calendar weeks
@@ -462,8 +464,10 @@ real multistate_lpmf(
               T_d, ms_obs_psa_covar_flat, tv_coef_01);
             if (!prog_deterministic[i] && T_d > 0) {
               int v_det = find_visit_idx(i, T_d, t_patient_visits, patient_visit_pos);
-              real log_surv_det = log_cond_surv_01[i, T_d]
-                + (v_det > 0 ? tv_coef_01 * ms_obs_psa_covar_flat[v_det] : 0.0);
+              real lcs_det = log_cond_surv_01[i, T_d];
+              real log_surv_det = (v_det > 0)
+                ? -exp(log(-lcs_det) + tv_coef_01 * ms_obs_psa_covar_flat[v_det])
+                : lcs_det;
               patient_ll += log1m_exp(log_surv_det);
             }
           }
