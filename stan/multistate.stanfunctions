@@ -141,6 +141,8 @@ int find_visit_idx(int i, int wk,
 real multistate_partial_sum(
   array[] int final_state_slice,  // auto-sliced ms_final_state[hmc_patient_idx]
   int start, int end,
+  // Per-patient likelihood weights (propensity or ones)
+  vector weight,
   // Per-patient data (HMC-indexed arrays, length n_hmc_patients)
   array[] int time_01, array[] int time_02, array[] int time_12,
   array[] int time_03, array[] int time_32,
@@ -639,7 +641,7 @@ real multistate_partial_sum(
       }
     }
 
-    total_ll += patient_ll;
+    total_ll += weight[i] * patient_ll;
   }
 
   return total_ll;
