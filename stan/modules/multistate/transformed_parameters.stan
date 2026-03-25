@@ -74,13 +74,26 @@ if (enable_ms_01) {
   }
 
   // -------------------------------------------------------------------------
-  // Time-varying covariate effects (generic - no feature knowledge)
+  // Time-varying covariate effects
   // -------------------------------------------------------------------------
-  if (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
-    // Generic loop - module doesn't know what each covariate represents
-    // ms_time_varying_covar_01[k] is built by _ms_time_varying_covar.stan
+  // Continuous mode: dense matrix addition across all weeks.
+  if (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 && !enable_ms_visit_gated_01) {
     for (k in 1:n_time_varying_covar) {
       log_cond_surv_01 += time_varying_coef_01[k] * ms_time_varying_covar_01[k];
+    }
+  }
+  // Visit-gated mode: sparse update at observed visit weeks only (before -exp,
+  // same log-hazard-level addition as continuous mode — no special handling needed).
+  if (enable_ms_pop_time_varying_cov && enable_ms_visit_gated_01) {
+    for (j in 1:n_hmc_patients) {
+      int p = hmc_patient_idx[j];
+      int v_start; int v_end;
+      (v_start, v_end) = get_pos(patient_visit_pos, p);
+      for (v in v_start:v_end) {
+        int wk = t_patient_visits[v];
+        if (wk >= 1 && wk <= max_all_t)
+          log_cond_surv_01[j, wk] += time_varying_coef_01[1] * ms_obs_psa_covar_flat[v];
+      }
     }
   }
 
@@ -197,8 +210,9 @@ if (enable_ms_02) {
   // -------------------------------------------------------------------------
   // Time-varying covariate effects (same pattern as 0→1)
   // -------------------------------------------------------------------------
-  // Note: For 0→2, we reuse the same covariate matrix from 0→1 (same state dynamics)
-  if (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 && enable_ms_01) {
+  // 0->2 time-varying covariate: uses modeled PSA (ms_time_varying_covar_01)
+  // Controlled by enable_ms_02_time_varying_cov, independent of 0->1 mode.
+  if (enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov && n_time_varying_covar > 0) {
     for (k in 1:n_time_varying_covar) {
       log_cond_surv_02 += time_varying_coef_02[k] * ms_time_varying_covar_01[k];
     }

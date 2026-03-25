@@ -43,7 +43,8 @@ if (enable_ms_01) {
   }
 
   // Time-varying covariate coefficients
-  if (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
+  // 0->1 time-varying covariate prior (size 1 in visit-gated, n_time_varying_covar otherwise)
+  if (enable_ms_pop_time_varying_cov && (enable_ms_visit_gated_01 || n_time_varying_covar > 0)) {
     time_varying_coef_01 ~ normal(time_varying_coef_01_mean, time_varying_coef_01_sd);
   }
 
@@ -102,7 +103,8 @@ if (enable_ms_02) {
   }
 
   // Time-varying covariate coefficients
-  if (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
+  // 0->2 time-varying covariate prior
+  if (enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov && n_time_varying_covar > 0) {
     time_varying_coef_02 ~ normal(time_varying_coef_02_mean, time_varying_coef_02_sd);
   }
 

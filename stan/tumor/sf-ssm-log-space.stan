@@ -95,7 +95,8 @@ model {
           log_cond_surv_12_s,
           log_cond_surv_12_t,
           log_cond_surv_03,
-          log_cond_surv_32
+          log_cond_surv_32,
+          0
         );
       }
     }
@@ -268,6 +269,12 @@ generated quantities {
     array[n_patients] int burden_right_censored = right_censored;
     array[n_patients] int burden_target_pfs = target_pfs;
     array[n_patients] int burden_target_right_censored = target_right_censored;
+    // Tumor model does not support visit-gated 0->1 (no PSA covariate)
+    int burden_enable_ms_visit_gated_01 = 0;
+    real burden_tv_coef_01_val = 0.0;
+    vector[0] burden_forecast_obs_log_psa;
+    real burden_median_log_psa_obs = 0.0;
+    real burden_iqr_log_psa_obs = 0.0;
 
     #include "modules/state_space/burden_endpoints.stan"
   }

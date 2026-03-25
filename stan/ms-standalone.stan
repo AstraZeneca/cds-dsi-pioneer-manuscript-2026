@@ -83,7 +83,7 @@ model {
 
   if (fit_multistate_data) {
     profile("multistate loglik") {
-      if (enable_ms_01 && !enable_ms_02 && !enable_ms_12) {
+      if (enable_ms_01 && !enable_ms_02 && !enable_ms_12 && !enable_ms_visit_gated_01) {
         // Single-transition optimisation: skip full illness-death solver
         target += sum(calc_ms_single_transition_loglik(
           ms_time_01[hmc_patient_idx],
@@ -108,7 +108,8 @@ model {
           log_cond_surv_12_s,
           log_cond_surv_12_t,
           log_cond_surv_03,
-          log_cond_surv_32
+          log_cond_surv_32,
+          0
         );
       }
     }
