@@ -36,12 +36,20 @@ if (enable_ms_01) {
       int lv_start, lv_end;
       (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
 
-      // Scale intercepts (shared by both intercept-only and GP modes)
-      log_lambda_gp_01_level_intercept[lv_start:lv_end] =
-        raw_log_lambda_gp_01_level_intercept[lv_start:lv_end] *
-        log_lambda_gp_01_level_intercept_sd[lv];
+      // Scale intercepts: FE uses fixed data SD, RE uses estimated SD
+      if (enable_ms_level_baseline_hazard[lv] == 1) {
+        // Fixed effects: no pooling
+        log_lambda_gp_01_level_intercept[lv_start:lv_end] =
+          raw_log_lambda_gp_01_level_intercept[lv_start:lv_end] *
+          fe_log_lambda_gp_01_level_intercept_sd[lv];
+      } else {
+        // Random effects (2 or 3): hierarchical pooling
+        log_lambda_gp_01_level_intercept[lv_start:lv_end] =
+          raw_log_lambda_gp_01_level_intercept[lv_start:lv_end] *
+          log_lambda_gp_01_level_intercept_sd[lv];
+      }
 
-      if (enable_ms_level_baseline_hazard[lv] == 2) {
+      if (enable_ms_level_baseline_hazard[lv] == 3) {
         // GP mode: full time-varying residual via calc_gp_pred
         int gp_start, gp_end;
         (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
@@ -174,11 +182,20 @@ if (enable_ms_02) {
       int lv_start, lv_end;
       (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
 
-      log_lambda_gp_02_level_intercept[lv_start:lv_end] =
-        raw_log_lambda_gp_02_level_intercept[lv_start:lv_end] *
-        log_lambda_gp_02_level_intercept_sd[lv];
+      // Scale intercepts: FE uses fixed data SD, RE uses estimated SD
+      if (enable_ms_level_baseline_hazard[lv] == 1) {
+        // Fixed effects: no pooling
+        log_lambda_gp_02_level_intercept[lv_start:lv_end] =
+          raw_log_lambda_gp_02_level_intercept[lv_start:lv_end] *
+          fe_log_lambda_gp_02_level_intercept_sd[lv];
+      } else {
+        // Random effects (2 or 3): hierarchical pooling
+        log_lambda_gp_02_level_intercept[lv_start:lv_end] =
+          raw_log_lambda_gp_02_level_intercept[lv_start:lv_end] *
+          log_lambda_gp_02_level_intercept_sd[lv];
+      }
 
-      if (enable_ms_level_baseline_hazard[lv] == 2) {
+      if (enable_ms_level_baseline_hazard[lv] == 3) {
         int gp_start, gp_end;
         (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
         for (g in lv_start:lv_end) {
@@ -288,11 +305,20 @@ if (need_12_s_gp) {
       int lv_start, lv_end;
       (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
 
-      log_lambda_gp_12_s_level_intercept[lv_start:lv_end] =
-        raw_log_lambda_gp_12_s_level_intercept[lv_start:lv_end] *
-        log_lambda_gp_12_s_level_intercept_sd[lv];
+      // Scale intercepts: FE uses fixed data SD, RE uses estimated SD
+      if (enable_ms_level_baseline_hazard[lv] == 1) {
+        // Fixed effects: no pooling
+        log_lambda_gp_12_s_level_intercept[lv_start:lv_end] =
+          raw_log_lambda_gp_12_s_level_intercept[lv_start:lv_end] *
+          fe_log_lambda_gp_12_s_level_intercept_sd[lv];
+      } else {
+        // Random effects (2 or 3): hierarchical pooling
+        log_lambda_gp_12_s_level_intercept[lv_start:lv_end] =
+          raw_log_lambda_gp_12_s_level_intercept[lv_start:lv_end] *
+          log_lambda_gp_12_s_level_intercept_sd[lv];
+      }
 
-      if (enable_ms_level_baseline_hazard[lv] == 2) {
+      if (enable_ms_level_baseline_hazard[lv] == 3) {
         int gp_start, gp_end;
         (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
         for (g in lv_start:lv_end) {
@@ -377,11 +403,20 @@ if (need_12_t_gp) {
       int lv_start, lv_end;
       (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
 
-      log_lambda_gp_12_t_level_intercept[lv_start:lv_end] =
-        raw_log_lambda_gp_12_t_level_intercept[lv_start:lv_end] *
-        log_lambda_gp_12_t_level_intercept_sd[lv];
+      // Scale intercepts: FE uses fixed data SD, RE uses estimated SD
+      if (enable_ms_level_baseline_hazard[lv] == 1) {
+        // Fixed effects: no pooling
+        log_lambda_gp_12_t_level_intercept[lv_start:lv_end] =
+          raw_log_lambda_gp_12_t_level_intercept[lv_start:lv_end] *
+          fe_log_lambda_gp_12_t_level_intercept_sd[lv];
+      } else {
+        // Random effects (2 or 3): hierarchical pooling
+        log_lambda_gp_12_t_level_intercept[lv_start:lv_end] =
+          raw_log_lambda_gp_12_t_level_intercept[lv_start:lv_end] *
+          log_lambda_gp_12_t_level_intercept_sd[lv];
+      }
 
-      if (enable_ms_level_baseline_hazard[lv] == 2) {
+      if (enable_ms_level_baseline_hazard[lv] == 3) {
         int gp_start, gp_end;
         (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
         for (g in lv_start:lv_end) {
@@ -473,11 +508,20 @@ if (enable_ms_03) {
       int lv_start, lv_end;
       (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
 
-      log_lambda_gp_03_level_intercept[lv_start:lv_end] =
-        raw_log_lambda_gp_03_level_intercept[lv_start:lv_end] *
-        log_lambda_gp_03_level_intercept_sd[lv];
+      // Scale intercepts: FE uses fixed data SD, RE uses estimated SD
+      if (enable_ms_level_baseline_hazard[lv] == 1) {
+        // Fixed effects: no pooling
+        log_lambda_gp_03_level_intercept[lv_start:lv_end] =
+          raw_log_lambda_gp_03_level_intercept[lv_start:lv_end] *
+          fe_log_lambda_gp_03_level_intercept_sd[lv];
+      } else {
+        // Random effects (2 or 3): hierarchical pooling
+        log_lambda_gp_03_level_intercept[lv_start:lv_end] =
+          raw_log_lambda_gp_03_level_intercept[lv_start:lv_end] *
+          log_lambda_gp_03_level_intercept_sd[lv];
+      }
 
-      if (enable_ms_level_baseline_hazard[lv] == 2) {
+      if (enable_ms_level_baseline_hazard[lv] == 3) {
         int gp_start, gp_end;
         (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
         for (g in lv_start:lv_end) {
@@ -539,11 +583,20 @@ if (enable_ms_32) {
       int lv_start, lv_end;
       (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
 
-      log_lambda_gp_32_s_level_intercept[lv_start:lv_end] =
-        raw_log_lambda_gp_32_s_level_intercept[lv_start:lv_end] *
-        log_lambda_gp_32_s_level_intercept_sd[lv];
+      // Scale intercepts: FE uses fixed data SD, RE uses estimated SD
+      if (enable_ms_level_baseline_hazard[lv] == 1) {
+        // Fixed effects: no pooling
+        log_lambda_gp_32_s_level_intercept[lv_start:lv_end] =
+          raw_log_lambda_gp_32_s_level_intercept[lv_start:lv_end] *
+          fe_log_lambda_gp_32_s_level_intercept_sd[lv];
+      } else {
+        // Random effects (2 or 3): hierarchical pooling
+        log_lambda_gp_32_s_level_intercept[lv_start:lv_end] =
+          raw_log_lambda_gp_32_s_level_intercept[lv_start:lv_end] *
+          log_lambda_gp_32_s_level_intercept_sd[lv];
+      }
 
-      if (enable_ms_level_baseline_hazard[lv] == 2) {
+      if (enable_ms_level_baseline_hazard[lv] == 3) {
         int gp_start, gp_end;
         (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
         for (g in lv_start:lv_end) {
