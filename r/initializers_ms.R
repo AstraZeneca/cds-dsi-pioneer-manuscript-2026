@@ -25,9 +25,10 @@ ms_init_values <- function(env) {
     n_enabled_groups_ms_baseline_03 <- if (enable_ms_03) n_enabled_groups_ms_baseline else 0L
     n_enabled_groups_ms_baseline_32 <- if (enable_ms_32) n_enabled_groups_ms_baseline else 0L
     n_enabled_groups_ms_slope <- sum(n_groups_per_level[enable_ms_level_cov == 1])
+    any_re_level <- any(enable_ms_level_baseline_hazard >= 2L)
 
-    # GP-only group counts (mode == 2): used for _level_eta matrix sizing
-    n_gp_groups_ms_baseline <- sum(n_groups_per_level[enable_ms_level_baseline_hazard == 2L])
+    # GP-only group counts (mode == 3): used for _level_eta matrix sizing
+    n_gp_groups_ms_baseline <- sum(n_groups_per_level[enable_ms_level_baseline_hazard == 3L])
     n_gp_groups_ms_baseline_01 <- if (enable_ms_01) n_gp_groups_ms_baseline else 0L
     n_gp_groups_ms_baseline_02 <- if (enable_ms_02) n_gp_groups_ms_baseline else 0L
     n_gp_groups_ms_baseline_12_s <- if (need_12_s_gp) n_gp_groups_ms_baseline else 0L
@@ -52,7 +53,7 @@ ms_init_values <- function(env) {
       log_lambda_gp_01_pop_eta = if (enable_ms_01) rnorm(n_ms_gp_cal_knots),
       log_lambda_gp_01_level_alpha = if (enable_ms_01) rep(1.0, n_levels) else numeric(0),
       log_lambda_gp_01_level_rho = if (enable_ms_01) pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_01_level_rho_alpha, log_lambda_gp_01_level_rho_beta), ms_gp_grid_step) else numeric(0),
-      log_lambda_gp_01_level_intercept_sd = if (enable_ms_01) abs(rnorm(n_levels, sd = log_lambda_gp_01_level_intercept_sd_sd)) else numeric(0),
+      log_lambda_gp_01_level_intercept_sd = if (enable_ms_01 && any_re_level) abs(rnorm(n_levels, sd = log_lambda_gp_01_level_intercept_sd_sd)) else numeric(0),
       log_lambda_gp_01_level_eta = if (enable_ms_01 && n_gp_groups_ms_baseline_01 > 0) {
         matrix(rnorm(n_gp_groups_ms_baseline_01 * n_ms_gp_cal_knots), nrow = n_gp_groups_ms_baseline_01, ncol = n_ms_gp_cal_knots)
       },
@@ -71,7 +72,7 @@ ms_init_values <- function(env) {
       log_lambda_gp_02_pop_eta = if (enable_ms_02) rnorm(n_ms_gp_cal_knots),
       log_lambda_gp_02_level_alpha = if (enable_ms_02) rep(1.0, n_levels) else numeric(0),
       log_lambda_gp_02_level_rho = if (enable_ms_02) pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_02_level_rho_alpha, log_lambda_gp_02_level_rho_beta), ms_gp_grid_step) else numeric(0),
-      log_lambda_gp_02_level_intercept_sd = if (enable_ms_02) abs(rnorm(n_levels, sd = log_lambda_gp_02_level_intercept_sd_sd)) else numeric(0),
+      log_lambda_gp_02_level_intercept_sd = if (enable_ms_02 && any_re_level) abs(rnorm(n_levels, sd = log_lambda_gp_02_level_intercept_sd_sd)) else numeric(0),
       log_lambda_gp_02_level_eta = if (enable_ms_02 && n_gp_groups_ms_baseline_02 > 0) {
         matrix(rnorm(n_gp_groups_ms_baseline_02 * n_ms_gp_cal_knots), nrow = n_gp_groups_ms_baseline_02, ncol = n_ms_gp_cal_knots)
       },
@@ -90,7 +91,7 @@ ms_init_values <- function(env) {
       log_lambda_gp_12_s_pop_eta = if (need_12_s_gp) rnorm(n_ms_gp_sojourn_knots),
       log_lambda_gp_12_s_level_alpha = if (need_12_s_gp) rep(1.0, n_levels) else numeric(0),
       log_lambda_gp_12_s_level_rho = if (need_12_s_gp) pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_12_s_level_rho_alpha, log_lambda_gp_12_s_level_rho_beta), ms_gp_grid_step) else numeric(0),
-      log_lambda_gp_12_s_level_intercept_sd = if (need_12_s_gp) abs(rnorm(n_levels, sd = log_lambda_gp_12_s_level_intercept_sd_sd)) else numeric(0),
+      log_lambda_gp_12_s_level_intercept_sd = if (need_12_s_gp && any_re_level) abs(rnorm(n_levels, sd = log_lambda_gp_12_s_level_intercept_sd_sd)) else numeric(0),
       log_lambda_gp_12_s_level_eta = if (need_12_s_gp && n_gp_groups_ms_baseline_12_s > 0) {
         matrix(rnorm(n_gp_groups_ms_baseline_12_s * n_ms_gp_sojourn_knots), nrow = n_gp_groups_ms_baseline_12_s, ncol = n_ms_gp_sojourn_knots)
       },
@@ -109,7 +110,7 @@ ms_init_values <- function(env) {
       log_lambda_gp_12_t_pop_eta = if (need_12_t_gp) rnorm(n_ms_gp_cal_knots),
       log_lambda_gp_12_t_level_alpha = if (need_12_t_gp) rep(1.0, n_levels) else numeric(0),
       log_lambda_gp_12_t_level_rho = if (need_12_t_gp) pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_12_t_level_rho_alpha, log_lambda_gp_12_t_level_rho_beta), ms_gp_grid_step) else numeric(0),
-      log_lambda_gp_12_t_level_intercept_sd = if (need_12_t_gp) abs(rnorm(n_levels, sd = log_lambda_gp_12_t_level_intercept_sd_sd)) else numeric(0),
+      log_lambda_gp_12_t_level_intercept_sd = if (need_12_t_gp && any_re_level) abs(rnorm(n_levels, sd = log_lambda_gp_12_t_level_intercept_sd_sd)) else numeric(0),
       log_lambda_gp_12_t_level_eta = if (need_12_t_gp && n_gp_groups_ms_baseline_12_t > 0) {
         matrix(rnorm(n_gp_groups_ms_baseline_12_t * n_ms_gp_cal_knots), nrow = n_gp_groups_ms_baseline_12_t, ncol = n_ms_gp_cal_knots)
       },
@@ -130,7 +131,7 @@ ms_init_values <- function(env) {
       log_lambda_gp_03_level_rho = if (enable_ms_03) {
         pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_03_level_rho_alpha, log_lambda_gp_03_level_rho_beta), ms_gp_grid_step)
       } else numeric(0),
-      log_lambda_gp_03_level_intercept_sd = if (enable_ms_03) {
+      log_lambda_gp_03_level_intercept_sd = if (enable_ms_03 && any_re_level) {
         abs(rnorm(n_levels, sd = log_lambda_gp_03_level_intercept_sd_sd))
       } else numeric(0),
       log_lambda_gp_03_level_eta = if (enable_ms_03 && n_gp_groups_ms_baseline_03 > 0) {
@@ -154,7 +155,7 @@ ms_init_values <- function(env) {
       log_lambda_gp_32_s_level_rho = if (enable_ms_32) {
         pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_32_s_level_rho_alpha, log_lambda_gp_32_s_level_rho_beta), ms_gp_grid_step)
       } else numeric(0),
-      log_lambda_gp_32_s_level_intercept_sd = if (enable_ms_32) {
+      log_lambda_gp_32_s_level_intercept_sd = if (enable_ms_32 && any_re_level) {
         abs(rnorm(n_levels, sd = log_lambda_gp_32_s_level_intercept_sd_sd))
       } else numeric(0),
       log_lambda_gp_32_s_level_eta = if (enable_ms_32 && n_gp_groups_ms_baseline_32 > 0) {
