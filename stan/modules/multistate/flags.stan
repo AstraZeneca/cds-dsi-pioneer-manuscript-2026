@@ -18,8 +18,8 @@ int<lower=0, upper=2> ms_time_scale_12;
 
 // --- Baseline Hazard Hierarchy ---
 // Uses generic n_levels structure (consistent with tr, frac, init modules)
-// Tri-state flag: 0 = no level effect, 1 = intercept-only, 2 = full GP
-array[n_levels] int<lower=0, upper=2> enable_ms_level_baseline_hazard;
+// 4-state flag: 0 = no level effect, 1 = FE intercept, 2 = RE intercept, 3 = RE GP
+array[n_levels] int<lower=0, upper=3> enable_ms_level_baseline_hazard;
 
 // --- Dropout / Off-trial Transitions ---
 // 0→3: Dropout (off-trial). Constant hazard (no GP).
