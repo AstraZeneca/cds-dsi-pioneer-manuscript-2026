@@ -42,6 +42,8 @@ data {
   #include "modules/multistate/data.stan"
   #include "modules/multistate/hyperparams.stan"
   #include "modules/endpoints/data.stan"     // n_pfs_quantiles, pfs_quantiles, cond_group, etc.
+  #include "modules/propensity/flags.stan"
+  #include "modules/propensity/hyperparams.stan"
 }
 
 transformed data {
@@ -63,10 +65,12 @@ transformed data {
   #include "_qr_decomposition.stan"
   #include "modules/multistate/transformed_data.stan"
   #include "modules/endpoints/transformed_data.stan"
+  #include "modules/propensity/transformed_data.stan"
 }
 
 parameters {
   #include "modules/multistate/parameters.stan"
+  #include "modules/propensity/parameters.stan"
 }
 
 transformed parameters {
@@ -76,23 +80,26 @@ transformed parameters {
     matrix[n_patients, max_all_t] ms_time_varying_covar_01;
 
   #include "modules/multistate/transformed_parameters.stan"
+  #include "modules/propensity/transformed_parameters.stan"
 }
 
 model {
   #include "modules/multistate/priors.stan"
+  #include "modules/propensity/priors.stan"
 
   if (fit_multistate_data) {
     profile("multistate loglik") {
       if (enable_ms_01 && !enable_ms_02 && !enable_ms_12 && !enable_ms_visit_gated_01) {
         // Single-transition optimisation: skip full illness-death solver
-        target += sum(calc_ms_single_transition_loglik(
-          ms_time_01[hmc_patient_idx],
-          ms_censored_01[hmc_patient_idx],
-          log_cond_surv_01
+        target += dot_product(likelihood_weight[hmc_patient_idx],
+          calc_ms_single_transition_loglik(
+            ms_time_01[hmc_patient_idx],
+            ms_censored_01[hmc_patient_idx],
+            log_cond_surv_01
         ));
       } else {
         ms_final_state[hmc_patient_idx] ~ multistate(
-          ones_vector(n_hmc_patients),   // no propensity weighting in standalone
+          likelihood_weight[hmc_patient_idx],
           enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
           enable_ms_03, enable_ms_32,
           ms_time_01[hmc_patient_idx], ms_time_02[hmc_patient_idx], ms_time_12[hmc_patient_idx],
