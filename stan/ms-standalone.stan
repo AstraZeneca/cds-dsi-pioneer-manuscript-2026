@@ -89,16 +89,7 @@ model {
 
   if (fit_multistate_data) {
     profile("multistate loglik") {
-      if (enable_ms_01 && !enable_ms_02 && !enable_ms_12 && !enable_ms_visit_gated_01) {
-        // Single-transition optimisation: skip full illness-death solver
-        target += dot_product(likelihood_weight[hmc_patient_idx],
-          calc_ms_single_transition_loglik(
-            ms_time_01[hmc_patient_idx],
-            ms_censored_01[hmc_patient_idx],
-            log_cond_surv_01
-        ));
-      } else {
-        target += reduce_sum(
+      target += reduce_sum(
           multistate_partial_sum,
           ms_final_state[hmc_patient_idx],  // auto-sliced
           1,                                 // grainsize=1: TBB auto-balances
@@ -121,7 +112,6 @@ model {
           enable_ms_03, enable_ms_32,
           enable_ms_visit_gated_01
         );
-      }
     }
   }
 }
