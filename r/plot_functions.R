@@ -1119,3 +1119,187 @@ plot_lfo_elpd_diff <- function(
 }
 
 # nolint end: object_usage_linter
+
+plot_competing_risks_cif <- function(
+  stan_data,
+  draws_cif,
+  cif_prefix = c("spop", "sample"),
+  time_step = 4L,
+  x_breaks_months = seq(0, 48, by = 6)
+) {
+  cif_prefix <- match.arg(cif_prefix)
+  trial_id   <- as.integer(stan_data$patient_trial)
+  n_trials   <- max(trial_id)
+  trial_names <- trial_labeller(levels(stan_data$patient_trial))
+  max_t      <- stan_data$max_all_t
+  x_breaks   <- months_to_weeks(x_breaks_months)
+
+  # ── Observed AJ CIF ──────────────────────────────────────────────────────
+  obs <- tibble(
+    trial   = trial_id,
+    cens_01 = stan_data$ms_censored_01, t_01 = stan_data$ms_time_01,
+    cens_02 = stan_data$ms_censored_02, t_02 = stan_data$ms_time_02,
+    fs      = stan_data$ms_final_state,  t_03 = stan_data$ms_time_03
+  ) |> mutate(
+    cr_cause = case_when(
+      fs == 3L ~ 3L, cens_01 == 0L ~ 1L, cens_02 == 0L ~ 2L, TRUE ~ 0L
+    ),
+    cr_time = case_when(
+      cr_cause == 3L ~ t_03, cr_cause == 1L ~ t_01,
+      cr_cause == 2L ~ t_02, TRUE ~ t_01
+    )
+  )
+
+  cause_labels <- c("0\u21921 Progression", "0\u21922 On-trial death", "0\u21923 Dropout")
+
+  aj_obs <- map_dfr(seq_len(n_trials), function(tr) {
+    sub <- filter(obs, trial == tr)
+    cif <- cmprsk::cuminc(sub$cr_time, sub$cr_cause, cencode = 0)
+    map_dfr(1:3, function(cause) {
+      key <- paste0("1 ", cause)
+      if (key %in% names(cif))
+        tibble(time = cif[[key]]$time, est = cif[[key]]$est, cause = cause, trial = tr)
+    })
+  }) |> mutate(
+    trial_name = trial_names[trial],
+    cause_lbl  = factor(cause_labels[cause], levels = cause_labels)
+  )
+
+  # Observed state 0 retention (KM for any exit)
+  obs_state0 <- map_dfr(seq_len(n_trials), function(tr) {
+    sub <- filter(obs, trial == tr)
+    fit <- survival::survfit(survival::Surv(cr_time, cr_cause != 0) ~ 1, data = sub)
+    tibble(time = fit$time, s0 = fit$surv, trial_name = trial_names[tr])
+  })
+
+  # ── Model CIF from Stan draws ────────────────────────────────────────────
+  draws_mat <- posterior::as_draws_matrix(draws_cif)
+  time_grid <- seq(time_step, max_t, by = time_step)
+
+  model_cif <- map_dfr(seq_len(n_trials), function(tr) {
+    map_dfr(time_grid, function(t) {
+      t_idx <- t + 1L
+      extract_cif <- function(cause_id) {
+        col <- paste0(cif_prefix, "_cif_0", cause_id, "[", tr, ",", t_idx, "]")
+        if (!col %in% colnames(draws_mat)) return(tibble(med = NA_real_, lo = NA_real_, hi = NA_real_))
+        x <- draws_mat[, col]
+        q <- quantile(x, c(0.10, 0.50, 0.90))
+        tibble(med = q[[2]], lo = q[[1]], hi = q[[3]])
+      }
+      bind_cols(
+        tibble(t = t, trial = tr),
+        rename_with(extract_cif(1), ~paste0("cif_01_", .)),
+        rename_with(extract_cif(2), ~paste0("cif_02_", .)),
+        rename_with(extract_cif(3), ~paste0("cif_03_", .))
+      )
+    })
+  })
+
+  model_cif_long <- model_cif |>
+    pivot_longer(
+      cols = starts_with("cif_"),
+      names_to = c("cause", ".value"),
+      names_pattern = "cif_(\\d+)_(\\w+)"
+    ) |>
+    mutate(
+      cause      = as.integer(cause),
+      trial_name = trial_names[trial],
+      cause_lbl  = factor(cause_labels[cause], levels = cause_labels)
+    )
+
+  # Model state 0 retention
+  model_state0 <- model_cif |>
+    mutate(
+      s0_med = 1 - cif_01_med - cif_02_med - cif_03_med,
+      s0_lo  = pmax(0, 1 - cif_01_hi  - cif_02_hi  - cif_03_hi),
+      s0_hi  = pmin(1, 1 - cif_01_lo  - cif_02_lo  - cif_03_lo),
+      trial_name = trial_names[trial]
+    )
+
+  # ── Colors ────────────────────────────────────────────────────────────────
+  cause_colors <- c(
+    "0\u21921 Progression"    = AZ_navy,
+    "0\u21922 On-trial death" = AZ_pink,
+    "0\u21923 Dropout"        = AZ_turquoise
+  )
+
+  strip_theme <- theme(
+    legend.position = "bottom",
+    strip.background = element_rect(fill = AZ_navy),
+    strip.text = element_text(color = "white", face = "bold"),
+    plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))
+  )
+
+  # ── Panel 1: CIF ─────────────────────────────────────────────────────────
+  p_cif <- ggplot() +
+    geom_ribbon(
+      data = model_cif_long,
+      aes(x = t, ymin = lo, ymax = hi, fill = cause_lbl),
+      alpha = 0.2
+    ) +
+    geom_line(
+      data = model_cif_long,
+      aes(x = t, y = med, color = cause_lbl),
+      linewidth = 0.8
+    ) +
+    geom_step(
+      data = aj_obs,
+      aes(x = time, y = est, color = cause_lbl),
+      linetype = "dashed", linewidth = 0.9
+    ) +
+    facet_wrap(~trial_name, ncol = n_trials) +
+    scale_color_manual(values = cause_colors, name = NULL) +
+    scale_fill_manual(values = cause_colors, name = NULL) +
+    scale_x_continuous(breaks = x_breaks, labels = label_weeks_to_months) +
+    scale_y_continuous(
+      labels = scales::label_percent(accuracy = 1),
+      limits = c(0, 1), breaks = seq(0, 1, 0.2)
+    ) +
+    labs(
+      title = "Competing risks CIF from state 0",
+      x = "Months from baseline", y = "Cumulative incidence",
+      caption = "Solid line/ribbon = posterior predictive median and 80% CI. Dashed = observed Aalen-Johansen."
+    ) +
+    theme_bw() +
+    strip_theme
+
+  # ── Panel 2: State 0 retention ───────────────────────────────────────────
+  p_state0 <- ggplot() +
+    geom_ribbon(
+      data = model_state0,
+      aes(x = t, ymin = s0_lo, ymax = s0_hi),
+      fill = AZ_platinum, alpha = 0.4
+    ) +
+    geom_line(
+      data = model_state0,
+      aes(x = t, y = s0_med),
+      color = AZ_navy, linewidth = 0.8
+    ) +
+    geom_step(
+      data = obs_state0,
+      aes(x = time, y = s0),
+      color = "#F0AB00", linewidth = 0.9, linetype = "dashed"
+    ) +
+    facet_wrap(~trial_name, ncol = n_trials) +
+    scale_x_continuous(breaks = x_breaks, labels = label_weeks_to_months) +
+    scale_y_continuous(
+      labels = scales::label_percent(accuracy = 1),
+      limits = c(0, 1), breaks = seq(0, 1, 0.2)
+    ) +
+    labs(
+      title = "Proportion still in state 0 (event-free)",
+      x = "Months from baseline", y = "P(still in state 0)",
+      caption = "Solid = model. Dashed = observed KM. Gap indicates the 0\u21921 hazard is too diffuse."
+    ) +
+    theme_bw() +
+    strip_theme
+
+  p_cif / p_state0 +
+    patchwork::plot_layout(guides = "collect") &
+    theme(legend.position = "bottom")
+}
+
+#' Table of observed competing risks event counts from state 0
+#'
+#' @param stan_data Stan data list with patient_trial, ms_censored_01, etc.
+#' @return A gt table summarising event counts by trial and cause.
