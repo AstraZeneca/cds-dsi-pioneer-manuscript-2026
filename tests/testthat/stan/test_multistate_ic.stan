@@ -67,7 +67,7 @@ generated quantities {
     t_patient_visits,
     patient_visit_pos,
     lcs_01, lcs_02, lcs_12_s, lcs_12_t, lcs_03, lcs_32,
-    0, rep_vector(0.0, 0), 0.0    // enable_ms_visit_gated_01=0, no covariate
+    0                             // enable_ms_visit_gated_01=0
   );
 
   // Reference: same call with all gaps zeroed (current no-IC behavior)
@@ -83,6 +83,6 @@ generated quantities {
     t_patient_visits,
     patient_visit_pos,
     lcs_01, lcs_02, lcs_12_s, lcs_12_t, lcs_03, lcs_32,
-    0, rep_vector(0.0, 0), 0.0    // enable_ms_visit_gated_01=0, no covariate
+    0                             // enable_ms_visit_gated_01=0
   );
 }
