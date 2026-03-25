@@ -91,6 +91,14 @@ array[n_levels] real<lower=0> log_lambda_gp_32_s_level_alpha_beta;
 array[n_levels] real<lower=0> log_lambda_gp_32_s_level_rho_alpha;
 array[n_levels] real<lower=0> log_lambda_gp_32_s_level_rho_beta;
 
+// --- Fixed-Effect Prior SD for Level Intercepts (used when flag == 1) ---
+array[n_levels] real<lower=0> fe_log_lambda_gp_01_level_intercept_sd;
+array[n_levels] real<lower=0> fe_log_lambda_gp_02_level_intercept_sd;
+array[n_levels] real<lower=0> fe_log_lambda_gp_12_s_level_intercept_sd;
+array[n_levels] real<lower=0> fe_log_lambda_gp_12_t_level_intercept_sd;
+array[n_levels] real<lower=0> fe_log_lambda_gp_03_level_intercept_sd;
+array[n_levels] real<lower=0> fe_log_lambda_gp_32_s_level_intercept_sd;
+
 // --- Covariate Coefficient Hyperparameters ---
 // Time-varying coefficients (population-level)
 vector[enable_ms_pop_time_varying_cov
