@@ -1130,7 +1130,7 @@ plot_competing_risks_cif <- function(
   cif_prefix <- match.arg(cif_prefix)
   trial_id   <- as.integer(stan_data$patient_trial)
   n_trials   <- max(trial_id)
-  trial_names <- trial_labeller(levels(stan_data$patient_trial))
+  trial_names <- trial_labeller(levels(stan_data$patient_trial) %||% as.character(seq_len(n_trials)))
   max_t      <- stan_data$max_all_t
   x_breaks   <- months_to_weeks(x_breaks_months)
 
