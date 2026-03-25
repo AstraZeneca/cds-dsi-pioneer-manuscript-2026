@@ -98,10 +98,11 @@ model {
             log_cond_surv_01
         ));
       } else {
-        ms_final_state[hmc_patient_idx] ~ multistate(
+        target += reduce_sum(
+          multistate_partial_sum,
+          ms_final_state[hmc_patient_idx],  // auto-sliced
+          1,                                 // grainsize=1: TBB auto-balances
           likelihood_weight[hmc_patient_idx],
-          enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
-          enable_ms_03, enable_ms_32,
           ms_time_01[hmc_patient_idx], ms_time_02[hmc_patient_idx], ms_time_12[hmc_patient_idx],
           ms_time_03[hmc_patient_idx], ms_time_32[hmc_patient_idx],
           ms_censored_01[hmc_patient_idx], ms_censored_02[hmc_patient_idx], ms_censored_12[hmc_patient_idx],
@@ -116,7 +117,9 @@ model {
           log_cond_surv_12_t,
           log_cond_surv_03,
           log_cond_surv_32,
-          0
+          enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
+          enable_ms_03, enable_ms_32,
+          enable_ms_visit_gated_01
         );
       }
     }
