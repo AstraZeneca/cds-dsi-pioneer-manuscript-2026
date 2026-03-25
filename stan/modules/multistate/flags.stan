@@ -32,3 +32,15 @@ int<lower=0, upper=1> enable_ms_32;
 int<lower=0, upper=1> enable_ms_pop_time_invariant_cov;  // Population-level time-invariant covariates
 int<lower=0, upper=1> enable_ms_pop_time_varying_cov;    // Population-level time-varying covariates
 array[n_levels] int<lower=0, upper=1> enable_ms_level_cov;  // Per-level random slopes for time-invariant
+
+// --- Visit-Gated 0->1 Mode ---
+// When enabled, 0->1 hazard accumulates only at assessment visit weeks
+// (not every calendar week). Time-varying covariates for 0->1 are built
+// from observed PSA (data) rather than modeled trajectory (parameters).
+// Interval censoring for 0->1 is disabled in this mode.
+int<lower=0, upper=1> enable_ms_visit_gated_01;
+
+// --- 0->2 Time-Varying Covariate ---
+// When enabled, 0->2 uses modeled PSA trajectory as time-varying covariate.
+// When disabled, 0->2 uses GP baseline + time-invariant covariates only.
+int<lower=0, upper=1> enable_ms_02_time_varying_cov;

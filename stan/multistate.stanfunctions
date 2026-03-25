@@ -69,18 +69,22 @@ tuple(int, int) sample_dropout_death_rng(
 }
 
 /**
- * Sum log_cond_surv_03 at assessment visit weeks strictly before `limit`.
- * Visit weeks are sorted ascending; iteration stops at the first week >= limit.
+ * Sum log conditional survival at assessment visit weeks below a limit.
  *
- * @param log_cond_surv_03  Matrix of log conditional survival for 0→3 [n_patients, max_t]
- * @param i                 Patient index (1-indexed)
- * @param t_patient_visits  Flat array of all patients' visit weeks
- * @param patient_visit_pos Position array (length n_patients + 1)
- * @param limit             Only accumulate visits with week < limit
- * @return Sum of log_cond_surv_03[i, wk] for all visit weeks wk < limit
+ * Shared implementation for all visit-gated transitions (0->1, 0->3).
+ * Both fire at the same assessment visit schedule — no per-visit filter needed.
+ * Pass zero-sized obs_covar for transitions with no time-varying covariate (0->3).
+ *
+ * @param log_cond_surv   Baseline-only conditional survival matrix [n_patients, max_t]
+ * @param i               Patient index
+ * @param t_patient_visits Flat visit-week array
+ * @param patient_visit_pos Position array
+ * @param limit           Only accumulate visits with wk < limit
+ * @param obs_covar       Flat visit-indexed covariate (zero-sized = no covariate)
+ * @param coef            Covariate coefficient (0.0 if no covariate)
  */
-real sum_03_at_visits_below(
-    matrix log_cond_surv_03,
+real sum_at_visits_below(
+    matrix log_cond_surv,
     int i,
     array[] int t_patient_visits,
     array[] int patient_visit_pos,
@@ -91,11 +95,554 @@ real sum_03_at_visits_below(
   (v_start, v_end) = get_pos(patient_visit_pos, i);
   for (v in v_start:v_end) {
     int wk = t_patient_visits[v];
-    if (wk < 1) continue;   // skip baseline (week 0) visits
+    if (wk < 1) continue;
     if (wk >= limit) break;
-    ll += log_cond_surv_03[i, wk];
+    ll += log_cond_surv[i, wk];
   }
   return ll;
+}
+
+// Thin wrapper for 0->3 backward compatibility within this file.
+real sum_03_at_visits_below(
+    matrix log_cond_surv_03,
+    int i,
+    array[] int t_patient_visits,
+    array[] int patient_visit_pos,
+    int limit
+) {
+  return sum_at_visits_below(log_cond_surv_03, i, t_patient_visits, patient_visit_pos, limit);
+}
+
+/**
+ * Find the flat visit index for patient i at a given week.
+ * Returns 0 if not found (week not a visit).
+ */
+int find_visit_idx(int i, int wk,
+    array[] int t_patient_visits, array[] int patient_visit_pos) {
+  int v_start; int v_end;
+  (v_start, v_end) = get_pos(patient_visit_pos, i);
+  for (v in v_start:v_end) {
+    if (t_patient_visits[v] == wk) return v;
+  }
+  return 0;
+}
+
+/**
+ * Partial sum for reduce_sum parallelisation of the multistate log-likelihood.
+ *
+ * First argument is ms_final_state[hmc_patient_idx] (length n_hmc_patients),
+ * auto-sliced by reduce_sum. The slice covers patients [start..end] in HMC order.
+ * All other per-patient arrays are fixed args passed in full; index with i
+ * (loop variable in start:end) to access the correct patient.
+ *
+ * patient_visit_pos uses unified ordering; safe because HMC patients are
+ * always patients 1..n_hmc_patients in the unified ordering.
+ */
+real multistate_partial_sum(
+  array[] int final_state_slice,  // auto-sliced ms_final_state[hmc_patient_idx]
+  int start, int end,
+  // Per-patient data (HMC-indexed arrays, length n_hmc_patients)
+  array[] int time_01, array[] int time_02, array[] int time_12,
+  array[] int time_03, array[] int time_32,
+  array[] int censored_01, array[] int censored_02, array[] int censored_12,
+  array[] int censored_32,
+  array[] int prog_deterministic,
+  array[] int ms_ic_gap_01,
+  // Visit arrays (unified patient ordering; valid for HMC patients = 1..n_hmc)
+  array[] int t_patient_visits,
+  array[] int patient_visit_pos,
+  // Log conditional survival matrices (HMC-indexed: rows 1..n_hmc_patients)
+  matrix log_cond_surv_01,
+  matrix log_cond_surv_02,
+  matrix log_cond_surv_12_s,
+  matrix log_cond_surv_12_t,
+  matrix log_cond_surv_03,
+  matrix log_cond_surv_32,
+  // Transition flags
+  int enable_01, int enable_02, int enable_12, int ms_time_scale_12,
+  int enable_03, int enable_32,
+  int enable_ms_visit_gated_01
+) {
+  real total_ll = 0;
+
+  for (i in start:end) {
+    real patient_ll = 0;
+
+    // ========================================================================
+    // STATE 0 CONTRIBUTIONS: survival in state 0 until event/censoring
+    // ========================================================================
+
+    if (final_state_slice[i - start + 1] == 0) {
+      // Right-censored in state 0: survived all enabled transitions
+
+      // 0→1 survival contribution
+      if (enable_01 && time_01[i] > 0) {
+        if (enable_ms_visit_gated_01) {
+          patient_ll += sum_at_visits_below(
+            log_cond_surv_01, i, t_patient_visits, patient_visit_pos,
+            time_01[i] + 1);
+        } else {
+          patient_ll += sum(log_cond_surv_01[i, 1:time_01[i]]);
+        }
+      }
+
+      // 0→2 survival contribution
+      if (enable_02 && time_02[i] > 0) {
+        patient_ll += sum(log_cond_surv_02[i, 1:time_02[i]]);
+      }
+
+      // 0→3 survival: admin-censored patients attended assessment visits without
+      // dropping out — this is informative about the dropout hazard even though
+      // their censoring is protocol-driven (DCO). Use time_01[i] + 1 as limit
+      // so visits AT the censoring week are included (no event excludes them).
+      if (enable_03) {
+        patient_ll += sum_03_at_visits_below(
+          log_cond_surv_03, i, t_patient_visits, patient_visit_pos,
+          time_01[i] + 1);
+      }
+    }
+
+    // ========================================================================
+    // STATE 1 CONTRIBUTIONS: progressed, alive at end of observation
+    // ========================================================================
+
+    else if (final_state_slice[i - start + 1] == 1) {
+      int T_d  = time_01[i];
+      int gap  = prog_deterministic[i] ? 0 : ms_ic_gap_01[i];
+      int T_c  = T_d - gap;
+
+      if (enable_ms_visit_gated_01) {
+        // ── Visit-gated 0->1 mode: no IC, detection = event ────────────────
+        // Survival at measured visits before T_d; event hazard at T_d.
+        if (enable_01) {
+          patient_ll += sum_at_visits_below(
+            log_cond_surv_01, i, t_patient_visits, patient_visit_pos, T_d);
+          if (!prog_deterministic[i] && T_d > 0)
+            patient_ll += log1m_exp(log_cond_surv_01[i, T_d]);
+        }
+        // 0->2 continuous (unchanged) — uses all calendar weeks
+        if (enable_02 && T_d > 0)
+          patient_ll += sum(log_cond_surv_02[i, 1:(T_d - 1)]);
+        // 0->3 visit-gated
+        if (enable_03)
+          patient_ll += sum_at_visits_below(
+            log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_d);
+        // Post-progression 1->2 sojourn (censored, same as no-IC path)
+        if (enable_12 && time_12[i] > 0) {
+          if (ms_time_scale_12 == 1) {
+            patient_ll += sum(log_cond_surv_12_s[i, 1:time_12[i]]);
+          } else if (ms_time_scale_12 == 0) {
+            int t_start = T_d + 1;
+            int t_end   = T_d + time_12[i];
+            if (t_end <= cols(log_cond_surv_12_t))
+              patient_ll += sum(log_cond_surv_12_t[i, t_start:t_end]);
+          } else if (ms_time_scale_12 == 2) {
+            patient_ll += sum(log_cond_surv_12_s[i, 1:time_12[i]]);
+            int t_start = T_d + 1;
+            int t_end   = T_d + time_12[i];
+            if (t_end <= cols(log_cond_surv_12_t))
+              patient_ll += sum(log_cond_surv_12_t[i, t_start:t_end]);
+          }
+        }
+      } else {
+        // ── Existing continuous / IC path (unchanged) ──────────────────────
+
+        // Base survival through last clean assessment (certain for all candidates)
+        if (enable_01 && T_c > 0) patient_ll += sum(log_cond_surv_01[i, 1:T_c]);
+        if (enable_02 && T_c > 0) patient_ll += sum(log_cond_surv_02[i, 1:T_c]);
+        // NOTE: 0→3 is visit-conditioned and handled separately in each path below
+        // (no-IC path covers the full [1, T_d) range; IC path splits at T_c).
+
+        if (gap == 0 || prog_deterministic[i]) {
+          // ── No-IC path (gap=0 or deterministic PD) ──────────────────────────
+          // Survival from T_c+1..T_d-1 and event at T_d
+          if (enable_01 && T_d > T_c + 1)
+            patient_ll += sum(log_cond_surv_01[i, (T_c + 1):(T_d - 1)]);
+          if (enable_02 && T_d > T_c + 1)
+            patient_ll += sum(log_cond_surv_02[i, (T_c + 1):(T_d - 1)]);
+          // 0→3 competing risk: visit-conditioned, all visits before progression
+          if (enable_03) {
+            patient_ll += sum_03_at_visits_below(
+              log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_d);
+          }
+          if (enable_01 && !prog_deterministic[i] && T_d > 0)
+            patient_ll += log1m_exp(log_cond_surv_01[i, T_d]);
+          // Post-progression sojourn (censored)
+          if (enable_12 && time_12[i] > 0) {
+            if (ms_time_scale_12 == 1) {
+              patient_ll += sum(log_cond_surv_12_s[i, 1:time_12[i]]);
+            } else if (ms_time_scale_12 == 0) {
+              int t_start = T_d + 1;
+              int t_end   = T_d + time_12[i];
+              if (t_end <= cols(log_cond_surv_12_t))
+                patient_ll += sum(log_cond_surv_12_t[i, t_start:t_end]);
+            } else if (ms_time_scale_12 == 2) {
+              patient_ll += sum(log_cond_surv_12_s[i, 1:time_12[i]]);
+              int t_start = T_d + 1;
+              int t_end   = T_d + time_12[i];
+              if (t_end <= cols(log_cond_surv_12_t))
+                patient_ll += sum(log_cond_surv_12_t[i, t_start:t_end]);
+            }
+          }
+
+        } else {
+          // ── IC path: marginalize over true progression week s ───────────────
+          // Only implemented for semi-Markov (ms_time_scale_12 == 1).
+          // For Markov/Extended, fall back to no-IC path (treat s = T_d).
+          // TODO: implement Markov/Extended IC support (see GitHub issue #82).
+          if (ms_time_scale_12 != 1) {
+            // Markov/Extended fallback: same as gap=0 no-IC path
+            if (enable_01 && T_d > T_c + 1)
+              patient_ll += sum(log_cond_surv_01[i, (T_c + 1):(T_d - 1)]);
+            if (enable_02 && T_d > T_c + 1)
+              patient_ll += sum(log_cond_surv_02[i, (T_c + 1):(T_d - 1)]);
+            // 0→3 competing risk: visit-conditioned, all visits before progression
+            if (enable_03) {
+              patient_ll += sum_03_at_visits_below(
+                log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_d);
+            }
+            if (enable_01 && !prog_deterministic[i] && T_d > 0)
+              patient_ll += log1m_exp(log_cond_surv_01[i, T_d]);
+            if (enable_12 && time_12[i] > 0) {
+              if (ms_time_scale_12 == 0) {
+                int t_start = T_d + 1;
+                int t_end   = T_d + time_12[i];
+                if (t_end <= cols(log_cond_surv_12_t))
+                  patient_ll += sum(log_cond_surv_12_t[i, t_start:t_end]);
+              } else if (ms_time_scale_12 == 2) {
+                patient_ll += sum(log_cond_surv_12_s[i, 1:time_12[i]]);
+                int t_start = T_d + 1;
+                int t_end   = T_d + time_12[i];
+                if (t_end <= cols(log_cond_surv_12_t))
+                  patient_ll += sum(log_cond_surv_12_t[i, t_start:t_end]);
+              }
+            }
+          } else {
+            // Semi-Markov IC path
+            // 0→3 base survival at visits strictly before T_c+1 (certain for all candidates)
+            if (enable_03 && T_c > 0) {
+              patient_ll += sum_03_at_visits_below(
+                log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_c + 1);
+            }
+
+            vector[gap] cum_01 = cumulative_sum(
+              to_vector(log_cond_surv_01[i, (T_c + 1):T_d]));
+            vector[gap] cum_02 = enable_02 ? cumulative_sum(
+              to_vector(log_cond_surv_02[i, (T_c + 1):T_d])) : rep_vector(0.0, gap);
+
+            // Visit-conditioned 0→3 cumulative sums over IC interval [T_c+1, T_d]
+            vector[gap] inc_03 = rep_vector(0.0, gap);
+            if (enable_03) {
+              int v_start; int v_end;
+              (v_start, v_end) = get_pos(patient_visit_pos, i);
+              for (v in v_start:v_end) {
+                int wk = t_patient_visits[v];
+                if (wk <= T_c) continue;
+                if (wk > T_d) break;
+                inc_03[wk - T_c] = log_cond_surv_03[i, wk];
+              }
+            }
+            vector[gap] cum_03 = cumulative_sum(inc_03);
+
+            vector[gap] terms;
+
+            // Seed sojourn at k=gap (s=T_d, tau=time_12) — censored state 1
+            real sojourn_ll = enable_12 && time_12[i] > 0
+              ? sum(log_cond_surv_12_s[i, 1:time_12[i]])
+              : 0.0;
+
+            for (kk in 0:(gap - 1)) {
+              int k = gap - kk;       // k: gap, gap-1, ..., 1
+              int s = T_c + k;
+              int tau_s = time_12[i] + kk;  // tau_s = time_12 + (T_d - s) = time_12 + kk
+
+              // Update incremental sojourn: prepend one survival week
+              if (kk > 0 && enable_12 && tau_s > 0)
+                sojourn_ll += log_cond_surv_12_s[i, tau_s];
+
+              real alpha = (k > 1 ? cum_01[k - 1] : 0.0)
+                         + log1m_exp(log_cond_surv_01[i, s]);
+              real beta  = (k > 1 ? cum_02[k - 1] + cum_03[k - 1] : 0.0);
+
+              terms[k] = alpha + beta + sojourn_ll;
+            }
+
+            patient_ll += log_sum_exp(terms);
+          }
+        }
+      }
+    }
+
+    // ========================================================================
+    // STATE 2 CONTRIBUTIONS: dead
+    // ========================================================================
+
+    else if (final_state_slice[i - start + 1] == 2) {
+      // Patient died - either 0→2 or 0→1→2
+
+      if (time_01[i] == 0) {
+        // Died without progression (0→2 transition)
+
+        // Survival in state 0 until death
+        if (enable_01 && time_02[i] > 1) {
+          if (enable_ms_visit_gated_01)
+            patient_ll += sum_at_visits_below(log_cond_surv_01, i, t_patient_visits, patient_visit_pos,
+              time_02[i]);
+          else
+            patient_ll += sum(log_cond_surv_01[i, 1:(time_02[i] - 1)]);
+        }
+        if (enable_02 && time_02[i] > 1) {
+          patient_ll += sum(log_cond_surv_02[i, 1:(time_02[i] - 1)]);
+        }
+        // 0→3 competing risk: visit-conditioned, all visits before death
+        if (enable_03) {
+          patient_ll += sum_03_at_visits_below(
+            log_cond_surv_03, i, t_patient_visits, patient_visit_pos, time_02[i]);
+        }
+
+        // Hazard contribution at death time (0→2)
+        if (enable_02 && time_02[i] > 0) {
+          patient_ll += log1m_exp(log_cond_surv_02[i, time_02[i]]);
+        }
+
+      } else {
+        // ── Progressed then died (0→1→2) ────────────────────────────────────
+        int T_d  = time_01[i];
+        int gap  = prog_deterministic[i] ? 0 : ms_ic_gap_01[i];
+        int T_c  = T_d - gap;
+
+        if (enable_ms_visit_gated_01) {
+          if (enable_01) {
+            patient_ll += sum_at_visits_below(
+              log_cond_surv_01, i, t_patient_visits, patient_visit_pos, T_d);
+            if (!prog_deterministic[i] && T_d > 0)
+              patient_ll += log1m_exp(log_cond_surv_01[i, T_d]);
+          }
+          if (enable_02 && T_d > 0)
+            patient_ll += sum(log_cond_surv_02[i, 1:(T_d - 1)]);
+          if (enable_03)
+            patient_ll += sum_at_visits_below(
+              log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_d);
+          // Post-progression 1->2 sojourn (event)
+          if (enable_12 && time_12[i] > 0) {
+            if (ms_time_scale_12 == 1) {
+              if (time_12[i] > 1) patient_ll += sum(log_cond_surv_12_s[i, 1:(time_12[i] - 1)]);
+              patient_ll += log1m_exp(log_cond_surv_12_s[i, time_12[i]]);
+            } else if (ms_time_scale_12 == 0) {
+              int t_start = T_d + 1;
+              int t_death = T_d + time_12[i];
+              if (t_death - 1 >= t_start && t_death <= cols(log_cond_surv_12_t))
+                patient_ll += sum(log_cond_surv_12_t[i, t_start:(t_death - 1)]);
+              if (t_death <= cols(log_cond_surv_12_t))
+                patient_ll += log1m_exp(log_cond_surv_12_t[i, t_death]);
+            } else if (ms_time_scale_12 == 2) {
+              if (time_12[i] > 1)
+                patient_ll += sum(log_cond_surv_12_s[i, 1:(time_12[i] - 1)]);
+              int t_start = T_d + 1;
+              int t_death = T_d + time_12[i];
+              if (t_death - 1 >= t_start && t_death <= cols(log_cond_surv_12_t))
+                patient_ll += sum(log_cond_surv_12_t[i, t_start:(t_death - 1)]);
+              real combined_lcs = log_cond_surv_12_s[i, time_12[i]];
+              if (t_death <= cols(log_cond_surv_12_t))
+                combined_lcs += log_cond_surv_12_t[i, t_death];
+              patient_ll += log1m_exp(combined_lcs);
+            }
+          }
+        } else {
+          // ── Existing continuous / IC path (unchanged) ────────────────────
+
+          if (enable_01 && T_c > 0) patient_ll += sum(log_cond_surv_01[i, 1:T_c]);
+          if (enable_02 && T_c > 0) patient_ll += sum(log_cond_surv_02[i, 1:T_c]);
+          // NOTE: 0→3 is visit-conditioned and handled separately in each path below
+
+          if (gap == 0 || prog_deterministic[i]) {
+            // ── No-IC path ───────────────────────────────────────────────────
+            if (enable_01 && T_d > T_c + 1)
+              patient_ll += sum(log_cond_surv_01[i, (T_c + 1):(T_d - 1)]);
+            if (enable_02 && T_d > T_c + 1)
+              patient_ll += sum(log_cond_surv_02[i, (T_c + 1):(T_d - 1)]);
+            // 0→3 competing risk: visit-conditioned, all visits before progression
+            if (enable_03) {
+              patient_ll += sum_03_at_visits_below(
+                log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_d);
+            }
+            if (enable_01 && !prog_deterministic[i] && T_d > 0)
+              patient_ll += log1m_exp(log_cond_surv_01[i, T_d]);
+            // Post-progression sojourn (event)
+            if (enable_12 && time_12[i] > 0) {
+              if (ms_time_scale_12 == 1) {
+                if (time_12[i] > 1)
+                  patient_ll += sum(log_cond_surv_12_s[i, 1:(time_12[i] - 1)]);
+                patient_ll += log1m_exp(log_cond_surv_12_s[i, time_12[i]]);
+              } else if (ms_time_scale_12 == 0) {
+                int t_start = T_d + 1;
+                int t_death = T_d + time_12[i];
+                if (t_death - 1 >= t_start && t_death <= cols(log_cond_surv_12_t))
+                  patient_ll += sum(log_cond_surv_12_t[i, t_start:(t_death - 1)]);
+                if (t_death <= cols(log_cond_surv_12_t))
+                  patient_ll += log1m_exp(log_cond_surv_12_t[i, t_death]);
+              } else if (ms_time_scale_12 == 2) {
+                if (time_12[i] > 1)
+                  patient_ll += sum(log_cond_surv_12_s[i, 1:(time_12[i] - 1)]);
+                int t_start = T_d + 1;
+                int t_death = T_d + time_12[i];
+                if (t_death - 1 >= t_start && t_death <= cols(log_cond_surv_12_t))
+                  patient_ll += sum(log_cond_surv_12_t[i, t_start:(t_death - 1)]);
+                real combined_lcs = log_cond_surv_12_s[i, time_12[i]];
+                if (t_death <= cols(log_cond_surv_12_t))
+                  combined_lcs += log_cond_surv_12_t[i, t_death];
+                patient_ll += log1m_exp(combined_lcs);
+              }
+            }
+
+          } else {
+            // ── IC path ──────────────────────────────────────────────────────
+            // Only implemented for semi-Markov (ms_time_scale_12 == 1).
+            // TODO: implement Markov/Extended IC support (see GitHub issue #82).
+            if (ms_time_scale_12 != 1) {
+              // Markov/Extended fallback: treat s = T_d (no-IC)
+              if (enable_01 && T_d > T_c + 1)
+                patient_ll += sum(log_cond_surv_01[i, (T_c + 1):(T_d - 1)]);
+              if (enable_02 && T_d > T_c + 1)
+                patient_ll += sum(log_cond_surv_02[i, (T_c + 1):(T_d - 1)]);
+              // 0→3 competing risk: visit-conditioned, all visits before progression
+              if (enable_03) {
+                patient_ll += sum_03_at_visits_below(
+                  log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_d);
+              }
+              if (enable_01 && !prog_deterministic[i] && T_d > 0)
+                patient_ll += log1m_exp(log_cond_surv_01[i, T_d]);
+              if (enable_12 && time_12[i] > 0) {
+                if (ms_time_scale_12 == 0) {
+                  int t_start = T_d + 1;
+                  int t_death = T_d + time_12[i];
+                  if (t_death - 1 >= t_start && t_death <= cols(log_cond_surv_12_t))
+                    patient_ll += sum(log_cond_surv_12_t[i, t_start:(t_death - 1)]);
+                  if (t_death <= cols(log_cond_surv_12_t))
+                    patient_ll += log1m_exp(log_cond_surv_12_t[i, t_death]);
+                } else if (ms_time_scale_12 == 2) {
+                  if (time_12[i] > 1)
+                    patient_ll += sum(log_cond_surv_12_s[i, 1:(time_12[i] - 1)]);
+                  int t_start = T_d + 1;
+                  int t_death = T_d + time_12[i];
+                  if (t_death - 1 >= t_start && t_death <= cols(log_cond_surv_12_t))
+                    patient_ll += sum(log_cond_surv_12_t[i, t_start:(t_death - 1)]);
+                  real combined_lcs = log_cond_surv_12_s[i, time_12[i]];
+                  if (t_death <= cols(log_cond_surv_12_t))
+                    combined_lcs += log_cond_surv_12_t[i, t_death];
+                  patient_ll += log1m_exp(combined_lcs);
+                }
+              }
+            } else {
+              // Semi-Markov IC path
+              // 0→3 base survival at visits strictly before T_c+1 (certain for all candidates)
+              if (enable_03 && T_c > 0) {
+                patient_ll += sum_03_at_visits_below(
+                  log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_c + 1);
+              }
+
+              vector[gap] cum_01 = cumulative_sum(
+                to_vector(log_cond_surv_01[i, (T_c + 1):T_d]));
+              vector[gap] cum_02 = enable_02 ? cumulative_sum(
+                to_vector(log_cond_surv_02[i, (T_c + 1):T_d])) : rep_vector(0.0, gap);
+
+              // Visit-conditioned 0→3 cumulative sums over IC interval [T_c+1, T_d]
+              vector[gap] inc_03 = rep_vector(0.0, gap);
+              if (enable_03) {
+                int v_start; int v_end;
+                (v_start, v_end) = get_pos(patient_visit_pos, i);
+                for (v in v_start:v_end) {
+                  int wk = t_patient_visits[v];
+                  if (wk <= T_c) continue;
+                  if (wk > T_d) break;
+                  inc_03[wk - T_c] = log_cond_surv_03[i, wk];
+                }
+              }
+              vector[gap] cum_03 = cumulative_sum(inc_03);
+
+              vector[gap] terms;
+
+              // Seed sojourn at k=gap (s=T_d, tau=time_12) — event case
+              real sojourn_ll = 0;
+              if (enable_12 && time_12[i] > 0) {
+                if (time_12[i] > 1)
+                  sojourn_ll += sum(log_cond_surv_12_s[i, 1:(time_12[i] - 1)]);
+                sojourn_ll += log1m_exp(log_cond_surv_12_s[i, time_12[i]]);
+              }
+
+              for (kk in 0:(gap - 1)) {
+                int k = gap - kk;
+                int s = T_c + k;
+                int tau_s = time_12[i] + kk;  // = time_12 + (T_d - s)
+
+                // Update incremental sojourn: shift death one week forward
+                if (kk > 0 && enable_12 && tau_s > 1) {
+                  sojourn_ll -= log1m_exp(log_cond_surv_12_s[i, tau_s - 1]);
+                  sojourn_ll += log_cond_surv_12_s[i, tau_s - 1];
+                  sojourn_ll += log1m_exp(log_cond_surv_12_s[i, tau_s]);
+                }
+
+                real alpha = (k > 1 ? cum_01[k - 1] : 0.0)
+                           + log1m_exp(log_cond_surv_01[i, s]);
+                real beta  = (k > 1 ? cum_02[k - 1] + cum_03[k - 1] : 0.0);
+
+                terms[k] = alpha + beta + sojourn_ll;
+              }
+
+              patient_ll += log_sum_exp(terms);
+            }
+          }
+        }
+      }
+    }
+
+    // ========================================================================
+    // STATE 3 CONTRIBUTIONS: dropped out (0→3), then died off-trial or censored
+    // ========================================================================
+
+    else if (final_state_slice[i - start + 1] == 3) {
+      // Patient dropped out of trial (0→3), then either died off-trial or censored in state 3
+
+      // Survival in state 0 until dropout
+      // 0→1 and 0→2 risks accumulate at ALL calendar weeks (can die/progress any time)
+      if (enable_01 && time_03[i] > 1) {
+        if (enable_ms_visit_gated_01)
+          patient_ll += sum_at_visits_below(log_cond_surv_01, i, t_patient_visits, patient_visit_pos,
+            time_03[i]);
+        else
+          patient_ll += sum(log_cond_surv_01[i, 1:(time_03[i] - 1)]);
+      }
+      if (enable_02 && time_03[i] > 1) {
+        patient_ll += sum(log_cond_surv_02[i, 1:(time_03[i] - 1)]);
+      }
+      // 0→3 risk accumulates only at assessment visit weeks (dropout observed at visits)
+      if (enable_03) {
+        patient_ll += sum_03_at_visits_below(
+          log_cond_surv_03, i, t_patient_visits, patient_visit_pos, time_03[i]);
+        // Dropout event at time_03[i] — always a visit week
+        patient_ll += log1m_exp(log_cond_surv_03[i, time_03[i]]);
+      }
+
+      // Post-dropout: 3→2 (off-trial death or censored in state 3)
+      // Sojourn time GP: indexed by sojourn time since dropout (1, 2, ...)
+      if (enable_32 && time_32[i] > 0) {
+        if (!censored_32[i]) {
+          // Off-trial death: survived sojourn intervals 1..time_32-1, then died
+          if (time_32[i] > 1) {
+            patient_ll += sum(log_cond_surv_32[i, 1:(time_32[i] - 1)]);
+          }
+          patient_ll += log1m_exp(log_cond_surv_32[i, time_32[i]]);
+        } else {
+          // Censored in state 3: survived sojourn intervals 1..time_32
+          patient_ll += sum(log_cond_surv_32[i, 1:time_32[i]]);
+        }
+      }
+    }
+
+    total_ll += patient_ll;
+  }
+
+  return total_ll;
 }
 
 /**
@@ -154,10 +701,11 @@ real multistate_lpmf(
   matrix log_cond_surv_12_s,
   matrix log_cond_surv_12_t,
   matrix log_cond_surv_03,
-  matrix log_cond_surv_32
+  matrix log_cond_surv_32,
+  int enable_ms_visit_gated_01
 ) {
   // Single-transition fast path (0→1 only, equivalent to old other_events)
-  if (enable_01 && !enable_02 && !enable_12 && !enable_03) {
+  if (enable_01 && !enable_02 && !enable_12 && !enable_03 && !enable_ms_visit_gated_01) {
     return dot_product(weight, calc_ms_single_transition_loglik(time_01, censored_01, log_cond_surv_01));
   }
 
@@ -176,7 +724,13 @@ real multistate_lpmf(
 
       // 0→1 survival contribution
       if (enable_01 && time_01[i] > 0) {
-        patient_ll += sum(log_cond_surv_01[i, 1:time_01[i]]);
+        if (enable_ms_visit_gated_01) {
+          patient_ll += sum_at_visits_below(
+            log_cond_surv_01, i, t_patient_visits, patient_visit_pos,
+            time_01[i] + 1);
+        } else {
+          patient_ll += sum(log_cond_surv_01[i, 1:time_01[i]]);
+        }
       }
 
       // 0→2 survival contribution
@@ -204,27 +758,23 @@ real multistate_lpmf(
       int gap  = prog_deterministic[i] ? 0 : ms_ic_gap_01[i];
       int T_c  = T_d - gap;
 
-      // Base survival through last clean assessment (certain for all candidates)
-      if (enable_01 && T_c > 0) patient_ll += sum(log_cond_surv_01[i, 1:T_c]);
-      if (enable_02 && T_c > 0) patient_ll += sum(log_cond_surv_02[i, 1:T_c]);
-      // NOTE: 0→3 is visit-conditioned and handled separately in each path below
-      // (no-IC path covers the full [1, T_d) range; IC path splits at T_c).
-
-      if (gap == 0 || prog_deterministic[i]) {
-        // ── No-IC path (gap=0 or deterministic PD) ──────────────────────────
-        // Survival from T_c+1..T_d-1 and event at T_d
-        if (enable_01 && T_d > T_c + 1)
-          patient_ll += sum(log_cond_surv_01[i, (T_c + 1):(T_d - 1)]);
-        if (enable_02 && T_d > T_c + 1)
-          patient_ll += sum(log_cond_surv_02[i, (T_c + 1):(T_d - 1)]);
-        // 0→3 competing risk: visit-conditioned, all visits before progression
-        if (enable_03) {
-          patient_ll += sum_03_at_visits_below(
-            log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_d);
+      if (enable_ms_visit_gated_01) {
+        // ── Visit-gated 0->1 mode: no IC, detection = event ────────────────
+        // Survival at measured visits before T_d; event hazard at T_d.
+        if (enable_01) {
+          patient_ll += sum_at_visits_below(
+            log_cond_surv_01, i, t_patient_visits, patient_visit_pos, T_d);
+          if (!prog_deterministic[i] && T_d > 0)
+            patient_ll += log1m_exp(log_cond_surv_01[i, T_d]);
         }
-        if (enable_01 && !prog_deterministic[i] && T_d > 0)
-          patient_ll += log1m_exp(log_cond_surv_01[i, T_d]);
-        // Post-progression sojourn (censored)
+        // 0->2 continuous (unchanged) — uses all calendar weeks
+        if (enable_02 && T_d > 0)
+          patient_ll += sum(log_cond_surv_02[i, 1:(T_d - 1)]);
+        // 0->3 visit-gated
+        if (enable_03)
+          patient_ll += sum_at_visits_below(
+            log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_d);
+        // Post-progression 1->2 sojourn (censored, same as no-IC path)
         if (enable_12 && time_12[i] > 0) {
           if (ms_time_scale_12 == 1) {
             patient_ll += sum(log_cond_surv_12_s[i, 1:time_12[i]]);
@@ -241,14 +791,18 @@ real multistate_lpmf(
               patient_ll += sum(log_cond_surv_12_t[i, t_start:t_end]);
           }
         }
-
       } else {
-        // ── IC path: marginalize over true progression week s ───────────────
-        // Only implemented for semi-Markov (ms_time_scale_12 == 1).
-        // For Markov/Extended, fall back to no-IC path (treat s = T_d).
-        // TODO: implement Markov/Extended IC support (see GitHub issue #82).
-        if (ms_time_scale_12 != 1) {
-          // Markov/Extended fallback: same as gap=0 no-IC path
+        // ── Existing continuous / IC path (unchanged) ──────────────────────
+
+        // Base survival through last clean assessment (certain for all candidates)
+        if (enable_01 && T_c > 0) patient_ll += sum(log_cond_surv_01[i, 1:T_c]);
+        if (enable_02 && T_c > 0) patient_ll += sum(log_cond_surv_02[i, 1:T_c]);
+        // NOTE: 0→3 is visit-conditioned and handled separately in each path below
+        // (no-IC path covers the full [1, T_d) range; IC path splits at T_c).
+
+        if (gap == 0 || prog_deterministic[i]) {
+          // ── No-IC path (gap=0 or deterministic PD) ──────────────────────────
+          // Survival from T_c+1..T_d-1 and event at T_d
           if (enable_01 && T_d > T_c + 1)
             patient_ll += sum(log_cond_surv_01[i, (T_c + 1):(T_d - 1)]);
           if (enable_02 && T_d > T_c + 1)
@@ -260,8 +814,11 @@ real multistate_lpmf(
           }
           if (enable_01 && !prog_deterministic[i] && T_d > 0)
             patient_ll += log1m_exp(log_cond_surv_01[i, T_d]);
+          // Post-progression sojourn (censored)
           if (enable_12 && time_12[i] > 0) {
-            if (ms_time_scale_12 == 0) {
+            if (ms_time_scale_12 == 1) {
+              patient_ll += sum(log_cond_surv_12_s[i, 1:time_12[i]]);
+            } else if (ms_time_scale_12 == 0) {
               int t_start = T_d + 1;
               int t_end   = T_d + time_12[i];
               if (t_end <= cols(log_cond_surv_12_t))
@@ -274,145 +831,14 @@ real multistate_lpmf(
                 patient_ll += sum(log_cond_surv_12_t[i, t_start:t_end]);
             }
           }
-        } else {
-          // Semi-Markov IC path
-          // 0→3 base survival at visits strictly before T_c+1 (certain for all candidates)
-          if (enable_03 && T_c > 0) {
-            patient_ll += sum_03_at_visits_below(
-              log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_c + 1);
-          }
-
-          vector[gap] cum_01 = cumulative_sum(
-            to_vector(log_cond_surv_01[i, (T_c + 1):T_d]));
-          vector[gap] cum_02 = enable_02 ? cumulative_sum(
-            to_vector(log_cond_surv_02[i, (T_c + 1):T_d])) : rep_vector(0.0, gap);
-
-          // Visit-conditioned 0→3 cumulative sums over IC interval [T_c+1, T_d]
-          vector[gap] inc_03 = rep_vector(0.0, gap);
-          if (enable_03) {
-            int v_start; int v_end;
-            (v_start, v_end) = get_pos(patient_visit_pos, i);
-            for (v in v_start:v_end) {
-              int wk = t_patient_visits[v];
-              if (wk <= T_c) continue;
-              if (wk > T_d) break;
-              inc_03[wk - T_c] = log_cond_surv_03[i, wk];
-            }
-          }
-          vector[gap] cum_03 = cumulative_sum(inc_03);
-
-          vector[gap] terms;
-
-          // Seed sojourn at k=gap (s=T_d, tau=time_12) — censored state 1
-          real sojourn_ll = enable_12 && time_12[i] > 0
-            ? sum(log_cond_surv_12_s[i, 1:time_12[i]])
-            : 0.0;
-
-          for (kk in 0:(gap - 1)) {
-            int k = gap - kk;       // k: gap, gap-1, ..., 1
-            int s = T_c + k;
-            int tau_s = time_12[i] + kk;  // tau_s = time_12 + (T_d - s) = time_12 + kk
-
-            // Update incremental sojourn: prepend one survival week
-            if (kk > 0 && enable_12 && tau_s > 0)
-              sojourn_ll += log_cond_surv_12_s[i, tau_s];
-
-            real alpha = (k > 1 ? cum_01[k - 1] : 0.0)
-                       + log1m_exp(log_cond_surv_01[i, s]);
-            real beta  = (k > 1 ? cum_02[k - 1] + cum_03[k - 1] : 0.0);
-
-            terms[k] = alpha + beta + sojourn_ll;
-          }
-
-          patient_ll += log_sum_exp(terms);
-        }
-      }
-    }
-
-    // ========================================================================
-    // STATE 2 CONTRIBUTIONS: dead
-    // ========================================================================
-
-    else if (final_state[i] == 2) {
-      // Patient died - either 0→2 or 0→1→2
-
-      if (time_01[i] == 0) {
-        // Died without progression (0→2 transition)
-
-        // Survival in state 0 until death
-        if (enable_01 && time_02[i] > 1) {
-          patient_ll += sum(log_cond_surv_01[i, 1:(time_02[i] - 1)]);
-        }
-        if (enable_02 && time_02[i] > 1) {
-          patient_ll += sum(log_cond_surv_02[i, 1:(time_02[i] - 1)]);
-        }
-        // 0→3 competing risk: visit-conditioned, all visits before death
-        if (enable_03) {
-          patient_ll += sum_03_at_visits_below(
-            log_cond_surv_03, i, t_patient_visits, patient_visit_pos, time_02[i]);
-        }
-
-        // Hazard contribution at death time (0→2)
-        if (enable_02 && time_02[i] > 0) {
-          patient_ll += log1m_exp(log_cond_surv_02[i, time_02[i]]);
-        }
-
-      } else {
-        // ── Progressed then died (0→1→2) ────────────────────────────────────
-        int T_d  = time_01[i];
-        int gap  = prog_deterministic[i] ? 0 : ms_ic_gap_01[i];
-        int T_c  = T_d - gap;
-
-        if (enable_01 && T_c > 0) patient_ll += sum(log_cond_surv_01[i, 1:T_c]);
-        if (enable_02 && T_c > 0) patient_ll += sum(log_cond_surv_02[i, 1:T_c]);
-        // NOTE: 0→3 is visit-conditioned and handled separately in each path below
-
-        if (gap == 0 || prog_deterministic[i]) {
-          // ── No-IC path ───────────────────────────────────────────────────
-          if (enable_01 && T_d > T_c + 1)
-            patient_ll += sum(log_cond_surv_01[i, (T_c + 1):(T_d - 1)]);
-          if (enable_02 && T_d > T_c + 1)
-            patient_ll += sum(log_cond_surv_02[i, (T_c + 1):(T_d - 1)]);
-          // 0→3 competing risk: visit-conditioned, all visits before progression
-          if (enable_03) {
-            patient_ll += sum_03_at_visits_below(
-              log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_d);
-          }
-          if (enable_01 && !prog_deterministic[i] && T_d > 0)
-            patient_ll += log1m_exp(log_cond_surv_01[i, T_d]);
-          // Post-progression sojourn (event)
-          if (enable_12 && time_12[i] > 0) {
-            if (ms_time_scale_12 == 1) {
-              if (time_12[i] > 1)
-                patient_ll += sum(log_cond_surv_12_s[i, 1:(time_12[i] - 1)]);
-              patient_ll += log1m_exp(log_cond_surv_12_s[i, time_12[i]]);
-            } else if (ms_time_scale_12 == 0) {
-              int t_start = T_d + 1;
-              int t_death = T_d + time_12[i];
-              if (t_death - 1 >= t_start && t_death <= cols(log_cond_surv_12_t))
-                patient_ll += sum(log_cond_surv_12_t[i, t_start:(t_death - 1)]);
-              if (t_death <= cols(log_cond_surv_12_t))
-                patient_ll += log1m_exp(log_cond_surv_12_t[i, t_death]);
-            } else if (ms_time_scale_12 == 2) {
-              if (time_12[i] > 1)
-                patient_ll += sum(log_cond_surv_12_s[i, 1:(time_12[i] - 1)]);
-              int t_start = T_d + 1;
-              int t_death = T_d + time_12[i];
-              if (t_death - 1 >= t_start && t_death <= cols(log_cond_surv_12_t))
-                patient_ll += sum(log_cond_surv_12_t[i, t_start:(t_death - 1)]);
-              real combined_lcs = log_cond_surv_12_s[i, time_12[i]];
-              if (t_death <= cols(log_cond_surv_12_t))
-                combined_lcs += log_cond_surv_12_t[i, t_death];
-              patient_ll += log1m_exp(combined_lcs);
-            }
-          }
 
         } else {
-          // ── IC path ──────────────────────────────────────────────────────
+          // ── IC path: marginalize over true progression week s ───────────────
           // Only implemented for semi-Markov (ms_time_scale_12 == 1).
+          // For Markov/Extended, fall back to no-IC path (treat s = T_d).
           // TODO: implement Markov/Extended IC support (see GitHub issue #82).
           if (ms_time_scale_12 != 1) {
-            // Markov/Extended fallback: treat s = T_d (no-IC)
+            // Markov/Extended fallback: same as gap=0 no-IC path
             if (enable_01 && T_d > T_c + 1)
               patient_ll += sum(log_cond_surv_01[i, (T_c + 1):(T_d - 1)]);
             if (enable_02 && T_d > T_c + 1)
@@ -427,22 +853,15 @@ real multistate_lpmf(
             if (enable_12 && time_12[i] > 0) {
               if (ms_time_scale_12 == 0) {
                 int t_start = T_d + 1;
-                int t_death = T_d + time_12[i];
-                if (t_death - 1 >= t_start && t_death <= cols(log_cond_surv_12_t))
-                  patient_ll += sum(log_cond_surv_12_t[i, t_start:(t_death - 1)]);
-                if (t_death <= cols(log_cond_surv_12_t))
-                  patient_ll += log1m_exp(log_cond_surv_12_t[i, t_death]);
+                int t_end   = T_d + time_12[i];
+                if (t_end <= cols(log_cond_surv_12_t))
+                  patient_ll += sum(log_cond_surv_12_t[i, t_start:t_end]);
               } else if (ms_time_scale_12 == 2) {
-                if (time_12[i] > 1)
-                  patient_ll += sum(log_cond_surv_12_s[i, 1:(time_12[i] - 1)]);
+                patient_ll += sum(log_cond_surv_12_s[i, 1:time_12[i]]);
                 int t_start = T_d + 1;
-                int t_death = T_d + time_12[i];
-                if (t_death - 1 >= t_start && t_death <= cols(log_cond_surv_12_t))
-                  patient_ll += sum(log_cond_surv_12_t[i, t_start:(t_death - 1)]);
-                real combined_lcs = log_cond_surv_12_s[i, time_12[i]];
-                if (t_death <= cols(log_cond_surv_12_t))
-                  combined_lcs += log_cond_surv_12_t[i, t_death];
-                patient_ll += log1m_exp(combined_lcs);
+                int t_end   = T_d + time_12[i];
+                if (t_end <= cols(log_cond_surv_12_t))
+                  patient_ll += sum(log_cond_surv_12_t[i, t_start:t_end]);
               }
             }
           } else {
@@ -474,25 +893,19 @@ real multistate_lpmf(
 
             vector[gap] terms;
 
-            // Seed sojourn at k=gap (s=T_d, tau=time_12) — event case
-            real sojourn_ll = 0;
-            if (enable_12 && time_12[i] > 0) {
-              if (time_12[i] > 1)
-                sojourn_ll += sum(log_cond_surv_12_s[i, 1:(time_12[i] - 1)]);
-              sojourn_ll += log1m_exp(log_cond_surv_12_s[i, time_12[i]]);
-            }
+            // Seed sojourn at k=gap (s=T_d, tau=time_12) — censored state 1
+            real sojourn_ll = enable_12 && time_12[i] > 0
+              ? sum(log_cond_surv_12_s[i, 1:time_12[i]])
+              : 0.0;
 
             for (kk in 0:(gap - 1)) {
-              int k = gap - kk;
+              int k = gap - kk;       // k: gap, gap-1, ..., 1
               int s = T_c + k;
-              int tau_s = time_12[i] + kk;  // = time_12 + (T_d - s)
+              int tau_s = time_12[i] + kk;  // tau_s = time_12 + (T_d - s) = time_12 + kk
 
-              // Update incremental sojourn: shift death one week forward
-              if (kk > 0 && enable_12 && tau_s > 1) {
-                sojourn_ll -= log1m_exp(log_cond_surv_12_s[i, tau_s - 1]);
-                sojourn_ll += log_cond_surv_12_s[i, tau_s - 1];
-                sojourn_ll += log1m_exp(log_cond_surv_12_s[i, tau_s]);
-              }
+              // Update incremental sojourn: prepend one survival week
+              if (kk > 0 && enable_12 && tau_s > 0)
+                sojourn_ll += log_cond_surv_12_s[i, tau_s];
 
               real alpha = (k > 1 ? cum_01[k - 1] : 0.0)
                          + log1m_exp(log_cond_surv_01[i, s]);
@@ -508,6 +921,229 @@ real multistate_lpmf(
     }
 
     // ========================================================================
+    // STATE 2 CONTRIBUTIONS: dead
+    // ========================================================================
+
+    else if (final_state[i] == 2) {
+      // Patient died - either 0→2 or 0→1→2
+
+      if (time_01[i] == 0) {
+        // Died without progression (0→2 transition)
+
+        // Survival in state 0 until death
+        if (enable_01 && time_02[i] > 1) {
+          if (enable_ms_visit_gated_01)
+            patient_ll += sum_at_visits_below(log_cond_surv_01, i, t_patient_visits, patient_visit_pos,
+              time_02[i]);
+          else
+            patient_ll += sum(log_cond_surv_01[i, 1:(time_02[i] - 1)]);
+        }
+        if (enable_02 && time_02[i] > 1) {
+          patient_ll += sum(log_cond_surv_02[i, 1:(time_02[i] - 1)]);
+        }
+        // 0→3 competing risk: visit-conditioned, all visits before death
+        if (enable_03) {
+          patient_ll += sum_03_at_visits_below(
+            log_cond_surv_03, i, t_patient_visits, patient_visit_pos, time_02[i]);
+        }
+
+        // Hazard contribution at death time (0→2)
+        if (enable_02 && time_02[i] > 0) {
+          patient_ll += log1m_exp(log_cond_surv_02[i, time_02[i]]);
+        }
+
+      } else {
+        // ── Progressed then died (0→1→2) ────────────────────────────────────
+        int T_d  = time_01[i];
+        int gap  = prog_deterministic[i] ? 0 : ms_ic_gap_01[i];
+        int T_c  = T_d - gap;
+
+        if (enable_ms_visit_gated_01) {
+          if (enable_01) {
+            patient_ll += sum_at_visits_below(
+              log_cond_surv_01, i, t_patient_visits, patient_visit_pos, T_d);
+            if (!prog_deterministic[i] && T_d > 0)
+              patient_ll += log1m_exp(log_cond_surv_01[i, T_d]);
+          }
+          if (enable_02 && T_d > 0)
+            patient_ll += sum(log_cond_surv_02[i, 1:(T_d - 1)]);
+          if (enable_03)
+            patient_ll += sum_at_visits_below(
+              log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_d);
+          // Post-progression 1->2 sojourn (event)
+          if (enable_12 && time_12[i] > 0) {
+            if (ms_time_scale_12 == 1) {
+              if (time_12[i] > 1) patient_ll += sum(log_cond_surv_12_s[i, 1:(time_12[i] - 1)]);
+              patient_ll += log1m_exp(log_cond_surv_12_s[i, time_12[i]]);
+            } else if (ms_time_scale_12 == 0) {
+              int t_start = T_d + 1;
+              int t_death = T_d + time_12[i];
+              if (t_death - 1 >= t_start && t_death <= cols(log_cond_surv_12_t))
+                patient_ll += sum(log_cond_surv_12_t[i, t_start:(t_death - 1)]);
+              if (t_death <= cols(log_cond_surv_12_t))
+                patient_ll += log1m_exp(log_cond_surv_12_t[i, t_death]);
+            } else if (ms_time_scale_12 == 2) {
+              if (time_12[i] > 1)
+                patient_ll += sum(log_cond_surv_12_s[i, 1:(time_12[i] - 1)]);
+              int t_start = T_d + 1;
+              int t_death = T_d + time_12[i];
+              if (t_death - 1 >= t_start && t_death <= cols(log_cond_surv_12_t))
+                patient_ll += sum(log_cond_surv_12_t[i, t_start:(t_death - 1)]);
+              real combined_lcs = log_cond_surv_12_s[i, time_12[i]];
+              if (t_death <= cols(log_cond_surv_12_t))
+                combined_lcs += log_cond_surv_12_t[i, t_death];
+              patient_ll += log1m_exp(combined_lcs);
+            }
+          }
+        } else {
+          // ── Existing continuous / IC path (unchanged) ────────────────────
+
+          if (enable_01 && T_c > 0) patient_ll += sum(log_cond_surv_01[i, 1:T_c]);
+          if (enable_02 && T_c > 0) patient_ll += sum(log_cond_surv_02[i, 1:T_c]);
+          // NOTE: 0→3 is visit-conditioned and handled separately in each path below
+
+          if (gap == 0 || prog_deterministic[i]) {
+            // ── No-IC path ───────────────────────────────────────────────────
+            if (enable_01 && T_d > T_c + 1)
+              patient_ll += sum(log_cond_surv_01[i, (T_c + 1):(T_d - 1)]);
+            if (enable_02 && T_d > T_c + 1)
+              patient_ll += sum(log_cond_surv_02[i, (T_c + 1):(T_d - 1)]);
+            // 0→3 competing risk: visit-conditioned, all visits before progression
+            if (enable_03) {
+              patient_ll += sum_03_at_visits_below(
+                log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_d);
+            }
+            if (enable_01 && !prog_deterministic[i] && T_d > 0)
+              patient_ll += log1m_exp(log_cond_surv_01[i, T_d]);
+            // Post-progression sojourn (event)
+            if (enable_12 && time_12[i] > 0) {
+              if (ms_time_scale_12 == 1) {
+                if (time_12[i] > 1)
+                  patient_ll += sum(log_cond_surv_12_s[i, 1:(time_12[i] - 1)]);
+                patient_ll += log1m_exp(log_cond_surv_12_s[i, time_12[i]]);
+              } else if (ms_time_scale_12 == 0) {
+                int t_start = T_d + 1;
+                int t_death = T_d + time_12[i];
+                if (t_death - 1 >= t_start && t_death <= cols(log_cond_surv_12_t))
+                  patient_ll += sum(log_cond_surv_12_t[i, t_start:(t_death - 1)]);
+                if (t_death <= cols(log_cond_surv_12_t))
+                  patient_ll += log1m_exp(log_cond_surv_12_t[i, t_death]);
+              } else if (ms_time_scale_12 == 2) {
+                if (time_12[i] > 1)
+                  patient_ll += sum(log_cond_surv_12_s[i, 1:(time_12[i] - 1)]);
+                int t_start = T_d + 1;
+                int t_death = T_d + time_12[i];
+                if (t_death - 1 >= t_start && t_death <= cols(log_cond_surv_12_t))
+                  patient_ll += sum(log_cond_surv_12_t[i, t_start:(t_death - 1)]);
+                real combined_lcs = log_cond_surv_12_s[i, time_12[i]];
+                if (t_death <= cols(log_cond_surv_12_t))
+                  combined_lcs += log_cond_surv_12_t[i, t_death];
+                patient_ll += log1m_exp(combined_lcs);
+              }
+            }
+
+          } else {
+            // ── IC path ──────────────────────────────────────────────────────
+            // Only implemented for semi-Markov (ms_time_scale_12 == 1).
+            // TODO: implement Markov/Extended IC support (see GitHub issue #82).
+            if (ms_time_scale_12 != 1) {
+              // Markov/Extended fallback: treat s = T_d (no-IC)
+              if (enable_01 && T_d > T_c + 1)
+                patient_ll += sum(log_cond_surv_01[i, (T_c + 1):(T_d - 1)]);
+              if (enable_02 && T_d > T_c + 1)
+                patient_ll += sum(log_cond_surv_02[i, (T_c + 1):(T_d - 1)]);
+              // 0→3 competing risk: visit-conditioned, all visits before progression
+              if (enable_03) {
+                patient_ll += sum_03_at_visits_below(
+                  log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_d);
+              }
+              if (enable_01 && !prog_deterministic[i] && T_d > 0)
+                patient_ll += log1m_exp(log_cond_surv_01[i, T_d]);
+              if (enable_12 && time_12[i] > 0) {
+                if (ms_time_scale_12 == 0) {
+                  int t_start = T_d + 1;
+                  int t_death = T_d + time_12[i];
+                  if (t_death - 1 >= t_start && t_death <= cols(log_cond_surv_12_t))
+                    patient_ll += sum(log_cond_surv_12_t[i, t_start:(t_death - 1)]);
+                  if (t_death <= cols(log_cond_surv_12_t))
+                    patient_ll += log1m_exp(log_cond_surv_12_t[i, t_death]);
+                } else if (ms_time_scale_12 == 2) {
+                  if (time_12[i] > 1)
+                    patient_ll += sum(log_cond_surv_12_s[i, 1:(time_12[i] - 1)]);
+                  int t_start = T_d + 1;
+                  int t_death = T_d + time_12[i];
+                  if (t_death - 1 >= t_start && t_death <= cols(log_cond_surv_12_t))
+                    patient_ll += sum(log_cond_surv_12_t[i, t_start:(t_death - 1)]);
+                  real combined_lcs = log_cond_surv_12_s[i, time_12[i]];
+                  if (t_death <= cols(log_cond_surv_12_t))
+                    combined_lcs += log_cond_surv_12_t[i, t_death];
+                  patient_ll += log1m_exp(combined_lcs);
+                }
+              }
+            } else {
+              // Semi-Markov IC path
+              // 0→3 base survival at visits strictly before T_c+1 (certain for all candidates)
+              if (enable_03 && T_c > 0) {
+                patient_ll += sum_03_at_visits_below(
+                  log_cond_surv_03, i, t_patient_visits, patient_visit_pos, T_c + 1);
+              }
+
+              vector[gap] cum_01 = cumulative_sum(
+                to_vector(log_cond_surv_01[i, (T_c + 1):T_d]));
+              vector[gap] cum_02 = enable_02 ? cumulative_sum(
+                to_vector(log_cond_surv_02[i, (T_c + 1):T_d])) : rep_vector(0.0, gap);
+
+              // Visit-conditioned 0→3 cumulative sums over IC interval [T_c+1, T_d]
+              vector[gap] inc_03 = rep_vector(0.0, gap);
+              if (enable_03) {
+                int v_start; int v_end;
+                (v_start, v_end) = get_pos(patient_visit_pos, i);
+                for (v in v_start:v_end) {
+                  int wk = t_patient_visits[v];
+                  if (wk <= T_c) continue;
+                  if (wk > T_d) break;
+                  inc_03[wk - T_c] = log_cond_surv_03[i, wk];
+                }
+              }
+              vector[gap] cum_03 = cumulative_sum(inc_03);
+
+              vector[gap] terms;
+
+              // Seed sojourn at k=gap (s=T_d, tau=time_12) — event case
+              real sojourn_ll = 0;
+              if (enable_12 && time_12[i] > 0) {
+                if (time_12[i] > 1)
+                  sojourn_ll += sum(log_cond_surv_12_s[i, 1:(time_12[i] - 1)]);
+                sojourn_ll += log1m_exp(log_cond_surv_12_s[i, time_12[i]]);
+              }
+
+              for (kk in 0:(gap - 1)) {
+                int k = gap - kk;
+                int s = T_c + k;
+                int tau_s = time_12[i] + kk;  // = time_12 + (T_d - s)
+
+                // Update incremental sojourn: shift death one week forward
+                if (kk > 0 && enable_12 && tau_s > 1) {
+                  sojourn_ll -= log1m_exp(log_cond_surv_12_s[i, tau_s - 1]);
+                  sojourn_ll += log_cond_surv_12_s[i, tau_s - 1];
+                  sojourn_ll += log1m_exp(log_cond_surv_12_s[i, tau_s]);
+                }
+
+                real alpha = (k > 1 ? cum_01[k - 1] : 0.0)
+                           + log1m_exp(log_cond_surv_01[i, s]);
+                real beta  = (k > 1 ? cum_02[k - 1] + cum_03[k - 1] : 0.0);
+
+                terms[k] = alpha + beta + sojourn_ll;
+              }
+
+              patient_ll += log_sum_exp(terms);
+            }
+          }
+        }
+      }
+    }
+
+    // ========================================================================
     // STATE 3 CONTRIBUTIONS: dropped out (0→3), then died off-trial or censored
     // ========================================================================
 
@@ -517,7 +1153,11 @@ real multistate_lpmf(
       // Survival in state 0 until dropout
       // 0→1 and 0→2 risks accumulate at ALL calendar weeks (can die/progress any time)
       if (enable_01 && time_03[i] > 1) {
-        patient_ll += sum(log_cond_surv_01[i, 1:(time_03[i] - 1)]);
+        if (enable_ms_visit_gated_01)
+          patient_ll += sum_at_visits_below(log_cond_surv_01, i, t_patient_visits, patient_visit_pos,
+            time_03[i]);
+        else
+          patient_ll += sum(log_cond_surv_01[i, 1:(time_03[i] - 1)]);
       }
       if (enable_02 && time_03[i] > 1) {
         patient_ll += sum(log_cond_surv_02[i, 1:(time_03[i] - 1)]);

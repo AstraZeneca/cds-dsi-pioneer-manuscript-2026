@@ -273,7 +273,12 @@ profile("gen_quant") {
     last_predict_visit,
     t_patient_visits,
     max_all_t,
-    n_patient_screening_visits
+    n_patient_screening_visits,
+    0,               // enable_ms_visit_gated_01 = 0 (tumor model does not use visit-gated 0->1)
+    0.0,             // tv_coef_01_val
+    zeros_vector(0), // forecast_obs_log_psa (unused)
+    0.0,             // median_log_psa_obs (unused)
+    0.0              // iqr_log_psa_obs (unused)
   );
   
   // Aggregate to trial-level metrics

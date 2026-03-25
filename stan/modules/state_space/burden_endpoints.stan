@@ -12,6 +12,11 @@
 //   burden_right_censored      — array[n_patients] int
 //   burden_target_pfs          — array[n_patients] int
 //   burden_target_right_censored — array[n_patients] int
+//   burden_enable_ms_visit_gated_01 — int (0 for non-PSA models)
+//   burden_tv_coef_01_val           — real (0.0 for non-visit-gated models)
+//   burden_forecast_obs_log_psa     — vector[n_total_forecast_obs_visits or 0]
+//   burden_median_log_psa_obs       — real (0.0 for non-PSA models)
+//   burden_iqr_log_psa_obs          — real (0.0 for non-PSA models)
 //
 // Output variables (GQ scope, declared by model before the { } block):
 //   sample_target_pfs, spop_target_pfs, ..., spop_cif_01, etc.
@@ -68,7 +73,12 @@ profile("burden_endpoints") {
     last_predict_visit,
     t_patient_visits,
     max_all_t,
-    n_patient_screening_visits
+    n_patient_screening_visits,
+    burden_enable_ms_visit_gated_01,
+    burden_tv_coef_01_val,
+    burden_forecast_obs_log_psa,
+    burden_median_log_psa_obs,
+    burden_iqr_log_psa_obs
   );
 }
 

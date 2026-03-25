@@ -838,6 +838,80 @@ tuple(int, int) visit_only_survival_time_rng(
 }
 
 /**
+ * Sample first event time for a visit-gated transition with optional covariate.
+ *
+ * Generalization of visit_only_survival_time_rng: one Bernoulli check per visit,
+ * with optional PSA covariate adjustment. Pass zero-sized obs_covar for transitions
+ * with no covariate (e.g., 0->3 dropout).
+ *
+ * @param log_cond_surv_base  Row vector [max_all_t] baseline log conditional survival
+ * @param visit_weeks         Pre-extracted visit weeks for this patient (ascending)
+ * @param max_all_t           Censoring boundary
+ * @param obs_covar           Covariate value at each visit (same indexing as visit_weeks);
+ *                            zero-sized = no covariate
+ * @param coef                Covariate coefficient (0.0 if no covariate)
+ * @return (event_week, censored)
+ */
+tuple(int, int) sample_at_visits_rng(
+    row_vector log_cond_surv_base,
+    array[] int visit_weeks,
+    int max_all_t,
+    vector obs_covar,
+    real coef
+) {
+  int n_intervals = num_elements(log_cond_surv_base);
+  int has_covar = size(obs_covar) > 0;
+
+  for (a in 1:size(visit_weeks)) {
+    int wk = visit_weeks[a];
+    if (wk < 1 || wk > n_intervals) continue;
+
+    real log_surv = log_cond_surv_base[wk]
+                    + (has_covar ? coef * obs_covar[a] : 0.0);
+    // log_surv >= 0 means covariate dominated baseline: P(survive) >= 1, no event.
+    if (log_surv < 0 && bernoulli_rng(1 - exp(log_surv))) {
+      return (wk, 0);
+    }
+  }
+
+  return (max_all_t, 1);
+}
+
+/**
+ * Conditional overload: starts from obs_time.
+ */
+tuple(int, int) sample_at_visits_rng(
+    row_vector log_cond_surv_base,
+    array[] int visit_weeks,
+    int max_all_t,
+    int obs_time,
+    int right_censored,
+    vector obs_covar,
+    real coef
+) {
+  if (!right_censored) {
+    return (obs_time, 0);
+  }
+
+  int n_intervals = num_elements(log_cond_surv_base);
+  int has_covar = size(obs_covar) > 0;
+
+  for (a in 1:size(visit_weeks)) {
+    int wk = visit_weeks[a];
+    if (wk <= obs_time) continue;
+    if (wk < 1 || wk > n_intervals) continue;
+
+    real log_surv = log_cond_surv_base[wk]
+                    + (has_covar ? coef * obs_covar[a] : 0.0);
+    if (log_surv < 0 && bernoulli_rng(1 - exp(log_surv))) {
+      return (wk, 0);
+    }
+  }
+
+  return (max_all_t, 1);
+}
+
+/**
  * Generate a survival time within the range of interval censored intervals
  *
  * Have to be careful using this; it is not in the log space. I don't want to touch it right now because I don't want to break something critical.
