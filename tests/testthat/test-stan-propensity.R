@@ -59,6 +59,9 @@ test_that("propensity transformed_data: target range and indicator are correct",
     label = paste0("out_is_target[", i, "]"))
   for (i in 4:5) expect_equal(get_stan_val(d, "out_is_target", i), 0,
     label = paste0("out_is_target[", i, "]"))
+
+  # log_marginal_odds = log(3/2)
+  expect_equal(get_stan_val(d, "out_log_marginal_odds"), log(3/2), tolerance = 1e-6)
 })
 
 test_that("propensity weights: target patients always get weight 1.0", {
@@ -71,7 +74,7 @@ test_that("propensity weights: target patients always get weight 1.0", {
     tolerance = 1e-10, label = paste0("weight[", i, "]"))
 })
 
-test_that("propensity weights: non-target patients get inv_logit score", {
+test_that("propensity weights: non-target patients get capped density ratio", {
   beta_intercept <- 0.5
   beta           <- c(0.3, -0.2)
   data <- make_propensity_data(beta_intercept = beta_intercept, beta = beta)
@@ -79,12 +82,52 @@ test_that("propensity weights: non-target patients get inv_logit score", {
   d    <- posterior::as_draws_df(fit$draws())
 
   X <- data$covar_design_matrix
+  n_trial <- 3L
+  n_total <- 5L
+  log_marginal_odds <- log(n_trial) - log(n_total - n_trial)
 
-  # RWD patients (4, 5): weight = inv_logit(intercept + X[i,] %*% beta)
+  # RWD patients (4, 5): weight = min(1, exp(logit_score - log_marginal_odds))
   for (i in 4:5) {
-    expected <- plogis(beta_intercept + sum(X[i, ] * beta))
+    logit_score <- beta_intercept + sum(X[i, ] * beta)
+    log_dr <- logit_score - log_marginal_odds
+    expected <- min(1.0, exp(log_dr))
     expect_equal(get_stan_val(d, "out_likelihood_weight", i), expected,
       tolerance = 1e-6, label = paste0("weight[", i, "]"))
+  }
+})
+
+test_that("propensity weights: identical covariates give weight=1 (not base rate)", {
+  # 3 trial + 2 RWD, all with IDENTICAL covariates
+  # Logistic regression with beta=0 should give weight = 1.0 for RWD patients
+  # (density ratio = 1 when covariates are non-discriminative)
+  # If the intercept equals logit(P(trial)) = logit(3/5) = log(3/2):
+  data2 <- make_propensity_data(
+    beta_intercept = log(3/2),  # = logit(P(trial)) when beta=0
+    beta = c(0.0, 0.0)
+  )
+  fit <- test_stan_propensity(data2)
+  d   <- posterior::as_draws_df(fit$draws())
+
+  # Now: logit_score = log(3/2), log_marginal_odds = log(3/2)
+  # log_density_ratio = 0 → weight = 1.0
+  for (i in 4:5) {
+    expect_equal(get_stan_val(d, "out_likelihood_weight", i), 1.0,
+      tolerance = 1e-6,
+      label = paste0("identical-twin weight[", i, "] should be 1.0"))
+  }
+})
+
+test_that("propensity weights: density ratio > 1 is capped at 1.0", {
+  # Large positive beta makes RWD patients look very trial-like
+  # (high logit_score → density ratio >> 1 → capped at 1.0)
+  data <- make_propensity_data(beta_intercept = 5.0, beta = c(2.0, 2.0))
+  fit  <- test_stan_propensity(data)
+  d    <- posterior::as_draws_df(fit$draws())
+
+  # RWD patients should have density ratio >> 1, capped to exactly 1.0
+  for (i in 4:5) {
+    expect_equal(get_stan_val(d, "out_likelihood_weight", i), 1.0,
+      tolerance = 1e-10, label = paste0("capped weight[", i, "]"))
   }
 })
 

@@ -41,13 +41,20 @@ generated quantities {
   int out_target_end             = propensity_target_end;
   int out_n_target               = propensity_n_target;
   array[n_patients] int out_is_target = propensity_is_target;
+  real out_log_marginal_odds     = propensity_log_marginal_odds;
 
   // transformed_parameters.stan logic inlined (block includes cannot go in GQ)
+  // Capped density ratio: min(1, exp(logit_score - log_marginal_odds))
   vector[n_patients] out_likelihood_weight = ones_vector(n_patients);
   if (enable_propensity_weighting && propensity_split_level > 0) {
-    out_likelihood_weight = inv_logit(
+    vector[n_patients] log_density_ratio =
       beta_propensity_intercept[1] + covar_design_matrix * beta_propensity
-    );
+      - propensity_log_marginal_odds;
+
+    for (i in 1:n_patients) {
+      out_likelihood_weight[i] = exp(fmin(0.0, log_density_ratio[i]));
+    }
+
     out_likelihood_weight[propensity_target_start:propensity_target_end] =
       ones_vector(propensity_n_target);
   }
