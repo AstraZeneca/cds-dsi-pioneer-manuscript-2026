@@ -28,9 +28,11 @@ if (enable_ms_01) {
     log_lambda_gp_01_level_rho[lv] ~ inv_gamma(
       log_lambda_gp_01_level_rho_alpha[lv], log_lambda_gp_01_level_rho_beta[lv]
     );
-    log_lambda_gp_01_level_intercept_sd[lv] ~ normal(
-      0, log_lambda_gp_01_level_intercept_sd_sd[lv]
-    );
+    if (any_re_level) {
+      log_lambda_gp_01_level_intercept_sd[lv] ~ normal(
+        0, log_lambda_gp_01_level_intercept_sd_sd[lv]
+      );
+    }
   }
 
   // Group-level intercepts (both intercept-only and GP modes)
@@ -91,9 +93,11 @@ if (enable_ms_02) {
     log_lambda_gp_02_level_rho[lv] ~ inv_gamma(
       log_lambda_gp_02_level_rho_alpha[lv], log_lambda_gp_02_level_rho_beta[lv]
     );
-    log_lambda_gp_02_level_intercept_sd[lv] ~ normal(
-      0, log_lambda_gp_02_level_intercept_sd_sd[lv]
-    );
+    if (any_re_level) {
+      log_lambda_gp_02_level_intercept_sd[lv] ~ normal(
+        0, log_lambda_gp_02_level_intercept_sd_sd[lv]
+      );
+    }
   }
   if (n_enabled_groups_ms_baseline_02 > 0) {
     raw_log_lambda_gp_02_level_intercept ~ std_normal();
@@ -149,9 +153,11 @@ if (need_12_s_gp) {
     log_lambda_gp_12_s_level_rho[lv] ~ inv_gamma(
       log_lambda_gp_12_s_level_rho_alpha[lv], log_lambda_gp_12_s_level_rho_beta[lv]
     );
-    log_lambda_gp_12_s_level_intercept_sd[lv] ~ normal(
-      0, log_lambda_gp_12_s_level_intercept_sd_sd[lv]
-    );
+    if (any_re_level) {
+      log_lambda_gp_12_s_level_intercept_sd[lv] ~ normal(
+        0, log_lambda_gp_12_s_level_intercept_sd_sd[lv]
+      );
+    }
   }
   if (n_enabled_groups_ms_baseline_12_s > 0) {
     raw_log_lambda_gp_12_s_level_intercept ~ std_normal();
@@ -184,9 +190,11 @@ if (need_12_t_gp) {
     log_lambda_gp_12_t_level_rho[lv] ~ inv_gamma(
       log_lambda_gp_12_t_level_rho_alpha[lv], log_lambda_gp_12_t_level_rho_beta[lv]
     );
-    log_lambda_gp_12_t_level_intercept_sd[lv] ~ normal(
-      0, log_lambda_gp_12_t_level_intercept_sd_sd[lv]
-    );
+    if (any_re_level) {
+      log_lambda_gp_12_t_level_intercept_sd[lv] ~ normal(
+        0, log_lambda_gp_12_t_level_intercept_sd_sd[lv]
+      );
+    }
   }
   if (n_enabled_groups_ms_baseline_12_t > 0) {
     raw_log_lambda_gp_12_t_level_intercept ~ std_normal();
@@ -218,9 +226,11 @@ if (enable_ms_03) {
     log_lambda_gp_03_level_rho[lv] ~ inv_gamma(
       log_lambda_gp_03_level_rho_alpha[lv], log_lambda_gp_03_level_rho_beta[lv]
     );
-    log_lambda_gp_03_level_intercept_sd[lv] ~ normal(
-      0, log_lambda_gp_03_level_intercept_sd_sd[lv]
-    );
+    if (any_re_level) {
+      log_lambda_gp_03_level_intercept_sd[lv] ~ normal(
+        0, log_lambda_gp_03_level_intercept_sd_sd[lv]
+      );
+    }
   }
 
   if (n_enabled_groups_ms_baseline_03 > 0) {
@@ -255,9 +265,11 @@ if (enable_ms_32) {
     log_lambda_gp_32_s_level_rho[lv] ~ inv_gamma(
       log_lambda_gp_32_s_level_rho_alpha[lv], log_lambda_gp_32_s_level_rho_beta[lv]
     );
-    log_lambda_gp_32_s_level_intercept_sd[lv] ~ normal(
-      0, log_lambda_gp_32_s_level_intercept_sd_sd[lv]
-    );
+    if (any_re_level) {
+      log_lambda_gp_32_s_level_intercept_sd[lv] ~ normal(
+        0, log_lambda_gp_32_s_level_intercept_sd_sd[lv]
+      );
+    }
   }
   if (n_enabled_groups_ms_baseline_32 > 0) {
     raw_log_lambda_gp_32_s_level_intercept ~ std_normal();
