@@ -134,6 +134,14 @@ get_multistate_priors <- function(n_levels, n_time_varying_covar, n_time_invaria
     log_lambda_gp_32_s_level_rho_alpha = rep(8.0, n_levels),
     log_lambda_gp_32_s_level_rho_beta = rep(90.0, n_levels),
 
+    # Fixed-effect prior SD for level intercepts (used when flag == 1)
+    fe_log_lambda_gp_01_level_intercept_sd = rep(1.0, n_levels),
+    fe_log_lambda_gp_02_level_intercept_sd = rep(1.0, n_levels),
+    fe_log_lambda_gp_12_s_level_intercept_sd = rep(1.0, n_levels),
+    fe_log_lambda_gp_12_t_level_intercept_sd = rep(1.0, n_levels),
+    fe_log_lambda_gp_03_level_intercept_sd = rep(1.0, n_levels),
+    fe_log_lambda_gp_32_s_level_intercept_sd = rep(1.0, n_levels),
+
     # Time-varying covariate coefficient hyperparameters
     # as.array() ensures length-1 vectors are passed as 1-element arrays to CmdStan,
     # not as scalars — required when visit-gated mode sets vector size to 1.
