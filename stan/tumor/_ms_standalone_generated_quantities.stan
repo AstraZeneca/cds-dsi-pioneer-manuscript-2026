@@ -19,16 +19,20 @@ array[n_patients] int<lower=0, upper=1> sample_os_censored, spop_os_censored;
 // Dropout flags — 1 if patient exited via cause 3 in this draw (for CIF computation)
 array[n_patients] int<lower=0, upper=1> spop_is_dropout, sample_is_dropout;
 
+// ── Composite PFS (progression OR direct death) ──────────────────────────
+array[n_patients] int<lower=0> sample_pfs, spop_pfs;
+array[n_patients] int<lower=0, upper=1> sample_pfs_right_censored, spop_pfs_right_censored;
+
 // ── Trial-level PFS KM ───────────────────────────────────────────────────
-array[n_trials] vector<lower=0, upper=1>[max_all_t + 1] sample_ms_km_est, spop_ms_km_est;
+array[n_trials] vector<lower=0, upper=1>[max_all_t + 1] sample_ms_pfs_km_est, spop_ms_pfs_km_est;
 
 array[n_trials] vector<lower=0>[n_pfs_quantiles]
-  sample_ms_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
-  spop_ms_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+  sample_ms_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
+  spop_ms_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
 
 array[n_trials, n_pfs_quantiles] int
-  sample_ms_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
-  spop_ms_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+  sample_ms_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
+  spop_ms_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
 
 array[n_trials] vector<lower=0, upper=1>[n_pfs_timepoints]
   sample_ms_pfs_n, spop_ms_pfs_n;
@@ -47,17 +51,31 @@ array[n_trials, n_pfs_quantiles] int
 array[n_trials] vector<lower=0, upper=1>[n_pfs_timepoints]
   sample_os_n, spop_os_n;
 
+// ── Composite PFS KM ────────────────────────────────────────────────────
+array[n_trials] vector<lower=0, upper=1>[max_all_t + 1] sample_pfs_km_est, spop_pfs_km_est;
+
+array[n_trials] vector<lower=0>[n_pfs_quantiles]
+  sample_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
+  spop_pfs_quant   = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+
+array[n_trials, n_pfs_quantiles] int
+  sample_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
+  spop_pfs_quant_exceeds_max   = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+
+array[n_trials] vector<lower=0, upper=1>[n_pfs_timepoints]
+  sample_pfs_n, spop_pfs_n;
+
 // ── Conditional group PFS KM ─────────────────────────────────────────────
 array[n_cond_group] vector<lower=0, upper=1>[max_all_t + 1]
-  cond_sample_ms_km_est, cond_spop_ms_km_est;
+  cond_sample_ms_pfs_km_est, cond_spop_ms_pfs_km_est;
 
 array[n_cond_group] vector<lower=0>[n_pfs_quantiles]
-  cond_sample_ms_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
-  cond_spop_ms_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+  cond_sample_ms_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
+  cond_spop_ms_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
 
 array[n_cond_group, n_pfs_quantiles] int
-  cond_sample_ms_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group),
-  cond_spop_ms_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+  cond_sample_ms_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group),
+  cond_spop_ms_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
 
 array[n_cond_group] vector<lower=0, upper=1>[n_pfs_timepoints]
   cond_sample_ms_pfs_n, cond_spop_ms_pfs_n;
@@ -76,6 +94,21 @@ array[n_cond_group, n_pfs_quantiles] int
 
 array[n_cond_group] vector<lower=0, upper=1>[n_pfs_timepoints]
   cond_sample_os_n, cond_spop_os_n;
+
+// ── Conditional group composite PFS KM ──────────────────────────────────
+array[n_cond_group] vector<lower=0, upper=1>[max_all_t + 1]
+  cond_sample_pfs_km_est, cond_spop_pfs_km_est;
+
+array[n_cond_group] vector<lower=0>[n_pfs_quantiles]
+  cond_sample_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
+  cond_spop_pfs_quant   = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+
+array[n_cond_group, n_pfs_quantiles] int
+  cond_sample_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group),
+  cond_spop_pfs_quant_exceeds_max   = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+
+array[n_cond_group] vector<lower=0, upper=1>[n_pfs_timepoints]
+  cond_sample_pfs_n, cond_spop_pfs_n;
 
 // ══════════════════════════════════════════════════════════════════════════
 // PATIENT-LEVEL SIMULATION
@@ -200,6 +233,13 @@ for (i in 1:n_patients) {
     enable_ms_02, enable_ms_03);
   sample_is_dropout[i] = (sample_cause == 3);
 
+  // pfs_km_est: composite PFS — cause 1 (progression) OR cause 2 (direct death) = event
+  // cause 3 (dropout) or admin-censored = censored
+  spop_pfs[i]                  = spop_exit;
+  spop_pfs_right_censored[i]   = (spop_cause == 1 || spop_cause == 2) ? 0 : 1;
+  sample_pfs[i]                = sample_exit;
+  sample_pfs_right_censored[i] = (sample_cause == 1 || sample_cause == 2) ? 0 : 1;
+
   // PFS: no RECIST in standalone — pass dummy target (max_all_t+1, censored=1)
   { int unused_pfs; int unused_cens;
     (unused_pfs, unused_cens, sample_ms_pfs[i], sample_ms_right_censored[i]) =
@@ -225,26 +265,26 @@ for (i in 1:n_patients) {
 for (s in 1:n_trials) {
   if (get_pos_size(trial_patient_pos, s) > 0) {
     // PFS KM curves
-    sample_ms_km_est[s] = estimate_kaplan_meier(
+    sample_ms_pfs_km_est[s] = estimate_kaplan_meier(
       get_int_sub_array(sample_ms_pfs, trial_patient_pos, s),
       get_int_sub_array(sample_ms_right_censored, trial_patient_pos, s),
       max_all_t, 0).1;
 
-    spop_ms_km_est[s] = estimate_kaplan_meier(
+    spop_ms_pfs_km_est[s] = estimate_kaplan_meier(
       get_int_sub_array(spop_ms_pfs, trial_patient_pos, s),
       get_int_sub_array(spop_ms_right_censored, trial_patient_pos, s),
       max_all_t, 0).1;
 
     // PFS quantiles
-    (sample_ms_quant_pfs[s], sample_ms_quant_pfs_exceeds_max[s]) =
-      km_quantiles(sample_ms_km_est[s], pfs_quantiles);
-    (spop_ms_quant_pfs[s], spop_ms_quant_pfs_exceeds_max[s]) =
-      km_quantiles(spop_ms_km_est[s], pfs_quantiles);
+    (sample_ms_pfs_quant[s], sample_ms_pfs_quant_exceeds_max[s]) =
+      km_quantiles(sample_ms_pfs_km_est[s], pfs_quantiles);
+    (spop_ms_pfs_quant[s], spop_ms_pfs_quant_exceeds_max[s]) =
+      km_quantiles(spop_ms_pfs_km_est[s], pfs_quantiles);
 
     // PFS-n at specified timepoints
     for (n in 1:n_pfs_timepoints) {
-      sample_ms_pfs_n[s, n] = calc_km_pfs_n(sample_ms_km_est[s], months_to_weeks(pfs_timepoints[n]));
-      spop_ms_pfs_n[s, n] = calc_km_pfs_n(spop_ms_km_est[s], months_to_weeks(pfs_timepoints[n]));
+      sample_ms_pfs_n[s, n] = calc_km_pfs_n(sample_ms_pfs_km_est[s], months_to_weeks(pfs_timepoints[n]));
+      spop_ms_pfs_n[s, n] = calc_km_pfs_n(spop_ms_pfs_km_est[s], months_to_weeks(pfs_timepoints[n]));
     }
 
     // OS KM curves
@@ -269,16 +309,41 @@ for (s in 1:n_trials) {
       sample_os_n[s, n] = calc_km_pfs_n(sample_os_km_est[s], months_to_weeks(pfs_timepoints[n]));
       spop_os_n[s, n] = calc_km_pfs_n(spop_os_km_est[s], months_to_weeks(pfs_timepoints[n]));
     }
+
+    // Composite PFS KM
+    sample_pfs_km_est[s] = estimate_kaplan_meier(
+      get_int_sub_array(sample_pfs, trial_patient_pos, s),
+      get_int_sub_array(sample_pfs_right_censored, trial_patient_pos, s),
+      max_all_t, 0).1;
+
+    spop_pfs_km_est[s] = estimate_kaplan_meier(
+      get_int_sub_array(spop_pfs, trial_patient_pos, s),
+      get_int_sub_array(spop_pfs_right_censored, trial_patient_pos, s),
+      max_all_t, 0).1;
+
+    (sample_pfs_quant[s], sample_pfs_quant_exceeds_max[s]) =
+      km_quantiles(sample_pfs_km_est[s], pfs_quantiles);
+    (spop_pfs_quant[s], spop_pfs_quant_exceeds_max[s]) =
+      km_quantiles(spop_pfs_km_est[s], pfs_quantiles);
+
+    for (n in 1:n_pfs_timepoints) {
+      sample_pfs_n[s, n] = calc_km_pfs_n(sample_pfs_km_est[s], months_to_weeks(pfs_timepoints[n]));
+      spop_pfs_n[s, n]   = calc_km_pfs_n(spop_pfs_km_est[s],   months_to_weeks(pfs_timepoints[n]));
+    }
   } else {
     // Empty trial
-    sample_ms_km_est[s] = zeros_vector(max_all_t + 1);
-    spop_ms_km_est[s] = zeros_vector(max_all_t + 1);
+    sample_ms_pfs_km_est[s] = zeros_vector(max_all_t + 1);
+    spop_ms_pfs_km_est[s] = zeros_vector(max_all_t + 1);
     sample_ms_pfs_n[s] = zeros_vector(n_pfs_timepoints);
     spop_ms_pfs_n[s] = zeros_vector(n_pfs_timepoints);
     sample_os_km_est[s] = zeros_vector(max_all_t + 1);
     spop_os_km_est[s] = zeros_vector(max_all_t + 1);
     sample_os_n[s] = zeros_vector(n_pfs_timepoints);
     spop_os_n[s] = zeros_vector(n_pfs_timepoints);
+    sample_pfs_km_est[s] = zeros_vector(max_all_t + 1);
+    spop_pfs_km_est[s]   = zeros_vector(max_all_t + 1);
+    sample_pfs_n[s]      = zeros_vector(n_pfs_timepoints);
+    spop_pfs_n[s]        = zeros_vector(n_pfs_timepoints);
   }
 }
 
@@ -292,26 +357,26 @@ for (c in 1:n_cond_group) {
     array[curr_group_size] int curr_group_patients = get_int_sub_array(cond_group, cond_group_pos, c);
 
     // PFS KM
-    cond_sample_ms_km_est[c] = estimate_kaplan_meier(
+    cond_sample_ms_pfs_km_est[c] = estimate_kaplan_meier(
       sample_ms_pfs[curr_group_patients],
       sample_ms_right_censored[curr_group_patients],
       max_all_t, 0).1;
 
-    cond_spop_ms_km_est[c] = estimate_kaplan_meier(
+    cond_spop_ms_pfs_km_est[c] = estimate_kaplan_meier(
       spop_ms_pfs[curr_group_patients],
       spop_ms_right_censored[curr_group_patients],
       max_all_t, 0).1;
 
     // PFS quantiles
-    (cond_sample_ms_quant_pfs[c], cond_sample_ms_quant_pfs_exceeds_max[c]) =
-      km_quantiles(cond_sample_ms_km_est[c], pfs_quantiles);
-    (cond_spop_ms_quant_pfs[c], cond_spop_ms_quant_pfs_exceeds_max[c]) =
-      km_quantiles(cond_spop_ms_km_est[c], pfs_quantiles);
+    (cond_sample_ms_pfs_quant[c], cond_sample_ms_pfs_quant_exceeds_max[c]) =
+      km_quantiles(cond_sample_ms_pfs_km_est[c], pfs_quantiles);
+    (cond_spop_ms_pfs_quant[c], cond_spop_ms_pfs_quant_exceeds_max[c]) =
+      km_quantiles(cond_spop_ms_pfs_km_est[c], pfs_quantiles);
 
     // PFS-n
     for (n in 1:n_pfs_timepoints) {
-      cond_sample_ms_pfs_n[c, n] = calc_km_pfs_n(cond_sample_ms_km_est[c], months_to_weeks(pfs_timepoints[n]));
-      cond_spop_ms_pfs_n[c, n] = calc_km_pfs_n(cond_spop_ms_km_est[c], months_to_weeks(pfs_timepoints[n]));
+      cond_sample_ms_pfs_n[c, n] = calc_km_pfs_n(cond_sample_ms_pfs_km_est[c], months_to_weeks(pfs_timepoints[n]));
+      cond_spop_ms_pfs_n[c, n] = calc_km_pfs_n(cond_spop_ms_pfs_km_est[c], months_to_weeks(pfs_timepoints[n]));
     }
 
     // OS KM
@@ -336,16 +401,41 @@ for (c in 1:n_cond_group) {
       cond_sample_os_n[c, n] = calc_km_pfs_n(cond_sample_os_km_est[c], months_to_weeks(pfs_timepoints[n]));
       cond_spop_os_n[c, n] = calc_km_pfs_n(cond_spop_os_km_est[c], months_to_weeks(pfs_timepoints[n]));
     }
+
+    // Conditional group composite PFS KM
+    cond_sample_pfs_km_est[c] = estimate_kaplan_meier(
+      sample_pfs[curr_group_patients],
+      sample_pfs_right_censored[curr_group_patients],
+      max_all_t, 0).1;
+
+    cond_spop_pfs_km_est[c] = estimate_kaplan_meier(
+      spop_pfs[curr_group_patients],
+      spop_pfs_right_censored[curr_group_patients],
+      max_all_t, 0).1;
+
+    (cond_sample_pfs_quant[c], cond_sample_pfs_quant_exceeds_max[c]) =
+      km_quantiles(cond_sample_pfs_km_est[c], pfs_quantiles);
+    (cond_spop_pfs_quant[c], cond_spop_pfs_quant_exceeds_max[c]) =
+      km_quantiles(cond_spop_pfs_km_est[c], pfs_quantiles);
+
+    for (n in 1:n_pfs_timepoints) {
+      cond_sample_pfs_n[c, n] = calc_km_pfs_n(cond_sample_pfs_km_est[c], months_to_weeks(pfs_timepoints[n]));
+      cond_spop_pfs_n[c, n]   = calc_km_pfs_n(cond_spop_pfs_km_est[c],   months_to_weeks(pfs_timepoints[n]));
+    }
   } else {
     // Empty group
-    cond_sample_ms_km_est[c] = zeros_vector(max_all_t + 1);
-    cond_spop_ms_km_est[c] = zeros_vector(max_all_t + 1);
+    cond_sample_ms_pfs_km_est[c] = zeros_vector(max_all_t + 1);
+    cond_spop_ms_pfs_km_est[c] = zeros_vector(max_all_t + 1);
     cond_sample_ms_pfs_n[c] = zeros_vector(n_pfs_timepoints);
     cond_spop_ms_pfs_n[c] = zeros_vector(n_pfs_timepoints);
     cond_sample_os_km_est[c] = zeros_vector(max_all_t + 1);
     cond_spop_os_km_est[c] = zeros_vector(max_all_t + 1);
     cond_sample_os_n[c] = zeros_vector(n_pfs_timepoints);
     cond_spop_os_n[c] = zeros_vector(n_pfs_timepoints);
+    cond_sample_pfs_km_est[c] = zeros_vector(max_all_t + 1);
+    cond_spop_pfs_km_est[c]   = zeros_vector(max_all_t + 1);
+    cond_sample_pfs_n[c]      = zeros_vector(n_pfs_timepoints);
+    cond_spop_pfs_n[c]        = zeros_vector(n_pfs_timepoints);
   }
 }
 
