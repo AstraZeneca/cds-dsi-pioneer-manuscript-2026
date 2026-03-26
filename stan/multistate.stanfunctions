@@ -139,10 +139,10 @@ int find_visit_idx(int i, int wk,
  * always patients 1..n_hmc_patients in the unified ordering.
  */
 real multistate_partial_sum(
-  array[] int final_state_slice,  // auto-sliced ms_final_state[hmc_patient_idx]
+  array[] real weight_slice,  // auto-sliced likelihood_weight[hmc_patient_idx]
   int start, int end,
-  // Per-patient likelihood weights (propensity or ones)
-  vector weight,
+  // Final state (int data — no autodiff cost as shared arg)
+  array[] int final_state,
   // Per-patient data (HMC-indexed arrays, length n_hmc_patients)
   array[] int time_01, array[] int time_02, array[] int time_12,
   array[] int time_03, array[] int time_32,
@@ -174,7 +174,7 @@ real multistate_partial_sum(
     // STATE 0 CONTRIBUTIONS: survival in state 0 until event/censoring
     // ========================================================================
 
-    if (final_state_slice[i - start + 1] == 0) {
+    if (final_state[i] == 0) {
       // Right-censored in state 0: survived all enabled transitions
 
       // 0→1 survival contribution
@@ -208,7 +208,7 @@ real multistate_partial_sum(
     // STATE 1 CONTRIBUTIONS: progressed, alive at end of observation
     // ========================================================================
 
-    else if (final_state_slice[i - start + 1] == 1) {
+    else if (final_state[i] == 1) {
       int T_d  = time_01[i];
       int gap  = prog_deterministic[i] ? 0 : ms_ic_gap_01[i];
       int T_c  = T_d - gap;
@@ -379,7 +379,7 @@ real multistate_partial_sum(
     // STATE 2 CONTRIBUTIONS: dead
     // ========================================================================
 
-    else if (final_state_slice[i - start + 1] == 2) {
+    else if (final_state[i] == 2) {
       // Patient died - either 0→2 or 0→1→2
 
       if (time_01[i] == 0) {
@@ -602,7 +602,7 @@ real multistate_partial_sum(
     // STATE 3 CONTRIBUTIONS: dropped out (0→3), then died off-trial or censored
     // ========================================================================
 
-    else if (final_state_slice[i - start + 1] == 3) {
+    else if (final_state[i] == 3) {
       // Patient dropped out of trial (0→3), then either died off-trial or censored in state 3
 
       // Survival in state 0 until dropout
@@ -641,7 +641,7 @@ real multistate_partial_sum(
       }
     }
 
-    total_ll += weight[i] * patient_ll;
+    total_ll += weight_slice[i - start + 1] * patient_ll;
   }
 
   return total_ll;
