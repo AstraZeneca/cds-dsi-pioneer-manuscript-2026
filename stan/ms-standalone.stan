@@ -84,10 +84,10 @@ transformed parameters {
 }
 
 model {
-  #include "modules/multistate/priors.stan"
   #include "modules/propensity/priors.stan"
-  #include "modules/propensity/likelihood.stan"
+  #include "modules/multistate/priors.stan"
 
+  #include "modules/propensity/likelihood.stan"
   #include "modules/multistate/likelihood.stan"
 }
 
