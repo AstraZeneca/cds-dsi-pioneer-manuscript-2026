@@ -56,7 +56,7 @@ parameters { real dummy; }
 model { dummy ~ normal(0, 1); }
 generated quantities {
   real ll_ic = multistate_lpmf(
-    final_state | 1, 1, 1, 1,   // enable_01, 02, 12, time_scale=semi-Markov
+    final_state | rep_vector(1.0, n_patients), 1, 1, 1, 1,   // weight=1, enable_01, 02, 12, time_scale=semi-Markov
     enable_03, 0,                 // enable_03 (data), enable_32=0
     time_01, time_02, time_12,
     time_03, time_32,
@@ -72,7 +72,7 @@ generated quantities {
 
   // Reference: same call with all gaps zeroed (current no-IC behavior)
   real ll_no_ic = multistate_lpmf(
-    final_state | 1, 1, 1, 1,
+    final_state | rep_vector(1.0, n_patients), 1, 1, 1, 1,
     enable_03, 0,
     time_01, time_02, time_12,
     time_03, time_32,
