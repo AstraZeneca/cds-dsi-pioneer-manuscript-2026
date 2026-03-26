@@ -92,9 +92,9 @@ model {
     profile("multistate loglik") {
       target += reduce_sum(
           multistate_partial_sum,
-          ms_final_state[hmc_patient_idx],  // auto-sliced
-          1,                                 // grainsize=1: TBB auto-balances
-          likelihood_weight[hmc_patient_idx],
+          to_array_1d(likelihood_weight[hmc_patient_idx]),  // auto-sliced: propensity autodiff local to each shard
+          1,                                                  // grainsize=1: TBB auto-balances
+          ms_final_state[hmc_patient_idx],
           ms_time_01[hmc_patient_idx], ms_time_02[hmc_patient_idx], ms_time_12[hmc_patient_idx],
           ms_time_03[hmc_patient_idx], ms_time_32[hmc_patient_idx],
           ms_censored_01[hmc_patient_idx], ms_censored_02[hmc_patient_idx], ms_censored_12[hmc_patient_idx],
