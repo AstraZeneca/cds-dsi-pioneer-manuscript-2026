@@ -1,14 +1,11 @@
 // modules/multistate/likelihood.stan
-// Multistate loglikelihood via reduce_sum — parallelised over patients.
-// likelihood_weight is the sliced arg so propensity autodiff is local to each shard.
-// Included inside the fit_multistate_data gate in each model's model block.
+// Multistate loglikelihood. Included inside each model's model block.
 if (fit_multistate_data) {
   profile("multistate loglik") {
-    target += reduce_sum(
-        multistate_partial_sum,
-        to_array_1d(likelihood_weight[hmc_patient_idx]),  // auto-sliced: propensity autodiff local to each shard
-        1,                                                  // grainsize=1: TBB auto-balances
-        ms_final_state[hmc_patient_idx],
+    ms_final_state[hmc_patient_idx] ~ multistate(
+        likelihood_weight[hmc_patient_idx],
+        enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
+        enable_ms_03, enable_ms_32,
         ms_time_01[hmc_patient_idx], ms_time_02[hmc_patient_idx], ms_time_12[hmc_patient_idx],
         ms_time_03[hmc_patient_idx], ms_time_32[hmc_patient_idx],
         ms_censored_01[hmc_patient_idx], ms_censored_02[hmc_patient_idx], ms_censored_12[hmc_patient_idx],
@@ -23,8 +20,6 @@ if (fit_multistate_data) {
         log_cond_surv_12_t,
         log_cond_surv_03,
         log_cond_surv_32,
-        enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
-        enable_ms_03, enable_ms_32,
         enable_ms_visit_gated_01
       );
   }
