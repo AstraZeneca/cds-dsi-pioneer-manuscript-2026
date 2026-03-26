@@ -51,7 +51,10 @@ sample_and_save <- function(
   fs::dir_create(output_dir, recurse = TRUE)
 
   # Load the compiled model from exe_file
-  model <- cmdstan_model(exe_file = exe_file, cpp_options = list(stan_threads = TRUE))
+  # Workaround for stan-dev/cmdstanr#765: cpp_options is ignored when exe_file
+  # is used, so stan_threads must be set via the private field directly.
+  model <- cmdstan_model(exe_file = exe_file)
+  model$.__enclos_env__$private$cpp_options_$stan_threads <- TRUE
 
   # Ensure the compiled Stan executable has execute permissions
   if (fs::file_exists(exe_file)) {
@@ -120,7 +123,10 @@ generate_quantities_from_fit <- function(
   output_dir,
   parallel_chains = 4
 ) {
-  model <- cmdstan_model(exe_file = exe_file, cpp_options = list(stan_threads = TRUE))
+  # Workaround for stan-dev/cmdstanr#765: cpp_options is ignored when exe_file
+  # is used, so stan_threads must be set via the private field directly.
+  model <- cmdstan_model(exe_file = exe_file)
+  model$.__enclos_env__$private$cpp_options_$stan_threads <- TRUE
 
   if (fs::file_exists(exe_file)) {
     fs::file_chmod(exe_file, "u+x")
