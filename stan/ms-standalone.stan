@@ -86,6 +86,7 @@ transformed parameters {
 model {
   #include "modules/multistate/priors.stan"
   #include "modules/propensity/priors.stan"
+  #include "modules/propensity/likelihood.stan"
 
   if (fit_multistate_data) {
     profile("multistate loglik") {
