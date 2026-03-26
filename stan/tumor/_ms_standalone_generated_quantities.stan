@@ -98,10 +98,19 @@ for (i in 1:n_patients) {
 
   // ── Unconditional (spop) pathway ─────────────────────────────────────────
 
-  // Draw individual competing times (raw 0-indexed → +1 for 1-based detection week)
-  int spop_t01_raw; int spop_c01;
-  (spop_t01_raw, spop_c01) = survival_time_rng(log_cond_surv_01[i]);
-  int spop_t01 = spop_t01_raw + 1;
+  // Draw individual competing times
+  int spop_t01; int spop_c01;
+  if (enable_ms_visit_gated_01) {
+    // Visit-gated: one Bernoulli per assessment visit (matches likelihood's
+    // sum_at_visits_below). Events can only be detected AT visits.
+    (spop_t01, spop_c01) = visit_only_survival_time_rng(
+        log_cond_surv_01[i], patient_visits, max_all_t);
+  } else {
+    // Continuous: per-week Bernoulli (raw 0-indexed → +1 for 1-based week)
+    int spop_t01_raw;
+    (spop_t01_raw, spop_c01) = survival_time_rng(log_cond_surv_01[i]);
+    spop_t01 = spop_t01_raw + 1;
+  }
 
   int spop_t02 = max_all_t + 1; int spop_c02 = 1;
   if (enable_ms_02) {
@@ -142,9 +151,16 @@ for (i in 1:n_patients) {
   // 0→1: respect observed data; forecast only censored patients
   int sample_t01; int sample_c01;
   if (ms_censored_01[i]) {
-    int t01_raw; int c01_raw;
-    (t01_raw, c01_raw) = survival_time_rng(log_cond_surv_01[i], ms_time_01[i], 1, 0);
-    sample_t01 = t01_raw + 1; sample_c01 = c01_raw;
+    if (enable_ms_visit_gated_01) {
+      // Visit-gated: forecast from observed censoring time, checking only future visits
+      (sample_t01, sample_c01) = visit_only_survival_time_rng(
+          log_cond_surv_01[i], patient_visits, max_all_t,
+          ms_time_01[i], 1);
+    } else {
+      int t01_raw; int c01_raw;
+      (t01_raw, c01_raw) = survival_time_rng(log_cond_surv_01[i], ms_time_01[i], 1, 0);
+      sample_t01 = t01_raw + 1; sample_c01 = c01_raw;
+    }
   } else {
     sample_t01 = ms_time_01[i]; sample_c01 = 0;
   }
