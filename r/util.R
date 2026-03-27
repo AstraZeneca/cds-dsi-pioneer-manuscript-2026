@@ -121,26 +121,50 @@ generate_quantities_from_fit <- function(
   fit,
   data,
   output_dir,
-  parallel_chains = 4
+  parallel_chains = 4,
+  stan_file = NULL,
+  include_paths = NULL
 ) {
+  fs::dir_create(output_dir, recurse = TRUE)
+
+  # If the binary doesn't exist (e.g. artifact mount from a prior job is no
+  # longer available), recompile from Stan source if provided.
+  if (!fs::file_exists(exe_file)) {
+    if (is.null(stan_file)) {
+      stop(
+        "Stan exe not found at '", exe_file, "' and no stan_file provided for recompilation."
+      )
+    }
+    message("Stan exe not found at '", exe_file, "' — recompiling from source.")
+    compile_dir <- fs::path(output_dir, "model")
+    fs::dir_create(compile_dir)
+    model <- cmdstan_model(
+      stan_file = stan_file,
+      include_paths = include_paths,
+      dir = compile_dir,
+      cpp_options = list(stan_threads = TRUE)
+    )
+    return(model$generate_quantities(
+      fitted_params = fit,
+      data = data,
+      output_dir = output_dir,
+      parallel_chains = parallel_chains
+    ))
+  }
+
   # If the binary isn't writable (e.g. read-only artifact mount from a prior
   # job), copy it to output_dir so we can chmod it before execution.
-  fs::dir_create(output_dir, recurse = TRUE)
-  if (fs::file_exists(exe_file) && !fs::file_access(exe_file, "write")) {
+  if (!fs::file_access(exe_file, "write")) {
     local_exe <- fs::path(output_dir, fs::path_file(exe_file))
     fs::file_copy(exe_file, local_exe, overwrite = TRUE)
     exe_file <- local_exe
   }
-  if (fs::file_exists(exe_file)) {
-    fs::file_chmod(exe_file, "u+x")
-  }
+  fs::file_chmod(exe_file, "u+x")
 
   # Workaround for stan-dev/cmdstanr#765: cpp_options is ignored when exe_file
   # is used, so stan_threads must be set via the private field directly.
   model <- cmdstan_model(exe_file = exe_file)
   model$.__enclos_env__$private$cpp_options_$stan_threads <- TRUE
-
-  fs::dir_create(output_dir, recurse = TRUE)
 
   model$generate_quantities(
     fitted_params = fit,
