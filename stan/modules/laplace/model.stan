@@ -3,27 +3,27 @@
 // Pre-computes per-patient offsets and base hazards, then calls per-patient
 // Laplace function that uses Newton solver with analytical Jacobians.
 
-if (enable_laplace_nontarget && n_laplace_patients > 0) {
+if (enable_laplace_nontarget && n_background_patients > 0) {
   profile("laplace nontarget") {
     // =====================================================================
     // (A) Pre-compute per-patient PSA offsets: pop + group-level intercepts
     // =====================================================================
-    vector[n_laplace_patients] lap_tr_offset = rep_vector(tr_loc_pop, n_laplace_patients);
-    vector[n_laplace_patients] lap_frac_offset = rep_vector(frac_logit_loc_pop, n_laplace_patients);
-    vector[n_laplace_patients] lap_init_offset = rep_vector(init_logit_loc_pop, n_laplace_patients);
+    vector[n_background_patients] lap_tr_offset = rep_vector(tr_loc_pop, n_background_patients);
+    vector[n_background_patients] lap_frac_offset = rep_vector(frac_logit_loc_pop, n_background_patients);
+    vector[n_background_patients] lap_init_offset = rep_vector(init_logit_loc_pop, n_background_patients);
 
     // Add group-level intercepts (trial, arm, etc.) — skip patient level (n_levels)
     for (lv in 1:(n_levels - 1)) {
       if (enable_level_intercept_tr[lv]) {
-        for (i in 1:n_laplace_patients)
+        for (i in 1:n_background_patients)
           lap_tr_offset[i] += tr_scaled_level_intercept[laplace_tr_intercept_flat_idx[i, lv]];
       }
       if (enable_level_intercept_frac[lv]) {
-        for (i in 1:n_laplace_patients)
+        for (i in 1:n_background_patients)
           lap_frac_offset[i] += frac_scaled_level_intercept[laplace_frac_intercept_flat_idx[i, lv]];
       }
       if (enable_level_intercept_init[lv]) {
-        for (i in 1:n_laplace_patients)
+        for (i in 1:n_background_patients)
           lap_init_offset[i] += init_scaled_level_intercept[laplace_init_intercept_flat_idx[i, lv]];
       }
     }
@@ -68,14 +68,14 @@ if (enable_laplace_nontarget && n_laplace_patients > 0) {
     // Base = pop GP + level residuals + time-invariant covariates
     // Time-varying covariates are z-dependent → computed inside Newton solver
 
-    matrix[n_laplace_patients, enable_ms_01 ? max_all_t : 0] lap_base_log_hazard_01;
+    matrix[n_background_patients, enable_ms_01 ? max_all_t : 0] lap_base_log_hazard_01;
     if (enable_ms_01) {
-      lap_base_log_hazard_01 = rep_matrix(log_pop_lambda_01, n_laplace_patients);
+      lap_base_log_hazard_01 = rep_matrix(log_pop_lambda_01, n_background_patients);
 
       // Level residuals
       for (lv in 1:n_levels) {
         if (enable_ms_level_baseline_hazard[lv]) {
-          for (i in 1:n_laplace_patients)
+          for (i in 1:n_background_patients)
             lap_base_log_hazard_01[i] +=
               log_level_lambda_01_residual[laplace_ms_baseline_flat_idx[i, lv]];
         }
@@ -83,7 +83,7 @@ if (enable_laplace_nontarget && n_laplace_patients > 0) {
 
       // Time-invariant covariates (QR space + multi-level random slopes)
       if (enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0) {
-        vector[n_laplace_patients] linpred_01 = laplace_Q_covar * time_invariant_coef_qr_01;
+        vector[n_background_patients] linpred_01 = laplace_Q_covar * time_invariant_coef_qr_01;
 
         if (n_enabled_groups_ms_slope > 0) {
           matrix[n_enabled_groups_ms_slope, n_time_invariant_covar] lap_ms_scaled_slope_01;
@@ -112,20 +112,20 @@ if (enable_laplace_nontarget && n_laplace_patients > 0) {
     }
 
     // Mirror for 0→2
-    matrix[n_laplace_patients, enable_ms_02 ? max_all_t : 0] lap_base_log_hazard_02;
+    matrix[n_background_patients, enable_ms_02 ? max_all_t : 0] lap_base_log_hazard_02;
     if (enable_ms_02) {
-      lap_base_log_hazard_02 = rep_matrix(log_pop_lambda_02, n_laplace_patients);
+      lap_base_log_hazard_02 = rep_matrix(log_pop_lambda_02, n_background_patients);
 
       for (lv in 1:n_levels) {
         if (enable_ms_level_baseline_hazard[lv]) {
-          for (i in 1:n_laplace_patients)
+          for (i in 1:n_background_patients)
             lap_base_log_hazard_02[i] +=
               log_level_lambda_02_residual[laplace_ms_baseline_flat_idx[i, lv]];
         }
       }
 
       if (enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0) {
-        vector[n_laplace_patients] linpred_02 = laplace_Q_covar * time_invariant_coef_qr_02;
+        vector[n_background_patients] linpred_02 = laplace_Q_covar * time_invariant_coef_qr_02;
 
         if (n_enabled_groups_ms_slope > 0) {
           matrix[n_enabled_groups_ms_slope, n_time_invariant_covar] lap_ms_scaled_slope_02;
@@ -162,14 +162,14 @@ if (enable_laplace_nontarget && n_laplace_patients > 0) {
       // Build log_cond_surv_12_s for non-target patients
       // Uses the SAME GP arrays as target patients (already computed)
       int lap_sojourn_cols = need_12_s_gp ? ms_max_sojourn_t : 0;
-      matrix[need_12_s_gp ? n_laplace_patients : 0, lap_sojourn_cols] lap_log_cond_surv_12_s;
+      matrix[need_12_s_gp ? n_background_patients : 0, lap_sojourn_cols] lap_log_cond_surv_12_s;
 
       if (need_12_s_gp) {
-        lap_log_cond_surv_12_s = rep_matrix(log_pop_lambda_12_s, n_laplace_patients);
+        lap_log_cond_surv_12_s = rep_matrix(log_pop_lambda_12_s, n_background_patients);
 
         for (lv in 1:n_levels) {
           if (enable_ms_level_baseline_hazard[lv]) {
-            for (i in 1:n_laplace_patients)
+            for (i in 1:n_background_patients)
               lap_log_cond_surv_12_s[i] +=
                 log_level_lambda_12_s_residual[laplace_ms_baseline_flat_idx[i, lv]];
           }
@@ -177,7 +177,7 @@ if (enable_laplace_nontarget && n_laplace_patients > 0) {
 
         // Time-invariant covariates for 1→2
         if (enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0) {
-          vector[n_laplace_patients] linpred_12 = laplace_Q_covar * time_invariant_coef_qr_12;
+          vector[n_background_patients] linpred_12 = laplace_Q_covar * time_invariant_coef_qr_12;
 
           if (n_enabled_groups_ms_slope > 0) {
             matrix[n_enabled_groups_ms_slope, n_time_invariant_covar] lap_ms_scaled_slope_12;
@@ -208,10 +208,10 @@ if (enable_laplace_nontarget && n_laplace_patients > 0) {
       }
 
       lap_zi_independent_ll = laplace_ms_zi_independent_ll(
-        n_laplace_patients,
-        ms_final_state[laplace_patient_idx],
-        ms_time_01[laplace_patient_idx], ms_time_12[laplace_patient_idx],
-        ms_censored_12[laplace_patient_idx],
+        n_background_patients,
+        ms_final_state[background_patient_idx],
+        ms_time_01[background_patient_idx], ms_time_12[background_patient_idx],
+        ms_censored_12[background_patient_idx],
         lap_log_cond_surv_12_s,
         enable_ms_12, ms_time_scale_12
       );
@@ -230,7 +230,7 @@ if (enable_laplace_nontarget && n_laplace_patients > 0) {
       1,  // grainsize
       normalized_psa,
       patient_visit_pos, n_patient_screening_visits, t_patient_visit_idx,
-      laplace_patient_idx,
+      background_patient_idx,
       lap_tr_offset, lap_frac_offset, lap_init_offset,
       tr_sd_level_intercept[n_levels],
       frac_sd_level_intercept[n_levels],

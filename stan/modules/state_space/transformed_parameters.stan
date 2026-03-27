@@ -8,25 +8,25 @@
 
 // Time-varying rates if either pop or patient process noise is enabled
 // Note: enable_any_process_noise_tr is computed in transformed data
-matrix[n_hmc_patients, enable_any_process_noise_tr ? max_t_width : 1] patient_log_decrease_rate;
-matrix[n_hmc_patients, enable_any_process_noise_tr ? max_t_width : 1] patient_log_growth_rate;
+matrix[n_forecast_patients, enable_any_process_noise_tr ? max_t_width : 1] patient_log_decrease_rate;
+matrix[n_forecast_patients, enable_any_process_noise_tr ? max_t_width : 1] patient_log_growth_rate;
 
 if (enable_pop_process_noise_tr && enable_patient_process_noise_tr) {
   // Both levels: pop + patient (additive)
   // log_rate[i,t] = log_baseline_rate[i] + pop_deviation[t] + patient_deviation[i,t]
   patient_log_decrease_rate = (tr_loc_patient + frac_log_decrease_patient) * ones_row_vector(max_t_width)
-    + rep_matrix(tr_pop_process_noise, n_hmc_patients)
+    + rep_matrix(tr_pop_process_noise, n_forecast_patients)
     + tr_patient_process_noise;
   patient_log_growth_rate = (tr_loc_patient + frac_log_growth_patient) * ones_row_vector(max_t_width)
-    + rep_matrix(tr_pop_process_noise, n_hmc_patients)
+    + rep_matrix(tr_pop_process_noise, n_forecast_patients)
     + tr_patient_process_noise;
 } else if (enable_pop_process_noise_tr) {
   // Pop-level only: shared temporal trend
   // log_rate[i,t] = log_baseline_rate[i] + pop_deviation[t]
   patient_log_decrease_rate = (tr_loc_patient + frac_log_decrease_patient) * ones_row_vector(max_t_width)
-    + rep_matrix(tr_pop_process_noise, n_hmc_patients);
+    + rep_matrix(tr_pop_process_noise, n_forecast_patients);
   patient_log_growth_rate = (tr_loc_patient + frac_log_growth_patient) * ones_row_vector(max_t_width)
-    + rep_matrix(tr_pop_process_noise, n_hmc_patients);
+    + rep_matrix(tr_pop_process_noise, n_forecast_patients);
 } else if (enable_patient_process_noise_tr) {
   // Patient-level only (existing behavior)
   // log_rate[i,t] = log_baseline_rate[i] + patient_deviation[i,t]
@@ -43,11 +43,11 @@ if (enable_pop_process_noise_tr && enable_patient_process_noise_tr) {
 // ============================================================================
 
 // Backward compatibility: states at actual visit times for observation model
-matrix[n_hmc_visits, 2] states;
+matrix[n_forecast_visits, 2] states;
 
 // Conditionally sized matrices for exponentiated rates
-matrix[n_hmc_patients, enable_any_process_noise_tr ? max_t_width : 1] patient_decrease_rate;
-matrix[n_hmc_patients, enable_any_process_noise_tr ? max_t_width : 1] patient_growth_rate;
+matrix[n_forecast_patients, enable_any_process_noise_tr ? max_t_width : 1] patient_decrease_rate;
+matrix[n_forecast_patients, enable_any_process_noise_tr ? max_t_width : 1] patient_growth_rate;
 
 patient_decrease_rate = exp(patient_log_decrease_rate);
 patient_growth_rate = exp(patient_log_growth_rate);
@@ -56,10 +56,7 @@ patient_growth_rate = exp(patient_log_growth_rate);
 // Position 1 = each patient's first visit (different absolute weeks)
 // Position t = t weeks after first visit for that patient
 // Needed when: process noise is ON, explicit flag is set, or MS time-varying covariates are active
-array[2] matrix[n_hmc_patients,
-  (enable_any_process_noise_tr || enable_states_full_grid ||
-   (enable_ms_01 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0))
-  ? max_t_width : 0] states_full_grid;
+array[2] matrix[n_forecast_patients, need_states_full_grid ? max_t_width : 0] states_full_grid;
 
 profile("states") {
   if (enable_patient_process_noise_tr) {
@@ -68,7 +65,7 @@ profile("states") {
     // ============================================================================
 
     profile("compute full states") {
-      for (j in 1:n_hmc_patients) {
+      for (j in 1:n_forecast_patients) {
         states_full_grid[1][j, 1] = init_log_decrease_patient[j];
         states_full_grid[2][j, 1] = init_log_growth_patient[j];
 
@@ -80,12 +77,12 @@ profile("states") {
     }
 
     profile("extract states") {
-      for (j in 1:n_hmc_patients) {
-        int p = hmc_patient_idx[j];
+      for (j in 1:n_forecast_patients) {
+        int p = forecast_patient_idx[j];
         int data_start, data_end;
         (data_start, data_end) = get_pos(patient_visit_pos, p);
         int state_start, state_end;
-        (state_start, state_end) = get_pos(hmc_visit_pos, j);
+        (state_start, state_end) = get_pos(forecast_visit_pos, j);
         array[data_end - data_start + 1] int visit_indices = t_patient_visit_idx[data_start:data_end];
         states[state_start:state_end, 1] = to_vector(states_full_grid[1][j, visit_indices]);
         states[state_start:state_end, 2] = to_vector(states_full_grid[2][j, visit_indices]);
@@ -101,8 +98,8 @@ profile("states") {
 
     profile("compute full states") {
       // Baseline rates without process noise (patient-specific, time-invariant)
-      vector[n_hmc_patients] baseline_decrease_rate = exp(tr_loc_patient + frac_log_decrease_patient);
-      vector[n_hmc_patients] baseline_growth_rate = exp(tr_loc_patient + frac_log_growth_patient);
+      vector[n_forecast_patients] baseline_decrease_rate = exp(tr_loc_patient + frac_log_decrease_patient);
+      vector[n_forecast_patients] baseline_growth_rate = exp(tr_loc_patient + frac_log_growth_patient);
 
       // Shared temporal cumulative sum: same for all patients
       // pop_cumsum_exp[t] = sum_{k=1}^{t} exp(pop_noise[k])
@@ -125,19 +122,18 @@ profile("states") {
     }
 
     profile("extract states") {
-      for (j in 1:n_hmc_patients) {
-        int p = hmc_patient_idx[j];
+      for (j in 1:n_forecast_patients) {
+        int p = forecast_patient_idx[j];
         int data_start, data_end;
         (data_start, data_end) = get_pos(patient_visit_pos, p);
         int state_start, state_end;
-        (state_start, state_end) = get_pos(hmc_visit_pos, j);
+        (state_start, state_end) = get_pos(forecast_visit_pos, j);
         array[data_end - data_start + 1] int visit_indices = t_patient_visit_idx[data_start:data_end];
         states[state_start:state_end, 1] = to_vector(states_full_grid[1][j, visit_indices]);
         states[state_start:state_end, 2] = to_vector(states_full_grid[2][j, visit_indices]);
       }
     }
-  } else if (enable_states_full_grid ||
-             (enable_ms_01 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0)) {
+  } else if (need_states_full_grid) {
     // ============================================================================
     // PROCESS NOISE OFF, but downstream modules need full grid: Use vectorized approach
     // (Triggered by enable_states_full_grid flag OR MS time-varying covariates)
@@ -150,12 +146,12 @@ profile("states") {
     }
 
     profile("extract states") {
-      for (j in 1:n_hmc_patients) {
-        int p = hmc_patient_idx[j];
+      for (j in 1:n_forecast_patients) {
+        int p = forecast_patient_idx[j];
         int data_start, data_end;
         (data_start, data_end) = get_pos(patient_visit_pos, p);
         int state_start, state_end;
-        (state_start, state_end) = get_pos(hmc_visit_pos, j);
+        (state_start, state_end) = get_pos(forecast_visit_pos, j);
         array[data_end - data_start + 1] int visit_indices = t_patient_visit_idx[data_start:data_end];
         states[state_start:state_end, 1] = to_vector(states_full_grid[1][j, visit_indices]);
         states[state_start:state_end, 2] = to_vector(states_full_grid[2][j, visit_indices]);
@@ -163,38 +159,29 @@ profile("states") {
     }
   } else {
     // ============================================================================
-    // PROCESS NOISE OFF, no full grid needed: Use sparse matrix multiplication
+    // PROCESS NOISE OFF, no full grid needed: Direct visit-time computation
     // ============================================================================
+    // With constant rates, state is a linear function of time from baseline:
+    //   state_d[v] = init_d - decrease_rate * (visit_week - baseline_week)
+    //   state_g[v] = init_g + growth_rate * (visit_week - baseline_week)
 
-    profile("compute sparse states") {
-      matrix[n_hmc_patients, max_unique_visit] D_increments = rep_matrix(-patient_decrease_rate[, 1], max_unique_visit);
-      matrix[n_hmc_patients, max_unique_visit] G_increments = rep_matrix(patient_growth_rate[, 1], max_unique_visit);
-
-      matrix[n_pop_unique_visits, n_hmc_patients] cumsum_d = visit_cumsum_mat * D_increments' + rep_matrix(init_log_decrease_patient', n_pop_unique_visits);
-      matrix[n_pop_unique_visits, n_hmc_patients] cumsum_g = visit_cumsum_mat * G_increments' + rep_matrix(init_log_growth_patient', n_pop_unique_visits);
-
-      // Anchor states at each patient's clinical baseline (last screening visit).
-      // visit_cumsum_mat accumulates from global_min_week, but we want t=1 to correspond
-      // to the baseline so that log_sum_exp(init_d, init_g) = 0 at the baseline.
-      // Correction: shift each patient's states by rate * (baseline_week - global_min_week + 1).
-      int global_min_week = min(pop_unique_visits);
-
-      for (j in 1:n_hmc_patients) {
-        int p = hmc_patient_idx[j];
+    profile("compute visit states") {
+      for (j in 1:n_forecast_patients) {
+        int p = forecast_patient_idx[j];
         int data_start, data_end;
         (data_start, data_end) = get_pos(patient_visit_pos, p);
         int state_start, state_end;
-        (state_start, state_end) = get_pos(hmc_visit_pos, j);
+        (state_start, state_end) = get_pos(forecast_visit_pos, j);
 
         int baseline_visit_idx = data_start + n_patient_screening_visits[p] - 1;
         int patient_baseline_week = t_patient_visits[baseline_visit_idx];
-        int baseline_offset = patient_baseline_week - global_min_week + 1;
 
-        real d_correction = patient_decrease_rate[j, 1] * baseline_offset;
-        real g_correction = patient_growth_rate[j, 1] * baseline_offset;
+        // Time from baseline to each visit (weeks)
+        vector[data_end - data_start + 1] dt =
+          to_vector(t_patient_visits[data_start:data_end]) - patient_baseline_week;
 
-        states[state_start:state_end, 1] = cumsum_d[patient2pop_unique_visit_idx[data_start:data_end], j] + d_correction;
-        states[state_start:state_end, 2] = cumsum_g[patient2pop_unique_visit_idx[data_start:data_end], j] - g_correction;
+        states[state_start:state_end, 1] = init_log_decrease_patient[j] - patient_decrease_rate[j, 1] * dt;
+        states[state_start:state_end, 2] = init_log_growth_patient[j] + patient_growth_rate[j, 1] * dt;
       }
     }
   }

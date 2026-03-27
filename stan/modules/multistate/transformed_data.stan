@@ -31,27 +31,27 @@ int ms_12_t_has_intercept = need_12_t_gp && !need_12_s_gp;  // Only in pure Mark
 
 // --- Enabled Group Counts for Baseline Hazard N-level Hierarchy ---
 int n_enabled_groups_ms_baseline_01 = enable_ms_01 ? compute_n_enabled_groups(
-  n_hmc_groups_per_level, enable_ms_level_baseline_hazard
+  n_forecast_groups_per_level, enable_ms_level_baseline_hazard
 ) : 0;
 
 int n_enabled_groups_ms_baseline_02 = enable_ms_02 ? compute_n_enabled_groups(
-  n_hmc_groups_per_level, enable_ms_level_baseline_hazard
+  n_forecast_groups_per_level, enable_ms_level_baseline_hazard
 ) : 0;
 
 int n_enabled_groups_ms_baseline_12_s = need_12_s_gp ? compute_n_enabled_groups(
-  n_hmc_groups_per_level, enable_ms_level_baseline_hazard
+  n_forecast_groups_per_level, enable_ms_level_baseline_hazard
 ) : 0;
 
 int n_enabled_groups_ms_baseline_12_t = need_12_t_gp ? compute_n_enabled_groups(
-  n_hmc_groups_per_level, enable_ms_level_baseline_hazard
+  n_forecast_groups_per_level, enable_ms_level_baseline_hazard
 ) : 0;
 
 int n_enabled_groups_ms_baseline_03 = enable_ms_03 ? compute_n_enabled_groups(
-  n_hmc_groups_per_level, enable_ms_level_baseline_hazard
+  n_forecast_groups_per_level, enable_ms_level_baseline_hazard
 ) : 0;
 
 int n_enabled_groups_ms_baseline_32 = enable_ms_32 ? compute_n_enabled_groups(
-  n_hmc_groups_per_level, enable_ms_level_baseline_hazard
+  n_forecast_groups_per_level, enable_ms_level_baseline_hazard
 ) : 0;
 
 // --- GP-Only Boolean Mask and Group Counts ---
@@ -63,7 +63,7 @@ for (lv in 1:n_levels) {
 }
 
 int n_gp_groups_ms_baseline = compute_n_enabled_groups(
-  n_hmc_groups_per_level, ms_level_baseline_is_gp
+  n_forecast_groups_per_level, ms_level_baseline_is_gp
 );
 
 int n_gp_groups_ms_baseline_01 = enable_ms_01 ? n_gp_groups_ms_baseline : 0;
@@ -78,23 +78,23 @@ int any_re_level = max(to_array_1d(enable_ms_level_baseline_hazard)) >= 2 ? 1 : 
 
 // GP-only position array (for indexing into eta matrices)
 array[n_levels + 1] int gp_level_pos_ms_baseline = create_enabled_pos(
-  n_hmc_groups_per_level, ms_level_baseline_is_gp
+  n_forecast_groups_per_level, ms_level_baseline_is_gp
 );
 
 // --- Position Arrays for Baseline Hazard Level Hierarchy ---
 // (includes both intercept-only and GP levels — any truthy flag)
 array[n_levels + 1] int enabled_level_pos_ms_baseline = create_enabled_pos(
-  n_hmc_groups_per_level, enable_ms_level_baseline_hazard
+  n_forecast_groups_per_level, enable_ms_level_baseline_hazard
 );
 
 // --- Enabled Group Counts for Covariate Slopes ---
 int n_enabled_groups_ms_slope = compute_n_enabled_groups(
-  n_hmc_groups_per_level, enable_ms_level_cov
+  n_forecast_groups_per_level, enable_ms_level_cov
 );
 
 // Position array for enabled slope levels
 array[n_levels + 1] int enabled_level_pos_ms_slope = create_enabled_pos(
-  n_hmc_groups_per_level, enable_ms_level_cov
+  n_forecast_groups_per_level, enable_ms_level_cov
 );
 
 // --- GP Coarse Knot Grids ---
@@ -149,7 +149,7 @@ array[n_patients, n_levels] int patient_ms_baseline_flat_idx;
     for (lv in 1:n_levels) {
       if (enable_ms_level_baseline_hazard[lv]) {
         patient_ms_baseline_flat_idx[i, lv] =
-          (lv == n_levels && patient_level_groups[i, lv] > n_hmc_patients) ? 1
+          (lv == n_levels && patient_level_groups[i, lv] > n_forecast_patients) ? 1
           : get_global_group_idx(enabled_level_pos_ms_baseline, lv, patient_level_groups[i, lv]);
       } else {
         patient_ms_baseline_flat_idx[i, lv] = 1;
@@ -165,7 +165,7 @@ array[n_patients, n_levels] int patient_ms_slope_flat_idx;
     for (lv in 1:n_levels) {
       if (enable_ms_level_cov[lv]) {
         patient_ms_slope_flat_idx[i, lv] =
-          (lv == n_levels && patient_level_groups[i, lv] > n_hmc_patients) ? 1
+          (lv == n_levels && patient_level_groups[i, lv] > n_forecast_patients) ? 1
           : get_global_group_idx(enabled_level_pos_ms_slope, lv, patient_level_groups[i, lv]);
       } else {
         patient_ms_slope_flat_idx[i, lv] = 1;
