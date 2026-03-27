@@ -59,6 +59,29 @@ transformed data {
   array[n_hmc_patients] int hmc_patient_idx = linspaced_int_array(n_hmc_patients, 1, n_hmc_patients);
   array[n_trials + 1] int hmc_trial_patient_pos = trial_patient_pos;
 
+  // Total visit count (needed for dummy biomarker arrays in GQ)
+  int n_total_visits = sum(n_patient_visits);
+
+  // Screening visit count per patient — visits with t <= 0 (mirrors _base_transformed_data.stan)
+  array[n_patients] int<lower=0> n_patient_screening_visits = zeros_int_array(n_patients);
+  for (i in 1:n_patients) {
+    int v_start = patient_visit_pos[i];
+    int v_end = patient_visit_pos[i + 1] - 1;
+    for (v in v_start:v_end) {
+      if (t_patient_visits[v] <= 0) n_patient_screening_visits[i] += 1;
+    }
+  }
+
+  // Forecast visit infrastructure (mirrors _base_transformed_data.stan)
+  int<lower=1> last_predict_visit = max_all_t;
+  array[n_patients] int<lower=1> patient_last_obs_visit = get_max_pos(t_patient_visits, patient_visit_pos);
+  array[n_patients] int<lower=0> n_patient_forecast_visits;
+  for (i in 1:n_patients) {
+    n_patient_forecast_visits[i] = last_predict_visit - patient_last_obs_visit[i];
+  }
+  array[n_patients + 1] int<lower=1> forecast_visits_pos = create_pos(n_patient_forecast_visits);
+  #include "modules/visits/transformed_data.stan"
+
   // Time grid for multistate GP
   array[max_all_t] real all_measure_t = linspaced_array(max_all_t, 1, max_all_t);
 
