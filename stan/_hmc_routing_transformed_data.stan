@@ -6,7 +6,7 @@
 // Requires in scope:
 //   n_hmc_patients — either from data (full models) or as a transformed data
 //                    constant (standalone: int n_hmc_patients = n_patients)
-//   n_levels, n_groups_per_level — from _base_hierarchy_data.stan
+//   n_levels, n_groups_per_level — from _hierarchy_data.stan
 
 // Parameter-sizing groups: mirrors n_groups_per_level but substitutes n_hmc_patients
 // at the patient level (level n_levels). This ensures patient-level NCP parameters
