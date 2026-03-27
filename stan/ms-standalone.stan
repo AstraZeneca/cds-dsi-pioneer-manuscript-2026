@@ -20,6 +20,7 @@ functions {
   #include "gp.stanfunctions"
   #include "pfs.stanfunctions"
   #include "multistate.stanfunctions"
+  #include "modules/state_space/sf.stanfunctions"
 }
 
 data {
