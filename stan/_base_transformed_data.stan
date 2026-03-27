@@ -1,5 +1,5 @@
 #include "_base_hierarchy_transformed_data.stan"
-#include "_hmc_routing_transformed_data.stan"
+#include "_forecast_routing_transformed_data.stan"
 
 array[n_patients + 1] int<lower = 1, upper = sum(n_patient_visits) + 1> patient_visit_pos = create_pos(n_patient_visits);
 
@@ -55,6 +55,18 @@ for (t in 2:max_t_width) {
 // Combined flag: any process noise enabled (pop-level or patient-level)
 int enable_any_process_noise_tr = enable_pop_process_noise_tr || enable_patient_process_noise_tr;
 
+// Whether the full states grid [n_patients × max_t_width] is needed:
+//   - process noise: rates vary by timepoint, need states at every week
+//   - enable_states_full_grid: explicit flag (future-proofing)
+//   - ungated continuous time-varying covariate for 0→1 multistate transition
+int need_states_full_grid = enable_any_process_noise_tr || enable_states_full_grid ||
+  (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
+   enable_ms_01 && !enable_ms_visit_gated_01);
+print("need_states_full_grid = ", need_states_full_grid,
+      " (process_noise=", enable_any_process_noise_tr,
+      ", full_grid_flag=", enable_states_full_grid,
+      ", ungated_01=", enable_ms_01 && !enable_ms_visit_gated_01, ")");
+
 // ============================================================================
 // FORECAST VISIT INFRASTRUCTURE
 // ============================================================================
@@ -82,75 +94,75 @@ for (i in 1:n_patients) {
 array[n_patients + 1] int<lower = 1> forecast_visits_pos = create_pos(n_patient_forecast_visits);
 
 // ============================================================================
-// PATIENT ROUTING: HMC vs Laplace index arrays
+// PATIENT ROUTING: Forecast vs Background index arrays
 // ============================================================================
-// Derived from n_hmc_patients, laplace_split_level, laplace_target_group
-// (all declared in _base_hierarchy_data.stan).
-// Lives here (not laplace/transformed_data.stan) because state_space and
-// multistate transformed_parameters are shared across all models.
+// Derived from n_forecast_patients, forecast_split_level, forecast_group
+// (all declared in _base_data.stan).
 //
-// When Laplace is disabled (laplace_split_level = 0):
-//   hmc_patient_idx = [1, 2, ..., n_patients]  (all patients are HMC)
-//   laplace_patient_idx is empty
+// Forecast patients = trial patients we generate quantities for
+// Background patients = RWD/non-target (contribute to likelihood, no GQ)
+//
+// When forecast_split_level = 0:
+//   forecast_patient_idx = [1, 2, ..., n_patients]  (all patients are forecast)
+//   background_patient_idx is empty
 
-int n_laplace_patients = n_patients - n_hmc_patients;
-array[n_hmc_patients] int hmc_patient_idx;
-array[n_laplace_patients] int laplace_patient_idx;
+int n_background_patients = n_patients - n_forecast_patients;
+array[n_forecast_patients] int forecast_patient_idx;
+array[n_background_patients] int background_patient_idx;
 
 {
-  int j_hmc = 0;
-  int j_lap = 0;
+  int j_fc = 0;
+  int j_bg = 0;
   for (p in 1:n_patients) {
-    if (laplace_split_level > 0 &&
-        patient_level_groups[p, laplace_split_level] != laplace_target_group) {
-      j_lap += 1;
-      laplace_patient_idx[j_lap] = p;
+    if (forecast_split_level > 0 &&
+        patient_level_groups[p, forecast_split_level] != forecast_group) {
+      j_bg += 1;
+      background_patient_idx[j_bg] = p;
     } else {
-      j_hmc += 1;
-      hmc_patient_idx[j_hmc] = p;
+      j_fc += 1;
+      forecast_patient_idx[j_fc] = p;
     }
   }
-  if (j_hmc != n_hmc_patients)
-    fatal_error("n_hmc_patients=", n_hmc_patients,
-                " but found ", j_hmc, " HMC patients via routing key");
+  if (j_fc != n_forecast_patients)
+    fatal_error("n_forecast_patients=", n_forecast_patients,
+                " but found ", j_fc, " forecast patients via routing key");
 }
 
-// HMC-local visit position array — parallel to patient_visit_pos but for HMC patients only.
-// create_pos uses fancy indexing: n_patient_visits[hmc_patient_idx] selects HMC visit counts.
-int n_hmc_visits = sum(n_patient_visits[hmc_patient_idx]);
-array[n_hmc_patients + 1] int hmc_visit_pos = create_pos(n_patient_visits[hmc_patient_idx]);
+// Forecast-local visit position array — parallel to patient_visit_pos but for forecast patients only.
+int n_forecast_visits = sum(n_patient_visits[forecast_patient_idx]);
+array[n_forecast_patients + 1] int forecast_visit_pos = create_pos(n_patient_visits[forecast_patient_idx]);
 
-// HMC-patient position array: like trial_patient_pos but counts only HMC patients
-// per trial. Used to slice n_hmc_patients-sized endpoint arrays in GQ by trial.
-array[n_trials + 1] int hmc_trial_patient_pos;
+// Forecast-patient position array: like trial_patient_pos but counts only forecast patients
+// per trial. Used to slice n_forecast_patients-sized endpoint arrays in GQ by trial.
+array[n_trials + 1] int forecast_trial_patient_pos;
 {
-  array[n_trials] int n_hmc_per_trial = rep_array(0, n_trials);
-  for (j in 1:n_hmc_patients) {
-    n_hmc_per_trial[patient_trial[hmc_patient_idx[j]]] += 1;
+  array[n_trials] int n_forecast_per_trial = rep_array(0, n_trials);
+  for (j in 1:n_forecast_patients) {
+    n_forecast_per_trial[patient_trial[forecast_patient_idx[j]]] += 1;
   }
-  hmc_trial_patient_pos = create_pos(n_hmc_per_trial);
+  forecast_trial_patient_pos = create_pos(n_forecast_per_trial);
 }
 
-if (hmc_visit_pos[n_hmc_patients + 1] - 1 != n_hmc_visits)
-  fatal_error("n_hmc_visits=", n_hmc_visits, " inconsistent with hmc_visit_pos sum");
+if (forecast_visit_pos[n_forecast_patients + 1] - 1 != n_forecast_visits)
+  fatal_error("n_forecast_visits=", n_forecast_visits, " inconsistent with forecast_visit_pos sum");
 
 // ============================================================================
 // DUAL INDEXING CONVENTION
 // ============================================================================
 // Two visit position systems coexist after this point:
 //
-//   UNIFIED positions  — patient_visit_pos[p]  where p = hmc_patient_idx[j]
-//                                                    or p = laplace_patient_idx[i]
+//   UNIFIED positions  — patient_visit_pos[p]  where p = forecast_patient_idx[j]
+//                                                    or p = background_patient_idx[i]
 //     Used for: all data arrays (normalized_psa, t_patient_visit_idx,
 //               ms_final_state, ms_time_*, psa_values, log_baseline_psa, ...)
 //
-//   HMC-LOCAL positions — hmc_visit_pos[j]  where j = 1..n_hmc_patients
-//     Used for: states[n_hmc_visits, 2] only
+//   FORECAST-LOCAL positions — forecast_visit_pos[j]  where j = 1..n_forecast_patients
+//     Used for: states[n_forecast_visits, 2] only
 //
-// Pattern in every HMC patient loop:
-//   for (j in 1:n_hmc_patients) {
-//     int p = hmc_patient_idx[j];               // unified patient index
-//     int data_start = patient_visit_pos[p];    // → data arrays
-//     int state_start = hmc_visit_pos[j];       // → states matrix
+// Pattern in every forecast patient loop:
+//   for (j in 1:n_forecast_patients) {
+//     int p = forecast_patient_idx[j];            // unified patient index
+//     int data_start = patient_visit_pos[p];      // → data arrays
+//     int state_start = forecast_visit_pos[j];    // → states matrix
 //   }
 

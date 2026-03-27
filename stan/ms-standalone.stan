@@ -50,14 +50,14 @@ transformed data {
   // patient_visit_pos derived from n_patient_visits
   array[n_patients + 1] int<lower=1> patient_visit_pos = create_pos(n_patient_visits);
 
-  // Standalone: all patients are HMC (no Laplace split)
-  int n_hmc_patients = n_patients;
+  // Standalone: all patients are forecast (no background split)
+  int n_forecast_patients = n_patients;
 
   #include "_base_hierarchy_transformed_data.stan"
-  #include "_hmc_routing_transformed_data.stan"
+  #include "_forecast_routing_transformed_data.stan"
 
-  array[n_hmc_patients] int hmc_patient_idx = linspaced_int_array(n_hmc_patients, 1, n_hmc_patients);
-  array[n_trials + 1] int hmc_trial_patient_pos = trial_patient_pos;
+  array[n_forecast_patients] int forecast_patient_idx = linspaced_int_array(n_forecast_patients, 1, n_forecast_patients);
+  array[n_trials + 1] int forecast_trial_patient_pos = trial_patient_pos;
 
   // Time grid for multistate GP
   array[max_all_t] real all_measure_t = linspaced_array(max_all_t, 1, max_all_t);

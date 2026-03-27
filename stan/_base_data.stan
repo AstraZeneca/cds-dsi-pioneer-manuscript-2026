@@ -22,10 +22,11 @@
 
 #include "_base_hierarchy_data.stan"
 
-// HMC/Laplace routing (full models only; standalones define n_hmc_patients as constant)
-int<lower=0> n_hmc_patients;
-int<lower=0> laplace_split_level;
-int<lower=0> laplace_target_group;
+// Forecast/background patient routing (full models only; standalones define as constant)
+// forecast = trial patients we generate quantities for; background = RWD/non-target
+int<lower=0> n_forecast_patients;
+int<lower=0> forecast_split_level;
+int<lower=0> forecast_group;
 
 array[n_patients] int<lower = 1> n_patient_visits;
 

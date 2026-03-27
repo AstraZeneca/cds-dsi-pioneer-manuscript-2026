@@ -17,16 +17,16 @@
 //     (no "target vs. non-target" distinction in the PSA context)
 
 // Patient-level PFS arrays
-array[n_hmc_patients] int<lower = 0> sample_target_pfs, spop_target_pfs, sample_ms_pfs, spop_ms_pfs,
+array[n_forecast_patients] int<lower = 0> sample_target_pfs, spop_target_pfs, sample_ms_pfs, spop_ms_pfs,
                                  spop_target_obs_cens_pfs, sample_pfs, spop_pfs;
-array[n_hmc_patients] int<lower = 0, upper = 1>
+array[n_forecast_patients] int<lower = 0, upper = 1>
   sample_target_right_censored, spop_target_right_censored, spop_target_obs_cens_right_censored,
   sample_ms_right_censored, spop_ms_right_censored,
   sample_right_censored, spop_right_censored;
 
 // OS endpoints
-array[n_hmc_patients] int<lower = 0> sample_os, spop_os;
-array[n_hmc_patients] int<lower = 0, upper = 1> sample_os_censored, spop_os_censored;
+array[n_forecast_patients] int<lower = 0> sample_os, spop_os;
+array[n_forecast_patients] int<lower = 0, upper = 1> sample_os_censored, spop_os_censored;
 
 // Forecast for right-censored patients
 array[sum(psa_right_censored)] int<lower = 0> forecast_target_pfs;
@@ -51,8 +51,8 @@ array[n_cond_group] vector<lower = 0, upper = 1>[n_pfs_timepoints] cond_sample_t
                                                                    cond_sample_pfs_n, cond_spop_pfs_n;
 
 // Response (PSA50 = unconfirmed, undetectable = confirmed)
-array[n_hmc_patients] int<lower = 0, upper = 1> sample_target_confirmed_response, spop_target_confirmed_response;
-array[n_hmc_patients] int<lower = 0, upper = 1> sample_target_unconfirmed_response, spop_target_unconfirmed_response;
+array[n_forecast_patients] int<lower = 0, upper = 1> sample_target_confirmed_response, spop_target_confirmed_response;
+array[n_forecast_patients] int<lower = 0, upper = 1> sample_target_unconfirmed_response, spop_target_unconfirmed_response;
 vector<lower = 0, upper = 1>[n_trials] sample_target_orr, spop_target_orr;
 vector<lower = 0, upper = 1>[n_cond_group] cond_sample_target_orr = zeros_vector(n_cond_group),
                                             cond_spop_target_orr = zeros_vector(n_cond_group);
@@ -122,7 +122,7 @@ profile("psa_ms_endpoints") {
    sample_os, sample_os_censored,
    spop_os, spop_os_censored
   ) = calculate_all_patients_endpoints_rng(
-    hmc_patient_idx,
+    forecast_patient_idx,
     pcwg3_category,
     rep_pcwg3,
     forecast_pcwg3,
@@ -199,7 +199,7 @@ profile("psa_ms_endpoints") {
       sample_os_censored,
       spop_os,
       spop_os_censored,
-      hmc_trial_patient_pos,
+      forecast_trial_patient_pos,
       max_all_t,
       pfs_quantiles,
       pfs_timepoints
