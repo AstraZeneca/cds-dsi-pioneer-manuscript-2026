@@ -98,14 +98,28 @@ array[n_trials] vector<lower=0, upper=1>[max_all_t + 1]
 
 // ── Shared endpoint computation ──────────────────────────────────────────────
 // Contract vars are local (not saved to CSV). No biomarker: dummy categories
-// never trigger target PD or response detection. burden_pfs feeds the
-// composite PFS pathway (ms 0→1 transition); all patients are target-censored.
+// never trigger target PD or response detection. burden_pfs combines
+// progression (0→1) and death (0→2) as PFS events; all patients are
+// target-censored so km_est == ms_km_est in the standalone.
 {
   array[n_total_visits] int obs_biomarker_cat          = rep_array(0, n_total_visits);
   array[n_total_visits] int rep_biomarker_cat          = rep_array(0, n_total_visits);
   array[n_total_forecast_obs_visits] int forecast_obs_biomarker_cat = rep_array(0, n_total_forecast_obs_visits);
-  array[n_patients] int burden_pfs                     = ms_time_01;
-  array[n_patients] int burden_right_censored          = ms_censored_01;
+  // PFS = progression (0→1) OR death (0→2); dropout (0→3) is censored
+  array[n_patients] int burden_pfs;
+  array[n_patients] int burden_right_censored;
+  for (i in 1:n_patients) {
+    if (ms_censored_01[i] == 0) {
+      burden_pfs[i] = ms_time_01[i];
+      burden_right_censored[i] = 0;
+    } else if (ms_censored_02[i] == 0) {
+      burden_pfs[i] = ms_time_02[i];
+      burden_right_censored[i] = 0;
+    } else {
+      burden_pfs[i] = min(ms_time_01[i], ms_time_02[i]);
+      burden_right_censored[i] = 1;
+    }
+  }
   array[n_patients] int burden_target_pfs              = rep_array(max_all_t + 1, n_patients);
   array[n_patients] int burden_target_right_censored   = rep_array(1, n_patients);
   int  burden_enable_ms_visit_gated_01 = 0;

@@ -1,4 +1,3 @@
-library(targets)
 library(tidybayes)
 library(dplyr)
 library(stringr)
@@ -8,15 +7,15 @@ library(rlang)
 library(qs2)
 source("r/util.R")
 
-store <- file.path(
+obj_path <- file.path(
   Sys.getenv("DOMINO_DATASETS_DIR"),
   "analysis-results",
   Sys.getenv("DOMINO_STARTING_USERNAME"),
-  "pioneer/propensity-full/_targets"
+  "pioneer/propensity-full/_targets/objects/pioneer_fit_res_posterior_propensity"
 )
 
-cat("Loading fit...\n")
-fit <- tar_read(pioneer_fit_res_posterior_propensity, store = store)
+cat("Loading fit from:", obj_path, "\n")
+fit <- qs2::qs_read(obj_path)
 
 cat("Selecting likelihood_weight draws...\n")
 w_draws <- select_draws(fit, starts_with("likelihood_weight"))
