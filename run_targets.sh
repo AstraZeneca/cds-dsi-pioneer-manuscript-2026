@@ -105,6 +105,8 @@ echo "=========================================="
 echo "Hardware tier: ${DOMINO_HARDWARE_TIER_ID:-Not set}"
 echo "Hostname: $(hostname)"
 echo "Date: $(date)"
+echo "Git commit: $(git rev-parse HEAD 2>/dev/null || echo 'N/A')"
+echo "Git log: $(git log --oneline -1 2>/dev/null || echo 'N/A')"
 echo ""
 
 # Check cgroup memory limit (works for both cgroup v1 and v2)
