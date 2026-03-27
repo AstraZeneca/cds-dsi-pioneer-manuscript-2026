@@ -300,8 +300,16 @@ compute_cif_from_draws <- function(fit, stan_data) {
 #' @return A draws_array object with selected variables
 #' @export
 select_draws <- function(fit, ...) {
-  # Get all variable names from the fit (base names without indices)
-  all_vars <- fit$metadata()$stan_variables
+  # Use include_failed=TRUE so output_files() returns paths even when the fit
+  # was loaded from a targets cache in a different R session — process handles
+  # are no longer live across jobs, but the CSV files remain on disk.
+  csv_files <- fit$output_files(include_failed = TRUE)
+
+  # Get all variable names from the CSV header (avoids fit$metadata() which
+  # also relies on live process state)
+  all_vars <- cmdstanr::read_cmdstan_csv(
+    csv_files[1], variables = character(0)
+  )$metadata$stan_variables
 
   if (...length() == 0) {
     # No selection - read all variables
@@ -324,7 +332,7 @@ select_draws <- function(fit, ...) {
   # Read directly from CSV files with variable selection
   # This bypasses fit object caching for better memory efficiency
   cmdstanr::read_cmdstan_csv(
-    files = fit$output_files(),
+    files = csv_files,
     variables = selected_vars
   )$post_warmup_draws
 }
