@@ -58,8 +58,7 @@ patient_growth_rate = exp(patient_log_growth_rate);
 // Needed when: process noise is ON, explicit flag is set, or MS time-varying covariates are active
 array[2] matrix[n_hmc_patients,
   (enable_any_process_noise_tr || enable_states_full_grid ||
-   (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
-    (enable_ms_01 && !enable_ms_visit_gated_01 || enable_ms_02_time_varying_cov)))
+   (enable_ms_01 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0))
   ? max_t_width : 0] states_full_grid;
 
 profile("states") {
@@ -138,8 +137,7 @@ profile("states") {
       }
     }
   } else if (enable_states_full_grid ||
-             (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
-              (enable_ms_01 && !enable_ms_visit_gated_01 || enable_ms_02_time_varying_cov))) {
+             (enable_ms_01 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0)) {
     // ============================================================================
     // PROCESS NOISE OFF, but downstream modules need full grid: Use vectorized approach
     // (Triggered by enable_states_full_grid flag OR MS time-varying covariates)
