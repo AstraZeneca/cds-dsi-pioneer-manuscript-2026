@@ -123,14 +123,22 @@ generate_quantities_from_fit <- function(
   output_dir,
   parallel_chains = 4
 ) {
+  # If the binary isn't writable (e.g. read-only artifact mount from a prior
+  # job), copy it to output_dir so we can chmod it before execution.
+  fs::dir_create(output_dir, recurse = TRUE)
+  if (fs::file_exists(exe_file) && !fs::file_access(exe_file, "write")) {
+    local_exe <- fs::path(output_dir, fs::path_file(exe_file))
+    fs::file_copy(exe_file, local_exe, overwrite = TRUE)
+    exe_file <- local_exe
+  }
+  if (fs::file_exists(exe_file)) {
+    fs::file_chmod(exe_file, "u+x")
+  }
+
   # Workaround for stan-dev/cmdstanr#765: cpp_options is ignored when exe_file
   # is used, so stan_threads must be set via the private field directly.
   model <- cmdstan_model(exe_file = exe_file)
   model$.__enclos_env__$private$cpp_options_$stan_threads <- TRUE
-
-  if (fs::file_exists(exe_file)) {
-    fs::file_chmod(exe_file, "u+x")
-  }
 
   fs::dir_create(output_dir, recurse = TRUE)
 
