@@ -122,6 +122,7 @@ generate_quantities_from_fit <- function(
   data,
   output_dir,
   parallel_chains = 4,
+  threads_per_chain = NULL,
   stan_file = NULL,
   include_paths = NULL
 ) {
@@ -144,12 +145,12 @@ generate_quantities_from_fit <- function(
       dir = compile_dir,
       cpp_options = list(stan_threads = TRUE)
     )
-    return(model$generate_quantities(
-      fitted_params = fit,
-      data = data,
-      output_dir = output_dir,
-      parallel_chains = parallel_chains
-    ))
+    gq_args <- list(
+      fitted_params = fit, data = data,
+      output_dir = output_dir, parallel_chains = parallel_chains
+    )
+    if (!is.null(threads_per_chain)) gq_args$threads_per_chain <- threads_per_chain
+    return(do.call(model$generate_quantities, gq_args))
   }
 
   # If the binary isn't writable (e.g. read-only artifact mount from a prior
@@ -166,12 +167,12 @@ generate_quantities_from_fit <- function(
   model <- cmdstan_model(exe_file = exe_file)
   model$.__enclos_env__$private$cpp_options_$stan_threads <- TRUE
 
-  model$generate_quantities(
-    fitted_params = fit,
-    data = data,
-    output_dir = output_dir,
-    parallel_chains = parallel_chains
+  gq_args <- list(
+    fitted_params = fit, data = data,
+    output_dir = output_dir, parallel_chains = parallel_chains
   )
+  if (!is.null(threads_per_chain)) gq_args$threads_per_chain <- threads_per_chain
+  do.call(model$generate_quantities, gq_args)
 }
 
 #' Compute CIF draws from existing fit CSVs by applying the state-3 correction in R
