@@ -315,7 +315,12 @@ base_plot_km <- function(
     pobj <- pobj +
       geom_step(aes(x = t, y = s, group = btype, color = btype), linewidth = 0.75, alpha = 0.5, data = \(d) {
         semi_join(obs_km_data, d, by = "trial")
-      })
+      }) +
+      geom_point(
+        aes(x = t, y = s, color = btype),
+        shape = 3, size = 2, stroke = 0.8,
+        data = \(d) semi_join(obs_km_data, d, by = "trial") |> filter(c > 0)
+      )
 
     if (!is_null(analysis_data)) {
       if (endpoint == "pfs") {
@@ -1125,11 +1130,13 @@ plot_competing_risks_cif <- function(
   draws_cif,
   cif_prefix = c("spop", "sample"),
   time_step = 4L,
-  x_breaks_months = seq(0, 48, by = 6)
+  x_breaks_months = seq(0, 48, by = 6),
+  trials = NULL
 ) {
   cif_prefix <- match.arg(cif_prefix)
   trial_id   <- as.integer(stan_data$patient_trial)
   n_trials   <- max(trial_id)
+  trials     <- trials %||% seq_len(n_trials)
   trial_names <- trial_labeller(levels(stan_data$patient_trial) %||% as.character(seq_len(n_trials)))
   max_t      <- stan_data$max_all_t
   x_breaks   <- months_to_weeks(x_breaks_months)
@@ -1152,7 +1159,7 @@ plot_competing_risks_cif <- function(
 
   cause_labels <- c("0\u21921 Progression", "0\u21922 On-trial death", "0\u21923 Dropout")
 
-  aj_obs <- map_dfr(seq_len(n_trials), function(tr) {
+  aj_obs <- map_dfr(trials, function(tr) {
     sub <- filter(obs, trial == tr)
     cif <- cmprsk::cuminc(sub$cr_time, sub$cr_cause, cencode = 0)
     map_dfr(1:3, function(cause) {
@@ -1166,7 +1173,7 @@ plot_competing_risks_cif <- function(
   )
 
   # Observed state 0 retention (KM for any exit)
-  obs_state0 <- map_dfr(seq_len(n_trials), function(tr) {
+  obs_state0 <- map_dfr(trials, function(tr) {
     sub <- filter(obs, trial == tr)
     fit <- survival::survfit(survival::Surv(cr_time, cr_cause != 0) ~ 1, data = sub)
     tibble(time = fit$time, s0 = fit$surv, trial_name = trial_names[tr])
@@ -1176,7 +1183,7 @@ plot_competing_risks_cif <- function(
   draws_mat <- posterior::as_draws_matrix(draws_cif)
   time_grid <- seq(time_step, max_t, by = time_step)
 
-  model_cif <- map_dfr(seq_len(n_trials), function(tr) {
+  model_cif <- map_dfr(trials, function(tr) {
     map_dfr(time_grid, function(t) {
       t_idx <- t + 1L
       extract_cif <- function(cause_id) {
