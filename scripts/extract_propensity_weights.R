@@ -9,7 +9,8 @@ library(qs2)
 source("r/util.R")
 
 store <- file.path(
-  "/mnt/data/analysis-results",
+  Sys.getenv("DOMINO_DATASETS_DIR"),
+  "analysis-results",
   Sys.getenv("DOMINO_STARTING_USERNAME"),
   "pioneer/propensity-full/_targets"
 )
