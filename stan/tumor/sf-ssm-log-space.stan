@@ -112,10 +112,10 @@ generated quantities {
   // Compute scaled intercept effects for all levels (flattened structure)
   // Note: tr_raw_level_intercept is sized by enabled groups only, so we use
   // enabled_level_pos_tr_intercept for indexing into it
-  vector[n_hmc_total_groups] tr_effect_level_intercept;
+  vector[n_forecast_total_groups] tr_effect_level_intercept;
   for (lv in 1:n_levels) {
-    int lv_start_output = n_hmc_level_pos[lv];
-    int lv_end_output = n_hmc_level_pos[lv + 1] - 1;
+    int lv_start_output = n_forecast_level_pos[lv];
+    int lv_end_output = n_forecast_level_pos[lv + 1] - 1;
     if (enable_level_intercept_tr[lv]) {
       // Index into compacted parameter array using enabled position array
       int lv_start_param = enabled_level_pos_tr_intercept[lv];
@@ -124,19 +124,19 @@ generated quantities {
         tr_sd_level_intercept[lv] * tr_raw_level_intercept[lv_start_param:lv_end_param];
     } else {
       tr_effect_level_intercept[lv_start_output:lv_end_output] =
-        rep_vector(0, n_hmc_groups_per_level[lv]);
+        rep_vector(0, n_forecast_groups_per_level[lv]);
     }
   }
 
   // Log rates for all groups at all levels (flattened structure)
   // Each group's rate = population rate + that group's intercept effect
-  vector[n_hmc_total_groups] level_log_total_rate = tr_loc_pop + tr_effect_level_intercept;
-  vector[n_hmc_total_groups] level_log_decrease_rate = level_log_total_rate + pop_log_decrease_frac;
-  vector[n_hmc_total_groups] level_log_growth_rate = level_log_total_rate + pop_log_growth_frac;
+  vector[n_forecast_total_groups] level_log_total_rate = tr_loc_pop + tr_effect_level_intercept;
+  vector[n_forecast_total_groups] level_log_decrease_rate = level_log_total_rate + pop_log_decrease_frac;
+  vector[n_forecast_total_groups] level_log_growth_rate = level_log_total_rate + pop_log_growth_frac;
 
   // Residuals for all groups at all levels (vs population)
-  vector[n_hmc_total_groups] level_log_growth_rate_residual = level_log_growth_rate - pop_log_growth_rate;
-  vector[n_hmc_total_groups] level_log_decrease_rate_residual = level_log_decrease_rate - pop_log_decrease_rate;
+  vector[n_forecast_total_groups] level_log_growth_rate_residual = level_log_growth_rate - pop_log_growth_rate;
+  vector[n_forecast_total_groups] level_log_decrease_rate_residual = level_log_decrease_rate - pop_log_decrease_rate;
 
   // Patient-level residuals: compare to parent level (level n_levels - 1, or population if n_levels == 1)
   matrix[n_patients, max_t_width] patient_log_growth_rate_residual;
@@ -151,11 +151,11 @@ generated quantities {
       // Parent is level n_levels - 1
       int parent_lv = n_levels - 1;
       int parent_lv_start, parent_lv_end;
-      (parent_lv_start, parent_lv_end) = get_pos(n_hmc_level_pos, parent_lv);
+      (parent_lv_start, parent_lv_end) = get_pos(n_forecast_level_pos, parent_lv);
 
       // Extract parent level rates, then index by patient's group membership
-      vector[n_hmc_groups_per_level[parent_lv]] parent_level_growth = level_log_growth_rate[parent_lv_start:parent_lv_end];
-      vector[n_hmc_groups_per_level[parent_lv]] parent_level_decrease = level_log_decrease_rate[parent_lv_start:parent_lv_end];
+      vector[n_forecast_groups_per_level[parent_lv]] parent_level_growth = level_log_growth_rate[parent_lv_start:parent_lv_end];
+      vector[n_forecast_groups_per_level[parent_lv]] parent_level_decrease = level_log_decrease_rate[parent_lv_start:parent_lv_end];
       parent_log_growth_rate = parent_level_growth[patient_level_groups[, parent_lv]];
       parent_log_decrease_rate = parent_level_decrease[patient_level_groups[, parent_lv]];
     } else {
@@ -186,19 +186,19 @@ generated quantities {
   #include "_tumor_categorization.stan"
 
   // Endpoint output declarations (GQ scope — saved to CSV)
-  array[n_hmc_patients] int<lower = 0> sample_target_pfs, spop_target_pfs, sample_ms_pfs, spop_ms_pfs,
+  array[n_forecast_patients] int<lower = 0> sample_target_pfs, spop_target_pfs, sample_ms_pfs, spop_ms_pfs,
                                        spop_target_obs_cens_pfs, sample_pfs, spop_pfs;
-  array[n_hmc_patients] int<lower = 0, upper = 1>
+  array[n_forecast_patients] int<lower = 0, upper = 1>
     sample_target_right_censored, spop_target_right_censored, spop_target_obs_cens_right_censored,
     sample_ms_right_censored, spop_ms_right_censored,
     sample_right_censored, spop_right_censored;
-  array[n_hmc_patients] int<lower = 0> sample_os, spop_os;
-  array[n_hmc_patients] int<lower = 0, upper = 1> sample_os_censored, spop_os_censored;
+  array[n_forecast_patients] int<lower = 0> sample_os, spop_os;
+  array[n_forecast_patients] int<lower = 0, upper = 1> sample_os_censored, spop_os_censored;
   array[n_patients] int<lower = 0, upper = 1> spop_is_dropout, sample_is_dropout;
   array[sum(target_right_censored)] int<lower = 0> forecast_target_pfs;
   array[sum(target_right_censored)] int<lower = 0, upper = 1> forecast_target_right_censored;
-  array[n_hmc_patients] int<lower = 0, upper = 1> sample_target_confirmed_response, spop_target_confirmed_response;
-  array[n_hmc_patients] int<lower = 0, upper = 1> sample_target_unconfirmed_response, spop_target_unconfirmed_response;
+  array[n_forecast_patients] int<lower = 0, upper = 1> sample_target_confirmed_response, spop_target_confirmed_response;
+  array[n_forecast_patients] int<lower = 0, upper = 1> sample_target_unconfirmed_response, spop_target_unconfirmed_response;
   vector<lower = 0, upper = 1>[n_trials] sample_target_orr, spop_target_orr;
   vector<lower = 0, upper = 1>[n_cond_group] cond_sample_target_orr = zeros_vector(n_cond_group),
                                               cond_spop_target_orr = zeros_vector(n_cond_group);

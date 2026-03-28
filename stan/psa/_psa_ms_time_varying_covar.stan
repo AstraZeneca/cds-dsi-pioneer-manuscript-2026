@@ -11,21 +11,21 @@
 // (provides ms_time_varying_covar_01)
 
 // Declare covariate matrix (sized by n_time_varying_covar from data)
-// Structure: array[n_covar] of matrix[n_hmc_patients, max_all_t]
+// Structure: array[n_covar] of matrix[n_forecast_patients, max_all_t]
 // Only allocated when both multistate and time-varying covariates are enabled.
-// Rows correspond to HMC patients (j = 1..n_hmc_patients); data arrays are
-// accessed via hmc_patient_idx[j] to map to the unified patient arrays.
+// Rows correspond to forecast patients (j = 1..n_forecast_patients); data arrays are
+// accessed via forecast_patient_idx[j] to map to the unified patient arrays.
 // Build modeled-PSA covariate matrix only when needed:
 // - 0->1 continuous mode (not visit-gated), OR
 // - 0->2 with time-varying covariate enabled
 array[enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
     (enable_ms_01 && !enable_ms_visit_gated_01 || enable_ms_02_time_varying_cov) ? n_time_varying_covar : 0]
-  matrix[n_hmc_patients, max_all_t] ms_time_varying_covar_01;
+  matrix[n_forecast_patients, max_all_t] ms_time_varying_covar_01;
 
 if (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
     (enable_ms_01 && !enable_ms_visit_gated_01 || enable_ms_02_time_varying_cov)) {
-  for (j in 1:n_hmc_patients) {
-    int p = hmc_patient_idx[j];  // Unified patient index
+  for (j in 1:n_forecast_patients) {
+    int p = forecast_patient_idx[j];  // Unified patient index
     int visit_start, visit_end;
     (visit_start, visit_end) = get_pos(patient_visit_pos, p);
 
@@ -39,7 +39,7 @@ if (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
 
     // Feature 1: Standardized log(PSA)
     // states_full_grid gives log(normalized_PSA) where normalized = ratio to baseline.
-    // states_full_grid is indexed by j (HMC-local), not p (unified).
+    // states_full_grid is indexed by j (forecast-local), not p (unified).
     row_vector[max_all_t] log_psa_normalized = log_sum_exp(
       states_full_grid[1][j, states_start_col:states_end_col],
       states_full_grid[2][j, states_start_col:states_end_col]
@@ -60,7 +60,7 @@ if (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
     ms_time_varying_covar_01[1][j] = (log_psa_absolute - median_log_psa_obs) / iqr_log_psa_obs;
 
     // Feature 2: log(decrease rate) - already on log scale.
-    // patient_log_decrease_rate is HMC-local (indexed by j).
+    // patient_log_decrease_rate is forecast-local (indexed by j).
     if (n_time_varying_covar >= 2) {
       if (enable_any_process_noise_tr) {
         // Time-varying rates: extract contiguous slice
@@ -72,7 +72,7 @@ if (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
     }
 
     // Feature 3: log(growth rate) - already on log scale.
-    // patient_log_growth_rate is HMC-local (indexed by j).
+    // patient_log_growth_rate is forecast-local (indexed by j).
     if (n_time_varying_covar >= 3) {
       if (enable_any_process_noise_tr) {
         ms_time_varying_covar_01[3][j] = patient_log_growth_rate[j, states_start_col:states_end_col];

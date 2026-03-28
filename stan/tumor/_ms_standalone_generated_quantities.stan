@@ -7,20 +7,20 @@
 // ============================================================================
 
 // ── Patient-level endpoint arrays ───────────────────────────────────────────
-array[n_hmc_patients] int<lower=0> sample_target_pfs, spop_target_pfs, sample_ms_pfs, spop_ms_pfs,
+array[n_forecast_patients] int<lower=0> sample_target_pfs, spop_target_pfs, sample_ms_pfs, spop_ms_pfs,
                                    spop_target_obs_cens_pfs, sample_pfs, spop_pfs;
-array[n_hmc_patients] int<lower=0, upper=1>
+array[n_forecast_patients] int<lower=0, upper=1>
   sample_target_right_censored, spop_target_right_censored, spop_target_obs_cens_right_censored,
   sample_ms_right_censored, spop_ms_right_censored,
   sample_right_censored, spop_right_censored;
-array[n_hmc_patients] int<lower=0> sample_os, spop_os;
-array[n_hmc_patients] int<lower=0, upper=1> sample_os_censored, spop_os_censored;
-array[n_hmc_patients] int<lower=0, upper=1> spop_is_dropout, sample_is_dropout;
+array[n_forecast_patients] int<lower=0> sample_os, spop_os;
+array[n_forecast_patients] int<lower=0, upper=1> sample_os_censored, spop_os_censored;
+array[n_forecast_patients] int<lower=0, upper=1> spop_is_dropout, sample_is_dropout;
 // In standalone all patients are target-censored (no biomarker-based target PFS).
-array[n_hmc_patients] int<lower=0> forecast_target_pfs;
-array[n_hmc_patients] int<lower=0, upper=1> forecast_target_right_censored;
-array[n_hmc_patients] int<lower=0, upper=1> sample_target_confirmed_response, spop_target_confirmed_response;
-array[n_hmc_patients] int<lower=0, upper=1> sample_target_unconfirmed_response, spop_target_unconfirmed_response;
+array[n_forecast_patients] int<lower=0> forecast_target_pfs;
+array[n_forecast_patients] int<lower=0, upper=1> forecast_target_right_censored;
+array[n_forecast_patients] int<lower=0, upper=1> sample_target_confirmed_response, spop_target_confirmed_response;
+array[n_forecast_patients] int<lower=0, upper=1> sample_target_unconfirmed_response, spop_target_unconfirmed_response;
 
 // ── Trial-level KM curves ───────────────────────────────────────────────────
 vector<lower=0, upper=1>[n_trials] sample_target_orr, spop_target_orr;
@@ -149,10 +149,10 @@ array[n_trials] vector<lower=0, upper=1>[max_all_t + 1]
 // ── Sojourn KM computation ───────────────────────────────────────────────────
 // Runs after the local block so GQ-scope endpoint arrays are populated.
 for (s in 1:n_trials) {
-  int n_tr = get_pos_size(hmc_trial_patient_pos, s);
+  int n_tr = get_pos_size(forecast_trial_patient_pos, s);
   if (n_tr > 0) {
     int tr_start; int tr_end;
-    (tr_start, tr_end) = get_pos(hmc_trial_patient_pos, s);
+    (tr_start, tr_end) = get_pos(forecast_trial_patient_pos, s);
 
     // ── 1→2: post-progression sojourn KM ─────────────────────────────────────
     // sample: patients who progressed (sample_ms_right_censored == 0)
