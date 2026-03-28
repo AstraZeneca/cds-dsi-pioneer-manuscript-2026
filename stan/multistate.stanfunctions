@@ -130,20 +130,20 @@ int find_visit_idx(int i, int wk,
 /**
  * Partial sum for reduce_sum parallelisation of the multistate log-likelihood.
  *
- * First argument is ms_final_state[hmc_patient_idx] (length n_hmc_patients),
+ * First argument is ms_final_state[forecast_patient_idx] (length n_forecast_patients),
  * auto-sliced by reduce_sum. The slice covers patients [start..end] in HMC order.
  * All other per-patient arrays are fixed args passed in full; index with i
  * (loop variable in start:end) to access the correct patient.
  *
  * patient_visit_pos uses unified ordering; safe because HMC patients are
- * always patients 1..n_hmc_patients in the unified ordering.
+ * always patients 1..n_forecast_patients in the unified ordering.
  */
 real multistate_partial_sum(
-  array[] real weight_slice,  // auto-sliced likelihood_weight[hmc_patient_idx]
+  array[] real weight_slice,  // auto-sliced likelihood_weight[forecast_patient_idx]
   int start, int end,
   // Final state (int data — no autodiff cost as shared arg)
   array[] int final_state,
-  // Per-patient data (HMC-indexed arrays, length n_hmc_patients)
+  // Per-patient data (HMC-indexed arrays, length n_forecast_patients)
   array[] int time_01, array[] int time_02, array[] int time_12,
   array[] int time_03, array[] int time_32,
   array[] int censored_01, array[] int censored_02, array[] int censored_12,
@@ -153,7 +153,7 @@ real multistate_partial_sum(
   // Visit arrays (unified patient ordering; valid for HMC patients = 1..n_hmc)
   array[] int t_patient_visits,
   array[] int patient_visit_pos,
-  // Log conditional survival matrices (HMC-indexed: rows 1..n_hmc_patients)
+  // Log conditional survival matrices (HMC-indexed: rows 1..n_forecast_patients)
   matrix log_cond_surv_01,
   matrix log_cond_surv_02,
   matrix log_cond_surv_12_s,

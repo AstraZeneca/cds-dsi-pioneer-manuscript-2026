@@ -11,7 +11,9 @@ functions {
 }
 
 data {
-  #include "_base_data.stan"
+  #include "_hierarchy_data.stan"
+  #include "_visit_data.stan"
+  #include "_full_model_data.stan"
   #include "modules/tumor/data.stan"
   #include "modules/visits/data.stan"
   #include "modules/tumor/hyperparams.stan"
@@ -30,7 +32,12 @@ data {
 }
 
 transformed data {
-  #include "_base_transformed_data.stan"
+  #include "_hierarchy_transformed_data.stan"
+  #include "_forecast_routing_transformed_data.stan"
+  int max_all_t = max(max(t_patient_visits) + 1, extend_max_all_t);
+  int<lower=0> max_t_width = max_all_t - min(t_patient_visits) + 1;
+  #include "_visit_transformed_data.stan"
+  #include "_full_model_transformed_data.stan"
   #include "modules/visits/transformed_data.stan"
   #include "modules/tumor/transformed_data.stan"
   #include "modules/tr/transformed_data.stan"
