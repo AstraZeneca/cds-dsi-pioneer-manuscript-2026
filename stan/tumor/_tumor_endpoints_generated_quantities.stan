@@ -373,6 +373,86 @@ profile("gen_quant") {
     );
 }
 
+// ── Sojourn KMs (1→2 post-progression, 3→2 off-trial) ───────────────────────
+array[n_trials] vector<lower=0, upper=1>[ms_max_sojourn_t + 1]
+  sample_km_12 = rep_array(ones_vector(ms_max_sojourn_t + 1), n_trials),
+  spop_km_12   = rep_array(ones_vector(ms_max_sojourn_t + 1), n_trials);
+array[n_trials] vector<lower=0, upper=1>[ms_max_sojourn_t_32 + 1]
+  sample_km_32 = rep_array(ones_vector(ms_max_sojourn_t_32 + 1), n_trials),
+  spop_km_32   = rep_array(ones_vector(ms_max_sojourn_t_32 + 1), n_trials);
+
+for (s in 1:n_trials) {
+  int n_tr = get_pos_size(trial_patient_pos, s);
+  if (n_tr > 0) {
+    int tr_start; int tr_end;
+    (tr_start, tr_end) = get_pos(trial_patient_pos, s);
+
+    {
+      int n_prog = n_tr - sum(sample_ms_right_censored[tr_start:tr_end]);
+      if (n_prog > 0) {
+        array[n_prog] int soj; array[n_prog] int cens;
+        int idx = 1;
+        for (i in tr_start:tr_end) {
+          if (!sample_ms_right_censored[i]) {
+            soj[idx]  = max(1, sample_os[i] - sample_ms_pfs[i]);
+            cens[idx] = sample_os_censored[i];
+            idx += 1;
+          }
+        }
+        sample_km_12[s] = estimate_kaplan_meier(soj, cens, ms_max_sojourn_t, 0).1;
+      }
+    }
+
+    {
+      int n_prog = n_tr - sum(spop_ms_right_censored[tr_start:tr_end]);
+      if (n_prog > 0) {
+        array[n_prog] int soj; array[n_prog] int cens;
+        int idx = 1;
+        for (i in tr_start:tr_end) {
+          if (!spop_ms_right_censored[i]) {
+            soj[idx]  = max(1, spop_os[i] - spop_ms_pfs[i]);
+            cens[idx] = spop_os_censored[i];
+            idx += 1;
+          }
+        }
+        spop_km_12[s] = estimate_kaplan_meier(soj, cens, ms_max_sojourn_t, 0).1;
+      }
+    }
+
+    {
+      int n_drop = sum(to_array_1d(sample_is_dropout[tr_start:tr_end]));
+      if (n_drop > 0) {
+        array[n_drop] int soj; array[n_drop] int cens;
+        int idx = 1;
+        for (i in tr_start:tr_end) {
+          if (sample_is_dropout[i]) {
+            soj[idx]  = max(1, sample_os[i] - sample_pfs[i]);
+            cens[idx] = sample_os_censored[i];
+            idx += 1;
+          }
+        }
+        sample_km_32[s] = estimate_kaplan_meier(soj, cens, ms_max_sojourn_t_32, 0).1;
+      }
+    }
+
+    {
+      int n_drop = sum(to_array_1d(spop_is_dropout[tr_start:tr_end]));
+      if (n_drop > 0) {
+        array[n_drop] int soj; array[n_drop] int cens;
+        int idx = 1;
+        for (i in tr_start:tr_end) {
+          if (spop_is_dropout[i]) {
+            soj[idx]  = max(1, spop_os[i] - spop_pfs[i]);
+            cens[idx] = spop_os_censored[i];
+            idx += 1;
+          }
+        }
+        spop_km_32[s] = estimate_kaplan_meier(soj, cens, ms_max_sojourn_t_32, 0).1;
+      }
+    }
+  }
+}
+
 // ── Competing Risks CIF (per-trial, empirical subdistribution) ───────────────
 // Uses combined PFS (spop_pfs = min(target_recist, ms_hazard)) so that
 // RECIST-detected progressions are included in the 0→1 cause.

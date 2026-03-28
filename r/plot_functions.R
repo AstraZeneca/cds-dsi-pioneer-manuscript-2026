@@ -261,6 +261,7 @@ base_plot_km <- function(
   alpha_group = NULL,
   color_group = NULL,
   linewidth = 0,
+  obs_line_color = NULL,
   endpoint = c("pfs", "os"),
   ...
 ) {
@@ -312,38 +313,87 @@ base_plot_km <- function(
     )
 
   if (!is_null(obs_km_data)) {
-    pobj <- pobj +
-      geom_step(aes(x = t, y = s, group = btype, color = btype), linewidth = 0.75, alpha = 0.5, data = \(d) {
-        semi_join(obs_km_data, d, by = "trial")
-      }) +
-      geom_point(
-        aes(x = t, y = s, color = btype),
-        shape = 3, size = 2, stroke = 0.8,
-        data = \(d) semi_join(obs_km_data, d, by = "trial") |> filter(c > 0)
-      )
+    if (is.null(obs_line_color)) {
+      # Default: color obs KM line by btype (upper/lower bound) — used by SCLC
+      pobj <- pobj +
+        geom_step(aes(x = t, y = s, group = btype, color = btype), linewidth = 0.75, alpha = 0.5, data = \(d) {
+          semi_join(obs_km_data, d, by = "trial")
+        }) +
+        geom_point(
+          aes(x = t, y = s, color = btype),
+          shape = 3, size = 2, stroke = 0.8,
+          data = \(d) semi_join(obs_km_data, d, by = "trial") |> filter(c > 0)
+        )
+    } else {
+      # Fixed color obs KM line (used by pioneer — no btype distinction needed)
+      pobj <- pobj +
+        geom_step(
+          aes(x = t, y = s),
+          color = obs_line_color, linewidth = 0.75, linetype = "dashed",
+          data = \(d) semi_join(obs_km_data, d, by = "trial")
+        )
+    }
 
     if (!is_null(analysis_data)) {
+      has_censor_reason <- "censor_reason" %in% names(analysis_data)
       if (endpoint == "pfs") {
-        pobj <- pobj +
-          geom_point(aes(x = t, y = s, color = btype, shape = "censored"), size = 2, alpha = 0.7, data = \(d) {
-            semi_join(obs_km_data, d, by = "trial") |>
-              inner_join(analysis_data |> filter(right_censored) |> select(pfs), by = c("t" = "pfs"), relationship = "many-to-many")
-          }) +
-          geom_point(aes(x = t, y = s, color = btype, shape = "death"), size = 2, alpha = 0.7, data = \(d) {
-            semi_join(obs_km_data, d, by = "trial") |>
-              inner_join(
-                analysis_data |> filter(!right_censored, !progression_before_death) |> select(pfs),
-                by = c("t" = "pfs"),
-                relationship = "many-to-many"
-              )
-          }) +
-          scale_shape_manual("", values = c(censored = "|", death = "o"), labels = c(censored = "Right Censored", death = "Death before PD"))
+        if (has_censor_reason) {
+          pobj <- pobj +
+            geom_point(
+              aes(x = t, y = s, color = censor_reason, shape = censor_reason),
+              size = 2.5, alpha = 0.9,
+              data = \(d) {
+                semi_join(obs_km_data, d, by = "trial") |>
+                  inner_join(
+                    analysis_data |> filter(right_censored) |> select(pfs, censor_reason),
+                    by = c("t" = "pfs"), relationship = "many-to-many"
+                  )
+              }
+            ) +
+            geom_point(
+              aes(x = t, y = s), color = "grey30", shape = "o",
+              size = 2, alpha = 0.7,
+              data = \(d) {
+                semi_join(obs_km_data, d, by = "trial") |>
+                  inner_join(
+                    analysis_data |> filter(!right_censored, !progression_before_death) |> select(pfs),
+                    by = c("t" = "pfs"), relationship = "many-to-many"
+                  )
+              }
+            ) +
+            scale_shape_manual(
+              "Censoring reason",
+              values = c("Admin censored" = "|", "Dropout" = "+")
+            )
+        } else {
+          pobj <- pobj +
+            geom_point(aes(x = t, y = s, color = btype, shape = "censored"), size = 2, alpha = 0.7, data = \(d) {
+              semi_join(obs_km_data, d, by = "trial") |>
+                inner_join(analysis_data |> filter(right_censored) |> select(pfs), by = c("t" = "pfs"), relationship = "many-to-many")
+            }) +
+            geom_point(aes(x = t, y = s, color = btype, shape = "death"), size = 2, alpha = 0.7, data = \(d) {
+              semi_join(obs_km_data, d, by = "trial") |>
+                inner_join(
+                  analysis_data |> filter(!right_censored, !progression_before_death) |> select(pfs),
+                  by = c("t" = "pfs"),
+                  relationship = "many-to-many"
+                )
+            }) +
+            scale_shape_manual("", values = c(censored = "|", death = "o"), labels = c(censored = "Right Censored", death = "Death before PD"))
+        }
       } else if (endpoint == "os") {
+        os_tick_data <- \(d) {
+          semi_join(obs_km_data, d, by = "trial") |>
+            inner_join(analysis_data |> filter(os_censored) |> select(os_time), by = c("t" = "os_time"), relationship = "many-to-many")
+        }
+        if (is.null(obs_line_color)) {
+          pobj <- pobj +
+            geom_point(aes(x = t, y = s, color = btype), shape = "|", size = 2, alpha = 0.7, data = os_tick_data)
+        } else {
+          pobj <- pobj +
+            geom_point(aes(x = t, y = s), color = obs_line_color, shape = "|", size = 2, alpha = 0.7, data = os_tick_data)
+        }
         pobj <- pobj +
-          geom_point(aes(x = t, y = s, color = btype, shape = "censored"), size = 2, alpha = 0.7, data = \(d) {
-            semi_join(obs_km_data, d, by = "trial") |>
-              inner_join(analysis_data |> filter(os_censored) |> select(os_time), by = c("t" = "os_time"), relationship = "many-to-many")
-          }) +
           scale_shape_manual("", values = c(censored = "|"), labels = c(censored = "Censored (Alive)"))
       }
     }
