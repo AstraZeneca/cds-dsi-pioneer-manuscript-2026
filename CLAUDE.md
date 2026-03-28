@@ -207,6 +207,16 @@ Plots always use `btype == "ub"`. For PFS, `interval_censored` captures visit-ga
 
 Issues across all PIONEER repos are tracked in the **PIONEER 2026** GitHub Project (project number 56, owner `azu-oncology-rd`). See `docs/GITHUB_PROJECT.md` for full reference (project/field IDs, `gh` commands, GraphQL queries).
 
+### Team Members (azu-oncology-rd)
+
+| Username | Name |
+|---|---|
+| `kmjq089_azu` | Naguib, Karim |
+| `kfvz858_azu` | Berché, Roger |
+| `kjmr060_azu` | Metcalfe, Paul |
+| `kzht939_azu` | Bevan, Antonia |
+| `kqdr852_azu` | Li, Lu |
+
 ## Pioneer Claude Marketplace
 
 - Plugin registry: `/home/ubuntu/.claude/plugins/marketplaces/pioneer-claude-marketplace/.claude-plugin/marketplace.json`
