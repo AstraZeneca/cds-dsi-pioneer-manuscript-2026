@@ -28,13 +28,13 @@ array[sum(target_right_censored)] int<lower = 0, upper = 1> forecast_target_righ
 
 array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_target_km_est, spop_target_km_est, 
                                                             spop_target_obs_cens_km_est, 
-                                                            sample_ms_km_est, spop_ms_km_est,
-                                                            sample_km_est, spop_km_est; 
+                                                            sample_ms_pfs_km_est, spop_ms_pfs_km_est,
+                                                            sample_pfs_km_est, spop_pfs_km_est; 
 
 array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_target_km_est, cond_spop_target_km_est, 
                                                                 cond_spop_target_obs_cens_km_est, 
-                                                                cond_sample_ms_km_est, cond_spop_ms_km_est,
-                                                                cond_sample_km_est, cond_spop_km_est;
+                                                                cond_sample_ms_pfs_km_est, cond_spop_ms_pfs_km_est,
+                                                                cond_sample_pfs_km_est, cond_spop_pfs_km_est;
 
 array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] sample_target_pfs_n, spop_target_pfs_n, 
                                                                sample_ms_pfs_n, spop_ms_pfs_n,
@@ -284,8 +284,8 @@ profile("gen_quant") {
   // Aggregate to trial-level metrics
   (sample_target_orr, spop_target_orr,
    sample_target_km_est, spop_target_km_est, spop_target_obs_cens_km_est,
-   sample_ms_km_est, spop_ms_km_est,
-   sample_km_est, spop_km_est,
+   sample_ms_pfs_km_est, spop_ms_pfs_km_est,
+   sample_pfs_km_est, spop_pfs_km_est,
    sample_target_quant_pfs, spop_target_quant_pfs,
    sample_target_quant_pfs_exceeds_max, spop_target_quant_pfs_exceeds_max,
    sample_ms_quant_pfs, spop_ms_quant_pfs,
@@ -329,8 +329,8 @@ profile("gen_quant") {
   // Aggregate to conditional group-level metrics
   (cond_sample_target_orr, cond_spop_target_orr,
    cond_sample_target_km_est, cond_spop_target_km_est, cond_spop_target_obs_cens_km_est,
-   cond_sample_ms_km_est, cond_spop_ms_km_est,
-   cond_sample_km_est, cond_spop_km_est,
+   cond_sample_ms_pfs_km_est, cond_spop_ms_pfs_km_est,
+   cond_sample_pfs_km_est, cond_spop_pfs_km_est,
    cond_sample_target_quant_pfs, cond_spop_target_quant_pfs,
    cond_sample_target_quant_pfs_exceeds_max, cond_spop_target_quant_pfs_exceeds_max,
    cond_sample_ms_quant_pfs, cond_spop_ms_quant_pfs,
