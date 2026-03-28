@@ -8,7 +8,9 @@ paths:
 
 ## Team Members (azu-oncology-rd)
 
-| Username | Name |
+These are **GitHub usernames only** — do not use them for Domino or any other system.
+
+| GitHub Username | Name |
 |---|---|
 | `kmjq089_azu` | Naguib, Karim |
 | `kfvz858_azu` | Berché, Roger |
