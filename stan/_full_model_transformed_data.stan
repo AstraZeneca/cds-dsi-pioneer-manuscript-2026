@@ -50,7 +50,7 @@ int enable_any_process_noise_tr = enable_pop_process_noise_tr || enable_patient_
 //   - ungated continuous time-varying covariate for 0→1 multistate transition
 int need_states_full_grid = enable_any_process_noise_tr || enable_states_full_grid ||
   (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
-   enable_ms_01 && !enable_ms_visit_gated_01);
+   (enable_ms_01 && !enable_ms_visit_gated_01 || enable_ms_02_time_varying_cov));
 print("need_states_full_grid = ", need_states_full_grid,
       " (process_noise=", enable_any_process_noise_tr,
       ", full_grid_flag=", enable_states_full_grid,
