@@ -108,8 +108,8 @@ array[n_cond_group] vector<lower = 0, upper = 1>[n_pfs_timepoints] cond_sample_o
 // ── Radiographic PFS (rPFS = 0→1 radiographic OR 0→2 direct death) ──────
 // Meaningful only for full pioneer model where 0→1 = radiographic hazard.
 // Does not include PSA-PD events (use pfs_km_est for those).
-array[n_hmc_patients] int<lower=0> sample_rpfs, spop_rpfs;
-array[n_hmc_patients] int<lower=0, upper=1> sample_rpfs_censored, spop_rpfs_censored;
+array[n_forecast_patients] int<lower=0> sample_rpfs, spop_rpfs;
+array[n_forecast_patients] int<lower=0, upper=1> sample_rpfs_censored, spop_rpfs_censored;
 
 // Trial-level rPFS
 array[n_trials] vector<lower=0, upper=1>[max_all_t + 1] sample_rpfs_km_est, spop_rpfs_km_est;
@@ -284,7 +284,7 @@ profile("psa_ms_endpoints") {
 // If ms event (radiographic progression): rPFS event at ms_pfs time.
 // If died without prior progression (os event, ms censored): rPFS event at os time.
 // Otherwise: censored at ms_pfs censoring time.
-for (i in 1:n_hmc_patients) {
+for (i in 1:n_forecast_patients) {
   if (!spop_ms_right_censored[i]) {
     spop_rpfs[i] = spop_ms_pfs[i]; spop_rpfs_censored[i] = 0;
   } else if (!spop_os_censored[i]) {
@@ -304,14 +304,14 @@ for (i in 1:n_hmc_patients) {
 
 // ── Radiographic PFS trial-level aggregation ─────────────────────────────
 for (s in 1:n_trials) {
-  if (get_pos_size(hmc_trial_patient_pos, s) > 0) {
+  if (get_pos_size(forecast_trial_patient_pos, s) > 0) {
     sample_rpfs_km_est[s] = estimate_kaplan_meier(
-      get_int_sub_array(sample_rpfs, hmc_trial_patient_pos, s),
-      get_int_sub_array(sample_rpfs_censored, hmc_trial_patient_pos, s),
+      get_int_sub_array(sample_rpfs, forecast_trial_patient_pos, s),
+      get_int_sub_array(sample_rpfs_censored, forecast_trial_patient_pos, s),
       max_all_t, 0).1;
     spop_rpfs_km_est[s] = estimate_kaplan_meier(
-      get_int_sub_array(spop_rpfs, hmc_trial_patient_pos, s),
-      get_int_sub_array(spop_rpfs_censored, hmc_trial_patient_pos, s),
+      get_int_sub_array(spop_rpfs, forecast_trial_patient_pos, s),
+      get_int_sub_array(spop_rpfs_censored, forecast_trial_patient_pos, s),
       max_all_t, 0).1;
 
     (sample_rpfs_quant[s], sample_rpfs_quant_exceeds_max[s]) =

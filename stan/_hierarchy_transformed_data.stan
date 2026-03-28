@@ -1,7 +1,7 @@
 // ============================================================================
-// Base Hierarchy Transformed Data
+// Hierarchy Transformed Data
 // Shared across all models (full joint model, standalone multistate, etc.)
-// Requires: _base_hierarchy_data.stan declarations in scope.
+// Requires: _hierarchy_data.stan declarations in scope.
 // ============================================================================
 
 // Multi-level hierarchy: computed totals and position arrays
