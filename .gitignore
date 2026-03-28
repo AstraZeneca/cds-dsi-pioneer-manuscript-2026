@@ -87,6 +87,8 @@ quarto/**/*.rmarkdown
 
 **/*.quarto_ipynb
 quarto/.posit/
+quarto/**/site_libs/
+quarto/**/_site/
 
 *_files/
 
