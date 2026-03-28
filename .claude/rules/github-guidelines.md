@@ -1,3 +1,41 @@
+---
+paths:
+  - "**/*.R"
+  - "**/*.stan"
+  - "**/*.qmd"
+  - "**/*.md"
+---
+
+## Team Members (azu-oncology-rd)
+
+| Username | Name |
+|---|---|
+| `kmjq089_azu` | Naguib, Karim |
+| `kfvz858_azu` | Berché, Roger |
+| `kjmr060_azu` | Metcalfe, Paul |
+| `kzht939_azu` | Bevan, Antonia |
+| `kqdr852_azu` | Li, Lu |
+
+Default assignee for new issues: `kmjq089_azu` (Karim).
+
+## GitHub Project Management
+
+Issues across all PIONEER repos are tracked in the **PIONEER 2026** GitHub Project (project number 56, owner `azu-oncology-rd`). Use the `pioneer-toolkit:issue-management` skill for creating/listing/updating issues.
+
+### Repositories
+
+| Shorthand | Full name |
+|---|---|
+| `core` | `cds-dsi-pioneer-core` |
+| `sclc-01` | `cds-dsi-pioneer-sclc-01-2025` |
+| `lung` | `cds-dsi-pioneer-lung-2024` |
+| `pioneer` | `cds-dsi-pioneer-pioneer-2026` |
+
+### Issue Guidelines
+
+- **NO hardcoded subject IDs in issues** — describe the problem (e.g., "5 patients have NA pfs") without listing specific IDs; add diagnostic R code as a comment instead
+- Set Trial and Status fields when creating issues (the `create_pioneer_issue.sh` script handles this automatically)
+
 ## Pull Request Checklist
 
 Before creating or submitting a PR, verify all items below. These are **mandatory requirements**:
