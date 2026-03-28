@@ -36,7 +36,7 @@ profile("burden_endpoints") {
    spop_os, spop_os_censored,
    spop_is_dropout, sample_is_dropout
   ) = calculate_all_patients_endpoints_rng(
-    hmc_patient_idx,
+    forecast_patient_idx,
     obs_biomarker_cat,
     rep_biomarker_cat,
     forecast_obs_biomarker_cat,
@@ -121,7 +121,7 @@ profile("burden_endpoints") {
     sample_os_censored,
     spop_os,
     spop_os_censored,
-    hmc_trial_patient_pos,
+    forecast_trial_patient_pos,
     max_all_t,
     pfs_quantiles,
     pfs_timepoints
@@ -174,13 +174,13 @@ profile("burden_endpoints") {
   );
 
 // Competing Risks CIF (per-trial, empirical subdistribution)
-// Uses hmc_trial_patient_pos — endpoint arrays are n_hmc_patients-sized,
-// not n_patients-sized (differs when RWD patients are Laplace-marginalized).
+// Uses forecast_trial_patient_pos — endpoint arrays are n_forecast_patients-sized,
+// not n_patients-sized (differs when RWD patients are background).
 for (s in 1:n_trials) {
-  int n_tr = get_pos_size(hmc_trial_patient_pos, s);
+  int n_tr = get_pos_size(forecast_trial_patient_pos, s);
   if (n_tr > 0) {
     int tr_start; int tr_end;
-    (tr_start, tr_end) = get_pos(hmc_trial_patient_pos, s);
+    (tr_start, tr_end) = get_pos(forecast_trial_patient_pos, s);
 
     (spop_cif_01[s], spop_cif_02[s], spop_cif_03[s]) = compute_trial_cif(
       spop_pfs[tr_start:tr_end], spop_right_censored[tr_start:tr_end],
