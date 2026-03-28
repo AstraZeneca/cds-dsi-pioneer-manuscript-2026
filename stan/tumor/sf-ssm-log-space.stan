@@ -211,12 +211,12 @@ generated quantities {
                                               cond_spop_target_orr = zeros_vector(n_cond_group);
   array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_target_km_est, spop_target_km_est,
                                                                spop_target_obs_cens_km_est,
-                                                               sample_ms_km_est, spop_ms_km_est,
-                                                               sample_km_est, spop_km_est;
+                                                               sample_ms_pfs_km_est, spop_ms_pfs_km_est,
+                                                               sample_pfs_km_est, spop_pfs_km_est;
   array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_target_km_est, cond_spop_target_km_est,
                                                                    cond_spop_target_obs_cens_km_est,
-                                                                   cond_sample_ms_km_est, cond_spop_ms_km_est,
-                                                                   cond_sample_km_est, cond_spop_km_est;
+                                                                   cond_sample_ms_pfs_km_est, cond_spop_ms_pfs_km_est,
+                                                                   cond_sample_pfs_km_est, cond_spop_pfs_km_est;
   array[n_trials] vector<lower = 0, upper = 1>[n_pfs_timepoints] sample_target_pfs_n, spop_target_pfs_n,
                                                                   sample_ms_pfs_n, spop_ms_pfs_n,
                                                                   sample_pfs_n, spop_pfs_n;
