@@ -57,7 +57,7 @@ test_that("calc_ms_single_transition_loglik: detection-week convention", {
   expected <- r_calc_ms_stl(event_time, censored, lcs)
   for (i in seq_len(n)) {
     expect_equal(get_stan_val(d, "st_llik", i), expected[i], tolerance = 1e-6,
-      label = paste0("st_llik[", i, "]"))
+      label = str_c("st_llik[", i, "]"))
   }
 })
 

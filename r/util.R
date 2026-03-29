@@ -214,7 +214,7 @@ compute_cif_from_draws <- function(fit, stan_data) {
 
   # Pre-build column index maps (1..n_patients per variable)
   col_idx <- function(varname) {
-    base::match(paste0(varname, "[", seq_len(n_patients), "]"), colnames(d_mat))
+    base::match(str_c(varname, "[", seq_len(n_patients), "]"), colnames(d_mat))
   }
   ci <- list(
     sms_pfs   = col_idx("spop_ms_pfs"),
@@ -314,7 +314,7 @@ compute_cif_from_draws <- function(fit, stan_data) {
       for (t in seq_len(T_len)) {
         k <- k + 1L
         result_mat[, k] <- arr[, s, t]
-        col_names[k] <- paste0(nm, "[", s, ",", t, "]")
+        col_names[k] <- str_c(nm, "[", s, ",", t, "]")
       }
     }
   }
@@ -377,7 +377,7 @@ select_draws <- function(fit, ...) {
 #' @return cmdstanr model object with exported functions
 export_stan_functions <- function(stan_file, includes = NULL) {
   # Read the Stan file
-  content <- readLines(stan_file) %>% paste(collapse = "\n")
+  content <- readLines(stan_file) %>% str_c(collapse = "\n")
 
   # Extract functions marked with @stan_export anywhere in their documentation
   # Find @stan_export markers and extract the following function
@@ -450,7 +450,7 @@ export_stan_functions <- function(stan_file, includes = NULL) {
     }
 
     if (!is.null(func_end)) {
-      func_text <- paste(lines[func_start:func_end], collapse = "\n")
+      func_text <- str_c(lines[func_start:func_end], collapse = "\n")
       exported_functions <- c(exported_functions, func_text)
     }
   }
@@ -462,11 +462,11 @@ export_stan_functions <- function(stan_file, includes = NULL) {
   functions_code <- exported_functions
 
   # Create Stan program with functions block
-  stan_program <- paste0(
+  stan_program <- str_c(
     "functions {\n",
-    if (!is.null(includes)) paste0("  ", includes, collapse = "\n"),
+    if (!is.null(includes)) str_c("  ", includes, collapse = "\n"),
     "\n",
-    paste(functions_code, collapse = "\n\n"),
+    str_c(functions_code, collapse = "\n\n"),
     "\n",
     "}\n\n",
     "data {}\n",
@@ -1273,7 +1273,7 @@ find_stan_includes <- function(stan_file, base_dir = NULL) {
 
     # Read the file
     if (!file.exists(abs_path)) {
-      warning(paste("File not found:", abs_path))
+      warning(str_c("File not found: ", abs_path))
       return()
     }
 
@@ -1332,10 +1332,10 @@ find_stan_includes <- function(stan_file, base_dir = NULL) {
                 process_file(alt_path)
               },
               error = function(e2) {
-                warning(paste(
-                  "Could not find included file:",
+                warning(str_c(
+                  "Could not find included file: ",
                   inc_file,
-                  "from",
+                  " from ",
                   abs_path
                 ))
               }

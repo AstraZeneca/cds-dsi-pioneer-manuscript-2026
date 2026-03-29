@@ -52,14 +52,14 @@ test_that("create_pos and get_pos_size match R oracle for multiple cases", {
   expected_pos1 <- r_create_pos(c(2L, 3L, 1L))
   for (i in seq_along(expected_pos1)) {
     expect_equal(get_stan_val(d, "pos_out", 1, i), expected_pos1[i],
-      label = paste0("case1 pos_out[", i, "]"))
+      label = str_c("case1 pos_out[", i, "]"))
   }
 
   # Case 2 pos: c(1, 1, 5)
   expected_pos2 <- r_create_pos(c(0L, 4L))
   for (i in seq_along(expected_pos2)) {
     expect_equal(get_stan_val(d, "pos_out", 2, i), expected_pos2[i],
-      label = paste0("case2 pos_out[", i, "]"))
+      label = str_c("case2 pos_out[", i, "]"))
   }
 
   # pos_size for case 1: c(2, 3, 1)
@@ -121,10 +121,10 @@ test_that("all-zero sizes: pos is all 1s, group sizes are all 0", {
   # pos = c(1, 1, 1, 1)
   for (i in 1:4) {
     expect_equal(get_stan_val(d, "pos_out", 1, i), 1L,
-      label = paste0("all-zero pos_out[", i, "]"))
+      label = str_c("all-zero pos_out[", i, "]"))
   }
   for (i in 1:3) {
     expect_equal(get_stan_val(d, "pos_size_out", 1, i), 0L,
-      label = paste0("all-zero pos_size_out[", i, "]"))
+      label = str_c("all-zero pos_size_out[", i, "]"))
   }
 })

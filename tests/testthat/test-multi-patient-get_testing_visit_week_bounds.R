@@ -149,30 +149,30 @@ test_that("get_testing_visit_week_bounds - multi-patient comprehensive test", {
     cat("Stan execution successful!\n")
 
     case_status <- get_val("case_status", 1)
-    expect_equal(case_status, 0, label = paste("Case", case_idx, "should not error"))
+    expect_equal(case_status, 0, label = str_glue("Case {case_idx} should not error"))
 
     for (n in 1:case$n_cutoffs) {
       for (i in 1:case$n_patients) {
         expect_equal(
           get_val("first_testing_visit_week", 1L, n, i),
           expected$first_testing_visit_week[n, i],
-          label = paste("Case", case_idx, case$case_name, "first_testing_visit_week n=", n, "i=", i)
+          label = str_glue("Case {case_idx} {case$case_name} first_testing_visit_week n= {n} i= {i}")
         )
         expect_equal(
           get_val("testing_start_idx", 1L, n, i),
           expected$testing_start_idx[n, i],
-          label = paste("Case", case_idx, case$case_name, "testing_start_idx n=", n, "i=", i)
+          label = str_glue("Case {case_idx} {case$case_name} testing_start_idx n= {n} i= {i}")
         )
         for (m in 1:case$n_cutoffs) {
           expect_equal(
             get_val("last_testing_visit_week", 1L, n, m, i),
             expected$last_testing_visit_week[n, m, i],
-            label = paste("Case", case_idx, case$case_name, "last_testing_visit_week n=", n, "m=", m, "i=", i)
+            label = str_glue("Case {case_idx} {case$case_name} last_testing_visit_week n= {n} m= {m} i= {i}")
           )
           expect_equal(
             get_val("testing_end_idx", 1L, n, m, i),
             expected$testing_end_idx[n, m, i],
-            label = paste("Case", case_idx, case$case_name, "testing_end_idx n=", n, "m=", m, "i=", i)
+            label = str_glue("Case {case_idx} {case$case_name} testing_end_idx n= {n} m= {m} i= {i}")
           )
         }
       }

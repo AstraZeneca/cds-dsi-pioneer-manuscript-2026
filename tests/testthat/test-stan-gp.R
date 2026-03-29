@@ -29,15 +29,15 @@ test_that("Stan GP kernels: diagonal, symmetry, Cholesky reconstruction", {
   for (i in seq_along(x)) {
     expect_equal(
       get_stan_val(d, "K_eq", i, i), K_eq_r[i, i], tolerance = 1e-6,
-      label = paste0("K_eq[", i, ",", i, "]")
+      label = str_c("K_eq[", i, ",", i, "]")
     )
     expect_equal(
       get_stan_val(d, "K_m32", i, i), K_m32_r[i, i], tolerance = 1e-6,
-      label = paste0("K_m32[", i, ",", i, "]")
+      label = str_c("K_m32[", i, ",", i, "]")
     )
     expect_equal(
       get_stan_val(d, "K_m52", i, i), K_m52_r[i, i], tolerance = 1e-6,
-      label = paste0("K_m52[", i, ",", i, "]")
+      label = str_c("K_m52[", i, ",", i, "]")
     )
   }
 
@@ -53,7 +53,7 @@ test_that("Stan GP kernels: diagonal, symmetry, Cholesky reconstruction", {
   for (i in seq_along(x)) {
     expect_equal(
       get_stan_val(d, "K_from_L", i, i), K_eq_r_delta[i, i], tolerance = 1e-5,
-      label = paste0("K_from_L[", i, ",", i, "]")
+      label = str_c("K_from_L[", i, ",", i, "]")
     )
   }
 })
@@ -88,15 +88,15 @@ test_that("Stan GP kernels: off-diagonal values match R oracle (exp_quad and mat
     i <- p[1]; j <- p[2]
     expect_equal(
       get_stan_val(d, "K_eq", i, j), K_eq_r[i, j], tolerance = 1e-6,
-      label = paste0("K_eq[", i, ",", j, "]")
+      label = str_c("K_eq[", i, ",", j, "]")
     )
     expect_equal(
       get_stan_val(d, "K_m32", i, j), K_m32_r[i, j], tolerance = 1e-6,
-      label = paste0("K_m32[", i, ",", j, "]")
+      label = str_c("K_m32[", i, ",", j, "]")
     )
     expect_equal(
       get_stan_val(d, "K_m52", i, j), K_m52_r[i, j], tolerance = 1e-6,
-      label = paste0("K_m52[", i, ",", j, "]")
+      label = str_c("K_m52[", i, ",", j, "]")
     )
   }
 })
@@ -192,7 +192,7 @@ test_that("gp_conditional_mean: matches R oracle", {
   for (j in seq_along(x_pred)) {
     expect_equal(
       get_stan_val(d, "cond_mean", j), cm_r[j], tolerance = 1e-5,
-      label = paste0("cond_mean[", j, "]")
+      label = str_c("cond_mean[", j, "]")
     )
   }
 })
@@ -237,7 +237,7 @@ test_that("gp_conditional_cov: diagonal is positive (PD check)", {
   for (j in seq_along(x_pred)) {
     expect_equal(
       get_stan_val(d, "cond_cov", j, j), cc_r[j, j], tolerance = 1e-5,
-      label = paste0("cond_cov[", j, ",", j, "]")
+      label = str_c("cond_cov[", j, ",", j, "]")
     )
   }
 })

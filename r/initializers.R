@@ -263,19 +263,19 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
   
   # Function to get parameter matrix from draws
   extract_matrix_param <- function(param_base, rows, cols) {
-    pattern <- paste0("^", param_base, "\\[")
-    matching_cols <- param_names %>% 
+    pattern <- str_c("^", param_base, "\\[")
+    matching_cols <- param_names %>%
       stringr::str_subset(pattern)
-    
+
     # If no matches found, return NULL
     if (length(matching_cols) == 0) return(NULL)
-    
+
     # Try to build the matrix
     result <- matrix(0, nrow = rows, ncol = cols)
-    
+
     for (i in 1:rows) {
       for (j in 1:cols) {
-        param <- paste0(param_base, "[", i, ",", j, "]")
+        param <- str_c(param_base, "[", i, ",", j, "]")
         if (param %in% param_names) {
           result[i, j] <- NA  # Just placeholder to check which elements exist
         }
@@ -290,18 +290,18 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
   
   # Function to get parameter vector from draws
   extract_vector_param <- function(param_base, length) {
-    pattern <- paste0("^", param_base, "\\[")
-    matching_cols <- param_names %>% 
+    pattern <- str_c("^", param_base, "\\[")
+    matching_cols <- param_names %>%
       stringr::str_subset(pattern)
-    
+
     # If no matches found, return NULL
     if (length(matching_cols) == 0) return(NULL)
-    
+
     # Try to build the vector
     result <- rep(NA, length)
-    
+
     for (i in 1:length) {
-      param <- paste0(param_base, "[", i, "]")
+      param <- str_c(param_base, "[", i, "]")
       if (param %in% param_names) {
         result[i] <- NA  # Just placeholder to check which elements exist
       }

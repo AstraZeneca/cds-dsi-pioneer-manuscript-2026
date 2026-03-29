@@ -762,7 +762,7 @@ plot_oos_specificity_matrix <- function(confusion_matrix_data) {
       y = "Predicted RECIST Response",
       caption = "Cell proportions show P(Predicted response | Observed ≠ category).\nColumn sums to 1.0. Higher off-diagonal values indicate better specificity."
     ) +
-    scale_x_discrete(labels = ~paste0("NOT\n", .x))
+    scale_x_discrete(labels = ~str_c("NOT\n", .x))
 }
 
 # Reusable function for OOS confusion matrix Sankey diagram
@@ -773,7 +773,7 @@ plot_oos_confusion_sankey <- function(confusion_matrix_data) {
       mp = median(mean_pred),
       # Create a flag for correct predictions
       correct = response == pred_response,
-      pct_label = if_else(correct, paste0(round(mp * 100, 1), "%"), NA_character_)
+      pct_label = if_else(correct, str_c(round(mp * 100, 1), "%"), NA_character_)
     ) |>
     # Ensure RECIST factor levels are in order
     mutate(
@@ -812,7 +812,7 @@ plot_oos_confusion_sankey <- function(confusion_matrix_data) {
   correct_data <- data |>
     filter(correct) |>
     arrange(response) |>
-    mutate(pct_label = paste0(round(mp * 100, 1), "%"))
+    mutate(pct_label = str_c(round(mp * 100, 1), "%"))
 
   # Match by order (both should be in same order after filtering)
   label_data <- label_data |>
@@ -1102,13 +1102,13 @@ plot_lfo_elpd_diff <- function(
         # Look up the baseline model in the named vector
         temp_baseline_label <- model_labels[baseline_model]
         if (!is.na(temp_baseline_label)) {
-          baseline_label_text <- paste("Baseline:", temp_baseline_label)
+          baseline_label_text <- str_c("Baseline: ", temp_baseline_label)
         } else {
-          baseline_label_text <- paste("Baseline:\n", baseline_model)
+          baseline_label_text <- str_c("Baseline:\n ", baseline_model)
         }
       } else {
         # Otherwise just use the baseline model name
-        baseline_label_text <- paste("Baseline:", baseline_model)
+        baseline_label_text <- str_c("Baseline: ", baseline_model)
       }
     }
     # Calculate the max line width in the baseline label text
@@ -1213,7 +1213,7 @@ plot_competing_risks_cif <- function(
     sub <- filter(obs, trial == tr)
     cif <- cmprsk::cuminc(sub$cr_time, sub$cr_cause, cencode = 0)
     map_dfr(1:3, function(cause) {
-      key <- paste0("1 ", cause)
+      key <- str_c("1 ", cause)
       if (key %in% names(cif))
         tibble(time = cif[[key]]$time, est = cif[[key]]$est, cause = cause, trial = tr)
     })
@@ -1237,7 +1237,7 @@ plot_competing_risks_cif <- function(
     map_dfr(time_grid, function(t) {
       t_idx <- t + 1L
       extract_cif <- function(cause_id) {
-        col <- paste0(cif_prefix, "_cif_0", cause_id, "[", tr, ",", t_idx, "]")
+        col <- str_c(cif_prefix, "_cif_0", cause_id, "[", tr, ",", t_idx, "]")
         if (!col %in% colnames(draws_mat)) return(tibble(med = NA_real_, lo = NA_real_, hi = NA_real_))
         x <- draws_mat[, col]
         q <- quantile(x, c(0.10, 0.50, 0.90))
@@ -1245,9 +1245,9 @@ plot_competing_risks_cif <- function(
       }
       bind_cols(
         tibble(t = t, trial = tr),
-        rename_with(extract_cif(1), ~paste0("cif_01_", .)),
-        rename_with(extract_cif(2), ~paste0("cif_02_", .)),
-        rename_with(extract_cif(3), ~paste0("cif_03_", .))
+        rename_with(extract_cif(1), ~str_c("cif_01_", .)),
+        rename_with(extract_cif(2), ~str_c("cif_02_", .)),
+        rename_with(extract_cif(3), ~str_c("cif_03_", .))
       )
     })
   })

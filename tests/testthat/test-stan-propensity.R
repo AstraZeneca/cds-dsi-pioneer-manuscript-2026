@@ -56,9 +56,9 @@ test_that("propensity transformed_data: target range and indicator are correct",
 
   # Trial patients (1-3) are target; RWD patients (4-5) are not
   for (i in 1:3) expect_equal(get_stan_val(d, "out_is_target", i), 1,
-    label = paste0("out_is_target[", i, "]"))
+    label = str_c("out_is_target[", i, "]"))
   for (i in 4:5) expect_equal(get_stan_val(d, "out_is_target", i), 0,
-    label = paste0("out_is_target[", i, "]"))
+    label = str_c("out_is_target[", i, "]"))
 
   # log_marginal_odds = log(3/2)
   expect_equal(get_stan_val(d, "out_log_marginal_odds"), log(3/2), tolerance = 1e-6)
@@ -71,7 +71,7 @@ test_that("propensity weights: target patients always get weight 1.0", {
 
   # Target patients (1-3): weight must be exactly 1.0 regardless of betas
   for (i in 1:3) expect_equal(get_stan_val(d, "out_likelihood_weight", i), 1.0,
-    tolerance = 1e-10, label = paste0("weight[", i, "]"))
+    tolerance = 1e-10, label = str_c("weight[", i, "]"))
 })
 
 test_that("propensity weights: non-target patients get capped density ratio", {
@@ -92,7 +92,7 @@ test_that("propensity weights: non-target patients get capped density ratio", {
     log_dr <- logit_score - log_marginal_odds
     expected <- min(1.0, exp(log_dr))
     expect_equal(get_stan_val(d, "out_likelihood_weight", i), expected,
-      tolerance = 1e-6, label = paste0("weight[", i, "]"))
+      tolerance = 1e-6, label = str_c("weight[", i, "]"))
   }
 })
 
@@ -113,7 +113,7 @@ test_that("propensity weights: identical covariates give weight=1 (not base rate
   for (i in 4:5) {
     expect_equal(get_stan_val(d, "out_likelihood_weight", i), 1.0,
       tolerance = 1e-6,
-      label = paste0("identical-twin weight[", i, "] should be 1.0"))
+      label = str_c("identical-twin weight[", i, "] should be 1.0"))
   }
 })
 
@@ -127,7 +127,7 @@ test_that("propensity weights: density ratio > 1 is capped at 1.0", {
   # RWD patients should have density ratio >> 1, capped to exactly 1.0
   for (i in 4:5) {
     expect_equal(get_stan_val(d, "out_likelihood_weight", i), 1.0,
-      tolerance = 1e-10, label = paste0("capped weight[", i, "]"))
+      tolerance = 1e-10, label = str_c("capped weight[", i, "]"))
   }
 })
 
@@ -137,7 +137,7 @@ test_that("propensity weights: disabled mode gives all-ones weights", {
   d    <- posterior::as_draws_df(fit$draws())
 
   for (i in 1:5) expect_equal(get_stan_val(d, "out_likelihood_weight", i), 1.0,
-    tolerance = 1e-10, label = paste0("weight[", i, "] when disabled"))
+    tolerance = 1e-10, label = str_c("weight[", i, "] when disabled"))
 })
 
 test_that("propensity transformed_data: correct when RWD patients come first", {
@@ -156,7 +156,7 @@ test_that("propensity transformed_data: correct when RWD patients come first", {
   expect_equal(get_stan_val(d, "out_target_end"),   5)
   expect_equal(get_stan_val(d, "out_n_target"),     3)
   for (i in 1:2) expect_equal(get_stan_val(d, "out_is_target", i), 0,
-    label = paste0("out_is_target[", i, "]"))
+    label = str_c("out_is_target[", i, "]"))
   for (i in 3:5) expect_equal(get_stan_val(d, "out_is_target", i), 1,
-    label = paste0("out_is_target[", i, "]"))
+    label = str_c("out_is_target[", i, "]"))
 })
