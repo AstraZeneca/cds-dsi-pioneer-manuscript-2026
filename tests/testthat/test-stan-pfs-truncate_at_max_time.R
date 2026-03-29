@@ -80,12 +80,12 @@ test_that("truncate_at_max_time: all cases produce correct truncated pfs and rig
       expect_equal(
         get_val("out_pfs", i, j),
         expected$pfs[j],
-        label = paste0("case ", i, " (", cc$case_name, ") out_pfs[", j, "]")
+        label = str_c("case ", i, " (", cc$case_name, ") out_pfs[", j, "]")
       )
       expect_equal(
         get_val("out_right_censored", i, j),
         expected$right_censored[j],
-        label = paste0("case ", i, " (", cc$case_name, ") out_right_censored[", j, "]")
+        label = str_c("case ", i, " (", cc$case_name, ") out_right_censored[", j, "]")
       )
     }
   }

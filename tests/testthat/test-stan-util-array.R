@@ -85,7 +85,7 @@ test_that("Stan util array functions: count_positive, which, rep_each, months_to
     expect_equal(
       get_val("study_dates_vec", i),
       expected_vec[i],
-      label = paste0("study_dates_vec[", i, "]")
+      label = str_c("study_dates_vec[", i, "]")
     )
   }
 
