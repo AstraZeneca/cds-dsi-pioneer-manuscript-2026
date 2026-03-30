@@ -52,11 +52,17 @@ sample_and_save <- function(
   # CSV files in output_dir rather than re-sampling. Set this env var once in a
   # recovery job to avoid re-running Stan when CSVs already exist on disk.
   if (nzchar(Sys.getenv("TAR_RECOVER_FROM_CSV"))) {
-    existing <- sort(list.files(output_dir, pattern = "\\.csv$", full.names = TRUE))
+    existing <- list.files(output_dir, pattern = "\\.csv$", full.names = TRUE)
     existing <- existing[!grepl("_metric|profile", existing)]
     if (length(existing) > 0) {
+      # Stan CSV filenames embed a 12-digit run_id timestamp
+      # (e.g. pioneer-202603300112-1-hash.csv). Multiple interrupted runs
+      # leave behind empty files from earlier attempts — keep only the latest.
+      run_ids <- stringr::str_extract(basename(existing), "[0-9]{12}")
+      latest_run <- max(run_ids, na.rm = TRUE)
+      existing <- sort(existing[!is.na(run_ids) & run_ids == latest_run])
       message("TAR_RECOVER_FROM_CSV: reconstructing fit from ", length(existing),
-              " existing CSV files in ", output_dir)
+              " existing CSV files (run ", latest_run, ") in ", output_dir)
       return(cmdstanr::as_cmdstan_fit(existing, check_diagnostics = FALSE))
     }
   }
