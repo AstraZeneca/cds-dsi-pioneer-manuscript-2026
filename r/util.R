@@ -48,6 +48,19 @@ sample_and_save <- function(
 ) {
   sampler_fun <- arg_match(sampler_fun)
 
+  # Recovery mode: if TAR_RECOVER_FROM_CSV is set, reconstruct fit from existing
+  # CSV files in output_dir rather than re-sampling. Set this env var once in a
+  # recovery job to avoid re-running Stan when CSVs already exist on disk.
+  if (nzchar(Sys.getenv("TAR_RECOVER_FROM_CSV"))) {
+    existing <- sort(list.files(output_dir, pattern = "\\.csv$", full.names = TRUE))
+    existing <- existing[!grepl("_metric|profile", existing)]
+    if (length(existing) > 0) {
+      message("TAR_RECOVER_FROM_CSV: reconstructing fit from ", length(existing),
+              " existing CSV files in ", output_dir)
+      return(cmdstanr::as_cmdstan_fit(existing, check_diagnostics = FALSE))
+    }
+  }
+
   fs::dir_create(output_dir, recurse = TRUE)
 
   # Load the compiled model from exe_file
