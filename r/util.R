@@ -63,7 +63,9 @@ sample_and_save <- function(
       existing <- sort(existing[!is.na(run_ids) & run_ids == latest_run])
       message("TAR_RECOVER_FROM_CSV: reconstructing fit from ", length(existing),
               " existing CSV files (run ", latest_run, ") in ", output_dir)
-      return(cmdstanr::as_cmdstan_fit(existing, check_diagnostics = FALSE))
+      # Return a lightweight mock — the write function only calls $output_files(),
+      # so a named list suffices. Avoids scanning 55GB CSV files via as_cmdstan_fit().
+      return(list(output_files = function() existing))
     }
   }
 
@@ -1098,12 +1100,17 @@ cmdstanr_format <- tar_format(
     # obj_file <- stringr::str_c(path, "_cmdstanr_object.rds")
     # object$save_object(path)
 
-    # Calculate hash of all CSV files combined
     csv_files <- object$output_files()
-    # csv_hash <- digest::digest(purrr::map(csv_files, \(f) digest::digest(file = f)), algo = "xxhash64")  # Fast hash algorithm
-    csv_hash <- purrr::map(csv_files, \(f) {
-      digest::digest(file = f, algo = "xxhash64")
-    }) # Fast hash algorithm
+    # Recovery mode: skip 4×55GB content reads; use size+mtime as a lightweight
+    # change-detection proxy. Content hashing runs normally on all other builds.
+    csv_hash <- if (nzchar(Sys.getenv("TAR_RECOVER_FROM_CSV"))) {
+      purrr::map(csv_files, \(f) {
+        info <- file.info(f)
+        list(size = info$size, mtime = as.numeric(info$mtime))
+      })
+    } else {
+      purrr::map(csv_files, \(f) digest::digest(file = f, algo = "xxhash64"))
+    }
 
     # Save both fit object and hash
     readr::write_rds(
