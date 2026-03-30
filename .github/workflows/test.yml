@@ -72,8 +72,9 @@ jobs:
 
       - name: Restore R packages
         run: |
-          # Install qs dependencies first (renv doesn't respect dependency order)
-          # qs requires: RApiSerialize, stringfish, Rcpp
+          # Install base recommended packages first (MASS, Matrix) - renv tries to compile these from source
+          Rscript -e "install.packages(c('MASS', 'Matrix'), repos = 'https://cloud.r-project.org')"
+          # Install qs dependencies (renv doesn't respect dependency order)
           Rscript -e "install.packages(c('Rcpp', 'RApiSerialize', 'stringfish'), repos = 'https://cloud.r-project.org')"
           # Now restore all packages from renv.lock
           Rscript -e "renv::restore(prompt = FALSE)"
