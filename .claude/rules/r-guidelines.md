@@ -49,10 +49,15 @@ See `docs/PUBLISHING.md` for full publishing instructions (API keys, rsconnect s
 ```bash
 # Render first (always from project root)
 quarto render quarto/sclc/website
+quarto render quarto/pioneer/website
 
 # Deploy via R
 Rscript -e 'rsconnect::deploySite(siteDir = "quarto/sclc/website", server = "az-connect", account = "kmjq089")'
+Rscript -e 'rsconnect::deploySite(siteDir = "quarto/pioneer/website", server = "az-connect", account = "kmjq089")'
 ```
+
+**Published URLs:**
+- Pioneer: https://rstudio-connect.seml.scp.astrazeneca.net/content/4ec50122-5d33-43fa-831c-3df0243084f7/
 
 ### Key Configuration Files
 - `_quarto.yml` - Site configuration, navigation, theme settings (per-trial)
