@@ -117,6 +117,7 @@ init_project <- function(output_path = output_path, artifacts_path = artifacts_p
     source(here("r", "pioneer", "prepare_laplace_data.R"))
     source(here("r", "pioneer", "priors.R"))
     source(here("r", "pioneer", "initializers.R"))
+    source(here("r", "pioneer", "plot_functions.R"))
   }
 
   source(here("r", "targets_tidyselect.R"))
