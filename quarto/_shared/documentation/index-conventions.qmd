@@ -1,6 +1,6 @@
 ## Overview
 
-The SCLC-01 model uses several interrelated time index conventions across its Stan code, R data preparation, and generated quantities. Inconsistencies between these conventions have been a recurring source of bugs, particularly in overall survival (OS) simulation. This page serves as the authoritative reference for all conventions.
+The PIONEER modeling system uses several interrelated time index conventions across its Stan code, R data preparation, and generated quantities. These conventions are shared by all projects (SCLC-01, Pioneer, etc.). Inconsistencies between these conventions have been a recurring source of bugs, particularly in overall survival (OS) simulation. This page serves as the authoritative reference for all conventions.
 
 ## Week Indexing {#sec-week-indexing}
 
