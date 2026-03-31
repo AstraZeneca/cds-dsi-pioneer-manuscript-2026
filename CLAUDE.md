@@ -11,7 +11,7 @@ Sclc is a Bayesian hierarchical modeling system for analyzing tumor dynamics and
 3. **Breast-01 to -04**: Cross-validation predictions
 
 ### GitHub Repositories (azu-oncology-rd org)
-- **This repo**: `cds-dsi-pioneer-core` — shared modeling core
+- `cds-dsi-pioneer-core` — shared modeling core
 - `cds-dsi-pioneer-sclc-01-2025` — SCLC-01 analysis
 - `cds-dsi-pioneer-lung-2024` — LUNG analysis
 - `cds-dsi-pioneer-pioneer-2026` — Pioneer analysis
