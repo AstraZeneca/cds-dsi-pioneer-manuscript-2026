@@ -1943,11 +1943,14 @@ tuple(
     // Guard: clock-forward matrix is [0,0] when ms_time_scale_12==1 (semi-Markov)
     row_vector[cols(log_cond_surv_12_t)] surv_12_t_i =
       cols(log_cond_surv_12_t) > 0 ? log_cond_surv_12_t[j] : rep_row_vector(0, 0);
+    // Guard: log_cond_surv_32 is matrix[0,0] when enable_ms_32=0
+    row_vector[cols(log_cond_surv_32)] surv_32_i =
+      rows(log_cond_surv_32) > 0 ? log_cond_surv_32[j] : rep_row_vector(0, 0);
     (spop_os[j], spop_os_censored[j]) = derive_spop_os_rng(
         spop_cause, spop_exit,
         enable_ms_12, enable_ms_32, ms_time_scale_12,
         log_cond_surv_12_s[j], surv_12_t_i,
-        log_cond_surv_32[j],
+        surv_32_i,
         t_01_spop, spop_time_02, spop_time_03);
 
     // --- RNG Step 6: sample 0→2 (use observed data if available) ---
@@ -2013,7 +2016,7 @@ tuple(
         sample_cause, sample_exit,
         enable_ms_12, enable_ms_32, ms_time_scale_12,
         log_cond_surv_12_s[j], surv_12_t_i,
-        log_cond_surv_32[j],
+        surv_32_i,
         sample_t01, sample_time_02,
         pfs[p],
         ms_censored_12[p], ms_time_12[p], ms_os_event_12[p],
