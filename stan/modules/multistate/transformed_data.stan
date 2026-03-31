@@ -6,7 +6,9 @@
 int ms_max_state = (enable_ms_02 || enable_ms_12) ? 2 : 1;
 if (enable_ms_03) ms_max_state = 3;
 for (i in 1:n_patients) {
-  if (ms_final_state[i] > ms_max_state) {
+  // State 3 is always tolerated in data: when enable_ms_03=0 the likelihood
+  // treats these patients as right-censored at patient_max_t (time_03).
+  if (ms_final_state[i] != 3 && ms_final_state[i] > ms_max_state) {
     fatal_error("Patient ", i, " has ms_final_state=", ms_final_state[i],
                 " but max reachable state is ", ms_max_state,
                 " given transition flags (enable_ms_02=", enable_ms_02,
