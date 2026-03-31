@@ -65,7 +65,7 @@ sample_and_save <- function(
               " existing CSV files (run ", latest_run, ") in ", output_dir)
       # Return a lightweight mock — the write function only calls $output_files(),
       # so a named list suffices. Avoids scanning 55GB CSV files via as_cmdstan_fit().
-      return(list(output_files = function() existing))
+      return(list(output_files = function(...) existing))
     }
   }
 
@@ -354,10 +354,7 @@ compute_cif_from_draws <- function(fit, stan_data) {
 #' @return A draws_array object with selected variables
 #' @export
 select_draws <- function(fit, ...) {
-  # Use include_failed=TRUE so output_files() returns paths even when the fit
-  # was loaded from a targets cache in a different R session — process handles
-  # are no longer live across jobs, but the CSV files remain on disk.
-  csv_files <- fit$output_files(include_failed = TRUE)
+  csv_files <- fit$output_files()
 
   # Get all variable names from the CSV header (avoids fit$metadata() which
   # also relies on live process state)
