@@ -380,6 +380,14 @@ if (need_12_s_gp) {
     log_cond_surv_12_s += rep_matrix(linpred_pop_12, ms_max_sojourn_t);
   }
 
+  // PSA-at-entry covariate: shift sojourn hazard per patient based on PSA
+  // burden at the moment of progression (entry into state 1).
+  if (enable_ms_12_entry_psa_cov) {
+    log_cond_surv_12_s += rep_matrix(
+      coef_log_psa_12[1] * to_vector(psa_at_entry_12), ms_max_sojourn_t
+    );
+  }
+
   log_cond_surv_12_s = -exp(fmax(log_cond_surv_12_s, -20.0));
 }
 
@@ -625,7 +633,13 @@ if (enable_ms_32) {
     }
   }
 
-  // No covariates for 3→2 in v1
+  // PSA-at-entry covariate: shift sojourn hazard per patient based on PSA
+  // burden at the moment of dropout (entry into state 3).
+  if (enable_ms_32_entry_psa_cov) {
+    log_cond_surv_32 += rep_matrix(
+      coef_log_psa_32[1] * to_vector(psa_at_entry_32), ms_max_sojourn_t_32
+    );
+  }
 
   // Transform to log conditional survival
   log_cond_surv_32 = -exp(fmax(log_cond_surv_32, -20.0));

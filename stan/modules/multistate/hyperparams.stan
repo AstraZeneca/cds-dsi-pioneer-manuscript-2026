@@ -124,3 +124,10 @@ vector<lower=0>[n_time_invariant_covar] time_invariant_coef_12_sd;
 array[n_levels] row_vector<lower=0>[n_time_invariant_covar] sd_level_slope_01_sd;
 array[n_levels] row_vector<lower=0>[n_time_invariant_covar] sd_level_slope_02_sd;
 array[n_levels] row_vector<lower=0>[n_time_invariant_covar] sd_level_slope_12_sd;
+
+// --- PSA-at-State-Entry Coefficient Hyperparameters ---
+// Prior for the scalar log-PSA coefficient on 1→2 and 3→2 sojourn hazards.
+real coef_log_psa_12_mean;
+real<lower=0> coef_log_psa_12_sd;
+real coef_log_psa_32_mean;
+real<lower=0> coef_log_psa_32_sd;

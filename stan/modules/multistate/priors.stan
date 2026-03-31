@@ -279,6 +279,14 @@ if (enable_ms_32) {
   }
 }
 
+// PSA-at-entry covariate priors
+if (enable_ms_12 && enable_ms_12_entry_psa_cov) {
+  coef_log_psa_12[1] ~ normal(coef_log_psa_12_mean, coef_log_psa_12_sd);
+}
+if (enable_ms_32 && enable_ms_32_entry_psa_cov) {
+  coef_log_psa_32[1] ~ normal(coef_log_psa_32_mean, coef_log_psa_32_sd);
+}
+
 // 1→2 covariate priors
 if (enable_ms_12) {
   if (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
