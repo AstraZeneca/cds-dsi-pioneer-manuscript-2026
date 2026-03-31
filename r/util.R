@@ -1101,16 +1101,9 @@ cmdstanr_format <- tar_format(
     # object$save_object(path)
 
     csv_files <- object$output_files()
-    # Recovery mode: skip 4×55GB content reads; use size+mtime as a lightweight
-    # change-detection proxy. Content hashing runs normally on all other builds.
-    csv_hash <- if (nzchar(Sys.getenv("TAR_RECOVER_FROM_CSV"))) {
-      purrr::map(csv_files, \(f) {
-        info <- file.info(f)
-        list(size = info$size, mtime = as.numeric(info$mtime))
-      })
-    } else {
-      purrr::map(csv_files, \(f) digest::digest(file = f, algo = "xxhash64"))
-    }
+    csv_hash <- purrr::map(csv_files, \(f) {
+      digest::digest(file = f, algo = "xxhash64")
+    })
 
     # Save both fit object and hash
     readr::write_rds(
