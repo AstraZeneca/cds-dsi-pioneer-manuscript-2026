@@ -114,6 +114,14 @@ matrix[n_gp_groups_ms_baseline_03, enable_ms_03 ? n_ms_gp_cal_knots : 0] log_lam
 vector[n_enabled_groups_ms_baseline_03] raw_log_lambda_gp_03_level_intercept;
 
 // ============================================================================
+// PSA-AT-ENTRY COVARIATE COEFFICIENTS
+// ============================================================================
+// Scalar coefficient for standardized log-PSA at state entry.
+// Shifts the entire sojourn hazard up/down per patient based on PSA burden.
+array[enable_ms_12 && enable_ms_12_entry_psa_cov ? 1 : 0] real coef_log_psa_12;
+array[enable_ms_32 && enable_ms_32_entry_psa_cov ? 1 : 0] real coef_log_psa_32;
+
+// ============================================================================
 // 3→2 TRANSITION PARAMETERS (Sojourn time GP baseline hazard, semi-Markov)
 // ============================================================================
 

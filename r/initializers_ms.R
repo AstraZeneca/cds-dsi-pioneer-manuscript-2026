@@ -222,6 +222,14 @@ ms_init_values <- function(env) {
         matrix(rnorm(n_enabled_groups_ms_slope * n_time_invariant_covar, sd = 0.5),
                nrow = n_enabled_groups_ms_slope, ncol = n_time_invariant_covar)
       },
+
+      # PSA-at-state-entry covariate coefficients
+      coef_log_psa_12 = if (enable_ms_12 && isTRUE(enable_ms_12_entry_psa_cov == 1L)) {
+        array(rnorm(1, coef_log_psa_12_mean, coef_log_psa_12_sd * 0.3), dim = 1)
+      },
+      coef_log_psa_32 = if (enable_ms_32 && isTRUE(enable_ms_32_entry_psa_cov == 1L)) {
+        array(rnorm(1, coef_log_psa_32_mean, coef_log_psa_32_sd * 0.3), dim = 1)
+      },
     )
   })
 }

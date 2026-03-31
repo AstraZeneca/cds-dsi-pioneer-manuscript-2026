@@ -67,3 +67,12 @@ int<lower=1> ms_gp_grid_step;
 // --- Covariate Dimensions ---
 int<lower=0> n_time_varying_covar;    // Number of time-varying covariates
 int<lower=0> n_time_invariant_covar;  // Number of time-invariant covariates
+
+// --- PSA-at-State-Entry Data ---
+// Standardized last observed log-PSA before entering state 1 (1→2 sojourn) or
+// state 3 (3→2 sojourn). Uses n_patients (not n_forecast_patients) so this
+// declaration works in both full models (where n_forecast_patients is in scope)
+// and the standalone model (where n_forecast_patients is a transformed constant).
+// In all enabled cases, n_forecast_patients == n_patients for PSA models.
+array[enable_ms_12_entry_psa_cov ? n_patients : 0] real psa_at_entry_12;
+array[enable_ms_32_entry_psa_cov ? n_patients : 0] real psa_at_entry_32;
