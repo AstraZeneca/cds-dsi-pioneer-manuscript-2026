@@ -223,30 +223,30 @@ generated quantities {
   array[n_cond_group] vector<lower = 0, upper = 1>[n_pfs_timepoints] cond_sample_target_pfs_n, cond_spop_target_pfs_n,
                                                                       cond_sample_ms_pfs_n, cond_spop_ms_pfs_n,
                                                                       cond_sample_pfs_n, cond_spop_pfs_n;
-  array[n_trials] vector<lower = 0>[n_pfs_quantiles] sample_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
-                                                      spop_target_quant_pfs   = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
-                                                      sample_ms_quant_pfs     = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
-                                                      spop_ms_quant_pfs       = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
-                                                      sample_quant_pfs        = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
-                                                      spop_quant_pfs          = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
-  array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_sample_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
-                                                          cond_spop_target_quant_pfs   = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
-                                                          cond_sample_ms_quant_pfs     = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
-                                                          cond_spop_ms_quant_pfs       = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
-                                                          cond_sample_quant_pfs        = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
-                                                          cond_spop_quant_pfs          = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
-  array[n_trials, n_pfs_quantiles] int sample_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
-                                       spop_target_quant_pfs_exceeds_max   = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
-                                       sample_ms_quant_pfs_exceeds_max     = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
-                                       spop_ms_quant_pfs_exceeds_max       = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
-                                       sample_quant_pfs_exceeds_max        = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
-                                       spop_quant_pfs_exceeds_max          = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
-  array[n_cond_group, n_pfs_quantiles] int cond_sample_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group),
-                                           cond_spop_target_quant_pfs_exceeds_max   = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group),
-                                           cond_sample_ms_quant_pfs_exceeds_max     = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group),
-                                           cond_spop_ms_quant_pfs_exceeds_max       = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group),
-                                           cond_sample_quant_pfs_exceeds_max        = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group),
-                                           cond_spop_quant_pfs_exceeds_max          = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+  array[n_trials] vector<lower = 0>[n_pfs_quantiles] sample_target_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
+                                                      spop_target_pfs_quant   = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
+                                                      sample_ms_pfs_quant     = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
+                                                      spop_ms_pfs_quant       = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
+                                                      sample_pfs_quant        = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
+                                                      spop_pfs_quant          = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+  array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_sample_target_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
+                                                          cond_spop_target_pfs_quant   = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
+                                                          cond_sample_ms_pfs_quant     = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
+                                                          cond_spop_ms_pfs_quant       = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
+                                                          cond_sample_pfs_quant        = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
+                                                          cond_spop_pfs_quant          = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+  array[n_trials, n_pfs_quantiles] int sample_target_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
+                                       spop_target_pfs_quant_exceeds_max   = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
+                                       sample_ms_pfs_quant_exceeds_max     = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
+                                       spop_ms_pfs_quant_exceeds_max       = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
+                                       sample_pfs_quant_exceeds_max        = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
+                                       spop_pfs_quant_exceeds_max          = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+  array[n_cond_group, n_pfs_quantiles] int cond_sample_target_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group),
+                                           cond_spop_target_pfs_quant_exceeds_max   = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group),
+                                           cond_sample_ms_pfs_quant_exceeds_max     = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group),
+                                           cond_spop_ms_pfs_quant_exceeds_max       = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group),
+                                           cond_sample_pfs_quant_exceeds_max        = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group),
+                                           cond_spop_pfs_quant_exceeds_max          = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
   array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_os_km_est, spop_os_km_est;
   array[n_cond_group] vector<lower = 0, upper = 1>[max_all_t + 1] cond_sample_os_km_est, cond_spop_os_km_est;
   array[n_trials] vector<lower = 0>[n_pfs_quantiles] sample_os_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials),

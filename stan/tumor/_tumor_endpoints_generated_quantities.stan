@@ -50,37 +50,37 @@ vector<lower = 0, upper = 1>[n_trials] sample_target_orr, spop_target_orr;
 vector<lower = 0, upper = 1>[n_cond_group] cond_sample_target_orr = zeros_vector(n_cond_group), cond_spop_target_orr = zeros_vector(n_cond_group);
 
 // PFS quantiles - target events
-array[n_trials] vector<lower = 0>[n_pfs_quantiles] sample_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
-array[n_trials] vector<lower = 0>[n_pfs_quantiles] spop_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
-array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_sample_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
-array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_spop_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+array[n_trials] vector<lower = 0>[n_pfs_quantiles] sample_target_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+array[n_trials] vector<lower = 0>[n_pfs_quantiles] spop_target_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_sample_target_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_spop_target_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
 
-array[n_trials, n_pfs_quantiles] int sample_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
-array[n_trials, n_pfs_quantiles] int spop_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
-array[n_cond_group, n_pfs_quantiles] int cond_sample_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
-array[n_cond_group, n_pfs_quantiles] int cond_spop_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+array[n_trials, n_pfs_quantiles] int sample_target_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+array[n_trials, n_pfs_quantiles] int spop_target_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+array[n_cond_group, n_pfs_quantiles] int cond_sample_target_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+array[n_cond_group, n_pfs_quantiles] int cond_spop_target_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
 
 // PFS quantiles - multistate events
-array[n_trials] vector<lower = 0>[n_pfs_quantiles] sample_ms_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
-array[n_trials] vector<lower = 0>[n_pfs_quantiles] spop_ms_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
-array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_sample_ms_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
-array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_spop_ms_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+array[n_trials] vector<lower = 0>[n_pfs_quantiles] sample_ms_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+array[n_trials] vector<lower = 0>[n_pfs_quantiles] spop_ms_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_sample_ms_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_spop_ms_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
 
-array[n_trials, n_pfs_quantiles] int sample_ms_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
-array[n_trials, n_pfs_quantiles] int spop_ms_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
-array[n_cond_group, n_pfs_quantiles] int cond_sample_ms_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
-array[n_cond_group, n_pfs_quantiles] int cond_spop_ms_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+array[n_trials, n_pfs_quantiles] int sample_ms_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+array[n_trials, n_pfs_quantiles] int spop_ms_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+array[n_cond_group, n_pfs_quantiles] int cond_sample_ms_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+array[n_cond_group, n_pfs_quantiles] int cond_spop_ms_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
 
 // PFS quantiles - combined
-array[n_trials] vector<lower = 0>[n_pfs_quantiles] sample_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
-array[n_trials] vector<lower = 0>[n_pfs_quantiles] spop_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
-array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_sample_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
-array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_spop_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+array[n_trials] vector<lower = 0>[n_pfs_quantiles] sample_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+array[n_trials] vector<lower = 0>[n_pfs_quantiles] spop_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_sample_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+array[n_cond_group] vector<lower = 0>[n_pfs_quantiles] cond_spop_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
 
-array[n_trials, n_pfs_quantiles] int sample_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
-array[n_trials, n_pfs_quantiles] int spop_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
-array[n_cond_group, n_pfs_quantiles] int cond_sample_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
-array[n_cond_group, n_pfs_quantiles] int cond_spop_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+array[n_trials, n_pfs_quantiles] int sample_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+array[n_trials, n_pfs_quantiles] int spop_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+array[n_cond_group, n_pfs_quantiles] int cond_sample_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+array[n_cond_group, n_pfs_quantiles] int cond_spop_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
 
 // OS KM estimates
 array[n_trials] vector<lower = 0, upper = 1>[max_all_t + 1] sample_os_km_est, spop_os_km_est;
@@ -286,12 +286,12 @@ profile("gen_quant") {
    sample_target_km_est, spop_target_km_est, spop_target_obs_cens_km_est,
    sample_ms_pfs_km_est, spop_ms_pfs_km_est,
    sample_pfs_km_est, spop_pfs_km_est,
-   sample_target_quant_pfs, spop_target_quant_pfs,
-   sample_target_quant_pfs_exceeds_max, spop_target_quant_pfs_exceeds_max,
-   sample_ms_quant_pfs, spop_ms_quant_pfs,
-   sample_ms_quant_pfs_exceeds_max, spop_ms_quant_pfs_exceeds_max,
-   sample_quant_pfs, spop_quant_pfs,
-   sample_quant_pfs_exceeds_max, spop_quant_pfs_exceeds_max,
+   sample_target_pfs_quant, spop_target_pfs_quant,
+   sample_target_pfs_quant_exceeds_max, spop_target_pfs_quant_exceeds_max,
+   sample_ms_pfs_quant, spop_ms_pfs_quant,
+   sample_ms_pfs_quant_exceeds_max, spop_ms_pfs_quant_exceeds_max,
+   sample_pfs_quant, spop_pfs_quant,
+   sample_pfs_quant_exceeds_max, spop_pfs_quant_exceeds_max,
    sample_target_pfs_n, spop_target_pfs_n,
    sample_ms_pfs_n, spop_ms_pfs_n,
    sample_pfs_n, spop_pfs_n,
@@ -331,12 +331,12 @@ profile("gen_quant") {
    cond_sample_target_km_est, cond_spop_target_km_est, cond_spop_target_obs_cens_km_est,
    cond_sample_ms_pfs_km_est, cond_spop_ms_pfs_km_est,
    cond_sample_pfs_km_est, cond_spop_pfs_km_est,
-   cond_sample_target_quant_pfs, cond_spop_target_quant_pfs,
-   cond_sample_target_quant_pfs_exceeds_max, cond_spop_target_quant_pfs_exceeds_max,
-   cond_sample_ms_quant_pfs, cond_spop_ms_quant_pfs,
-   cond_sample_ms_quant_pfs_exceeds_max, cond_spop_ms_quant_pfs_exceeds_max,
-   cond_sample_quant_pfs, cond_spop_quant_pfs,
-   cond_sample_quant_pfs_exceeds_max, cond_spop_quant_pfs_exceeds_max,
+   cond_sample_target_pfs_quant, cond_spop_target_pfs_quant,
+   cond_sample_target_pfs_quant_exceeds_max, cond_spop_target_pfs_quant_exceeds_max,
+   cond_sample_ms_pfs_quant, cond_spop_ms_pfs_quant,
+   cond_sample_ms_pfs_quant_exceeds_max, cond_spop_ms_pfs_quant_exceeds_max,
+   cond_sample_pfs_quant, cond_spop_pfs_quant,
+   cond_sample_pfs_quant_exceeds_max, cond_spop_pfs_quant_exceeds_max,
    cond_sample_target_pfs_n, cond_spop_target_pfs_n,
    cond_sample_ms_pfs_n, cond_spop_ms_pfs_n,
    cond_sample_pfs_n, cond_spop_pfs_n,
