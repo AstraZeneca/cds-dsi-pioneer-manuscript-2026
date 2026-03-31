@@ -1,4 +1,4 @@
-**Last Updated:** November 14, 2025
+**Last Updated:** March 31, 2026
 
 ## Overview {#sec-arch-overview}
 
@@ -301,6 +301,8 @@ The Stan code uses a modular architecture with `#include` directives. Modules ar
 - **`tumor/`** - Tumor-specific functions (SLD conversions, RECIST)
 - **`multistate/`** - Multistate hazard model (PFS events, death, post-progression)
 - **`measurement/`** - Observation model
+- **`propensity/`** - Propensity-weighted borrowing from RWD (pioneer only; 6-file pattern --- no `data.stan`)
+- **`laplace/`** - Laplace marginalization for RWD patients (pioneer only)
 
 ### Module File Pattern
 
@@ -361,11 +363,53 @@ This standardization makes modules:
 
 ---
 
+## Endpoint Naming Convention {#sec-endpoint-naming}
+
+**Added:** March 2026
+
+All survival endpoints follow a consistent naming pattern across both the SCLC-01 (tumor/SLD) and Pioneer (PSA) models:
+
+```
+{prefix}_{endpoint}_{metric}
+```
+
+**Prefixes** indicate the estimation mode:
+
+| Prefix | Level | Mode |
+|--------|-------|------|
+| `sample_` | Trial | Sample-based (conditional on observed data) |
+| `spop_` | Trial | Posterior predictive (unconditional) |
+| `cond_sample_` | Conditional group | Sample-based, stratified |
+| `cond_spop_` | Conditional group | Posterior predictive, stratified |
+
+**Endpoints** available in the system:
+
+| Endpoint | Description | Availability |
+|----------|-------------|:------------:|
+| `ms_pfs` | Cause-specific progression ($0 \to 1$; death censored) | All models |
+| `pfs` | Composite PFS (progression OR direct death) | All models |
+| `rpfs` | Radiographic PFS ($0 \to 1$ radio OR $0 \to 2$) | Full model only |
+| `os` | Overall survival (all deaths) | All models |
+
+**Metrics** for each endpoint:
+
+| Metric | Description | Example |
+|--------|-------------|---------|
+| `km_est` | KM survival curve vector | `sample_pfs_km_est` |
+| `quant` | Quantiles (0.25, 0.50, 0.75) | `spop_os_quant` |
+| `n` | Survival probability at fixed timepoints | `sample_pfs_n` |
+| `quant_exceeds_max` | Indicator: quantile > max follow-up | `spop_rpfs_quant_exceeds_max` |
+
+For full details on endpoint definitions and inference modes, see [Clinical Endpoints Specification](clinical-endpoints-specification.qmd).
+
+---
+
 ## References
 
 ### Key Documentation
 
 - [Model Specification](model-specification.qmd) - Complete mathematical specification
+- [Clinical Endpoints Specification](clinical-endpoints-specification.qmd) - Endpoint definitions and inference
 - [AR(1) Process Noise](ar1-process-noise.qmd) - Detailed AR(1) implementation
 - [Onboarding Tutorial](onboarding-tutorial.qmd) - Learning path for newcomers
 
@@ -377,7 +421,7 @@ This standardization makes modules:
 
 ---
 
-**Document Version:** 2.0 (Consolidated)
+**Document Version:** 3.0 (Endpoint naming convention)
 **Status:** Active Reference
 **Maintainer:** Update when architectural patterns change
 
@@ -385,6 +429,7 @@ This standardization makes modules:
 ## Related Pages
 
 - [Model Specification](model-specification.qmd) - Complete mathematical specification
+- [Clinical Endpoints Specification](clinical-endpoints-specification.qmd) - Endpoint definitions and inference
 - [AR(1) Process Noise](ar1-process-noise.qmd) - Time-varying rate implementation
 - [Onboarding Tutorial](onboarding-tutorial.qmd) - Learning path
 - [Parameter Inference](../analysis/parameter-inference.qmd) - See parameters in practice
