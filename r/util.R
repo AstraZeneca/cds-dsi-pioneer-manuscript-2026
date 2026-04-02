@@ -359,12 +359,17 @@ select_draws <- function(fit, ...) {
     }
   }
 
-  # Read directly from CSV files with variable selection
-  # This bypasses fit object caching for better memory efficiency
-  cmdstanr::read_cmdstan_csv(
-    files = csv_files,
-    variables = selected_vars
-  )$post_warmup_draws
+  # Read one chain at a time to avoid OOM on large CSV files.
+  # The combined model writes ~49 GB per chain; reading all 4 chains at once
+  # (196 GB) causes read_cmdstan_csv to fail mid-parse and return NA draws.
+  # Sequential per-chain reads keep peak memory to one chain's selected columns.
+  chain_draws <- lapply(csv_files, function(csv) {
+    cmdstanr::read_cmdstan_csv(
+      files = csv,
+      variables = selected_vars
+    )$post_warmup_draws
+  })
+  posterior::bind_draws(chain_draws, along = "chain")
 }
 
 #' Extract and compile decorated Stan functions
