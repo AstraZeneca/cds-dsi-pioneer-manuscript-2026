@@ -128,24 +128,24 @@ Target naming follows nested `tar_map`: outer = model, inner = type (`posterior`
 **NEVER assume a project or store path without confirming.** This codebase supports multiple projects — do not default to sclc.
 
 The active project is set via `TAR_PROJECT` (see `_targets.yaml`). Store paths by project:
-- **sclc**: `/mnt/data/analysis-results/<user>/sclc/<TAR_BRANCH>/_targets`
-- **pioneer**: `/mnt/data/analysis-results/<user>/pioneer/<TAR_BRANCH>/_targets`
+- **sclc**: `/mnt/data/analysis-results/<user>/sclc/<TAR_RUN>/_targets`
+- **pioneer**: `/mnt/data/analysis-results/<user>/pioneer/<TAR_RUN>/_targets`
 
 When the project or store name is ambiguous, list available stores first:
 ```bash
 ls /mnt/data/analysis-results/$DOMINO_STARTING_USERNAME/<project>/
 ```
 
-### Store Selection via TAR_BRANCH
+### Store Selection via TAR_RUN
 
-`TAR_BRANCH` selects the analysis run (named by data cut-off or feature branch). For sclc:
-- `export TAR_BRANCH=dco3` - January 26, 2026 DCO (current, includes pdl1_central)
-- `export TAR_BRANCH=dco2` - August 2025 DCO
-- `export TAR_BRANCH=dco1` - April 2025 DCO
+`TAR_RUN` selects the analysis run (named by data cut-off or feature branch). For sclc:
+- `export TAR_RUN=dco3` - January 26, 2026 DCO (current, includes pdl1_central)
+- `export TAR_RUN=dco2` - August 2025 DCO
+- `export TAR_RUN=dco1` - April 2025 DCO
 
 For pioneer, common branches include: `main`, `rwd-filtered-1`, `laplace`, `multistate`, etc.
 
-Full store path pattern: `/mnt/data/analysis-results/<user>/<TAR_PROJECT>/<TAR_BRANCH>/_targets`
+Full store path pattern: `/mnt/data/analysis-results/<user>/<TAR_PROJECT>/<TAR_RUN>/_targets`
 
 ### Sclc Fit Output
 
@@ -155,7 +155,7 @@ Sclc results are stored in `/mnt/data/analysis-results/<username>/sclc/<run_name
 
 **Example:**
 ```bash
-export TAR_BRANCH=dco3
+export TAR_RUN=dco3
 Rscript -e 'targets::tar_make(sclc_patient_data_jan26)'
 ```
 
