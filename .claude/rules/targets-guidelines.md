@@ -9,8 +9,8 @@ paths:
 - **NEVER use `tar_config_set(store = ...)`** - it changes global state and causes conflicts
 - Always use explicit `store` argument: `tar_read(name, store = "path/_targets")`
 - Same applies to all targets functions: `tar_meta()`, `tar_load()`, etc.
-- **IMPORTANT**: `TAR_BRANCH` environment variable does NOT work with `tar_make()` - always use explicit `store="/path/_targets"` argument
-- `_targets.yaml` sclc store uses `!expr` with `DOMINO_STARTING_USERNAME` and `TAR_BRANCH` — never hardcode username or branch in this file
+- **IMPORTANT**: `TAR_RUN` environment variable does NOT work with `tar_make()` - always use explicit `store="/path/_targets"` argument
+- `_targets.yaml` sclc store uses `!expr` with `DOMINO_STARTING_USERNAME` and `TAR_RUN` — never hardcode username or branch in this file
 - `tumor_ssls_draws_pop` selection: `time_invariant_coef_qr_*` and `time_varying_coef_*` params don't follow the `_pop` suffix — they need `matches("^(time_invariant|time_varying)_coef")` added to the `select_draws` call
 - **NEVER inline complex code in targets** - extract to helper functions in `r/` directory
   - Target commands should be simple function calls, not multi-line code blocks
