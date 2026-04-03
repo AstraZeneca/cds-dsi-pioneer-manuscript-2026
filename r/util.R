@@ -100,31 +100,6 @@ sample_and_save <- function(
     )
   }
 
-  # Create stable per-chain symlinks pointing to the timestamped CSV files.
-  # Symlink names use the fixed basename without timestamp or hash suffix, so
-  # fit$output_files() returns paths that remain valid across R sessions even
-  # after the fit object is serialised to a targets store and reloaded later.
-  if (!no_save) {
-    csv_files  <- fit$output_files()
-    base <- if (is.null(output_basename)) "fit" else output_basename
-    stable_names <- file.path(
-      output_dir,
-      paste0(base, "-", seq_along(csv_files), ".csv")
-    )
-    for (i in seq_along(csv_files)) {
-      if (file.exists(stable_names[i]) || fs::is_symlink(stable_names[i])) {
-        fs::file_delete(stable_names[i])
-      }
-      fs::link_create(
-        path     = fs::path_abs(csv_files[i]),
-        new_path = stable_names[i],
-        symbolic = TRUE
-      )
-    }
-    # Update the fit object so output_files() returns the stable symlink paths.
-    fit$.__enclos_env__$private$output_files_ <- stable_names
-  }
-
   return(fit)
 }
 
