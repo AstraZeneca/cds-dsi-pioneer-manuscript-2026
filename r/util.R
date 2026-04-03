@@ -396,6 +396,38 @@ select_draws <- function(fit, ...) {
   posterior::bind_draws(chain_draws, along = "chain")
 }
 
+#' Read a single chain's draws with tidyselect variable filtering
+#'
+#' Intended for use with targets dynamic branching: each branch receives one
+#' CSV file path and returns the post-warmup draws for that chain.
+#' Downstream targets combine branches with bind_draws(along = "chain").
+#'
+#' @param csv Path to a single CmdStan CSV file
+#' @param ... Tidyselect expressions to filter variables
+#' @return A draws_array for the single chain
+#' @export
+select_draws_single_chain <- function(csv, ...) {
+  all_vars <- cmdstanr::read_cmdstan_csv(
+    csv, variables = character(0)
+  )$metadata$stan_variables
+
+  selection <- substitute(c(...))
+  selected_idx <- tidyselect::eval_select(
+    selection,
+    data = rlang::set_names(all_vars, all_vars)
+  )
+  selected_vars <- all_vars[selected_idx]
+
+  if (length(selected_vars) == 0) {
+    stop("No variables matched the selection criteria")
+  }
+
+  cmdstanr::read_cmdstan_csv(
+    files = csv,
+    variables = selected_vars
+  )$post_warmup_draws
+}
+
 #' Extract and compile decorated Stan functions
 #'
 #' @param stan_file Path to .stan file with decorated functions
