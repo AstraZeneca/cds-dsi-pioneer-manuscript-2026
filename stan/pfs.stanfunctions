@@ -1940,6 +1940,9 @@ tuple(
                         enable_ms_02, enable_ms_03);
 
     // --- RNG Step 5: spop OS ---
+    // Guard: sojourn matrix is [0,0] when ms_time_scale_12==0 (Markov-only)
+    row_vector[cols(log_cond_surv_12_s)] surv_12_s_i =
+      rows(log_cond_surv_12_s) > 0 ? log_cond_surv_12_s[j] : rep_row_vector(0, 0);
     // Guard: clock-forward matrix is [0,0] when ms_time_scale_12==1 (semi-Markov)
     row_vector[cols(log_cond_surv_12_t)] surv_12_t_i =
       cols(log_cond_surv_12_t) > 0 ? log_cond_surv_12_t[j] : rep_row_vector(0, 0);
@@ -1949,7 +1952,7 @@ tuple(
     (spop_os[j], spop_os_censored[j]) = derive_spop_os_rng(
         spop_cause, spop_exit,
         enable_ms_12, enable_ms_32, ms_time_scale_12,
-        log_cond_surv_12_s[j], surv_12_t_i,
+        surv_12_s_i, surv_12_t_i,
         surv_32_i,
         t_01_spop, spop_time_02, spop_time_03);
 
@@ -2015,7 +2018,7 @@ tuple(
     (sample_os[j], sample_os_censored[j]) = derive_sample_os_rng(
         sample_cause, sample_exit,
         enable_ms_12, enable_ms_32, ms_time_scale_12,
-        log_cond_surv_12_s[j], surv_12_t_i,
+        surv_12_s_i, surv_12_t_i,
         surv_32_i,
         sample_t01, sample_time_02,
         pfs[p],
