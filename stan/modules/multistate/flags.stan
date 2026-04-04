@@ -35,10 +35,12 @@ array[n_levels] int<lower=0, upper=1> enable_ms_level_cov;  // Per-level random 
 
 // --- Visit-Gated 0->1 Mode ---
 // When enabled, 0->1 hazard accumulates only at assessment visit weeks
-// (not every calendar week). Time-varying covariates for 0->1 are built
-// from observed PSA (data) rather than modeled trajectory (parameters).
-// Interval censoring for 0->1 is disabled in this mode.
+// (not every calendar week). Interval censoring for 0->1 is disabled.
+// By default, time-varying covariates for 0->1 are built from observed PSA
+// (data). Set enable_ms_visit_gated_latent_01=1 to use the modeled latent
+// PSA trajectory instead (still evaluated only at visit weeks).
 int<lower=0, upper=1> enable_ms_visit_gated_01;
+int<lower=0, upper=1> enable_ms_visit_gated_latent_01;
 
 // --- 0->2 Time-Varying Covariate ---
 // When enabled, 0->2 uses modeled PSA trajectory as time-varying covariate.

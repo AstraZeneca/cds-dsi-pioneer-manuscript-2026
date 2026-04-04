@@ -92,6 +92,7 @@ if (enable_ms_01) {
   }
   // Visit-gated mode: sparse update at observed visit weeks only (before -exp,
   // same log-hazard-level addition as continuous mode — no special handling needed).
+  // PSA source: observed (default) or latent trajectory (enable_ms_visit_gated_latent_01).
   if (enable_ms_pop_time_varying_cov && enable_ms_visit_gated_01) {
     for (j in 1:n_forecast_patients) {
       int p = forecast_patient_idx[j];
@@ -99,8 +100,12 @@ if (enable_ms_01) {
       (v_start, v_end) = get_pos(patient_visit_pos, p);
       for (v in v_start:v_end) {
         int wk = t_patient_visits[v];
-        if (wk >= 1 && wk <= max_all_t)
-          log_cond_surv_01[j, wk] += time_varying_coef_01[1] * ms_obs_psa_covar_flat[v];
+        if (wk >= 1 && wk <= max_all_t) {
+          real psa_covar = enable_ms_visit_gated_latent_01
+            ? ms_time_varying_covar_01[1][j, wk]
+            : ms_obs_psa_covar_flat[v];
+          log_cond_surv_01[j, wk] += time_varying_coef_01[1] * psa_covar;
+        }
       }
     }
   }

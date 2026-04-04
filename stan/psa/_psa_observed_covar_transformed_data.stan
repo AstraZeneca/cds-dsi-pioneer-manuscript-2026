@@ -12,7 +12,7 @@
 // MUST be included AFTER: modules/multistate/transformed_data.stan
 //   (declares ms_obs_psa_covar_flat)
 
-if (enable_ms_visit_gated_01) {
+if (enable_ms_visit_gated_01 && !enable_ms_visit_gated_latent_01) {
   for (v in 1:sum(n_patient_visits)) {
     ms_obs_psa_covar_flat[v] = psa_measured[v]
       ? (log_psa_values[v] - median_log_psa_obs) / iqr_log_psa_obs
