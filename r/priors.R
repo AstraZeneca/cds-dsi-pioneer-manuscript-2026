@@ -149,8 +149,8 @@ get_multistate_priors <- function(n_levels, n_time_varying_covar, n_time_invaria
     time_varying_coef_01_sd = as.array(rep(0.5, n_tv_01)),
     time_varying_coef_02_mean = as.array(rep(0, n_tv_02)),
     time_varying_coef_02_sd = as.array(rep(0.5, n_tv_02)),
-    time_varying_coef_12_mean = rep(0, n_time_varying_covar),
-    time_varying_coef_12_sd = rep(0.5, n_time_varying_covar),
+    time_varying_coef_12_mean = as.array(rep(0, n_time_varying_covar)),
+    time_varying_coef_12_sd = as.array(rep(0.5, n_time_varying_covar)),
 
     # Time-invariant covariate coefficient hyperparameters (QR space)
     time_invariant_coef_01_mean = rep(0, n_time_invariant_covar),
@@ -409,12 +409,12 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     log_lambda_gp_32_s_level_rho_beta = rep(4.0, n_levels),
 
     # --- Time-varying covariate coefficient hyperparameters ---
-    time_varying_coef_01_mean = rep(0, n_time_varying_covar),
-    time_varying_coef_01_sd = rep(0.5, n_time_varying_covar),
-    time_varying_coef_02_mean = rep(0, n_time_varying_covar),
-    time_varying_coef_02_sd = rep(0.5, n_time_varying_covar),
-    time_varying_coef_12_mean = rep(0, n_time_varying_covar),
-    time_varying_coef_12_sd = rep(0.5, n_time_varying_covar),
+    time_varying_coef_01_mean = as.array(rep(0, n_time_varying_covar)),
+    time_varying_coef_01_sd = as.array(rep(0.5, n_time_varying_covar)),
+    time_varying_coef_02_mean = as.array(rep(0, n_time_varying_covar)),
+    time_varying_coef_02_sd = as.array(rep(0.5, n_time_varying_covar)),
+    time_varying_coef_12_mean = as.array(rep(0, n_time_varying_covar)),
+    time_varying_coef_12_sd = as.array(rep(0.5, n_time_varying_covar)),
 
     # --- Time-invariant covariate coefficient hyperparameters (QR space) ---
     time_invariant_coef_01_mean = rep(0, n_time_invariant_covar),
