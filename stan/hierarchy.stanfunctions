@@ -44,6 +44,13 @@ tuple(
   array[] int enable_intercept,
   array[] int enable_slope
 ) {
+  for (lv in 1:n_levels) {
+    if (enable_intercept[lv] != 0 && enable_intercept[lv] != 1)
+      fatal_error("enable_intercept[", lv, "] must be 0 or 1; got ", enable_intercept[lv]);
+    if (enable_slope[lv] != 0 && enable_slope[lv] != 1)
+      fatal_error("enable_slope[", lv, "] must be 0 or 1; got ", enable_slope[lv]);
+  }
+
   int n_int = compute_n_enabled_groups(n_forecast_groups_per_level, enable_intercept);
   array[n_levels + 1] int pos_int = create_enabled_pos(n_forecast_groups_per_level, enable_intercept);
 
