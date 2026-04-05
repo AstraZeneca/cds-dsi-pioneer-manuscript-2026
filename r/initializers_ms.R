@@ -184,7 +184,7 @@ ms_init_values <- function(env) {
         else NULL
       },
       time_varying_coef_12 = if (enable_ms_12 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
-        rnorm(n_time_varying_covar, time_varying_coef_12_mean, time_varying_coef_12_sd * qr_init_scale)
+        as.array(rnorm(n_time_varying_covar, time_varying_coef_12_mean, time_varying_coef_12_sd * qr_init_scale))
       },
 
       # --- Time-invariant Covariate Coefficients (QR space) ---
