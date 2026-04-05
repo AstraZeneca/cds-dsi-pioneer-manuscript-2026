@@ -67,6 +67,9 @@ generated quantities {
 
     // Copy pos arrays, pad remainder with 0
     for (k in 1:(nl + 1)) out_pos_intercept[c, k] = pos_int[k];
+    // Padding loops: when nl == n_levels_max (typical single-n_levels test),
+    // these ranges are zero-length and the loops are skipped.
+    // They are here to support future multi-n_levels batch tests.
     for (k in (nl + 2):(n_levels_max + 1)) out_pos_intercept[c, k] = 0;
     for (k in 1:(nl + 1)) out_pos_slope[c, k] = pos_slp[k];
     for (k in (nl + 2):(n_levels_max + 1)) out_pos_slope[c, k] = 0;
