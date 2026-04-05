@@ -1,0 +1,82 @@
+// hierarchy.stanfunctions
+// Tuple-returning helpers for flag-derived hierarchy computations.
+// #included inside functions {} in model files.
+
+/**
+ * Compute all flag-derived hierarchy quantities for a module with intercept and slope.
+ *
+ * For each patient i and level lv, the flat index is:
+ *   - 1 (dummy) if the level is disabled (enable[lv] == 0)
+ *   - 1 (dummy) if lv == n_levels and patient is a forecast (background) patient
+ *     (gid > n_forecast_patients) — such patients have no explicit parameter
+ *   - get_global_group_idx(pos, lv, gid) otherwise
+ *
+ * @param n_patients          Number of patients
+ * @param n_levels            Number of hierarchy levels
+ * @param n_forecast_patients Number of forecast (trial) patients; background patients
+ *                            have group IDs > n_forecast_patients at the patient level
+ * @param n_forecast_groups_per_level  Group counts per level for parameter sizing
+ * @param patient_level_groups  [n_patients, n_levels] group membership
+ * @param enable_intercept    [n_levels] 0/1 flags for intercept levels
+ * @param enable_slope        [n_levels] 0/1 flags for slope levels
+ *
+ * @return tuple of:
+ *   (1) n_enabled_groups_intercept          int
+ *   (2) enabled_level_pos_intercept         array[n_levels+1] int
+ *   (3) patient_intercept_flat_idx          array[n_patients, n_levels] int
+ *   (4) n_enabled_groups_slope              int
+ *   (5) enabled_level_pos_slope             array[n_levels+1] int
+ *   (6) patient_slope_flat_idx              array[n_patients, n_levels] int
+ */
+tuple(
+  int,
+  array[] int,
+  array[,] int,
+  int,
+  array[] int,
+  array[,] int
+) compute_level_module_flags(
+  int n_patients,
+  int n_levels,
+  int n_forecast_patients,
+  array[] int n_forecast_groups_per_level,
+  array[,] int patient_level_groups,
+  array[] int enable_intercept,
+  array[] int enable_slope
+) {
+  int n_int = compute_n_enabled_groups(n_forecast_groups_per_level, enable_intercept);
+  array[n_levels + 1] int pos_int = create_enabled_pos(n_forecast_groups_per_level, enable_intercept);
+
+  array[n_patients, n_levels] int flat_int;
+  for (i in 1:n_patients) {
+    for (lv in 1:n_levels) {
+      if (enable_intercept[lv]) {
+        int gid = patient_level_groups[i, lv];
+        flat_int[i, lv] =
+          (lv == n_levels && gid > n_forecast_patients) ? 1
+          : get_global_group_idx(pos_int, lv, gid);
+      } else {
+        flat_int[i, lv] = 1;
+      }
+    }
+  }
+
+  int n_slp = compute_n_enabled_groups(n_forecast_groups_per_level, enable_slope);
+  array[n_levels + 1] int pos_slp = create_enabled_pos(n_forecast_groups_per_level, enable_slope);
+
+  array[n_patients, n_levels] int flat_slp;
+  for (i in 1:n_patients) {
+    for (lv in 1:n_levels) {
+      if (enable_slope[lv]) {
+        int gid = patient_level_groups[i, lv];
+        flat_slp[i, lv] =
+          (lv == n_levels && gid > n_forecast_patients) ? 1
+          : get_global_group_idx(pos_slp, lv, gid);
+      } else {
+        flat_slp[i, lv] = 1;
+      }
+    }
+  }
+
+  return (n_int, pos_int, flat_int, n_slp, pos_slp, flat_slp);
+}
