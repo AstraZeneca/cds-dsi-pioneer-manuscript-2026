@@ -1181,14 +1181,15 @@ plot_competing_risks_cif <- function(
   cif_prefix = c("spop", "sample"),
   time_step = 4L,
   x_breaks_months = seq(0, 48, by = 6),
-  trials = NULL
+  trials = NULL,
+  causes = 1:3
 ) {
   cif_prefix <- match.arg(cif_prefix)
   trial_id   <- as.integer(stan_data$patient_trial)
   n_trials   <- max(trial_id)
   trials     <- trials %||% seq_len(n_trials)
   trial_names <- trial_labeller(levels(stan_data$patient_trial) %||% as.character(seq_len(n_trials)))
-  max_t      <- stan_data$max_all_t
+  max_t      <- stan_data$max_all_t %||% stan_data$extend_max_all_t
   x_breaks   <- months_to_weeks(x_breaks_months)
 
   # ── Observed AJ CIF ──────────────────────────────────────────────────────
@@ -1207,19 +1208,20 @@ plot_competing_risks_cif <- function(
     )
   )
 
-  cause_labels <- c("0\u21921 Progression", "0\u21922 On-trial death", "0\u21923 Dropout")
+  all_cause_labels <- c("0\u21921 Progression", "0\u21922 On-trial death", "0\u21923 Dropout")
+  cause_labels <- all_cause_labels[causes]
 
   aj_obs <- map_dfr(trials, function(tr) {
     sub <- filter(obs, trial == tr)
     cif <- cmprsk::cuminc(sub$cr_time, sub$cr_cause, cencode = 0)
-    map_dfr(1:3, function(cause) {
+    map_dfr(causes, function(cause) {
       key <- str_c("1 ", cause)
       if (key %in% names(cif))
         tibble(time = cif[[key]]$time, est = cif[[key]]$est, cause = cause, trial = tr)
     })
   }) |> mutate(
     trial_name = trial_names[trial],
-    cause_lbl  = factor(cause_labels[cause], levels = cause_labels)
+    cause_lbl  = factor(all_cause_labels[cause], levels = cause_labels)
   )
 
   # Observed state 0 retention (KM for any exit)
@@ -1243,11 +1245,14 @@ plot_competing_risks_cif <- function(
         q <- quantile(x, c(0.10, 0.50, 0.90))
         tibble(med = q[[2]], lo = q[[1]], hi = q[[3]])
       }
+      # Always extract all 3 causes: state-0 retention requires subtracting all
+      # three CIFs (CIF_01 + CIF_02 + CIF_03), regardless of which causes are
+      # displayed in the upper CIF panel.
       bind_cols(
         tibble(t = t, trial = tr),
-        rename_with(extract_cif(1), ~str_c("cif_01_", .)),
-        rename_with(extract_cif(2), ~str_c("cif_02_", .)),
-        rename_with(extract_cif(3), ~str_c("cif_03_", .))
+        map(1:3, function(cause_id) {
+          rename_with(extract_cif(cause_id), ~str_c("cif_0", cause_id, "_", .))
+        }) |> bind_cols()
       )
     })
   })
@@ -1258,13 +1263,14 @@ plot_competing_risks_cif <- function(
       names_to = c("cause", ".value"),
       names_pattern = "cif_(\\d+)_(\\w+)"
     ) |>
+    mutate(cause = as.integer(cause)) |>
+    filter(cause %in% causes) |>
     mutate(
-      cause      = as.integer(cause),
       trial_name = trial_names[trial],
-      cause_lbl  = factor(cause_labels[cause], levels = cause_labels)
+      cause_lbl  = factor(all_cause_labels[cause], levels = cause_labels)
     )
 
-  # Model state 0 retention
+  # Model state 0 retention: subtract ALL 3 CIFs — P(state 0) = 1 - sum(all CIFs)
   model_state0 <- model_cif |>
     mutate(
       s0_med = 1 - cif_01_med - cif_02_med - cif_03_med,
@@ -1274,11 +1280,12 @@ plot_competing_risks_cif <- function(
     )
 
   # ── Colors ────────────────────────────────────────────────────────────────
-  cause_colors <- c(
+  all_cause_colors <- c(
     "0\u21921 Progression"    = AZ_navy,
     "0\u21922 On-trial death" = AZ_pink,
     "0\u21923 Dropout"        = AZ_turquoise
   )
+  cause_colors <- all_cause_colors[cause_labels]
 
   strip_theme <- theme(
     legend.position = "bottom",
