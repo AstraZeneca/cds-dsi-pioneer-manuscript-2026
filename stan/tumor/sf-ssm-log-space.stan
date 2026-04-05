@@ -2,6 +2,7 @@
 functions {
   #include "util.stanfunctions"
   #include "pos.stanfunctions"
+  #include "hierarchy.stanfunctions"
   #include "gp.stanfunctions"
   #include "pfs.stanfunctions"
   #include "lfo.stanfunctions"
