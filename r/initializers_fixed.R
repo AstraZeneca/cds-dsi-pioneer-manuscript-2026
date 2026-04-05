@@ -136,7 +136,7 @@ ms_init_values_fixed <- function(env) {
         else NULL
       },
       time_varying_coef_12 = if (enable_ms_12 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
-        rep(0, n_time_varying_covar)
+        as.array(rep(0, n_time_varying_covar))
       },
 
       # --- Time-invariant covariate coefficients ---
