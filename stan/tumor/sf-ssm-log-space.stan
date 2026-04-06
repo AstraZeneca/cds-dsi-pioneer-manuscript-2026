@@ -284,6 +284,8 @@ generated quantities {
     vector[0] burden_forecast_obs_log_psa;
     real burden_median_log_psa_obs = 0.0;
     real burden_iqr_log_psa_obs = 0.0;
+    // RECIST ORR = confirmed response (>=2 assessments at PR/CR)
+    int burden_orr_use_confirmed_response = 1;
 
     #include "modules/state_space/burden_endpoints.stan"
   }
