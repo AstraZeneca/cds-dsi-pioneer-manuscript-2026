@@ -10,6 +10,154 @@
  * For PSA model (all enabled): full illness-death multistate likelihood
  */
 
+// ============================================================================
+// Multistate Flag Computation Functions
+// ============================================================================
+
+/**
+ * Compute derived time-scale flags for the 1→2 transition.
+ *
+ * Determines which GP components (sojourn and/or clock-forward) are needed
+ * for the 1→2 post-progression hazard, given the requested time scale.
+ *
+ * Time scale codes:
+ *   0 = Markov (clock-forward GP only)
+ *   1 = semi-Markov (sojourn GP only)
+ *   2 = extended (both GPs, additive)
+ *
+ * @param enable_ms_12   Flag: is 1→2 transition enabled?
+ * @param ms_time_scale_12 Time scale code (0, 1, or 2); others trigger error if strict=1
+ * @param strict         If 1, fatal_error on invalid time scale; if 0, return is_valid=0
+ * @return Tuple: (is_valid, need_12_s_gp, need_12_t_gp, ms_12_t_has_intercept)
+ */
+tuple(int, int, int, int) compute_ms_time_scale_flags(
+  int enable_ms_12, int ms_time_scale_12, int strict
+) {
+  if (ms_time_scale_12 < 0 || ms_time_scale_12 > 2) {
+    if (strict) fatal_error("ms_time_scale_12 must be 0-2; got ", ms_time_scale_12);
+    return (0, 0, 0, 0);
+  }
+  int need_s = enable_ms_12 && (ms_time_scale_12 == 1 || ms_time_scale_12 == 2);
+  int need_t = enable_ms_12 && (ms_time_scale_12 == 0 || ms_time_scale_12 == 2);
+  int t_int  = need_t && !need_s;
+  return (1, need_s, need_t, t_int);
+}
+
+/**
+ * Compute level baseline flags for the multistate hazard N-level hierarchy.
+ *
+ * Determines which levels use GP (mode 3), which use any RE (mode >= 2),
+ * and builds position arrays for both GP-only and enabled-level indexing.
+ *
+ * Level modes:
+ *   0 = disabled (no contribution from this level)
+ *   1 = fixed effect (intercept only, shared across all groups)
+ *   2 = random effect (intercept + per-group RE, no GP)
+ *   3 = GP (full Gaussian process per group)
+ *
+ * @param n_levels                       Number of hierarchy levels
+ * @param n_forecast_groups_per_level    Group counts per level
+ * @param enable_ms_level_baseline_hazard Mode per level (0-3)
+ * @param strict                         If 1, fatal_error on invalid mode; if 0, return is_valid=0
+ * @return Tuple: (is_valid, any_re_level, ms_level_baseline_is_gp[n_levels],
+ *                n_gp_groups_ms_baseline, gp_level_pos_ms_baseline[n_levels+1],
+ *                enabled_level_pos_ms_baseline[n_levels+1])
+ */
+tuple(int, int, array[] int, int, array[] int, array[] int) compute_ms_level_baseline_flags(
+  int n_levels,
+  array[] int n_forecast_groups_per_level,
+  array[] int enable_ms_level_baseline_hazard,
+  int strict
+) {
+  for (lv in 1:n_levels) {
+    if (enable_ms_level_baseline_hazard[lv] < 0 || enable_ms_level_baseline_hazard[lv] > 3) {
+      if (strict) fatal_error("enable_ms_level_baseline_hazard[", lv, "] must be 0-3; got ", enable_ms_level_baseline_hazard[lv]);
+      return (0, 0, zeros_int_array(n_levels), 0, zeros_int_array(n_levels + 1), zeros_int_array(n_levels + 1));
+    }
+  }
+  // any_re_level: 1 if any level has mode >= 2
+  int any_re = max(enable_ms_level_baseline_hazard) >= 2;
+  // is_gp: 1 if level has mode == 3
+  array[n_levels] int is_gp;
+  for (lv in 1:n_levels) is_gp[lv] = (enable_ms_level_baseline_hazard[lv] == 3);
+  // n_gp_groups: sum of group counts where is_gp[lv]=1
+  int n_gp = compute_n_enabled_groups(n_forecast_groups_per_level, is_gp);
+  array[n_levels + 1] int gp_pos = create_enabled_pos(n_forecast_groups_per_level, is_gp);
+  // enabled pos: 1 if any level mode >= 1
+  array[n_levels] int is_enabled;
+  for (lv in 1:n_levels) is_enabled[lv] = (enable_ms_level_baseline_hazard[lv] >= 1);
+  array[n_levels + 1] int enabled_pos = create_enabled_pos(n_forecast_groups_per_level, is_enabled);
+  return (1, any_re, is_gp, n_gp, gp_pos, enabled_pos);
+}
+
+/**
+ * Compute per-transition group count scalars from shared baseline counts.
+ *
+ * Each enabled transition gets the same n_enabled and n_gp_groups as the
+ * shared baseline hierarchy; disabled transitions get 0.
+ *
+ * @param enable_ms_01       Flag: 0→1 transition enabled
+ * @param enable_ms_02       Flag: 0→2 transition enabled
+ * @param need_12_s_gp       Flag: sojourn GP for 1→2 needed (from B1)
+ * @param need_12_t_gp       Flag: clock-forward GP for 1→2 needed (from B1)
+ * @param enable_ms_03       Flag: 0→3 transition enabled
+ * @param enable_ms_32       Flag: 3→2 transition enabled (requires enable_ms_03)
+ * @param n_enabled_groups_ms_baseline  Total enabled groups in shared hierarchy
+ * @param n_gp_groups_ms_baseline       Total GP-only groups in shared hierarchy
+ * @param strict             If 1, fatal_error when enable_ms_32 && !enable_ms_03
+ * @return Tuple: (is_valid,
+ *                n_enabled_groups_ms_baseline_01, n_gp_groups_ms_baseline_01,
+ *                n_enabled_groups_ms_baseline_02, n_gp_groups_ms_baseline_02,
+ *                n_enabled_groups_ms_baseline_12_s, n_gp_groups_ms_baseline_12_s,
+ *                n_enabled_groups_ms_baseline_12_t, n_gp_groups_ms_baseline_12_t,
+ *                n_enabled_groups_ms_baseline_03, n_gp_groups_ms_baseline_03,
+ *                n_enabled_groups_ms_baseline_32, n_gp_groups_ms_baseline_32)
+ */
+tuple(int, int, int, int, int, int, int, int, int, int, int, int, int) compute_ms_transition_group_counts(
+  int enable_ms_01,
+  int enable_ms_02,
+  int need_12_s_gp,
+  int need_12_t_gp,
+  int enable_ms_03,
+  int enable_ms_32,
+  int n_enabled_groups_ms_baseline,
+  int n_gp_groups_ms_baseline,
+  int strict
+) {
+  if (enable_ms_32 && !enable_ms_03) {
+    if (strict) fatal_error("enable_ms_32 requires enable_ms_03");
+    return (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  }
+  int N = n_enabled_groups_ms_baseline;
+  int G = n_gp_groups_ms_baseline;
+  return (1,
+    enable_ms_01  ? N : 0, enable_ms_01  ? G : 0,
+    enable_ms_02  ? N : 0, enable_ms_02  ? G : 0,
+    need_12_s_gp  ? N : 0, need_12_s_gp  ? G : 0,
+    need_12_t_gp  ? N : 0, need_12_t_gp  ? G : 0,
+    enable_ms_03  ? N : 0, enable_ms_03  ? G : 0,
+    enable_ms_32  ? N : 0, enable_ms_32  ? G : 0);
+}
+
+/**
+ * Compute the size of the flat observed-PSA covariate vector for visit-gated 0→1.
+ *
+ * The covariate is only used in visit-gated mode with observed (not latent) PSA.
+ * Returns n_visits when visit-gated is on and latent PSA is off; 0 otherwise.
+ *
+ * @param enable_ms_visit_gated_01         Flag: visit-gated 0→1 enabled
+ * @param enable_ms_visit_gated_latent_01  Flag: use latent (not observed) PSA
+ * @param n_visits                         Total number of assessment visits across all patients
+ * @return Size of the flat covariate vector (0 or n_visits)
+ */
+int compute_ms_obs_psa_covar_size(
+  int enable_ms_visit_gated_01,
+  int enable_ms_visit_gated_latent_01,
+  int n_visits
+) {
+  return enable_ms_visit_gated_01 && !enable_ms_visit_gated_latent_01 ? n_visits : 0;
+}
+
 /**
  * Calculate log-likelihood for a single transition using piecewise constant hazard
  *
