@@ -200,44 +200,16 @@ create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_
       # Level positions for indexing flattened arrays
       level_pos <- c(1L, cumsum(n_groups_per_level) + 1L)
 
-      # Hierarchical SDs per level - used for RE levels only
-      tr_sd_level <- c(0.35, 0.40)
-      frac_sd_level <- c(0.35, 0.40)
-      init_sd_level <- c(0.35, 0.50)
+      # SD initial values per level (n_levels elements) — used for RE SD parameter init
+      tr_sd_level   <- rep(0.40, n_levels)
+      frac_sd_level <- rep(0.40, n_levels)
+      init_sd_level <- rep(0.50, n_levels)
 
-      # Generate deviations for ENABLED levels only (flattened, truthy for FE and RE)
-      tr_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
-        if (enable_level_intercept_tr[lv] != 0) rnorm(n_groups_per_level[lv], sd = if (lv == n_levels) 0.3 else 0.2) else NULL
-      }))
-      frac_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
-        if (enable_level_intercept_frac[lv] != 0) rnorm(n_groups_per_level[lv], sd = if (lv == n_levels) 0.3 else 0.2) else NULL
-      }))
-      init_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
-        if (enable_level_intercept_init[lv] != 0) rnorm(n_groups_per_level[lv], sd = if (lv == n_levels) 0.3 else 0.2) else NULL
-      }))
-
-      # Back-calculate raw values using enabled level positions
-      # enabled_level_pos uses (!=0) as 0/1 indicator to size the flattened array
-      enabled_level_pos_tr <- c(1L, cumsum(n_groups_per_level * (enable_level_intercept_tr != 0)) + 1L)
-      tr_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
-        if (enable_level_intercept_tr[lv] == 0) return(NULL)
-        idx <- enabled_level_pos_tr[lv]:(enabled_level_pos_tr[lv + 1] - 1)
-        tr_level_dev[idx] / tr_sd_level[lv]
-      }))
-
-      enabled_level_pos_frac <- c(1L, cumsum(n_groups_per_level * (enable_level_intercept_frac != 0)) + 1L)
-      frac_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
-        if (enable_level_intercept_frac[lv] == 0) return(NULL)
-        idx <- enabled_level_pos_frac[lv]:(enabled_level_pos_frac[lv + 1] - 1)
-        frac_level_dev[idx] / frac_sd_level[lv]
-      }))
-
-      enabled_level_pos_init <- c(1L, cumsum(n_groups_per_level * (enable_level_intercept_init != 0)) + 1L)
-      init_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
-        if (enable_level_intercept_init[lv] == 0) return(NULL)
-        idx <- enabled_level_pos_init[lv]:(enabled_level_pos_init[lv + 1] - 1)
-        init_level_dev[idx] / init_sd_level[lv]
-      }))
+      # Generate raw NCP values directly for all enabled groups (both FE and RE).
+      # Avoids per-level SD indexing which was fragile for n_levels > 2.
+      tr_raw_level   <- rnorm(n_enabled_groups_tr_intercept,   sd = 0.2)
+      frac_raw_level <- rnorm(n_enabled_groups_frac_intercept, sd = 0.2)
+      init_raw_level <- rnorm(n_enabled_groups_init_intercept, sd = 0.2)
 
       # Tumor dynamics parameters
       tumor_init <- tibble::lst(
