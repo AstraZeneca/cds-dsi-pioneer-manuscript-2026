@@ -17,77 +17,59 @@ for (i in 1:n_patients) {
   }
 }
 
-if (!enable_ms_03 && enable_ms_32) {
-  fatal_error("enable_ms_32=1 requires enable_ms_03=1");
-}
-
-// --- Derived Flags for Time Scale ---
+// --- Derived Flags for Time Scale (B1) ---
 // Which GPs are needed for the 1→2 transition
-int need_12_s_gp = enable_ms_12 && (ms_time_scale_12 == 1 || ms_time_scale_12 == 2);
-int need_12_t_gp = enable_ms_12 && (ms_time_scale_12 == 0 || ms_time_scale_12 == 2);
+// strict=1: fatal_error on invalid input; is_valid sentinel discarded
+int ms_flag_b1_valid;
+int need_12_s_gp;
+int need_12_t_gp;
+int ms_12_t_has_intercept;
+(ms_flag_b1_valid, need_12_s_gp, need_12_t_gp, ms_12_t_has_intercept) =
+  compute_ms_time_scale_flags(enable_ms_12, ms_time_scale_12, 1);
 
-// In extended mode (2), both GPs are active and additive. To avoid
-// non-identifiability of two intercepts, the clock-forward GP is zero-mean
-// and only the sojourn GP carries the intercept.
-int ms_12_t_has_intercept = need_12_t_gp && !need_12_s_gp;  // Only in pure Markov mode
-
-// --- Enabled Group Counts for Baseline Hazard N-level Hierarchy ---
-int n_enabled_groups_ms_baseline_01 = enable_ms_01 ? compute_n_enabled_groups(
-  n_forecast_groups_per_level, enable_ms_level_baseline_hazard
-) : 0;
-
-int n_enabled_groups_ms_baseline_02 = enable_ms_02 ? compute_n_enabled_groups(
-  n_forecast_groups_per_level, enable_ms_level_baseline_hazard
-) : 0;
-
-int n_enabled_groups_ms_baseline_12_s = need_12_s_gp ? compute_n_enabled_groups(
-  n_forecast_groups_per_level, enable_ms_level_baseline_hazard
-) : 0;
-
-int n_enabled_groups_ms_baseline_12_t = need_12_t_gp ? compute_n_enabled_groups(
-  n_forecast_groups_per_level, enable_ms_level_baseline_hazard
-) : 0;
-
-int n_enabled_groups_ms_baseline_03 = enable_ms_03 ? compute_n_enabled_groups(
-  n_forecast_groups_per_level, enable_ms_level_baseline_hazard
-) : 0;
-
-int n_enabled_groups_ms_baseline_32 = enable_ms_32 ? compute_n_enabled_groups(
-  n_forecast_groups_per_level, enable_ms_level_baseline_hazard
-) : 0;
-
-// --- GP-Only Boolean Mask and Group Counts ---
-// For intercept-only modes (FE=1, RE=2), we don't need eta vectors.
-// GP-only arrays track which levels use full GP (mode==3).
+// --- Level Baseline Hazard Flags (B2) ---
+// GP-Only Boolean Mask, group counts, and position arrays
+// strict=1: fatal_error on invalid input; is_valid sentinel discarded
+int ms_flag_b2_valid;
+int any_re_level;
 array[n_levels] int ms_level_baseline_is_gp;
-for (lv in 1:n_levels) {
-  ms_level_baseline_is_gp[lv] = (enable_ms_level_baseline_hazard[lv] == 3) ? 1 : 0;
-}
+int n_gp_groups_ms_baseline;
+array[n_levels + 1] int gp_level_pos_ms_baseline;
+array[n_levels + 1] int enabled_level_pos_ms_baseline;
+(ms_flag_b2_valid, any_re_level, ms_level_baseline_is_gp, n_gp_groups_ms_baseline,
+ gp_level_pos_ms_baseline, enabled_level_pos_ms_baseline) =
+  compute_ms_level_baseline_flags(
+    n_levels, n_forecast_groups_per_level, enable_ms_level_baseline_hazard, 1
+  );
 
-int n_gp_groups_ms_baseline = compute_n_enabled_groups(
-  n_forecast_groups_per_level, ms_level_baseline_is_gp
-);
-
-int n_gp_groups_ms_baseline_01 = enable_ms_01 ? n_gp_groups_ms_baseline : 0;
-int n_gp_groups_ms_baseline_02 = enable_ms_02 ? n_gp_groups_ms_baseline : 0;
-int n_gp_groups_ms_baseline_12_s = need_12_s_gp ? n_gp_groups_ms_baseline : 0;
-int n_gp_groups_ms_baseline_12_t = need_12_t_gp ? n_gp_groups_ms_baseline : 0;
-int n_gp_groups_ms_baseline_03 = enable_ms_03 ? n_gp_groups_ms_baseline : 0;
-int n_gp_groups_ms_baseline_32 = enable_ms_32 ? n_gp_groups_ms_baseline : 0;
-
-// --- Any-RE Flag (gates conditional sizing of estimated level_intercept_sd) ---
-int any_re_level = max(to_array_1d(enable_ms_level_baseline_hazard)) >= 2 ? 1 : 0;
-
-// GP-only position array (for indexing into eta matrices)
-array[n_levels + 1] int gp_level_pos_ms_baseline = create_enabled_pos(
-  n_forecast_groups_per_level, ms_level_baseline_is_gp
-);
-
-// --- Position Arrays for Baseline Hazard Level Hierarchy ---
-// (includes both intercept-only and GP levels — any truthy flag)
-array[n_levels + 1] int enabled_level_pos_ms_baseline = create_enabled_pos(
+// --- Shared enabled group count (needed by B3) ---
+int n_enabled_groups_ms_baseline = compute_n_enabled_groups(
   n_forecast_groups_per_level, enable_ms_level_baseline_hazard
 );
+
+// --- Per-Transition Group Counts (B3) ---
+// Validates enable_ms_32 requires enable_ms_03 (strict=1: fatal_error on violation)
+// is_valid sentinel discarded
+int ms_flag_b3_valid;
+int n_enabled_groups_ms_baseline_01; int n_gp_groups_ms_baseline_01;
+int n_enabled_groups_ms_baseline_02; int n_gp_groups_ms_baseline_02;
+int n_enabled_groups_ms_baseline_12_s; int n_gp_groups_ms_baseline_12_s;
+int n_enabled_groups_ms_baseline_12_t; int n_gp_groups_ms_baseline_12_t;
+int n_enabled_groups_ms_baseline_03; int n_gp_groups_ms_baseline_03;
+int n_enabled_groups_ms_baseline_32; int n_gp_groups_ms_baseline_32;
+(ms_flag_b3_valid,
+ n_enabled_groups_ms_baseline_01, n_gp_groups_ms_baseline_01,
+ n_enabled_groups_ms_baseline_02, n_gp_groups_ms_baseline_02,
+ n_enabled_groups_ms_baseline_12_s, n_gp_groups_ms_baseline_12_s,
+ n_enabled_groups_ms_baseline_12_t, n_gp_groups_ms_baseline_12_t,
+ n_enabled_groups_ms_baseline_03, n_gp_groups_ms_baseline_03,
+ n_enabled_groups_ms_baseline_32, n_gp_groups_ms_baseline_32) =
+  compute_ms_transition_group_counts(
+    enable_ms_01, enable_ms_02,
+    need_12_s_gp, need_12_t_gp,
+    enable_ms_03, enable_ms_32,
+    n_enabled_groups_ms_baseline, n_gp_groups_ms_baseline, 1
+  );
 
 // --- Enabled Group Counts for Covariate Slopes ---
 int n_enabled_groups_ms_slope = compute_n_enabled_groups(
@@ -196,5 +178,7 @@ for (i in 1:n_patients) {
 // Indexed identically to log_psa_values[v]: visit v in [1, sum(n_patient_visits)].
 // Only psa_measured[v]==1 entries are meaningful; others are 0 (never used).
 // Not allocated when enable_ms_visit_gated_latent_01=1 (latent PSA used instead).
-vector[enable_ms_visit_gated_01 && !enable_ms_visit_gated_latent_01 ? size(t_patient_visits) : 0] ms_obs_psa_covar_flat;
+vector[compute_ms_obs_psa_covar_size(
+  enable_ms_visit_gated_01, enable_ms_visit_gated_latent_01, size(t_patient_visits)
+)] ms_obs_psa_covar_flat;
 
