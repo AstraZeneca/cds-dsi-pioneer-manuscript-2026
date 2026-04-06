@@ -5,6 +5,26 @@
 vector[n_forecast_patients] init_linpred_pop = enable_pop_cov_init ?
   (Q_covar_design_matrix[forecast_patient_idx, :] * init_coef_qr_pop) : zeros_vector(n_forecast_patients);
 
+// ===== SD EXPANSION =====
+// Assemble full n_levels SD array from RE free params and FE hyperparams.
+// FE levels (mode=1): use fixed init_fe_sd_level_intercept[lv] from data.
+// RE levels (mode=2): use free parameter init_sd_level_intercept_raw (sequential counter).
+// Disabled levels (mode=0): set to 0.0 (never used in intercept scaling).
+array[n_levels] real<lower=0> init_sd_level_intercept;
+{
+  int sd_idx = 0;
+  for (lv in 1:n_levels) {
+    if (enable_level_intercept_init[lv] == LEVEL_MODE_FE) {
+      init_sd_level_intercept[lv] = init_fe_sd_level_intercept[lv];
+    } else if (enable_level_intercept_init[lv] == LEVEL_MODE_RE) {
+      sd_idx += 1;
+      init_sd_level_intercept[lv] = init_sd_level_intercept_raw[sd_idx];
+    } else {
+      init_sd_level_intercept[lv] = 0.0;
+    }
+  }
+}
+
 // ===== INTERCEPT EFFECTS =====
 // Step 1: Scale all raw effects at once
 vector[n_enabled_groups_init_intercept] init_scaled_level_intercept;

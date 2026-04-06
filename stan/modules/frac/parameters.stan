@@ -11,8 +11,10 @@ vector[enable_pop_cov_frac ? n_covar : 0] frac_coef_qr_pop;
 
 // ===== UNIFIED LEVEL STRUCTURE =====
 
-// Intercept SD hyperparameters - one per level (always n_levels for simplicity)
-array[n_levels] real<lower=0> frac_sd_level_intercept;
+// Intercept SD free parameters - sized to RE levels only (mode=2)
+// FE levels (mode=1) use frac_fe_sd_level_intercept from hyperparams; disabled levels use 0.
+// Full n_levels array frac_sd_level_intercept is assembled in transformed_parameters.
+array[n_re_levels_frac_intercept] real<lower=0> frac_sd_level_intercept_raw;
 
 // Raw standard normal draws for intercepts - sized by ENABLED groups only
 vector[n_enabled_groups_frac_intercept] frac_raw_level_intercept;

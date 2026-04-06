@@ -11,8 +11,10 @@ vector[enable_pop_cov_init ? n_covar : 0] init_coef_qr_pop;
 
 // ===== UNIFIED LEVEL STRUCTURE =====
 
-// Intercept SD hyperparameters - one per level (always n_levels for simplicity)
-array[n_levels] real<lower=0> init_sd_level_intercept;
+// Intercept SD free parameters - sized to RE levels only (mode=2)
+// FE levels (mode=1) use init_fe_sd_level_intercept from hyperparams; disabled levels use 0.
+// Full n_levels array init_sd_level_intercept is assembled in transformed_parameters.
+array[n_re_levels_init_intercept] real<lower=0> init_sd_level_intercept_raw;
 
 // Raw standard normal draws for intercepts - sized by ENABLED groups only
 vector[n_enabled_groups_init_intercept] init_raw_level_intercept;
