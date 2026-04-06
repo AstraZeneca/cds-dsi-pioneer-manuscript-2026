@@ -172,7 +172,13 @@ get_multistate_priors <- function(n_levels, n_time_varying_covar, n_time_invaria
     coef_log_psa_12_mean = 0.0,
     coef_log_psa_12_sd   = 0.5,
     coef_log_psa_32_mean = 0.0,
-    coef_log_psa_32_sd   = 0.5
+    coef_log_psa_32_sd   = 0.5,
+
+    # Student-t hierarchy nu hyperparameters for multistate
+    ms_nu_baseline_level_prior_alpha = rep(2, n_levels),
+    ms_nu_baseline_level_prior_beta  = rep(0.1, n_levels),
+    ms_nu_slope_level_prior_alpha    = rep(2, n_levels),
+    ms_nu_slope_level_prior_beta     = rep(0.1, n_levels)
   )
 }
 
@@ -251,6 +257,8 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     tr_loc_pop_mean = tr_loc_pop_mean,
     tr_loc_pop_sd = tr_loc_pop_sd,
     tr_sd_level_intercept_sd = c(0.35, 0.35),
+    tr_nu_level_prior_alpha = rep(2, n_levels),
+    tr_nu_level_prior_beta = rep(0.1, n_levels),
     tr_coef_qr_pop_mean = as.array(rep(0, n_covar)),
     tr_coef_qr_pop_sd = as.array(rep(1, n_covar)),
     tr_sd_level_slope_sd = list(
@@ -278,6 +286,8 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     frac_logit_loc_pop_mean = frac_logit_loc_pop_mean,
     frac_logit_loc_pop_sd = frac_logit_loc_pop_sd,
     frac_sd_level_intercept_sd = c(0.25, 0.25),
+    frac_nu_level_prior_alpha = rep(2, n_levels),
+    frac_nu_level_prior_beta = rep(0.1, n_levels),
     frac_coef_qr_pop_mean = as.array(qr_frac$coef_mean_qr),
     frac_coef_qr_pop_sd = as.array(qr_frac$coef_sd_qr),
     frac_sd_level_slope_sd = list(
@@ -289,6 +299,8 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     init_logit_loc_pop_mean = init_logit_loc_pop_mean,
     init_logit_loc_pop_sd = init_logit_loc_pop_sd,
     init_sd_level_intercept_sd = c(0.6, 0.5),
+    init_nu_level_prior_alpha = rep(2, n_levels),
+    init_nu_level_prior_beta = rep(0.1, n_levels),
     init_coef_qr_pop_mean = as.array(qr_init$coef_mean_qr),
     init_coef_qr_pop_sd = as.array(qr_init$coef_sd_qr),
     init_sd_level_slope_sd = list(

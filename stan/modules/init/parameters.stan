@@ -22,3 +22,6 @@ array[n_levels] vector<lower=0>[n_covar] init_sd_level_slope;
 
 // Raw standard normal draws for slopes - sized by ENABLED groups only
 matrix[n_enabled_groups_init_slope, n_covar] init_raw_level_slope;
+
+// Student-t hierarchy: degrees of freedom per level (size 0 when disabled)
+array[enable_student_t_hierarchy ? n_levels : 0] real<lower=2> init_nu_level;
