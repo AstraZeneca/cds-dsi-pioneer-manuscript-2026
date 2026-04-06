@@ -189,50 +189,52 @@ create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_
     with(stan_data, {
       # Multi-level hierarchy: n_levels, n_groups_per_level
       # Compute enabled group counts for each module (matches Stan transformed_data)
-      n_enabled_groups_tr_intercept <- sum(n_groups_per_level[enable_level_intercept_tr == 1])
+      # Use != 0 to support mode=1 (FE) and mode=2 (RE) — both contribute groups
+      n_enabled_groups_tr_intercept <- sum(n_groups_per_level[enable_level_intercept_tr != 0])
       n_enabled_groups_tr_slope <- sum(n_groups_per_level[enable_level_cov_tr == 1])
-      n_enabled_groups_frac_intercept <- sum(n_groups_per_level[enable_level_intercept_frac == 1])
+      n_enabled_groups_frac_intercept <- sum(n_groups_per_level[enable_level_intercept_frac != 0])
       n_enabled_groups_frac_slope <- sum(n_groups_per_level[enable_level_cov_frac == 1])
-      n_enabled_groups_init_intercept <- sum(n_groups_per_level[enable_level_intercept_init == 1])
+      n_enabled_groups_init_intercept <- sum(n_groups_per_level[enable_level_intercept_init != 0])
       n_enabled_groups_init_slope <- sum(n_groups_per_level[enable_level_cov_init == 1])
 
       # Level positions for indexing flattened arrays
       level_pos <- c(1L, cumsum(n_groups_per_level) + 1L)
 
-      # Hierarchical SDs per level - c(trial, patient) for 2-level
+      # Hierarchical SDs per level - used for RE levels only
       tr_sd_level <- c(0.35, 0.40)
       frac_sd_level <- c(0.35, 0.40)
       init_sd_level <- c(0.35, 0.50)
 
-      # Generate deviations for ENABLED levels only (flattened)
+      # Generate deviations for ENABLED levels only (flattened, truthy for FE and RE)
       tr_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
-        if (enable_level_intercept_tr[lv]) rnorm(n_groups_per_level[lv], sd = if (lv == n_levels) 0.3 else 0.2) else NULL
+        if (enable_level_intercept_tr[lv] != 0) rnorm(n_groups_per_level[lv], sd = if (lv == n_levels) 0.3 else 0.2) else NULL
       }))
       frac_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
-        if (enable_level_intercept_frac[lv]) rnorm(n_groups_per_level[lv], sd = if (lv == n_levels) 0.3 else 0.2) else NULL
+        if (enable_level_intercept_frac[lv] != 0) rnorm(n_groups_per_level[lv], sd = if (lv == n_levels) 0.3 else 0.2) else NULL
       }))
       init_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
-        if (enable_level_intercept_init[lv]) rnorm(n_groups_per_level[lv], sd = if (lv == n_levels) 0.3 else 0.2) else NULL
+        if (enable_level_intercept_init[lv] != 0) rnorm(n_groups_per_level[lv], sd = if (lv == n_levels) 0.3 else 0.2) else NULL
       }))
 
       # Back-calculate raw values using enabled level positions
-      enabled_level_pos_tr <- c(1L, cumsum(n_groups_per_level * enable_level_intercept_tr) + 1L)
+      # enabled_level_pos uses (!=0) as 0/1 indicator to size the flattened array
+      enabled_level_pos_tr <- c(1L, cumsum(n_groups_per_level * (enable_level_intercept_tr != 0)) + 1L)
       tr_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
-        if (!enable_level_intercept_tr[lv]) return(NULL)
+        if (enable_level_intercept_tr[lv] == 0) return(NULL)
         idx <- enabled_level_pos_tr[lv]:(enabled_level_pos_tr[lv + 1] - 1)
         tr_level_dev[idx] / tr_sd_level[lv]
       }))
 
-      enabled_level_pos_frac <- c(1L, cumsum(n_groups_per_level * enable_level_intercept_frac) + 1L)
+      enabled_level_pos_frac <- c(1L, cumsum(n_groups_per_level * (enable_level_intercept_frac != 0)) + 1L)
       frac_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
-        if (!enable_level_intercept_frac[lv]) return(NULL)
+        if (enable_level_intercept_frac[lv] == 0) return(NULL)
         idx <- enabled_level_pos_frac[lv]:(enabled_level_pos_frac[lv + 1] - 1)
         frac_level_dev[idx] / frac_sd_level[lv]
       }))
 
-      enabled_level_pos_init <- c(1L, cumsum(n_groups_per_level * enable_level_intercept_init) + 1L)
+      enabled_level_pos_init <- c(1L, cumsum(n_groups_per_level * (enable_level_intercept_init != 0)) + 1L)
       init_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
-        if (!enable_level_intercept_init[lv]) return(NULL)
+        if (enable_level_intercept_init[lv] == 0) return(NULL)
         idx <- enabled_level_pos_init[lv]:(enabled_level_pos_init[lv + 1] - 1)
         init_level_dev[idx] / init_sd_level[lv]
       }))
@@ -244,12 +246,12 @@ create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_
         frac_logit_loc_pop = 1.5,
         init_logit_loc_pop = 0.0,
 
-        # Level-indexed intercept SDs and raw values
-        tr_sd_level_intercept = tr_sd_level,
+        # Level-indexed intercept SDs (RE levels only) and raw values (all enabled levels)
+        tr_sd_level_intercept_raw = tr_sd_level[enable_level_intercept_tr == 2L],
         tr_raw_level_intercept = tr_raw_level,
-        frac_sd_level_intercept = frac_sd_level,
+        frac_sd_level_intercept_raw = frac_sd_level[enable_level_intercept_frac == 2L],
         frac_raw_level_intercept = frac_raw_level,
-        init_sd_level_intercept = init_sd_level,
+        init_sd_level_intercept_raw = init_sd_level[enable_level_intercept_init == 2L],
         init_raw_level_intercept = init_raw_level,
 
         # Covariate effects - all zero
