@@ -17,6 +17,8 @@
 //   burden_forecast_obs_log_psa     — vector[n_total_forecast_obs_visits or 0]
 //   burden_median_log_psa_obs       — real (0.0 for non-PSA models)
 //   burden_iqr_log_psa_obs          — real (0.0 for non-PSA models)
+//   burden_orr_use_confirmed_response — int: 1 = confirmed (>=2 assessments, RECIST ORR),
+//                                             0 = unconfirmed (>=1 assessment, PSA50/ORR)
 //
 // Output variables (GQ scope, declared by model before the { } block):
 //   sample_target_pfs, spop_target_pfs, ..., spop_cif_01, etc.
@@ -82,6 +84,18 @@ profile("burden_endpoints") {
   );
 }
 
+// Select confirmed vs unconfirmed response for ORR depending on the biomarker type:
+//   RECIST (tumor): confirmed response (>=2 assessments at PR/CR) — standard ORR definition
+//   PSA50 (pioneer): unconfirmed response (>=1 assessment at PR/CR) — best PSA response
+array[n_forecast_patients] int orr_sample_response =
+  burden_orr_use_confirmed_response
+    ? sample_target_confirmed_response
+    : sample_target_unconfirmed_response;
+array[n_forecast_patients] int orr_spop_response =
+  burden_orr_use_confirmed_response
+    ? spop_target_confirmed_response
+    : spop_target_unconfirmed_response;
+
 // Aggregate to trial-level metrics
 (sample_target_orr, spop_target_orr,
  sample_target_km_est, spop_target_km_est, spop_target_obs_cens_km_est,
@@ -101,8 +115,8 @@ profile("burden_endpoints") {
  sample_os_quant_exceeds_max, spop_os_quant_exceeds_max,
  sample_os_n, spop_os_n) =
   aggregate_trial_metrics(
-    sample_target_confirmed_response,
-    spop_target_confirmed_response,
+    orr_sample_response,
+    orr_spop_response,
     sample_target_pfs,
     sample_target_right_censored,
     spop_target_pfs,
@@ -146,8 +160,8 @@ profile("burden_endpoints") {
  cond_sample_os_quant_exceeds_max, cond_spop_os_quant_exceeds_max,
  cond_sample_os_n, cond_spop_os_n) =
   aggregate_conditional_group_metrics(
-    sample_target_confirmed_response,
-    spop_target_confirmed_response,
+    orr_sample_response,
+    orr_spop_response,
     sample_target_pfs,
     sample_target_right_censored,
     spop_target_pfs,
