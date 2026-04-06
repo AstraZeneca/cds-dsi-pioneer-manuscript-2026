@@ -14,8 +14,8 @@ make_hierarchy_flag_combos <- function(
     n_forecast_patients,
     n_groups_per_level
 ) {
-  # All 2^n_levels combos for intercept x 2^n_levels for slope
-  ei_list <- replicate(n_levels, 0:1, simplify = FALSE) |>
+  # All 3^n_levels combos for intercept (modes 0/1/2) x 2^n_levels for slope (0/1)
+  ei_list <- replicate(n_levels, c(0L, 1L, 2L), simplify = FALSE) |>
     setNames(str_c("ei_", seq_len(n_levels)))
   es_list <- replicate(n_levels, 0:1, simplify = FALSE) |>
     setNames(str_c("es_", seq_len(n_levels)))
