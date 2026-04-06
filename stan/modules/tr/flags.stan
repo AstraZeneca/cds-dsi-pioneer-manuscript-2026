@@ -8,7 +8,7 @@ int<lower=0,upper=1> enable_pop_cov_tr;  // population covariate linear model
 // Per-level flags for hierarchical intercepts and slopes
 // Index 1 = first grouping level (e.g., trial)
 // Index n_levels = patient level
-array[n_levels] int<lower=0,upper=1> enable_level_intercept_tr;
+array[n_levels] int<lower=0,upper=3> enable_level_intercept_tr;
 array[n_levels] int<lower=0,upper=1> enable_level_cov_tr;
 
 // Process noise flags (patient-specific features, unchanged)

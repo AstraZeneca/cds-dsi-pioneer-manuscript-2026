@@ -4,6 +4,12 @@
 // Requires: _hierarchy_data.stan declarations in scope.
 // ============================================================================
 
+// Level intercept mode constants (consistent across tr, frac, init, ms modules)
+int LEVEL_MODE_NONE  = 0;  // No intercept at this level
+int LEVEL_MODE_FE    = 1;  // Fixed effect: SD is a data hyperparameter (no pooling)
+int LEVEL_MODE_RE    = 2;  // Random effect: SD estimated via NCP (hierarchical pooling)
+int LEVEL_MODE_RE_GP = 3;  // Random effect + full GP residual (ms module only, for now)
+
 // Multi-level hierarchy: computed totals and position arrays
 int n_total_groups = sum(n_groups_per_level);
 array[n_levels + 1] int level_pos = create_pos(n_groups_per_level);
