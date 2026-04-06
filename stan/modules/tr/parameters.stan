@@ -37,3 +37,6 @@ vector[enable_patient_process_noise_phi_tr ? n_forecast_patients : 0] tr_raw_pat
 array[enable_pop_process_noise_tr ? 1 : 0] real tr_log_sd_pop_process_noise_pop;
 array[enable_pop_process_noise_tr ? 1 : 0] real tr_logit_phi_pop_process_noise_pop;
 row_vector[enable_pop_process_noise_tr ? max_t_width : 0] tr_raw_pop_process_noise;
+
+// Student-t hierarchy: degrees of freedom per level (size 0 when disabled)
+array[enable_student_t_hierarchy ? n_levels : 0] real<lower=2> tr_nu_level;
