@@ -3,6 +3,7 @@ functions {
   #include "util.stanfunctions"
   #include "pos.stanfunctions"
   #include "hierarchy.stanfunctions"
+  #include "full_model.stanfunctions"
   #include "gp.stanfunctions"
   #include "pfs.stanfunctions"
   #include "lfo.stanfunctions"

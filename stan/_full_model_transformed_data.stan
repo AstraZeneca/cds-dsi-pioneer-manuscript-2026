@@ -41,16 +41,20 @@ for (t in 2:max_t_width) {
   cumsum_integration_matrix[1:(t-1), t] = rep_vector(1, t-1);
 }
 
-// Combined flag: any process noise enabled (pop-level or patient-level)
-int enable_any_process_noise_tr = enable_pop_process_noise_tr || enable_patient_process_noise_tr;
-
-// Whether the full states grid [n_patients × max_t_width] is needed:
+// Combined flag: any process noise enabled (pop-level or patient-level),
+// and whether the full states grid [n_patients × max_t_width] is needed:
 //   - process noise: rates vary by timepoint, need states at every week
 //   - enable_states_full_grid: explicit flag (future-proofing)
 //   - ungated continuous time-varying covariate for 0→1 multistate transition
-int need_states_full_grid = enable_any_process_noise_tr || enable_states_full_grid ||
-  (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
-   (enable_ms_01 && !enable_ms_visit_gated_01 || enable_ms_02_time_varying_cov));
+int enable_any_process_noise_tr;
+int need_states_full_grid;
+(enable_any_process_noise_tr, need_states_full_grid) = compute_full_model_grid_flags(
+  enable_pop_process_noise_tr, enable_patient_process_noise_tr,
+  enable_states_full_grid,
+  enable_ms_pop_time_varying_cov, n_time_varying_covar,
+  enable_ms_01, enable_ms_visit_gated_01,
+  enable_ms_02_time_varying_cov
+);
 print("need_states_full_grid = ", need_states_full_grid,
       " (process_noise=", enable_any_process_noise_tr,
       ", full_grid_flag=", enable_states_full_grid,
