@@ -250,7 +250,8 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     # Total rate module hyperparams (multi-level): c(trial, patient)
     tr_loc_pop_mean = tr_loc_pop_mean,
     tr_loc_pop_sd = tr_loc_pop_sd,
-    tr_sd_level_intercept_sd = c(0.35, 0.35),
+    tr_sd_level_intercept_sd = rep(0.35, n_levels),
+    tr_fe_sd_level_intercept = rep(1e-4, n_levels),
     tr_coef_qr_pop_mean = as.array(rep(0, n_covar)),
     tr_coef_qr_pop_sd = as.array(rep(1, n_covar)),
     tr_sd_level_slope_sd = list(
@@ -277,7 +278,8 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     # Fraction module hyperparams (multi-level): c(trial, patient)
     frac_logit_loc_pop_mean = frac_logit_loc_pop_mean,
     frac_logit_loc_pop_sd = frac_logit_loc_pop_sd,
-    frac_sd_level_intercept_sd = c(0.25, 0.25),
+    frac_sd_level_intercept_sd = rep(0.25, n_levels),
+    frac_fe_sd_level_intercept = rep(1e-4, n_levels),
     frac_coef_qr_pop_mean = as.array(qr_frac$coef_mean_qr),
     frac_coef_qr_pop_sd = as.array(qr_frac$coef_sd_qr),
     frac_sd_level_slope_sd = list(
@@ -289,6 +291,7 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     init_logit_loc_pop_mean = init_logit_loc_pop_mean,
     init_logit_loc_pop_sd = init_logit_loc_pop_sd,
     init_sd_level_intercept_sd = c(0.6, 0.5),
+    init_fe_sd_level_intercept = rep(1e-4, n_levels),
     init_coef_qr_pop_mean = as.array(qr_init$coef_mean_qr),
     init_coef_qr_pop_sd = as.array(qr_init$coef_sd_qr),
     init_sd_level_slope_sd = list(
