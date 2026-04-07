@@ -15,20 +15,20 @@
 array[n_forecast_patients] int<lower=0> sample_rpfs, spop_rpfs;
 array[n_forecast_patients] int<lower=0, upper=1> sample_rpfs_censored, spop_rpfs_censored;
 
-// Trial-level rPFS KM curves
-array[n_trials] vector<lower=0, upper=1>[max_all_t + 1] sample_rpfs_km_est, spop_rpfs_km_est;
+// Trial-level rPFS KM curves (flat — no trial dimension)
+vector<lower=0, upper=1>[max_all_t + 1] sample_rpfs_km_est, spop_rpfs_km_est;
 array[n_cond_group] vector<lower=0, upper=1>[max_all_t + 1]
   cond_sample_rpfs_km_est, cond_spop_rpfs_km_est;
 
-// rPFS quantiles — trial-level
-array[n_trials] vector<lower=0>[n_pfs_quantiles]
-  sample_rpfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials),
-  spop_rpfs_quant   = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
-array[n_trials, n_pfs_quantiles] int
-  sample_rpfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials),
-  spop_rpfs_quant_exceeds_max   = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+// rPFS quantiles — flat
+vector<lower=0>[n_pfs_quantiles]
+  sample_rpfs_quant = zeros_vector(n_pfs_quantiles),
+  spop_rpfs_quant   = zeros_vector(n_pfs_quantiles);
+array[n_pfs_quantiles] int
+  sample_rpfs_quant_exceeds_max = zeros_int_array(n_pfs_quantiles),
+  spop_rpfs_quant_exceeds_max   = zeros_int_array(n_pfs_quantiles);
 
-// rPFS quantiles — conditional group-level
+// rPFS quantiles — conditional group-level (unchanged)
 array[n_cond_group] vector<lower=0>[n_pfs_quantiles]
   cond_sample_rpfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group),
   cond_spop_rpfs_quant   = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
@@ -37,7 +37,7 @@ array[n_cond_group, n_pfs_quantiles] int
   cond_spop_rpfs_quant_exceeds_max   = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
 
 // rPFS at fixed timepoints
-array[n_trials] vector<lower=0, upper=1>[n_pfs_timepoints] sample_rpfs_n, spop_rpfs_n;
+vector<lower=0, upper=1>[n_pfs_timepoints] sample_rpfs_n, spop_rpfs_n;
 array[n_cond_group] vector<lower=0, upper=1>[n_pfs_timepoints] cond_sample_rpfs_n, cond_spop_rpfs_n;
 
 // Patient-level: rPFS = min(radiographic PFS, OS), censored otherwise
@@ -59,36 +59,19 @@ for (i in 1:n_forecast_patients) {
   }
 }
 
-// Trial-level aggregation
-for (s in 1:n_trials) {
-  if (get_pos_size(forecast_trial_patient_pos, s) > 0) {
-    sample_rpfs_km_est[s] = estimate_kaplan_meier(
-      get_int_sub_array(sample_rpfs, forecast_trial_patient_pos, s),
-      get_int_sub_array(sample_rpfs_censored, forecast_trial_patient_pos, s),
-      max_all_t, 0).1;
-    spop_rpfs_km_est[s] = estimate_kaplan_meier(
-      get_int_sub_array(spop_rpfs, forecast_trial_patient_pos, s),
-      get_int_sub_array(spop_rpfs_censored, forecast_trial_patient_pos, s),
-      max_all_t, 0).1;
+// Flat aggregation
+sample_rpfs_km_est = estimate_kaplan_meier(sample_rpfs, sample_rpfs_censored, max_all_t, 0).1;
+spop_rpfs_km_est   = estimate_kaplan_meier(spop_rpfs,   spop_rpfs_censored,   max_all_t, 0).1;
 
-    (sample_rpfs_quant[s], sample_rpfs_quant_exceeds_max[s]) =
-      km_quantiles(sample_rpfs_km_est[s], pfs_quantiles);
-    (spop_rpfs_quant[s], spop_rpfs_quant_exceeds_max[s]) =
-      km_quantiles(spop_rpfs_km_est[s], pfs_quantiles);
+(sample_rpfs_quant, sample_rpfs_quant_exceeds_max) = km_quantiles(sample_rpfs_km_est, pfs_quantiles);
+(spop_rpfs_quant,   spop_rpfs_quant_exceeds_max)   = km_quantiles(spop_rpfs_km_est,   pfs_quantiles);
 
-    for (n in 1:n_pfs_timepoints) {
-      sample_rpfs_n[s, n] = calc_km_pfs_n(sample_rpfs_km_est[s], months_to_weeks(pfs_timepoints[n]));
-      spop_rpfs_n[s, n]   = calc_km_pfs_n(spop_rpfs_km_est[s],   months_to_weeks(pfs_timepoints[n]));
-    }
-  } else {
-    sample_rpfs_km_est[s] = zeros_vector(max_all_t + 1);
-    spop_rpfs_km_est[s]   = zeros_vector(max_all_t + 1);
-    sample_rpfs_n[s]      = zeros_vector(n_pfs_timepoints);
-    spop_rpfs_n[s]        = zeros_vector(n_pfs_timepoints);
-  }
+for (n in 1:n_pfs_timepoints) {
+  sample_rpfs_n[n] = calc_km_pfs_n(sample_rpfs_km_est, months_to_weeks(pfs_timepoints[n]));
+  spop_rpfs_n[n]   = calc_km_pfs_n(spop_rpfs_km_est,   months_to_weeks(pfs_timepoints[n]));
 }
 
-// Conditional group aggregation
+// Conditional group aggregation (unchanged)
 for (c in 1:n_cond_group) {
   int curr_group_size = get_pos_size(cond_group_pos, c);
   if (curr_group_size > 0) {
