@@ -28,14 +28,26 @@ if (enable_pop_cov_frac) {
     if (enable_level_intercept_frac[lv]) {
       int lv_start = enabled_level_pos_frac_intercept[lv];
       int lv_end = enabled_level_pos_frac_intercept[lv + 1] - 1;
-      frac_raw_level_intercept[lv_start:lv_end] ~ std_normal();
+      if (enable_student_t_hierarchy)
+        frac_raw_level_intercept[lv_start:lv_end] ~ student_t(frac_nu_level[lv], 0, 1);
+      else
+        frac_raw_level_intercept[lv_start:lv_end] ~ std_normal();
     }
 
     // Slope raw effects - only apply prior to enabled levels
     if (enable_level_cov_frac[lv] && n_covar > 0) {
       int lv_start = enabled_level_pos_frac_slope[lv];
       int lv_end = enabled_level_pos_frac_slope[lv + 1] - 1;
-      to_vector(frac_raw_level_slope[lv_start:lv_end, :]) ~ std_normal();
+      if (enable_student_t_hierarchy)
+        to_vector(frac_raw_level_slope[lv_start:lv_end, :]) ~ student_t(frac_nu_level[lv], 0, 1);
+      else
+        to_vector(frac_raw_level_slope[lv_start:lv_end, :]) ~ std_normal();
     }
   }
+}
+
+// Student-t nu priors (only when enabled)
+if (enable_student_t_hierarchy) {
+  for (lv in 1:n_levels)
+    frac_nu_level[lv] ~ gamma(frac_nu_level_prior_alpha[lv], frac_nu_level_prior_beta[lv]);
 }

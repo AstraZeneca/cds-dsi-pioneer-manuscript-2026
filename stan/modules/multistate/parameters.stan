@@ -114,6 +114,12 @@ matrix[n_gp_groups_ms_baseline_03, enable_ms_03 ? n_ms_gp_cal_knots : 0] log_lam
 vector[n_enabled_groups_ms_baseline_03] raw_log_lambda_gp_03_level_intercept;
 
 // ============================================================================
+// STUDENT-T HIERARCHY: DEGREES OF FREEDOM (size 0 when disabled)
+// ============================================================================
+array[enable_student_t_hierarchy ? n_levels : 0] real<lower=2> ms_nu_baseline_level;
+array[enable_student_t_hierarchy ? n_levels : 0] real<lower=2> ms_nu_slope_level;
+
+// ============================================================================
 // PSA-AT-ENTRY COVARIATE COEFFICIENTS
 // ============================================================================
 // Scalar coefficient for standardized log-PSA at state entry.
