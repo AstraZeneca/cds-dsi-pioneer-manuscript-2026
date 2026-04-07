@@ -9,6 +9,7 @@
 
 functions {
   #include "pfs.stanfunctions"
+  #include "multistate.stanfunctions"
   #include "util.stanfunctions"
   #include "pos.stanfunctions"
 }
