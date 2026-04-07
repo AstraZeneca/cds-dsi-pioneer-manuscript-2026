@@ -2,6 +2,7 @@ functions {
   #include "pos.stanfunctions"
   #include "util.stanfunctions"
   #include "pfs.stanfunctions"
+  #include "multistate.stanfunctions"
 }
 
 data {
