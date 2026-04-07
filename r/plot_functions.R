@@ -1182,7 +1182,8 @@ plot_competing_risks_cif <- function(
   time_step = 4L,
   x_breaks_months = seq(0, 48, by = 6),
   trials = NULL,
-  causes = 1:3
+  causes = 1:3,
+  flat_cif = FALSE
 ) {
   cif_prefix <- match.arg(cif_prefix)
   trial_id   <- as.integer(stan_data$patient_trial)
@@ -1235,27 +1236,46 @@ plot_competing_risks_cif <- function(
   draws_mat <- posterior::as_draws_matrix(draws_cif)
   time_grid <- seq(time_step, max_t, by = time_step)
 
-  model_cif <- map_dfr(trials, function(tr) {
+  model_cif <- if (flat_cif) {
     map_dfr(time_grid, function(t) {
       t_idx <- t + 1L
       extract_cif <- function(cause_id) {
-        col <- str_c(cif_prefix, "_cif_0", cause_id, "[", tr, ",", t_idx, "]")
+        col <- str_c(cif_prefix, "_cif_0", cause_id, "[", t_idx, "]")
         if (!col %in% colnames(draws_mat)) return(tibble(med = NA_real_, lo = NA_real_, hi = NA_real_))
         x <- draws_mat[, col]
         q <- quantile(x, c(0.10, 0.50, 0.90))
         tibble(med = q[[2]], lo = q[[1]], hi = q[[3]])
       }
-      # Always extract all 3 causes: state-0 retention requires subtracting all
-      # three CIFs (CIF_01 + CIF_02 + CIF_03), regardless of which causes are
-      # displayed in the upper CIF panel.
       bind_cols(
-        tibble(t = t, trial = tr),
+        tibble(t = t, trial = 1L),  # single pseudo-trial for downstream compat
         map(1:3, function(cause_id) {
           rename_with(extract_cif(cause_id), ~str_c("cif_0", cause_id, "_", .))
         }) |> bind_cols()
       )
     })
-  })
+  } else {
+    map_dfr(trials, function(tr) {
+      map_dfr(time_grid, function(t) {
+        t_idx <- t + 1L
+        extract_cif <- function(cause_id) {
+          col <- str_c(cif_prefix, "_cif_0", cause_id, "[", tr, ",", t_idx, "]")
+          if (!col %in% colnames(draws_mat)) return(tibble(med = NA_real_, lo = NA_real_, hi = NA_real_))
+          x <- draws_mat[, col]
+          q <- quantile(x, c(0.10, 0.50, 0.90))
+          tibble(med = q[[2]], lo = q[[1]], hi = q[[3]])
+        }
+        # Always extract all 3 causes: state-0 retention requires subtracting all
+        # three CIFs (CIF_01 + CIF_02 + CIF_03), regardless of which causes are
+        # displayed in the upper CIF panel.
+        bind_cols(
+          tibble(t = t, trial = tr),
+          map(1:3, function(cause_id) {
+            rename_with(extract_cif(cause_id), ~str_c("cif_0", cause_id, "_", .))
+          }) |> bind_cols()
+        )
+      })
+    })
+  }
 
   model_cif_long <- model_cif |>
     pivot_longer(
