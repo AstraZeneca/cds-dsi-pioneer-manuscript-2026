@@ -597,6 +597,19 @@ build_model <- function(
   return(model)
 }
 
+build_model_exe_hash <- function(model_file, include_files, artifacts_path, include_paths) {
+  model <- build_model(
+    model_file,
+    include_files,
+    file.path(artifacts_path, "models"),
+    include_paths = include_paths
+  )
+  list(
+    source_hash = compute_stan_source_hash(model_file, include_files),
+    exe_file = model$exe_file()
+  )
+}
+
 remove_incomplete_cases <- function(data, incomplete) {
   if (is_empty(incomplete)) {
     return(data)
