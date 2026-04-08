@@ -403,6 +403,53 @@ select_draws_single_chain <- function(csv, ...) {
   )$post_warmup_draws
 }
 
+#' Extract hierarchy-level intercepts (tr/frac/init) from a fit
+#'
+#' Spreads the full \code{*_raw_level_intercept} vectors via
+#' \code{tidybayes::spread_rvars}, then assigns level names and group labels
+#' using \code{enable_level_intercept_tr} and \code{n_groups_per_level}.
+#' Disabled levels (mode 0) are silently omitted.
+#'
+#' @param fit CmdStanMCMC fit object.
+#' @param stan_data Stan data list (needs \code{enable_level_intercept_tr},
+#'   \code{n_groups_per_level}).
+#' @param analysis_data Data frame whose \code{trial}/\code{arm} factors
+#'   provide group labels.
+#' @return Long tibble with columns \code{level}, \code{group_label},
+#'   \code{param} (tr/frac/init), and \code{level_intercept} (rvar).
+extract_level_intercepts <- function(fit, stan_data, analysis_data) {
+  enabled_idx <- which(stan_data$enable_level_intercept_tr > 0)
+  if (length(enabled_idx) == 0L) return(tibble())
+
+  level_names <- names(stan_data$n_groups_per_level)
+  n_per_enabled <- stan_data$n_groups_per_level[enabled_idx]
+
+  # Map each group index to its level name and label
+  level_vec <- rep(level_names[enabled_idx], n_per_enabled)
+  label_vec <- unlist(map(enabled_idx, \(lv) {
+    col <- level_names[lv]
+    if (col %in% names(analysis_data) && is.factor(analysis_data[[col]])) {
+      levels(analysis_data[[col]])
+    } else {
+      as.character(seq_len(stan_data$n_groups_per_level[lv]))
+    }
+  }))
+
+  select_draws(fit, matches("_raw_level_intercept")) |>
+    spread_rvars(
+      tr_raw_level_intercept[group],
+      frac_raw_level_intercept[group],
+      init_raw_level_intercept[group]
+    ) |>
+    mutate(level = level_vec[group], group_label = label_vec[group]) |>
+    pivot_longer(
+      ends_with("_raw_level_intercept"),
+      names_to = "param",
+      names_pattern = "(.+)_raw_level_intercept",
+      values_to = "level_intercept"
+    )
+}
+
 #' Extract and compile decorated Stan functions
 #'
 #' @param stan_file Path to .stan file with decorated functions
