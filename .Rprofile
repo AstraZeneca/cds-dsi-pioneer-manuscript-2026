@@ -102,6 +102,7 @@ init_project <- function(output_path = output_path, artifacts_path = artifacts_p
   source(here("r", "state_space.R"))
   source(here("r", "plot_functions.R"))
   source(here("r", "parquet_draws.R"))
+  source(here("r", "diagnostics.R"))
 
   tar_project <- Sys.getenv("TAR_PROJECT", "sclc")
 
