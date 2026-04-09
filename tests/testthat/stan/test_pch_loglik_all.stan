@@ -1,4 +1,5 @@
 functions {
+  #include "multistate.stanfunctions"
   #include "pfs.stanfunctions"
   #include "util.stanfunctions"
   #include "pos.stanfunctions"

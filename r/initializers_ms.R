@@ -223,6 +223,14 @@ ms_init_values <- function(env) {
                nrow = n_enabled_groups_ms_slope, ncol = n_time_invariant_covar)
       },
 
+      # Student-t hierarchy: multistate nu starting values
+      ms_nu_baseline_level = if (isTRUE(enable_student_t_hierarchy == 1L)) {
+        as.array(pmax(2.1, rgamma(n_levels, 2, 0.1)))
+      },
+      ms_nu_slope_level = if (isTRUE(enable_student_t_hierarchy == 1L)) {
+        as.array(pmax(2.1, rgamma(n_levels, 2, 0.1)))
+      },
+
       # PSA-at-state-entry covariate coefficients
       coef_log_psa_12 = if (enable_ms_12 && isTRUE(enable_ms_12_entry_psa_cov == 1L)) {
         array(rnorm(1, coef_log_psa_12_mean, coef_log_psa_12_sd * 0.3), dim = 1)

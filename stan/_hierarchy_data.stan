@@ -22,3 +22,6 @@ array[n_patients, n_levels] int<lower=1> patient_level_groups;
 
 int<lower=0> n_covar;
 matrix[n_patients, n_covar] covar_design_matrix;
+
+// Student-t hierarchy flag: 0 = std_normal (default), 1 = student_t(nu, 0, 1)
+int<lower=0, upper=1> enable_student_t_hierarchy;

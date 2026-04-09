@@ -125,6 +125,14 @@ array[n_levels] row_vector<lower=0>[n_time_invariant_covar] sd_level_slope_01_sd
 array[n_levels] row_vector<lower=0>[n_time_invariant_covar] sd_level_slope_02_sd;
 array[n_levels] row_vector<lower=0>[n_time_invariant_covar] sd_level_slope_12_sd;
 
+// --- Student-t hierarchy: nu prior hyperparameters for multistate ---
+// Baseline intercepts (one per level)
+array[n_levels] real<lower=0> ms_nu_baseline_level_prior_alpha;
+array[n_levels] real<lower=0> ms_nu_baseline_level_prior_beta;
+// Slopes (one per level)
+array[n_levels] real<lower=0> ms_nu_slope_level_prior_alpha;
+array[n_levels] real<lower=0> ms_nu_slope_level_prior_beta;
+
 // --- PSA-at-State-Entry Coefficient Hyperparameters ---
 // Prior for the scalar log-PSA coefficient on 1→2 and 3→2 sojourn hazards.
 real coef_log_psa_12_mean;
