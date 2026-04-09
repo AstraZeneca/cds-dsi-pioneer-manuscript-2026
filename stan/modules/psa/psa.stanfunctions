@@ -217,9 +217,10 @@ tuple(array[] int, array[] int) calculate_all_patients_pcwg3(
       );
       obs_indices[n_assessment] = fcast_end;
 
-      // PSA trajectory: last observed + assessment visits (for nadir continuity)
+      // PSA trajectory: pre-treatment baseline + assessment visits
+      // combined_psa[1] anchors the PSA50 baseline (must be pre-treatment, not last treatment PSA)
       vector[1 + n_assessment] combined_psa;
-      combined_psa[1] = rep_psa_abs[visit_size];
+      combined_psa[1] = rep_psa_abs[n_screening];
       combined_psa[2:] = exp(forecast_patient_log_psa[obs_indices]);
 
       // Days: last observed day + assessment visit days
