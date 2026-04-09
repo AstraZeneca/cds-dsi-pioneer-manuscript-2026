@@ -132,7 +132,9 @@ generate_quantities_from_fit <- function(
   if (!fs::file_exists(exe_file)) {
     if (is.null(stan_file)) {
       stop(
-        "Stan exe not found at '", exe_file, "' and no stan_file provided for recompilation."
+        "Stan exe not found at '",
+        exe_file,
+        "' and no stan_file provided for recompilation."
       )
     }
     message("Stan exe not found at '", exe_file, "' — recompiling from source.")
@@ -145,10 +147,14 @@ generate_quantities_from_fit <- function(
       cpp_options = list(stan_threads = TRUE)
     )
     gq_args <- list(
-      fitted_params = fit, data = data,
-      output_dir = output_dir, parallel_chains = parallel_chains
+      fitted_params = fit,
+      data = data,
+      output_dir = output_dir,
+      parallel_chains = parallel_chains
     )
-    if (!is.null(threads_per_chain)) gq_args$threads_per_chain <- threads_per_chain
+    if (!is.null(threads_per_chain)) {
+      gq_args$threads_per_chain <- threads_per_chain
+    }
     return(do.call(model$generate_quantities, gq_args))
   }
 
@@ -167,10 +173,14 @@ generate_quantities_from_fit <- function(
   model$.__enclos_env__$private$cpp_options_$stan_threads <- TRUE
 
   gq_args <- list(
-    fitted_params = fit, data = data,
-    output_dir = output_dir, parallel_chains = parallel_chains
+    fitted_params = fit,
+    data = data,
+    output_dir = output_dir,
+    parallel_chains = parallel_chains
   )
-  if (!is.null(threads_per_chain)) gq_args$threads_per_chain <- threads_per_chain
+  if (!is.null(threads_per_chain)) {
+    gq_args$threads_per_chain <- threads_per_chain
+  }
   do.call(model$generate_quantities, gq_args)
 }
 
@@ -192,20 +202,27 @@ generate_quantities_from_fit <- function(
 #' @return posterior::draws_df with spop/sample_cif_01/02/03[trial,time] variables
 compute_cif_from_draws <- function(fit, stan_data) {
   n_patients <- stan_data$n_patients
-  n_trials   <- stan_data$n_trials
+  n_trials <- stan_data$n_trials
   # max_all_t and trial_patient_pos are Stan transformed_data — reconstruct here.
   # Stan: max_all_t = max(max(t_patient_visits) + 1, extend_max_all_t)
-  max_all_t  <- max(max(stan_data$t_patient_visits) + 1L, stan_data$extend_max_all_t)
-  T_len      <- max_all_t + 1L
+  max_all_t <- max(max(stan_data$t_patient_visits) + 1L, stan_data$extend_max_all_t)
+  T_len <- max_all_t + 1L
   n_trial_patients <- tabulate(stan_data$patient_trial, nbins = n_trials)
-  tpp <- c(1L, cumsum(n_trial_patients) + 1L)  # length n_trials + 1
+  tpp <- c(1L, cumsum(n_trial_patients) + 1L) # length n_trials + 1
 
   pvars <- c(
-    "spop_ms_pfs", "spop_ms_right_censored",
-    "spop_right_censored", "spop_target_right_censored", "spop_target_pfs",
-    "spop_pfs", "spop_os", "spop_os_censored",
-    "sample_ms_pfs", "sample_ms_right_censored",
-    "sample_os", "sample_os_censored"
+    "spop_ms_pfs",
+    "spop_ms_right_censored",
+    "spop_right_censored",
+    "spop_target_right_censored",
+    "spop_target_pfs",
+    "spop_pfs",
+    "spop_os",
+    "spop_os_censored",
+    "sample_ms_pfs",
+    "sample_ms_right_censored",
+    "sample_os",
+    "sample_os_censored"
   )
 
   d_mat <- posterior::as_draws_matrix(fit$draws(variables = pvars))
@@ -216,25 +233,25 @@ compute_cif_from_draws <- function(fit, stan_data) {
     base::match(str_c(varname, "[", seq_len(n_patients), "]"), colnames(d_mat))
   }
   ci <- list(
-    sms_pfs   = col_idx("spop_ms_pfs"),
-    sms_rc    = col_idx("spop_ms_right_censored"),
-    s_rc      = col_idx("spop_right_censored"),
-    st_rc     = col_idx("spop_target_right_censored"),
-    st_pfs    = col_idx("spop_target_pfs"),
-    s_pfs     = col_idx("spop_pfs"),
-    s_os      = col_idx("spop_os"),
-    s_osc     = col_idx("spop_os_censored"),
-    sam_pfs   = col_idx("sample_ms_pfs"),
-    sam_rc    = col_idx("sample_ms_right_censored"),
-    sam_os    = col_idx("sample_os"),
-    sam_osc   = col_idx("sample_os_censored")
+    sms_pfs = col_idx("spop_ms_pfs"),
+    sms_rc = col_idx("spop_ms_right_censored"),
+    s_rc = col_idx("spop_right_censored"),
+    st_rc = col_idx("spop_target_right_censored"),
+    st_pfs = col_idx("spop_target_pfs"),
+    s_pfs = col_idx("spop_pfs"),
+    s_os = col_idx("spop_os"),
+    s_osc = col_idx("spop_os_censored"),
+    sam_pfs = col_idx("sample_ms_pfs"),
+    sam_rc = col_idx("sample_ms_right_censored"),
+    sam_os = col_idx("sample_os"),
+    sam_osc = col_idx("sample_os_censored")
   )
 
   # Output CIF arrays [n_draws, n_trials, T_len]
   cif_arrs <- list(
-    spop_cif_01   = array(0, c(n_draws, n_trials, T_len)),
-    spop_cif_02   = array(0, c(n_draws, n_trials, T_len)),
-    spop_cif_03   = array(0, c(n_draws, n_trials, T_len)),
+    spop_cif_01 = array(0, c(n_draws, n_trials, T_len)),
+    spop_cif_02 = array(0, c(n_draws, n_trials, T_len)),
+    spop_cif_03 = array(0, c(n_draws, n_trials, T_len)),
     sample_cif_01 = array(0, c(n_draws, n_trials, T_len)),
     sample_cif_02 = array(0, c(n_draws, n_trials, T_len)),
     sample_cif_03 = array(0, c(n_draws, n_trials, T_len))
@@ -244,55 +261,57 @@ compute_cif_from_draws <- function(fit, stan_data) {
     row <- d_mat[i, ]
     get_int <- function(idx) as.integer(round(row[idx]))
 
-    sms_pfs   <- get_int(ci$sms_pfs)
-    sms_rc    <- get_int(ci$sms_rc)
-    s_rc      <- get_int(ci$s_rc)
-    st_rc     <- get_int(ci$st_rc)
-    st_pfs    <- get_int(ci$st_pfs)
-    s_pfs     <- get_int(ci$s_pfs)
-    s_os      <- get_int(ci$s_os)
-    s_osc     <- get_int(ci$s_osc)
-    sam_pfs   <- get_int(ci$sam_pfs)
-    sam_rc    <- get_int(ci$sam_rc)
-    sam_os    <- get_int(ci$sam_os)
-    sam_osc   <- get_int(ci$sam_osc)
+    sms_pfs <- get_int(ci$sms_pfs)
+    sms_rc <- get_int(ci$sms_rc)
+    s_rc <- get_int(ci$s_rc)
+    st_rc <- get_int(ci$st_rc)
+    st_pfs <- get_int(ci$st_pfs)
+    s_pfs <- get_int(ci$s_pfs)
+    s_os <- get_int(ci$s_os)
+    s_osc <- get_int(ci$s_osc)
+    sam_pfs <- get_int(ci$sam_pfs)
+    sam_rc <- get_int(ci$sam_rc)
+    sam_os <- get_int(ci$sam_os)
+    sam_osc <- get_int(ci$sam_osc)
 
     # Mirror the Stan GQ correction (_endpoints_generated_quantities.stan:336-347).
     # This overwrites spop_ms_pfs/spop_ms_right_censored before the CIF module runs.
     # Case 1: PFS event (combined) — use combined PFS time (min of target + ms)
     case1 <- s_rc == 0L
     sms_pfs[case1] <- s_pfs[case1]
-    sms_rc[case1]  <- 0L
+    sms_rc[case1] <- 0L
     # Case 2: dropout where SF progression precedes dropout — reclassify as 0→1
     case2 <- s_rc == 1L & st_rc == 0L & st_pfs <= sms_pfs
     sms_pfs[case2] <- st_pfs[case2]
-    sms_rc[case2]  <- 0L
+    sms_rc[case2] <- 0L
     # Case 3 (else): leave unchanged — dropout or fully censored
     # Note: Stan GQ applies NO correction to sample_* variables.
 
     for (s in seq_len(n_trials)) {
-      tr   <- seq(tpp[s], tpp[s + 1L] - 1L)
+      tr <- seq(tpp[s], tpp[s + 1L] - 1L)
       n_tr <- length(tr)
-      if (n_tr == 0L) next
+      if (n_tr == 0L) {
+        next
+      }
 
       # ── spop (unconditional posterior predictive) ──────────────────────────
       pfs_e <- sms_rc[tr] == 0L
-      dd    <- pfs_e & s_osc[tr] == 0L & sms_pfs[tr] == s_os[tr]
-      prog  <- pfs_e & !dd
+      dd <- pfs_e & s_osc[tr] == 0L & sms_pfs[tr] == s_os[tr]
+      prog <- pfs_e & !dd
       drop_ <- !pfs_e & sms_pfs[tr] <= max_all_t
 
-      cif_arrs$spop_cif_01[i, s, ] <- cumsum(tabulate(sms_pfs[tr][prog],  nbins = T_len)) / n_tr
-      cif_arrs$spop_cif_02[i, s, ] <- cumsum(tabulate(sms_pfs[tr][dd],    nbins = T_len)) / n_tr
+      cif_arrs$spop_cif_01[i, s, ] <- cumsum(tabulate(sms_pfs[tr][prog], nbins = T_len)) / n_tr
+      cif_arrs$spop_cif_02[i, s, ] <- cumsum(tabulate(sms_pfs[tr][dd], nbins = T_len)) / n_tr
       cif_arrs$spop_cif_03[i, s, ] <- cumsum(tabulate(sms_pfs[tr][drop_], nbins = T_len)) / n_tr
 
       # ── sample (conditional on observed data, no correction — matches Stan GQ)
       pfs_e_s <- sam_rc[tr] == 0L
-      dd_s    <- pfs_e_s & sam_osc[tr] == 0L & sam_pfs[tr] == sam_os[tr]
-      prog_s  <- pfs_e_s & !dd_s
-      drop_s  <- !pfs_e_s & sam_pfs[tr] <= max_all_t
+      dd_s <- pfs_e_s & sam_osc[tr] == 0L & sam_pfs[tr] == sam_os[tr]
+      prog_s <- pfs_e_s & !dd_s
+      drop_s <- !pfs_e_s & sam_pfs[tr] <= max_all_t
 
       cif_arrs$sample_cif_01[i, s, ] <- cumsum(tabulate(sam_pfs[tr][prog_s], nbins = T_len)) / n_tr
-      cif_arrs$sample_cif_02[i, s, ] <- cumsum(tabulate(sam_pfs[tr][dd_s],   nbins = T_len)) / n_tr
+      cif_arrs$sample_cif_02[i, s, ] <- cumsum(tabulate(sam_pfs[tr][dd_s], nbins = T_len)) / n_tr
       cif_arrs$sample_cif_03[i, s, ] <- cumsum(tabulate(sam_pfs[tr][drop_s], nbins = T_len)) / n_tr
     }
   }
@@ -305,7 +324,7 @@ compute_cif_from_draws <- function(fit, stan_data) {
   # columns into list-typed array variables, breaking downstream as.numeric().
   n_cif_cols <- length(cif_arrs) * n_trials * T_len
   result_mat <- matrix(0, nrow = n_draws, ncol = n_cif_cols)
-  col_names  <- character(n_cif_cols)
+  col_names <- character(n_cif_cols)
   k <- 0L
   for (nm in names(cif_arrs)) {
     arr <- cif_arrs[[nm]]
@@ -337,7 +356,8 @@ select_draws <- function(fit, ...) {
   # Get all variable names from the CSV header (avoids fit$metadata() which
   # also relies on live process state)
   all_vars <- cmdstanr::read_cmdstan_csv(
-    csv_files[1], variables = character(0)
+    csv_files[1],
+    variables = character(0)
   )$metadata$stan_variables
 
   if (...length() == 0) {
@@ -383,7 +403,8 @@ select_draws <- function(fit, ...) {
 #' @export
 select_draws_single_chain <- function(csv, ...) {
   all_vars <- cmdstanr::read_cmdstan_csv(
-    csv, variables = character(0)
+    csv,
+    variables = character(0)
   )$metadata$stan_variables
 
   selection <- substitute(c(...))
@@ -401,6 +422,55 @@ select_draws_single_chain <- function(csv, ...) {
     files = csv,
     variables = selected_vars
   )$post_warmup_draws
+}
+
+#' Extract hierarchy-level intercepts (tr/frac/init) from a fit
+#'
+#' Spreads the full \code{*_raw_level_intercept} vectors via
+#' \code{tidybayes::spread_rvars}, then assigns level names and group labels
+#' using \code{enable_level_intercept_tr} and \code{n_groups_per_level}.
+#' Disabled levels (mode 0) are silently omitted.
+#'
+#' @param fit CmdStanMCMC fit object.
+#' @param stan_data Stan data list (needs \code{enable_level_intercept_tr},
+#'   \code{n_groups_per_level}).
+#' @param analysis_data Data frame whose \code{trial}/\code{arm} factors
+#'   provide group labels.
+#' @return Long tibble with columns \code{level}, \code{group_label},
+#'   \code{param} (tr/frac/init), and \code{level_intercept} (rvar).
+extract_level_intercepts <- function(fit, stan_data, analysis_data) {
+  enabled_idx <- which(stan_data$enable_level_intercept_tr > 0)
+  if (length(enabled_idx) == 0L) {
+    return(tibble())
+  }
+
+  level_names <- names(stan_data$n_groups_per_level)
+  n_per_enabled <- stan_data$n_groups_per_level[enabled_idx]
+
+  # Map each group index to its level name and label
+  level_vec <- rep(level_names[enabled_idx], n_per_enabled)
+  label_vec <- unlist(map(enabled_idx, \(lv) {
+    col <- level_names[lv]
+    if (col %in% names(analysis_data) && is.factor(analysis_data[[col]])) {
+      levels(analysis_data[[col]])
+    } else {
+      as.character(seq_len(stan_data$n_groups_per_level[lv]))
+    }
+  }))
+
+  select_draws(fit, matches("_raw_level_intercept")) |>
+    spread_rvars(
+      tr_raw_level_intercept[group],
+      frac_raw_level_intercept[group],
+      init_raw_level_intercept[group]
+    ) |>
+    mutate(level = level_vec[group], group_label = label_vec[group]) |>
+    pivot_longer(
+      ends_with("_raw_level_intercept"),
+      names_to = "param",
+      names_pattern = "(.+)_raw_level_intercept",
+      values_to = "level_intercept"
+    )
 }
 
 #' Extract and compile decorated Stan functions
@@ -797,7 +867,6 @@ apply_calendar_cutoff <- function(
         1L,
         right_censored
       ),
-
     ) |>
     # Replace original variables with cutoff versions
     mutate(
