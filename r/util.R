@@ -50,16 +50,23 @@ sample_and_save <- function(
 
   fs::dir_create(output_dir, recurse = TRUE)
 
+  # Ensure execute permissions before loading the model. If the binary lacks
+  # the execute bit (e.g. artifacts volume between jobs), copy to output_dir
+  # first so the chmod applies to a local, definitely-writable path.
+  if (fs::file_exists(exe_file) && !fs::file_access(exe_file, "execute")) {
+    local_exe <- fs::path(output_dir, fs::path_file(exe_file))
+    fs::file_copy(exe_file, local_exe, overwrite = TRUE)
+    exe_file <- local_exe
+  }
+  if (fs::file_exists(exe_file)) {
+    fs::file_chmod(exe_file, "u+x")
+  }
+
   # Load the compiled model from exe_file
   # Workaround for stan-dev/cmdstanr#765: cpp_options is ignored when exe_file
   # is used, so stan_threads must be set via the private field directly.
   model <- cmdstan_model(exe_file = exe_file)
   model$.__enclos_env__$private$cpp_options_$stan_threads <- TRUE
-
-  # Ensure the compiled Stan executable has execute permissions
-  if (fs::file_exists(exe_file)) {
-    fs::file_chmod(exe_file, "u+x")
-  }
 
   if (!no_save && !timestamp) {
     # fit <- model$sample(..., output_dir = output_dir, output_basename = output_basename)
