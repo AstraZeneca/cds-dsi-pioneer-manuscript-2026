@@ -445,7 +445,7 @@ select_draws_single_chain <- function(csv, ...) {
 #'   provide group labels.
 #' @return Long tibble with columns \code{level}, \code{group_label},
 #'   \code{param} (tr/frac/init), and \code{level_intercept} (rvar).
-extract_level_intercepts <- function(fit, stan_data, analysis_data) {
+extract_level_intercepts <- function(draws, stan_data, analysis_data) {
   enabled_idx <- which(stan_data$enable_level_intercept_tr > 0)
   if (length(enabled_idx) == 0L) {
     return(tibble())
@@ -465,7 +465,7 @@ extract_level_intercepts <- function(fit, stan_data, analysis_data) {
     }
   }))
 
-  select_draws(fit, matches("_raw_level_intercept")) |>
+  draws |>
     spread_rvars(
       tr_raw_level_intercept[group],
       frac_raw_level_intercept[group],
