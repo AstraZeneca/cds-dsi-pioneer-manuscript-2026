@@ -1196,7 +1196,7 @@ plot_competing_risks_cif <- function(
   obs <- tibble(
     trial   = trial_id,
     cens_01 = stan_data$ms_censored_01, t_01 = stan_data$ms_time_01,
-    cens_02 = stan_data$ms_censored_02, t_02 = stan_data$ms_time_02,
+    cens_02 = as.integer(!(stan_data$ms_final_state == 2L & stan_data$ms_time_01 == 0L)), t_02 = stan_data$ms_time_02,
     fs      = stan_data$ms_final_state,  t_03 = stan_data$ms_time_03
   ) |> mutate(
     cr_cause = case_when(

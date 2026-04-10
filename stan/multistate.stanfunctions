@@ -159,6 +159,51 @@ int compute_ms_obs_psa_covar_size(
 }
 
 /**
+ * Derive binary censoring indicators for the 0→2, 1→2, and 3→2 transitions.
+ *
+ * These are logical consequences of ms_final_state, ms_time_01, and ms_time_32;
+ * factoring the derivation into a function lets the same code be exercised by
+ * tests without duplicating the logic.
+ *
+ * Classification rules (value 0 = event observed, 1 = right-censored):
+ *   - censored_02 = 0  iff  ms_final_state == 2 AND ms_time_01 == 0
+ *       (died without prior progression — direct 0→2 path)
+ *   - censored_12 = 0  iff  ms_final_state == 2 AND ms_time_01 > 0
+ *       (died after progressing — 0→1→2 path)
+ *   - censored_32 = 0  iff  ms_time_32 > 0
+ *       (off-trial death observed after dropout)
+ *
+ * Six patient patterns and their expected indicator values:
+ *   admin_censored:   state 0, time_01=0, time_32=0  → (1, 1, 1)
+ *   true_dropout:     state 0, time_01=0, time_32=0  → (1, 1, 1)
+ *   progressed_alive: state 1, time_01>0, time_32=0  → (1, 1, 1)
+ *   progressed_died:  state 2, time_01>0, time_32=0  → (1, 0, 1)
+ *   died_on_trial:    state 2, time_01=0, time_32=0  → (0, 1, 1)
+ *   died_off_trial:   state 3, time_01=0, time_32>0  → (1, 1, 0)
+ *
+ * @param ms_final_state  Final observed state per patient [0=alive/cens, 1=progressed, 2=dead, 3=dropout]
+ * @param ms_time_01      Week of 0→1 progression event (0 if patient never progressed)
+ * @param ms_time_32      Sojourn weeks from dropout to off-trial death (0 if not observed)
+ * @return Tuple: (censored_02[], censored_12[], censored_32[])
+ */
+tuple(array[] int, array[] int, array[] int) derive_ms_censoring_indicators(
+  array[] int ms_final_state,
+  array[] int ms_time_01,
+  array[] int ms_time_32
+) {
+  int n = size(ms_final_state);
+  array[n] int censored_02;
+  array[n] int censored_12;
+  array[n] int censored_32;
+  for (i in 1:n) {
+    censored_02[i] = (ms_final_state[i] == 2 && ms_time_01[i] == 0) ? 0 : 1;
+    censored_12[i] = (ms_final_state[i] == 2 && ms_time_01[i] > 0)  ? 0 : 1;
+    censored_32[i] = (ms_time_32[i] > 0) ? 0 : 1;
+  }
+  return (censored_02, censored_12, censored_32);
+}
+
+/**
  * Calculate log-likelihood for a single transition using piecewise constant hazard
  *
  * Wraps calc_pch_loglik for the detection-week convention.
