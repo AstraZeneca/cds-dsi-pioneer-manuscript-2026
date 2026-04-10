@@ -138,3 +138,4 @@ core.*
 .worktrees/
 .remember/
 .worktrees/
+docs/burden-endpoints-ablation.md
