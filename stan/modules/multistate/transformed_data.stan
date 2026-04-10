@@ -17,6 +17,21 @@ for (i in 1:n_patients) {
   }
 }
 
+// --- Derived Censoring Indicators ---
+// These are logical consequences of ms_final_state, ms_time_01, and ms_time_32;
+// computing them here avoids passing redundant data from R.
+array[n_patients] int ms_censored_02;
+array[n_patients] int ms_censored_12;
+array[n_patients] int ms_censored_32;
+for (i in 1:n_patients) {
+  // 0→2 event iff patient reached state 2 via the direct-death path (time_01 == 0)
+  ms_censored_02[i] = (ms_final_state[i] == 2 && ms_time_01[i] == 0) ? 0 : 1;
+  // 1→2 event iff patient reached state 2 via 0→1→2 path (time_01 > 0)
+  ms_censored_12[i] = (ms_final_state[i] == 2 && ms_time_01[i] > 0) ? 0 : 1;
+  // 3→2 event iff off-trial death observed (time_32 > 0)
+  ms_censored_32[i] = (ms_time_32[i] > 0) ? 0 : 1;
+}
+
 // --- Derived Flags for Time Scale (B1) ---
 // Which GPs are needed for the 1→2 transition
 // strict=1: fatal_error on invalid input; is_valid sentinel discarded

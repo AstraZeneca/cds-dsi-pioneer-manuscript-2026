@@ -211,7 +211,6 @@ if (enable_laplace_nontarget && n_background_patients > 0) {
         n_background_patients,
         ms_final_state[background_patient_idx],
         ms_time_01[background_patient_idx], ms_time_12[background_patient_idx],
-        ms_censored_12[background_patient_idx],
         lap_log_cond_surv_12_s,
         enable_ms_12, ms_time_scale_12
       );
@@ -245,7 +244,7 @@ if (enable_laplace_nontarget && n_background_patients > 0) {
       log_baseline_psa,
       median_log_psa_obs, iqr_log_psa_obs,
       ms_final_state, ms_time_01, ms_time_02,
-      ms_censored_01, ms_censored_02, ms_prog_deterministic,
+      ms_censored_01, ms_prog_deterministic,
       enable_ms_01, enable_ms_02,
       laplace_newton_tol, laplace_newton_max_iter
     );
