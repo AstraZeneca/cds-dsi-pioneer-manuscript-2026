@@ -37,7 +37,7 @@ real laplace_partial_sum(
     // MS event data (unified indexing)
     array[] int ms_final_state,
     array[] int ms_time_01, array[] int ms_time_02,
-    array[] int ms_censored_01, array[] int ms_censored_02,
+    array[] int ms_censored_01,
     array[] int ms_prog_deterministic,
     int enable_ms_01, int enable_ms_02,
     real newton_tol, int max_iter) {
@@ -59,7 +59,7 @@ real laplace_partial_sum(
       base_lh_01[i], base_lh_02[i],   // zero-col row_vector when disabled
       tv_coef_01, tv_coef_02, n_tv,
       ms_final_state[p], ms_time_01[p], ms_time_02[p],
-      ms_censored_01[p], ms_censored_02[p],
+      ms_censored_01[p],
       ms_prog_deterministic[p],
       enable_ms_01, enable_ms_02,
       newton_tol, max_iter
@@ -87,7 +87,7 @@ real laplace_patient_marginal(
     row_vector base_lh_01, row_vector base_lh_02,
     vector tv_coef_01, vector tv_coef_02, int n_tv,
     int final_state, int t_01, int t_02,
-    int cens_01, int cens_02, int prog_det,
+    int cens_01, int prog_det,
     int do_01, int do_02,
     real newton_tol, int max_iter) {
 
@@ -526,7 +526,6 @@ real laplace_ms_zi_independent_ll(
     int n_pat,
     array[] int final_state,
     array[] int time_01, array[] int time_12,
-    array[] int censored_12,
     matrix log_cond_surv_12_s,
     int enable_12, int ts_12) {
 

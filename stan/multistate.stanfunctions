@@ -294,8 +294,7 @@ real multistate_partial_sum(
   // Per-patient data (HMC-indexed arrays, length n_forecast_patients)
   array[] int time_01, array[] int time_02, array[] int time_12,
   array[] int time_03, array[] int time_32,
-  array[] int censored_01, array[] int censored_02, array[] int censored_12,
-  array[] int censored_32,
+  array[] int censored_01,
   array[] int prog_deterministic,
   array[] int ms_ic_gap_01,
   // Visit arrays (unified patient ordering; valid for HMC patients = 1..n_hmc)
@@ -773,19 +772,14 @@ real multistate_partial_sum(
         patient_ll += log1m_exp(log_cond_surv_03[i, time_03[i]]);
       }
 
-      // Post-dropout: 3→2 (off-trial death or censored in state 3)
+      // Post-dropout: 3→2 off-trial death (time_32 > 0 implies event observed)
       // Sojourn time GP: indexed by sojourn time since dropout (1, 2, ...)
       if (enable_32 && time_32[i] > 0) {
-        if (!censored_32[i]) {
-          // Off-trial death: survived sojourn intervals 1..time_32-1, then died
-          if (time_32[i] > 1) {
-            patient_ll += sum(log_cond_surv_32[i, 1:(time_32[i] - 1)]);
-          }
-          patient_ll += log1m_exp(log_cond_surv_32[i, time_32[i]]);
-        } else {
-          // Censored in state 3: survived sojourn intervals 1..time_32
-          patient_ll += sum(log_cond_surv_32[i, 1:time_32[i]]);
+        // Off-trial death: survived sojourn intervals 1..time_32-1, then died
+        if (time_32[i] > 1) {
+          patient_ll += sum(log_cond_surv_32[i, 1:(time_32[i] - 1)]);
         }
+        patient_ll += log1m_exp(log_cond_surv_32[i, time_32[i]]);
       }
     }
 
@@ -822,8 +816,6 @@ real multistate_partial_sum(
  * @param time_02 Array of 0→2 transition times (0 if not applicable)
  * @param time_12 Array of sojourn times in state 1 (0 if not applicable)
  * @param censored_01 Array of censoring indicators for 0→1
- * @param censored_02 Array of censoring indicators for 0→2
- * @param censored_12 Array of censoring indicators for 1→2
  * @param prog_deterministic Array indicating if progression was deterministic (from SF model)
  * @param t_patient_visits Flat array of all patients' assessment visit weeks
  * @param patient_visit_pos Position array into t_patient_visits (length n_patients + 1)
@@ -840,8 +832,7 @@ real multistate_lpmf(
   int enable_03, int enable_32,
   array[] int time_01, array[] int time_02, array[] int time_12,
   array[] int time_03, array[] int time_32,
-  array[] int censored_01, array[] int censored_02, array[] int censored_12,
-  array[] int censored_32,
+  array[] int censored_01,
   array[] int prog_deterministic,
   array[] int ms_ic_gap_01,
   array[] int t_patient_visits,      // flat visit-week array (all patients)
@@ -1320,19 +1311,14 @@ real multistate_lpmf(
         patient_ll += log1m_exp(log_cond_surv_03[i, time_03[i]]);
       }
 
-      // Post-dropout: 3→2 (off-trial death or censored in state 3)
+      // Post-dropout: 3→2 off-trial death (time_32 > 0 implies event observed)
       // Sojourn time GP: indexed by sojourn time since dropout (1, 2, ...)
       if (enable_32 && time_32[i] > 0) {
-        if (!censored_32[i]) {
-          // Off-trial death: survived sojourn intervals 1..time_32-1, then died
-          if (time_32[i] > 1) {
-            patient_ll += sum(log_cond_surv_32[i, 1:(time_32[i] - 1)]);
-          }
-          patient_ll += log1m_exp(log_cond_surv_32[i, time_32[i]]);
-        } else {
-          // Censored in state 3: survived sojourn intervals 1..time_32
-          patient_ll += sum(log_cond_surv_32[i, 1:time_32[i]]);
+        // Off-trial death: survived sojourn intervals 1..time_32-1, then died
+        if (time_32[i] > 1) {
+          patient_ll += sum(log_cond_surv_32[i, 1:(time_32[i] - 1)]);
         }
+        patient_ll += log1m_exp(log_cond_surv_32[i, time_32[i]]);
       }
     }
 
@@ -1359,19 +1345,14 @@ real multistate_lpmf(
         patient_ll += log1m_exp(log_cond_surv_03[i, time_03[i]]);
       }
 
-      // Post-dropout: 3→2 (off-trial death or censored in state 3)
+      // Post-dropout: 3→2 off-trial death (time_32 > 0 implies event observed)
       // Sojourn time GP: indexed by sojourn time since dropout (1, 2, ...)
       if (enable_32 && time_32[i] > 0) {
-        if (!censored_32[i]) {
-          // Off-trial death: survived sojourn intervals 1..time_32-1, then died
-          if (time_32[i] > 1) {
-            patient_ll += sum(log_cond_surv_32[i, 1:(time_32[i] - 1)]);
-          }
-          patient_ll += log1m_exp(log_cond_surv_32[i, time_32[i]]);
-        } else {
-          // Censored in state 3: survived sojourn intervals 1..time_32
-          patient_ll += sum(log_cond_surv_32[i, 1:time_32[i]]);
+        // Off-trial death: survived sojourn intervals 1..time_32-1, then died
+        if (time_32[i] > 1) {
+          patient_ll += sum(log_cond_surv_32[i, 1:(time_32[i] - 1)]);
         }
+        patient_ll += log1m_exp(log_cond_surv_32[i, time_32[i]]);
       }
     }
 
