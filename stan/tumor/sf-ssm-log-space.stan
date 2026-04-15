@@ -288,6 +288,7 @@ generated quantities {
     int burden_orr_use_confirmed_response = 1;
 
     #include "modules/state_space/burden_endpoints.stan"
+    #include "modules/state_space/_trial_aggregate_metrics.stan"
   }
 
   // RECIST accuracy metrics
