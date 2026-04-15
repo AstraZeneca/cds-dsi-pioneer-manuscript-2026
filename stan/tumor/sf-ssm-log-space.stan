@@ -291,4 +291,7 @@ generated quantities {
 
   // RECIST accuracy metrics
   #include "modules/tumor/generated_quantities.stan"
+
+  // Back-transformed covariate coefficients (population + arm-level)
+  #include "modules/multistate/covar_coef_generated_quantities.stan"
 }
