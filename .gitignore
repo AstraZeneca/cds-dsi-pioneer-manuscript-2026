@@ -139,4 +139,3 @@ core.*
 .remember/
 .worktrees/
 docs/burden-endpoints-ablation.md
-!quarto/pioneer/website/_environment
