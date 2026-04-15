@@ -136,3 +136,16 @@ array[n_trials] vector<lower=0, upper=1>[max_all_t + 1]
 // ── Sojourn KM computation ───────────────────────────────────────────────────
 // Runs after the local block so GQ-scope endpoint arrays are populated.
 #include "modules/multistate/sojourn_km_generated_quantities.stan"
+
+// ── Back-transformed time-invariant covariate coefficients ───────────────────
+// Recovers original-space beta_02 from QR-space theta_qr by solving
+//   R * beta = theta_qr  (R upper triangular)
+// Using the identity:  R^{-1} * v = (mdivide_right_tri_low(v', R'))' ,
+// where R' is lower triangular and mdivide_right_tri_low solves x'*R' = v'.
+vector[enable_ms_02 && enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0
+         ? n_time_invariant_covar : 0] time_invariant_coef_02;
+if (enable_ms_02 && enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0) {
+  time_invariant_coef_02 = (mdivide_right_tri_low(
+    time_invariant_coef_qr_02', R_covar_design_matrix'
+  ))';
+}
