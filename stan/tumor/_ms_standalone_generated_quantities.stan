@@ -131,6 +131,7 @@ array[n_trials] vector<lower=0, upper=1>[max_all_t + 1]
   int burden_orr_use_confirmed_response = 1;
 
   #include "modules/state_space/burden_endpoints.stan"
+  #include "modules/state_space/_trial_aggregate_metrics.stan"
 }
 
 // ── Sojourn KM computation ───────────────────────────────────────────────────
