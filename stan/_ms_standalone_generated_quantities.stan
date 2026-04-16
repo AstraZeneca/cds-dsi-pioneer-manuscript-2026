@@ -83,9 +83,13 @@ array[n_cond_group] vector<lower=0, upper=1>[n_pfs_timepoints]
 
 for (i in 1:n_patients) {
 
-  // Guard: clock-forward matrix is [0,0] when ms_time_scale_12==1 (semi-Markov)
+  // Guards: conditional matrices are [0,0] when their transition is disabled
+  row_vector[cols(log_cond_surv_12_s)] surv_12_s_i =
+    cols(log_cond_surv_12_s) > 0 ? log_cond_surv_12_s[i] : rep_row_vector(0, 0);
   row_vector[cols(log_cond_surv_12_t)] surv_12_t_i =
     cols(log_cond_surv_12_t) > 0 ? log_cond_surv_12_t[i] : rep_row_vector(0, 0);
+  row_vector[cols(log_cond_surv_32)] surv_32_i =
+    cols(log_cond_surv_32) > 0 ? log_cond_surv_32[i] : rep_row_vector(0, 0);
 
   // ── Build visit schedule (shared by spop and sample 0→3) ────────────────
   int v_start = patient_visit_pos[i];
@@ -134,7 +138,7 @@ for (i in 1:n_patients) {
   (spop_os[i], spop_os_censored[i]) = derive_spop_os_rng(
     spop_cause, spop_exit,
     enable_ms_12, enable_ms_32, ms_time_scale_12,
-    log_cond_surv_12_s[i], surv_12_t_i, log_cond_surv_32[i],
+    surv_12_s_i, surv_12_t_i, surv_32_i,
     spop_t01, spop_t02, spop_t03);
 
   // ── Conditional (sample) pathway ─────────────────────────────────────────
@@ -195,7 +199,7 @@ for (i in 1:n_patients) {
   (sample_os[i], sample_os_censored[i]) = derive_sample_os_rng(
     sample_cause, sample_exit,
     enable_ms_12, enable_ms_32, ms_time_scale_12,
-    log_cond_surv_12_s[i], surv_12_t_i, log_cond_surv_32[i],
+    surv_12_s_i, surv_12_t_i, surv_32_i,
     sample_t01, sample_t02,
     ms_time_01[i],
     ms_censored_12[i], ms_time_12[i], ms_os_event_12[i],
