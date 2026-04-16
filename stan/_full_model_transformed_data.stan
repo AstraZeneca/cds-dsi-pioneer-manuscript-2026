@@ -46,19 +46,22 @@ for (t in 2:max_t_width) {
 //   - process noise: rates vary by timepoint, need states at every week
 //   - enable_states_full_grid: explicit flag (future-proofing)
 //   - ungated continuous time-varying covariate for 0→1 multistate transition
+//   - gated+latent 0→1 or 0→2 TV cov (requires grid when process noise ON)
+// ms_needs_inline_psa: when process noise OFF but MS needs modeled PSA,
+//   compute PSA inline instead of building full grid
 int enable_any_process_noise_tr;
 int need_states_full_grid;
-(enable_any_process_noise_tr, need_states_full_grid) = compute_full_model_grid_flags(
+int ms_needs_inline_psa;
+(enable_any_process_noise_tr, need_states_full_grid, ms_needs_inline_psa) = compute_full_model_grid_flags(
   enable_pop_process_noise_tr, enable_patient_process_noise_tr,
   enable_states_full_grid,
   enable_ms_pop_time_varying_cov, n_time_varying_covar,
-  enable_ms_01, enable_ms_visit_gated_01,
+  enable_ms_01, enable_ms_visit_gated_01, enable_ms_visit_gated_latent_01,
   enable_ms_02_time_varying_cov
 );
 print("need_states_full_grid = ", need_states_full_grid,
       " (process_noise=", enable_any_process_noise_tr,
-      ", full_grid_flag=", enable_states_full_grid,
-      ", ungated_01=", enable_ms_01 && !enable_ms_visit_gated_01, ")");
+      ", ms_needs_inline_psa=", ms_needs_inline_psa, ")");
 
 // ============================================================================
 // POPULATION UNIQUE VISITS
