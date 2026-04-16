@@ -1567,14 +1567,18 @@ tuple(
                         enable_ms_02, enable_ms_03);
 
     // --- RNG Step 5: spop OS ---
-    // Guard: clock-forward matrix is [0,0] when ms_time_scale_12==1 (semi-Markov)
+    // Guards: conditional matrices are [0,0] when their transition is disabled
+    row_vector[cols(log_cond_surv_12_s)] surv_12_s_i =
+      cols(log_cond_surv_12_s) > 0 ? log_cond_surv_12_s[i] : rep_row_vector(0, 0);
     row_vector[cols(log_cond_surv_12_t)] surv_12_t_i =
       cols(log_cond_surv_12_t) > 0 ? log_cond_surv_12_t[i] : rep_row_vector(0, 0);
+    row_vector[cols(log_cond_surv_32)] surv_32_i =
+      cols(log_cond_surv_32) > 0 ? log_cond_surv_32[i] : rep_row_vector(0, 0);
     (spop_os[i], spop_os_censored[i]) = derive_spop_os_rng(
         spop_cause, spop_exit,
         enable_ms_12, enable_ms_32, ms_time_scale_12,
-        log_cond_surv_12_s[i], surv_12_t_i,
-        log_cond_surv_32[i],
+        surv_12_s_i, surv_12_t_i,
+        surv_32_i,
         t_01_spop, spop_time_02, spop_time_03);
 
     // --- RNG Step 6: sample 0→2 (use observed data if available) ---
@@ -1635,12 +1639,12 @@ tuple(
                           sample_time_03,
                           enable_ms_02, enable_ms_03);
 
-    // --- RNG Step 7: sample OS ---
+    // --- RNG Step 7: sample OS (reuse guarded row vectors from Step 5) ---
     (sample_os[i], sample_os_censored[i]) = derive_sample_os_rng(
         sample_cause, sample_exit,
         enable_ms_12, enable_ms_32, ms_time_scale_12,
-        log_cond_surv_12_s[i], surv_12_t_i,
-        log_cond_surv_32[i],
+        surv_12_s_i, surv_12_t_i,
+        surv_32_i,
         sample_t01, sample_time_02,
         pfs[i],
         ms_censored_12[i], ms_time_12[i], ms_os_event_12[i],
