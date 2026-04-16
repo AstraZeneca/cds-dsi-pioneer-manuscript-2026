@@ -27,6 +27,28 @@ vector calc_log_psa_mean(matrix patient_states, real psa_baseline) {
   return to_vector(log_sum_exp(patient_states[, 1], patient_states[, 2])) + log(psa_baseline);
 }
 
+/**
+ * Standardize log(PSA) for use as a time-varying covariate.
+ *
+ * Converts a log(normalized PSA) value — i.e. log(PSA / baseline) from the
+ * two-component state — into a standardized absolute log(PSA) suitable for
+ * the multistate hazard model.
+ *
+ * Caps log_psa_normalized at 10 (PSA up to exp(10)× baseline ≈ 22000×) to
+ * prevent the downstream log-hazard cap from binding during HMC warmup.
+ *
+ * @param log_psa_normalized  log(exp(state_d) + exp(state_g)) — ratio scale
+ * @param log_baseline_psa    log(baseline PSA in ng/mL)
+ * @param median_log_psa_obs  Population median of log(absolute PSA)
+ * @param iqr_log_psa_obs     Population IQR of log(absolute PSA)
+ * @return Standardized log(PSA) value
+ */
+real standardize_log_psa(real log_psa_normalized, real log_baseline_psa,
+                         real median_log_psa_obs, real iqr_log_psa_obs) {
+  real log_psa_abs = log_baseline_psa + fmin(log_psa_normalized, 10.0);
+  return (log_psa_abs - median_log_psa_obs) / iqr_log_psa_obs;
+}
+
 // ============================================================================
 // PCWG3 RESPONSE EVALUATION FUNCTIONS
 // ============================================================================

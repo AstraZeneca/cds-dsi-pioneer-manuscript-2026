@@ -433,6 +433,7 @@ derive_ms_fields <- function(
     ms_final_state        = ms_final_state,
     ms_time_01            = ms_time_01,
     ms_time_02            = ms_time_02,
+    ms_max_time_02        = as.integer(pmin(ms_time_01, ms_time_02)),
     ms_time_12            = ms_time_12,
     ms_censored_01        = ms_censored_01,
     ms_os_event_12        = ms_os_event_12,
