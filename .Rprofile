@@ -86,6 +86,7 @@ init_project <- function(output_path = output_path, artifacts_path = artifacts_p
   library(autometric)
   library(here)
   library(cmdstanr)
+  set_cmdstan_path("~/.cmdstan/cmdstan-2.38.0")
   library(posterior)
   library(tidybayes)
   library(qs2)
