@@ -203,7 +203,7 @@ profile("gen_quant") {
     cutoff_n_patient_screening_visits
   );
 
-  // Assessment-visit noisy SLD for cutoff patients
+  // Assessment-visit deterministic SLD for cutoff patients (see main GQ for rationale)
   vector[n_cutoff_total_forecast_obs_visits] cutoff_forecast_obs_log_sld;
   array[n_cutoff_total_forecast_obs_visits] int cutoff_forecast_obs_recist;
   for (i in 1:n_cutoff_observed_patients) {
@@ -222,12 +222,11 @@ profile("gen_quant") {
         obs_visit_mean[a] = cutoff_forecast_mean_patient_log_sld[forecast_visit_start + forecast_idx - 1];
       }
 
-      cutoff_forecast_obs_log_sld[assess_start:assess_end] =
-        to_vector(student_t_rng(measure_nu_sld, obs_visit_mean, measure_sd_sld));
+      cutoff_forecast_obs_log_sld[assess_start:assess_end] = obs_visit_mean;
     }
   }
 
-  // Assessment-visit RECIST from noisy SLD (for endpoint computation)
+  // Assessment-visit RECIST from deterministic SLD (for endpoint computation)
   {
     array[n_cutoff_visits] int unused_rep_recist;
     (unused_rep_recist, cutoff_forecast_obs_recist) = calculate_all_patients_recist(
