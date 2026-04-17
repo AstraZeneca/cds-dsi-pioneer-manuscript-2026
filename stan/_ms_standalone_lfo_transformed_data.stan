@@ -25,14 +25,41 @@ array[n_cutoffs] int<lower=1, upper=n_patients> testing_patient_idx =
 print("testing_patient_idx = ", testing_patient_idx);
 assert_ascending(testing_patient_idx);
 
-int<lower=0, upper=n_patients> n_all_testing_patients =
+int<lower=0, upper=n_patients> n_all_testing_patients_unfiltered =
   n_patients - testing_patient_idx[1] + 1;
-array[n_all_testing_patients] int<lower=1, upper=n_patients> all_testing_patients =
-  last_visit_calendar_day_sort_idx[testing_patient_idx[1]:];
+
+// Filter testing patients to only those in the eval trial
+int n_all_testing_patients = 0;
+{
+  array[n_all_testing_patients_unfiltered] int unfiltered =
+    last_visit_calendar_day_sort_idx[testing_patient_idx[1]:];
+  for (j in 1:n_all_testing_patients_unfiltered) {
+    if (patient_trial[unfiltered[j]] == lfo_eval_trial) n_all_testing_patients += 1;
+  }
+}
+array[n_all_testing_patients] int<lower=1, upper=n_patients> all_testing_patients;
+{
+  array[n_all_testing_patients_unfiltered] int unfiltered =
+    last_visit_calendar_day_sort_idx[testing_patient_idx[1]:];
+  int idx = 1;
+  for (j in 1:n_all_testing_patients_unfiltered) {
+    if (patient_trial[unfiltered[j]] == lfo_eval_trial) {
+      all_testing_patients[idx] = unfiltered[j];
+      idx += 1;
+    }
+  }
+}
+
+// Reverse lookup: patient i → position in all_testing_patients (0 = not in eval trial)
+array[n_patients] int<lower=0, upper=n_all_testing_patients> lfo_testing_patient_idx =
+  zeros_int_array(n_patients);
+for (j in 1:n_all_testing_patients) {
+  lfo_testing_patient_idx[all_testing_patients[j]] = j;
+}
 
 int<lower=0, upper=n_patients> n_training_patients = testing_patient_idx[1] - 1;
 
-print("n_all_testing_patients = ", n_all_testing_patients);
+print("n_all_testing_patients (trial ", lfo_eval_trial, ") = ", n_all_testing_patients);
 print("n_training_patients = ", n_training_patients);
 
 // --- Step 3: Compute testing visit bounds for GQ evaluation windows ---

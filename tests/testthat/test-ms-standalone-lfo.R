@@ -13,11 +13,15 @@ test_that("add_lfo_fields adds required LFO fields", {
   expect_equal(result$cutoff_calendar_day, cutoffs)
   expect_equal(result$max_n_rows, 1L)
   expect_equal(result$max_forecast_horizon, 2L)
+  expect_equal(result$lfo_eval_trial, 1L)
 
   # Original data preserved
-
   expect_equal(result$n_patients, 10L)
   expect_equal(result$calendar_day, mock_stan_data$calendar_day)
+
+  # Custom eval trial
+  result2 <- add_lfo_fields(mock_stan_data, cutoffs, lfo_eval_trial = 2L)
+  expect_equal(result2$lfo_eval_trial, 2L)
 })
 
 test_that("add_lfo_fields respects PSIS mode dimensions", {

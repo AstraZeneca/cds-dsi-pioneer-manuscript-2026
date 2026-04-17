@@ -28,7 +28,6 @@ array[max_n_rows, max_forecast_horizon] vector[n_all_testing_patients] patient_l
 profile("lfo_gq") {
   for (n in 1:max_n_rows) {
     int n_curr_patients = n_patients - testing_patient_idx[n] + 1;
-    int curr_first_testing_patient_idx = n_all_testing_patients - n_curr_patients + 1;
     array[n_curr_patients] int curr_patients =
       last_visit_calendar_day_sort_idx[testing_patient_idx[n]:];
 
@@ -42,7 +41,13 @@ profile("lfo_gq") {
 
       for (i_idx in 1:n_curr_patients) {
         int i = curr_patients[i_idx];
-        int patient_idx = curr_first_testing_patient_idx + i_idx - 1;
+        int patient_idx = lfo_testing_patient_idx[i];
+
+        // Skip patients not in the eval trial
+        if (patient_idx == 0) continue;
+
+        // Skip patients not yet enrolled at this cutoff
+        if (calendar_day[i] > cutoff_calendar_day[n]) continue;
 
         int visit_start, visit_end;
         (visit_start, visit_end) = get_pos(patient_visit_pos, i);
