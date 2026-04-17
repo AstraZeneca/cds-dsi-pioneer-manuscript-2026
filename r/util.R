@@ -68,6 +68,14 @@ sample_and_save <- function(
   model <- cmdstan_model(exe_file = exe_file)
   model$.__enclos_env__$private$cpp_options_$stan_threads <- TRUE
 
+  # Ensure TBB is discoverable at runtime. CmdStanR bakes an absolute RUNPATH
+  # into the binary at compile time, but on Domino jobs the artifacts mount
+  # can differ from the workspace, breaking the embedded path.
+  tbb_dir <- file.path(cmdstan_path(), "stan", "lib", "stan_math", "lib", "tbb")
+  withr::local_envvar(LD_LIBRARY_PATH = paste(
+    tbb_dir, Sys.getenv("LD_LIBRARY_PATH", ""), sep = ":"
+  ))
+
   if (!no_save && !timestamp) {
     # fit <- model$sample(..., output_dir = output_dir, output_basename = output_basename)
     fit <- exec(
