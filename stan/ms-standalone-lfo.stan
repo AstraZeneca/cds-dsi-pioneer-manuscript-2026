@@ -77,6 +77,14 @@ transformed parameters {
 
   #include "modules/multistate/transformed_parameters.stan"
   #include "modules/propensity/transformed_parameters.stan"
+
+  // LFO: zero-weight unenrolled patients (propensity likelihood_weight now available)
+  vector[n_patients] lfo_likelihood_weight;
+  for (i in 1:n_patients) {
+    lfo_likelihood_weight[i] = lfo_patient_enrolled[i] == 1
+      ? likelihood_weight[i]
+      : 0.0;
+  }
 }
 
 model {
