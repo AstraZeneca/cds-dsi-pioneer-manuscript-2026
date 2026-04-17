@@ -318,7 +318,8 @@ lfo <- function(
       cutoff_calendar_day = remaining_all_cutoffs$cutoff_calendar_day,
       n_cutoffs = n_cutoffs,
       max_n_rows = max_n_rows,
-      max_forecast_horizon = max_forecast_horizon
+      max_forecast_horizon = max_forecast_horizon,
+      lfo_eval_trial = stan_data$lfo_eval_trial %||% 1L
     ) %>%
     sample_and_save(
       exe_file,
