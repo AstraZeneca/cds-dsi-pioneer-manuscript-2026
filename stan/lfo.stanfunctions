@@ -341,3 +341,171 @@ tuple(array[,] int, array[,,] int, array[,] int, array[,,] int) get_testing_visi
   
   return (first_testing_visit_week, last_testing_visit_week, testing_start_idx, testing_end_idx);
 }
+
+/**
+ * Re-censor multistate event data at a patient-specific cutoff week.
+ *
+ * For each patient, events occurring after cutoff_week[i] are masked:
+ * the patient appears as if the trial ended at their cutoff.
+ * Patients not yet enrolled (cutoff_week[i] <= 0) are zeroed out entirely.
+ *
+ * All time fields are patient-relative weeks (from landmark).
+ * cutoff_week[i] comes from cutoff_visits() and is in the same timescale.
+ *
+ * @param ms_final_state       Original final state per patient
+ * @param ms_time_01           0→1 event time
+ * @param ms_censored_01       0→1 censoring indicator
+ * @param ms_time_02           0→2 event/censoring time
+ * @param ms_time_12           1→2 sojourn time
+ * @param ms_time_03           0→3 dropout time
+ * @param ms_time_32           3→2 sojourn time
+ * @param ms_os_event_12       Death week for 0→1→2 patients (0 otherwise)
+ * @param interval_censored    Interval censoring gap per patient
+ * @param ms_prog_deterministic Whether progression was deterministic
+ * @param cutoff_week          Per-patient cutoff week (0 = not enrolled)
+ * @return Tuple of 10 re-censored arrays:
+ *   (lfo_ms_final_state, lfo_ms_time_01, lfo_ms_censored_01,
+ *    lfo_ms_time_02, lfo_ms_time_12, lfo_ms_time_03, lfo_ms_time_32,
+ *    lfo_interval_censored, lfo_ms_prog_deterministic, lfo_ms_ic_gap_01)
+ */
+tuple(array[] int, array[] int, array[] int,
+      array[] int, array[] int, array[] int, array[] int,
+      array[] int, array[] int, array[] int)
+recensor_ms_at_cutoff(
+    array[] int ms_final_state,
+    array[] int ms_time_01,
+    array[] int ms_censored_01,
+    array[] int ms_time_02,
+    array[] int ms_time_12,
+    array[] int ms_time_03,
+    array[] int ms_time_32,
+    array[] int ms_os_event_12,
+    array[] int interval_censored,
+    array[] int ms_prog_deterministic,
+    array[] int cutoff_week) {
+
+  int n = size(ms_final_state);
+  array[n] int lfo_final_state;
+  array[n] int lfo_time_01;
+  array[n] int lfo_censored_01;
+  array[n] int lfo_time_02;
+  array[n] int lfo_time_12;
+  array[n] int lfo_time_03;
+  array[n] int lfo_time_32;
+  array[n] int lfo_ic;
+  array[n] int lfo_prog_det;
+  array[n] int lfo_ic_gap_01;
+
+  for (i in 1:n) {
+    int cw = cutoff_week[i];
+
+    // Default: copy original data
+    lfo_final_state[i] = ms_final_state[i];
+    lfo_time_01[i] = ms_time_01[i];
+    lfo_censored_01[i] = ms_censored_01[i];
+    lfo_time_02[i] = ms_time_02[i];
+    lfo_time_12[i] = ms_time_12[i];
+    lfo_time_03[i] = ms_time_03[i];
+    lfo_time_32[i] = ms_time_32[i];
+    lfo_ic[i] = interval_censored[i];
+    lfo_prog_det[i] = ms_prog_deterministic[i];
+
+    if (cw <= 0) {
+      // Not enrolled at cutoff: zero out everything
+      lfo_final_state[i] = 0;
+      lfo_time_01[i] = 0;
+      lfo_censored_01[i] = 1;
+      lfo_time_02[i] = 0;
+      lfo_time_12[i] = 0;
+      lfo_time_03[i] = 0;
+      lfo_time_32[i] = 0;
+      lfo_ic[i] = 0;
+      lfo_prog_det[i] = 0;
+      lfo_ic_gap_01[i] = 0;
+      continue;
+    }
+
+    if (ms_final_state[i] == 0) {
+      // State 0 (right-censored): clamp follow-up times at cutoff
+      if (ms_time_01[i] > cw) {
+        lfo_time_01[i] = cw;
+        lfo_ic[i] = 0;
+      }
+      if (ms_time_02[i] > cw) lfo_time_02[i] = cw;
+      if (ms_time_03[i] > cw) lfo_time_03[i] = cw;
+
+    } else if (ms_final_state[i] == 1) {
+      // State 1 (progressed)
+      if (ms_time_01[i] > cw) {
+        // Progression after cutoff: downgrade to state 0
+        lfo_final_state[i] = 0;
+        lfo_time_01[i] = cw;
+        lfo_censored_01[i] = 1;
+        lfo_time_02[i] = cw;
+        lfo_time_12[i] = 0;
+        lfo_ic[i] = 0;
+        lfo_prog_det[i] = 0;
+      }
+
+    } else if (ms_final_state[i] == 2) {
+      // State 2 (dead)
+      if (ms_censored_01[i] == 0 && ms_time_01[i] <= cw) {
+        // 0→1→2 path, progression before cutoff
+        if (ms_os_event_12[i] > 0 && ms_os_event_12[i] > cw) {
+          // Death after cutoff: downgrade to state 1, censor 1→2
+          lfo_final_state[i] = 1;
+          lfo_time_12[i] = max(0, cw - ms_time_01[i]);
+          lfo_time_02[i] = cw;
+        }
+      } else if (ms_censored_01[i] == 0 && ms_time_01[i] > cw) {
+        // 0→1→2 path, progression after cutoff: censor everything
+        lfo_final_state[i] = 0;
+        lfo_time_01[i] = cw;
+        lfo_censored_01[i] = 1;
+        lfo_time_02[i] = cw;
+        lfo_time_12[i] = 0;
+        lfo_ic[i] = 0;
+        lfo_prog_det[i] = 0;
+      } else {
+        // 0→2 direct death (ms_censored_01 == 1)
+        if (ms_time_02[i] > cw) {
+          lfo_final_state[i] = 0;
+          lfo_time_01[i] = cw;
+          lfo_censored_01[i] = 1;
+          lfo_time_02[i] = cw;
+          lfo_time_12[i] = 0;
+          lfo_ic[i] = 0;
+          lfo_prog_det[i] = 0;
+        }
+      }
+
+    } else if (ms_final_state[i] == 3) {
+      // State 3 (dropout)
+      if (ms_time_03[i] > cw) {
+        // Dropout after cutoff
+        lfo_final_state[i] = 0;
+        lfo_time_01[i] = cw;
+        lfo_censored_01[i] = 1;
+        lfo_time_02[i] = cw;
+        lfo_time_03[i] = cw;
+        lfo_time_32[i] = 0;
+        lfo_ic[i] = 0;
+        lfo_prog_det[i] = 0;
+      } else if (ms_time_32[i] > 0 && ms_time_03[i] + ms_time_32[i] > cw) {
+        // Dropout before cutoff, off-trial death after: censor 3→2
+        lfo_time_32[i] = max(0, cw - ms_time_03[i]);
+      }
+    }
+
+    // Recompute ic_gap_01 from re-censored values
+    if (lfo_censored_01[i] || lfo_prog_det[i]) {
+      lfo_ic_gap_01[i] = 0;
+    } else {
+      lfo_ic_gap_01[i] = lfo_ic[i] + 1;
+    }
+  }
+
+  return (lfo_final_state, lfo_time_01, lfo_censored_01,
+          lfo_time_02, lfo_time_12, lfo_time_03, lfo_time_32,
+          lfo_ic, lfo_prog_det, lfo_ic_gap_01);
+}
