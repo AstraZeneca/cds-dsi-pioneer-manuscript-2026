@@ -183,7 +183,12 @@ profile("gen_quant") {
     n_patient_screening_visits
   );
 
-  // Assessment-visit noisy SLD for RECIST endpoint computation
+  // Assessment-visit deterministic SLD for RECIST endpoint computation.
+  // Uses the mean (noise-free) SLD trajectory at Q6W assessment visits.
+  // Measurement noise is excluded because the RECIST nadir is a running minimum:
+  // noisy draws ratchet the nadir down, inflating the PD threshold and artificially
+  // delaying progression detection — especially for good responders whose trajectories
+  // hover near the PD boundary.
   vector[n_total_forecast_obs_visits] forecast_obs_log_sld;
   array[n_total_forecast_obs_visits] int forecast_obs_recist;
   for (i in 1:n_patients) {
@@ -203,13 +208,11 @@ profile("gen_quant") {
         obs_visit_mean[a] = forecast_mean_patient_log_sld[forecast_visit_start + forecast_idx - 1];
       }
 
-      // Apply measurement noise at assessment visits only
-      forecast_obs_log_sld[assess_start:assess_end] =
-        to_vector(student_t_rng(measure_nu_sld, obs_visit_mean, measure_sd_sld));
+      forecast_obs_log_sld[assess_start:assess_end] = obs_visit_mean;
     }
   }
 
-  // Assessment-visit RECIST from noisy SLD (for endpoint computation)
+  // Assessment-visit RECIST from deterministic SLD (for endpoint computation)
   {
     array[sum(n_patient_visits)] int unused_rep_recist;
     (unused_rep_recist, forecast_obs_recist) = calculate_all_patients_recist(
