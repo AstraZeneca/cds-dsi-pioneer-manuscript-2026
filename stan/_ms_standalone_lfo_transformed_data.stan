@@ -47,12 +47,12 @@ array[n_cutoffs, n_cutoffs, n_patients] int testing_end_idx;
                                 cutoff_calendar_day, calendar_day,
                                 t_patient_visits, t_patient_visits_day, patient_visit_pos);
 
-// --- Step 4: Build likelihood weight mask for enrolled patients ---
-vector[n_patients] lfo_likelihood_weight;
+// --- Step 4: Mark which patients are enrolled at the cutoff ---
+// The actual lfo_likelihood_weight is computed in transformed parameters
+// (after propensity likelihood_weight is available).
+array[n_patients] int lfo_patient_enrolled;
 for (i in 1:n_patients) {
-  lfo_likelihood_weight[i] = cutoff_last_visit_idx[i] > 0
-    ? likelihood_weight[i]
-    : 0.0;
+  lfo_patient_enrolled[i] = cutoff_last_visit_idx[i] > 0 ? 1 : 0;
 }
 
 // --- Step 5: Re-censor multistate events at the first cutoff ---
