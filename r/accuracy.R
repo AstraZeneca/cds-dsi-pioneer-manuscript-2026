@@ -578,7 +578,7 @@ redo_lfo_results <- function(lfo_res, lean = FALSE) {
 }
 
 clean_lfo_results <- function(lfo_res) {
-  lfo_res |>
+  res <- lfo_res |>
     lfo_drop_bad_approx() |>
     mutate(
       E_log_lik = if_else(
@@ -586,32 +586,46 @@ clean_lfo_results <- function(lfo_res) {
         E_patient_log_lik,
         approx_E_patient_log_lik
       ),
-      E_pfs_log_lik = if_else(
-        is.na(k),
-        E_patient_pfs_log_lik,
-        approx_E_patient_pfs_log_lik
-      ),
-      E_crcr_log_lik = if_else(
-        is.na(k),
-        E_patient_crcr_log_lik,
-        approx_E_patient_crcr_log_lik
-      ),
       E_log_lik_w = if_else(
         is.na(k),
         E_patient_log_lik_w,
         approx_E_patient_log_lik_w
       ),
-      E_pfs_log_lik_w = if_else(
-        is.na(k),
-        E_patient_pfs_log_lik_w,
-        approx_E_patient_pfs_log_lik_w
-      ),
-      E_crcr_log_lik_w = if_else(
-        is.na(k),
-        E_patient_crcr_log_lik_w,
-        approx_E_patient_crcr_log_lik_w
-      ),
     )
+
+  if ("E_patient_pfs_log_lik" %in% names(res)) {
+    res <- res |>
+      mutate(
+        E_pfs_log_lik = if_else(
+          is.na(k),
+          E_patient_pfs_log_lik,
+          approx_E_patient_pfs_log_lik
+        ),
+        E_pfs_log_lik_w = if_else(
+          is.na(k),
+          E_patient_pfs_log_lik_w,
+          approx_E_patient_pfs_log_lik_w
+        ),
+      )
+  }
+
+  if ("E_patient_crcr_log_lik" %in% names(res)) {
+    res <- res |>
+      mutate(
+        E_crcr_log_lik = if_else(
+          is.na(k),
+          E_patient_crcr_log_lik,
+          approx_E_patient_crcr_log_lik
+        ),
+        E_crcr_log_lik_w = if_else(
+          is.na(k),
+          E_patient_crcr_log_lik_w,
+          approx_E_patient_crcr_log_lik_w
+        ),
+      )
+  }
+
+  res
 }
 
 #' Bootstrap Expected Log Pointwise Predictive Density (ELPD) for Leave-Future-Out Cross-Validation
