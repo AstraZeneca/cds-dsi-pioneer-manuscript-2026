@@ -366,9 +366,13 @@ lfo <- function(
       mutate(fit = if_else(n == refit_n, list(fit), list(NULL)))
   }
 
-  next_cutoffs <- psis_results |>
-    filter(exact | (!is.na(k) & k > k_threshold), n > refit_n) %>%
-    semi_join(remaining_cutoffs, ., by = "n")
+  next_cutoffs <- if (exact) {
+    remaining_cutoffs |> filter(n > refit_n)
+  } else {
+    psis_results |>
+      filter(!is.na(k) & k > k_threshold, n > refit_n) %>%
+      semi_join(remaining_cutoffs, ., by = "n")
+  }
 
   if (verbose) {
     cat("LFO results:\n")
