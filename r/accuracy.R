@@ -315,7 +315,7 @@ lfo <- function(
 
   fit <- stan_data |>
     list_assign(
-      cutoff_calendar_day = remaining_all_cutoffs$cutoff_calendar_day,
+      cutoff_calendar_day = as.array(remaining_all_cutoffs$cutoff_calendar_day),
       n_cutoffs = n_cutoffs,
       max_n_rows = max_n_rows,
       max_forecast_horizon = max_forecast_horizon,
