@@ -38,7 +38,7 @@ Sum of lesion diameters (SLD) forecasts for SCLC-01 patients who are right censo
 #| fig-height: 12
 #| warning: false
 
-tar_read(tumor_ssls_staged_sld_rvar_right_censored_posterior_ctdna_apr25) |>
+tar_read_model("tumor_ssls_staged_sld_rvar_right_censored_posterior", dco = "apr25") |>
   filter(fct_match(trial, "sclc")) |>
   plot_sld_forecast_censored()
 ```
@@ -52,7 +52,7 @@ tar_read(tumor_ssls_staged_sld_rvar_right_censored_posterior_ctdna_apr25) |>
 #| fig-height: 12
 #| warning: false
 
-tar_read(tumor_ssls_staged_sld_rvar_right_censored_posterior_ctdna_aug25) |>
+tar_read_model("tumor_ssls_staged_sld_rvar_right_censored_posterior", dco = "aug25") |>
   filter(fct_match(trial, "sclc")) |>
   plot_sld_forecast_censored()
 ```
@@ -66,7 +66,7 @@ tar_read(tumor_ssls_staged_sld_rvar_right_censored_posterior_ctdna_aug25) |>
 #| fig-height: 12
 #| warning: false
 
-tar_read(tumor_ssls_staged_sld_rvar_right_censored_posterior_ctdna_jan26) |>
+tar_read_model("tumor_ssls_staged_sld_rvar_right_censored_posterior") |>
   filter(fct_match(trial, "sclc")) |>
   plot_sld_forecast_censored()
 ```
@@ -88,7 +88,7 @@ Predicted RECIST categories over time for censored patients, showing the model's
 #| fig-height: 12
 #| warning: false
 
-tar_read(tumor_ssls_staged_recist_rvar_right_censored_posterior_ctdna_apr25) |>
+tar_read_model("tumor_ssls_staged_recist_rvar_right_censored_posterior", dco = "apr25") |>
   filter(fct_match(trial, "sclc")) |>
   plot_recist_censored()
 ```
@@ -102,7 +102,7 @@ tar_read(tumor_ssls_staged_recist_rvar_right_censored_posterior_ctdna_apr25) |>
 #| fig-height: 12
 #| warning: false
 
-tar_read(tumor_ssls_staged_recist_rvar_right_censored_posterior_ctdna_aug25) |>
+tar_read_model("tumor_ssls_staged_recist_rvar_right_censored_posterior", dco = "aug25") |>
   filter(fct_match(trial, "sclc")) |>
   plot_recist_censored()
 ```
@@ -116,7 +116,7 @@ tar_read(tumor_ssls_staged_recist_rvar_right_censored_posterior_ctdna_aug25) |>
 #| fig-height: 12
 #| warning: false
 
-tar_read(tumor_ssls_staged_recist_rvar_right_censored_posterior_ctdna_jan26) |>
+tar_read_model("tumor_ssls_staged_recist_rvar_right_censored_posterior") |>
   filter(fct_match(trial, "sclc")) |>
   plot_recist_censored()
 ```

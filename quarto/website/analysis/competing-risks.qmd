@@ -33,7 +33,7 @@ The full SCLC-01 model jointly estimates SLD tumor dynamics and multistate trans
 #| label: tbl-event-counts-full
 #| tbl-cap: "Observed competing risks event counts from state 0 (full model data)."
 
-stan_data_full <- tar_read(tumor_ssls_stan_data_posterior_ctdna_jan26)
+stan_data_full <- tar_read_model("tumor_ssls_stan_data_posterior")
 competing_risks_event_table(stan_data_full)
 ```
 
@@ -46,7 +46,7 @@ competing_risks_event_table(stan_data_full)
 #| fig-height: 9
 #| column: body-outset
 
-draws_cif_full <- tar_read(tumor_ssls_draws_cif_posterior_ctdna_jan26)
+draws_cif_full <- tar_read_model("tumor_ssls_draws_cif_posterior")
 # Full model uses extend_max_all_t for the GQ forecast grid; max_all_t is unused
 stan_data_full$max_all_t <- stan_data_full$extend_max_all_t
 plot_competing_risks_cif(stan_data_full, draws_cif_full, cif_prefix = "spop")

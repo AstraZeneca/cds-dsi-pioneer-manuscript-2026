@@ -381,7 +381,7 @@ test_that("derive_ms_fields returns all required Stan field names", {
     "ms_censored_01", "ms_censored_02", "ms_censored_12",
     "ms_time_03", "ms_time_32", "ms_censored_32",
     "ms_prog_deterministic", "ms_max_sojourn_t", "ms_max_sojourn_t_32",
-    "ms_gp_grid_step"
+    "ms_gp_grid_step", "ms_os_event_12", "interval_censored"
   )
   expect_true(all(expected_names %in% names(result)))
 })

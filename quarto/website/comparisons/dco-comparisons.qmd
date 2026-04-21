@@ -9,72 +9,72 @@ subtitle: "Comparing results across data cutoff dates"
 
 source("_setup.R")
 
-# Jan26 PFS endpoint data
-jan26_orr_data            <- tar_read(all_tumor_ssls_orr_rvar_ctdna_jan26)
-jan26_cond_orr_data       <- tar_read(all_tumor_ssls_cond_orr_rvar_ctdna_jan26)
-jan26_quant_pfs_data      <- tar_read(all_tumor_ssls_trial_quant_pfs_ctdna_jan26)
-jan26_cond_quant_pfs_data <- tar_read(all_tumor_ssls_cond_quant_pfs_ctdna_jan26)
-jan26_pfs_n_data          <- tar_read(all_tumor_ssls_forecast_target_pfs_n_rvar_ctdna_jan26)
-jan26_cond_pfs_n_data     <- tar_read(all_tumor_ssls_cond_forecast_target_pfs_n_rvar_ctdna_jan26)
+# Jan26 PFS endpoint data (model selected by FOCAL_MODEL in _setup.R)
+jan26_orr_data            <- tar_read_model("all_tumor_ssls_orr_rvar")
+jan26_cond_orr_data       <- tar_read_model("all_tumor_ssls_cond_orr_rvar")
+jan26_quant_pfs_data      <- tar_read_model("all_tumor_ssls_trial_quant_pfs")
+jan26_cond_quant_pfs_data <- tar_read_model("all_tumor_ssls_cond_quant_pfs")
+jan26_pfs_n_data          <- tar_read_model("all_tumor_ssls_forecast_target_pfs_n_rvar")
+jan26_cond_pfs_n_data     <- tar_read_model("all_tumor_ssls_cond_forecast_target_pfs_n_rvar")
 pfs_timepoints            <- tar_read(pfs_timepoints)
-jan26_obs_km_all          <- tar_read(km_trial_pfs_ctdna_jan26)
-jan26_obs_km_first_line   <- tar_read(km_trial_pfs_naive_ctdna_jan26)
-jan26_obs_km_pdl1         <- tar_read(km_trial_pfs_pdl1_ctdna_jan26)
-jan26_obs_km_pdl1_naive   <- tar_read(km_trial_pfs_pdl1_naive_ctdna_jan26)
+jan26_obs_km_all          <- tar_read_model("km_trial_pfs")
+jan26_obs_km_first_line   <- tar_read_model("km_trial_pfs_naive")
+jan26_obs_km_pdl1         <- tar_read_model("km_trial_pfs_pdl1")
+jan26_obs_km_pdl1_naive   <- tar_read_model("km_trial_pfs_pdl1_naive")
 
 # Load multi-DCO data for comparisons
 orr_list <- list(
-  apr25 = tar_read(all_tumor_ssls_orr_rvar_ctdna_apr25),
-  aug25 = tar_read(all_tumor_ssls_orr_rvar_ctdna_aug25),
+  apr25 = tar_read_model("all_tumor_ssls_orr_rvar", dco = "apr25"),
+  aug25 = tar_read_model("all_tumor_ssls_orr_rvar", dco = "aug25"),
   jan26 = jan26_orr_data
 )
 cond_orr_list <- list(
-  apr25 = tar_read(all_tumor_ssls_cond_orr_rvar_ctdna_apr25),
-  aug25 = tar_read(all_tumor_ssls_cond_orr_rvar_ctdna_aug25),
+  apr25 = tar_read_model("all_tumor_ssls_cond_orr_rvar", dco = "apr25"),
+  aug25 = tar_read_model("all_tumor_ssls_cond_orr_rvar", dco = "aug25"),
   jan26 = jan26_cond_orr_data
 )
 
 quant_pfs_list <- list(
-  apr25 = tar_read(all_tumor_ssls_trial_quant_pfs_ctdna_apr25),
-  aug25 = tar_read(all_tumor_ssls_trial_quant_pfs_ctdna_aug25),
+  apr25 = tar_read_model("all_tumor_ssls_trial_quant_pfs", dco = "apr25"),
+  aug25 = tar_read_model("all_tumor_ssls_trial_quant_pfs", dco = "aug25"),
   jan26 = jan26_quant_pfs_data
 )
 cond_quant_pfs_list <- list(
-  apr25 = tar_read(all_tumor_ssls_cond_quant_pfs_ctdna_apr25),
-  aug25 = tar_read(all_tumor_ssls_cond_quant_pfs_ctdna_aug25),
+  apr25 = tar_read_model("all_tumor_ssls_cond_quant_pfs", dco = "apr25"),
+  aug25 = tar_read_model("all_tumor_ssls_cond_quant_pfs", dco = "aug25"),
   jan26 = jan26_cond_quant_pfs_data
 )
 
 # Observed KM data for median PFS plot
 obs_km_list <- list(
   apr25 = list(
-    all = tar_read(km_trial_pfs_ctdna_apr25),
-    pdl1_naive = tar_read(km_trial_pfs_pdl1_naive_ctdna_apr25),
-    pdl1 = tar_read(km_trial_pfs_pdl1_ctdna_apr25),
-    naive = tar_read(km_trial_pfs_naive_ctdna_apr25)
+    all        = tar_read_model("km_trial_pfs", dco = "apr25"),
+    pdl1_naive = tar_read_model("km_trial_pfs_pdl1_naive", dco = "apr25"),
+    pdl1       = tar_read_model("km_trial_pfs_pdl1", dco = "apr25"),
+    naive      = tar_read_model("km_trial_pfs_naive", dco = "apr25")
   ),
   aug25 = list(
-    all = tar_read(km_trial_pfs_ctdna_aug25),
-    pdl1_naive = tar_read(km_trial_pfs_pdl1_naive_ctdna_aug25),
-    pdl1 = tar_read(km_trial_pfs_pdl1_ctdna_aug25),
-    naive = tar_read(km_trial_pfs_naive_ctdna_aug25)
+    all        = tar_read_model("km_trial_pfs", dco = "aug25"),
+    pdl1_naive = tar_read_model("km_trial_pfs_pdl1_naive", dco = "aug25"),
+    pdl1       = tar_read_model("km_trial_pfs_pdl1", dco = "aug25"),
+    naive      = tar_read_model("km_trial_pfs_naive", dco = "aug25")
   ),
   jan26 = list(
-    all = jan26_obs_km_all,
+    all        = jan26_obs_km_all,
     pdl1_naive = jan26_obs_km_pdl1_naive,
-    pdl1 = jan26_obs_km_pdl1,
-    naive = jan26_obs_km_first_line
+    pdl1       = jan26_obs_km_pdl1,
+    naive      = jan26_obs_km_first_line
   )
 )
 
 pfs_n_list <- list(
-  apr25 = tar_read(all_tumor_ssls_forecast_target_pfs_n_rvar_ctdna_apr25),
-  aug25 = tar_read(all_tumor_ssls_forecast_target_pfs_n_rvar_ctdna_aug25),
+  apr25 = tar_read_model("all_tumor_ssls_forecast_target_pfs_n_rvar", dco = "apr25"),
+  aug25 = tar_read_model("all_tumor_ssls_forecast_target_pfs_n_rvar", dco = "aug25"),
   jan26 = jan26_pfs_n_data
 )
 cond_pfs_n_list <- list(
-  apr25 = tar_read(all_tumor_ssls_cond_forecast_target_pfs_n_rvar_ctdna_apr25),
-  aug25 = tar_read(all_tumor_ssls_cond_forecast_target_pfs_n_rvar_ctdna_aug25),
+  apr25 = tar_read_model("all_tumor_ssls_cond_forecast_target_pfs_n_rvar", dco = "apr25"),
+  aug25 = tar_read_model("all_tumor_ssls_cond_forecast_target_pfs_n_rvar", dco = "aug25"),
   jan26 = jan26_cond_pfs_n_data
 )
 ```
@@ -297,29 +297,29 @@ Kaplan-Meier curves for SCLC-01 showing All patients, First Line patients, and P
 plot_sclc_km_by_dco(
   estimate_type = "sample",
   all_km_list = list(
-    apr25 = tar_read(all_tumor_ssls_km_rvar_ctdna_apr25),
-    aug25 = tar_read(all_tumor_ssls_km_rvar_ctdna_aug25),
-    jan26 = tar_read(all_tumor_ssls_km_rvar_ctdna_jan26)
+    apr25 = tar_read_model("all_tumor_ssls_km_rvar", dco = "apr25"),
+    aug25 = tar_read_model("all_tumor_ssls_km_rvar", dco = "aug25"),
+    jan26 = tar_read_model("all_tumor_ssls_km_rvar")
   ),
   cond_km_list = list(
-    apr25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_apr25),
-    aug25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_aug25),
-    jan26 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26)
+    apr25 = tar_read_model("all_tumor_ssls_cond_km_rvar", dco = "apr25"),
+    aug25 = tar_read_model("all_tumor_ssls_cond_km_rvar", dco = "aug25"),
+    jan26 = tar_read_model("all_tumor_ssls_cond_km_rvar")
   ),
   obs_km_all_list = list(
-    apr25 = tar_read(km_trial_pfs_ctdna_apr25),
-    aug25 = tar_read(km_trial_pfs_ctdna_aug25),
-    jan26 = tar_read(km_trial_pfs_ctdna_jan26)
+    apr25 = tar_read_model("km_trial_pfs", dco = "apr25"),
+    aug25 = tar_read_model("km_trial_pfs", dco = "aug25"),
+    jan26 = tar_read_model("km_trial_pfs")
   ),
   obs_km_first_line_list = list(
-    apr25 = tar_read(km_trial_pfs_naive_ctdna_apr25),
-    aug25 = tar_read(km_trial_pfs_naive_ctdna_aug25),
-    jan26 = tar_read(km_trial_pfs_naive_ctdna_jan26)
+    apr25 = tar_read_model("km_trial_pfs_naive", dco = "apr25"),
+    aug25 = tar_read_model("km_trial_pfs_naive", dco = "aug25"),
+    jan26 = tar_read_model("km_trial_pfs_naive")
   ),
   analysis_data_list = list(
-    apr25 = tar_read(all_analysis_data_ctdna_apr25),
-    aug25 = tar_read(all_analysis_data_ctdna_aug25),
-    jan26 = tar_read(all_analysis_data_ctdna_jan26)
+    apr25 = tar_read_model("all_analysis_data", dco = "apr25"),
+    aug25 = tar_read_model("all_analysis_data", dco = "aug25"),
+    jan26 = tar_read_model("all_analysis_data")
   )
 )
 ```
@@ -336,29 +336,29 @@ plot_sclc_km_by_dco(
 plot_sclc_km_by_dco(
   estimate_type = "spop",
   all_km_list = list(
-    apr25 = tar_read(all_tumor_ssls_km_rvar_ctdna_apr25),
-    aug25 = tar_read(all_tumor_ssls_km_rvar_ctdna_aug25),
-    jan26 = tar_read(all_tumor_ssls_km_rvar_ctdna_jan26)
+    apr25 = tar_read_model("all_tumor_ssls_km_rvar", dco = "apr25"),
+    aug25 = tar_read_model("all_tumor_ssls_km_rvar", dco = "aug25"),
+    jan26 = tar_read_model("all_tumor_ssls_km_rvar")
   ),
   cond_km_list = list(
-    apr25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_apr25),
-    aug25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_aug25),
-    jan26 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26)
+    apr25 = tar_read_model("all_tumor_ssls_cond_km_rvar", dco = "apr25"),
+    aug25 = tar_read_model("all_tumor_ssls_cond_km_rvar", dco = "aug25"),
+    jan26 = tar_read_model("all_tumor_ssls_cond_km_rvar")
   ),
   obs_km_all_list = list(
-    apr25 = tar_read(km_trial_pfs_ctdna_apr25),
-    aug25 = tar_read(km_trial_pfs_ctdna_aug25),
-    jan26 = tar_read(km_trial_pfs_ctdna_jan26)
+    apr25 = tar_read_model("km_trial_pfs", dco = "apr25"),
+    aug25 = tar_read_model("km_trial_pfs", dco = "aug25"),
+    jan26 = tar_read_model("km_trial_pfs")
   ),
   obs_km_first_line_list = list(
-    apr25 = tar_read(km_trial_pfs_naive_ctdna_apr25),
-    aug25 = tar_read(km_trial_pfs_naive_ctdna_aug25),
-    jan26 = tar_read(km_trial_pfs_naive_ctdna_jan26)
+    apr25 = tar_read_model("km_trial_pfs_naive", dco = "apr25"),
+    aug25 = tar_read_model("km_trial_pfs_naive", dco = "aug25"),
+    jan26 = tar_read_model("km_trial_pfs_naive")
   ),
   analysis_data_list = list(
-    apr25 = tar_read(all_analysis_data_ctdna_apr25),
-    aug25 = tar_read(all_analysis_data_ctdna_aug25),
-    jan26 = tar_read(all_analysis_data_ctdna_jan26)
+    apr25 = tar_read_model("all_analysis_data", dco = "apr25"),
+    aug25 = tar_read_model("all_analysis_data", dco = "aug25"),
+    jan26 = tar_read_model("all_analysis_data")
   )
 )
 ```
@@ -382,24 +382,24 @@ Kaplan-Meier curves stratified by PDL1 status (High vs Low) for All patients, Fi
 
 plot_km_pdl1_by_dco(
   cond_km_data_list = list(
-    apr25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_apr25),
-    aug25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_aug25),
-    jan26 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26)
+    apr25 = tar_read_model("all_tumor_ssls_cond_km_rvar", dco = "apr25"),
+    aug25 = tar_read_model("all_tumor_ssls_cond_km_rvar", dco = "aug25"),
+    jan26 = tar_read_model("all_tumor_ssls_cond_km_rvar")
   ),
   obs_km_all_list = list(
-    apr25 = tar_read(km_trial_pfs_pdl1_ctdna_apr25),
-    aug25 = tar_read(km_trial_pfs_pdl1_ctdna_aug25),
-    jan26 = tar_read(km_trial_pfs_pdl1_ctdna_jan26)
+    apr25 = tar_read_model("km_trial_pfs_pdl1", dco = "apr25"),
+    aug25 = tar_read_model("km_trial_pfs_pdl1", dco = "aug25"),
+    jan26 = tar_read_model("km_trial_pfs_pdl1")
   ),
   obs_km_first_line_list = list(
-    apr25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_apr25),
-    aug25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_aug25),
-    jan26 = tar_read(km_trial_pfs_pdl1_naive_ctdna_jan26)
+    apr25 = tar_read_model("km_trial_pfs_pdl1_naive", dco = "apr25"),
+    aug25 = tar_read_model("km_trial_pfs_pdl1_naive", dco = "aug25"),
+    jan26 = tar_read_model("km_trial_pfs_pdl1_naive")
   ),
   obs_km_part_e_list = list(
-    apr25 = tar_read(km_trial_pfs_part_e_pdl1_ctdna_apr25),
-    aug25 = tar_read(km_trial_pfs_part_e_pdl1_ctdna_aug25),
-    jan26 = tar_read(km_trial_pfs_part_e_pdl1_ctdna_jan26)
+    apr25 = tar_read_model("km_trial_pfs_part_e_pdl1", dco = "apr25"),
+    aug25 = tar_read_model("km_trial_pfs_part_e_pdl1", dco = "aug25"),
+    jan26 = tar_read_model("km_trial_pfs_part_e_pdl1")
   ),
   estimate_type = "sample"
 )
@@ -416,24 +416,24 @@ plot_km_pdl1_by_dco(
 
 plot_km_pdl1_by_dco(
   cond_km_data_list = list(
-    apr25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_apr25),
-    aug25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_aug25),
-    jan26 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26)
+    apr25 = tar_read_model("all_tumor_ssls_cond_km_rvar", dco = "apr25"),
+    aug25 = tar_read_model("all_tumor_ssls_cond_km_rvar", dco = "aug25"),
+    jan26 = tar_read_model("all_tumor_ssls_cond_km_rvar")
   ),
   obs_km_all_list = list(
-    apr25 = tar_read(km_trial_pfs_pdl1_ctdna_apr25),
-    aug25 = tar_read(km_trial_pfs_pdl1_ctdna_aug25),
-    jan26 = tar_read(km_trial_pfs_pdl1_ctdna_jan26)
+    apr25 = tar_read_model("km_trial_pfs_pdl1", dco = "apr25"),
+    aug25 = tar_read_model("km_trial_pfs_pdl1", dco = "aug25"),
+    jan26 = tar_read_model("km_trial_pfs_pdl1")
   ),
   obs_km_first_line_list = list(
-    apr25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_apr25),
-    aug25 = tar_read(km_trial_pfs_pdl1_naive_ctdna_aug25),
-    jan26 = tar_read(km_trial_pfs_pdl1_naive_ctdna_jan26)
+    apr25 = tar_read_model("km_trial_pfs_pdl1_naive", dco = "apr25"),
+    aug25 = tar_read_model("km_trial_pfs_pdl1_naive", dco = "aug25"),
+    jan26 = tar_read_model("km_trial_pfs_pdl1_naive")
   ),
   obs_km_part_e_list = list(
-    apr25 = tar_read(km_trial_pfs_part_e_pdl1_ctdna_apr25),
-    aug25 = tar_read(km_trial_pfs_part_e_pdl1_ctdna_aug25),
-    jan26 = tar_read(km_trial_pfs_part_e_pdl1_ctdna_jan26)
+    apr25 = tar_read_model("km_trial_pfs_part_e_pdl1", dco = "apr25"),
+    aug25 = tar_read_model("km_trial_pfs_part_e_pdl1", dco = "aug25"),
+    jan26 = tar_read_model("km_trial_pfs_part_e_pdl1")
   ),
   estimate_type = "spop"
 )
