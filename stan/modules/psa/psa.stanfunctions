@@ -52,7 +52,7 @@ vector calc_log_psa_mean(matrix patient_states, real psa_baseline) {
  * @param visit_days Study day for each visit (Day 82 gate per SAP Section 5.4.4 and Appendix D)
  * @param pre_nadir Pre-existing nadir from previous visits (0 if none)
  * @param n_screening Number of screening visits before treatment
- * @param psa_undetectable_threshold Threshold for undetectable (typically 0.1 ng/mL)
+ * @param psa_undetectable_threshold Threshold for undetectable (protocol: < 0.2 ng/mL)
  * @return Array of PCWG3 categories for post-treatment visits
  */
 array[] int calculate_psa_category(
@@ -159,7 +159,7 @@ array[] int calculate_psa_category(
  * @param patient_last_obs_visit    Last observed visit week per patient
  * @param forecast_observation_interval  Weeks between assessments (typically 6)
  * @param last_predict_visit        Maximum forecast week
- * @param psa_undetectable_threshold  CR threshold (typically 0.1 ng/mL)
+ * @param psa_undetectable_threshold  CR threshold (protocol: < 0.2 ng/mL)
  */
 tuple(array[] int, array[] int) calculate_all_patients_pcwg3(
   vector rep_patient_log_psa,
