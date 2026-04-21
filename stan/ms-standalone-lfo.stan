@@ -123,8 +123,10 @@ model {
 
 generated quantities {
   // LFO: held-out log-likelihoods per transition for temporal cross-validation.
-  // NOTE: No endpoint GQ here — the data{} arrays (ms_final_state, ms_time_01, etc.)
-  // are not in scope for GQ, and the re-censored lfo_ms_* versions would give wrong
-  // endpoint predictions. Use the non-LFO ms-standalone.stan for endpoint simulation.
   #include "_ms_standalone_lfo_generated_quantities.stan"
+
+  // Posterior-predictive OS KM from re-censored events — pre-cutoff events
+  // are preserved, post-cutoff events are hidden so the KM represents the
+  // model's out-of-sample forecast at this cutoff.
+  #include "_ms_standalone_lfo_os_km_generated_quantities.stan"
 }
