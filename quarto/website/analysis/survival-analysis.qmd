@@ -9,15 +9,15 @@ subtitle: "Kaplan-Meier survival curves and PFS forecasts"
 
 source("_setup.R")
 
-# PFS KM data
-all_analysis_data    <- tar_read(all_analysis_data_ctdna_jan26)
-jan26_km_data        <- tar_read(all_tumor_ssls_km_rvar_ctdna_jan26)
-jan26_cond_km_data   <- tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26)
-jan26_obs_km_all     <- tar_read(km_trial_pfs_ctdna_jan26)
-jan26_obs_km_first_line   <- tar_read(km_trial_pfs_naive_ctdna_jan26)
-jan26_obs_km_pdl1         <- tar_read(km_trial_pfs_pdl1_ctdna_jan26)
-jan26_obs_km_pdl1_naive   <- tar_read(km_trial_pfs_pdl1_naive_ctdna_jan26)
-jan26_obs_km_part_e_pdl1  <- tar_read(km_trial_pfs_part_e_pdl1_ctdna_jan26)
+# PFS KM data (model selected by FOCAL_MODEL in _setup.R)
+all_analysis_data    <- tar_read_model("all_analysis_data")
+jan26_km_data        <- tar_read_model("all_tumor_ssls_km_rvar")
+jan26_cond_km_data   <- tar_read_model("all_tumor_ssls_cond_km_rvar")
+jan26_obs_km_all     <- tar_read_model("km_trial_pfs")
+jan26_obs_km_first_line   <- tar_read_model("km_trial_pfs_naive")
+jan26_obs_km_pdl1         <- tar_read_model("km_trial_pfs_pdl1")
+jan26_obs_km_pdl1_naive   <- tar_read_model("km_trial_pfs_pdl1_naive")
+jan26_obs_km_part_e_pdl1  <- tar_read_model("km_trial_pfs_part_e_pdl1")
 ```
 
 This page presents Kaplan-Meier survival analysis results including historical trial comparisons and SCLC forecasts using **DCO3 (January 2026)** data.
@@ -44,9 +44,9 @@ Kaplan-Meier curves for the historical trials (excluding SCLC-01) used to inform
 #| fig-width: 7
 
 plot_km(
-  tar_read(all_tumor_ssls_km_rvar_ctdna_jan26) |> filter(!fct_match(trial, "sclc")),
+  tar_read_model("all_tumor_ssls_km_rvar") |> filter(!fct_match(trial, "sclc")),
   km_est_var = sample_km_est,
-  obs_km_data = tar_read(km_trial_pfs_ctdna_jan26) |>
+  obs_km_data = tar_read_model("km_trial_pfs") |>
     filter(fct_match(btype, "ub"), !fct_match(trial, "sclc")) |>
     select(!quantiles) |>
     unnest(km_data),

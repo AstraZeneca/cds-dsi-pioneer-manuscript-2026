@@ -30,7 +30,7 @@ Key diagnostics from CmdStan indicating sampling quality.
 ```{r}
 #| label: ssls-diagnostics
 
-tar_read(tumor_ssls_res_posterior_ctdna_jan26)$diagnostic_summary()
+tar_read_model("tumor_ssls_res_posterior")$diagnostic_summary()
 ```
 
 ::: {.callout-note}
@@ -68,7 +68,7 @@ For detailed parameter-level diagnostics, trace plots, and pair plots, the CmdSt
 
 ```r
 # Access the fitted model object
-fit <- tar_read(tumor_ssls_res_posterior_ctdna_jan26)
+fit <- tar_read_model("tumor_ssls_res_posterior")
 
 # View parameter summaries with diagnostics
 fit$summary()

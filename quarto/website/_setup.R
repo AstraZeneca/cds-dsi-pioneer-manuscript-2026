@@ -42,6 +42,17 @@ source(here("r", "sclc", "accuracy.R"))
 # Define target stores (shared across website and other scripts)
 source(here("r", "sclc", "target_stores.R"))
 
+# ── Focal model (change this one line to switch the entire site) ──
+FOCAL_MODEL <- Sys.getenv("FOCAL_MODEL", unset = "no_dropout")
+
+tar_read_model <- function(base_name, model = FOCAL_MODEL, dco = "jan26", store = analysis_store) {
+  targets::tar_read_raw(str_glue("{base_name}_{model}_{dco}"), store = store)
+}
+
+tar_read_model_dco <- function(base_name, dco, model = FOCAL_MODEL, store = analysis_store) {
+  targets::tar_read_raw(str_glue("{base_name}_{model}_{dco}"), store = store)
+}
+
 # Set default targets store (note: per CLAUDE.md, avoid tar_config_set for global state)
 # Instead, use explicit store arguments in tar_read/tar_load calls
 # This line is kept for backward compatibility but should be migrated to explicit stores

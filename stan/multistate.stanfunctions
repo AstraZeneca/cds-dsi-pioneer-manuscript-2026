@@ -113,7 +113,8 @@ real sum_03_at_visits_below(
  * The 0→3 (dropout) transition is visit-conditioned: dropout can only be
  * observed at assessment visit weeks, so the 0→3 hazard accumulates only
  * at visit weeks (not every calendar week). Admin-censored patients (state 0)
- * contribute nothing to the 0→3 hazard.
+ * contribute 0→3 survival terms at their assessment visit weeks (informative
+ * about the dropout hazard) but do not contribute a dropout event.
  *
  * @param final_state Observed final states (0=censored, 1=progressed, 2=dead, 3=dropout)
  * @param enable_01 Flag: is 0→1 transition enabled?
