@@ -1,0 +1,21 @@
+{
+  "r.sessionWatcher": true,
+  "r.bracketedPaste": true,
+  "r.alwaysUseActiveTerminal": true,
+  "r.rterm.linux": "/usr/bin/R",
+  "r.rpath.linux": "/usr/bin/R",
+  "r.plot.useHttpgd": false,
+  "r.rtermSendDelay": 8,
+  "r.session.watchGlobalEnvironment": true,
+  "r.session.objectLengthLimit": 200,
+  "r.source.focus": "editor",
+  "r.lsp.enabled": true,
+  "r.lsp.debug": true,
+  "files.associations": {
+    "*.r": "r",
+    "*.R": "r"
+  },
+  "[r]": {
+    "editor.defaultFormatter": null
+  }
+}

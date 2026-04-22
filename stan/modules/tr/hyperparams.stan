@@ -8,6 +8,13 @@ real<lower=0> tr_loc_pop_sd;  // sd prior for population log total rate
 // Hierarchical intercept prior scale hyperparameters - one per level
 array[n_levels] real<lower=0> tr_sd_level_intercept_sd;
 
+// Fixed-effect SD hyperparameter for FE levels (mode=1); unused for RE/disabled levels
+array[n_levels] real<lower=0> tr_fe_sd_level_intercept;
+
+// Student-t hierarchy: nu prior hyperparameters (one per level)
+array[n_levels] real<lower=0> tr_nu_level_prior_alpha;
+array[n_levels] real<lower=0> tr_nu_level_prior_beta;
+
 // QR-space coefficient hyperparameters (applied in model block)
 vector[n_covar] tr_coef_qr_pop_mean;        // mean for QR coefficients (typically 0)
 vector<lower=0>[n_covar] tr_coef_qr_pop_sd; // sd for QR coefficients (typically 1)

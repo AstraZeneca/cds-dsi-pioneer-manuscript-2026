@@ -211,11 +211,8 @@ make_stan_fields_state0 <- function(n, patient_max_t = 20L) {
     ms_time_02            = rep(patient_max_t, n),
     ms_time_12            = rep(0L, n),
     ms_censored_01        = rep(1L, n),
-    ms_censored_02        = rep(1L, n),
-    ms_censored_12        = rep(1L, n),
     ms_time_03            = rep(patient_max_t, n),
     ms_time_32            = rep(0L, n),
-    ms_censored_32        = rep(1L, n),
     ms_prog_deterministic = rep(0L, n),
     ms_max_sojourn_t      = 11L,
     ms_max_sojourn_t_32   = 11L,
@@ -351,7 +348,6 @@ test_that("derive_ms_fields: progressed_died sojourn uses pmax(1, death_week - p
   ad <- make_analysis_data(d, pfs = 30L)
   result <- derive_ms_fields(ad, "full")
   expect_equal(result$ms_time_12, 5L)
-  expect_equal(result$ms_censored_12, 0L)
 })
 
 test_that("derive_ms_fields: sojourn clamped to 1 when death same week as adjusted pfs", {
@@ -369,7 +365,6 @@ test_that("derive_ms_fields: died_off_trial has correct ms_time_32", {
   ad <- make_analysis_data(d, pfs = 20L)
   result <- derive_ms_fields(ad, "full")
   expect_equal(result$ms_time_32, 20L)
-  expect_equal(result$ms_censored_32, 0L)
   expect_equal(result$ms_final_state, 3L)
 })
 
@@ -378,8 +373,8 @@ test_that("derive_ms_fields returns all required Stan field names", {
   result <- derive_ms_fields(ad, "full")
   expected_names <- c(
     "ms_final_state", "ms_time_01", "ms_time_02", "ms_time_12",
-    "ms_censored_01", "ms_censored_02", "ms_censored_12",
-    "ms_time_03", "ms_time_32", "ms_censored_32",
+    "ms_censored_01",
+    "ms_time_03", "ms_time_32",
     "ms_prog_deterministic", "ms_max_sojourn_t", "ms_max_sojourn_t_32",
     "ms_gp_grid_step"
   )

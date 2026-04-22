@@ -10,7 +10,7 @@
 /**
  * Calculate mean log(PSA) from two-component log-space states
  *
- * When lambda=1, this is identical to calc_log_sld_mean:
+ * When lambda=1, this is identical to calc_log_burden_mean:
  *   log(PSA) = log_sum_exp(state[1], state[2]) + log(psa_baseline)
  *
  * The two-component state represents:
@@ -42,12 +42,14 @@ vector calc_log_psa_mean(matrix patient_states, real psa_baseline) {
 /**
  * Calculate PCWG3 PSA response category with confirmation logic
  *
- * PCWG3 PSA Progression Criteria:
- * - Scenario A (after PSA decline): >= 25% AND >= 2 ng/mL rise from nadir, confirmed
- * - Scenario B (no decline): After 12 weeks, >= 25% AND >= 2 ng/mL rise from baseline, confirmed
+ * SAP Section 5.4.4 PSA Progression Criteria:
+ * - Single nadir-based rule: >= 25% AND >= 2 ng/mL rise from nadir, after week 12
+ * - Day 82 gate applied universally (no Scenario A/B split)
+ * - Trigger date = first qualifying visit; values not required to be consecutive
+ * - nadir initialised to baseline, so no PSA decline is required to trigger PD
  *
  * @param psa_trajectory Absolute PSA values (ng/mL) at each visit
- * @param visit_weeks Week number for each visit (for 12-week rule)
+ * @param visit_days Study day for each visit (Day 82 gate per SAP Section 5.4.4 and Appendix D)
  * @param pre_nadir Pre-existing nadir from previous visits (0 if none)
  * @param n_screening Number of screening visits before treatment
  * @param psa_undetectable_threshold Threshold for undetectable (typically 0.1 ng/mL)
@@ -55,7 +57,7 @@ vector calc_log_psa_mean(matrix patient_states, real psa_baseline) {
  */
 array[] int calculate_psa_category(
   vector psa_trajectory,
-  array[] int visit_weeks,
+  array[] int visit_days,
   real pre_nadir,
   int n_screening,
   real psa_undetectable_threshold
@@ -66,47 +68,40 @@ array[] int calculate_psa_category(
   array[n_treat] int psa_status;
 
   real baseline = psa_trajectory[n_screening];
+  // nadir initialised to baseline; when PSA never declines, nadir == baseline,
+  // so the single nadir-based rule covers both the "decline" and "no decline"
+  // cases without special-casing (SAP Section 5.4.4, Issue #56).
   real nadir = pre_nadir <= 0 ? baseline : pre_nadir;
-  int pending_pd_week = -1;
-  int had_decline = 0;  // Track if PSA ever declined below baseline
+  int pending_pd_day = -1;
 
   int CR = 1; int PSA50 = 2; int STABLE = 3; int PSA_PD = 4;
 
   for (t in (n_screening + 1):n) {
     real psa_t = psa_trajectory[t];
-    int week_t = visit_weeks[t];
+    int day_t = visit_days[t];
     int idx = t - n_screening;
 
-    // Update nadir and check if we've had a decline
+    // Update nadir
     if (psa_t < nadir) {
       nadir = psa_t;
-      had_decline = 1;
     }
 
-    // Check PCWG3 progression criteria
-    int meets_pd_criteria = 0;
+    // SAP Section 5.4.4: single nadir-based rule with Day 82 gate applied
+    // universally — no Scenario A/B split. SAP Appendix D: Day 82 = start of
+    // the Week 13 visit window.
+    int meets_pd_criteria = (day_t >= 82) &&
+                            (nadir > 0) &&
+                            ((psa_t - nadir) / nadir >= 0.25) &&
+                            ((psa_t - nadir) >= 2.0);
 
-    if (had_decline) {
-      // Scenario A: After PSA decline - use nadir as reference
-      meets_pd_criteria = (nadir > 0) &&
-                         ((psa_t - nadir) / nadir >= 0.25) &&
-                         ((psa_t - nadir) >= 2.0);
-    } else {
-      // Scenario B: No decline - use baseline as reference, only after 12 weeks
-      meets_pd_criteria = (week_t > 12) &&
-                         (baseline > 0) &&
-                         ((psa_t - baseline) / baseline >= 0.25) &&
-                         ((psa_t - baseline) >= 2.0);
-    }
-
-    // Handle confirmation requirement (>= 3 weeks between measurements)
+    // Handle confirmation requirement (>= 21 days between trigger and confirmer)
     if (meets_pd_criteria) {
-      if (pending_pd_week > 0 && (week_t - pending_pd_week) >= 3) {
+      if (pending_pd_day > 0 && (day_t - pending_pd_day) >= 21) {
         // Confirmed progression
         psa_status[idx] = PSA_PD;
       } else {
-        if (pending_pd_week < 0) {
-          pending_pd_week = week_t;
+        if (pending_pd_day < 0) {
+          pending_pd_day = day_t;
         }
         // Not yet confirmed - assign based on other criteria
         if (psa_t < psa_undetectable_threshold) {
@@ -118,7 +113,9 @@ array[] int calculate_psa_category(
         }
       }
     } else {
-      pending_pd_week = -1;  // Reset confirmation window
+      // SAP Section 5.4.4: values not required to be consecutive —
+      // a PSA dip between trigger and confirmation does NOT invalidate the trigger.
+      // Do NOT reset pending_pd_day here.
       if (psa_t < psa_undetectable_threshold) {
         psa_status[idx] = CR;
       } else if (baseline > 0 && (baseline - psa_t) / baseline >= 0.5) {
@@ -136,9 +133,114 @@ array[] int calculate_psa_category(
  */
 array[] int calculate_psa_category(
   vector psa_trajectory,
-  array[] int visit_weeks,
+  array[] int visit_days,
   int n_screening,
   real psa_undetectable_threshold
 ) {
-  return calculate_psa_category(psa_trajectory, visit_weeks, 0, n_screening, psa_undetectable_threshold);
+  return calculate_psa_category(psa_trajectory, visit_days, 0, n_screening, psa_undetectable_threshold);
+}
+
+/**
+ * Batched PCWG3 classification for all patients.
+ *
+ * Mirrors calculate_all_patients_recist: takes flat log-PSA vectors indexed by
+ * position arrays and returns flat output arrays sized for all patients.
+ *
+ * rep_pcwg3 covers all observed visits (screening slots filled with NE=5).
+ * forecast_obs_pcwg3 covers assessment-visit forecast positions only.
+ *
+ * @param rep_patient_log_psa       Log PSA at observed visits (flat, all patients)
+ * @param forecast_patient_log_psa  Log PSA at weekly forecast visits (flat, all patients)
+ * @param patient_visit_pos         Position array for observed visits
+ * @param forecast_visits_pos       Position array for weekly forecast visits
+ * @param forecast_obs_visits_pos   Position array for assessment-visit forecast
+ * @param n_patient_screening_visits Screening visits per patient
+ * @param t_patient_visits_day      Study days at observed visits (flat, all patients)
+ * @param patient_last_obs_visit    Last observed visit week per patient
+ * @param forecast_observation_interval  Weeks between assessments (typically 6)
+ * @param last_predict_visit        Maximum forecast week
+ * @param psa_undetectable_threshold  CR threshold (typically 0.1 ng/mL)
+ */
+tuple(array[] int, array[] int) calculate_all_patients_pcwg3(
+  vector rep_patient_log_psa,
+  vector forecast_patient_log_psa,
+  array[] int patient_visit_pos,
+  array[] int forecast_visits_pos,
+  array[] int forecast_obs_visits_pos,
+  array[] int n_patient_screening_visits,
+  array[] int t_patient_visits_day,
+  array[] int patient_last_obs_visit,
+  int forecast_observation_interval,
+  int last_predict_visit,
+  real psa_undetectable_threshold
+) {
+  int n_patients = size(patient_visit_pos) - 1;
+  int n_total_visits = get_pos_total_size(patient_visit_pos);
+  int n_total_forecast_obs_visits = get_pos_total_size(forecast_obs_visits_pos);
+
+  array[n_total_visits] int rep_pcwg3 = rep_array(5, n_total_visits);
+  array[n_total_forecast_obs_visits] int forecast_obs_pcwg3;
+
+  for (i in 1:n_patients) {
+    int visit_start, visit_end;
+    (visit_start, visit_end) = get_pos(patient_visit_pos, i);
+    int visit_size = visit_end - visit_start + 1;
+    int n_screening = n_patient_screening_visits[i];
+    int n_treat = visit_size - n_screening;
+
+    vector[visit_size] rep_psa_abs = exp(rep_patient_log_psa[visit_start:visit_end]);
+
+    // Replicated PCWG3 at observed treatment visits
+    if (n_treat > 0) {
+      rep_pcwg3[(visit_start + n_screening):visit_end] = calculate_psa_category(
+        rep_psa_abs,
+        t_patient_visits_day[visit_start:visit_end],
+        n_screening,
+        psa_undetectable_threshold
+      );
+    }
+
+    // Assessment-visit PCWG3 (subsampled from noisy weekly forecast)
+    int n_assessment = get_pos_size(forecast_obs_visits_pos, i);
+    if (n_assessment > 0) {
+      int assess_start, assess_end;
+      (assess_start, assess_end) = get_pos(forecast_obs_visits_pos, i);
+
+      int fcast_start, fcast_end;
+      (fcast_start, fcast_end) = get_pos(forecast_visits_pos, i);
+
+      // Subsample weekly forecast at assessment-visit indices
+      array[n_assessment] int obs_indices = linspaced_int_array(
+        n_assessment,
+        fcast_start + forecast_observation_interval - 1,
+        fcast_start + n_assessment * forecast_observation_interval - 1
+      );
+      obs_indices[n_assessment] = fcast_end;
+
+      // PSA trajectory: pre-treatment baseline + assessment visits
+      // combined_psa[1] anchors the PSA50 baseline (must be pre-treatment, not last treatment PSA)
+      vector[1 + n_assessment] combined_psa;
+      combined_psa[1] = rep_psa_abs[n_screening];
+      combined_psa[2:] = exp(forecast_patient_log_psa[obs_indices]);
+
+      // Days: last observed day + assessment visit days
+      array[1 + n_assessment] int combined_days;
+      combined_days[1] = (patient_last_obs_visit[i] - 1) * 7 + 4;
+      for (a in 1:n_assessment) {
+        int week = min(patient_last_obs_visit[i] + a * forecast_observation_interval, last_predict_visit);
+        combined_days[a + 1] = (week - 1) * 7 + 4;
+      }
+
+      // Nadir from observed treatment period (or last observed if no treatment visits)
+      real obs_nadir = n_treat > 0
+        ? min(rep_psa_abs[(n_screening + 1):visit_size])
+        : rep_psa_abs[visit_size];
+
+      forecast_obs_pcwg3[assess_start:assess_end] = calculate_psa_category(
+        combined_psa, combined_days, obs_nadir, 1, psa_undetectable_threshold
+      );
+    }
+  }
+
+  return (rep_pcwg3, forecast_obs_pcwg3);
 }

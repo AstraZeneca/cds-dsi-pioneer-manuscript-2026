@@ -18,8 +18,8 @@ int<lower=0, upper=2> ms_time_scale_12;
 
 // --- Baseline Hazard Hierarchy ---
 // Uses generic n_levels structure (consistent with tr, frac, init modules)
-// Tri-state flag: 0 = no level effect, 1 = intercept-only, 2 = full GP
-array[n_levels] int<lower=0, upper=2> enable_ms_level_baseline_hazard;
+// 4-state flag: 0 = no level effect, 1 = FE intercept, 2 = RE intercept, 3 = RE GP
+array[n_levels] int<lower=0, upper=3> enable_ms_level_baseline_hazard;
 
 // --- Dropout / Off-trial Transitions ---
 // 0→3: Dropout (off-trial). Constant hazard (no GP).
@@ -32,3 +32,24 @@ int<lower=0, upper=1> enable_ms_32;
 int<lower=0, upper=1> enable_ms_pop_time_invariant_cov;  // Population-level time-invariant covariates
 int<lower=0, upper=1> enable_ms_pop_time_varying_cov;    // Population-level time-varying covariates
 array[n_levels] int<lower=0, upper=1> enable_ms_level_cov;  // Per-level random slopes for time-invariant
+
+// --- Visit-Gated 0->1 Mode ---
+// When enabled, 0->1 hazard accumulates only at assessment visit weeks
+// (not every calendar week). Interval censoring for 0->1 is disabled.
+// By default, time-varying covariates for 0->1 are built from observed PSA
+// (data). Set enable_ms_visit_gated_latent_01=1 to use the modeled latent
+// PSA trajectory instead (still evaluated only at visit weeks).
+int<lower=0, upper=1> enable_ms_visit_gated_01;
+int<lower=0, upper=1> enable_ms_visit_gated_latent_01;
+
+// --- 0->2 Time-Varying Covariate ---
+// When enabled, 0->2 uses modeled PSA trajectory as time-varying covariate.
+// When disabled, 0->2 uses GP baseline + time-invariant covariates only.
+int<lower=0, upper=1> enable_ms_02_time_varying_cov;
+
+// --- PSA-at-State-Entry Covariates ---
+// When enabled, the last observed log-PSA before entering state 1 (1→2) or
+// state 3 (3→2) is used as a time-invariant patient-level covariate, shifting
+// the entire sojourn hazard up/down based on PSA burden at transition entry.
+int<lower=0, upper=1> enable_ms_12_entry_psa_cov;
+int<lower=0, upper=1> enable_ms_32_entry_psa_cov;

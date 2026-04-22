@@ -32,7 +32,7 @@ test_that("km_and_quantiles: all scenarios produce expected outputs (n_failures 
     n_failures,
     0L,
     label = "n_failures",
-    info  = paste0(
+    info  = str_c(
       "One or more KM/quantile scenarios produced unexpected outputs. ",
       "See Stan print() messages above for which scenarios failed."
     )

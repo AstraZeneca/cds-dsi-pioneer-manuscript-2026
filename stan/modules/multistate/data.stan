@@ -23,8 +23,8 @@ array[n_patients] int<lower=0> ms_time_12;  // Post-progression survival / sojou
 // --- Censoring Indicators ---
 // 1 = censored for this transition, 0 = event observed
 array[n_patients] int<lower=0, upper=1> ms_censored_01;
-array[n_patients] int<lower=0, upper=1> ms_censored_02;
-array[n_patients] int<lower=0, upper=1> ms_censored_12;
+// ms_censored_02 and ms_censored_12 are derived in transformed data from
+// ms_final_state and ms_time_01 (see multistate/transformed_data.stan).
 
 // --- Observed 1→2 death calendar week ---
 // Exact calendar week of death for progressed-then-died patients (0 otherwise).
@@ -32,12 +32,13 @@ array[n_patients] int<lower=0, upper=1> ms_censored_12;
 // which can overshoot when detection-adjustment pushes pfs past death_week.
 array[n_patients] int<lower=0> ms_os_event_12;
 
+
 // --- 0→3 Transition: Dropout ---
 array[n_patients] int<lower=0> ms_time_03;  // Calendar week of dropout (= patient_max_t for all patients)
 
 // --- 3→2 Transition: Off-trial death ---
 array[n_patients] int<lower=0> ms_time_32;              // Sojourn time in state 3 until off-trial death, 0 if N/A
-array[n_patients] int<lower=0, upper=1> ms_censored_32; // 1 = censored in state 3, 0 = off-trial death observed
+// ms_censored_32 is derived in transformed data from ms_time_32.
 
 // --- Deterministic Progression Flag ---
 // Was progression determined by the mechanistic model (PSA-PD/RECIST-PD)?
@@ -66,3 +67,12 @@ int<lower=1> ms_gp_grid_step;
 // --- Covariate Dimensions ---
 int<lower=0> n_time_varying_covar;    // Number of time-varying covariates
 int<lower=0> n_time_invariant_covar;  // Number of time-invariant covariates
+
+// --- PSA-at-State-Entry Data ---
+// Standardized last observed log-PSA before entering state 1 (1→2 sojourn) or
+// state 3 (3→2 sojourn). Uses n_patients (not n_forecast_patients) so this
+// declaration works in both full models (where n_forecast_patients is in scope)
+// and the standalone model (where n_forecast_patients is a transformed constant).
+// In all enabled cases, n_forecast_patients == n_patients for PSA models.
+array[enable_ms_12_entry_psa_cov ? n_patients : 0] real psa_at_entry_12;
+array[enable_ms_32_entry_psa_cov ? n_patients : 0] real psa_at_entry_32;

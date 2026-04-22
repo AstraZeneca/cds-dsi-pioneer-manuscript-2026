@@ -11,27 +11,45 @@ if (enable_pop_cov_tr) {
 }
 
 // ===== UNIFIED LOOP OVER ALL LEVELS =====
-for (lv in 1:n_levels) {
-  // SD hyperpriors are always applied (arrays are always n_levels)
-  tr_sd_level_intercept[lv] ~ normal(0, tr_sd_level_intercept_sd[lv]);
-  if (n_covar > 0) {
-    tr_sd_level_slope[lv] ~ normal(0, tr_sd_level_slope_sd[lv]);
-  }
+{
+  int sd_idx = 0;
+  for (lv in 1:n_levels) {
+    // SD prior only for RE levels (mode=2); FE levels use fixed hyperparameter
+    if (enable_level_intercept_tr[lv] == LEVEL_MODE_RE) {
+      sd_idx += 1;
+      tr_sd_level_intercept_raw[sd_idx] ~ normal(0, tr_sd_level_intercept_sd[lv]);
+    }
+    if (n_covar > 0) {
+      tr_sd_level_slope[lv] ~ normal(0, tr_sd_level_slope_sd[lv]);
+    }
 
-  // Intercept raw effects - only apply prior to enabled levels
-  // (parameter array is sized by enabled groups only)
-  if (enable_level_intercept_tr[lv]) {
-    int lv_start = enabled_level_pos_tr_intercept[lv];
-    int lv_end = enabled_level_pos_tr_intercept[lv + 1] - 1;
-    tr_raw_level_intercept[lv_start:lv_end] ~ std_normal();
-  }
+    // Intercept raw effects - only apply prior to enabled levels (FE and RE both)
+    // (parameter array is sized by enabled groups only)
+    if (enable_level_intercept_tr[lv]) {
+      int lv_start = enabled_level_pos_tr_intercept[lv];
+      int lv_end = enabled_level_pos_tr_intercept[lv + 1] - 1;
+      if (enable_student_t_hierarchy)
+        tr_raw_level_intercept[lv_start:lv_end] ~ student_t(tr_nu_level[lv], 0, 1);
+      else
+        tr_raw_level_intercept[lv_start:lv_end] ~ std_normal();
+    }
 
-  // Slope raw effects - only apply prior to enabled levels
-  if (enable_level_cov_tr[lv] && n_covar > 0) {
-    int lv_start = enabled_level_pos_tr_slope[lv];
-    int lv_end = enabled_level_pos_tr_slope[lv + 1] - 1;
-    to_vector(tr_raw_level_slope[lv_start:lv_end, :]) ~ std_normal();
+    // Slope raw effects - only apply prior to enabled levels
+    if (enable_level_cov_tr[lv] && n_covar > 0) {
+      int lv_start = enabled_level_pos_tr_slope[lv];
+      int lv_end = enabled_level_pos_tr_slope[lv + 1] - 1;
+      if (enable_student_t_hierarchy)
+        to_vector(tr_raw_level_slope[lv_start:lv_end, :]) ~ student_t(tr_nu_level[lv], 0, 1);
+      else
+        to_vector(tr_raw_level_slope[lv_start:lv_end, :]) ~ std_normal();
+    }
   }
+}
+
+// Student-t nu priors (only when enabled)
+if (enable_student_t_hierarchy) {
+  for (lv in 1:n_levels)
+    tr_nu_level[lv] ~ gamma(tr_nu_level_prior_alpha[lv], tr_nu_level_prior_beta[lv]);
 }
 
 // Patient-level process noise priors - only when feature is enabled
