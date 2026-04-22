@@ -1,0 +1,31 @@
+// full_model.stanfunctions
+// Tuple-returning helpers for full-model grid flag computations.
+// #included inside functions {} in model files.
+
+/**
+ * Compute process-noise presence and full-state-grid requirement flags.
+ *
+ * need_states_full_grid is true when any of these hold:
+ *   - Process noise (AR(1) state noise) is enabled
+ *   - The explicit full-grid flag is set
+ *   - Time-varying covariates flow through the multistate 0→1 transition
+ *     (ungated) or the 0→2 transition
+ *
+ * @return (enable_any_process_noise_tr, need_states_full_grid)
+ */
+tuple(int, int) compute_full_model_grid_flags(
+  int enable_pop_process_noise_tr,
+  int enable_patient_process_noise_tr,
+  int enable_states_full_grid,
+  int enable_ms_pop_time_varying_cov,
+  int n_time_varying_covar,
+  int enable_ms_01,
+  int enable_ms_visit_gated_01,
+  int enable_ms_02_time_varying_cov
+) {
+  int any_pn    = enable_pop_process_noise_tr || enable_patient_process_noise_tr;
+  int need_grid = any_pn || enable_states_full_grid ||
+    (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
+     ((enable_ms_01 && !enable_ms_visit_gated_01) || enable_ms_02_time_varying_cov));
+  return (any_pn, need_grid);
+}

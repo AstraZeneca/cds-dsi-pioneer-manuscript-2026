@@ -7,10 +7,10 @@
 #'
 #' @param edges A data frame with 'from' and 'to' columns
 #' @param start_names Character vector of starting target names
-#' @return Character vector of all downstream target names (including start_names)
+#' @return Character vector of all downstream target names (excluding start_names)
 get_downstream <- function(edges, start_names) {
   if (nrow(edges) == 0 || length(start_names) == 0) {
-    return(start_names)
+    return(character())
   }
 
   graph <- igraph::graph_from_data_frame(edges, directed = TRUE)
@@ -19,7 +19,7 @@ get_downstream <- function(edges, start_names) {
     intersect(igraph::V(graph)$name) |>
     purrr::map(~ igraph::subcomponent(graph, .x, mode = "out")$name) |>
     purrr::reduce(union, .init = character()) |>
-    union(start_names)
+    setdiff(start_names)
 }
 
 #' Get upstream dependencies from a dependency edge list

@@ -1,4 +1,15 @@
 // ============================================================================
+// PCWG3 RESPONSE CATEGORY CONSTANTS
+// ============================================================================
+// Same 1-4 encoding as RECIST (compatible with shared endpoint functions).
+// NE (Not Evaluable) = 5 is PSA-specific (screening visits, no RECIST equivalent).
+int UNDETECTABLE = 1;  // PSA below detection threshold (CR equivalent)
+int PSA50        = 2;  // >= 50% PSA reduction from baseline (PR equivalent)
+int STABLE       = 3;  // Neither undetectable nor PSA-PD (SD equivalent)
+int PSA_PD       = 4;  // PSA progression by PCWG3 criteria (PD equivalent)
+int NE           = 5;  // Not Evaluable (screening visits)
+
+// ============================================================================
 // PSA NORMALIZATION AND PREPROCESSING
 // ============================================================================
 
@@ -19,10 +30,12 @@ vector[sum(n_patient_visits) - sum(n_patient_screening_visits)] post_treat_psa;
     int visit_start, visit_end;
     (visit_start, visit_end) = get_pos(patient_visit_pos, i);
 
-    // Baseline is first post-screening visit (at treatment start)
-    int baseline_idx = visit_start + n_patient_screening_visits[i];
+    // Baseline is the LAST screening visit (week 0, ADaM ABLFL=Y).
+    // Treatment visits (week > 0) start at visit_start + n_screening.
+    int baseline_idx = visit_start + n_patient_screening_visits[i] - 1;
     real baseline_psa = psa_values[baseline_idx];
     log_baseline_psa[i] = log(baseline_psa);
+
 
     for (v in visit_start:visit_end) {
       if (psa_measured[v]) {
@@ -40,4 +53,46 @@ vector[sum(n_patient_visits) - sum(n_patient_screening_visits)] post_treat_psa;
       }
     }
   }
+}
+
+// Biomarker-agnostic baseline for state_space module
+vector[n_patients] baseline_obs_per_patient;
+{
+  for (i in 1:n_patients) {
+    baseline_obs_per_patient[i] = exp(log_baseline_psa[i]);
+  }
+}
+
+// ============================================================================
+// GP TIME GRID
+// ============================================================================
+// Array of absolute time points used for GP modeling in the multistate module.
+array[max_all_t] real all_measure_t = linspaced_array(max_all_t, 1, max_all_t);
+
+// ============================================================================
+// PSA NORMALIZATION CONSTANTS FOR PROPORTIONAL HAZARDS
+// ============================================================================
+// Robust normalization statistics (median and IQR) from observed log(PSA)
+// Used by multistate module for time-varying covariates
+// Only computed from measured PSA values (psa_measured == 1 and non-zero)
+
+real median_log_psa_obs;
+real iqr_log_psa_obs;
+
+{
+  int n_positive = 0;
+  for (i in 1:sum(n_patient_visits)) {
+    if (psa_measured[i] && log_psa_values[i] != 0) n_positive += 1;
+  }
+  vector[n_positive] obs_log_psa;
+  int obs_idx = 1;
+  for (i in 1:sum(n_patient_visits)) {
+    if (psa_measured[i] && log_psa_values[i] != 0) {
+      obs_log_psa[obs_idx] = log_psa_values[i];
+      obs_idx += 1;
+    }
+  }
+  array[3] real quantiles_obs = quantile(obs_log_psa, {0.25, 0.5, 0.75});
+  median_log_psa_obs = quantiles_obs[2];
+  iqr_log_psa_obs = quantiles_obs[3] - quantiles_obs[1];
 }

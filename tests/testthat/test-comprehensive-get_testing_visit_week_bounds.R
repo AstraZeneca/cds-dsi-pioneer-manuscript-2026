@@ -149,7 +149,7 @@ test_that("get_testing_visit_week_bounds - comprehensive stress test", {
     expect_equal(
       case_status,
       0,
-      label = paste("Case", case_idx, "should not error")
+      label = str_glue("Case {case_idx} should not error")
     )
 
     # Validate specific results for each cutoff and patient
@@ -176,29 +176,13 @@ test_that("get_testing_visit_week_bounds - comprehensive stress test", {
         expect_equal(
           first_week_actual,
           case$expected_first_testing_visit_week[n, i],
-          label = paste(
-            "Case",
-            case_idx,
-            case$case_name,
-            "first_testing_visit_week n=",
-            n,
-            "i=",
-            i
-          )
+          label = str_glue("Case {case_idx} {case$case_name} first_testing_visit_week n= {n} i= {i}")
         )
 
         expect_equal(
           start_idx_actual,
           case$expected_testing_start_idx[n, i],
-          label = paste(
-            "Case",
-            case_idx,
-            case$case_name,
-            "testing_start_idx n=",
-            n,
-            "i=",
-            i
-          )
+          label = str_glue("Case {case_idx} {case$case_name} testing_start_idx n= {n} i= {i}")
         )
 
         cat(

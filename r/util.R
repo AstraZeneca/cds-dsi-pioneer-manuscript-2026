@@ -50,13 +50,23 @@ sample_and_save <- function(
 
   fs::dir_create(output_dir, recurse = TRUE)
 
-  # Load the compiled model from exe_file
-  model <- cmdstan_model(exe_file = exe_file)
-
-  # Ensure the compiled Stan executable has execute permissions
+  # Ensure execute permissions before loading the model. If the binary lacks
+  # the execute bit (e.g. artifacts volume between jobs), copy to output_dir
+  # first so the chmod applies to a local, definitely-writable path.
+  if (fs::file_exists(exe_file) && !fs::file_access(exe_file, "execute")) {
+    local_exe <- fs::path(output_dir, fs::path_file(exe_file))
+    fs::file_copy(exe_file, local_exe, overwrite = TRUE)
+    exe_file <- local_exe
+  }
   if (fs::file_exists(exe_file)) {
     fs::file_chmod(exe_file, "u+x")
   }
+
+  # Load the compiled model from exe_file
+  # Workaround for stan-dev/cmdstanr#765: cpp_options is ignored when exe_file
+  # is used, so stan_threads must be set via the private field directly.
+  model <- cmdstan_model(exe_file = exe_file)
+  model$.__enclos_env__$private$cpp_options_$stan_threads <- TRUE
 
   if (!no_save && !timestamp) {
     # fit <- model$sample(..., output_dir = output_dir, output_basename = output_basename)
@@ -92,7 +102,6 @@ sample_and_save <- function(
       },
       error = function(e) {
         warning("Failed to save profile files: ", conditionMessage(e))
-        # Optionally return a sentinel or do nothing
         NULL
       }
     )
@@ -118,22 +127,68 @@ generate_quantities_from_fit <- function(
   fit,
   data,
   output_dir,
-  parallel_chains = 4
+  parallel_chains = 4,
+  threads_per_chain = NULL,
+  stan_file = NULL,
+  include_paths = NULL
 ) {
-  model <- cmdstan_model(exe_file = exe_file)
-
-  if (fs::file_exists(exe_file)) {
-    fs::file_chmod(exe_file, "u+x")
-  }
-
   fs::dir_create(output_dir, recurse = TRUE)
 
-  model$generate_quantities(
+  # If the binary doesn't exist (e.g. artifact mount from a prior job is no
+  # longer available), recompile from Stan source if provided.
+  if (!fs::file_exists(exe_file)) {
+    if (is.null(stan_file)) {
+      stop(
+        "Stan exe not found at '",
+        exe_file,
+        "' and no stan_file provided for recompilation."
+      )
+    }
+    message("Stan exe not found at '", exe_file, "' — recompiling from source.")
+    compile_dir <- fs::path(output_dir, "model")
+    fs::dir_create(compile_dir)
+    model <- cmdstan_model(
+      stan_file = stan_file,
+      include_paths = include_paths,
+      dir = compile_dir,
+      cpp_options = list(stan_threads = TRUE)
+    )
+    gq_args <- list(
+      fitted_params = fit,
+      data = data,
+      output_dir = output_dir,
+      parallel_chains = parallel_chains
+    )
+    if (!is.null(threads_per_chain)) {
+      gq_args$threads_per_chain <- threads_per_chain
+    }
+    return(do.call(model$generate_quantities, gq_args))
+  }
+
+  # If the binary isn't writable (e.g. read-only artifact mount from a prior
+  # job), copy it to output_dir so we can chmod it before execution.
+  if (!fs::file_access(exe_file, "write")) {
+    local_exe <- fs::path(output_dir, fs::path_file(exe_file))
+    fs::file_copy(exe_file, local_exe, overwrite = TRUE)
+    exe_file <- local_exe
+  }
+  fs::file_chmod(exe_file, "u+x")
+
+  # Workaround for stan-dev/cmdstanr#765: cpp_options is ignored when exe_file
+  # is used, so stan_threads must be set via the private field directly.
+  model <- cmdstan_model(exe_file = exe_file)
+  model$.__enclos_env__$private$cpp_options_$stan_threads <- TRUE
+
+  gq_args <- list(
     fitted_params = fit,
     data = data,
     output_dir = output_dir,
     parallel_chains = parallel_chains
   )
+  if (!is.null(threads_per_chain)) {
+    gq_args$threads_per_chain <- threads_per_chain
+  }
+  do.call(model$generate_quantities, gq_args)
 }
 
 #' Compute CIF draws from existing fit CSVs by applying the state-3 correction in R
@@ -154,20 +209,27 @@ generate_quantities_from_fit <- function(
 #' @return posterior::draws_df with spop/sample_cif_01/02/03[trial,time] variables
 compute_cif_from_draws <- function(fit, stan_data) {
   n_patients <- stan_data$n_patients
-  n_trials   <- stan_data$n_trials
+  n_trials <- stan_data$n_trials
   # max_all_t and trial_patient_pos are Stan transformed_data — reconstruct here.
   # Stan: max_all_t = max(max(t_patient_visits) + 1, extend_max_all_t)
-  max_all_t  <- max(max(stan_data$t_patient_visits) + 1L, stan_data$extend_max_all_t)
-  T_len      <- max_all_t + 1L
+  max_all_t <- max(max(stan_data$t_patient_visits) + 1L, stan_data$extend_max_all_t)
+  T_len <- max_all_t + 1L
   n_trial_patients <- tabulate(stan_data$patient_trial, nbins = n_trials)
-  tpp <- c(1L, cumsum(n_trial_patients) + 1L)  # length n_trials + 1
+  tpp <- c(1L, cumsum(n_trial_patients) + 1L) # length n_trials + 1
 
   pvars <- c(
-    "spop_ms_pfs", "spop_ms_right_censored",
-    "spop_right_censored", "spop_target_right_censored", "spop_target_pfs",
-    "spop_pfs", "spop_os", "spop_os_censored",
-    "sample_ms_pfs", "sample_ms_right_censored",
-    "sample_os", "sample_os_censored"
+    "spop_ms_pfs",
+    "spop_ms_right_censored",
+    "spop_right_censored",
+    "spop_target_right_censored",
+    "spop_target_pfs",
+    "spop_pfs",
+    "spop_os",
+    "spop_os_censored",
+    "sample_ms_pfs",
+    "sample_ms_right_censored",
+    "sample_os",
+    "sample_os_censored"
   )
 
   d_mat <- posterior::as_draws_matrix(fit$draws(variables = pvars))
@@ -175,28 +237,28 @@ compute_cif_from_draws <- function(fit, stan_data) {
 
   # Pre-build column index maps (1..n_patients per variable)
   col_idx <- function(varname) {
-    base::match(paste0(varname, "[", seq_len(n_patients), "]"), colnames(d_mat))
+    base::match(str_c(varname, "[", seq_len(n_patients), "]"), colnames(d_mat))
   }
   ci <- list(
-    sms_pfs   = col_idx("spop_ms_pfs"),
-    sms_rc    = col_idx("spop_ms_right_censored"),
-    s_rc      = col_idx("spop_right_censored"),
-    st_rc     = col_idx("spop_target_right_censored"),
-    st_pfs    = col_idx("spop_target_pfs"),
-    s_pfs     = col_idx("spop_pfs"),
-    s_os      = col_idx("spop_os"),
-    s_osc     = col_idx("spop_os_censored"),
-    sam_pfs   = col_idx("sample_ms_pfs"),
-    sam_rc    = col_idx("sample_ms_right_censored"),
-    sam_os    = col_idx("sample_os"),
-    sam_osc   = col_idx("sample_os_censored")
+    sms_pfs = col_idx("spop_ms_pfs"),
+    sms_rc = col_idx("spop_ms_right_censored"),
+    s_rc = col_idx("spop_right_censored"),
+    st_rc = col_idx("spop_target_right_censored"),
+    st_pfs = col_idx("spop_target_pfs"),
+    s_pfs = col_idx("spop_pfs"),
+    s_os = col_idx("spop_os"),
+    s_osc = col_idx("spop_os_censored"),
+    sam_pfs = col_idx("sample_ms_pfs"),
+    sam_rc = col_idx("sample_ms_right_censored"),
+    sam_os = col_idx("sample_os"),
+    sam_osc = col_idx("sample_os_censored")
   )
 
   # Output CIF arrays [n_draws, n_trials, T_len]
   cif_arrs <- list(
-    spop_cif_01   = array(0, c(n_draws, n_trials, T_len)),
-    spop_cif_02   = array(0, c(n_draws, n_trials, T_len)),
-    spop_cif_03   = array(0, c(n_draws, n_trials, T_len)),
+    spop_cif_01 = array(0, c(n_draws, n_trials, T_len)),
+    spop_cif_02 = array(0, c(n_draws, n_trials, T_len)),
+    spop_cif_03 = array(0, c(n_draws, n_trials, T_len)),
     sample_cif_01 = array(0, c(n_draws, n_trials, T_len)),
     sample_cif_02 = array(0, c(n_draws, n_trials, T_len)),
     sample_cif_03 = array(0, c(n_draws, n_trials, T_len))
@@ -206,55 +268,57 @@ compute_cif_from_draws <- function(fit, stan_data) {
     row <- d_mat[i, ]
     get_int <- function(idx) as.integer(round(row[idx]))
 
-    sms_pfs   <- get_int(ci$sms_pfs)
-    sms_rc    <- get_int(ci$sms_rc)
-    s_rc      <- get_int(ci$s_rc)
-    st_rc     <- get_int(ci$st_rc)
-    st_pfs    <- get_int(ci$st_pfs)
-    s_pfs     <- get_int(ci$s_pfs)
-    s_os      <- get_int(ci$s_os)
-    s_osc     <- get_int(ci$s_osc)
-    sam_pfs   <- get_int(ci$sam_pfs)
-    sam_rc    <- get_int(ci$sam_rc)
-    sam_os    <- get_int(ci$sam_os)
-    sam_osc   <- get_int(ci$sam_osc)
+    sms_pfs <- get_int(ci$sms_pfs)
+    sms_rc <- get_int(ci$sms_rc)
+    s_rc <- get_int(ci$s_rc)
+    st_rc <- get_int(ci$st_rc)
+    st_pfs <- get_int(ci$st_pfs)
+    s_pfs <- get_int(ci$s_pfs)
+    s_os <- get_int(ci$s_os)
+    s_osc <- get_int(ci$s_osc)
+    sam_pfs <- get_int(ci$sam_pfs)
+    sam_rc <- get_int(ci$sam_rc)
+    sam_os <- get_int(ci$sam_os)
+    sam_osc <- get_int(ci$sam_osc)
 
     # Mirror the Stan GQ correction (_endpoints_generated_quantities.stan:336-347).
     # This overwrites spop_ms_pfs/spop_ms_right_censored before the CIF module runs.
     # Case 1: PFS event (combined) — use combined PFS time (min of target + ms)
     case1 <- s_rc == 0L
     sms_pfs[case1] <- s_pfs[case1]
-    sms_rc[case1]  <- 0L
+    sms_rc[case1] <- 0L
     # Case 2: dropout where SF progression precedes dropout — reclassify as 0→1
     case2 <- s_rc == 1L & st_rc == 0L & st_pfs <= sms_pfs
     sms_pfs[case2] <- st_pfs[case2]
-    sms_rc[case2]  <- 0L
+    sms_rc[case2] <- 0L
     # Case 3 (else): leave unchanged — dropout or fully censored
     # Note: Stan GQ applies NO correction to sample_* variables.
 
     for (s in seq_len(n_trials)) {
-      tr   <- seq(tpp[s], tpp[s + 1L] - 1L)
+      tr <- seq(tpp[s], tpp[s + 1L] - 1L)
       n_tr <- length(tr)
-      if (n_tr == 0L) next
+      if (n_tr == 0L) {
+        next
+      }
 
       # ── spop (unconditional posterior predictive) ──────────────────────────
       pfs_e <- sms_rc[tr] == 0L
-      dd    <- pfs_e & s_osc[tr] == 0L & sms_pfs[tr] == s_os[tr]
-      prog  <- pfs_e & !dd
+      dd <- pfs_e & s_osc[tr] == 0L & sms_pfs[tr] == s_os[tr]
+      prog <- pfs_e & !dd
       drop_ <- !pfs_e & sms_pfs[tr] <= max_all_t
 
-      cif_arrs$spop_cif_01[i, s, ] <- cumsum(tabulate(sms_pfs[tr][prog],  nbins = T_len)) / n_tr
-      cif_arrs$spop_cif_02[i, s, ] <- cumsum(tabulate(sms_pfs[tr][dd],    nbins = T_len)) / n_tr
+      cif_arrs$spop_cif_01[i, s, ] <- cumsum(tabulate(sms_pfs[tr][prog], nbins = T_len)) / n_tr
+      cif_arrs$spop_cif_02[i, s, ] <- cumsum(tabulate(sms_pfs[tr][dd], nbins = T_len)) / n_tr
       cif_arrs$spop_cif_03[i, s, ] <- cumsum(tabulate(sms_pfs[tr][drop_], nbins = T_len)) / n_tr
 
       # ── sample (conditional on observed data, no correction — matches Stan GQ)
       pfs_e_s <- sam_rc[tr] == 0L
-      dd_s    <- pfs_e_s & sam_osc[tr] == 0L & sam_pfs[tr] == sam_os[tr]
-      prog_s  <- pfs_e_s & !dd_s
-      drop_s  <- !pfs_e_s & sam_pfs[tr] <= max_all_t
+      dd_s <- pfs_e_s & sam_osc[tr] == 0L & sam_pfs[tr] == sam_os[tr]
+      prog_s <- pfs_e_s & !dd_s
+      drop_s <- !pfs_e_s & sam_pfs[tr] <= max_all_t
 
       cif_arrs$sample_cif_01[i, s, ] <- cumsum(tabulate(sam_pfs[tr][prog_s], nbins = T_len)) / n_tr
-      cif_arrs$sample_cif_02[i, s, ] <- cumsum(tabulate(sam_pfs[tr][dd_s],   nbins = T_len)) / n_tr
+      cif_arrs$sample_cif_02[i, s, ] <- cumsum(tabulate(sam_pfs[tr][dd_s], nbins = T_len)) / n_tr
       cif_arrs$sample_cif_03[i, s, ] <- cumsum(tabulate(sam_pfs[tr][drop_s], nbins = T_len)) / n_tr
     }
   }
@@ -267,7 +331,7 @@ compute_cif_from_draws <- function(fit, stan_data) {
   # columns into list-typed array variables, breaking downstream as.numeric().
   n_cif_cols <- length(cif_arrs) * n_trials * T_len
   result_mat <- matrix(0, nrow = n_draws, ncol = n_cif_cols)
-  col_names  <- character(n_cif_cols)
+  col_names <- character(n_cif_cols)
   k <- 0L
   for (nm in names(cif_arrs)) {
     arr <- cif_arrs[[nm]]
@@ -275,7 +339,7 @@ compute_cif_from_draws <- function(fit, stan_data) {
       for (t in seq_len(T_len)) {
         k <- k + 1L
         result_mat[, k] <- arr[, s, t]
-        col_names[k] <- paste0(nm, "[", s, ",", t, "]")
+        col_names[k] <- str_c(nm, "[", s, ",", t, "]")
       }
     }
   }
@@ -294,8 +358,14 @@ compute_cif_from_draws <- function(fit, stan_data) {
 #' @return A draws_array object with selected variables
 #' @export
 select_draws <- function(fit, ...) {
-  # Get all variable names from the fit (base names without indices)
-  all_vars <- fit$metadata()$stan_variables
+  csv_files <- fit$output_files()
+
+  # Get all variable names from the CSV header (avoids fit$metadata() which
+  # also relies on live process state)
+  all_vars <- cmdstanr::read_cmdstan_csv(
+    csv_files[1],
+    variables = character(0)
+  )$metadata$stan_variables
 
   if (...length() == 0) {
     # No selection - read all variables
@@ -315,12 +385,99 @@ select_draws <- function(fit, ...) {
     }
   }
 
-  # Read directly from CSV files with variable selection
-  # This bypasses fit object caching for better memory efficiency
+  # Read one chain at a time to avoid OOM on large CSV files.
+  # The combined model writes ~49 GB per chain; reading all 4 chains at once
+  # (196 GB) causes read_cmdstan_csv to fail mid-parse and return NA draws.
+  # Sequential per-chain reads keep peak memory to one chain's selected columns.
+  chain_draws <- lapply(csv_files, function(csv) {
+    cmdstanr::read_cmdstan_csv(
+      files = csv,
+      variables = selected_vars
+    )$post_warmup_draws
+  })
+  posterior::bind_draws(chain_draws, along = "chain")
+}
+
+#' Read a single chain's draws with tidyselect variable filtering
+#'
+#' Intended for use with targets dynamic branching: each branch receives one
+#' CSV file path and returns the post-warmup draws for that chain.
+#' Downstream targets combine branches with bind_draws(along = "chain").
+#'
+#' @param csv Path to a single CmdStan CSV file
+#' @param ... Tidyselect expressions to filter variables
+#' @return A draws_array for the single chain
+#' @export
+select_draws_single_chain <- function(csv, ...) {
+  all_vars <- cmdstanr::read_cmdstan_csv(
+    csv,
+    variables = character(0)
+  )$metadata$stan_variables
+
+  selection <- substitute(c(...))
+  selected_idx <- tidyselect::eval_select(
+    selection,
+    data = rlang::set_names(all_vars, all_vars)
+  )
+  selected_vars <- all_vars[selected_idx]
+
+  if (length(selected_vars) == 0) {
+    stop("No variables matched the selection criteria")
+  }
+
   cmdstanr::read_cmdstan_csv(
-    files = fit$output_files(),
+    files = csv,
     variables = selected_vars
   )$post_warmup_draws
+}
+
+#' Extract hierarchy-level intercepts (tr/frac/init) from a fit
+#'
+#' Spreads the full \code{*_raw_level_intercept} vectors via
+#' \code{tidybayes::spread_rvars}, then assigns level names and group labels
+#' using \code{enable_level_intercept_tr} and \code{n_groups_per_level}.
+#' Disabled levels (mode 0) are silently omitted.
+#'
+#' @param fit CmdStanMCMC fit object.
+#' @param stan_data Stan data list (needs \code{enable_level_intercept_tr},
+#'   \code{n_groups_per_level}).
+#' @param analysis_data Data frame whose \code{trial}/\code{arm} factors
+#'   provide group labels.
+#' @return Long tibble with columns \code{level}, \code{group_label},
+#'   \code{param} (tr/frac/init), and \code{level_intercept} (rvar).
+extract_level_intercepts <- function(draws, stan_data, analysis_data) {
+  enabled_idx <- which(stan_data$enable_level_intercept_tr > 0)
+  if (length(enabled_idx) == 0L) {
+    return(tibble())
+  }
+
+  level_names <- names(stan_data$n_groups_per_level)
+  n_per_enabled <- stan_data$n_groups_per_level[enabled_idx]
+
+  # Map each group index to its level name and label
+  level_vec <- rep(level_names[enabled_idx], n_per_enabled)
+  label_vec <- unlist(map(enabled_idx, \(lv) {
+    col <- level_names[lv]
+    if (col %in% names(analysis_data) && is.factor(analysis_data[[col]])) {
+      levels(analysis_data[[col]])
+    } else {
+      as.character(seq_len(stan_data$n_groups_per_level[lv]))
+    }
+  }))
+
+  draws |>
+    spread_rvars(
+      tr_raw_level_intercept[group],
+      frac_raw_level_intercept[group],
+      init_raw_level_intercept[group]
+    ) |>
+    mutate(level = level_vec[group], group_label = label_vec[group]) |>
+    pivot_longer(
+      ends_with("_raw_level_intercept"),
+      names_to = "param",
+      names_pattern = "(.+)_raw_level_intercept",
+      values_to = "level_intercept"
+    )
 }
 
 #' Extract and compile decorated Stan functions
@@ -330,7 +487,7 @@ select_draws <- function(fit, ...) {
 #' @return cmdstanr model object with exported functions
 export_stan_functions <- function(stan_file, includes = NULL) {
   # Read the Stan file
-  content <- readLines(stan_file) %>% paste(collapse = "\n")
+  content <- readLines(stan_file) %>% str_c(collapse = "\n")
 
   # Extract functions marked with @stan_export anywhere in their documentation
   # Find @stan_export markers and extract the following function
@@ -403,7 +560,7 @@ export_stan_functions <- function(stan_file, includes = NULL) {
     }
 
     if (!is.null(func_end)) {
-      func_text <- paste(lines[func_start:func_end], collapse = "\n")
+      func_text <- str_c(lines[func_start:func_end], collapse = "\n")
       exported_functions <- c(exported_functions, func_text)
     }
   }
@@ -415,11 +572,11 @@ export_stan_functions <- function(stan_file, includes = NULL) {
   functions_code <- exported_functions
 
   # Create Stan program with functions block
-  stan_program <- paste0(
+  stan_program <- str_c(
     "functions {\n",
-    if (!is.null(includes)) paste0("  ", includes, collapse = "\n"),
+    if (!is.null(includes)) str_c("  ", includes, collapse = "\n"),
     "\n",
-    paste(functions_code, collapse = "\n\n"),
+    str_c(functions_code, collapse = "\n\n"),
     "\n",
     "}\n\n",
     "data {}\n",
@@ -515,6 +672,19 @@ build_model <- function(
   attr(model, "exe_hash") <- exe_hash
 
   return(model)
+}
+
+build_model_exe_hash <- function(model_file, include_files, artifacts_path, include_paths) {
+  model <- build_model(
+    model_file,
+    include_files,
+    file.path(artifacts_path, "models"),
+    include_paths = include_paths
+  )
+  list(
+    source_hash = compute_stan_source_hash(model_file, include_files),
+    exe_file = model$exe_file()
+  )
 }
 
 remove_incomplete_cases <- function(data, incomplete) {
@@ -704,7 +874,6 @@ apply_calendar_cutoff <- function(
         1L,
         right_censored
       ),
-
     ) |>
     # Replace original variables with cutoff versions
     mutate(
@@ -1032,12 +1201,10 @@ cmdstanr_format <- tar_format(
     # obj_file <- stringr::str_c(path, "_cmdstanr_object.rds")
     # object$save_object(path)
 
-    # Calculate hash of all CSV files combined
     csv_files <- object$output_files()
-    # csv_hash <- digest::digest(purrr::map(csv_files, \(f) digest::digest(file = f)), algo = "xxhash64")  # Fast hash algorithm
     csv_hash <- purrr::map(csv_files, \(f) {
       digest::digest(file = f, algo = "xxhash64")
-    }) # Fast hash algorithm
+    })
 
     # Save both fit object and hash
     readr::write_rds(
@@ -1226,7 +1393,7 @@ find_stan_includes <- function(stan_file, base_dir = NULL) {
 
     # Read the file
     if (!file.exists(abs_path)) {
-      warning(paste("File not found:", abs_path))
+      warning(str_c("File not found: ", abs_path))
       return()
     }
 
@@ -1285,10 +1452,10 @@ find_stan_includes <- function(stan_file, base_dir = NULL) {
                 process_file(alt_path)
               },
               error = function(e2) {
-                warning(paste(
-                  "Could not find included file:",
+                warning(str_c(
+                  "Could not find included file: ",
                   inc_file,
-                  "from",
+                  " from ",
                   abs_path
                 ))
               }
