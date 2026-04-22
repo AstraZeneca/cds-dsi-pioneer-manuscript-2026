@@ -136,3 +136,6 @@ array[n_trials] vector<lower=0, upper=1>[max_all_t + 1]
 // ── Sojourn KM computation ───────────────────────────────────────────────────
 // Runs after the local block so GQ-scope endpoint arrays are populated.
 #include "modules/multistate/sojourn_km_generated_quantities.stan"
+
+// ── Back-transformed covariate coefficients (population + arm-level) ─────────
+#include "modules/multistate/covar_coef_generated_quantities.stan"

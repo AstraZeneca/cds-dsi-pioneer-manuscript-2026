@@ -1876,30 +1876,43 @@ tuple(
     // In visit-gated mode, sample_at_visits_rng is used (one Bernoulli per visit,
     // matching the likelihood's sum_at_visits_below pattern).
     // In continuous mode, assessment_gated_survival_time_rng accumulates per-week hazard.
-    if (ms_right_censored[p]) {
-      if (enable_ms_visit_gated_01) {
-        (sample_ms_pfs[j], sample_ms_right_censored[j]) = sample_at_visits_rng(
-            ms_log_cond_surv[j], spop_visit_weeks, max_all_t,
-            pfs[p], 1, spop_ms01_psa_covar, tv_coef_01_val);
+    // Guard: ms_log_cond_surv is [0,0] when enable_ms_01=0 (e.g. simple survival).
+    if (rows(ms_log_cond_surv) > 0) {
+      if (ms_right_censored[p]) {
+        if (enable_ms_visit_gated_01) {
+          (sample_ms_pfs[j], sample_ms_right_censored[j]) = sample_at_visits_rng(
+              ms_log_cond_surv[j], spop_visit_weeks, max_all_t,
+              pfs[p], 1, spop_ms01_psa_covar, tv_coef_01_val);
+        } else {
+          (sample_ms_pfs[j], sample_ms_right_censored[j]) = assessment_gated_survival_time_rng(
+              ms_log_cond_surv[j], spop_visit_weeks, max_all_t, pfs[p], 1);
+        }
       } else {
-        (sample_ms_pfs[j], sample_ms_right_censored[j]) = assessment_gated_survival_time_rng(
-            ms_log_cond_surv[j], spop_visit_weeks, max_all_t, pfs[p], 1);
+        sample_ms_pfs[j] = pfs[p];
+        sample_ms_right_censored[j] = 0;
       }
     } else {
-      sample_ms_pfs[j] = pfs[p];
-      sample_ms_right_censored[j] = 0;
+      // No 0→1 transition — no progression possible, right-censored at horizon
+      sample_ms_pfs[j] = max_all_t;
+      sample_ms_right_censored[j] = 1;
     }
 
     // --- RNG Step 2: spop ms01 (unconditional) ---
     // No +1: sampling functions return 1-indexed calendar week directly
+    // Guard: ms_log_cond_surv is [0,0] when enable_ms_01=0.
     int t_ms01_spop; int c_ms01_spop;
-    if (enable_ms_visit_gated_01) {
-      (t_ms01_spop, c_ms01_spop) = sample_at_visits_rng(
-          ms_log_cond_surv[j], spop_visit_weeks, max_all_t,
-          spop_ms01_psa_covar, tv_coef_01_val);
+    if (rows(ms_log_cond_surv) > 0) {
+      if (enable_ms_visit_gated_01) {
+        (t_ms01_spop, c_ms01_spop) = sample_at_visits_rng(
+            ms_log_cond_surv[j], spop_visit_weeks, max_all_t,
+            spop_ms01_psa_covar, tv_coef_01_val);
+      } else {
+        (t_ms01_spop, c_ms01_spop) = assessment_gated_survival_time_rng(
+            ms_log_cond_surv[j], spop_visit_weeks, max_all_t);
+      }
     } else {
-      (t_ms01_spop, c_ms01_spop) = assessment_gated_survival_time_rng(
-          ms_log_cond_surv[j], spop_visit_weeks, max_all_t);
+      t_ms01_spop = max_all_t;
+      c_ms01_spop = 1;
     }
 
     // --- RNG Steps 3–4: spop 0→2 and 0→3 competing risks ---
