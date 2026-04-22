@@ -77,28 +77,20 @@ transformed parameters {
 
   #include "modules/multistate/transformed_parameters.stan"
   #include "modules/propensity/transformed_parameters.stan"
-
-  // LFO: zero-weight unenrolled patients (propensity likelihood_weight now available)
-  vector[n_patients] lfo_likelihood_weight;
-  for (i in 1:n_patients) {
-    lfo_likelihood_weight[i] = lfo_patient_enrolled[i] == 1
-      ? likelihood_weight[i]
-      : 0.0;
-  }
 }
 
 model {
   #include "modules/propensity/priors.stan"
   #include "modules/multistate/priors.stan"
 
-  // Train on re-censored data only.
-  // lfo_likelihood_weight is 0 for patients not yet enrolled at the cutoff,
-  // so they contribute nothing to the log-likelihood even though they appear
-  // in the data arrays. This avoids the cost of compact patient subsetting.
+  // Train on re-censored data. Patients whose last visit is after the cutoff
+  // have their lfo_ms_* fields zeroed by recensor_ms_at_cutoff, so the
+  // time_*[i] > 0 guards inside multistate_lpmf naturally exclude them —
+  // no extra weight gate needed.
   if (fit_multistate_data) {
     profile("multistate loglik") {
       lfo_ms_final_state[forecast_patient_idx] ~ multistate(
-          lfo_likelihood_weight[forecast_patient_idx],
+          likelihood_weight[forecast_patient_idx],
           enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
           enable_ms_03, enable_ms_32,
           lfo_ms_time_01[forecast_patient_idx], lfo_ms_time_02[forecast_patient_idx],
