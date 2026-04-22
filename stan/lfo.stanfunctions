@@ -343,14 +343,26 @@ tuple(array[,] int, array[,,] int, array[,] int, array[,,] int) get_testing_visi
 }
 
 /**
- * Re-censor multistate event data at a patient-specific cutoff week.
+ * Re-censor multistate event data at a patient-specific cutoff.
  *
- * For each patient, events occurring after cutoff_week[i] are masked:
- * the patient appears as if the trial ended at their cutoff.
- * Patients not yet enrolled (cutoff_week[i] <= 0) are zeroed out entirely.
+ * Takes two per-patient cutoff-week arrays on different clocks:
+ *   - cutoff_visit_week[i]: the week of the patient's last visit at or before
+ *     the calendar cutoff. Used for progression (0→1) and state-0 follow-up,
+ *     which are only observable at visits.
+ *   - cutoff_cal_week[i]: the calendar cutoff itself expressed in the patient's
+ *     own week scale. Used for events known from registry data — direct death
+ *     (0→2), post-progression death (1→2), dropout (0→3), and off-trial death
+ *     (3→2) — which are observed exactly regardless of visit cadence.
+ *
+ * This distinction matters: a patient whose last visit was week 14 but died
+ * at week 31 (with a calendar cutoff past week 31) should retain the death.
+ * Using the visit week alone would clip the death to week 14 and treat the
+ * patient as censored, discarding known mortality information and inflating
+ * the posterior's survival estimate.
+ *
+ * Patients not yet enrolled (cutoff_visit_week[i] <= 0) are zeroed out.
  *
  * All time fields are patient-relative weeks (from landmark).
- * cutoff_week[i] comes from cutoff_visits() and is in the same timescale.
  *
  * @param ms_final_state       Original final state per patient
  * @param ms_time_01           0→1 event time
@@ -362,7 +374,9 @@ tuple(array[,] int, array[,,] int, array[,] int, array[,,] int) get_testing_visi
  * @param ms_os_event_12       Death week for 0→1→2 patients (0 otherwise)
  * @param interval_censored    Interval censoring gap per patient
  * @param ms_prog_deterministic Whether progression was deterministic
- * @param cutoff_week          Per-patient cutoff week (0 = not enrolled)
+ * @param cutoff_visit_week    Per-patient last-visit week at/before cutoff
+ *                             (0 = not enrolled)
+ * @param cutoff_cal_week      Per-patient calendar cutoff in week scale
  * @return Tuple of 10 re-censored arrays:
  *   (lfo_ms_final_state, lfo_ms_time_01, lfo_ms_censored_01,
  *    lfo_ms_time_02, lfo_ms_time_12, lfo_ms_time_03, lfo_ms_time_32,
@@ -382,7 +396,8 @@ recensor_ms_at_cutoff(
     array[] int ms_os_event_12,
     array[] int interval_censored,
     array[] int ms_prog_deterministic,
-    array[] int cutoff_week) {
+    array[] int cutoff_visit_week,
+    array[] int cutoff_cal_week) {
 
   int n = size(ms_final_state);
   array[n] int lfo_final_state;
@@ -397,7 +412,8 @@ recensor_ms_at_cutoff(
   array[n] int lfo_ic_gap_01;
 
   for (i in 1:n) {
-    int cw = cutoff_week[i];
+    int cw_v = cutoff_visit_week[i];
+    int cw_c = cutoff_cal_week[i];
 
     // Default: copy original data
     lfo_final_state[i] = ms_final_state[i];
@@ -410,7 +426,7 @@ recensor_ms_at_cutoff(
     lfo_ic[i] = interval_censored[i];
     lfo_prog_det[i] = ms_prog_deterministic[i];
 
-    if (cw <= 0) {
+    if (cw_v <= 0) {
       // Not enrolled at cutoff: zero out everything
       lfo_final_state[i] = 0;
       lfo_time_01[i] = 0;
@@ -426,74 +442,77 @@ recensor_ms_at_cutoff(
     }
 
     if (ms_final_state[i] == 0) {
-      // State 0 (right-censored): clamp follow-up times at cutoff
-      if (ms_time_01[i] > cw) {
-        lfo_time_01[i] = cw;
+      // State 0 (right-censored): clamp visit-based follow-up at last visit
+      if (ms_time_01[i] > cw_v) {
+        lfo_time_01[i] = cw_v;
         lfo_ic[i] = 0;
       }
-      if (ms_time_02[i] > cw) lfo_time_02[i] = cw;
-      if (ms_time_03[i] > cw) lfo_time_03[i] = cw;
+      if (ms_time_02[i] > cw_v) lfo_time_02[i] = cw_v;
+      if (ms_time_03[i] > cw_v) lfo_time_03[i] = cw_v;
 
     } else if (ms_final_state[i] == 1) {
-      // State 1 (progressed)
-      if (ms_time_01[i] > cw) {
-        // Progression after cutoff: downgrade to state 0
+      // State 1 (progressed) — progression is visit-observed
+      if (ms_time_01[i] > cw_v) {
+        // Progression after cutoff: downgrade to state 0, clamp to last visit
         lfo_final_state[i] = 0;
-        lfo_time_01[i] = cw;
+        lfo_time_01[i] = cw_v;
         lfo_censored_01[i] = 1;
-        lfo_time_02[i] = cw;
+        lfo_time_02[i] = cw_v;
         lfo_time_12[i] = 0;
         lfo_ic[i] = 0;
         lfo_prog_det[i] = 0;
       }
 
     } else if (ms_final_state[i] == 2) {
-      // State 2 (dead)
-      if (ms_censored_01[i] == 0 && ms_time_01[i] <= cw) {
-        // 0→1→2 path, progression before cutoff
-        if (ms_os_event_12[i] > 0 && ms_os_event_12[i] > cw) {
-          // Death after cutoff: downgrade to state 1, censor 1→2
+      // State 2 (dead) — death is registry-exact (calendar cutoff)
+      if (ms_censored_01[i] == 0 && ms_time_01[i] <= cw_v) {
+        // 0→1→2 path, progression observed before last visit
+        if (ms_os_event_12[i] > 0 && ms_os_event_12[i] > cw_c) {
+          // Death after calendar cutoff: downgrade to state 1, censor 1→2 at cal cutoff
           lfo_final_state[i] = 1;
-          lfo_time_12[i] = max(0, cw - ms_time_01[i]);
-          lfo_time_02[i] = cw;
+          lfo_time_12[i] = max(0, cw_c - ms_time_01[i]);
+          lfo_time_02[i] = cw_c;
         }
-      } else if (ms_censored_01[i] == 0 && ms_time_01[i] > cw) {
-        // 0→1→2 path, progression after cutoff: censor everything
+        // else: death ≤ cw_c → keep the event as-is
+      } else if (ms_censored_01[i] == 0 && ms_time_01[i] > cw_v) {
+        // 0→1→2 path, progression after cutoff: censor everything at last visit
         lfo_final_state[i] = 0;
-        lfo_time_01[i] = cw;
+        lfo_time_01[i] = cw_v;
         lfo_censored_01[i] = 1;
-        lfo_time_02[i] = cw;
+        lfo_time_02[i] = cw_v;
         lfo_time_12[i] = 0;
         lfo_ic[i] = 0;
         lfo_prog_det[i] = 0;
       } else {
         // 0→2 direct death (ms_censored_01 == 1)
-        if (ms_time_02[i] > cw) {
+        if (ms_time_02[i] > cw_c) {
+          // Death after calendar cutoff: censor at last visit (no progression to observe)
           lfo_final_state[i] = 0;
-          lfo_time_01[i] = cw;
+          lfo_time_01[i] = cw_v;
           lfo_censored_01[i] = 1;
-          lfo_time_02[i] = cw;
+          lfo_time_02[i] = cw_v;
           lfo_time_12[i] = 0;
           lfo_ic[i] = 0;
           lfo_prog_det[i] = 0;
         }
+        // else: death ≤ cw_c → keep
       }
 
     } else if (ms_final_state[i] == 3) {
-      // State 3 (dropout)
-      if (ms_time_03[i] > cw) {
-        // Dropout after cutoff
+      // State 3 (dropout) — dropout and off-trial death are registry-exact
+      if (ms_time_03[i] > cw_c) {
+        // Dropout after calendar cutoff: downgrade to state 0 at last visit
         lfo_final_state[i] = 0;
-        lfo_time_01[i] = cw;
+        lfo_time_01[i] = cw_v;
         lfo_censored_01[i] = 1;
-        lfo_time_02[i] = cw;
-        lfo_time_03[i] = cw;
+        lfo_time_02[i] = cw_v;
+        lfo_time_03[i] = cw_v;
         lfo_time_32[i] = 0;
         lfo_ic[i] = 0;
         lfo_prog_det[i] = 0;
-      } else if (ms_time_32[i] > 0 && ms_time_03[i] + ms_time_32[i] > cw) {
-        // Dropout before cutoff, off-trial death after: censor 3→2
-        lfo_time_32[i] = max(0, cw - ms_time_03[i]);
+      } else if (ms_time_32[i] > 0 && ms_time_03[i] + ms_time_32[i] > cw_c) {
+        // Dropout before cutoff, off-trial death after calendar cutoff: censor 3→2
+        lfo_time_32[i] = max(0, cw_c - ms_time_03[i]);
       }
     }
 
