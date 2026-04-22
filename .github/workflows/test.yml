@@ -57,7 +57,7 @@ jobs:
               'testthat', 'here', 'posterior',
               'tidyverse', 'tidybayes', 'recipes',
               'conflicted', 'stringr',
-              'patchwork', 'ggdist', 'scales'
+              'patchwork', 'ggdist', 'scales', 'cmprsk', 'survival'
             )
             install.packages(pkgs, repos = 'https://packagemanager.posit.co/cran/__linux__/jammy/latest')
           "
