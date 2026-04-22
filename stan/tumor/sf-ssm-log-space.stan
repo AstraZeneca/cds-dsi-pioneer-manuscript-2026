@@ -93,8 +93,7 @@ model {
           enable_ms_03, enable_ms_32,
           ms_time_01, ms_time_02, ms_time_12,
           ms_time_03, ms_time_32,
-          ms_censored_01, ms_censored_02, ms_censored_12,
-          ms_censored_32,
+          ms_censored_01,
           ms_prog_deterministic,
           ms_ic_gap_01,
           t_patient_visits,
@@ -293,4 +292,7 @@ generated quantities {
 
   // RECIST accuracy metrics
   #include "modules/tumor/generated_quantities.stan"
+
+  // Back-transformed covariate coefficients (population + arm-level)
+  #include "modules/multistate/covar_coef_generated_quantities.stan"
 }

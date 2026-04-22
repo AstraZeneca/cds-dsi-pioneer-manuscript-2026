@@ -17,6 +17,17 @@ for (i in 1:n_patients) {
   }
 }
 
+// --- Derived Censoring Indicators ---
+// Logical consequences of ms_final_state, ms_time_01, and ms_time_32.
+// Factored into derive_ms_censoring_indicators() so the same code path is
+// exercised by Stan-level tests.
+array[n_patients] int ms_censored_02;
+array[n_patients] int ms_censored_12;
+array[n_patients] int ms_censored_32;
+(ms_censored_02, ms_censored_12, ms_censored_32) = derive_ms_censoring_indicators(
+  ms_final_state, ms_time_01, ms_time_32
+);
+
 // --- Derived Flags for Time Scale (B1) ---
 // Which GPs are needed for the 1→2 transition
 // strict=1: fatal_error on invalid input; is_valid sentinel discarded

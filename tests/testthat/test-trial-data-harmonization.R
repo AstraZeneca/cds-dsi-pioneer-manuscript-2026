@@ -68,7 +68,8 @@ make_raw_trial_patient <- function(
 }
 
 make_raw_trial_visit <- function(studyid = "FPI-TEST", usubjid = "PT-001",
-                                 week = 4L) {
+                                 week = 4L, measurement_value = 10.0,
+                                 psa_pd_confirmed = 0L) {
   tibble(
     studyid          = studyid,
     usubjid          = usubjid,
@@ -76,15 +77,25 @@ make_raw_trial_visit <- function(studyid = "FPI-TEST", usubjid = "PT-001",
     ady              = as.integer(week * 7),
     day              = as.integer(week * 7),
     week             = as.integer(week),
-    measurement_value = 10.0,
-    response         = "SD",
-    psa_nadir = 10.0, psa_change_from_nadir = 0.0,
+    measurement_value = measurement_value,
+    response         = NA_character_,
+    psa_nadir = measurement_value, psa_change_from_nadir = 0.0,
     psa_pct_change_from_nadir = 0.0,
-    psa_pd = 0L, psa_pd_confirmed = 0L,
+    psa_pd = 0L, psa_pd_confirmed = as.integer(psa_pd_confirmed),
     psa50 = 0L, psa90 = 0L, bone_pd = 0L, bone_pd_confirmed = 0L,
     new_lesion = 0L, combined_response = "SD", combined_pd = 0L,
     radiographic_pd = 0L
   )
+}
+
+# Build a multi-visit tibble for a single patient from parallel vectors
+make_visits <- function(usubjid = "PT-001", weeks, psas,
+                        psa_pd_confirmed = rep(0L, length(weeks))) {
+  map2(weeks, psas, \(w, p) make_raw_trial_visit(
+    usubjid = usubjid, week = w, measurement_value = p,
+    psa_pd_confirmed = psa_pd_confirmed[match(w, weeks)]
+  )) |>
+    bind_rows()
 }
 
 harmonize <- function(patient_rows, visit_rows = NULL) {
@@ -245,4 +256,87 @@ test_that("right-censored patient without events: other_events_pfs = patient_max
   result <- harmonize(pd)
   expect_equal(result$other_events_pfs[[1]], 20L)
   expect_true(result$other_events_right_censored[[1]])
+})
+
+# =============================================================================
+# compute_pcwg3_from_psa: unit tests
+# =============================================================================
+
+test_that("PSA50 achiever gets PR", {
+  # baseline (week -1) = 100, post PSA = 40 → 60% reduction → PR
+  week <- c(-1L, 4L, 8L)
+  psa  <- c(100, 40, 35)
+  res  <- compute_pcwg3_from_psa(week, psa, rep(0L, 3))
+  expect_equal(res[week > 0], c("PR", "PR"))
+  expect_true(is.na(res[week < 0]))
+})
+
+test_that("undetectable PSA gets CR", {
+  week <- c(-1L, 4L)
+  psa  <- c(50, 0.05)
+  res  <- compute_pcwg3_from_psa(week, psa, c(0L, 0L))
+  expect_equal(res[[2]], "CR")
+})
+
+test_that("PSA below 50% reduction gets SD", {
+  week <- c(-1L, 4L)
+  psa  <- c(100, 60)   # only 40% reduction
+  res  <- compute_pcwg3_from_psa(week, psa, c(0L, 0L))
+  expect_equal(res[[2]], "SD")
+})
+
+test_that("confirmed PSA-PD gets PD", {
+  week <- c(-1L, 4L)
+  psa  <- c(100, 60)
+  res  <- compute_pcwg3_from_psa(week, psa, c(0L, 1L))
+  expect_equal(res[[2]], "PD")
+})
+
+test_that("missing post-baseline PSA gets NE", {
+  week <- c(-1L, 4L)
+  psa  <- c(100, NA_real_)
+  res  <- compute_pcwg3_from_psa(week, psa, c(0L, 0L))
+  expect_equal(res[[2]], "NE")
+})
+
+test_that("screening visits return NA", {
+  week <- c(-4L, -1L, 4L)
+  psa  <- c(120, 100, 40)
+  res  <- compute_pcwg3_from_psa(week, psa, rep(0L, 3))
+  expect_true(all(is.na(res[week <= 0])))
+})
+
+test_that("week 0 is excluded from baseline (regression: 115-203 pattern)", {
+  # week -2 PSA = 53.3 (last pre-treatment), week 0 PSA = 38.1 (day-of-treatment)
+  # Post PSA = 20.2 → PSA50 only when baseline = 53.3 (53.3/2 = 26.65 > 20.2)
+  # Old bug: used week <= 0 → baseline = 38.1 → 38.1/2 = 19.05 < 20.2 → SD (wrong)
+  week <- c(-2L, 0L, 11L)
+  psa  <- c(53.3, 38.1, 20.2)
+  res  <- compute_pcwg3_from_psa(week, psa, c(0L, 0L, 0L))
+  expect_equal(res[[3]], "PR")   # must be PR, not SD
+})
+
+test_that("no pre-treatment PSA (only week 0) returns all NA", {
+  # week 0 is day-of-dose; with week < 0 baseline, no valid baseline → all NA
+  week <- c(0L, 4L)
+  psa  <- c(100, 40)
+  res  <- compute_pcwg3_from_psa(week, psa, c(0L, 0L))
+  expect_true(all(is.na(res)))
+})
+
+# =============================================================================
+# compute_pcwg3_from_psa: integration via prepare_trial_analysis_data
+# =============================================================================
+
+test_that("det_response in visit_data is derived from raw PSA, not response column", {
+  # response column is NA at all visits (as in real data) — det_response must
+  # still correctly classify PSA50 from measurement_value
+  pd <- make_raw_trial_patient()
+  visits <- make_visits(
+    weeks = c(-1L, 4L, 8L),
+    psas  = c(100, 40, 35)   # 60% and 65% reductions → PR
+  )
+  result <- harmonize(pd, visits)
+  vd <- result$visit_data[[1]]
+  expect_equal(vd$det_response[vd$week > 0], c("PR", "PR"))
 })

@@ -21,8 +21,6 @@ data {
   array[n_patients] int time_03;
   array[n_patients] int time_32;
   array[n_patients] int censored_01;
-  array[n_patients] int censored_02;
-  array[n_patients] int censored_12;
   array[n_patients] int prog_deterministic;
   array[n_patients] int ms_ic_gap_01;
 
@@ -60,8 +58,7 @@ generated quantities {
     enable_03, 0,                 // enable_03 (data), enable_32=0
     time_01, time_02, time_12,
     time_03, time_32,
-    censored_01, censored_02, censored_12,
-    rep_array(1, n_patients),    // censored_32 unused
+    censored_01,
     prog_deterministic,
     ms_ic_gap_01,
     t_patient_visits,
@@ -76,8 +73,7 @@ generated quantities {
     enable_03, 0,
     time_01, time_02, time_12,
     time_03, time_32,
-    censored_01, censored_02, censored_12,
-    rep_array(1, n_patients),
+    censored_01,
     prog_deterministic,
     rep_array(0, n_patients),    // gaps all zero -> no-IC path
     t_patient_visits,

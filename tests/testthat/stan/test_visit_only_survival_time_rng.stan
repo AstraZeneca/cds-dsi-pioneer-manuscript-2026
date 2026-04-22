@@ -8,6 +8,7 @@
 //   5. Low survival probability: events cluster at first visit
 
 functions {
+  #include "multistate.stanfunctions"
   #include "pfs.stanfunctions"
   #include "multistate.stanfunctions"
   #include "util.stanfunctions"
