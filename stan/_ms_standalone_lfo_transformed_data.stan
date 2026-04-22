@@ -82,7 +82,18 @@ for (i in 1:n_patients) {
   lfo_patient_enrolled[i] = cutoff_last_visit_idx[i] > 0 ? 1 : 0;
 }
 
-// --- Step 5: Re-censor multistate events at the first cutoff ---
+// --- Step 5: Compute per-patient calendar cutoff in week scale ---
+// Death, dropout, and off-trial death are registry-exact events that do not
+// require a visit to be observed, so they must be censored at the calendar
+// cutoff — not the last visit before it. Visit-gated events (progression,
+// state-0 follow-up) continue to use cutoff_last_visit_week.
+array[n_patients] int lfo_cutoff_cal_week;
+for (i in 1:n_patients) {
+  int days_since_enroll = cutoff_calendar_day[1] - calendar_day[i] + 1;
+  lfo_cutoff_cal_week[i] = days_since_enroll > 0 ? (days_since_enroll - 1) %/% 7 + 1 : 0;
+}
+
+// --- Step 6: Re-censor multistate events at the first cutoff ---
 // Calls the shared recensor_ms_at_cutoff() function (tested in test_recensor_ms_all.stan).
 array[n_patients] int lfo_ms_final_state;
 array[n_patients] int lfo_ms_time_01;
@@ -102,4 +113,4 @@ array[n_patients] int lfo_ms_ic_gap_01;
     ms_final_state, ms_time_01, ms_censored_01,
     ms_time_02, ms_time_12, ms_time_03, ms_time_32,
     ms_os_event_12, interval_censored, ms_prog_deterministic,
-    cutoff_last_visit_week);
+    cutoff_last_visit_week, lfo_cutoff_cal_week);

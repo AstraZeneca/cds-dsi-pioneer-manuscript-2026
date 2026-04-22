@@ -19,7 +19,8 @@ data {
   array[N_cases, max_n_patients] int ms_os_event_12;
   array[N_cases, max_n_patients] int interval_censored;
   array[N_cases, max_n_patients] int ms_prog_deterministic;
-  array[N_cases, max_n_patients] int cutoff_week;
+  array[N_cases, max_n_patients] int cutoff_visit_week;
+  array[N_cases, max_n_patients] int cutoff_cal_week;
 }
 
 generated quantities {
@@ -47,7 +48,8 @@ generated quantities {
         ms_final_state[c, 1:np], ms_time_01[c, 1:np], ms_censored_01[c, 1:np],
         ms_time_02[c, 1:np], ms_time_12[c, 1:np], ms_time_03[c, 1:np],
         ms_time_32[c, 1:np], ms_os_event_12[c, 1:np], interval_censored[c, 1:np],
-        ms_prog_deterministic[c, 1:np], cutoff_week[c, 1:np]);
+        ms_prog_deterministic[c, 1:np],
+        cutoff_visit_week[c, 1:np], cutoff_cal_week[c, 1:np]);
 
     for (i in 1:np) {
       out_final_state[c, i] = r_fs[i];
