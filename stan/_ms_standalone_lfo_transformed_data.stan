@@ -74,15 +74,7 @@ array[n_cutoffs, n_cutoffs, n_patients] int testing_end_idx;
                                 cutoff_calendar_day, calendar_day,
                                 t_patient_visits, t_patient_visits_day, patient_visit_pos);
 
-// --- Step 4: Mark which patients are enrolled at the cutoff ---
-// The actual lfo_likelihood_weight is computed in transformed parameters
-// (after propensity likelihood_weight is available).
-array[n_patients] int lfo_patient_enrolled;
-for (i in 1:n_patients) {
-  lfo_patient_enrolled[i] = cutoff_last_visit_idx[i] > 0 ? 1 : 0;
-}
-
-// --- Step 5: Compute per-patient calendar cutoff in week scale ---
+// --- Step 4: Compute per-patient calendar cutoff in week scale ---
 // Death, dropout, and off-trial death are registry-exact events that do not
 // require a visit to be observed, so they must be censored at the calendar
 // cutoff — not the last visit before it. Visit-gated events (progression,
@@ -93,8 +85,12 @@ for (i in 1:n_patients) {
   lfo_cutoff_cal_week[i] = days_since_enroll > 0 ? (days_since_enroll - 1) %/% 7 + 1 : 0;
 }
 
-// --- Step 6: Re-censor multistate events at the first cutoff ---
+// --- Step 5: Re-censor multistate events at the first cutoff ---
 // Calls the shared recensor_ms_at_cutoff() function (tested in test_recensor_ms_all.stan).
+// Patients with no pre-cutoff visit (cutoff_last_visit_week == 0) are zeroed
+// out inside recensor_ms_at_cutoff, so their ms_time_* == 0 downstream and
+// the standard time_*[i] > 0 guards inside multistate_lpmf make their
+// likelihood contribution vanish — no separate enrolment gate needed.
 array[n_patients] int lfo_ms_final_state;
 array[n_patients] int lfo_ms_time_01;
 array[n_patients] int lfo_ms_censored_01;
