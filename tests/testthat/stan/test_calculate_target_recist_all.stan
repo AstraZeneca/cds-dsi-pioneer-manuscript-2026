@@ -3,7 +3,6 @@ functions {
   #include "pos.stanfunctions"
   #include "util.stanfunctions"
   #include "pfs.stanfunctions"
-  #include "multistate.stanfunctions"
   #include "modules/tumor/tumor.stanfunctions"
 }
 
