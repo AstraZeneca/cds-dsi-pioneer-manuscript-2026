@@ -34,5 +34,5 @@ array[sum(n_patient_visits)] int<lower=1, upper=5> pcwg3_category;
 // PSA-SPECIFIC THRESHOLDS
 // ============================================================================
 
-// PSA undetectable threshold (typically 0.1 ng/mL)
+// PSA undetectable threshold (protocol: < 0.2 ng/mL = CR)
 real<lower=0> psa_undetectable_threshold;
