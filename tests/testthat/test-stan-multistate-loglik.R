@@ -5,10 +5,9 @@ library(here)
 BIG <- 999L
 
 make_ms_data <- function(n, max_t, event_time, censored, final_state,
-                         lcs_01, lcs_02 = NULL, time_02 = NULL, censored_02 = NULL) {
+                         lcs_01, lcs_02 = NULL, time_02 = NULL) {
   if (is.null(lcs_02))      lcs_02      <- matrix(-0.05, nrow = n, ncol = max_t)
   if (is.null(time_02))     time_02     <- rep(max_t, n)
-  if (is.null(censored_02)) censored_02 <- rep(1L, n)
 
   list(
     N = n, MAX_T = max_t,
@@ -17,9 +16,7 @@ make_ms_data <- function(n, max_t, event_time, censored, final_state,
     log_cond_surv_01 = lcs_01,
     final_state = final_state,
     time_02     = time_02,
-    censored_02 = censored_02,
     time_12     = rep(0L, n),
-    censored_12 = rep(1L, n),
     log_cond_surv_02   = lcs_02,
     log_cond_surv_12_s = matrix(-0.05, n, max_t),
     log_cond_surv_12_t = matrix(-0.05, n, max_t),
@@ -30,7 +27,6 @@ make_ms_data <- function(n, max_t, event_time, censored, final_state,
     t_patient_visits   = rep(1L, n),
     patient_visit_pos  = seq_len(n + 1L),
     time_03     = rep(BIG, n),
-    censored_32 = rep(1L, n),
     log_cond_surv_03  = matrix(-0.05, n, max_t),
     log_cond_surv_32  = matrix(-0.05, n, max_t),
     weight      = rep(1.0, n)
@@ -93,7 +89,7 @@ test_that("multistate_lpmf 01+02: state-0 censored patient accumulates both surv
     event_time = cens_time, censored = 1L,
     final_state = 0L,
     lcs_01 = lcs_01, lcs_02 = lcs_02,
-    time_02 = cens_time, censored_02 = 1L
+    time_02 = cens_time
   )
   fit <- test_stan_function(
     here("tests", "testthat", "stan", "test_multistate_loglik_all.stan"),
@@ -116,11 +112,9 @@ test_that("multistate_lpmf 01+02: progressed patient (state 1) accumulates 01+02
     event_time = t01, censored = 0L,
     final_state = 1L,
     lcs_01 = lcs_01, lcs_02 = lcs_02,
-    time_02 = BIG, censored_02 = 1L
+    time_02 = BIG
   )
-  # Set censored_12 = 1 (no post-progression death observed)
   data$time_12     <- 0L
-  data$censored_12 <- 1L
 
   fit <- test_stan_function(
     here("tests", "testthat", "stan", "test_multistate_loglik_all.stan"),
@@ -168,7 +162,7 @@ test_that("multistate_lpmf: weight=0.5 halves patient contribution in full illne
     event_time = c(4L, 6L), censored = c(0L, 0L),
     final_state = c(1L, 1L), lcs_01 = lcs,
     lcs_02 = matrix(-0.02, nrow = n, ncol = max_t),
-    time_02 = c(8L, 8L), censored_02 = c(1L, 1L)
+    time_02 = c(8L, 8L)
   )
   data_half <- modifyList(data_full, list(weight = c(0.5, 1.0)))
 
