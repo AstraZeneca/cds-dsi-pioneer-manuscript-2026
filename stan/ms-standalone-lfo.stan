@@ -64,6 +64,9 @@ transformed data {
 
   // LFO: re-censor events at cutoff, identify training/testing patients
   #include "_ms_standalone_lfo_transformed_data.stan"
+
+  // LFO: compact cutoff-observed cohort mapping (for GQ endpoint aggregation)
+  #include "_ms_standalone_lfo_compact_transformed_data.stan"
 }
 
 parameters {
