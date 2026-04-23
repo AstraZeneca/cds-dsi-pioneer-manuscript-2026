@@ -18,13 +18,15 @@
 // Build modeled-PSA covariate matrix only when needed:
 // - 0->1 continuous mode (not visit-gated), OR
 // - 0->2 with time-varying covariate enabled
-array[enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
+// When ms_needs_inline_psa, size to 0 (PSA computed inline in multistate TP instead).
+array[!ms_needs_inline_psa && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
     (enable_ms_01 && !enable_ms_visit_gated_01 || enable_ms_02_time_varying_cov || enable_ms_visit_gated_latent_01) ? n_time_varying_covar : 0]
   matrix[n_forecast_patients, max_all_t] ms_time_varying_covar_01;
 
-if (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
+if (!ms_needs_inline_psa && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
     (enable_ms_01 && !enable_ms_visit_gated_01 || enable_ms_02_time_varying_cov || enable_ms_visit_gated_latent_01)) {
-  for (j in 1:n_forecast_patients) {
+  profile("tv covariate") {
+    for (j in 1:n_forecast_patients) {
     int p = forecast_patient_idx[j];  // Unified patient index
     int visit_start, visit_end;
     (visit_start, visit_end) = get_pos(patient_visit_pos, p);
@@ -80,5 +82,6 @@ if (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
         ms_time_varying_covar_01[3][j] = rep_row_vector(patient_log_growth_rate[j, 1], max_all_t);
       }
     }
+  }
   }
 }
