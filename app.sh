@@ -15,4 +15,4 @@ if [ ! -d "${site_dir}" ]; then
 fi
 
 echo "Serving ${site_dir} on port 8888"
-npx serve "${site_dir}" --listen 8888 --no-clipboard
+python3 -m http.server 8888 --bind 0.0.0.0 --directory "${site_dir}"
