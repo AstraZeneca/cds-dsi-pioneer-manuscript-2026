@@ -1583,3 +1583,304 @@ tuple(int, int) derive_sample_os_rng(
     return (max(sample_time_01, sample_time_02), 1);
   }
 }
+
+// ============================================================================
+// Posterior-predictive OS Kaplan-Meier (per trial)
+// ============================================================================
+// Factored out of burden_endpoints.stan so models that only need OS KM
+// (e.g. ms_standalone LFO) can reuse the same code path without cloning
+// the full endpoint + aggregation machinery.
+//
+// Calls calculate_all_patients_endpoints_rng to get sample_os / sample_os_censored,
+// then estimate_kaplan_meier per trial. Returns only sample_os_km_est
+// (no ORR, quantiles, PFS, etc.); everything else is discarded.
+
+/**
+ * Canonical overload — full signature (matches calculate_all_patients_endpoints_rng).
+ *
+ * Intended for callers that already have the biomarker / PSA scaffolding
+ * (tumor SSM, pioneer). For ms-standalone models, use the short overload below.
+ *
+ * @return sample_os_km_est [n_trials][max_all_t + 1]
+ */
+array[] vector compute_ms_os_km_rng(
+    // forecast routing
+    array[] int forecast_patient_idx,
+    array[] int forecast_trial_patient_pos,
+    int max_all_t,
+    // biomarker path
+    array[] int obs_biomarker_cat,
+    array[] int rep_biomarker_cat,
+    array[] int forecast_obs_biomarker_cat,
+    array[] int forecast_obs_visits_pos,
+    int forecast_observation_interval,
+    // multistate hazards
+    matrix log_cond_surv_01,
+    int enable_ms_02,
+    int enable_ms_03,
+    int enable_ms_32,
+    int enable_ms_12,
+    int ms_time_scale_12,
+    matrix log_cond_surv_02,
+    matrix log_cond_surv_03,
+    matrix log_cond_surv_32,
+    matrix log_cond_surv_12_s,
+    matrix log_cond_surv_12_t,
+    // PFS inputs
+    array[] int burden_pfs,
+    array[] int burden_right_censored,
+    array[] int burden_target_pfs,
+    array[] int burden_target_right_censored,
+    // multistate event arrays
+    array[] int ms_censored_01,
+    array[] int ms_final_state,
+    array[] int ms_time_02,
+    array[] int ms_censored_02,
+    array[] int ms_censored_12,
+    array[] int ms_time_12,
+    array[] int ms_os_event_12,
+    array[] int ms_time_03,
+    array[] int ms_time_32,
+    array[] int ms_censored_32,
+    // visit scaffolding
+    array[] int patient_visit_pos,
+    array[] int forecast_visits_pos,
+    array[] int patient_last_obs_visit,
+    int last_predict_visit,
+    array[] int t_patient_visits,
+    array[] int n_patient_screening_visits,
+    // visit-gated PSA
+    int burden_enable_ms_visit_gated_01,
+    real burden_tv_coef_01_val,
+    vector burden_forecast_obs_log_psa,
+    real burden_median_log_psa_obs,
+    real burden_iqr_log_psa_obs) {
+  int n_trials = size(forecast_trial_patient_pos) - 1;
+  int n_forecast_patients = size(forecast_patient_idx);
+
+  // Declare return upfront so every branch has an assignment target.
+  array[n_trials] vector[max_all_t + 1] sample_os_km_est =
+    rep_array(zeros_vector(max_all_t + 1), n_trials);
+
+  array[n_forecast_patients] int sample_target_pfs;
+  array[n_forecast_patients] int sample_target_right_censored;
+  array[n_forecast_patients] int spop_target_pfs;
+  array[n_forecast_patients] int spop_target_right_censored;
+  array[n_forecast_patients] int spop_target_obs_cens_pfs;
+  array[n_forecast_patients] int spop_target_obs_cens_right_censored;
+  array[n_forecast_patients] int sample_ms_pfs;
+  array[n_forecast_patients] int sample_ms_right_censored;
+  array[n_forecast_patients] int spop_ms_pfs;
+  array[n_forecast_patients] int spop_ms_right_censored;
+  array[n_forecast_patients] int sample_pfs;
+  array[n_forecast_patients] int sample_right_censored;
+  array[n_forecast_patients] int spop_pfs;
+  array[n_forecast_patients] int spop_right_censored;
+  array[n_forecast_patients] int sample_target_confirmed_response;
+  array[n_forecast_patients] int sample_target_unconfirmed_response;
+  array[n_forecast_patients] int spop_target_confirmed_response;
+  array[n_forecast_patients] int spop_target_unconfirmed_response;
+  array[n_forecast_patients] int forecast_target_pfs;
+  array[n_forecast_patients] int forecast_target_right_censored;
+  array[n_forecast_patients] int sample_os;
+  array[n_forecast_patients] int sample_os_censored;
+  array[n_forecast_patients] int spop_os;
+  array[n_forecast_patients] int spop_os_censored;
+  array[n_forecast_patients] int spop_is_dropout;
+  array[n_forecast_patients] int sample_is_dropout;
+
+  (sample_target_pfs, sample_target_right_censored,
+   spop_target_pfs, spop_target_right_censored,
+   spop_target_obs_cens_pfs, spop_target_obs_cens_right_censored,
+   sample_ms_pfs, sample_ms_right_censored,
+   spop_ms_pfs, spop_ms_right_censored,
+   sample_pfs, sample_right_censored,
+   spop_pfs, spop_right_censored,
+   sample_target_confirmed_response, sample_target_unconfirmed_response,
+   spop_target_confirmed_response, spop_target_unconfirmed_response,
+   forecast_target_pfs, forecast_target_right_censored,
+   sample_os, sample_os_censored,
+   spop_os, spop_os_censored,
+   spop_is_dropout, sample_is_dropout
+  ) = calculate_all_patients_endpoints_rng(
+    forecast_patient_idx,
+    obs_biomarker_cat,
+    rep_biomarker_cat,
+    forecast_obs_biomarker_cat,
+    forecast_obs_visits_pos,
+    forecast_observation_interval,
+    log_cond_surv_01,
+    enable_ms_02,
+    enable_ms_03,
+    enable_ms_32,
+    enable_ms_12,
+    ms_time_scale_12,
+    log_cond_surv_02,
+    log_cond_surv_03,
+    log_cond_surv_32,
+    log_cond_surv_12_s,
+    log_cond_surv_12_t,
+    burden_pfs,
+    burden_right_censored,
+    burden_target_pfs,
+    burden_target_right_censored,
+    ms_censored_01,
+    ms_final_state,
+    ms_time_02,
+    ms_censored_02,
+    ms_censored_12,
+    ms_time_12,
+    ms_os_event_12,
+    ms_time_03,
+    ms_time_32,
+    ms_censored_32,
+    patient_visit_pos,
+    forecast_visits_pos,
+    patient_last_obs_visit,
+    last_predict_visit,
+    t_patient_visits,
+    max_all_t,
+    n_patient_screening_visits,
+    burden_enable_ms_visit_gated_01,
+    burden_tv_coef_01_val,
+    burden_forecast_obs_log_psa,
+    burden_median_log_psa_obs,
+    burden_iqr_log_psa_obs
+  );
+
+  for (s in 1:n_trials) {
+    if (get_pos_size(forecast_trial_patient_pos, s) > 0) {
+      sample_os_km_est[s] = estimate_kaplan_meier(
+        get_int_sub_array(sample_os, forecast_trial_patient_pos, s),
+        get_int_sub_array(sample_os_censored, forecast_trial_patient_pos, s),
+        max_all_t, 0).1;
+    }
+  }
+
+  return sample_os_km_est;
+}
+
+/**
+ * Short overload — ms-standalone (no biomarker, no visit-gating).
+ *
+ * Constructs the zero-sized biomarker / PSA scaffolding internally and delegates
+ * to the canonical overload. Callers need only pass multistate-relevant fields.
+ *
+ * burden_pfs is derived here (progression 0→1 or death 0→2, dropout censored),
+ * matching the standalone GQ include; target_pfs is all-censored.
+ *
+ * @return sample_os_km_est [n_trials][max_all_t + 1]
+ */
+array[] vector compute_ms_os_km_rng(
+    array[] int forecast_patient_idx,
+    array[] int forecast_trial_patient_pos,
+    int max_all_t,
+    int n_total_visits,
+    int n_total_forecast_obs_visits,
+    int forecast_observation_interval,
+    matrix log_cond_surv_01,
+    int enable_ms_02,
+    int enable_ms_03,
+    int enable_ms_32,
+    int enable_ms_12,
+    int ms_time_scale_12,
+    matrix log_cond_surv_02,
+    matrix log_cond_surv_03,
+    matrix log_cond_surv_32,
+    matrix log_cond_surv_12_s,
+    matrix log_cond_surv_12_t,
+    array[] int ms_final_state,
+    array[] int ms_time_01,
+    array[] int ms_censored_01,
+    array[] int ms_time_02,
+    array[] int ms_censored_02,
+    array[] int ms_time_12,
+    array[] int ms_censored_12,
+    array[] int ms_os_event_12,
+    array[] int ms_time_03,
+    array[] int ms_time_32,
+    array[] int ms_censored_32,
+    array[] int patient_visit_pos,
+    array[] int forecast_visits_pos,
+    array[] int forecast_obs_visits_pos,
+    array[] int patient_last_obs_visit,
+    int last_predict_visit,
+    array[] int t_patient_visits,
+    array[] int n_patient_screening_visits) {
+  int n_patients = size(ms_final_state);
+
+  // Dummy biomarker — all zeros means no PD detection, so target_pfs stays censored.
+  array[n_total_visits] int obs_biomarker_cat = zeros_int_array(n_total_visits);
+  array[n_total_visits] int rep_biomarker_cat = zeros_int_array(n_total_visits);
+  array[n_total_forecast_obs_visits] int forecast_obs_biomarker_cat =
+    zeros_int_array(n_total_forecast_obs_visits);
+
+  // PFS = progression (0→1) OR death (0→2); dropout (0→3) is censored.
+  // Matches the construction in tumor/_ms_standalone_generated_quantities.stan.
+  array[n_patients] int burden_pfs;
+  array[n_patients] int burden_right_censored;
+  for (i in 1:n_patients) {
+    if (ms_censored_01[i] == 0) {
+      burden_pfs[i] = ms_time_01[i];
+      burden_right_censored[i] = 0;
+    } else if (ms_censored_02[i] == 0) {
+      burden_pfs[i] = ms_time_02[i];
+      burden_right_censored[i] = 0;
+    } else {
+      burden_pfs[i] = min(ms_time_01[i], ms_time_02[i]);
+      burden_right_censored[i] = 1;
+    }
+  }
+  array[n_patients] int burden_target_pfs = rep_array(max_all_t + 1, n_patients);
+  array[n_patients] int burden_target_right_censored = rep_array(1, n_patients);
+
+  // No visit-gated PSA path in ms-standalone.
+  vector[0] burden_forecast_obs_log_psa;
+
+  return compute_ms_os_km_rng(
+    forecast_patient_idx,
+    forecast_trial_patient_pos,
+    max_all_t,
+    obs_biomarker_cat,
+    rep_biomarker_cat,
+    forecast_obs_biomarker_cat,
+    forecast_obs_visits_pos,
+    forecast_observation_interval,
+    log_cond_surv_01,
+    enable_ms_02,
+    enable_ms_03,
+    enable_ms_32,
+    enable_ms_12,
+    ms_time_scale_12,
+    log_cond_surv_02,
+    log_cond_surv_03,
+    log_cond_surv_32,
+    log_cond_surv_12_s,
+    log_cond_surv_12_t,
+    burden_pfs,
+    burden_right_censored,
+    burden_target_pfs,
+    burden_target_right_censored,
+    ms_censored_01,
+    ms_final_state,
+    ms_time_02,
+    ms_censored_02,
+    ms_censored_12,
+    ms_time_12,
+    ms_os_event_12,
+    ms_time_03,
+    ms_time_32,
+    ms_censored_32,
+    patient_visit_pos,
+    forecast_visits_pos,
+    patient_last_obs_visit,
+    last_predict_visit,
+    t_patient_visits,
+    n_patient_screening_visits,
+    0,                                 // burden_enable_ms_visit_gated_01
+    0.0,                               // burden_tv_coef_01_val
+    burden_forecast_obs_log_psa,
+    0.0,                               // burden_median_log_psa_obs
+    0.0                                // burden_iqr_log_psa_obs
+  );
+}
