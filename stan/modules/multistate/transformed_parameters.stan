@@ -1,6 +1,10 @@
 // ============================================================================
 // Multistate Hazard Model Transformed Parameters
 // ============================================================================
+// When ms_needs_inline_psa = TRUE, PSA models compute time-varying covariates
+// inline in psa/_psa_inline_tv_covar.stan instead of via the grid-based
+// ms_time_varying_covar_01 matrix. Guards on !ms_needs_inline_psa below prevent
+// double-counting. Non-PSA models (tumor) always have ms_needs_inline_psa = 0.
 
 // ============================================================================
 // 0→1 TRANSITION: Log Conditional Survival
@@ -93,7 +97,10 @@ if (enable_ms_01) {
   // Visit-gated mode: sparse update at observed visit weeks only (before -exp,
   // same log-hazard-level addition as continuous mode — no special handling needed).
   // PSA source: observed (default) or latent trajectory (enable_ms_visit_gated_latent_01).
-  if (enable_ms_pop_time_varying_cov && enable_ms_visit_gated_01) {
+  // When ms_needs_inline_psa && enable_ms_visit_gated_latent_01, the latent PSA path
+  // is handled by the PSA-specific inline include. Observed PSA path still runs here.
+  if (enable_ms_pop_time_varying_cov && enable_ms_visit_gated_01 &&
+      !(ms_needs_inline_psa && enable_ms_visit_gated_latent_01)) {
     for (j in 1:n_forecast_patients) {
       int p = forecast_patient_idx[j];
       int v_start; int v_end;
@@ -146,16 +153,9 @@ if (enable_ms_01) {
     log_cond_surv_01 += rep_matrix(linpred_pop_01, max_all_t);
   }
 
-  // Transform log-hazard to log conditional survival probability
-  // log P(survive interval t) = -exp(log_hazard[t]) = -hazard[t]
-  // Clamp log-hazard to [-20, 10] before exp():
-  //   upper 10: exp(10)≈22000/week already means instantaneous death; tighter than
-  //             the old 35 cap (exp(35)≈1.5e15/week) which created lp≈-1e15 with
-  //             zero gradient (fmin is piecewise-constant) trapping HMC. Consistent
-  //             with the laplace.stanfunctions cap of 5–10 for non-target patients.
-  //   lower -20: prevents exp() underflow to 0 → log_cond_surv = 0 →
-  //              log1m_exp(0) = -Inf at event times.
-  log_cond_surv_01 = -exp(fmax(log_cond_surv_01, -20.0));
+  // NOTE: -exp() transform for log_cond_surv_01 is deferred to
+  // modules/multistate/cond_surv_transform.stan to allow PSA-specific
+  // inline TV covariate insertion before the transform.
 }
 
 // ============================================================================
@@ -234,7 +234,8 @@ if (enable_ms_02) {
   // -------------------------------------------------------------------------
   // 0->2 time-varying covariate: uses modeled PSA (ms_time_varying_covar_01)
   // Controlled by enable_ms_02_time_varying_cov, independent of 0->1 mode.
-  if (enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov && n_time_varying_covar > 0) {
+  // When ms_needs_inline_psa, the PSA-specific inline path handles this instead.
+  if (!ms_needs_inline_psa && enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov && n_time_varying_covar > 0) {
     for (k in 1:n_time_varying_covar) {
       log_cond_surv_02 += time_varying_coef_02[k] * ms_time_varying_covar_01[k];
     }
@@ -271,8 +272,8 @@ if (enable_ms_02) {
     log_cond_surv_02 += rep_matrix(linpred_pop_02, max_all_t);
   }
 
-  // Transform to log conditional survival (clamped, see 0→1 comment)
-  log_cond_surv_02 = -exp(fmax(log_cond_surv_02, -20.0));
+  // NOTE: -exp() transform for log_cond_surv_02 is deferred to
+  // modules/multistate/cond_surv_transform.stan (same reason as 0→1).
 }
 
 // ============================================================================

@@ -1,6 +1,8 @@
 functions {
   #include "util.stanfunctions"
   #include "pos.stanfunctions"
+  #include "hierarchy.stanfunctions"
+  #include "full_model.stanfunctions"
   #include "gp.stanfunctions"
   #include "pfs.stanfunctions"
   #include "lfo.stanfunctions"
@@ -66,6 +68,7 @@ transformed parameters {
   #include "modules/state_space/transformed_parameters.stan"
   #include "_ms_time_varying_covar.stan"
   #include "modules/multistate/transformed_parameters.stan"
+  #include "modules/multistate/cond_surv_transform.stan"
 }
 
 model {
@@ -290,9 +293,8 @@ generated quantities {
         int start_idx = testing_start_idx[n, i];
         int end_idx = m_abs < n_cutoffs ? testing_end_idx[n, m_abs + 1, i] : visit_end;
 
-        // Only evaluate patients who were observed at cutoff (exclude newly enrolled patients)
-        // cutoff_observed_mask[i] == 1 means patient had at least one visit before/at cutoff
-        if (start_idx > 0 && end_idx >= start_idx && cutoff_observed_mask[i]) {
+        // Only evaluate patients enrolled at this cutoff (not just cutoff 1)
+        if (start_idx > 0 && end_idx >= start_idx && calendar_day[i] <= cutoff_calendar_day[n]) {
           int patient_idx = curr_first_testing_patient_idx + i_idx - 1;
 
           // Component 1: Tumor model log-likelihood using observed SLD

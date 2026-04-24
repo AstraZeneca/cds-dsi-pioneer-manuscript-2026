@@ -315,10 +315,11 @@ lfo <- function(
 
   fit <- stan_data |>
     list_assign(
-      cutoff_calendar_day = remaining_all_cutoffs$cutoff_calendar_day,
+      cutoff_calendar_day = as.array(remaining_all_cutoffs$cutoff_calendar_day),
       n_cutoffs = n_cutoffs,
       max_n_rows = max_n_rows,
-      max_forecast_horizon = max_forecast_horizon
+      max_forecast_horizon = max_forecast_horizon,
+      lfo_eval_trial = stan_data$lfo_eval_trial %||% 1L
     ) %>%
     sample_and_save(
       exe_file,
@@ -365,9 +366,13 @@ lfo <- function(
       mutate(fit = if_else(n == refit_n, list(fit), list(NULL)))
   }
 
-  next_cutoffs <- psis_results |>
-    filter(exact | (!is.na(k) & k > k_threshold), n > refit_n) %>%
-    semi_join(remaining_cutoffs, ., by = "n")
+  next_cutoffs <- if (exact) {
+    remaining_cutoffs |> filter(n > refit_n)
+  } else {
+    psis_results |>
+      filter(!is.na(k) & k > k_threshold, n > refit_n) %>%
+      semi_join(remaining_cutoffs, ., by = "n")
+  }
 
   if (verbose) {
     cat("LFO results:\n")
@@ -577,7 +582,7 @@ redo_lfo_results <- function(lfo_res, lean = FALSE) {
 }
 
 clean_lfo_results <- function(lfo_res) {
-  lfo_res |>
+  res <- lfo_res |>
     lfo_drop_bad_approx() |>
     mutate(
       E_log_lik = if_else(
@@ -585,32 +590,46 @@ clean_lfo_results <- function(lfo_res) {
         E_patient_log_lik,
         approx_E_patient_log_lik
       ),
-      E_pfs_log_lik = if_else(
-        is.na(k),
-        E_patient_pfs_log_lik,
-        approx_E_patient_pfs_log_lik
-      ),
-      E_crcr_log_lik = if_else(
-        is.na(k),
-        E_patient_crcr_log_lik,
-        approx_E_patient_crcr_log_lik
-      ),
       E_log_lik_w = if_else(
         is.na(k),
         E_patient_log_lik_w,
         approx_E_patient_log_lik_w
       ),
-      E_pfs_log_lik_w = if_else(
-        is.na(k),
-        E_patient_pfs_log_lik_w,
-        approx_E_patient_pfs_log_lik_w
-      ),
-      E_crcr_log_lik_w = if_else(
-        is.na(k),
-        E_patient_crcr_log_lik_w,
-        approx_E_patient_crcr_log_lik_w
-      ),
     )
+
+  if ("E_patient_pfs_log_lik" %in% names(res)) {
+    res <- res |>
+      mutate(
+        E_pfs_log_lik = if_else(
+          is.na(k),
+          E_patient_pfs_log_lik,
+          approx_E_patient_pfs_log_lik
+        ),
+        E_pfs_log_lik_w = if_else(
+          is.na(k),
+          E_patient_pfs_log_lik_w,
+          approx_E_patient_pfs_log_lik_w
+        ),
+      )
+  }
+
+  if ("E_patient_crcr_log_lik" %in% names(res)) {
+    res <- res |>
+      mutate(
+        E_crcr_log_lik = if_else(
+          is.na(k),
+          E_patient_crcr_log_lik,
+          approx_E_patient_crcr_log_lik
+        ),
+        E_crcr_log_lik_w = if_else(
+          is.na(k),
+          E_patient_crcr_log_lik_w,
+          approx_E_patient_crcr_log_lik_w
+        ),
+      )
+  }
+
+  res
 }
 
 #' Bootstrap Expected Log Pointwise Predictive Density (ELPD) for Leave-Future-Out Cross-Validation

@@ -86,6 +86,7 @@ init_project <- function(output_path = output_path, artifacts_path = artifacts_p
   library(autometric)
   library(here)
   library(cmdstanr)
+  set_cmdstan_path("~/.cmdstan/cmdstan-2.38.0")
   library(posterior)
   library(tidybayes)
   library(qs2)
@@ -119,6 +120,7 @@ init_project <- function(output_path = output_path, artifacts_path = artifacts_p
     source(here("r", "pioneer", "priors.R"))
     source(here("r", "pioneer", "initializers.R"))
     source(here("r", "pioneer", "plot_functions.R"))
+    source(here("r", "pioneer", "prepare_ms_standalone_lfo_data.R"))
   }
 
   source(here("r", "targets_tidyselect.R"))
