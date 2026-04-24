@@ -1,6 +1,8 @@
 functions {
   #include "util.stanfunctions"
   #include "pos.stanfunctions"
+  #include "hierarchy.stanfunctions"
+  #include "full_model.stanfunctions"
   #include "gp.stanfunctions"
   #include "pfs.stanfunctions"
   #include "lfo.stanfunctions"
@@ -64,6 +66,7 @@ transformed parameters {
   #include "modules/state_space/transformed_parameters.stan"
   #include "_ms_time_varying_covar.stan"
   #include "modules/multistate/transformed_parameters.stan"
+  #include "modules/multistate/cond_surv_transform.stan"
 }
 
 generated quantities {

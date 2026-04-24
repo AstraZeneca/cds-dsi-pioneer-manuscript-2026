@@ -67,7 +67,8 @@ check_convergence <- function(draws_pop, draws_patient) {
 #'   Stan's default `max_depth` setting). Hits are counted as
 #'   treedepth__ >= max_treedepth.
 #' @return Tibble with one row per chain:
-#'   Chain, n_iter, n_divergent, n_max_treedepth, mean_accept, ebfmi
+#'   Chain, n_iter, n_divergent, n_max_treedepth, mean_accept,
+#'   median_stepsize, total_leapfrog, ebfmi
 summarize_nuts <- function(nuts_params_df, max_treedepth = 10) {
   nuts_params_df |>
     tidyr::pivot_wider(names_from = Parameter, values_from = Value) |>
@@ -77,7 +78,89 @@ summarize_nuts <- function(nuts_params_df, max_treedepth = 10) {
       n_divergent      = as.integer(sum(divergent__)),
       n_max_treedepth  = as.integer(sum(treedepth__ >= max_treedepth)),
       mean_accept      = mean(accept_stat__),
+      median_stepsize  = stats::median(stepsize__),
+      total_leapfrog   = sum(n_leapfrog__),
       ebfmi            = stats::var(diff(energy__)) / stats::var(energy__)
     ) |>
     dplyr::arrange(Chain)
+}
+
+# energy_correlations --------------------------------------------------------
+
+#' Rank parameters by correlation with HMC energy
+#'
+#' Low E-BFMI indicates the Hamiltonian kinetic energy is not exploring the
+#' posterior geometry well. Parameters whose values correlate strongly with
+#' the per-iteration energy are the dimensions driving that mis-match, and
+#' are therefore the candidate culprits for geometry-induced pathologies
+#' (heavy tails, funnels).
+#'
+#' @param draws         posterior::draws_array (or anything as_draws_df accepts)
+#' @param nuts_param_df bayesplot::nuts_params output aligned to the same draws
+#' @return Tibble ordered by |cor(energy, theta)| descending:
+#'   variable, cor_energy, abs_cor, ess_bulk, rhat
+energy_correlations <- function(draws, nuts_param_df) {
+  np_wide <- nuts_param_df |>
+    tidyr::pivot_wider(names_from = Parameter, values_from = Value) |>
+    dplyr::arrange(Chain, Iteration)
+
+  draws_df <- posterior::as_draws_df(draws) |>
+    dplyr::arrange(.chain, .iteration)
+
+  stopifnot(nrow(draws_df) == nrow(np_wide))
+
+  theta_mat <- draws_df |>
+    dplyr::select(-.chain, -.iteration, -.draw) |>
+    as.matrix()
+
+  # Some columns (derived fully deterministic quantities) may be constant;
+  # cor() emits NaN for those — just drop them from the ranking.
+  cors <- suppressWarnings(stats::cor(np_wide$energy__, theta_mat)[1, ])
+
+  summary_df <- posterior::summarize_draws(
+    draws,
+    ess_bulk = posterior::ess_bulk,
+    rhat     = posterior::rhat
+  )
+
+  tibble::tibble(
+    variable   = colnames(theta_mat),
+    cor_energy = unname(cors),
+    abs_cor    = abs(unname(cors))
+  ) |>
+    dplyr::filter(!is.na(.data$abs_cor)) |>
+    dplyr::left_join(summary_df, by = "variable") |>
+    dplyr::arrange(dplyr::desc(.data$abs_cor))
+}
+
+# group_ess_summary ----------------------------------------------------------
+
+#' Aggregate ESS / R-hat by parameter group prefix
+#'
+#' Expands the scalar `check_convergence()$patient` summary: instead of one
+#' row for "all patient effects", produce one row per group prefix (e.g.
+#' `frac_log_growth_patient`, `init_raw_level_intercept`). Useful for
+#' pinpointing which hierarchical layer is under-mixing.
+#'
+#' @param draws posterior::draws_array
+#' @return Tibble ordered by min_ess_bulk ascending:
+#'   group, n_params, min_ess_bulk, median_ess_bulk, max_rhat, n_rhat_bad
+group_ess_summary <- function(draws) {
+  posterior::summarize_draws(
+    draws,
+    ess_bulk = posterior::ess_bulk,
+    rhat     = posterior::rhat
+  ) |>
+    dplyr::mutate(
+      group = sub("\\[.*\\]$", "", .data$variable)
+    ) |>
+    dplyr::summarise(
+      .by             = group,
+      n_params        = dplyr::n(),
+      min_ess_bulk    = min(.data$ess_bulk, na.rm = TRUE),
+      median_ess_bulk = stats::median(.data$ess_bulk, na.rm = TRUE),
+      max_rhat        = max(.data$rhat, na.rm = TRUE),
+      n_rhat_bad      = as.integer(sum(.data$rhat > 1.01, na.rm = TRUE))
+    ) |>
+    dplyr::arrange(.data$min_ess_bulk)
 }

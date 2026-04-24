@@ -18,6 +18,7 @@ array[n_patients] int<lower=0> ms_final_state;
 // Time to each transition (0 if not observed/applicable)
 array[n_patients] int<lower=0> ms_time_01;  // Time to progression (0→1)
 array[n_patients] int<lower=0> ms_time_02;  // Time to death w/o progression (0→2)
+array[n_patients] int<lower=0> ms_max_time_02;  // min(ms_time_01, ms_time_02): last week 0→2 cond surv is needed
 array[n_patients] int<lower=0> ms_time_12;  // Post-progression survival / sojourn time (1→2)
 
 // --- Censoring Indicators ---
