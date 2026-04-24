@@ -2,6 +2,8 @@
 #
 # Pure R mirror of get_testing_visit_week_bounds() from stan/lfo.stanfunctions.
 # Used to compute reference expected values for Stan tests.
+
+source(here::here("r/pioneer/prepare_ms_standalone_lfo_data.R"))
 #
 # Pre-conditions (same as Stan asserts):
 #   - t_patient_visits_week and t_patient_visits_day are strictly ascending
