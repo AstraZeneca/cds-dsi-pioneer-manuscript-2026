@@ -3,14 +3,14 @@ title: "SCLC-01 DCO3 Update"
 subtitle: "PIONEER Bayesian Forecasting Results"
 author: "Karim Naguib, Roger Berché, Antonia Bevan, Haroon Hasan, Jessica Davies, Paul Metcalfe"
 institute: "Data Science Innovation & Lung Team, CDS"
-date: "28 January 2026"
+date: "27 April 2026"
 freeze: auto
 format:
   revealjs:
     template-partials:
       - title-slide.html
     theme: [default, az-reveal-theme.scss]
-    footer: "PIONEER | 28 January 2026"
+    footer: "PIONEER | 27 April 2026"
     slide-number: true
     width: 1600
     height: 900
@@ -48,9 +48,9 @@ source(here::here("quarto", "_shared", "_setup.R"))
 
 :::: {.columns}
 
-::: {.column width="40%"}
+::: {.column width="35%"}
 
-- **Reliable early forecasts**: 
+- **Reliable early forecasts**:
     * PIONEER delivers **reliable predictions 3-6 months earlier** than the latest DCO observational-only analyses
     * While uncertainty diminished with more data, our model is able to provide survival information beyond the censoring horizon.
 
@@ -58,99 +58,23 @@ source(here::here("quarto", "_shared", "_setup.R"))
 
 - **Validated approach**: _Leave-future-out cross-validation_ confirms predictive performance
 
-:::
-
-::: {.column width="60%"}
-
-```{r part-e-summary-plots}
-#| fig-width: 8
-#| fig-height: 7
+```{r exec-summary-timeline}
+#| fig-width: 6
+#| fig-height: 2.8
 #| out-width: 100%
+#| fig-align: center
 #| cache: false
 
-# Get conditional KM for Part E only across DCOs (posterior only)
-cond_km_part_e <- bind_rows(
-  apr25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_apr25),
-  aug25 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_aug25),
-  jan26 = tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26),
-  .id = "dco"
-) |>
-  filter(
-    fct_match(variable, "parts"),
-    fct_match(cond_group_name, "part_e"),
-    fct_match(fit_type, "posterior")
-  ) |>
-  mutate(
-    km_est = cond_sample_km_est,
-    dco = fct_recode(factor(dco), "Apr25" = "apr25", "Aug25" = "aug25", "Jan26" = "jan26"),
-    trial = "sclc"
-  )
-
-# Get observed KM for Part E from pre-computed targets
-obs_km_part_e <- bind_rows(
-  apr25 = tar_read(km_trial_pfs_part_e_ctdna_apr25),
-  aug25 = tar_read(km_trial_pfs_part_e_ctdna_aug25),
-  jan26 = tar_read(km_trial_pfs_part_e_ctdna_jan26),
-  .id = "dco"
-) |>
-  filter(fct_match(btype, "ub")) |>
-  select(!quantiles) |>
-  unnest(km_data) |>
-  mutate(
-    dco = fct_recode(factor(dco), "Apr25" = "apr25", "Aug25" = "aug25", "Jan26" = "jan26")
-  )
-
-# KM plot (add observed KM manually for thicker line)
-p_km <- cond_km_part_e |>
-  base_plot_km(
-    obs_km_data = NULL,
-    km_est = km_est,
-    group = fit_type,
-    linewidth = 0.5,
-    alpha = 0.25
-  ) +
-  geom_step(
-    aes(x = t, y = s, linetype = "Observed KM"),
-    linewidth = 1.2,
-    alpha = 0.5,
-    color = AZ_plum,
-    data = obs_km_part_e
-  ) +
-  scale_linetype_manual("", values = c("Observed KM" = "solid")) +
-  scale_x_continuous(
-    "Months",
-    breaks = months_to_weeks(seq(0, 60, 12)),
-    label = label_weeks_to_months
-  ) +
-  scale_y_continuous("PFS", labels = scales::percent) +
-  scale_fill_manual(values = AZ_platinum) +
-  guides(color = "none", fill = "none", alpha = "none") +
-  facet_wrap(~dco, ncol = 3) +
-  labs(title = "Part E PFS Forecast by DCO") +
-  theme(
-    plot.title = element_text(size = 14, face = "bold"),
-    strip.text = element_text(size = 12, face = "bold"),
-    legend.position = "bottom",
-    plot.caption = element_text(size = 7, hjust = 0)
-  )
-
-# Define DCO dates
 dco_dates <- tibble(
-  dco = c("DCO1", "DCO2", "DCO3"),
+  dco  = c("DCO1", "DCO2", "DCO3"),
   date = as.Date(c("2025-04-30", "2025-08-30", "2026-01-22"))
 )
 
-# Get Part E data for both timelines
 part_e_data <- all_analysis_data |>
   filter(fct_match(trial, "sclc"), fct_match(arm, "E01"))
 
-# Compute shared x-axis limits
-x_limits <- c(
-  min(part_e_data$trtsdt),
-  max(dco_dates$date)
-)
+x_limits <- c(min(part_e_data$trtsdt), max(dco_dates$date))
 
-# Enrollment timeline plot (use first visit date per patient)
 p_enrollment <- part_e_data |>
   select(usubjid, trtsdt, visit_data) |>
   unnest(visit_data) |>
@@ -160,24 +84,15 @@ p_enrollment <- part_e_data |>
   ggplot(aes(x = first_visit)) +
   geom_vline(aes(xintercept = date), color = AZ_pink, linewidth = 0.8, data = dco_dates) +
   geom_histogram(binwidth = 30, fill = AZ_navy, alpha = 0.75, color = "white") +
-  geom_label(
-    aes(x = date, label = dco),
-    y = Inf,
-    vjust = 1.3,
-    data = dco_dates,
-    size = 2.5,
-    color = "white",
-    fill = AZ_pink,
-    fontface = "bold",
-    label.padding = unit(0.2, "lines"),
-    label.r = unit(0.3, "lines")
-  ) +
+  geom_label(aes(x = date, label = dco), y = Inf, vjust = 1.3,
+             data = dco_dates, size = 2.5, color = "white", fill = AZ_pink,
+             fontface = "bold", label.padding = unit(0.2, "lines"),
+             label.r = unit(0.3, "lines")) +
   scale_x_date("", limits = x_limits) +
   scale_y_continuous("Patients") +
-  theme_minimal(base_size = 10) +
+  theme_minimal(base_size = 9) +
   theme(panel.grid.minor = element_blank())
 
-# Visits/assessments timeline plot
 p_visits <- part_e_data |>
   select(usubjid, trtsdt, visit_data) |>
   unnest(visit_data) |>
@@ -187,11 +102,114 @@ p_visits <- part_e_data |>
   geom_histogram(binwidth = 30, fill = AZ_turquoise, alpha = 0.75, color = "white") +
   scale_x_date("Date", limits = x_limits) +
   scale_y_continuous("Assessments") +
-  theme_minimal(base_size = 10) +
+  theme_minimal(base_size = 9) +
   theme(panel.grid.minor = element_blank())
 
-# Combine with patchwork and save for reuse
-p_exec_summary <- p_km / p_enrollment / p_visits + plot_layout(heights = c(6, 2, 2))
+p_enrollment / p_visits
+```
+
+:::
+
+::: {.column width="65%"}
+
+```{r part-e-summary-plots}
+#| fig-width: 10
+#| fig-height: 7.5
+#| out-width: 100%
+#| cache: false
+
+# Helper to filter cond KM target to Part E posterior
+filter_part_e <- function(df, km_col, dco_label) {
+  df |>
+    filter(
+      fct_match(variable, "parts"),
+      fct_match(cond_group_name, "part_e"),
+      fct_match(fit_type, "posterior")
+    ) |>
+    mutate(
+      km_est = {{ km_col }},
+      dco = dco_label,
+      trial = "sclc"
+    )
+}
+
+# PFS conditional KM across DCOs
+cond_km_pfs <- bind_rows(
+  filter_part_e(tar_read(all_tumor_ssls_cond_km_rvar_ctdna_apr25),  cond_sample_km_est, "Apr25"),
+  filter_part_e(tar_read(all_tumor_ssls_cond_km_rvar_ctdna_aug25),  cond_sample_km_est, "Aug25"),
+  filter_part_e(tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26),  cond_sample_km_est, "Jan26")
+) |> mutate(dco = factor(dco, levels = c("Apr25", "Aug25", "Jan26")))
+
+# OS conditional KM across DCOs
+cond_km_os <- bind_rows(
+  filter_part_e(tar_read(all_tumor_ssls_cond_km_os_rvar_ctdna_apr25), cond_sample_os_km_est, "Apr25"),
+  filter_part_e(tar_read(all_tumor_ssls_cond_km_os_rvar_ctdna_aug25), cond_sample_os_km_est, "Aug25"),
+  filter_part_e(tar_read(all_tumor_ssls_cond_km_os_rvar_ctdna_jan26), cond_sample_os_km_est, "Jan26")
+) |> mutate(dco = factor(dco, levels = c("Apr25", "Aug25", "Jan26")))
+
+# Observed PFS KM for Part E
+obs_km_pfs <- bind_rows(
+  apr25 = tar_read(km_trial_pfs_part_e_ctdna_apr25),
+  aug25 = tar_read(km_trial_pfs_part_e_ctdna_aug25),
+  jan26 = tar_read(km_trial_pfs_part_e_ctdna_jan26),
+  .id = "dco"
+) |>
+  filter(fct_match(btype, "ub")) |>
+  select(!quantiles) |>
+  unnest(km_data) |>
+  mutate(dco = fct_recode(factor(dco), "Apr25" = "apr25", "Aug25" = "aug25", "Jan26" = "jan26"))
+
+# Observed OS KM for Part E (unstratified)
+obs_km_os <- bind_rows(
+  apr25 = tar_read(km_trial_os_part_e_ctdna_apr25),
+  aug25 = tar_read(km_trial_os_part_e_ctdna_aug25),
+  jan26 = tar_read(km_trial_os_part_e_ctdna_jan26),
+  .id = "dco"
+) |>
+  filter(fct_match(btype, "ub")) |>
+  select(!quantiles) |>
+  unnest(km_data) |>
+  mutate(dco = fct_recode(factor(dco), "Apr25" = "apr25", "Aug25" = "aug25", "Jan26" = "jan26"))
+
+km_theme <- theme(
+  plot.title      = element_text(size = 13, face = "bold"),
+  strip.text      = element_text(size = 11, face = "bold"),
+  legend.position = "bottom",
+  plot.caption    = element_text(size = 7, hjust = 0)
+)
+
+p_pfs <- cond_km_pfs |>
+  base_plot_km(obs_km_data = NULL, km_est = km_est, group = fit_type,
+               linewidth = 0.5, alpha = 0.25) +
+  geom_step(aes(x = t, y = s, linetype = "Observed KM"),
+            linewidth = 1.2, alpha = 0.5, color = AZ_plum, data = obs_km_pfs) +
+  scale_linetype_manual("", values = c("Observed KM" = "solid")) +
+  scale_x_continuous("Months", breaks = months_to_weeks(seq(0, 60, 12)),
+                     label = label_weeks_to_months) +
+  scale_y_continuous("PFS", labels = scales::percent) +
+  scale_fill_manual(values = AZ_platinum) +
+  guides(color = "none", fill = "none", alpha = "none") +
+  facet_wrap(~dco, ncol = 3) +
+  labs(title = "Part E PFS Forecast by DCO") +
+  km_theme
+
+p_os <- cond_km_os |>
+  base_plot_km(obs_km_data = NULL, km_est = km_est, group = fit_type,
+               linewidth = 0.5, alpha = 0.25) +
+  geom_step(aes(x = t, y = s, linetype = "Observed KM"),
+            linewidth = 1.2, alpha = 0.5, color = AZ_plum, data = obs_km_os) +
+  scale_linetype_manual("", values = c("Observed KM" = "solid")) +
+  scale_x_continuous("Months", breaks = months_to_weeks(seq(0, 60, 12)),
+                     label = label_weeks_to_months) +
+  scale_y_continuous("OS", labels = scales::percent) +
+  scale_fill_manual(values = AZ_platinum) +
+  guides(color = "none", fill = "none", alpha = "none") +
+  facet_wrap(~dco, ncol = 3) +
+  labs(title = "Part E OS Forecast by DCO") +
+  km_theme
+
+# Stack PFS over OS; save for reuse at end-summary slide
+p_exec_summary <- p_pfs / p_os
 p_exec_summary
 ```
 
@@ -442,6 +460,23 @@ On the bottom:
 :::
 
 
+## Illness-Death Multistate Model {.center}
+
+::: {.column-page}
+
+![](images/multistate-diagram.svg){fig-align="center" width="80%"}
+
+:::
+
+::: {.notes}
+
+* Progression and death are modeled as distinct transitions — not competing risks.
+* Five transitions: progression ($\lambda_{01}$), death without progression ($\lambda_{02}$), post-progression death ($\lambda_{12}$), dropout ($\lambda_{03}$), and off-trial death ($\lambda_{32}$).
+* The illness-death structure allows the model to capture post-progression survival and differentiate between patients who die on vs off trial.
+
+:::
+
+
 ## Model Mathematical Specification {.smaller}
 
 :::: {.columns}
@@ -529,6 +564,7 @@ DCO Endpoint Evolution
   - Overall Response Rate (ORR)
   - Median PFS
   - PFS at fixed timepoints
+  - Median Overall Survival (OS)
 - Results shown for **all** patients, **first line** patients, and **Part E** patients
 - Both sample-based and superpopulation estimates are presented
 
@@ -582,6 +618,38 @@ obs_km_list <- list(
     pdl1_naive = jan26_obs_km_pdl1_naive,
     pdl1 = jan26_obs_km_pdl1,
     naive = jan26_obs_km_first_line
+  )
+)
+
+quant_os_list <- list(
+  apr25 = tar_read(all_tumor_ssls_trial_quant_os_ctdna_apr25),
+  aug25 = tar_read(all_tumor_ssls_trial_quant_os_ctdna_aug25),
+  jan26 = tar_read(all_tumor_ssls_trial_quant_os_ctdna_jan26)
+)
+cond_quant_os_list <- list(
+  apr25 = tar_read(all_tumor_ssls_cond_quant_os_ctdna_apr25),
+  aug25 = tar_read(all_tumor_ssls_cond_quant_os_ctdna_aug25),
+  jan26 = tar_read(all_tumor_ssls_cond_quant_os_ctdna_jan26)
+)
+
+obs_km_os_list <- list(
+  apr25 = list(
+    all        = tar_read(km_trial_os_ctdna_apr25),
+    pdl1_naive = tar_read(km_trial_os_pdl1_naive_ctdna_apr25),
+    pdl1       = tar_read(km_trial_os_pdl1_ctdna_apr25),
+    naive      = tar_read(km_trial_os_naive_ctdna_apr25)
+  ),
+  aug25 = list(
+    all        = tar_read(km_trial_os_ctdna_aug25),
+    pdl1_naive = tar_read(km_trial_os_pdl1_naive_ctdna_aug25),
+    pdl1       = tar_read(km_trial_os_pdl1_ctdna_aug25),
+    naive      = tar_read(km_trial_os_naive_ctdna_aug25)
+  ),
+  jan26 = list(
+    all        = tar_read(km_trial_os_ctdna_jan26),
+    pdl1_naive = tar_read(km_trial_os_pdl1_naive_ctdna_jan26),
+    pdl1       = tar_read(km_trial_os_pdl1_ctdna_jan26),
+    naive      = tar_read(km_trial_os_naive_ctdna_jan26)
   )
 )
 
@@ -878,6 +946,134 @@ plot_surv_n_by_dco("spop", pfs_n_list, cond_pfs_n_list, pfs_timepoints, show_pri
 :::
 
 
+## Median OS by Data Cutoff {.smaller}
+
+<style>
+#pres-median-os-sample-with-obs, #pres-median-os-spop-with-obs {
+  display: none;
+}
+</style>
+
+:::: {.columns}
+
+::: {.column width="33%"}
+
+**Median OS Forecasting**
+
+- OS is still maturing — forecasts extend well beyond the censoring horizon
+- Model captures post-progression survival via the illness-death structure
+- Increasing precision with more data across all cohorts
+
+<div style="margin-top: 2rem;">
+  <label style="display: inline-flex; align-items: center; cursor: pointer; font-weight: 500;">
+    <span class="toggle-switch">
+      <input type="checkbox" id="pres-show-observed-os" onchange="togglePresentationObservedOS(this.checked)">
+      <span class="toggle-slider"></span>
+    </span>
+    Show Observed KM Estimates
+  </label>
+</div>
+
+:::
+
+::: {.column width="67%"}
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+<div id="pres-median-os-sample-with-obs">
+```{r median-os-dco-sample-with-obs}
+#| fig-width: 12
+#| fig-height: 6
+
+plot_median_surv_by_dco("sample", quant_os_list, cond_quant_os_list, obs_km_os_list,
+                        show_observed = TRUE, endpoint = "os") +
+  labs(title = "Median OS by DCO") +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    axis.text = element_text(size = 12),
+    strip.text = element_text(size = 14, face = "bold"),
+    legend.text = element_text(size = 12)
+  )
+```
+</div>
+
+<div id="pres-median-os-sample-without-obs">
+```{r median-os-dco-sample-without-obs}
+#| fig-width: 12
+#| fig-height: 6
+
+plot_median_surv_by_dco("sample", quant_os_list, cond_quant_os_list, obs_km_os_list,
+                        show_observed = FALSE, endpoint = "os") +
+  labs(title = "Median OS by DCO") +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    axis.text = element_text(size = 12),
+    strip.text = element_text(size = 14, face = "bold"),
+    legend.text = element_text(size = 12)
+  )
+```
+</div>
+
+### Superpopulation
+
+<div id="pres-median-os-spop-with-obs">
+```{r median-os-dco-spop-with-obs}
+#| fig-width: 12
+#| fig-height: 6
+
+plot_median_surv_by_dco("spop", quant_os_list, cond_quant_os_list, obs_km_os_list,
+                        show_observed = TRUE, endpoint = "os") +
+  labs(title = "Median OS by DCO") +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    axis.text = element_text(size = 12),
+    strip.text = element_text(size = 14, face = "bold"),
+    legend.text = element_text(size = 12)
+  )
+```
+</div>
+
+<div id="pres-median-os-spop-without-obs">
+```{r median-os-dco-spop-without-obs}
+#| fig-width: 12
+#| fig-height: 6
+
+plot_median_surv_by_dco("spop", quant_os_list, cond_quant_os_list, obs_km_os_list,
+                        show_observed = FALSE, endpoint = "os") +
+  labs(title = "Median OS by DCO") +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    axis.text = element_text(size = 12),
+    strip.text = element_text(size = 14, face = "bold"),
+    legend.text = element_text(size = 12)
+  )
+```
+</div>
+
+:::
+
+:::
+
+::::
+
+<script>
+function togglePresentationObservedOS(show) {
+  document.getElementById('pres-median-os-sample-with-obs').style.display = show ? 'block' : 'none';
+  document.getElementById('pres-median-os-sample-without-obs').style.display = show ? 'none' : 'block';
+  document.getElementById('pres-median-os-spop-with-obs').style.display = show ? 'block' : 'none';
+  document.getElementById('pres-median-os-spop-without-obs').style.display = show ? 'none' : 'block';
+}
+</script>
+
+::: {.notes}
+
+Toggle to overlay observed KM estimates. OS is still maturing — the forecast beyond the censoring horizon is the key story here.
+
+:::
+
+
 # {.section-intro}
 
 :::: {.columns style="align-items: center;"}
@@ -888,8 +1084,8 @@ KM Curves by DCO
 
 ::: {.column width="65%"}
 
-- Full survival curve forecasts for all cohorts
-- PDL1-stratified predictions 
+- Full **PFS and OS** survival curve forecasts for all cohorts
+- PDL1-stratified predictions
 - Evolution from early to late data cutoffs
 - Results shown for **all** patients, **first line** patients, and **Part E** patients
 - Both sample-based and superpopulation estimates are presented
@@ -1119,6 +1315,230 @@ plot_km_pdl1_by_dco(
 :::
 
 
+## OS KM Curves by DCO: By Cohort {.smaller}
+
+:::: {.columns}
+
+::: {.column width="33%"}
+
+**Overall Survival by Cohort**
+
+- OS is still maturing — model forecasts beyond the censoring horizon
+- Sample-based estimates track the observed KM closely where events exist
+- Superpopulation estimates show what we expect for a broader population
+
+:::
+
+::: {.column width="67%"}
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+```{r km-os-dco-cohort-sample}
+#| fig-width: 12
+#| fig-height: 7.5
+
+plot_sclc_km_by_dco(
+  estimate_type = "sample",
+  all_km_list = list(
+    apr25 = tar_read(all_tumor_ssls_km_os_rvar_ctdna_apr25),
+    aug25 = tar_read(all_tumor_ssls_km_os_rvar_ctdna_aug25),
+    jan26 = tar_read(all_tumor_ssls_km_os_rvar_ctdna_jan26)
+  ),
+  cond_km_list = list(
+    apr25 = tar_read(all_tumor_ssls_cond_km_os_rvar_ctdna_apr25),
+    aug25 = tar_read(all_tumor_ssls_cond_km_os_rvar_ctdna_aug25),
+    jan26 = tar_read(all_tumor_ssls_cond_km_os_rvar_ctdna_jan26)
+  ),
+  obs_km_all_list = list(
+    apr25 = tar_read(km_trial_os_ctdna_apr25),
+    aug25 = tar_read(km_trial_os_ctdna_aug25),
+    jan26 = tar_read(km_trial_os_ctdna_jan26)
+  ),
+  obs_km_first_line_list = list(
+    apr25 = tar_read(km_trial_os_naive_ctdna_apr25),
+    aug25 = tar_read(km_trial_os_naive_ctdna_aug25),
+    jan26 = tar_read(km_trial_os_naive_ctdna_jan26)
+  ),
+  analysis_data_list = list(
+    apr25 = tar_read(all_analysis_data_ctdna_apr25),
+    aug25 = tar_read(all_analysis_data_ctdna_aug25),
+    jan26 = tar_read(all_analysis_data_ctdna_jan26)
+  ),
+  show_priors = FALSE,
+  fill_color = AZ_platinum,
+  obs_color = AZ_plum,
+  endpoint = "os"
+) +
+  labs(title = "OS KM Curves by Cohort") +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    axis.text = element_text(size = 10),
+    strip.text = element_text(size = 12, face = "bold")
+  )
+```
+
+### Superpopulation
+
+```{r km-os-dco-cohort-spop}
+#| fig-width: 12
+#| fig-height: 7.5
+
+plot_sclc_km_by_dco(
+  estimate_type = "spop",
+  all_km_list = list(
+    apr25 = tar_read(all_tumor_ssls_km_os_rvar_ctdna_apr25),
+    aug25 = tar_read(all_tumor_ssls_km_os_rvar_ctdna_aug25),
+    jan26 = tar_read(all_tumor_ssls_km_os_rvar_ctdna_jan26)
+  ),
+  cond_km_list = list(
+    apr25 = tar_read(all_tumor_ssls_cond_km_os_rvar_ctdna_apr25),
+    aug25 = tar_read(all_tumor_ssls_cond_km_os_rvar_ctdna_aug25),
+    jan26 = tar_read(all_tumor_ssls_cond_km_os_rvar_ctdna_jan26)
+  ),
+  obs_km_all_list = list(
+    apr25 = tar_read(km_trial_os_ctdna_apr25),
+    aug25 = tar_read(km_trial_os_ctdna_aug25),
+    jan26 = tar_read(km_trial_os_ctdna_jan26)
+  ),
+  obs_km_first_line_list = list(
+    apr25 = tar_read(km_trial_os_naive_ctdna_apr25),
+    aug25 = tar_read(km_trial_os_naive_ctdna_aug25),
+    jan26 = tar_read(km_trial_os_naive_ctdna_jan26)
+  ),
+  analysis_data_list = list(
+    apr25 = tar_read(all_analysis_data_ctdna_apr25),
+    aug25 = tar_read(all_analysis_data_ctdna_aug25),
+    jan26 = tar_read(all_analysis_data_ctdna_jan26)
+  ),
+  show_priors = FALSE,
+  fill_color = AZ_platinum,
+  obs_color = AZ_plum,
+  endpoint = "os"
+) +
+  labs(title = "OS KM Curves by Cohort") +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    axis.text = element_text(size = 10),
+    strip.text = element_text(size = 12, face = "bold")
+  )
+```
+
+:::
+
+:::
+
+::::
+
+::: {.notes}
+:::
+
+
+## OS KM Curves by DCO: PDL1-Stratified {.smaller}
+
+:::: {.columns}
+
+::: {.column width="33%"}
+
+**PDL1-Stratified OS Analysis**
+
+- OS PDL1-hi group has zero events at early DCOs — forecasts are purely model-driven
+- Later DCOs begin to show separation between PDL1-hi and PDL1-low
+- Superpopulation estimates provide a less data-driven view
+
+:::
+
+::: {.column width="67%"}
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+```{r km-os-dco-pdl1-sample}
+#| fig-width: 12
+#| fig-height: 7.5
+
+plot_km_pdl1_by_dco(
+  cond_km_data_list = list(
+    apr25 = tar_read(all_tumor_ssls_cond_km_os_rvar_ctdna_apr25),
+    aug25 = tar_read(all_tumor_ssls_cond_km_os_rvar_ctdna_aug25),
+    jan26 = tar_read(all_tumor_ssls_cond_km_os_rvar_ctdna_jan26)
+  ),
+  obs_km_all_list = list(
+    apr25 = tar_read(km_trial_os_pdl1_ctdna_apr25),
+    aug25 = tar_read(km_trial_os_pdl1_ctdna_aug25),
+    jan26 = tar_read(km_trial_os_pdl1_ctdna_jan26)
+  ),
+  obs_km_first_line_list = list(
+    apr25 = tar_read(km_trial_os_pdl1_naive_ctdna_apr25),
+    aug25 = tar_read(km_trial_os_pdl1_naive_ctdna_aug25),
+    jan26 = tar_read(km_trial_os_pdl1_naive_ctdna_jan26)
+  ),
+  obs_km_part_e_list = list(
+    apr25 = tar_read(km_trial_os_part_e_pdl1_ctdna_apr25),
+    aug25 = tar_read(km_trial_os_part_e_pdl1_ctdna_aug25),
+    jan26 = tar_read(km_trial_os_part_e_pdl1_ctdna_jan26)
+  ),
+  estimate_type = "sample",
+  endpoint = "os"
+) +
+  labs(title = "PDL1-Stratified OS KM Curves") +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    axis.text = element_text(size = 10),
+    strip.text = element_text(size = 12, face = "bold")
+  )
+```
+
+### Superpopulation
+
+```{r km-os-dco-pdl1-spop}
+#| fig-width: 12
+#| fig-height: 7.5
+
+plot_km_pdl1_by_dco(
+  cond_km_data_list = list(
+    apr25 = tar_read(all_tumor_ssls_cond_km_os_rvar_ctdna_apr25),
+    aug25 = tar_read(all_tumor_ssls_cond_km_os_rvar_ctdna_aug25),
+    jan26 = tar_read(all_tumor_ssls_cond_km_os_rvar_ctdna_jan26)
+  ),
+  obs_km_all_list = list(
+    apr25 = tar_read(km_trial_os_pdl1_ctdna_apr25),
+    aug25 = tar_read(km_trial_os_pdl1_ctdna_aug25),
+    jan26 = tar_read(km_trial_os_pdl1_ctdna_jan26)
+  ),
+  obs_km_first_line_list = list(
+    apr25 = tar_read(km_trial_os_pdl1_naive_ctdna_apr25),
+    aug25 = tar_read(km_trial_os_pdl1_naive_ctdna_aug25),
+    jan26 = tar_read(km_trial_os_pdl1_naive_ctdna_jan26)
+  ),
+  obs_km_part_e_list = list(
+    apr25 = tar_read(km_trial_os_part_e_pdl1_ctdna_apr25),
+    aug25 = tar_read(km_trial_os_part_e_pdl1_ctdna_aug25),
+    jan26 = tar_read(km_trial_os_part_e_pdl1_ctdna_jan26)
+  ),
+  estimate_type = "spop",
+  endpoint = "os"
+) +
+  labs(title = "PDL1-Stratified OS KM Curves") +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    axis.text = element_text(size = 10),
+    strip.text = element_text(size = 12, face = "bold")
+  )
+```
+
+:::
+
+:::
+
+::::
+
+::: {.notes}
+:::
+
+
 # {.section-intro}
 
 :::: {.columns style="align-items: center;"}
@@ -1164,7 +1584,7 @@ plot_oos_confusion_matrix(oos_confusion_matrix) +
 
 ::: {.column width="52%"}
 
-```{r oos-confusion-matrix}
+```{r oos-confusion-matrix-2}
 #| fig-width: 6
 #| fig-height: 5.5
 #| out-height: 480px
