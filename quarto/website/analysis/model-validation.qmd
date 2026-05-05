@@ -10,12 +10,12 @@ subtitle: "Leave-future-out cross-validation and accuracy assessment"
 source("_setup.R")
 
 # Load SLD data for posterior predictive checks
-sld_data_historical_apr25 <- tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_apr25)
-sld_data_historical_aug25 <- tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_aug25)
-sld_data_historical_jan26 <- tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_jan26)
-sld_data_sclc_apr25 <- tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_apr25)
-sld_data_sclc_aug25 <- tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_aug25)
-sld_data_sclc_jan26 <- tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_jan26)
+sld_data_historical_apr25 <- tar_read_model("tumor_ssls_staged_sld_rvar_uncensored_posterior", dco = "apr25")
+sld_data_historical_aug25 <- tar_read_model("tumor_ssls_staged_sld_rvar_uncensored_posterior", dco = "aug25")
+sld_data_historical_jan26 <- tar_read_model("tumor_ssls_staged_sld_rvar_uncensored_posterior")
+sld_data_sclc_apr25 <- tar_read_model("tumor_ssls_staged_sld_rvar_uncensored_posterior", dco = "apr25")
+sld_data_sclc_aug25 <- tar_read_model("tumor_ssls_staged_sld_rvar_uncensored_posterior", dco = "aug25")
+sld_data_sclc_jan26 <- tar_read_model("tumor_ssls_staged_sld_rvar_uncensored_posterior")
 ```
 
 This page presents model validation results using leave-future-out (LFO) cross-validation and accuracy assessments.
@@ -28,7 +28,7 @@ Leave-future-out cross-validation results on this page are based on **DCO2 (Augu
 ::: {.callout-tip}
 ## Related Pages
 - See [Leave-Future-Out Cross-Validation](../documentation/leave-future-out-cross-validation.qmd) for LFO methodology details
-- See [Model Specification](../documentation/model-specification.qmd) for model details
+- See [Model Architecture](../documentation/model-architecture.qmd) for model overview
 - See [Architecture](../documentation/architecture.qmd) for computational optimization strategies
 :::
 
@@ -130,7 +130,7 @@ Comparing posterior PFS predictions with observed PFS for uncensored patients to
 #| column: body-outset
 #| fig-width: 10
 
-ppc_spop_pfs <- tar_read(all_tumor_ssls_pfs_rvar_ctdna_jan26) |>
+ppc_spop_pfs <- tar_read_model("all_tumor_ssls_pfs_rvar") |>
   filter(fct_match(fit_type, "posterior"), !right_censored) |>
   mutate(event_type = case_when(
     !progression_before_death ~ "Death",
@@ -340,5 +340,5 @@ tar_read(full_oos_confusion_matrix_ctdna_jan26, store = lfo_store) |>
 - [Survival Analysis](survival-analysis.qmd#sec-cutoff-km) - Cutoff KM comparisons
 - [DCO Comparisons](../comparisons/dco-comparisons.qmd) - Data cutoff analyses
 - [Diagnostics](diagnostics.qmd) - Sampling diagnostics
-- [Model Specification](../documentation/model-specification.qmd) - Model details
+- [Model Architecture](../documentation/model-architecture.qmd) - Model overview
 :::

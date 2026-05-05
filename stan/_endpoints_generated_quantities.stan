@@ -21,6 +21,9 @@ array[n_patients] int<lower = 0, upper = 1>
 array[n_patients] int<lower = 0> sample_os, spop_os;
 array[n_patients] int<lower = 0, upper = 1> sample_os_censored, spop_os_censored;
 
+// Dropout flags — 1 if patient exited via cause 3 in this draw (for CIF computation)
+array[n_patients] int<lower = 0, upper = 1> spop_is_dropout, sample_is_dropout;
+
 // Forecasting for right censored patients 
 array[sum(target_right_censored)] int<lower = 0> forecast_target_pfs;
 array[sum(target_right_censored)] int<lower = 0, upper = 1> forecast_target_right_censored; 
@@ -118,6 +121,7 @@ profile("gen_quant") {
         t_patient_visit_idx,
         sum_tumor_size,
         measure_sd_sld,
+        measure_nu_sld,
         n_patient_screening_visits
       );
   } else {
@@ -157,7 +161,8 @@ profile("gen_quant") {
           negative_infinity(),  // growth lag (disabled)
           1.0,                  // growth transition
           rep_matrix(0.0, forecast_size, 2),  // No forecast process noise
-          measure_sd_sld
+          measure_sd_sld,
+          measure_nu_sld
         );
 
       // Store results
@@ -169,14 +174,55 @@ profile("gen_quant") {
     }
   }
   
-  // Calculate RECIST classifications for all patients at once
+  // Weekly RECIST from noisy SLD (for visualization/diagnostics)
   (rep_recist, forecast_recist) = calculate_all_patients_recist(
-    rep_mean_patient_log_sld,
-    forecast_mean_patient_log_sld,
+    rep_patient_log_sld,
+    forecast_patient_log_sld,
     patient_visit_pos,
     forecast_visits_pos,
     n_patient_screening_visits
   );
+
+  // Assessment-visit deterministic SLD for RECIST endpoint computation.
+  // Uses the mean (noise-free) SLD trajectory at Q6W assessment visits.
+  // Measurement noise is excluded because the RECIST nadir is a running minimum:
+  // noisy draws ratchet the nadir down, inflating the PD threshold and artificially
+  // delaying progression detection — especially for good responders whose trajectories
+  // hover near the PD boundary.
+  vector[n_total_forecast_obs_visits] forecast_obs_log_sld;
+  array[n_total_forecast_obs_visits] int forecast_obs_recist;
+  for (i in 1:n_patients) {
+    int n_assessment = get_pos_size(forecast_obs_visits_pos, i);
+    if (n_assessment > 0) {
+      int assess_start, assess_end;
+      (assess_start, assess_end) = get_pos(forecast_obs_visits_pos, i);
+
+      int forecast_visit_start, forecast_visit_end;
+      (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
+      int forecast_size = forecast_visit_end - forecast_visit_start + 1;
+
+      // Extract mean SLD at assessment weeks (subsample from weekly mean grid)
+      vector[n_assessment] obs_visit_mean;
+      for (a in 1:n_assessment) {
+        int forecast_idx = min(a * forecast_observation_interval, forecast_size);
+        obs_visit_mean[a] = forecast_mean_patient_log_sld[forecast_visit_start + forecast_idx - 1];
+      }
+
+      forecast_obs_log_sld[assess_start:assess_end] = obs_visit_mean;
+    }
+  }
+
+  // Assessment-visit RECIST from deterministic SLD (for endpoint computation)
+  {
+    array[sum(n_patient_visits)] int unused_rep_recist;
+    (unused_rep_recist, forecast_obs_recist) = calculate_all_patients_recist(
+        rep_patient_log_sld,
+        forecast_obs_log_sld,
+        patient_visit_pos,
+        forecast_obs_visits_pos,
+        n_patient_screening_visits
+    );
+  }
   
   // Calculate patient-level endpoints (PFS, response) for all patients at once
   (sample_target_pfs, sample_target_right_censored,
@@ -190,20 +236,27 @@ profile("gen_quant") {
    spop_target_confirmed_response, spop_target_unconfirmed_response,
    forecast_target_pfs, forecast_target_right_censored,
    sample_os, sample_os_censored,
-   spop_os, spop_os_censored
+   spop_os, spop_os_censored,
+   spop_is_dropout, sample_is_dropout
   ) = calculate_all_patients_endpoints_rng(
     recist,
     rep_recist,
     forecast_recist,
+    forecast_obs_recist,
+    forecast_obs_visits_pos,
+    forecast_observation_interval,
     log_cond_surv_01,
     enable_ms_02,
+    enable_ms_03,
+    enable_ms_32,
     enable_ms_12,
     ms_time_scale_12,
     log_cond_surv_02,
+    log_cond_surv_03,
+    log_cond_surv_32,
     log_cond_surv_12_s,
     log_cond_surv_12_t,
     pfs,
-    interval_censored,
     right_censored,
     target_pfs,
     target_right_censored,
@@ -213,6 +266,10 @@ profile("gen_quant") {
     ms_censored_02,
     ms_censored_12,
     ms_time_12,
+    ms_os_event_12,
+    ms_time_03,
+    ms_time_32,
+    ms_censored_32,
     patient_visit_pos,
     forecast_visits_pos,
     patient_last_obs_visit,
@@ -312,4 +369,38 @@ profile("gen_quant") {
       pfs_quantiles,
       pfs_timepoints
     );
+}
+
+// ── Competing Risks CIF (per-trial, empirical subdistribution) ───────────────
+// Uses combined PFS (spop_pfs = min(target_recist, ms_hazard)) so that
+// RECIST-detected progressions are included in the 0→1 cause.
+
+array[n_trials] vector<lower=0, upper=1>[max_all_t + 1]
+  spop_cif_01   = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  spop_cif_02   = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  spop_cif_03   = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  sample_cif_01 = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  sample_cif_02 = rep_array(zeros_vector(max_all_t + 1), n_trials),
+  sample_cif_03 = rep_array(zeros_vector(max_all_t + 1), n_trials);
+
+for (s in 1:n_trials) {
+  int n_tr = get_pos_size(trial_patient_pos, s);
+  if (n_tr > 0) {
+    int tr_start; int tr_end;
+    (tr_start, tr_end) = get_pos(trial_patient_pos, s);
+
+    (spop_cif_01[s], spop_cif_02[s], spop_cif_03[s]) = compute_trial_cif(
+      spop_pfs[tr_start:tr_end], spop_right_censored[tr_start:tr_end],
+      spop_is_dropout[tr_start:tr_end],
+      spop_os[tr_start:tr_end],  spop_os_censored[tr_start:tr_end],
+      max_all_t
+    );
+
+    (sample_cif_01[s], sample_cif_02[s], sample_cif_03[s]) = compute_trial_cif(
+      sample_pfs[tr_start:tr_end], sample_right_censored[tr_start:tr_end],
+      sample_is_dropout[tr_start:tr_end],
+      sample_os[tr_start:tr_end],  sample_os_censored[tr_start:tr_end],
+      max_all_t
+    );
+  }
 }

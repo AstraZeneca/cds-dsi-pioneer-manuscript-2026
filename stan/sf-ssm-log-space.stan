@@ -13,6 +13,7 @@ functions {
 data {
   #include "_base_data.stan"
   #include "modules/tumor/data.stan"
+  #include "modules/visits/data.stan"
   #include "modules/tumor/hyperparams.stan"
   #include "modules/state_space/data.stan"
   #include "modules/multistate/flags.stan"
@@ -30,6 +31,7 @@ data {
 
 transformed data {
   #include "_base_transformed_data.stan"
+  #include "modules/visits/transformed_data.stan"
   #include "modules/tumor/transformed_data.stan"
   #include "modules/tr/transformed_data.stan"
   #include "modules/frac/transformed_data.stan"
@@ -69,39 +71,31 @@ model {
         for (i in 1:n_patients) {
           int visit_start, visit_end;
           (visit_start, visit_end) = get_pos(patient_visit_pos, i);
-          normalized_sld[visit_start:visit_end] ~ sf_log_space_obs(states[visit_start:visit_end], measure_sd_sld, log_lod - log_baseline_sld[i]);
+          normalized_sld[visit_start:visit_end] ~ sf_log_space_obs(states[visit_start:visit_end], measure_sd_sld, log_lod - log_baseline_sld[i], measure_nu_sld);
         }
       }
     }
 
     if (fit_multistate_data) {
       profile("multistate loglik") {
-        // Multistate likelihood contribution
-        // For SLD mode (enable_ms_01=1, enable_ms_02=0, enable_ms_12=0):
-        //   Single 0→1 transition, equivalent to old other_events
-        // For PSA mode (all enabled): full illness-death likelihood
-
-        if (enable_ms_01 && !enable_ms_02 && !enable_ms_12) {
-          // SLD mode: single transition using simplified likelihood
-          target += sum(calc_ms_single_transition_loglik(
-            ms_time_01,
-            ms_censored_01,
-            log_cond_surv_01
-          ));
-        } else {
-          // Full multistate mode
-          target += calc_multistate_loglik(
-            enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
-            ms_final_state,
-            ms_time_01, ms_time_02, ms_time_12,
-            ms_censored_01, ms_censored_02, ms_censored_12,
-            ms_prog_deterministic,
-            log_cond_surv_01,
-            log_cond_surv_02,
-            log_cond_surv_12_s,
-            log_cond_surv_12_t
-          );
-        }
+        ms_final_state ~ multistate(
+          enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
+          enable_ms_03, enable_ms_32,
+          ms_time_01, ms_time_02, ms_time_12,
+          ms_time_03, ms_time_32,
+          ms_censored_01, ms_censored_02, ms_censored_12,
+          ms_censored_32,
+          ms_prog_deterministic,
+          ms_ic_gap_01,
+          t_patient_visits,
+          patient_visit_pos,
+          log_cond_surv_01,
+          log_cond_surv_02,
+          log_cond_surv_12_s,
+          log_cond_surv_12_t,
+          log_cond_surv_03,
+          log_cond_surv_32
+        );
       }
     }
   }

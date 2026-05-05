@@ -632,6 +632,212 @@ tuple(int, int) survival_time_rng(row_vector log_cond_prob_surv, int obs_surv_ti
 }
 
 /**
+ * Sample a survival time gated by assessment visits.
+ *
+ * Instead of sampling bernoulli per-week, accumulates cumulative hazard
+ * between assessment visits and samples once per visit. Event time is the
+ * assessment visit week where the transition is detected.
+ *
+ * When visit_weeks has weekly spacing (interval=1), this is mathematically
+ * equivalent to survival_time_rng (single-week cumulative = single bernoulli).
+ *
+ * @param log_cond_prob_surv  Row vector [max_all_t] of log P(survive week t)
+ * @param visit_weeks         Array of assessment visit calendar weeks (1-indexed, ascending)
+ * @param n_visits            Number of visits in visit_weeks
+ * @param max_all_t           Maximum time (returned when censored)
+ * @return (event_week, censored) — event_week is 1-indexed calendar week or max_all_t
+ */
+tuple(int, int) assessment_gated_survival_time_rng(
+    row_vector log_cond_prob_surv,
+    array[] int visit_weeks,
+    int max_all_t
+) {
+  int n_intervals = num_elements(log_cond_prob_surv);
+  int event_week = max_all_t;
+  int censored = 1;
+  int prev_week = 0;
+  int done = 0;
+
+  for (a in 1:size(visit_weeks)) {
+    if (!done) {
+      int curr_week = visit_weeks[a];
+      int start_t = prev_week + 1;
+      int end_t = min(curr_week, n_intervals);
+
+      if (start_t > n_intervals) {
+        done = 1;
+      } else {
+        // Accumulate log P(survive interval) = sum of per-week log conditional survivals
+        real cum_log_surv = sum(log_cond_prob_surv[start_t:end_t]);
+        // P(no event in interval) = exp(cum_log_surv)
+        // Sample: survived this interval?
+        if (!bernoulli_rng(exp(cum_log_surv))) {
+          // Event detected at this assessment visit
+          event_week = curr_week;
+          censored = 0;
+          done = 1;
+        }
+      }
+      prev_week = curr_week;
+    }
+  }
+
+  return (event_week, censored);
+}
+
+/**
+ * Conditional overload: starts accumulating from obs_surv_time.
+ * Skips visits at or before obs_surv_time. If right_censored=0,
+ * returns observed time directly (no forecast needed).
+ */
+tuple(int, int) assessment_gated_survival_time_rng(
+    row_vector log_cond_prob_surv,
+    array[] int visit_weeks,
+    int max_all_t,
+    int obs_surv_time,
+    int right_censored
+) {
+  if (!right_censored) {
+    return (obs_surv_time, 0);
+  }
+
+  int n_intervals = num_elements(log_cond_prob_surv);
+  int event_week = max_all_t;
+  int censored = 1;
+  int prev_week = obs_surv_time;  // Start from observed time
+  int done = 0;
+
+  for (a in 1:size(visit_weeks)) {
+    if (!done) {
+      int curr_week = visit_weeks[a];
+      if (curr_week <= obs_surv_time) {
+        // Skip visits in the observed region
+      } else {
+        int start_t = prev_week + 1;
+        int end_t = min(curr_week, n_intervals);
+
+        if (start_t > n_intervals) {
+          done = 1;
+        } else {
+          real cum_log_surv = sum(log_cond_prob_surv[start_t:end_t]);
+          if (!bernoulli_rng(exp(cum_log_surv))) {
+            event_week = curr_week;
+            censored = 0;
+            done = 1;
+          }
+        }
+        prev_week = curr_week;
+      }
+    }
+  }
+
+  return (event_week, censored);
+}
+
+/**
+ * Build a full spop visit schedule: observed visits + forecast visits at regular
+ * intervals from the last observed visit up to max_t.
+ *
+ * @param obs_visits           Array of observed visit weeks (1-indexed, ascending)
+ * @param forecast_interval    Weeks between forecast assessments (e.g. 6)
+ * @param max_t                Maximum calendar time (prediction horizon)
+ * @return Array of visit weeks covering [obs_visits, ..., max_t]
+ */
+array[] int build_spop_visit_schedule(
+    array[] int obs_visits,
+    int forecast_interval,
+    int max_t
+) {
+  int n_obs = size(obs_visits);
+  int last_wk = obs_visits[n_obs];
+  int n_forecast = max(0, (max_t - last_wk) %/% forecast_interval);
+  array[n_obs + n_forecast] int schedule;
+  schedule[1:n_obs] = obs_visits;
+  for (a in 1:n_forecast) {
+    schedule[n_obs + a] = min(last_wk + a * forecast_interval, max_t);
+  }
+  return schedule;
+}
+
+/**
+ * Sample a survival time for a visit-discrete process (e.g., dropout).
+ *
+ * Unlike assessment_gated_survival_time_rng which accumulates per-week hazard
+ * between visits, this function evaluates the hazard ONLY at visit weeks —
+ * one bernoulli check per visit using only log_cond_prob_surv[visit_week].
+ *
+ * Use for processes that can only occur AT visits (not between them), matching
+ * the likelihood's sum_03_at_visits_below() which evaluates one log_cond_surv
+ * term per visit.
+ *
+ * @param log_cond_prob_surv  Row vector [max_all_t] of log P(survive week t)
+ * @param visit_weeks         Array of assessment visit calendar weeks (1-indexed, ascending)
+ * @param max_all_t           Maximum time (returned when censored)
+ * @return (event_week, censored) — event_week is 1-indexed calendar week or max_all_t
+ */
+tuple(int, int) visit_only_survival_time_rng(
+    row_vector log_cond_prob_surv,
+    array[] int visit_weeks,
+    int max_all_t
+) {
+  int n_intervals = num_elements(log_cond_prob_surv);
+
+  for (a in 1:size(visit_weeks)) {
+    int wk = visit_weeks[a];
+    if (wk < 1 || wk > n_intervals) continue;
+
+    // Single-visit check: log-odds = log P(survive) - log P(event)
+    real log_odds_surv = log_cond_prob_surv[wk] - log1m_exp(log_cond_prob_surv[wk]);
+    if (!bernoulli_logit_rng(log_odds_surv)) {
+      return (wk, 0);
+    }
+  }
+
+  return (max_all_t, 1);
+}
+
+/**
+ * Conditional overload: starts from obs_time, skipping visits at or before it.
+ * If right_censored=0 (event already observed), returns observed time directly.
+ *
+ * Use for the sample pathway when an admin-censored patient needs a forecasted
+ * 0→3 dropout time beyond their last observed visit.
+ *
+ * @param log_cond_prob_surv  Row vector [max_all_t] of log P(survive week t)
+ * @param visit_weeks         Array of assessment visit calendar weeks (1-indexed, ascending)
+ * @param max_all_t           Maximum time (returned when censored)
+ * @param obs_time            Last observed time (visits at or before this are skipped)
+ * @param right_censored      1 if censored (forecast needed), 0 if event observed
+ * @return (event_week, censored)
+ */
+tuple(int, int) visit_only_survival_time_rng(
+    row_vector log_cond_prob_surv,
+    array[] int visit_weeks,
+    int max_all_t,
+    int obs_time,
+    int right_censored
+) {
+  if (!right_censored) {
+    return (obs_time, 0);
+  }
+
+  int n_intervals = num_elements(log_cond_prob_surv);
+
+  for (a in 1:size(visit_weeks)) {
+    int wk = visit_weeks[a];
+    if (wk <= obs_time) continue;  // skip observed region
+    if (wk < 1 || wk > n_intervals) continue;
+
+    real log_odds_surv = log_cond_prob_surv[wk] - log1m_exp(log_cond_prob_surv[wk]);
+    if (!bernoulli_logit_rng(log_odds_surv)) {
+      return (wk, 0);
+    }
+  }
+
+  return (max_all_t, 1);
+}
+
+/**
  * Generate a survival time within the range of interval censored intervals
  *
  * Have to be careful using this; it is not in the log space. I don't want to touch it right now because I don't want to break something critical.
@@ -1012,4 +1218,277 @@ tuple(matrix, matrix, vector, vector) prepare_early_tumor_sums_covar(
   }
   
   return (tumor_sum_covar, uncentered_tumor_sum_covar, tumor_sum_covar_mean, tumor_sum_covar_sd);
+}
+
+// ============================================================================
+// Classification-first competing-risks endpoint computation (Issue 79)
+//
+// Cause enum used by all four functions below:
+//   0 = CENSORED     — no state-0 exit within the prediction horizon
+//   1 = PROGRESSION  — 0→1 fired first (SLD-driven or ms-hazard-driven)
+//   2 = DIRECT_DEATH — 0→2 fired first
+//   3 = DROPOUT      — 0→3 fired first
+// ============================================================================
+
+/**
+ * Classify the first state-0 exit for the unconditional (spop) pathway.
+ *
+ * Encapsulates the tie-breaking logic from sf.stanfunctions lines 1561–1569.
+ * Priority on ties: progression (0→1) > direct death (0→2) > dropout (0→3).
+ *
+ * @param t_01         Combined 0→1 time = min(target_pfs, ms_hazard_pfs); 1-indexed
+ * @param c_01         Combined 0→1 censoring (1 = censored)
+ * @param t_02         Direct death time; 1-indexed (max_all_t+1 if disabled/censored)
+ * @param c_02         Direct death censoring
+ * @param t_03         Dropout time; 1-indexed (max_all_t+1 if disabled/censored)
+ * @param c_03         Dropout censoring
+ * @param enable_ms_02 Flag: 0→2 transition enabled
+ * @param enable_ms_03 Flag: 0→3 transition enabled
+ * @return (cause, exit_time)
+ */
+tuple(int, int) classify_spop_exit(
+    int t_01, int c_01,
+    int t_02, int c_02,
+    int t_03, int c_03,
+    int enable_ms_02, int enable_ms_03) {
+
+  int progressed_first = !c_01
+    && (c_02 || t_01 <= t_02)
+    && (c_03 || t_01 <= t_03);
+
+  int died_directly = enable_ms_02 && !c_02
+    && (c_01 || t_02 < t_01)
+    && (c_03 || t_02 <= t_03);
+
+  int dropped_out = enable_ms_03 && !c_03
+    && (c_01 || t_03 < t_01)
+    && (c_02 || t_03 < t_02);
+
+  if (progressed_first) {
+    return (1, t_01);
+  } else if (died_directly) {
+    return (2, t_02);
+  } else if (dropped_out) {
+    return (3, t_03);
+  } else {
+    return (0, max({t_01, t_02, t_03}));
+  }
+}
+
+/**
+ * Derive spop PFS variables atomically from the competing-risks outcome.
+ *
+ * Subsumes the retroactive PFS patches (sf.stanfunctions lines 1597–1620) and
+ * the CIF reclassification loop (_endpoints_generated_quantities.stan lines 366–389).
+ * No RNG — pure derivation.
+ *
+ * @param cause    First-exit cause from classify_spop_exit()
+ * @param exit_time Exit time from classify_spop_exit()
+ * @param t_target  Target-lesion PFS time (spop_target_pfs)
+ * @param c_target  Target-lesion PFS censoring (spop_target_right_censored)
+ * @param t_ms01    Raw ms-hazard PFS time (from assessment_gated_survival_time_rng)
+ * @param c_ms01    Raw ms-hazard PFS censoring
+ * @param t_03      Dropout time (spop 0→3 exit time)
+ * @param enable_ms_02 Flag: 0→2 transition enabled
+ * @param enable_ms_03 Flag: 0→3 transition enabled
+ * @return (pfs, right_censored, ms_pfs, ms_right_censored)
+ */
+tuple(int, int, int, int) derive_spop_pfs(
+    int cause, int exit_time,
+    int t_target, int c_target,
+    int t_ms01, int c_ms01,
+    int t_03,
+    int enable_ms_02, int enable_ms_03) {
+
+  if (cause == 1) {
+    // Progression (0→1): combined PFS = min(target, ms01) = exit_time; both uncensored
+    return (exit_time, 0, exit_time, 0);
+
+  } else if (cause == 2) {
+    // Direct death (0→2): since 0→2 beat 0→1, t_02 < min(t_target, t_ms01),
+    // so min(t_target, exit_time) = exit_time; both uncensored
+    return (exit_time, 0, exit_time, 0);
+
+  } else if (cause == 3) {
+    // Dropout (0→3): ms_pfs censored at dropout time; PFS event only if SLD PD arrived before dropout
+    if (!c_target && t_target <= t_03) {
+      // SLD progression before dropout — counts as a PFS event
+      return (t_target, 0, t_03, 1);
+    } else {
+      // No SLD PD before dropout — censored at dropout
+      return (t_03, 1, t_03, 1);
+    }
+
+  } else {
+    // All censored (cause == 0): combined PFS = min(target, ms01); ms_pfs = raw ms01 sample
+    return (min(t_target, t_ms01), 1, t_ms01, c_ms01);
+  }
+}
+
+/**
+ * Classify the first state-0 exit for the conditional (sample) pathway.
+ *
+ * Symmetric with classify_spop_exit: pure competing-risks classification
+ * using (time, censoring) tuples for all three transitions.
+ * Caller is responsible for setting the 0→3 tuple:
+ *   - Observed dropout (state 3):  (ms_time_03, 0)
+ *   - Admin-censored (state 0):    forecasted via visit_only_survival_time_rng
+ *   - States 1, 2 (event observed): (max_all_t+1, 1)  — dropout didn't win
+ *
+ * @param sample_time_01    Combined 0→1 PFS (pre-classification); 1-indexed
+ * @param sample_cens_01    Combined 0→1 censoring
+ * @param sample_time_02    Direct death time (observed or forecasted); 1-indexed
+ * @param sample_cens_02    Direct death censoring
+ * @param sample_time_03    Dropout time (observed or forecasted); 1-indexed
+ * @param sample_cens_03    Dropout censoring (0 = event, 1 = survived)
+ * @param ms_censored_02_i  Censoring indicator for 0→2 (1 = not observed)
+ * @param enable_ms_02      Flag: 0→2 transition enabled
+ * @param enable_ms_03      Flag: 0→3 transition enabled
+ * @return (cause, exit_time)
+ */
+tuple(int, int) classify_sample_exit(
+    int sample_time_01, int sample_cens_01,
+    int sample_time_02, int sample_cens_02,
+    int sample_time_03, int sample_cens_03,
+    int ms_censored_02_i,
+    int enable_ms_02, int enable_ms_03) {
+
+  // Dropout: observed or forecasted 0→3 event that precedes 0→1 and 0→2
+  int dropped_out = enable_ms_03 && !sample_cens_03
+    && (sample_cens_01 || sample_time_03 < sample_time_01)
+    && (sample_cens_02 || sample_time_03 < sample_time_02);
+
+  // Direct death: either observed directly or forecasted to precede progression
+  int died_directly = !dropped_out && enable_ms_02 && !sample_cens_02
+    && (!ms_censored_02_i || sample_cens_01 || sample_time_02 < sample_time_01)
+    && (sample_cens_03 || sample_time_02 <= sample_time_03);
+
+  // Progression: 0→1 beats 0→2 and 0→3
+  int progressed_first = !dropped_out && !died_directly && !sample_cens_01
+    && (sample_cens_02 || sample_time_01 <= sample_time_02)
+    && (sample_cens_03 || sample_time_01 <= sample_time_03);
+
+  if (dropped_out) {
+    return (3, sample_time_03);
+  } else if (died_directly) {
+    return (2, sample_time_02);
+  } else if (progressed_first) {
+    return (1, sample_time_01);
+  } else {
+    return (0, max({sample_time_01, sample_time_02, sample_time_03}));
+  }
+}
+
+/**
+ * Derive sample PFS variables atomically from the competing-risks outcome.
+ *
+ * Subsumes the retroactive PFS patches for the sample pathway
+ * (sf.stanfunctions lines 1696–1719). No RNG — pure derivation.
+ *
+ * @param cause                    First-exit cause from classify_sample_exit()
+ * @param exit_time                Exit time from classify_sample_exit()
+ * @param sample_target_pfs_i      Sample target-lesion PFS time
+ * @param sample_target_right_cens_i Sample target-lesion PFS censoring
+ * @param sample_ms_pfs_raw        Raw ms-hazard PFS (from RNG step 1, before any patches)
+ * @param sample_ms_right_cens_raw Raw ms-hazard PFS censoring
+ * @param sample_time_03_i         Dropout time (observed or forecasted); from classify_sample_exit
+ * @param enable_ms_02             Flag: 0→2 transition enabled
+ * @param enable_ms_03             Flag: 0→3 transition enabled
+ * @return (pfs, right_censored, ms_pfs, ms_right_censored)
+ */
+tuple(int, int, int, int) derive_sample_pfs(
+    int cause, int exit_time,
+    int sample_target_pfs_i, int sample_target_right_cens_i,
+    int sample_ms_pfs_raw, int sample_ms_right_cens_raw,
+    int sample_time_03_i,
+    int enable_ms_02, int enable_ms_03) {
+
+  if (cause == 2) {
+    // Direct death (0→2): both pfs and ms_pfs updated to t_02; uncensored
+    return (exit_time, 0, exit_time, 0);
+
+  } else if (cause == 3) {
+    // Dropout (0→3): ms_pfs censored at dropout; PFS event if SLD PD before dropout
+    if (!sample_target_right_cens_i && sample_target_pfs_i <= sample_time_03_i) {
+      return (sample_target_pfs_i, 0, sample_time_03_i, 1);
+    } else {
+      return (sample_time_03_i, 1, sample_time_03_i, 1);
+    }
+
+  } else {
+    // cause=1 (progression): exit_time is the combined PFS; right_censored=0 (event)
+    // cause=0 (censored):    exit_time is the combined PFS; right_censored=1
+    // ms_pfs stays at the raw ms-hazard sample in both cases
+    int right_censored = (cause == 0) ? 1 : 0;
+    return (exit_time, right_censored, sample_ms_pfs_raw, sample_ms_right_cens_raw);
+  }
+}
+
+// ============================================================================
+// Competing-risks CIF computation for a single trial's patient cohort
+// ============================================================================
+
+/**
+ * Compute empirical cumulative incidence functions for one trial cohort.
+ *
+ * Classification rule (identical for spop and sample pathways):
+ *   0→2 direct death : PFS event AND OS event AND pfs_time == os_time
+ *   0→1 progression  : PFS event AND NOT 0→2
+ *   0→3 dropout      : right_censored AND is_dropout (explicit cause flag)
+ *   admin censored   : right_censored AND NOT is_dropout (no CIF contribution)
+ *
+ * NOTE: is_dropout must be set explicitly from the cause computed upstream
+ * (spop_cause==3 or spop_dropped_out). Do NOT use pfs<=max_t as a proxy —
+ * admin-censored patients also satisfy pfs<=max_t in the GQ simulation.
+ *
+ * CIF vectors are 1-indexed (length max_t + 1): index k = fraction of cohort
+ * with the given cause AND exit at vector position <= k (i.e. time 0..k-1).
+ *
+ * @param pfs            Patient PFS times (1-indexed, length n_patients)
+ * @param right_censored PFS censoring flags (1 = censored)
+ * @param is_dropout     1 if patient dropped out (cause 3), 0 otherwise
+ * @param os             Patient OS times
+ * @param os_censored    OS censoring flags
+ * @param max_t          Maximum time horizon (CIF vectors have length max_t + 1)
+ * @return tuple(cif_01, cif_02, cif_03) — three vectors of length max_t + 1
+ */
+tuple(vector, vector, vector) compute_trial_cif(
+    array[] int pfs,
+    array[] int right_censored,
+    array[] int is_dropout,
+    array[] int os,
+    array[] int os_censored,
+    int max_t) {
+
+  int n = size(pfs);
+  array[max_t + 1] int cnt_01 = zeros_int_array(max_t + 1);
+  array[max_t + 1] int cnt_02 = zeros_int_array(max_t + 1);
+  array[max_t + 1] int cnt_03 = zeros_int_array(max_t + 1);
+
+  for (j in 1:n) {
+    if (!right_censored[j]) {
+      // PFS event: distinguish direct death (0→2) from progression (0→1)
+      if (!os_censored[j] && pfs[j] == os[j]) {
+        cnt_02[pfs[j]] += 1;
+      } else {
+        cnt_01[pfs[j]] += 1;
+      }
+    } else if (is_dropout[j]) {
+      cnt_03[pfs[j]] += 1;   // genuine dropout (cause 3)
+    }
+    // else: admin-censored — no CIF contribution
+  }
+
+  int c01 = 0; int c02 = 0; int c03 = 0;
+  vector[max_t + 1] cif_01 = zeros_vector(max_t + 1);
+  vector[max_t + 1] cif_02 = zeros_vector(max_t + 1);
+  vector[max_t + 1] cif_03 = zeros_vector(max_t + 1);
+  for (t in 1:max_t + 1) {
+    c01 += cnt_01[t]; c02 += cnt_02[t]; c03 += cnt_03[t];
+    cif_01[t] = c01 * 1.0 / n;
+    cif_02[t] = c02 * 1.0 / n;
+    cif_03[t] = c03 * 1.0 / n;
+  }
+
+  return (cif_01, cif_02, cif_03);
 }

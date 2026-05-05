@@ -19,7 +19,7 @@ This page shows results across all data cutoffs: **April 2025**, **August 2025**
 
 ::: {.callout-tip}
 ## Related Pages
-- See [Model Specification](../documentation/model-specification.qmd#sec-tumor-dynamics) for the bi-exponential tumor model
+- See [Tumor Dynamics Specification](../documentation/tumor-dynamics-specification.qmd#sec-tumor-dynamics) for the bi-exponential tumor model
 - See [Data Exploration](data-exploration.qmd) for observed tumor dynamics
 :::
 
@@ -38,7 +38,7 @@ Sum of lesion diameters (SLD) forecasts for SCLC-01 patients who are right censo
 #| fig-height: 12
 #| warning: false
 
-tar_read(tumor_ssls_staged_sld_rvar_right_censored_posterior_ctdna_apr25) |>
+tar_read_model("tumor_ssls_staged_sld_rvar_right_censored_posterior", dco = "apr25") |>
   filter(fct_match(trial, "sclc")) |>
   plot_sld_forecast_censored()
 ```
@@ -52,7 +52,7 @@ tar_read(tumor_ssls_staged_sld_rvar_right_censored_posterior_ctdna_apr25) |>
 #| fig-height: 12
 #| warning: false
 
-tar_read(tumor_ssls_staged_sld_rvar_right_censored_posterior_ctdna_aug25) |>
+tar_read_model("tumor_ssls_staged_sld_rvar_right_censored_posterior", dco = "aug25") |>
   filter(fct_match(trial, "sclc")) |>
   plot_sld_forecast_censored()
 ```
@@ -66,7 +66,7 @@ tar_read(tumor_ssls_staged_sld_rvar_right_censored_posterior_ctdna_aug25) |>
 #| fig-height: 12
 #| warning: false
 
-tar_read(tumor_ssls_staged_sld_rvar_right_censored_posterior_ctdna_jan26) |>
+tar_read_model("tumor_ssls_staged_sld_rvar_right_censored_posterior") |>
   filter(fct_match(trial, "sclc")) |>
   plot_sld_forecast_censored()
 ```
@@ -88,7 +88,7 @@ Predicted RECIST categories over time for censored patients, showing the model's
 #| fig-height: 12
 #| warning: false
 
-tar_read(tumor_ssls_staged_recist_rvar_right_censored_posterior_ctdna_apr25) |>
+tar_read_model("tumor_ssls_staged_recist_rvar_right_censored_posterior", dco = "apr25") |>
   filter(fct_match(trial, "sclc")) |>
   plot_recist_censored()
 ```
@@ -102,7 +102,7 @@ tar_read(tumor_ssls_staged_recist_rvar_right_censored_posterior_ctdna_apr25) |>
 #| fig-height: 12
 #| warning: false
 
-tar_read(tumor_ssls_staged_recist_rvar_right_censored_posterior_ctdna_aug25) |>
+tar_read_model("tumor_ssls_staged_recist_rvar_right_censored_posterior", dco = "aug25") |>
   filter(fct_match(trial, "sclc")) |>
   plot_recist_censored()
 ```
@@ -116,7 +116,7 @@ tar_read(tumor_ssls_staged_recist_rvar_right_censored_posterior_ctdna_aug25) |>
 #| fig-height: 12
 #| warning: false
 
-tar_read(tumor_ssls_staged_recist_rvar_right_censored_posterior_ctdna_jan26) |>
+tar_read_model("tumor_ssls_staged_recist_rvar_right_censored_posterior") |>
   filter(fct_match(trial, "sclc")) |>
   plot_recist_censored()
 ```
@@ -137,5 +137,5 @@ tar_read(tumor_ssls_staged_recist_rvar_right_censored_posterior_ctdna_jan26) |>
 - [Data Exploration](data-exploration.qmd) - Observed tumor dynamics
 - [Clinical Endpoints](clinical-endpoints.qmd) - ORR and PFS results
 - [Survival Analysis](survival-analysis.qmd) - Kaplan-Meier curves
-- [Model Specification](../documentation/model-specification.qmd#sec-recist) - RECIST criteria
+- [Tumor Dynamics Specification](../documentation/tumor-dynamics-specification.qmd#sec-recist) - RECIST criteria
 :::

@@ -42,6 +42,17 @@ source(here("r", "sclc", "accuracy.R"))
 # Define target stores (shared across website and other scripts)
 source(here("r", "sclc", "target_stores.R"))
 
+# ── Focal model (change this one line to switch the entire site) ──
+FOCAL_MODEL <- Sys.getenv("FOCAL_MODEL", unset = "no_dropout")
+
+tar_read_model <- function(base_name, model = FOCAL_MODEL, dco = "jan26", store = analysis_store) {
+  targets::tar_read_raw(str_glue("{base_name}_{model}_{dco}"), store = store)
+}
+
+tar_read_model_dco <- function(base_name, dco, model = FOCAL_MODEL, store = analysis_store) {
+  targets::tar_read_raw(str_glue("{base_name}_{model}_{dco}"), store = store)
+}
+
 # Set default targets store (note: per CLAUDE.md, avoid tar_config_set for global state)
 # Instead, use explicit store arguments in tar_read/tar_load calls
 # This line is kept for backward compatibility but should be migrated to explicit stores
@@ -56,53 +67,3 @@ ggplot2::theme_set(
   )
 )
 
-# Load common data used across multiple pages
-all_analysis_data <- tar_read(all_analysis_data_ctdna_jan26)
-all_stan_data <- tar_read(all_stan_data_ctdna_jan26)
-
-# === Jan26 DCO Data (current DCO - used across pages) ===
-
-# KM data
-jan26_km_data <- tar_read(all_tumor_ssls_km_rvar_ctdna_jan26)
-jan26_cond_km_data <- tar_read(all_tumor_ssls_cond_km_rvar_ctdna_jan26)
-jan26_obs_km_all <- tar_read(km_trial_pfs_ctdna_jan26)
-jan26_obs_km_first_line <- tar_read(km_trial_pfs_naive_ctdna_jan26)
-
-# ORR data
-jan26_orr_data <- tar_read(all_tumor_ssls_orr_rvar_ctdna_jan26)
-jan26_cond_orr_data <- tar_read(all_tumor_ssls_cond_orr_rvar_ctdna_jan26)
-
-# Median PFS data
-jan26_quant_pfs_data <- tar_read(all_tumor_ssls_trial_quant_pfs_ctdna_jan26)
-jan26_cond_quant_pfs_data <- tar_read(all_tumor_ssls_cond_quant_pfs_ctdna_jan26)
-
-# PFS-n data
-jan26_pfs_n_data <- tar_read(all_tumor_ssls_forecast_target_pfs_n_rvar_ctdna_jan26)
-jan26_cond_pfs_n_data <- tar_read(all_tumor_ssls_cond_forecast_target_pfs_n_rvar_ctdna_jan26)
-pfs_timepoints <- tar_read(pfs_timepoints)
-
-# PDL1 observed KM data
-jan26_obs_km_pdl1 <- tar_read(km_trial_pfs_pdl1_ctdna_jan26)
-jan26_obs_km_pdl1_naive <- tar_read(km_trial_pfs_pdl1_naive_ctdna_jan26)
-jan26_obs_km_part_e_pdl1 <- tar_read(km_trial_pfs_part_e_pdl1_ctdna_jan26)
-
-# === OS Data ===
-
-# OS KM data
-jan26_os_km_data <- tar_read(all_tumor_ssls_km_os_rvar_ctdna_jan26)
-jan26_cond_os_km_data <- tar_read(all_tumor_ssls_cond_km_os_rvar_ctdna_jan26)
-jan26_obs_os_km_all <- tar_read(km_trial_os_ctdna_jan26)
-jan26_obs_os_km_first_line <- tar_read(km_trial_os_naive_ctdna_jan26)
-
-# Median OS data
-jan26_quant_os_data <- tar_read(all_tumor_ssls_trial_quant_os_ctdna_jan26)
-jan26_cond_quant_os_data <- tar_read(all_tumor_ssls_cond_quant_os_ctdna_jan26)
-
-# OS-n data
-jan26_os_n_data <- tar_read(all_tumor_ssls_forecast_os_n_rvar_ctdna_jan26)
-jan26_cond_os_n_data <- tar_read(all_tumor_ssls_cond_forecast_os_n_rvar_ctdna_jan26)
-
-# PDL1 observed OS KM data
-jan26_obs_os_km_pdl1 <- tar_read(km_trial_os_pdl1_ctdna_jan26)
-jan26_obs_os_km_pdl1_naive <- tar_read(km_trial_os_pdl1_naive_ctdna_jan26)
-jan26_obs_os_km_part_e_pdl1 <- tar_read(km_trial_os_part_e_pdl1_ctdna_jan26)

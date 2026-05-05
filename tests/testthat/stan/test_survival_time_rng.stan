@@ -1,7 +1,7 @@
 functions {
-  #include "pfs_functions.stan"
-  #include "util.stan"
-  #include "pos.stan"
+  #include "pfs.stanfunctions"
+  #include "util.stanfunctions"
+  #include "pos.stanfunctions"
 }
 
 data {

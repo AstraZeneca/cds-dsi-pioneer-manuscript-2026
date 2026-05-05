@@ -862,7 +862,7 @@ plot_recist_predictions <- function(
 
 plot_pfs_ppc <- function(data, pfs_var = spop_target_pfs, label_patients = FALSE) {
   plot_obj <- data |>
-    ggplot(aes(pfs + interval_censored + 1)) +
+    ggplot(aes(pfs)) +
     geom_abline(slope = 1, linetype = "dashed") +
     scale_x_continuous("Recorded PFS [Months]", breaks = months_to_weeks(seq(0, 48, 6)), label = label_weeks_to_months) +
     scale_y_continuous("Posterior PFS [Months]", breaks = months_to_weeks(seq(0, 48, 6)), label = label_weeks_to_months) +

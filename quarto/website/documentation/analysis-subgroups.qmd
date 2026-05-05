@@ -340,6 +340,6 @@ The "non-Squamous" category includes adenocarcinoma and other non-squamous histo
 
 ## Related Documentation
 
-- [Model Specification](model-specification.qmd) - How covariates enter the mechanistic model
+- [Tumor Dynamics Specification](tumor-dynamics-specification.qmd) - How covariates enter the mechanistic model
 - [Targets Pipeline](targets-pipeline.qmd) - Complete analysis workflow
 - [Clinical Endpoints](../analysis/clinical-endpoints.qmd) - Visualization of subgroup predictions

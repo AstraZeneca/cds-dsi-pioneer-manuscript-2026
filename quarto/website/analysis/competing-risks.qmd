@@ -1,0 +1,110 @@
+---
+title: "Competing Risks"
+subtitle: "Cumulative incidence functions for state 0 exits: progression, on-trial death, and dropout"
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+source("_setup.R")
+```
+
+This page validates the **4-state multistate model's** allocation of patients across competing exit routes from state 0 (on-treatment, pre-progression). From state 0, a patient can:
+
+- **0→1 Progression**: Tumor progression detected via RECIST
+- **0→2 On-trial death**: Death without prior progression while on trial
+- **0→3 Dropout**: Treatment discontinuation without progression or on-trial death
+
+The cumulative incidence function (CIF) measures the probability of each cause by time $t$, accounting for the fact that causes compete — a patient who progresses can no longer drop out, and vice versa.
+
+::: {.callout-note}
+## CIF vs KM
+Unlike the Kaplan-Meier estimator (which estimates the marginal survival function), the CIF accounts for competing risks and always sums to at most 1 across all causes. The observed CIF is computed using the Aalen-Johansen estimator.
+:::
+
+## Full Model {#sec-full-model-cif}
+
+The full SCLC-01 model jointly estimates SLD tumor dynamics and multistate transition hazards. The CIF below reflects the complete posterior: transition hazards are informed by both the observed event times and the mechanistic SLD trajectories.
+
+### Event Counts
+
+```{r}
+#| label: tbl-event-counts-full
+#| tbl-cap: "Observed competing risks event counts from state 0 (full model data)."
+
+stan_data_full <- tar_read_model("tumor_ssls_stan_data_posterior")
+competing_risks_event_table(stan_data_full)
+```
+
+### Super-population CIF
+
+```{r}
+#| label: fig-cif-full
+#| fig-cap: "Super-population CIF: independent draws from the joint posterior (spop). Each simulated patient is an independent draw; non-progressors may still receive phantom progression events because the bi-exponential SLD model guarantees eventual growth."
+#| fig-width: 10
+#| fig-height: 9
+#| column: body-outset
+
+draws_cif_full <- tar_read_model("tumor_ssls_draws_cif_posterior")
+# Full model uses extend_max_all_t for the GQ forecast grid; max_all_t is unused
+stan_data_full$max_all_t <- stan_data_full$extend_max_all_t
+plot_competing_risks_cif(stan_data_full, draws_cif_full, cif_prefix = "spop")
+```
+
+### Sample CIF
+
+```{r}
+#| label: fig-cif-full-sample
+#| fig-cap: "Sample CIF: posterior predictive conditioned on observed data. For patients who progressed, the observed progression time is used. For censored/dropout patients, progression is forecasted from last observation. This calibration check accounts for the fact that observed non-progressors are unlikely to progress soon."
+#| fig-width: 10
+#| fig-height: 9
+#| column: body-outset
+
+plot_competing_risks_cif(stan_data_full, draws_cif_full, cif_prefix = "sample")
+```
+
+## Standalone Multistate Model {#sec-standalone-cif}
+
+The standalone multistate model estimates transition hazards **without SLD tumor dynamics** — all transitions are driven purely by baseline hazards and covariates. Comparing this to @sec-full-model-cif reveals how much the mechanistic SLD component contributes to the competing risks calibration.
+
+### CIF Validation
+
+```{r}
+#| label: fig-cif-standalone
+#| fig-cap: "Competing risks CIF: standalone multistate model (posterior predictive) vs observed Aalen-Johansen."
+#| fig-width: 10
+#| fig-height: 9
+#| column: body-outset
+
+stan_data_ms <- tar_read(ms_standalone_stan_data_posterior_ctdna_jan26, store = ms_standalone_store)
+draws_cif_ms <- tar_read(ms_standalone_draws_cif_posterior_ctdna_jan26, store = ms_standalone_store)
+plot_competing_risks_cif(stan_data_ms, draws_cif_ms)
+```
+
+## Prior Predictive Check {#sec-prior-predictive-cif}
+
+Following [Gabry et al. (2019)](https://doi.org/10.1111/rssa.12378), we compare the standalone prior predictive CIF against the observed data to assess whether the priors encode a reasonable competing risks structure before seeing data.
+
+```{r}
+#| label: fig-cif-prior
+#| fig-cap: "Prior predictive competing risks CIF vs observed Aalen-Johansen. The prior spreads probability roughly equally across all causes rather than concentrating on progression."
+#| fig-width: 10
+#| fig-height: 9
+#| column: body-outset
+
+stan_data_prior <- tar_read(ms_standalone_stan_data_prior_ctdna_jan26, store = ms_standalone_store)
+draws_cif_prior <- tar_read(ms_standalone_draws_cif_prior_ctdna_jan26, store = ms_standalone_store)
+
+plot_competing_risks_cif(stan_data_prior, draws_cif_prior)
+```
+
+The prior predictive reveals the prior spreads probability roughly equally across all causes rather than concentrating on progression, with 0→2 on-trial death massively over-predicted (~25--30% vs observed ~0--5%). The data corrects this, confirming the priors are diffuse but not pathological.
+
+::: {.related-pages}
+## Related Pages
+
+- [Overall Survival](overall-survival.qmd) - OS Kaplan-Meier curves and predictions
+- [Survival Analysis](survival-analysis.qmd) - PFS Kaplan-Meier curves
+- [Multistate Model Specification](../documentation/multistate-specification.qmd) - Multistate model details
+:::
