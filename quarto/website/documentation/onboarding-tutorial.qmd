@@ -66,10 +66,10 @@ We observe **noisy SLD measurements** at discrete clinic visits. The model infer
 
 ::: {.callout-note}
 ## Reading
-**Read:** [Model Specification](model-specification.qmd) Sections 1-2.1
+**Read:** [Model Architecture](model-architecture.qmd) for model overview and hierarchy, then [Tumor Dynamics Specification](tumor-dynamics-specification.qmd) for the state representation
 
-- Section 1: Model overview and hierarchy
-- Section 2.1: State representation (what the decrease and growth components mean)
+- Model Architecture: Model overview and hierarchy
+- Tumor Dynamics: State representation (what the decrease and growth components mean)
 :::
 
 ---
@@ -180,11 +180,11 @@ scenarios |>
 
 ::: {.callout-note}
 ## Reading
-**Read:** [Model Specification](model-specification.qmd) Sections 2.2-2.4
+**Read:** [Tumor Dynamics Specification](tumor-dynamics-specification.qmd)
 
-- Section 2.2: Temporal dynamics equations
-- Section 2.3: Hierarchical parameter structure
-- Section 2.4: Observation model details
+- State evolution and temporal dynamics equations
+- Hierarchical parameter structure (rate parameters, fraction model)
+- Observation model details
 :::
 
 ---
@@ -253,7 +253,7 @@ Covariate effects can also have trial-level and patient-level random slopes.
 
 ::: {.callout-note}
 ## Reading
-**Read:** [Model Specification](model-specification.qmd) Section 2.3.1
+**Read:** [Tumor Dynamics Specification](tumor-dynamics-specification.qmd#sec-rate-parameters)
 
 **Read:** [Architecture](architecture.qmd) — Stan implementation patterns
 :::
@@ -305,11 +305,11 @@ The other events hazard can depend on tumor state:
 
 ::: {.callout-note}
 ## Reading
-**Read:** [Model Specification](model-specification.qmd) Section 3
+**Read:** [Multistate Model Specification](multistate-specification.qmd)
 
-- Section 3.1: Independence assumption
-- Section 3.2: Hazard model structure
-- Section 3.4: Tumor covariates
+- Model structure and state encoding
+- Hazard model structure and transitions
+- Time-varying tumor covariates
 :::
 
 ---
@@ -500,7 +500,10 @@ plot_pfs_ppc(fit, stan_data, analysis_data)
 
 | Document | Purpose |
 |----------|---------|
-| [Model Specification](model-specification.qmd) | **Primary reference** — complete model specification |
+| [Model Architecture](model-architecture.qmd) | **Primary reference** — model overview and structure |
+| [Tumor Dynamics](tumor-dynamics-specification.qmd) | Tumor state-space model specification |
+| [Multistate Model](multistate-specification.qmd) | Illness-death multistate model specification |
+| [Clinical Endpoints](clinical-endpoints-specification.qmd) | PFS, OS, and derived endpoints |
 | [Architecture](architecture.qmd) | Code organization, naming conventions |
 | [AR(1) Process Noise](ar1-process-noise.qmd) | AR(1) implementation (if enabled) |
 | `CLAUDE.md` | Development guidelines |
@@ -543,7 +546,10 @@ plot_pfs_ppc(fit, stan_data, analysis_data)
 ::: {.related-pages}
 ## Related Pages
 
-- [Model Specification](model-specification.qmd) - Complete mathematical specification
+- [Model Architecture](model-architecture.qmd) - Model overview and structure
+- [Tumor Dynamics Specification](tumor-dynamics-specification.qmd) - Tumor state-space model
+- [Multistate Model Specification](multistate-specification.qmd) - Illness-death multistate model
+- [Clinical Endpoints Specification](clinical-endpoints-specification.qmd) - PFS, OS, and derived endpoints
 - [Architecture](architecture.qmd) - Code organization and naming conventions
 - [Data Exploration](../analysis/data-exploration.qmd) - Explore the data
 - [Clinical Endpoints](../analysis/clinical-endpoints.qmd) - See actual results

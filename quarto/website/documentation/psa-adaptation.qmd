@@ -9,7 +9,7 @@ number-sections: false
 
 ::: {.callout-tip}
 ## Related Pages
-- See [Model Specification](model-specification.qmd) for the current SLD-based model
+- See [Tumor Dynamics Specification](tumor-dynamics-specification.qmd) for the current SLD-based model
 - See [Architecture](architecture.qmd) for code organization
 - See [Onboarding Tutorial](onboarding-tutorial.qmd) for model background
 :::
@@ -23,7 +23,7 @@ This document presents the plan to adapt the PIONEER tumor dynamics model from s
 1. **Latent tumor burden model** with modality-specific observation equations
 2. **Multi-biomarker support** for PSA, LDH, ALP, ctDNA, and future markers
 3. **PCWG3-compliant progression criteria** replacing RECIST categories
-4. **OS modeling** via the multistate illness-death model (already implemented, see [Model Specification](model-specification.qmd#sec-multistate))
+4. **OS modeling** via the multistate illness-death model (already implemented, see [Multistate Model Specification](multistate-specification.qmd#sec-multistate))
 
 ---
 
@@ -337,7 +337,7 @@ PSA doubling time $(\log(2)/g)$ and PSA half-life $(\log(2)/d)$ are monotonic tr
 
 ::: {.callout-note}
 ## Already Implemented
-The multistate module infrastructure is already implemented in `stan/modules/multistate/`. Phase 2 requires enabling existing transitions and providing death data, not new Stan code. See [Model Specification](model-specification.qmd#sec-multistate).
+The multistate module infrastructure is already implemented in `stan/modules/multistate/`. Phase 2 requires enabling existing transitions and providing death data, not new Stan code. See [Multistate Model Specification](multistate-specification.qmd#sec-multistate).
 :::
 
 ### Phase 3: Hierarchical $\lambda$ Parameter
@@ -449,14 +449,16 @@ The multistate module infrastructure is already implemented in `stan/modules/mul
 
 - **PCWG3 Guidelines:** Scher et al. (2016) "Trial Design and Objectives for Castration-Resistant Prostate Cancer", *Journal of Clinical Oncology*
 - **Multi-State Models:** Putter, Fiocco, Geskus (2007) "Tutorial in biostatistics: competing risks and multi-state models", *Statistics in Medicine*
-- **Current Model:** [Model Specification](model-specification.qmd)
+- **Current Model:** [Model Architecture](model-architecture.qmd)
 
 ---
 
 ::: {.related-pages}
 ## Related Pages
 
-- [Model Specification](model-specification.qmd) - Current SLD-based model with multistate hazard
+- [Model Architecture](model-architecture.qmd) - Model overview and structure
+- [Tumor Dynamics Specification](tumor-dynamics-specification.qmd) - Current SLD-based tumor model
+- [Multistate Model Specification](multistate-specification.qmd) - Illness-death multistate model
 - [Architecture](architecture.qmd) - Code organization and multistate module structure
 - [Onboarding Tutorial](onboarding-tutorial.qmd) - Model background and clinical context
 - [Clinical Endpoints](../analysis/clinical-endpoints.qmd) - Current RECIST-based results

@@ -24,7 +24,8 @@ mappings:
       - "r/initializers.R"
       - "r/initializers_fixed.R"
     docs:
-      - "quarto/website/documentation/model-specification.qmd"
+      - "quarto/website/documentation/tumor-dynamics-specification.qmd"
+      - "quarto/website/documentation/model-architecture.qmd"
 
   # System architecture and design patterns
   - name: "Architecture"
@@ -97,7 +98,7 @@ mappings:
       # Design documentation
       - "docs/OTHER_EVENTS_MODEL.md"
     docs:
-      - "quarto/website/documentation/model-specification.qmd"  # Section on other events
+      - "quarto/website/documentation/multistate-specification.qmd"
 
   # Analysis results pages (these depend on R plotting/analysis functions)
   - name: "Model Validation Analysis"

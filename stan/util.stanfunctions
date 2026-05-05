@@ -296,12 +296,12 @@ array[] int which(array[] int mask, int inverse) {
   int n = size(mask);
   int count = 0;
   for (i in 1:n) {
-    if ((inverse == 0 && mask[i] > 0) || (inverse == 1 && mask[i] <= 0)) count += 1;
+    if ((!inverse && mask[i] > 0) || (inverse && mask[i] <= 0)) count += 1;
   }
   array[count] int idx;
   int pos = 1;
   for (i in 1:n) {
-    if ((inverse == 0 && mask[i] > 0) || (inverse == 1 && mask[i] <= 0)) {
+    if ((!inverse && mask[i] > 0) || (inverse && mask[i] <= 0)) {
       idx[pos] = i;
       pos += 1;
     }
@@ -847,7 +847,7 @@ tuple(array[] int, array[] int) create_compact_patient_mapping(
   
   int obs_idx = 1;
   for (i in 1:n_patients) {
-    if (observed_mask[i] == 1) {
+    if (observed_mask[i]) {
       observed_patients[obs_idx] = i;
       patient_to_compact_idx[i] = obs_idx;
       obs_idx += 1;
@@ -910,7 +910,7 @@ tuple(array[] int, array[] int) remap_group_to_compact(
   
   for (g_idx in 1:total_entries) {
     int patient_id = group[g_idx];
-    if (observed_mask[patient_id] == 1) {
+    if (observed_mask[patient_id]) {
       // Determine which group this entry belongs to
       int group_id = 1;
       while (group_id <= n_groups && g_idx >= group_pos[group_id + 1]) {
@@ -935,7 +935,7 @@ tuple(array[] int, array[] int) remap_group_to_compact(
   
   for (g_idx in 1:total_entries) {
     int patient_id = group[g_idx];
-    if (observed_mask[patient_id] == 1) {
+    if (observed_mask[patient_id]) {
       // Determine which group this entry belongs to
       int group_id = 1;
       while (group_id <= n_groups && g_idx >= group_pos[group_id + 1]) {

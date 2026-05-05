@@ -18,7 +18,7 @@
     font=\normalsize, align=center, inner sep=8pt
   },
   transition/.style={
-    ->{Stealth[length=8pt,width=6pt]},
+    -Stealth,
     line width=1.2pt, black
   },
   hazlabel/.style={
@@ -36,17 +36,24 @@
 };
 
 % State 1: Progressed (bottom left)
-\node (s1) [state, fill=white, text width=3.8cm] at (-4.5, -5.5) {
+\node (s1) [state, fill=white, text width=3.8cm] at (-5.5, -5.5) {
     \large\textbf{Progressed}\\[0.15cm]
     \normalsize State 1\\[0.15cm]
     \footnotesize\textit{PFS event occurred}
 };
 
 % State 2: Dead (bottom right) - absorbing state
-\node (s2) [state, fill=black!85, text=white, text width=3.8cm] at (4.5, -5.5) {
+\node (s2) [state, fill=black!85, text=white, text width=3.8cm] at (5.5, -5.5) {
     \large\textbf{Dead}\\[0.15cm]
     \normalsize State 2\\[0.15cm]
     \footnotesize\textit{Absorbing state}
+};
+
+% State 3: Dropout (below State 0, between States 1 and 2)
+\node (s3) [state, fill=white, text width=3.8cm, dashed] at (0, -5.5) {
+    \large\textbf{Dropout}\\[0.15cm]
+    \normalsize State 3\\[0.15cm]
+    \footnotesize\textit{Off-trial}
 };
 
 % ==================== TRANSITIONS ====================
@@ -61,29 +68,52 @@
     node[hazlabel, pos=0.5, right=2pt] {$\lambda_{02}(t)$}
     (s2.north);
 
+% 0 -> 3: Treatment discontinuation (dropout)
+\draw [transition] (s0.south) --
+    node[hazlabel, pos=0.5, right=2pt] {$\lambda_{03}(t)$}
+    (s3.north);
+
 % 1 -> 2: Post-progression death
 \draw [transition] (s1.east) --
     node[hazlabel, pos=0.5, below=2pt] {$\lambda_{12}(s)$}
+    (s3.west);
+
+% 3 -> 2: Off-trial death
+\draw [transition] (s3.east) --
+    node[hazlabel, pos=0.5, below=2pt] {$\lambda_{32}(s)$}
     (s2.west);
 
 % ==================== ANNOTATIONS ====================
 
 % Transition descriptions
-\node[font=\footnotesize, text=black!70, align=center] at (-4.2, -2.2) {
+\node[font=\footnotesize, text=black!70, align=center] at (-4.8, -2.2) {
     Non-target progression,\\new lesions, clinical PD
 };
 
-\node[font=\footnotesize, text=black!70, align=center] at (4.2, -2.2) {
+\node[font=\footnotesize, text=black!70, align=center] at (4.8, -2.2) {
     Death without\\prior progression
 };
 
-\node[font=\footnotesize, text=black!70, align=center] at (0, -7.2) {
+\node[font=\footnotesize, text=black!70, align=center] at (1.8, -3.0) {
+    Treatment\\discontinuation
+};
+
+\node[font=\footnotesize, text=black!70, align=center] at (-2.75, -7.2) {
     Post-progression\\survival
 };
 
 % Time scale note for 1->2
-\node[font=\scriptsize, text=black!50, align=center] at (0, -6.4) {
+\node[font=\scriptsize, text=black!50, align=center] at (-2.75, -6.4) {
     $s = t - T_{01}$ (sojourn time)
+};
+
+\node[font=\footnotesize, text=black!70, align=center] at (2.75, -7.2) {
+    Off-trial\\death
+};
+
+% Time scale note for 3->2
+\node[font=\scriptsize, text=black!50, align=center] at (2.75, -6.4) {
+    $s = t - T_{03}$ (sojourn time)
 };
 
 \end{tikzpicture}

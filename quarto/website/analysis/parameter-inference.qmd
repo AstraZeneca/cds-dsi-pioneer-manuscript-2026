@@ -8,6 +8,7 @@ subtitle: "Population and patient-level parameter estimates"
 #| include: false
 
 source("_setup.R")
+all_stan_data <- tar_read_model("all_stan_data")
 ```
 
 This page presents the inferred parameter estimates from the Bayesian hierarchical model, comparing prior predictions with posterior estimates.
@@ -19,7 +20,7 @@ Results on this page are based on **DCO3 (January 2026)**.
 
 ::: {.callout-tip}
 ## Related Pages
-- See [Model Specification](../documentation/model-specification.qmd#sec-tumor-dynamics) for mathematical details on the tumor dynamics model
+- See [Tumor Dynamics Specification](../documentation/tumor-dynamics-specification.qmd#sec-tumor-dynamics) for mathematical details on the tumor dynamics model
 - See [Architecture](../documentation/architecture.qmd#sec-hierarchical) for the hierarchical parameter structure
 :::
 
@@ -32,8 +33,8 @@ The model estimates population-level tumor regression and growth rates. These re
 #| fig-cap: Population level log growth/regression rates comparing prior and posterior distributions.
 
 bind_rows(
-  prior = tar_read(tumor_ssls_rates_rvar_prior_ctdna_jan26),
-  posterior = tar_read(tumor_ssls_rates_rvar_posterior_ctdna_jan26),
+  prior = tar_read_model("tumor_ssls_rates_rvar_prior"),
+  posterior = tar_read_model("tumor_ssls_rates_rvar_posterior"),
   .id = "stage"
 ) |>
   plot_prior_post_dens(.value, normalize = "groups") +
@@ -57,7 +58,7 @@ Individual patients have their own rates that deviate from the population mean. 
 #| label: fig-patient-rates-distogram
 #| fig-cap: Distribution of patient-level posterior rate histograms showing the spread of individual patient rates.
 
-tar_read(all_tumor_ssls_patient_rates_bpi_ctdna_jan26) |>
+tar_read_model("all_tumor_ssls_patient_rates_bpi") |>
   filter(fct_match(.variable, c("patient_log_decrease_rate_residual", "patient_log_growth_rate_residual")),  !is.na(.value)) |>
   plot_level_rates()
 ```
@@ -75,7 +76,7 @@ The observation model includes measurement error representing variability in SLD
 # - tr_log_sd_pop_process_noise[1], tr_logit_phi_pop_process_noise[1] (patient-level)
 # - tr_log_sd_pop_process_noise_pop[1], tr_logit_phi_pop_process_noise_pop[1] (pop-level)
 
-tar_read(all_tumor_ssls_noise_sd_rvar_ctdna_jan26) |>
+tar_read_model("all_tumor_ssls_noise_sd_rvar") |>
   plot_prior_post_hist(normalize = "groups") +
   labs(x = "Measurement SD") +
   NULL
@@ -89,7 +90,7 @@ The initial proportion of responsive vs resistant tumor cells varies across pati
 #| label: fig-initial-state
 #| fig-cap: Distribution of prior and posterior histograms of patient-level initial proportion of responsive tumors.
 
-tar_read(all_tumor_ssls_patient_decrease_prop_bpi_ctdna_jan26) |>
+tar_read_model("all_tumor_ssls_patient_decrease_prop_bpi") |>
   filter(fct_match(.variable, "init_log_decrease_patient"), !is.na(.rs_value)) |>
   plot_level_decrease_prop() +
   coord_cartesian(xlim = c(0, 1)) +
@@ -107,7 +108,7 @@ The model includes covariate effects on multiple model components. These coeffic
 #| fig-width: 10
 #| fig-height: 6
 
-coef_data <- tar_read(all_tumor_ssls_coef_ctdna_jan26)
+coef_data <- tar_read_model("all_tumor_ssls_coef")
 
 # Filter out multistate coefficients (variable name depends on model version)
 ms_tv_names <- c("ms_time_varying_coef_01", "oe_tumor_coef_pop")
@@ -139,7 +140,7 @@ The multistate model (0→1 transition: non-target progression and death) includ
 #| fig-cap: Prior predicted and posterior linear models for tumor size effects on the multistate 0→1 transition model.
 #| fig-height: 3
 
-tar_read(all_tumor_ssls_coef_ctdna_jan26) |>
+tar_read_model("all_tumor_ssls_coef") |>
   filter(.variable %in% intersect(c("ms_time_varying_coef_01", "oe_tumor_coef_pop"),
                                    levels(.variable))) |>
   mutate(n = factor(n, levels = 1:3, labels = c("SLD", "Decrease Rate", "Growth Rate"))) |>
@@ -153,7 +154,7 @@ tar_read(all_tumor_ssls_coef_ctdna_jan26) |>
 ::: {.related-pages}
 ## Related Pages
 
-- [Model Specification](../documentation/model-specification.qmd) - Mathematical details
+- [Tumor Dynamics Specification](../documentation/tumor-dynamics-specification.qmd) - Mathematical details
 - [Architecture](../documentation/architecture.qmd#sec-hierarchical) - Hierarchical structure
 - [Patient Dynamics](patient-dynamics.qmd) - Individual patient trajectories
 - [Clinical Endpoints](clinical-endpoints.qmd) - ORR and PFS results
