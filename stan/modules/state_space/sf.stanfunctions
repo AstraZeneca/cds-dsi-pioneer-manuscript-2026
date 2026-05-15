@@ -1,28 +1,29 @@
 // ============================================================================
-// STEIN-FOJO (SF) STATE-SPACE MODEL - GENERAL IMPLEMENTATION
+// STEIN-FOJO (SF) STATE-SPACE MODEL - BIOMARKER-AGNOSTIC IMPLEMENTATION
 // ============================================================================
 //
-// This file contains a GENERAL two-component log-space state-space model
+// This file contains a fully biomarker-agnostic two-component log-space state-space model
 // that can be applied to any biomarker with competing decrease/increase dynamics:
 //   - Component 1: Decreasing (e.g., treatment effect)
 //   - Component 2: Increasing (e.g., progression/resistance)
 //
 // Originally developed for tumor growth (Stein-Fojo model), but the mathematical
 // framework is biomarker-agnostic and can model:
-//   - Tumor burden (SLD) - see modules/tumor/functions.stan for SLD-specific wrappers
-//   - PSA dynamics - future modules/psa/functions.stan will add PSA-specific wrappers
+//   - Tumor burden (SLD) - see modules/tumor/ for RECIST-specific logic
+//   - PSA dynamics - see stan/_psa_endpoints_generated_quantities.stan for PCWG3 criteria
 //   - Any biomarker with decrease + growth dynamics
 //
 // Key functions:
 //   - sf_log_space_transition: State transitions
 //   - sf_log_space_trajectory_ncp: Full trajectory generation (non-centered)
 //   - calc_states: Calculate state trajectories for patients
-//   - generate_patient_states_rng: Generate replicated and forecast states
-//   - calculate_all_patients_endpoints_rng: Simulate clinical endpoints
+//   - generate_patient_states_rng: Generate replicated and forecast observations
+//   - generate_all_patients_states_with_means_rng: Batch all patients with mean calculations
 //
-// Note: Some function parameters currently use tumor-specific names
-// (e.g., "sum_tumor_size_baseline") for backward compatibility. These could be
-// generalized when adding new biomarkers (e.g., "baseline_value").
+// All functions use generic terminology:
+//   - "baseline_obs_value" / "baseline_obs_per_patient" (not "sum_tumor_size")
+//   - "rep_patient_log_obs" (not "rep_patient_log_sld")
+//   - "log_burden_mean" (not "log_sld_mean")
 // ============================================================================
 
 row_vector sf_log_space_transition(row_vector current_x, 
@@ -168,6 +169,26 @@ vector get_growth_lag_factor(vector time_points, real growth_lag, real transitio
 
 vector get_growth_lag_factor(array[] real time_points, real growth_lag, real transition_rate) {
   return inv_logit((to_vector(time_points) - growth_lag) / transition_rate);
+}
+
+/**
+ * Calculate mean log(biomarker) from two-component log-space states
+ * GENERIC function for any biomarker (SLD, PSA, etc.)
+ *
+ * The two-component state represents:
+ *   Component 1: Decreasing burden (treatment effect)
+ *   Component 2: Growing burden (progression/resistance)
+ *
+ * Total biomarker = exp(state[1]) + exp(state[2])
+ * So log(biomarker) = log_sum_exp(state[1], state[2])
+ *
+ * @param patient_states Matrix of states [n_visits × 2]
+ * @param baseline Baseline biomarker measurement
+ * @return Vector of log(biomarker) means at each visit
+ */
+vector calc_log_burden_mean(matrix patient_states, real baseline) {
+  assert_equal(cols(patient_states), 2);
+  return to_vector(log_sum_exp(patient_states[, 1], patient_states[, 2])) + log(baseline);
 }
 
 tuple(matrix, matrix) sf_log_space_trajectory_ncp(matrix raw_x, row_vector x0, array[] real times, real decrease_rate, real growth_rate, vector process_sd, matrix L_process_corr) {
@@ -805,18 +826,18 @@ matrix calc_patient_process_noise(
 
 
 /**
- * Generate patient states including process noise, SLD trajectories, and forecast states
- * 
+ * Generate patient states including process noise, biomarker trajectories, and forecast states
+ *
  * NOTE: This function assumes TIME-INVARIANT (scalar) rates.
  * When AR(1) process noise is enabled, rates become time-varying matrices [n_patients × max_t_width].
  * In that case, use generate_all_patients_states_with_means_rng() instead, which works
  * with pre-computed states_full_grid that already incorporates time-varying rates.
- * 
+ *
  * @param patient_states States for this patient's visits
  * @param forecast_time Forecast time points (should be real, not int)
  * @param patient_log_decrease_rate Scalar log decrease rate (TIME-INVARIANT)
  * @param patient_log_growth_rate Scalar log growth rate (TIME-INVARIANT)
- * @param sum_tumor_size_baseline Baseline tumor size
+ * @param baseline_obs_value Baseline observation value (e.g., sum tumor size or PSA)
  * @param forecast_growth_lag Growth lag for forecast
  * @param forecast_growth_transition Growth transition for forecast
  * @param forecast_process_noise Process noise matrix for forecast
@@ -824,14 +845,14 @@ matrix calc_patient_process_noise(
  */
 tuple(
   matrix,  // forecast_patient_states for this patient
-  vector,  // rep_patient_log_sld for this patient
-  vector   // forecast_patient_log_sld for this patient
+  vector,  // rep_patient_log_obs for this patient
+  vector   // forecast_patient_log_obs for this patient
 ) generate_patient_states_rng(
   matrix patient_states,              // states for this patient's visits
   array[] real forecast_time,         // forecast time points (should be real, not int)
   real patient_log_decrease_rate,     // patient_log_decrease_rate (TIME-INVARIANT)
   real patient_log_growth_rate,       // patient_log_growth_rate (TIME-INVARIANT)
-  real sum_tumor_size_baseline,       // baseline tumor size
+  real baseline_obs_value,            // baseline observation value
   // Forecast configuration parameters
   real forecast_growth_lag,           // growth lag for forecast (was hardcoded to negative_infinity())
   real forecast_growth_transition,    // growth transition for forecast (was hardcoded to 1)
@@ -841,15 +862,15 @@ tuple(
   real measure_nu
 ) {
   int n_patient_visits = rows(patient_states);
-  // Calculate replicated SLD for observed visits
-  vector[n_patient_visits] rep_log_sld = zeros_vector(n_patient_visits);
+  // Calculate replicated observations for observed visits
+  vector[n_patient_visits] rep_log_obs = zeros_vector(n_patient_visits);
 
   // First visit uses baseline measurement
-  rep_log_sld[1] = log(sum_tumor_size_baseline);
+  rep_log_obs[1] = log(baseline_obs_value);
 
   // Subsequent visits are generated from states with measurement noise (Student-t)
   if (n_patient_visits > 1) {
-    rep_log_sld[2:] = to_vector(student_t_rng(measure_nu, calc_log_sld_mean(patient_states[2:], sum_tumor_size_baseline), measure_sd));
+    rep_log_obs[2:] = to_vector(student_t_rng(measure_nu, calc_log_burden_mean(patient_states[2:], baseline_obs_value), measure_sd));
   }
 
   int forecast_size = size(forecast_time) - 1;
@@ -865,13 +886,13 @@ tuple(
     0 // No debug
   );
 
-  // Calculate forecast SLD with measurement noise (Student-t)
-  vector[forecast_size] forecast_log_sld = zeros_vector(forecast_size);
+  // Calculate forecast observations with measurement noise (Student-t)
+  vector[forecast_size] forecast_log_obs = zeros_vector(forecast_size);
   if (forecast_size > 0) {
-    forecast_log_sld = to_vector(student_t_rng(measure_nu, calc_log_sld_mean(forecast_states[2:], sum_tumor_size_baseline), measure_sd));
+    forecast_log_obs = to_vector(student_t_rng(measure_nu, calc_log_burden_mean(forecast_states[2:], baseline_obs_value), measure_sd));
   }
 
-  return (forecast_states[2:], rep_log_sld, forecast_log_sld);
+  return (forecast_states[2:], rep_log_obs, forecast_log_obs);
 }
 
 matrix multi_normal_rng(
@@ -920,46 +941,46 @@ matrix multi_normal_rng(
 
 
 /**
- * Generate patient states with mean SLD calculations
+ * Generate patient states with mean observation calculations
  * This is a higher-level wrapper around generate_patient_states_rng that also computes
- * mean log SLD for both observed and forecast periods.
- * 
+ * mean log observations for both observed and forecast periods.
+ *
  * NOTE: This function assumes TIME-INVARIANT (scalar) rates.
  * When AR(1) process noise is enabled, rates become time-varying matrices [n_patients × max_t_width].
  * In that case, use generate_all_patients_states_with_means_rng() instead, which works
  * with pre-computed states_full_grid that already incorporates time-varying rates.
- * 
+ *
  * @param patient_states States for this patient's visits
  * @param forecast_time Forecast time points (with anchor at position 1)
  * @param patient_log_decrease_rate Scalar patient-specific log decrease rate (TIME-INVARIANT)
  * @param patient_log_growth_rate Scalar patient-specific log growth rate (TIME-INVARIANT)
- * @param sum_tumor_size_baseline Baseline sum of tumor sizes
+ * @param baseline_obs_value Baseline observation value (e.g., sum tumor size or PSA)
  * @param forecast_growth_lag Growth lag for forecast
  * @param forecast_growth_transition Growth transition rate for forecast
  * @param forecast_process_noise Process noise for forecast
  * @param measure_sd Measurement standard deviation
- * 
+ *
  * @return Tuple containing:
  *   - forecast_patient_states: Forecasted states (excluding anchor)
- *   - rep_patient_log_sld: Replicated log SLD for observed visits
- *   - rep_mean_patient_log_sld: Mean log SLD for observed visits (deterministic)
- *   - forecast_patient_log_sld: Forecasted log SLD (with measurement noise)
- *   - forecast_mean_patient_log_sld: Mean log SLD for forecast (deterministic)
+ *   - rep_patient_log_obs: Replicated log observations for observed visits
+ *   - rep_mean_patient_log_obs: Mean log observations for observed visits (deterministic)
+ *   - forecast_patient_log_obs: Forecasted log observations (with measurement noise)
+ *   - forecast_mean_patient_log_obs: Mean log observations for forecast (deterministic)
  *   - obs_patient_process_noise: Observed process noise (zeros)
  */
 tuple(
   matrix,  // forecast_patient_states
-  vector,  // rep_patient_log_sld
-  vector,  // rep_mean_patient_log_sld
-  vector,  // forecast_patient_log_sld
-  vector,  // forecast_mean_patient_log_sld
+  vector,  // rep_patient_log_obs
+  vector,  // rep_mean_patient_log_obs
+  vector,  // forecast_patient_log_obs
+  vector,  // forecast_mean_patient_log_obs
   matrix   // obs_patient_process_noise
 ) generate_patient_states_with_means_rng(
   matrix patient_states,
   array[] real forecast_time,
   real patient_log_decrease_rate,
   real patient_log_growth_rate,
-  real sum_tumor_size_baseline,
+  real baseline_obs_value,
   real forecast_growth_lag,
   real forecast_growth_transition,
   matrix forecast_process_noise,
@@ -969,44 +990,44 @@ tuple(
   int n_patient_visits = rows(patient_states);
   int forecast_size = size(forecast_time) - 1;
 
-  // Generate states and SLD using existing function
+  // Generate states and observations using existing function
   matrix[forecast_size, 2] forecast_patient_states;
-  vector[n_patient_visits] rep_patient_log_sld;
-  vector[forecast_size] forecast_patient_log_sld;
+  vector[n_patient_visits] rep_patient_log_obs;
+  vector[forecast_size] forecast_patient_log_obs;
 
-  (forecast_patient_states, rep_patient_log_sld, forecast_patient_log_sld) =
+  (forecast_patient_states, rep_patient_log_obs, forecast_patient_log_obs) =
     generate_patient_states_rng(
       patient_states,
       forecast_time,
       patient_log_decrease_rate,
       patient_log_growth_rate,
-      sum_tumor_size_baseline,
+      baseline_obs_value,
       forecast_growth_lag,
       forecast_growth_transition,
       forecast_process_noise,
       measure_sd,
       measure_nu
     );
-  
-  // Calculate mean log SLD (deterministic, no measurement noise)
-  vector[n_patient_visits] rep_mean_patient_log_sld = 
-    calc_log_sld_mean(patient_states, sum_tumor_size_baseline);
-  
-  vector[forecast_size] forecast_mean_patient_log_sld = 
-    forecast_size > 0 
-      ? calc_log_sld_mean(forecast_patient_states, sum_tumor_size_baseline)
+
+  // Calculate mean log observations (deterministic, no measurement noise)
+  vector[n_patient_visits] rep_mean_patient_log_obs =
+    calc_log_burden_mean(patient_states, baseline_obs_value);
+
+  vector[forecast_size] forecast_mean_patient_log_obs =
+    forecast_size > 0
+      ? calc_log_burden_mean(forecast_patient_states, baseline_obs_value)
       : zeros_vector(0);
-  
+
   // Generate process noise outputs
-  matrix[n_patient_visits - 1, 2] obs_patient_process_noise = 
+  matrix[n_patient_visits - 1, 2] obs_patient_process_noise =
     rep_matrix(0.0, n_patient_visits - 1, 2);
-  
+
   return (
     forecast_patient_states,
-    rep_patient_log_sld,
-    rep_mean_patient_log_sld,
-    forecast_patient_log_sld,
-    forecast_mean_patient_log_sld,
+    rep_patient_log_obs,
+    rep_mean_patient_log_obs,
+    forecast_patient_log_obs,
+    forecast_mean_patient_log_obs,
     obs_patient_process_noise
   );
 }
@@ -1016,7 +1037,7 @@ tuple(
  * This function processes all patients at once, reducing code in generated quantities.
  * States are extracted from pre-computed states_full_grid which already incorporates
  * time-varying rates (including AR(1) process noise in the tr module).
- * 
+ *
  * @param states_full_grid Full states grid for all patients [2][n_patients, max_t_width]
  * @param patient_visit_pos Position array for patient visits
  * @param patient_visit_m1_pos Position array for patient visits minus 1
@@ -1025,25 +1046,26 @@ tuple(
  * @param last_predict_visit Last prediction visit week (scalar)
  * @param t_patient_visits All patient visit times (flat array)
  * @param t_patient_visit_idx Patient visit indices relative to first visit
- * @param sum_tumor_size Baseline tumor sizes (flat array)
+ * @param baseline_obs_per_patient Baseline observation values per patient (flat array)
  * @param measure_sd Measurement standard deviation
  * @param n_patient_screening_visits Number of screening visits per patient
- * 
+ *
  * @return Tuple containing:
  *   - forecast_patient_states: All forecasted states
- *   - rep_patient_log_sld: All replicated log SLD for observed visits
- *   - rep_mean_patient_log_sld: All mean log SLD for observed visits
- *   - forecast_patient_log_sld: All forecasted log SLD
- *   - forecast_mean_patient_log_sld: All mean log SLD for forecast
+ *   - rep_patient_log_obs: All replicated log observations for observed visits
+ *   - rep_mean_patient_log_obs: All mean log observations for observed visits
+ *   - forecast_patient_log_obs: All forecasted log observations
+ *   - forecast_mean_patient_log_obs: All mean log observations for forecast
  */
 tuple(
   matrix,  // forecast_patient_states [n_total_forecast_visits, 2]
-  vector,  // rep_patient_log_sld [sum(n_patient_visits)]
-  vector,  // rep_mean_patient_log_sld [sum(n_patient_visits)]
-  vector,  // forecast_patient_log_sld [n_total_forecast_visits]
-  vector   // forecast_mean_patient_log_sld [n_total_forecast_visits]
+  vector,  // rep_patient_log_obs [sum(n_patient_visits)]
+  vector,  // rep_mean_patient_log_obs [sum(n_patient_visits)]
+  vector,  // forecast_patient_log_obs [n_total_forecast_visits]
+  vector   // forecast_mean_patient_log_obs [n_total_forecast_visits]
 ) generate_all_patients_states_with_means_rng(
   array[] matrix states_full_grid,
+  array[] int patient_idx,         // maps loop index j -> unified patient index p
   array[] int patient_visit_pos,
   array[] int patient_visit_m1_pos,
   array[] int forecast_visits_pos,
@@ -1051,1215 +1073,110 @@ tuple(
   int last_predict_visit,
   array[] int t_patient_visits,
   array[] int t_patient_visit_idx,
-  vector sum_tumor_size,
+  vector baseline_obs_per_patient,
   real measure_sd,
   real measure_nu,
-  array[] int n_patient_screening_visits  // Number of screening visits per patient
+  array[] int n_patient_screening_visits
 ) {
-  // Calculate sizes from position arrays
-  int n_patients = size(patient_visit_pos) - 1;
+  // j indexes states_full_grid (HMC-local); p = patient_idx[j] indexes data arrays.
+  int n_patients = size(patient_idx);
   int n_total_visits = get_pos_total_size(patient_visit_pos);
   int n_total_forecast_visits = get_pos_total_size(forecast_visits_pos);
-  
+
   // Initialize output arrays
   matrix[n_total_forecast_visits, 2] forecast_patient_states;
-  vector[n_total_visits] rep_patient_log_sld;
-  vector[n_total_visits] rep_mean_patient_log_sld;
-  vector[n_total_forecast_visits] forecast_patient_log_sld;
-  vector[n_total_forecast_visits] forecast_mean_patient_log_sld;
-  
-  // Process each patient: generate noise then states
-  for (i in 1:n_patients) {
-    // Compute sizes from position arrays
-    int visit_size = get_pos_size(patient_visit_pos, i);
-    int forecast_size = get_pos_size(forecast_visits_pos, i);
-    
+  vector[n_total_visits] rep_patient_log_obs;
+  vector[n_total_visits] rep_mean_patient_log_obs;
+  vector[n_total_forecast_visits] forecast_patient_log_obs;
+  vector[n_total_forecast_visits] forecast_mean_patient_log_obs;
+
+  for (j in 1:n_patients) {
+    int p = patient_idx[j];  // unified patient index for data arrays
+    int visit_size = get_pos_size(patient_visit_pos, p);
+    int forecast_size = get_pos_size(forecast_visits_pos, p);
+
     int visit_start, visit_screening_end, treat_visit_start, visit_end;
     (visit_start, visit_screening_end, treat_visit_start, visit_end) = get_visit_pos(
-      patient_visit_pos, i, n_patient_screening_visits[i]);
-    
+      patient_visit_pos, p, n_patient_screening_visits[p]);
+
     int visit_m1_start, visit_m1_end;
-    (visit_m1_start, visit_m1_end) = get_pos(patient_visit_m1_pos, i);
-    
+    (visit_m1_start, visit_m1_end) = get_pos(patient_visit_m1_pos, p);
+
     int forecast_visit_start, forecast_visit_end;
-    (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
-    
+    (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, p);
+
     // Get visit indices for this patient (relative to their first visit)
     array[visit_size] int visit_indices = t_patient_visit_idx[visit_start:visit_end];
-    
-    // Extract observed states from full grid
+
+    // Extract observed states from full grid using j (HMC-local row index)
     matrix[visit_size, 2] patient_states;
-    patient_states[, 1] = to_vector(states_full_grid[1][i, visit_indices]);
-    patient_states[, 2] = to_vector(states_full_grid[2][i, visit_indices]);
-    
+    patient_states[, 1] = to_vector(states_full_grid[1][j, visit_indices]);
+    patient_states[, 2] = to_vector(states_full_grid[2][j, visit_indices]);
+
     // Build forecast time (absolute weeks)
     array[forecast_size + 1] int forecast_time_abs = linspaced_int_array(
       forecast_size + 1,
-      patient_last_obs_visit[i],
+      patient_last_obs_visit[p],
       last_predict_visit);
-    
-    // Extract forecast states from full grid
-    // forecast_time_abs[2:] are absolute weeks, which directly index the treatment period
-    // (after dropping screening visits, position 1 = week 1, position w = week w)
+
+    // Extract forecast states from full grid using j (HMC-local row index)
     matrix[forecast_size, 2] temp_forecast_patient_states;
     if (forecast_size > 0) {
-      temp_forecast_patient_states[, 1] = to_vector(states_full_grid[1][i, forecast_time_abs[2:]]);
-      temp_forecast_patient_states[, 2] = to_vector(states_full_grid[2][i, forecast_time_abs[2:]]);
+      temp_forecast_patient_states[, 1] = to_vector(states_full_grid[1][j, forecast_time_abs[2:]]);
+      temp_forecast_patient_states[, 2] = to_vector(states_full_grid[2][j, forecast_time_abs[2:]]);
     }
-    
-    // Calculate replicated SLD for observed visits (Student-t noise)
-    vector[visit_size] temp_rep_patient_log_sld = zeros_vector(visit_size);
-    temp_rep_patient_log_sld[1] = log(sum_tumor_size[visit_start]);
+
+    // Calculate replicated observations for observed visits (Student-t noise)
+    vector[visit_size] temp_rep_patient_log_obs = zeros_vector(visit_size);
+    temp_rep_patient_log_obs[1] = log(baseline_obs_per_patient[p]);
     if (visit_size > 1) {
-      temp_rep_patient_log_sld[2:] = to_vector(student_t_rng(
+      temp_rep_patient_log_obs[2:] = to_vector(student_t_rng(
         measure_nu,
-        calc_log_sld_mean(patient_states[2:], sum_tumor_size[visit_start]),
+        calc_log_burden_mean(patient_states[2:], baseline_obs_per_patient[p]),
         measure_sd
       ));
     }
-    
-    // Calculate mean log SLD (deterministic, no measurement noise)
-    vector[visit_size] temp_rep_mean_patient_log_sld = 
-      calc_log_sld_mean(patient_states, sum_tumor_size[visit_start]);
-    
-    // Calculate forecast SLD with measurement noise
-    vector[forecast_size] temp_forecast_patient_log_sld = zeros_vector(forecast_size);
-    vector[forecast_size] temp_forecast_mean_patient_log_sld = zeros_vector(forecast_size);
+
+    // Calculate mean log observations (deterministic, no measurement noise)
+    vector[visit_size] temp_rep_mean_patient_log_obs =
+      calc_log_burden_mean(patient_states, baseline_obs_per_patient[p]);
+
+    // Calculate forecast observations with measurement noise
+    vector[forecast_size] temp_forecast_patient_log_obs = zeros_vector(forecast_size);
+    vector[forecast_size] temp_forecast_mean_patient_log_obs = zeros_vector(forecast_size);
     if (forecast_size > 0) {
-      temp_forecast_mean_patient_log_sld = 
-        calc_log_sld_mean(temp_forecast_patient_states, sum_tumor_size[visit_start]);
-      temp_forecast_patient_log_sld = to_vector(student_t_rng(
+      temp_forecast_mean_patient_log_obs =
+        calc_log_burden_mean(temp_forecast_patient_states, baseline_obs_per_patient[p]);
+      temp_forecast_patient_log_obs = to_vector(student_t_rng(
         measure_nu,
-        temp_forecast_mean_patient_log_sld,
+        temp_forecast_mean_patient_log_obs,
         measure_sd
       ));
     }
-    
+
     // Assign to output arrays
     if (forecast_size > 0) {
       forecast_patient_states[forecast_visit_start:forecast_visit_end] = temp_forecast_patient_states;
-      forecast_patient_log_sld[forecast_visit_start:forecast_visit_end] = temp_forecast_patient_log_sld;
-      forecast_mean_patient_log_sld[forecast_visit_start:forecast_visit_end] = temp_forecast_mean_patient_log_sld;
+      forecast_patient_log_obs[forecast_visit_start:forecast_visit_end] = temp_forecast_patient_log_obs;
+      forecast_mean_patient_log_obs[forecast_visit_start:forecast_visit_end] = temp_forecast_mean_patient_log_obs;
     }
-    
-    rep_patient_log_sld[visit_start:visit_end] = temp_rep_patient_log_sld;
-    rep_mean_patient_log_sld[visit_start:visit_end] = temp_rep_mean_patient_log_sld;
+
+    rep_patient_log_obs[visit_start:visit_end] = temp_rep_patient_log_obs;
+    rep_mean_patient_log_obs[visit_start:visit_end] = temp_rep_mean_patient_log_obs;
   }
-  
+
   return (
     forecast_patient_states,
-    rep_patient_log_sld,
-    rep_mean_patient_log_sld,
-    forecast_patient_log_sld,
-    forecast_mean_patient_log_sld
+    rep_patient_log_obs,
+    rep_mean_patient_log_obs,
+    forecast_patient_log_obs,
+    forecast_mean_patient_log_obs
   );
 }
 
-/**
- * Calculate RECIST classifications for all patients with internalized loop
- * This function processes all patients at once, computing both observed (replicated)
- * and forecasted RECIST responses.
- * 
- * @param rep_patient_log_sld Log SLD for observed visits (all patients; noisy or mean)
- * @param forecast_patient_log_sld Log SLD for forecast (all patients; noisy or mean)
- * @param patient_visit_pos Position array for patient visits
- * @param forecast_visits_pos Position array for forecast visits
- * @param n_patient_visits Number of visits per patient
- * @param n_patient_screening_visits Number of screening visits per patient
- * @param n_patient_forecast_visits Number of forecast visits per patient
- * 
- * @return Tuple containing:
- *   - rep_recist: RECIST classifications for observed treatment visits
- *   - forecast_recist: RECIST classifications for forecast visits
- */
-tuple(
-  array[] int,  // rep_recist [sum(n_patient_visits)] - sized for ALL visits for direct indexing
-  array[] int   // forecast_recist [sum(n_patient_forecast_visits)]
-) calculate_all_patients_recist(
-  vector rep_patient_log_sld,
-  vector forecast_patient_log_sld,
-  array[] int patient_visit_pos,
-  array[] int forecast_visits_pos,
-  array[] int n_patient_screening_visits  // Number of screening visits per patient
-) {
-  int n_patients = size(patient_visit_pos) - 1;
-  
-  // Compute total sizes from position arrays
-  int n_total_visits = get_pos_total_size(patient_visit_pos);
-  int n_total_forecast_visits = get_pos_total_size(forecast_visits_pos);
-  
-  // RECIST constants
-  int CR = 1; int PR = 2; int SD = 3; int PD = 4;
-  
-  // Initialize output arrays with sentinel values
-  // rep_recist is sized for ALL visits (including screening) to allow direct indexing with treat_visit_start:visit_end
-  array[n_total_visits] int rep_recist = rep_array(PD + 1, n_total_visits);
-  array[n_total_forecast_visits] int forecast_recist;
-  
-  // Process each patient
-  for (i in 1:n_patients) {
-    // Compute sizes from position arrays
-    int visit_size = get_pos_size(patient_visit_pos, i);
-    int forecast_size = get_pos_size(forecast_visits_pos, i);
-    int n_obs_treat_visits = visit_size - n_patient_screening_visits[i];
-    
-    // Get full visit positions (for extracting SLD means and indexing rep_recist)
-    int visit_start, screening_visit_end, treat_visit_start, visit_end;
-    (visit_start, screening_visit_end, treat_visit_start, visit_end) = get_visit_pos(
-      patient_visit_pos, i, n_patient_screening_visits[i]);
-    
-    // Get forecast visit positions
-    int forecast_visit_start, forecast_visit_end;
-    (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
-    
-    // Calculate RECIST for observed + forecast SLD
-    // calculate_target_recist drops screening visits, so output length = n_obs_treat_visits + forecast_size
-    array[n_obs_treat_visits + forecast_size] int full_predict_recist = calculate_target_recist(
-      exp(append_row(rep_patient_log_sld[visit_start:visit_end],
-                    forecast_patient_log_sld[forecast_visit_start:forecast_visit_end])) * 10,
-      n_patient_screening_visits[i]
-    );
-    
-    // Split into observed and forecast components
-    // Use absolute visit indices for rep_recist (sized for all visits)
-    rep_recist[treat_visit_start:visit_end] = full_predict_recist[:n_obs_treat_visits];
-    forecast_recist[forecast_visit_start:forecast_visit_end] = full_predict_recist[(n_obs_treat_visits + 1):];
-  }
-  
-  return (rep_recist, forecast_recist);
-}
+// calculate_all_patients_endpoints_rng has been moved to pfs.stanfunctions
+// (biomarker-agnostic — needed by both full models and standalone multistate)
 
-/**
- * Calculate patient-level endpoints (PFS and response indicators) for all patients
- * This function processes all patients at once, computing PFS times, censoring status,
- * and confirmed/unconfirmed response indicators.
- * 
- * @param recist Observed RECIST classifications (all visits including screening)
- * @param rep_recist Replicated RECIST classifications (treatment visits only)
- * @param forecast_recist Forecasted RECIST classifications
- * @param pfs Observed PFS detection weeks (1-indexed; = patient_max_t for censored patients)
- * @param right_censored Right censored indicators
- * @param patient_visit_pos Position array for patient visits
- * @param forecast_visits_pos Position array for forecast visits
- * @param n_patient_visits Number of visits per patient
- * @param n_patient_screening_visits Number of screening visits per patient
- * @param n_patient_forecast_visits Number of forecast visits per patient
- * @param patient_last_obs_visit Last observed visit week per patient
- * @param last_predict_visit Last prediction visit week (scalar)
- * @param t_patient_visits All patient visit times (flat array)
- * @param max_all_t Maximum time for analysis
- * 
- * @return Tuple containing:
- *   - sample_target_pfs: Sample PFS times
- *   - sample_target_right_censored: Sample censoring status
- *   - spop_target_pfs: Posterior predictive PFS times
- *   - spop_target_right_censored: Posterior predictive censoring status
- *   - spop_target_obs_cens_pfs: Observed-censored posterior PFS
- *   - spop_target_obs_cens_right_censored: Observed-censored posterior censoring
- *   - sample_target_confirmed_response: Sample confirmed response indicators
- *   - sample_target_unconfirmed_response: Sample unconfirmed response indicators
- *   - spop_target_confirmed_response: Posterior predictive confirmed response
- *   - spop_target_unconfirmed_response: Posterior predictive unconfirmed response
- *   - forecast_target_pfs: Forecast PFS for right-censored patients
- *   - forecast_target_right_censored: Forecast censoring for right-censored patients
- */
-tuple(
-  array[] int,  // sample_target_pfs
-  array[] int,  // sample_target_right_censored
-  array[] int,  // spop_target_pfs
-  array[] int,  // spop_target_right_censored
-  array[] int,  // spop_target_obs_cens_pfs
-  array[] int,  // spop_target_obs_cens_right_censored
-  array[] int,  // sample_ms_pfs
-  array[] int,  // sample_ms_right_censored
-  array[] int,  // spop_ms_pfs
-  array[] int,  // spop_ms_right_censored
-  array[] int,  // sample_pfs
-  array[] int,  // sample_right_censored
-  array[] int,  // spop_pfs
-  array[] int,  // spop_right_censored
-  array[] int,  // sample_target_confirmed_response
-  array[] int,  // sample_target_unconfirmed_response
-  array[] int,  // spop_target_confirmed_response
-  array[] int,  // spop_target_unconfirmed_response
-  array[] int,  // forecast_target_pfs
-  array[] int,  // forecast_target_right_censored
-  array[] int,  // sample_os
-  array[] int,  // sample_os_censored
-  array[] int,  // spop_os
-  array[] int,  // spop_os_censored
-  array[] int,  // spop_is_dropout
-  array[] int   // sample_is_dropout
-) calculate_all_patients_endpoints_rng(
-  array[] int recist,
-  array[] int rep_recist,
-  array[] int forecast_recist,
-  array[] int forecast_obs_recist,
-  array[] int forecast_obs_visits_pos,
-  int forecast_observation_interval,
-  matrix ms_log_cond_surv,  // matrix[n_patients, max_all_t] - log conditional survival probabilities (0→1)
-  int enable_ms_02,
-  int enable_ms_03,
-  int enable_ms_32,
-  int enable_ms_12,
-  int ms_time_scale_12,
-  matrix log_cond_surv_02,    // matrix[n_patients, max_all_t] or [0,0] - 0→2 log conditional survival
-  matrix log_cond_surv_03,    // matrix[n_patients, max_all_t] or [0,0] - 0→3 log conditional survival
-  matrix log_cond_surv_32,    // matrix[n_patients, ms_max_sojourn_t_32] or [0,0] - 3→2 log conditional survival
-  matrix log_cond_surv_12_s,  // matrix[n_patients, ms_max_sojourn_t] or [0,0] - 1→2 sojourn GP
-  matrix log_cond_surv_12_t,  // matrix[n_patients, max_all_t] or [0,0] - 1→2 clock-forward GP
-  array[] int pfs,
-  array[] int right_censored,
-  array[] int target_pfs,  // PFS based on target lesions only (observed data)
-  array[] int target_right_censored,  // Censoring status for target lesions only (observed data)
-  array[] int ms_right_censored,  // Censoring status for multistate events
-  array[] int ms_final_state,  // Final state per patient: 0=censored, 1=progressed, 2=dead, 3=dropout
-  array[] int ms_time_02,      // Observed time to death without progression
-  array[] int ms_censored_02,  // Censoring indicator for 0→2
-  array[] int ms_censored_12,  // Censoring indicator for 1→2
-  array[] int ms_time_12,      // Observed time to post-progression death (sojourn)
-  array[] int ms_os_event_12,  // Exact death calendar week for observed 1→2 deaths (0 if censored)
-  array[] int ms_time_03,      // Calendar week of dropout (= patient_max_t; 1-indexed)
-  array[] int ms_time_32,      // Observed sojourn from dropout to death (0 if not observed)
-  array[] int ms_censored_32,  // Censoring indicator for 3→2
-  array[] int patient_visit_pos,
-  array[] int forecast_visits_pos,
-  array[] int patient_last_obs_visit,
-  int last_predict_visit,
-  array[] int t_patient_visits,
-  int max_all_t,
-  array[] int n_patient_screening_visits  // Number of screening visits per patient
-) {
-  // Illness-death model states:
-  //   0 = alive without progression
-  //   1 = alive with progression (post-progression)
-  //   2 = dead
-  //   3 = dropout (off-trial)
-  // Transitions: 0→1 (progression), 0→2 (direct death), 1→2 (post-progression death),
-  //              0→3 (dropout), 3→2 (off-trial death)
-  //
-  // Key data conventions:
-  //   pfs[i]         = detection week (1-indexed; week progression was detected)
-  //                     for censored patients: pfs = patient_max_t
-  //   ms_time_02[i]  = death_week for observed 0→2 deaths (1-indexed, exact)
-  //   ms_time_12[i]  = sojourn time post-progression:
-  //                     observed death: death_week - detection_week (exact sojourn)
-  //                     censored alive: patient_max_t - detection_week (observed sojourn survival)
-  //                     never progressed: 0
-  //   ms_time_03[i]  = calendar dropout week (1-indexed, patient_max_t for dropout patients)
-  //   ms_time_32[i]  = sojourn from dropout to off-trial death (0 if not observed)
 
-  int n_patients = size(patient_visit_pos) - 1;
-  int n_target_right_censored_patients = sum(target_right_censored);
-
-  // RECIST constants
-  int CR = 1; int PR = 2; int SD = 3; int PD = 4;
-  
-  // Initialize output arrays
-  array[n_patients] int sample_target_pfs;
-  array[n_patients] int sample_target_right_censored;
-  array[n_patients] int spop_target_pfs;
-  array[n_patients] int spop_target_right_censored;
-  array[n_patients] int spop_target_obs_cens_pfs;
-  array[n_patients] int spop_target_obs_cens_right_censored;
-  array[n_patients] int sample_target_confirmed_response;
-  array[n_patients] int sample_target_unconfirmed_response;
-  array[n_patients] int spop_target_confirmed_response;
-  array[n_patients] int spop_target_unconfirmed_response;
-  array[n_target_right_censored_patients] int forecast_target_pfs;
-  array[n_target_right_censored_patients] int forecast_target_right_censored;
-  
-  // Multistate PFS
-  array[n_patients] int sample_ms_pfs;
-  array[n_patients] int sample_ms_right_censored;
-  array[n_patients] int spop_ms_pfs;
-  array[n_patients] int spop_ms_right_censored;
-  
-  // Combined PFS (minimum of target and other events)
-  array[n_patients] int sample_pfs;
-  array[n_patients] int sample_right_censored;
-  array[n_patients] int spop_pfs;
-  array[n_patients] int spop_right_censored;
-
-  // OS (overall survival)
-  array[n_patients] int sample_os;
-  array[n_patients] int sample_os_censored;
-  array[n_patients] int spop_os;
-  array[n_patients] int spop_os_censored;
-
-  // Dropout flags (1 if patient exited via cause 3; used for CIF computation)
-  array[n_patients] int spop_is_dropout;
-  array[n_patients] int sample_is_dropout;
-
-  int right_censored_idx = 1;
-  
-  // Process each patient
-  for (i in 1:n_patients) {
-    // Compute sizes from position arrays
-    int visit_size = get_pos_size(patient_visit_pos, i);
-    int forecast_size = get_pos_size(forecast_visits_pos, i);
-    int n_obs_treat_visits = visit_size - n_patient_screening_visits[i];
-    
-    int visit_start, screening_visit_end, treat_visit_start, visit_end;
-    (visit_start, screening_visit_end, treat_visit_start, visit_end) = get_visit_pos(
-      patient_visit_pos, i, n_patient_screening_visits[i]);
-    
-    int forecast_visit_start, forecast_visit_end;
-    (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, i);
-    
-    array[visit_size] int curr_visits = get_int_sub_array(t_patient_visits, patient_visit_pos, i);
-    array[n_obs_treat_visits] int treat_curr_visits = curr_visits[(n_patient_screening_visits[i] + 1):];
-    
-    // Build assessment-visit forecast time and RECIST
-    int n_assessment = get_pos_size(forecast_obs_visits_pos, i);
-    int assess_start, assess_end;
-    (assess_start, assess_end) = get_pos(forecast_obs_visits_pos, i);
-
-    // Assessment visit calendar weeks (subsampled from weekly grid)
-    array[n_assessment] int obs_visit_time;
-    for (a in 1:n_assessment) {
-      obs_visit_time[a] = min(patient_last_obs_visit[i] + a * forecast_observation_interval,
-                               last_predict_visit);
-    }
-
-    // Full assessment visit schedule for spop (unconditional):
-    // observed treatment visits + forecast assessment visits
-    int n_spop_visits = n_obs_treat_visits + n_assessment;
-    array[n_spop_visits] int spop_visit_weeks =
-      append_array(treat_curr_visits, obs_visit_time);
-
-    // Assessment-visit forecast RECIST for this patient
-    array[n_assessment] int patient_forecast_obs_recist =
-      forecast_obs_recist[assess_start:assess_end];
-
-    // Concatenate observed RECIST + assessment-visit forecast RECIST
-    array[n_obs_treat_visits] int patient_rep_recist = rep_recist[treat_visit_start:visit_end];
-    array[n_obs_treat_visits + n_assessment] int full_predict_recist =
-      append_array(patient_rep_recist, patient_forecast_obs_recist);
-
-    // Weekly forecast RECIST (used by weekly forecast_recist for visualization)
-    array[forecast_size] int patient_forecast_recist = forecast_recist[forecast_visit_start:forecast_visit_end];
-
-    // Initialize response tracking variables
-    int sample_target_confirmed_response_week, sample_target_confirmed_response_censored;
-    int sample_target_unconfirmed_response_week, sample_target_unconfirmed_response_censored;
-    int spop_target_confirmed_response_week, spop_target_confirmed_response_censored;
-    int spop_target_unconfirmed_response_week, spop_target_unconfirmed_response_censored;
-
-    // Calculate posterior predictive target PFS (using assessment-visit RECIST)
-    (spop_target_pfs[i], spop_target_right_censored[i]) = find_first_week(
-      full_predict_recist, { PD }, 1, treat_curr_visits, obs_visit_time, max_all_t);
-
-    // Calculate response weeks for posterior predictive (always use full prediction)
-    (spop_target_confirmed_response_week, spop_target_confirmed_response_censored) = find_first_week(
-      full_predict_recist, { PR, CR }, 2, treat_curr_visits, obs_visit_time, max_all_t);
-
-    (spop_target_unconfirmed_response_week, spop_target_unconfirmed_response_censored) = find_first_week(
-      full_predict_recist, { PR, CR }, 1, treat_curr_visits, obs_visit_time, max_all_t);
-
-    // Handle right-censored patients with forecast
-    if (forecast_size > 0 && target_right_censored[i]) {
-      // Combine observed + assessment-visit forecast RECIST for sample outcomes
-      array[n_obs_treat_visits + n_assessment] int combined_recist =
-        append_array(recist[treat_visit_start:visit_end], patient_forecast_obs_recist);
-
-      (sample_target_pfs[i], sample_target_right_censored[i]) =
-        find_first_week(combined_recist, { PD }, 1, treat_curr_visits, obs_visit_time, max_all_t);
-
-      forecast_target_pfs[right_censored_idx] = sample_target_pfs[i];
-      forecast_target_right_censored[right_censored_idx] = sample_target_right_censored[i];
-
-      (sample_target_confirmed_response_week, sample_target_confirmed_response_censored) = find_first_week(
-        combined_recist, { PR, CR }, 2, treat_curr_visits, obs_visit_time, max_all_t);
-
-      (sample_target_unconfirmed_response_week, sample_target_unconfirmed_response_censored) = find_first_week(
-        combined_recist, { PR, CR }, 1, treat_curr_visits, obs_visit_time, max_all_t);
-
-      right_censored_idx += 1;
-    } else {
-      // Calculate sample target PFS from observed target-lesion data
-      // Use target_pfs (deterministic PFS from target lesions only) not overall pfs
-      sample_target_pfs[i] = target_pfs[i];
-      sample_target_right_censored[i] = target_right_censored[i];
-
-      // Calculate response weeks for observed data (will be updated with forecast if censored)
-      (sample_target_confirmed_response_week, sample_target_confirmed_response_censored) = find_first_week(
-        recist[treat_visit_start:visit_end], { PR, CR }, 2, treat_curr_visits, obs_visit_time, max_all_t);
-
-      (sample_target_unconfirmed_response_week, sample_target_unconfirmed_response_censored) = find_first_week(
-        recist[treat_visit_start:visit_end], { PR, CR }, 1, treat_curr_visits, obs_visit_time, max_all_t);
-    }
-    
-    // Calculate observed-censored posterior PFS
-    spop_target_obs_cens_right_censored[i] = target_right_censored[i];
-    spop_target_obs_cens_pfs[i] = target_right_censored[i] ? min(spop_target_pfs[i], target_pfs[i]) : spop_target_pfs[i];
-    
-    // Calculate response indicators
-    sample_target_confirmed_response[i] = !sample_target_confirmed_response_censored && sample_target_confirmed_response_week < sample_target_pfs[i];
-    sample_target_unconfirmed_response[i] = !sample_target_unconfirmed_response_censored && sample_target_unconfirmed_response_week <= sample_target_pfs[i];
-    
-    spop_target_confirmed_response[i] = !spop_target_confirmed_response_censored && spop_target_confirmed_response_week < spop_target_pfs[i];
-    spop_target_unconfirmed_response[i] = !spop_target_unconfirmed_response_censored && spop_target_unconfirmed_response_week <= spop_target_pfs[i];
-    
-    // =========================================================================
-    // MULTISTATE PFS + OS: Classify-first competing-risks approach (Issue 79)
-    //
-    // Per-patient RNG call sequence (preserved for bitwise equivalence):
-    //   Step 1: assessment_gated_survival_time_rng  — sample ms01 (conditional)
-    //   Step 2: assessment_gated_survival_time_rng  — spop  ms01 (unconditional)
-    //   Step 3: survival_time_rng                   — spop  0→2  (if enable_ms_02)
-    //   Step 4: survival_time_rng                   — spop  0→3  (if enable_ms_03)
-    //   Step 5: derive_spop_os RNG                  — spop post-event death
-    //   Step 6: survival_time_rng                   — sample 0→2 (if enable_ms_02 && ms_censored)
-    //   Step 7: derive_sample_os RNG                — sample post-event death
-    // =========================================================================
-
-    // --- RNG Step 1: sample ms01 (conditional on observed data) ---
-    if (ms_right_censored[i]) {
-      (sample_ms_pfs[i], sample_ms_right_censored[i]) = assessment_gated_survival_time_rng(
-          ms_log_cond_surv[i], spop_visit_weeks, max_all_t, pfs[i], 1);
-    } else {
-      sample_ms_pfs[i] = pfs[i];
-      sample_ms_right_censored[i] = 0;
-    }
-
-    // --- RNG Step 2: spop ms01 (unconditional) ---
-    // No +1: assessment_gated_survival_time_rng returns 1-indexed calendar week directly
-    int t_ms01_spop; int c_ms01_spop;
-    (t_ms01_spop, c_ms01_spop) = assessment_gated_survival_time_rng(
-        ms_log_cond_surv[i], spop_visit_weeks, max_all_t);
-
-    // --- RNG Steps 3–4: spop 0→2 and 0→3 competing risks ---
-    int spop_time_02 = max_all_t + 1; int spop_cens_02 = 1;
-    if (enable_ms_02) {
-      int t02_raw; int c02_raw;
-      (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[i]);
-      spop_time_02 = t02_raw + 1;  // Convert to 1-indexed week
-      spop_cens_02 = c02_raw;
-    }
-
-    int spop_time_03 = max_all_t + 1; int spop_cens_03 = 1;
-    if (enable_ms_03) {
-      // Visit-only sampling: dropout can only occur AT visits, not between them.
-      // Matches the likelihood's sum_03_at_visits_below() which evaluates one
-      // log_cond_surv_03 term per visit week.
-      (spop_time_03, spop_cens_03) = visit_only_survival_time_rng(
-          log_cond_surv_03[i], spop_visit_weeks, max_all_t);
-    }
-
-    // --- Classify and derive spop PFS atomically (no RNG) ---
-    int t_01_spop = min(spop_target_pfs[i], t_ms01_spop);
-    int c_01_spop = spop_target_right_censored[i] && c_ms01_spop;
-    int spop_cause; int spop_exit;
-    (spop_cause, spop_exit) = classify_spop_exit(
-        t_01_spop, c_01_spop,
-        spop_time_02, spop_cens_02,
-        spop_time_03, spop_cens_03,
-        enable_ms_02, enable_ms_03);
-
-    spop_is_dropout[i] = (spop_cause == 3);
-
-    (spop_pfs[i], spop_right_censored[i], spop_ms_pfs[i], spop_ms_right_censored[i]) =
-        derive_spop_pfs(spop_cause, spop_exit,
-                        spop_target_pfs[i], spop_target_right_censored[i],
-                        t_ms01_spop, c_ms01_spop,
-                        spop_time_03,
-                        enable_ms_02, enable_ms_03);
-
-    // --- RNG Step 5: spop OS ---
-    // Guard: clock-forward matrix is [0,0] when ms_time_scale_12==1 (semi-Markov)
-    row_vector[cols(log_cond_surv_12_t)] surv_12_t_i =
-      cols(log_cond_surv_12_t) > 0 ? log_cond_surv_12_t[i] : rep_row_vector(0, 0);
-    (spop_os[i], spop_os_censored[i]) = derive_spop_os_rng(
-        spop_cause, spop_exit,
-        enable_ms_12, enable_ms_32, ms_time_scale_12,
-        log_cond_surv_12_s[i], surv_12_t_i,
-        log_cond_surv_32[i],
-        t_01_spop, spop_time_02, spop_time_03);
-
-    // --- RNG Step 6: sample 0→2 (use observed data if available) ---
-    int sample_time_02 = max_all_t + 1; int sample_cens_02 = 1;
-    if (enable_ms_02) {
-      if (!ms_censored_02[i]) {
-        // Death without progression was observed (death_week is exact, 1-indexed)
-        sample_time_02 = ms_time_02[i];
-        sample_cens_02 = 0;
-      } else {
-        // Censored for 0→2: forecast from observed time
-        int t02_raw; int c02_raw;
-        (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[i], pfs[i], 1, 0);
-        sample_time_02 = t02_raw + 1;
-        sample_cens_02 = c02_raw;
-      }
-    }
-
-    // --- RNG Step 6b: sample 0→3 (use observed data or forecast) ---
-    int sample_time_03 = max_all_t + 1; int sample_cens_03 = 1;
-    if (enable_ms_03) {
-      if (ms_final_state[i] == 3) {
-        // Observed dropout — use ground truth
-        sample_time_03 = ms_time_03[i]; sample_cens_03 = 0;
-      } else if (ms_final_state[i] == 0) {
-        // Admin-censored — forecast 0→3 from last observation
-        (sample_time_03, sample_cens_03) = visit_only_survival_time_rng(
-            log_cond_surv_03[i], spop_visit_weeks, max_all_t,
-            ms_time_03[i], 1);
-      }
-      // States 1, 2: event observed → dropout didn't happen; leave as (max_all_t+1, 1)
-    }
-
-    // --- Classify and derive sample PFS atomically (no RNG) ---
-    int sample_t01; int sample_c01;
-    if (!right_censored[i]) {
-      sample_t01 = pfs[i];
-      sample_c01 = 0;
-    } else {
-      sample_t01 = min(sample_target_pfs[i], sample_ms_pfs[i]);
-      sample_c01 = sample_target_right_censored[i] && sample_ms_right_censored[i];
-    }
-
-    int sample_cause; int sample_exit;
-    (sample_cause, sample_exit) = classify_sample_exit(
-        sample_t01, sample_c01,
-        sample_time_02, sample_cens_02,
-        sample_time_03, sample_cens_03,
-        ms_censored_02[i],
-        enable_ms_02, enable_ms_03);
-
-    sample_is_dropout[i] = (sample_cause == 3);
-
-    (sample_pfs[i], sample_right_censored[i], sample_ms_pfs[i], sample_ms_right_censored[i]) =
-        derive_sample_pfs(sample_cause, sample_exit,
-                          sample_target_pfs[i], sample_target_right_censored[i],
-                          sample_ms_pfs[i], sample_ms_right_censored[i],
-                          sample_time_03,
-                          enable_ms_02, enable_ms_03);
-
-    // --- RNG Step 7: sample OS ---
-    (sample_os[i], sample_os_censored[i]) = derive_sample_os_rng(
-        sample_cause, sample_exit,
-        enable_ms_12, enable_ms_32, ms_time_scale_12,
-        log_cond_surv_12_s[i], surv_12_t_i,
-        log_cond_surv_32[i],
-        sample_t01, sample_time_02,
-        pfs[i],
-        ms_censored_12[i], ms_time_12[i], ms_os_event_12[i],
-        ms_censored_32[i], sample_time_03, ms_time_32[i]);
-  }
-
-  return (
-    sample_target_pfs,
-    sample_target_right_censored,
-    spop_target_pfs,
-    spop_target_right_censored,
-    spop_target_obs_cens_pfs,
-    spop_target_obs_cens_right_censored,
-    sample_ms_pfs,
-    sample_ms_right_censored,
-    spop_ms_pfs,
-    spop_ms_right_censored,
-    sample_pfs,
-    sample_right_censored,
-    spop_pfs,
-    spop_right_censored,
-    sample_target_confirmed_response,
-    sample_target_unconfirmed_response,
-    spop_target_confirmed_response,
-    spop_target_unconfirmed_response,
-    forecast_target_pfs,
-    forecast_target_right_censored,
-    sample_os,
-    sample_os_censored,
-    spop_os,
-    spop_os_censored,
-    spop_is_dropout,
-    sample_is_dropout
-  );
-}
-
-/**
- * Aggregate patient-level endpoints to trial-level metrics
- * This function processes all trials at once, computing trial-level ORR, 
- * Kaplan-Meier curves, median PFS, and PFS at specific timepoints.
- * 
- * @param sample_target_confirmed_response Sample confirmed response indicators
- * @param spop_target_confirmed_response Posterior predictive confirmed response
- * @param sample_target_pfs Sample PFS times
- * @param sample_target_right_censored Sample censoring status
- * @param spop_target_pfs Posterior predictive PFS times
- * @param spop_target_right_censored Posterior predictive censoring status
- * @param spop_target_obs_cens_pfs Observed-censored posterior PFS
- * @param spop_target_obs_cens_right_censored Observed-censored posterior censoring
- * @param trial_patient_pos Position array for trial patients
- * @param max_all_t Maximum time for analysis
- * @param pfs_timepoints PFS timepoints (in months)
- * 
- * @return Tuple containing:
- *   - sample_target_orr: Sample ORR per trial
- *   - spop_target_orr: Posterior predictive ORR per trial
- *   - sample_target_km_est: Sample KM curves per trial
- *   - spop_target_km_est: Posterior predictive KM curves per trial
- *   - spop_target_obs_cens_km_est: Observed-censored posterior KM curves
- *   - sample_target_median_pfs: Sample median PFS per trial
- *   - spop_target_median_pfs: Posterior predictive median PFS per trial
- *   - sample_target_median_pfs_exceeds_max: Indicator if sample median exceeds max_all_t per trial
- *   - spop_target_median_pfs_exceeds_max: Indicator if spop median exceeds max_all_t per trial
- *   - sample_target_pfs_n: Sample PFS-n per trial
- *   - spop_target_pfs_n: Posterior predictive PFS-n per trial
- */
-tuple(
-  vector,         // sample_target_orr [n_trials]
-  vector,         // spop_target_orr [n_trials]
-  array[] vector, // sample_target_km_est [n_trials][max_all_t + 1]
-  array[] vector, // spop_target_km_est [n_trials][max_all_t + 1]
-  array[] vector, // spop_target_obs_cens_km_est [n_trials][max_all_t + 1]
-  array[] vector, // sample_ms_km_est [n_trials][max_all_t + 1]
-  array[] vector, // spop_ms_km_est [n_trials][max_all_t + 1]
-  array[] vector, // sample_km_est [n_trials][max_all_t + 1]
-  array[] vector, // spop_km_est [n_trials][max_all_t + 1]
-  array[] vector, // sample_target_quant_pfs [n_trials][n_pfs_quantiles]
-  array[] vector, // spop_target_quant_pfs [n_trials][n_pfs_quantiles]
-  array[,] int,   // sample_target_quant_pfs_exceeds_max [n_trials, n_pfs_quantiles]
-  array[,] int,   // spop_target_quant_pfs_exceeds_max [n_trials, n_pfs_quantiles]
-  array[] vector, // sample_ms_quant_pfs [n_trials][n_pfs_quantiles]
-  array[] vector, // spop_ms_quant_pfs [n_trials][n_pfs_quantiles]
-  array[,] int,   // sample_ms_quant_pfs_exceeds_max [n_trials, n_pfs_quantiles]
-  array[,] int,   // spop_ms_quant_pfs_exceeds_max [n_trials, n_pfs_quantiles]
-  array[] vector, // sample_quant_pfs [n_trials][n_pfs_quantiles]
-  array[] vector, // spop_quant_pfs [n_trials][n_pfs_quantiles]
-  array[,] int,   // sample_quant_pfs_exceeds_max [n_trials, n_pfs_quantiles]
-  array[,] int,   // spop_quant_pfs_exceeds_max [n_trials, n_pfs_quantiles]
-  array[] vector, // sample_target_pfs_n [n_trials][n_pfs_timepoints]
-  array[] vector, // spop_target_pfs_n [n_trials][n_pfs_timepoints]
-  array[] vector, // sample_ms_pfs_n [n_trials][n_pfs_timepoints]
-  array[] vector, // spop_ms_pfs_n [n_trials][n_pfs_timepoints]
-  array[] vector, // sample_pfs_n [n_trials][n_pfs_timepoints]
-  array[] vector, // spop_pfs_n [n_trials][n_pfs_timepoints]
-  array[] vector, // sample_os_km_est [n_trials][max_all_t + 1]
-  array[] vector, // spop_os_km_est [n_trials][max_all_t + 1]
-  array[] vector, // sample_os_quant [n_trials][n_pfs_quantiles]
-  array[] vector, // spop_os_quant [n_trials][n_pfs_quantiles]
-  array[,] int,   // sample_os_quant_exceeds_max [n_trials, n_pfs_quantiles]
-  array[,] int,   // spop_os_quant_exceeds_max [n_trials, n_pfs_quantiles]
-  array[] vector, // sample_os_n [n_trials][n_pfs_timepoints]
-  array[] vector  // spop_os_n [n_trials][n_pfs_timepoints]
-) aggregate_trial_metrics(
-  array[] int sample_target_confirmed_response,
-  array[] int spop_target_confirmed_response,
-  array[] int sample_target_pfs,
-  array[] int sample_target_right_censored,
-  array[] int spop_target_pfs,
-  array[] int spop_target_right_censored,
-  array[] int spop_target_obs_cens_pfs,
-  array[] int spop_target_obs_cens_right_censored,
-  array[] int sample_ms_pfs,
-  array[] int sample_ms_right_censored,
-  array[] int spop_ms_pfs,
-  array[] int spop_ms_right_censored,
-  array[] int sample_pfs,
-  array[] int sample_right_censored,
-  array[] int spop_pfs,
-  array[] int spop_right_censored,
-  array[] int sample_os,
-  array[] int sample_os_censored,
-  array[] int spop_os,
-  array[] int spop_os_censored,
-  array[] int trial_patient_pos,
-  int max_all_t,
-  vector pfs_quantiles,
-  array[] int pfs_timepoints
-) {
-  int n_trials = size(trial_patient_pos) - 1;  // Position arrays have size n_groups + 1
-  int n_pfs_quantiles = num_elements(pfs_quantiles);
-  int n_pfs_timepoints = size(pfs_timepoints);
-  
-  // Initialize output arrays
-  vector[n_trials] sample_target_orr;
-  vector[n_trials] spop_target_orr;
-  array[n_trials] vector[max_all_t + 1] sample_target_km_est;
-  array[n_trials] vector[max_all_t + 1] spop_target_km_est;
-  array[n_trials] vector[max_all_t + 1] spop_target_obs_cens_km_est;
-  array[n_trials] vector[max_all_t + 1] sample_ms_km_est;
-  array[n_trials] vector[max_all_t + 1] spop_ms_km_est;
-  array[n_trials] vector[max_all_t + 1] sample_km_est;
-  array[n_trials] vector[max_all_t + 1] spop_km_est;
-  array[n_trials] vector[n_pfs_quantiles] sample_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
-  array[n_trials] vector[n_pfs_quantiles] spop_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
-  array[n_trials, n_pfs_quantiles] int sample_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
-  array[n_trials, n_pfs_quantiles] int spop_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
-  array[n_trials] vector[n_pfs_quantiles] sample_ms_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
-  array[n_trials] vector[n_pfs_quantiles] spop_ms_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
-  array[n_trials, n_pfs_quantiles] int sample_ms_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
-  array[n_trials, n_pfs_quantiles] int spop_ms_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
-  array[n_trials] vector[n_pfs_quantiles] sample_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
-  array[n_trials] vector[n_pfs_quantiles] spop_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
-  array[n_trials, n_pfs_quantiles] int sample_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
-  array[n_trials, n_pfs_quantiles] int spop_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
-  array[n_trials] vector[n_pfs_timepoints] sample_target_pfs_n;
-  array[n_trials] vector[n_pfs_timepoints] spop_target_pfs_n;
-  array[n_trials] vector[n_pfs_timepoints] sample_ms_pfs_n;
-  array[n_trials] vector[n_pfs_timepoints] spop_ms_pfs_n;
-  array[n_trials] vector[n_pfs_timepoints] sample_pfs_n;
-  array[n_trials] vector[n_pfs_timepoints] spop_pfs_n;
-  // OS aggregation arrays
-  array[n_trials] vector[max_all_t + 1] sample_os_km_est;
-  array[n_trials] vector[max_all_t + 1] spop_os_km_est;
-  array[n_trials] vector[n_pfs_quantiles] sample_os_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
-  array[n_trials] vector[n_pfs_quantiles] spop_os_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
-  array[n_trials, n_pfs_quantiles] int sample_os_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
-  array[n_trials, n_pfs_quantiles] int spop_os_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
-  array[n_trials] vector[n_pfs_timepoints] sample_os_n;
-  array[n_trials] vector[n_pfs_timepoints] spop_os_n;
-
-  // Process each trial
-  for (s in 1:n_trials) {
-    if (get_pos_size(trial_patient_pos, s) > 0) {
-      // Calculate ORR
-      sample_target_orr[s] = mean(get_int_sub_array(sample_target_confirmed_response, trial_patient_pos, s));
-      spop_target_orr[s] = mean(get_int_sub_array(spop_target_confirmed_response, trial_patient_pos, s));
-      
-      // Get trial patient data
-      array[get_pos_size(trial_patient_pos, s)] int curr_sample_pfs = 
-        get_int_sub_array(sample_target_pfs, trial_patient_pos, s);
-      array[get_pos_size(trial_patient_pos, s)] int curr_sample_right_censored = 
-        get_int_sub_array(sample_target_right_censored, trial_patient_pos, s);
-      
-      array[get_pos_size(trial_patient_pos, s)] int curr_spop_target_pfs = 
-        get_int_sub_array(spop_target_pfs, trial_patient_pos, s);
-      array[get_pos_size(trial_patient_pos, s)] int curr_spop_target_right_censored = 
-        get_int_sub_array(spop_target_right_censored, trial_patient_pos, s);
-      
-      // Estimate Kaplan-Meier curves
-      sample_target_km_est[s] = estimate_kaplan_meier(
-        curr_sample_pfs, curr_sample_right_censored, max_all_t).1;
-      
-      spop_target_km_est[s] = estimate_kaplan_meier(
-        curr_spop_target_pfs, curr_spop_target_right_censored, max_all_t, 0).1;
-      
-      spop_target_obs_cens_km_est[s] = estimate_kaplan_meier(
-        get_int_sub_array(spop_target_obs_cens_pfs, trial_patient_pos, s),
-        get_int_sub_array(spop_target_obs_cens_right_censored, trial_patient_pos, s),
-        max_all_t, 0).1;
-      
-      // Multistate KM estimates
-      sample_ms_km_est[s] = estimate_kaplan_meier(
-        get_int_sub_array(sample_ms_pfs, trial_patient_pos, s),
-        get_int_sub_array(sample_ms_right_censored, trial_patient_pos, s),
-        max_all_t, 0).1;
-
-      spop_ms_km_est[s] = estimate_kaplan_meier(
-        get_int_sub_array(spop_ms_pfs, trial_patient_pos, s),
-        get_int_sub_array(spop_ms_right_censored, trial_patient_pos, s),
-        max_all_t, 0).1;
-      
-      // Combined PFS KM estimates
-      sample_km_est[s] = estimate_kaplan_meier(
-        get_int_sub_array(sample_pfs, trial_patient_pos, s),
-        get_int_sub_array(sample_right_censored, trial_patient_pos, s),
-        max_all_t, 0).1;
-      
-      spop_km_est[s] = estimate_kaplan_meier(
-        get_int_sub_array(spop_pfs, trial_patient_pos, s),
-        get_int_sub_array(spop_right_censored, trial_patient_pos, s),
-        max_all_t, 0).1;
-      
-      // Calculate quantile PFS and capture exceeds_max indicators using vectorized function
-      (sample_target_quant_pfs[s], sample_target_quant_pfs_exceeds_max[s]) = 
-        km_quantiles(sample_target_km_est[s], pfs_quantiles);
-      (spop_target_quant_pfs[s], spop_target_quant_pfs_exceeds_max[s]) = 
-        km_quantiles(spop_target_km_est[s], pfs_quantiles);
-      (sample_ms_quant_pfs[s], sample_ms_quant_pfs_exceeds_max[s]) =
-        km_quantiles(sample_ms_km_est[s], pfs_quantiles);
-      (spop_ms_quant_pfs[s], spop_ms_quant_pfs_exceeds_max[s]) =
-        km_quantiles(spop_ms_km_est[s], pfs_quantiles);
-      (sample_quant_pfs[s], sample_quant_pfs_exceeds_max[s]) = 
-        km_quantiles(sample_km_est[s], pfs_quantiles);
-      (spop_quant_pfs[s], spop_quant_pfs_exceeds_max[s]) = 
-        km_quantiles(spop_km_est[s], pfs_quantiles);
-      
-      // Calculate PFS-n at specified timepoints
-      for (n in 1:n_pfs_timepoints) {
-        sample_target_pfs_n[s, n] = calc_km_pfs_n(sample_target_km_est[s], months_to_weeks(pfs_timepoints[n]));
-        spop_target_pfs_n[s, n] = calc_km_pfs_n(spop_target_km_est[s], months_to_weeks(pfs_timepoints[n]));
-        sample_ms_pfs_n[s, n] = calc_km_pfs_n(sample_ms_km_est[s], months_to_weeks(pfs_timepoints[n]));
-        spop_ms_pfs_n[s, n] = calc_km_pfs_n(spop_ms_km_est[s], months_to_weeks(pfs_timepoints[n]));
-        sample_pfs_n[s, n] = calc_km_pfs_n(sample_km_est[s], months_to_weeks(pfs_timepoints[n]));
-        spop_pfs_n[s, n] = calc_km_pfs_n(spop_km_est[s], months_to_weeks(pfs_timepoints[n]));
-      }
-
-      // OS KM estimates
-      sample_os_km_est[s] = estimate_kaplan_meier(
-        get_int_sub_array(sample_os, trial_patient_pos, s),
-        get_int_sub_array(sample_os_censored, trial_patient_pos, s),
-        max_all_t, 0).1;
-
-      spop_os_km_est[s] = estimate_kaplan_meier(
-        get_int_sub_array(spop_os, trial_patient_pos, s),
-        get_int_sub_array(spop_os_censored, trial_patient_pos, s),
-        max_all_t, 0).1;
-
-      // OS quantiles
-      (sample_os_quant[s], sample_os_quant_exceeds_max[s]) =
-        km_quantiles(sample_os_km_est[s], pfs_quantiles);
-      (spop_os_quant[s], spop_os_quant_exceeds_max[s]) =
-        km_quantiles(spop_os_km_est[s], pfs_quantiles);
-
-      // OS-n at specified timepoints
-      for (n in 1:n_pfs_timepoints) {
-        sample_os_n[s, n] = calc_km_pfs_n(sample_os_km_est[s], months_to_weeks(pfs_timepoints[n]));
-        spop_os_n[s, n] = calc_km_pfs_n(spop_os_km_est[s], months_to_weeks(pfs_timepoints[n]));
-      }
-    } else {
-      // Empty trial - set to zero
-      sample_target_orr[s] = 0;
-      spop_target_orr[s] = 0;
-      sample_target_km_est[s] = zeros_vector(max_all_t + 1);
-      spop_target_km_est[s] = zeros_vector(max_all_t + 1);
-      spop_target_obs_cens_km_est[s] = zeros_vector(max_all_t + 1);
-      sample_ms_km_est[s] = zeros_vector(max_all_t + 1);
-      spop_ms_km_est[s] = zeros_vector(max_all_t + 1);
-      sample_km_est[s] = zeros_vector(max_all_t + 1);
-      spop_km_est[s] = zeros_vector(max_all_t + 1);
-      sample_os_km_est[s] = zeros_vector(max_all_t + 1);
-      spop_os_km_est[s] = zeros_vector(max_all_t + 1);
-      sample_target_pfs_n[s] = zeros_vector(n_pfs_timepoints);
-      spop_target_pfs_n[s] = zeros_vector(n_pfs_timepoints);
-      sample_ms_pfs_n[s] = zeros_vector(n_pfs_timepoints);
-      spop_ms_pfs_n[s] = zeros_vector(n_pfs_timepoints);
-      sample_pfs_n[s] = zeros_vector(n_pfs_timepoints);
-      spop_pfs_n[s] = zeros_vector(n_pfs_timepoints);
-      sample_os_n[s] = zeros_vector(n_pfs_timepoints);
-      spop_os_n[s] = zeros_vector(n_pfs_timepoints);
-    }
-  }
-  
-  return (
-    sample_target_orr,
-    spop_target_orr,
-    sample_target_km_est,
-    spop_target_km_est,
-    spop_target_obs_cens_km_est,
-    sample_ms_km_est,
-    spop_ms_km_est,
-    sample_km_est,
-    spop_km_est,
-    sample_target_quant_pfs,
-    spop_target_quant_pfs,
-    sample_target_quant_pfs_exceeds_max,
-    spop_target_quant_pfs_exceeds_max,
-    sample_ms_quant_pfs,
-    spop_ms_quant_pfs,
-    sample_ms_quant_pfs_exceeds_max,
-    spop_ms_quant_pfs_exceeds_max,
-    sample_quant_pfs,
-    spop_quant_pfs,
-    sample_quant_pfs_exceeds_max,
-    spop_quant_pfs_exceeds_max,
-    sample_target_pfs_n,
-    spop_target_pfs_n,
-    sample_ms_pfs_n,
-    spop_ms_pfs_n,
-    sample_pfs_n,
-    spop_pfs_n,
-    sample_os_km_est,
-    spop_os_km_est,
-    sample_os_quant,
-    spop_os_quant,
-    sample_os_quant_exceeds_max,
-    spop_os_quant_exceeds_max,
-    sample_os_n,
-    spop_os_n
-  );
-}
-
-/**
- * Aggregate patient-level endpoints to conditional group-level metrics
- * This function processes all conditional groups at once, computing group-level ORR, 
- * Kaplan-Meier curves, median PFS, and PFS at specific timepoints.
- * 
- * @param sample_target_confirmed_response Sample confirmed response indicators
- * @param spop_target_confirmed_response Posterior predictive confirmed response
- * @param sample_target_pfs Sample PFS times
- * @param sample_target_right_censored Sample censoring status
- * @param spop_target_pfs Posterior predictive PFS times
- * @param spop_target_right_censored Posterior predictive censoring status
- * @param spop_target_obs_cens_pfs Observed-censored posterior PFS
- * @param spop_target_obs_cens_right_censored Observed-censored posterior censoring
- * @param cond_group Conditional group patient indices
- * @param cond_group_pos Position array for conditional group patients
- * @param cond_group_size Size of each conditional group
- * @param max_all_t Maximum time for analysis
- * @param pfs_timepoints PFS timepoints (in months)
- * 
- * @return Tuple containing:
- *   - cond_sample_target_orr: Sample ORR per group
- *   - cond_spop_target_orr: Posterior predictive ORR per group
- *   - cond_sample_target_km_est: Sample KM curves per group
- *   - cond_spop_target_km_est: Posterior predictive KM curves per group
- *   - cond_spop_target_obs_cens_km_est: Observed-censored posterior KM curves
- *   - cond_sample_target_median_pfs: Sample median PFS per group
- *   - cond_spop_target_median_pfs: Posterior predictive median PFS per group
- *   - cond_sample_target_median_pfs_exceeds_max: Indicator if sample median exceeds max_all_t per group
- *   - cond_spop_target_median_pfs_exceeds_max: Indicator if spop median exceeds max_all_t per group
- *   - cond_sample_target_pfs_n: Sample PFS-n per group
- *   - cond_spop_target_pfs_n: Posterior predictive PFS-n per group
- */
-tuple(
-  vector,         // cond_sample_target_orr [n_cond_group]
-  vector,         // cond_spop_target_orr [n_cond_group]
-  array[] vector, // cond_sample_target_km_est [n_cond_group][max_all_t + 1]
-  array[] vector, // cond_spop_target_km_est [n_cond_group][max_all_t + 1]
-  array[] vector, // cond_spop_target_obs_cens_km_est [n_cond_group][max_all_t + 1]
-  array[] vector, // cond_sample_ms_km_est [n_cond_group][max_all_t + 1]
-  array[] vector, // cond_spop_ms_km_est [n_cond_group][max_all_t + 1]
-  array[] vector, // cond_sample_km_est [n_cond_group][max_all_t + 1]
-  array[] vector, // cond_spop_km_est [n_cond_group][max_all_t + 1]
-  array[] vector, // cond_sample_target_quant_pfs [n_cond_group][n_pfs_quantiles]
-  array[] vector, // cond_spop_target_quant_pfs [n_cond_group][n_pfs_quantiles]
-  array[,] int,   // cond_sample_target_quant_pfs_exceeds_max [n_cond_group, n_pfs_quantiles]
-  array[,] int,   // cond_spop_target_quant_pfs_exceeds_max [n_cond_group, n_pfs_quantiles]
-  array[] vector, // cond_sample_ms_quant_pfs [n_cond_group][n_pfs_quantiles]
-  array[] vector, // cond_spop_ms_quant_pfs [n_cond_group][n_pfs_quantiles]
-  array[,] int,   // cond_sample_ms_quant_pfs_exceeds_max [n_cond_group, n_pfs_quantiles]
-  array[,] int,   // cond_spop_ms_quant_pfs_exceeds_max [n_cond_group, n_pfs_quantiles]
-  array[] vector, // cond_sample_quant_pfs [n_cond_group][n_pfs_quantiles]
-  array[] vector, // cond_spop_quant_pfs [n_cond_group][n_pfs_quantiles]
-  array[,] int,   // cond_sample_quant_pfs_exceeds_max [n_cond_group, n_pfs_quantiles]
-  array[,] int,   // cond_spop_quant_pfs_exceeds_max [n_cond_group, n_pfs_quantiles]
-  array[] vector, // cond_sample_target_pfs_n [n_cond_group][n_pfs_timepoints]
-  array[] vector, // cond_spop_target_pfs_n [n_cond_group][n_pfs_timepoints]
-  array[] vector, // cond_sample_ms_pfs_n [n_cond_group][n_pfs_timepoints]
-  array[] vector, // cond_spop_ms_pfs_n [n_cond_group][n_pfs_timepoints]
-  array[] vector, // cond_sample_pfs_n [n_cond_group][n_pfs_timepoints]
-  array[] vector, // cond_spop_pfs_n [n_cond_group][n_pfs_timepoints]
-  array[] vector, // cond_sample_os_km_est [n_cond_group][max_all_t + 1]
-  array[] vector, // cond_spop_os_km_est [n_cond_group][max_all_t + 1]
-  array[] vector, // cond_sample_os_quant [n_cond_group][n_pfs_quantiles]
-  array[] vector, // cond_spop_os_quant [n_cond_group][n_pfs_quantiles]
-  array[,] int,   // cond_sample_os_quant_exceeds_max [n_cond_group, n_pfs_quantiles]
-  array[,] int,   // cond_spop_os_quant_exceeds_max [n_cond_group, n_pfs_quantiles]
-  array[] vector, // cond_sample_os_n [n_cond_group][n_pfs_timepoints]
-  array[] vector  // cond_spop_os_n [n_cond_group][n_pfs_timepoints]
-) aggregate_conditional_group_metrics(
-  array[] int sample_target_confirmed_response,
-  array[] int spop_target_confirmed_response,
-  array[] int sample_target_pfs,
-  array[] int sample_target_right_censored,
-  array[] int spop_target_pfs,
-  array[] int spop_target_right_censored,
-  array[] int spop_target_obs_cens_pfs,
-  array[] int spop_target_obs_cens_right_censored,
-  array[] int sample_ms_pfs,
-  array[] int sample_ms_right_censored,
-  array[] int spop_ms_pfs,
-  array[] int spop_ms_right_censored,
-  array[] int sample_pfs,
-  array[] int sample_right_censored,
-  array[] int spop_pfs,
-  array[] int spop_right_censored,
-  array[] int sample_os,
-  array[] int sample_os_censored,
-  array[] int spop_os,
-  array[] int spop_os_censored,
-  array[] int cond_group,
-  array[] int cond_group_pos,
-  int max_all_t,
-  vector pfs_quantiles,
-  array[] int pfs_timepoints
-) {
-  int n_cond_group = size(cond_group_pos) - 1;
-  int n_pfs_quantiles = num_elements(pfs_quantiles);
-  int n_pfs_timepoints = size(pfs_timepoints);
-  
-  // Initialize output arrays
-  vector[n_cond_group] cond_sample_target_orr = zeros_vector(n_cond_group);
-  vector[n_cond_group] cond_spop_target_orr = zeros_vector(n_cond_group);
-  array[n_cond_group] vector[max_all_t + 1] cond_sample_target_km_est;
-  array[n_cond_group] vector[max_all_t + 1] cond_spop_target_km_est;
-  array[n_cond_group] vector[max_all_t + 1] cond_spop_target_obs_cens_km_est;
-  array[n_cond_group] vector[max_all_t + 1] cond_sample_ms_km_est;
-  array[n_cond_group] vector[max_all_t + 1] cond_spop_ms_km_est;
-  array[n_cond_group] vector[max_all_t + 1] cond_sample_km_est;
-  array[n_cond_group] vector[max_all_t + 1] cond_spop_km_est;
-  array[n_cond_group] vector[n_pfs_quantiles] cond_sample_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
-  array[n_cond_group] vector[n_pfs_quantiles] cond_spop_target_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
-  array[n_cond_group, n_pfs_quantiles] int cond_sample_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
-  array[n_cond_group, n_pfs_quantiles] int cond_spop_target_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
-  array[n_cond_group] vector[n_pfs_quantiles] cond_sample_ms_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
-  array[n_cond_group] vector[n_pfs_quantiles] cond_spop_ms_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
-  array[n_cond_group, n_pfs_quantiles] int cond_sample_ms_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
-  array[n_cond_group, n_pfs_quantiles] int cond_spop_ms_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
-  array[n_cond_group] vector[n_pfs_quantiles] cond_sample_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
-  array[n_cond_group] vector[n_pfs_quantiles] cond_spop_quant_pfs = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
-  array[n_cond_group, n_pfs_quantiles] int cond_sample_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
-  array[n_cond_group, n_pfs_quantiles] int cond_spop_quant_pfs_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
-  array[n_cond_group] vector[n_pfs_timepoints] cond_sample_target_pfs_n;
-  array[n_cond_group] vector[n_pfs_timepoints] cond_spop_target_pfs_n;
-  array[n_cond_group] vector[n_pfs_timepoints] cond_sample_ms_pfs_n;
-  array[n_cond_group] vector[n_pfs_timepoints] cond_spop_ms_pfs_n;
-  array[n_cond_group] vector[n_pfs_timepoints] cond_sample_pfs_n;
-  array[n_cond_group] vector[n_pfs_timepoints] cond_spop_pfs_n;
-  // OS aggregation arrays
-  array[n_cond_group] vector[max_all_t + 1] cond_sample_os_km_est;
-  array[n_cond_group] vector[max_all_t + 1] cond_spop_os_km_est;
-  array[n_cond_group] vector[n_pfs_quantiles] cond_sample_os_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
-  array[n_cond_group] vector[n_pfs_quantiles] cond_spop_os_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
-  array[n_cond_group, n_pfs_quantiles] int cond_sample_os_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
-  array[n_cond_group, n_pfs_quantiles] int cond_spop_os_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
-  array[n_cond_group] vector[n_pfs_timepoints] cond_sample_os_n;
-  array[n_cond_group] vector[n_pfs_timepoints] cond_spop_os_n;
-
-  // Process each conditional group
-  for (c in 1:n_cond_group) {
-    int curr_group_size = get_pos_size(cond_group_pos, c);
-    if (curr_group_size > 0) {
-      array[curr_group_size] int curr_group_patients = get_int_sub_array(cond_group, cond_group_pos, c);
-      
-      // Calculate ORR
-      cond_sample_target_orr[c] = mean(sample_target_confirmed_response[curr_group_patients]);
-      cond_spop_target_orr[c] = mean(spop_target_confirmed_response[curr_group_patients]);
-      
-      // Estimate Kaplan-Meier curves
-      cond_sample_target_km_est[c] = estimate_kaplan_meier(
-        sample_target_pfs[curr_group_patients],
-        sample_target_right_censored[curr_group_patients],
-        max_all_t, 0).1;
-      
-      cond_spop_target_km_est[c] = estimate_kaplan_meier(
-        spop_target_pfs[curr_group_patients],
-        spop_target_right_censored[curr_group_patients],
-        max_all_t, 0).1;
-      
-      cond_spop_target_obs_cens_km_est[c] = estimate_kaplan_meier(
-        spop_target_obs_cens_pfs[curr_group_patients],
-        spop_target_obs_cens_right_censored[curr_group_patients],
-        max_all_t, 0).1;
-      
-      // Multistate KM estimates
-      cond_sample_ms_km_est[c] = estimate_kaplan_meier(
-        sample_ms_pfs[curr_group_patients],
-        sample_ms_right_censored[curr_group_patients],
-        max_all_t, 0).1;
-
-      cond_spop_ms_km_est[c] = estimate_kaplan_meier(
-        spop_ms_pfs[curr_group_patients],
-        spop_ms_right_censored[curr_group_patients],
-        max_all_t, 0).1;
-      
-      // Combined PFS KM estimates
-      cond_sample_km_est[c] = estimate_kaplan_meier(
-        sample_pfs[curr_group_patients],
-        sample_right_censored[curr_group_patients],
-        max_all_t, 0).1;
-      
-      cond_spop_km_est[c] = estimate_kaplan_meier(
-        spop_pfs[curr_group_patients],
-        spop_right_censored[curr_group_patients],
-        max_all_t, 0).1;
-      
-      // Calculate quantile PFS and capture exceeds_max indicators using vectorized function
-      (cond_sample_target_quant_pfs[c], cond_sample_target_quant_pfs_exceeds_max[c]) = 
-        km_quantiles(cond_sample_target_km_est[c], pfs_quantiles);
-      (cond_spop_target_quant_pfs[c], cond_spop_target_quant_pfs_exceeds_max[c]) = 
-        km_quantiles(cond_spop_target_km_est[c], pfs_quantiles);
-      (cond_sample_ms_quant_pfs[c], cond_sample_ms_quant_pfs_exceeds_max[c]) =
-        km_quantiles(cond_sample_ms_km_est[c], pfs_quantiles);
-      (cond_spop_ms_quant_pfs[c], cond_spop_ms_quant_pfs_exceeds_max[c]) =
-        km_quantiles(cond_spop_ms_km_est[c], pfs_quantiles);
-      (cond_sample_quant_pfs[c], cond_sample_quant_pfs_exceeds_max[c]) = 
-        km_quantiles(cond_sample_km_est[c], pfs_quantiles);
-      (cond_spop_quant_pfs[c], cond_spop_quant_pfs_exceeds_max[c]) = 
-        km_quantiles(cond_spop_km_est[c], pfs_quantiles);
-      
-      // Calculate PFS-n at specified timepoints
-      for (n in 1:n_pfs_timepoints) {
-        cond_sample_target_pfs_n[c, n] = calc_km_pfs_n(cond_sample_target_km_est[c], months_to_weeks(pfs_timepoints[n]));
-        cond_spop_target_pfs_n[c, n] = calc_km_pfs_n(cond_spop_target_km_est[c], months_to_weeks(pfs_timepoints[n]));
-        cond_sample_ms_pfs_n[c, n] = calc_km_pfs_n(cond_sample_ms_km_est[c], months_to_weeks(pfs_timepoints[n]));
-        cond_spop_ms_pfs_n[c, n] = calc_km_pfs_n(cond_spop_ms_km_est[c], months_to_weeks(pfs_timepoints[n]));
-        cond_sample_pfs_n[c, n] = calc_km_pfs_n(cond_sample_km_est[c], months_to_weeks(pfs_timepoints[n]));
-        cond_spop_pfs_n[c, n] = calc_km_pfs_n(cond_spop_km_est[c], months_to_weeks(pfs_timepoints[n]));
-      }
-
-      // OS KM estimates
-      cond_sample_os_km_est[c] = estimate_kaplan_meier(
-        sample_os[curr_group_patients],
-        sample_os_censored[curr_group_patients],
-        max_all_t, 0).1;
-
-      cond_spop_os_km_est[c] = estimate_kaplan_meier(
-        spop_os[curr_group_patients],
-        spop_os_censored[curr_group_patients],
-        max_all_t, 0).1;
-
-      // OS quantiles
-      (cond_sample_os_quant[c], cond_sample_os_quant_exceeds_max[c]) =
-        km_quantiles(cond_sample_os_km_est[c], pfs_quantiles);
-      (cond_spop_os_quant[c], cond_spop_os_quant_exceeds_max[c]) =
-        km_quantiles(cond_spop_os_km_est[c], pfs_quantiles);
-
-      // OS-n at specified timepoints
-      for (n in 1:n_pfs_timepoints) {
-        cond_sample_os_n[c, n] = calc_km_pfs_n(cond_sample_os_km_est[c], months_to_weeks(pfs_timepoints[n]));
-        cond_spop_os_n[c, n] = calc_km_pfs_n(cond_spop_os_km_est[c], months_to_weeks(pfs_timepoints[n]));
-      }
-    } else {
-      // Empty group - set to zero
-      cond_sample_target_km_est[c] = zeros_vector(max_all_t + 1);
-      cond_spop_target_km_est[c] = zeros_vector(max_all_t + 1);
-      cond_spop_target_obs_cens_km_est[c] = zeros_vector(max_all_t + 1);
-      cond_sample_ms_km_est[c] = zeros_vector(max_all_t + 1);
-      cond_spop_ms_km_est[c] = zeros_vector(max_all_t + 1);
-      cond_sample_km_est[c] = zeros_vector(max_all_t + 1);
-      cond_spop_km_est[c] = zeros_vector(max_all_t + 1);
-      cond_sample_os_km_est[c] = zeros_vector(max_all_t + 1);
-      cond_spop_os_km_est[c] = zeros_vector(max_all_t + 1);
-      cond_sample_target_pfs_n[c] = zeros_vector(n_pfs_timepoints);
-      cond_spop_target_pfs_n[c] = zeros_vector(n_pfs_timepoints);
-      cond_sample_ms_pfs_n[c] = zeros_vector(n_pfs_timepoints);
-      cond_spop_ms_pfs_n[c] = zeros_vector(n_pfs_timepoints);
-      cond_sample_pfs_n[c] = zeros_vector(n_pfs_timepoints);
-      cond_spop_pfs_n[c] = zeros_vector(n_pfs_timepoints);
-      cond_sample_os_n[c] = zeros_vector(n_pfs_timepoints);
-      cond_spop_os_n[c] = zeros_vector(n_pfs_timepoints);
-    }
-  }
-  
-  return (
-    cond_sample_target_orr,
-    cond_spop_target_orr,
-    cond_sample_target_km_est,
-    cond_spop_target_km_est,
-    cond_spop_target_obs_cens_km_est,
-    cond_sample_ms_km_est,
-    cond_spop_ms_km_est,
-    cond_sample_km_est,
-    cond_spop_km_est,
-    cond_sample_target_quant_pfs,
-    cond_spop_target_quant_pfs,
-    cond_sample_target_quant_pfs_exceeds_max,
-    cond_spop_target_quant_pfs_exceeds_max,
-    cond_sample_ms_quant_pfs,
-    cond_spop_ms_quant_pfs,
-    cond_sample_ms_quant_pfs_exceeds_max,
-    cond_spop_ms_quant_pfs_exceeds_max,
-    cond_sample_quant_pfs,
-    cond_spop_quant_pfs,
-    cond_sample_quant_pfs_exceeds_max,
-    cond_spop_quant_pfs_exceeds_max,
-    cond_sample_target_pfs_n,
-    cond_spop_target_pfs_n,
-    cond_sample_ms_pfs_n,
-    cond_spop_ms_pfs_n,
-    cond_sample_pfs_n,
-    cond_spop_pfs_n,
-    cond_sample_os_km_est,
-    cond_spop_os_km_est,
-    cond_sample_os_quant,
-    cond_spop_os_quant,
-    cond_sample_os_quant_exceeds_max,
-    cond_spop_os_quant_exceeds_max,
-    cond_sample_os_n,
-    cond_spop_os_n
-  );
-}
+// aggregate_trial_metrics and aggregate_conditional_group_metrics have been
+// moved to pfs.stanfunctions (biomarker-agnostic — needed by standalone too)

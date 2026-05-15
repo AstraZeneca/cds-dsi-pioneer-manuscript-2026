@@ -31,11 +31,11 @@ test_that("calc_pch_loglik: right-censored patients", {
   for (i in seq_len(n)) {
     expect_equal(
       get_stan_val(d, "lp_full", i), expected[i], tolerance = 1e-6,
-      label = paste0("lp_full[", i, "] right-censored")
+      label = str_c("lp_full[", i, "] right-censored")
     )
     expect_equal(
       get_stan_val(d, "lp_single", i), expected[i], tolerance = 1e-6,
-      label = paste0("lp_single[", i, "] right-censored")
+      label = str_c("lp_single[", i, "] right-censored")
     )
   }
 })
@@ -70,7 +70,7 @@ test_that("calc_pch_loglik: event patients (no censoring)", {
   for (i in seq_len(n)) {
     expect_equal(
       get_stan_val(d, "lp_full", i), expected[i], tolerance = 1e-5,
-      label = paste0("lp_full[", i, "] event")
+      label = str_c("lp_full[", i, "] event")
     )
   }
 })
@@ -105,7 +105,7 @@ test_that("calc_pch_loglik: mixed right-censored and event patients", {
   for (i in seq_len(n)) {
     expect_equal(
       get_stan_val(d, "lp_full", i), expected[i], tolerance = 1e-5,
-      label = paste0("lp_full[", i, "] mixed")
+      label = str_c("lp_full[", i, "] mixed")
     )
   }
 })
@@ -175,7 +175,7 @@ test_that("lp_no_end matches lp_full when end_at = max_t for all patients", {
       get_stan_val(d, "lp_no_end", i),
       get_stan_val(d, "lp_full", i),
       tolerance = 1e-9,
-      label = paste0("lp_no_end[", i, "] == lp_full[", i, "]")
+      label = str_c("lp_no_end[", i, "] == lp_full[", i, "]")
     )
   }
 })

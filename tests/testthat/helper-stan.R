@@ -78,6 +78,6 @@ create_mock_km_data <- function(n_patients = 20, max_t = 100, pfs_offset = 0) {
 #' @return Numeric scalar (first iteration value)
 get_stan_val <- function(draws_df, var, ...) {
   indices <- c(...)
-  vname   <- if (length(indices) == 0) var else sprintf("%s[%s]", var, paste(indices, collapse = ","))
+  vname   <- if (length(indices) == 0) var else sprintf("%s[%s]", var, str_c(indices, collapse = ","))
   as.numeric(draws_df[[vname]][1])
 }

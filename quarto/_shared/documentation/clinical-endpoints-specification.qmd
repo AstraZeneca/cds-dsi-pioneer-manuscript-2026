@@ -1,0 +1,236 @@
+## Overview {#sec-endpoints-overview}
+
+Clinical endpoints in the PIONEER modeling system are derived from the **illness-death multistate model** that routes patients through progression and death states. All models produce posterior distributions over survival endpoints using two estimation modes: sample-based (conditional on observed data) and posterior predictive (unconditional).
+
+This page specifies the generic endpoint definitions, Kaplan-Meier estimation, and posterior inference framework shared across all PIONEER projects. For project-specific details on how endpoints are derived, see the project documentation.
+
+---
+
+## Endpoint Definitions {#sec-endpoint-definitions}
+
+The model produces four families of survival endpoints, each following a consistent naming convention:
+
+| Endpoint | Variable Pattern | Definition |
+|----------|-----------------|------------|
+| **ms_pfs** | `ms_pfs_km_est`, `ms_pfs_quant`, `ms_pfs_n` | Cause-specific progression ($0 \to 1$ transition only; death censored) |
+| **pfs** | `pfs_km_est`, `pfs_quant`, `pfs_n` | Composite PFS = progression OR direct death ($0 \to 1$ or $0 \to 2$) |
+| **rpfs** | `rpfs_km_est`, `rpfs_quant`, `rpfs_n` | Radiographic PFS (full model only; see below) |
+| **os** | `os_km_est`, `os_quant`, `os_n` | Overall survival = all deaths ($0 \to 2$ and $1 \to 2$) |
+
+: Endpoint naming convention {.striped .hover}
+
+### Variable Naming Pattern
+
+All endpoint variables follow the pattern:
+
+```
+{prefix}_{endpoint}_{metric}
+```
+
+where:
+
+- **Prefix**: `sample_` / `spop_` (trial-level) or `cond_sample_` / `cond_spop_` (conditional group)
+- **Endpoint**: `ms_pfs`, `pfs`, `rpfs`, or `os`
+- **Metric**: `km_est` (KM curve), `quant` (quantiles), `n` (at-timepoint survival), `quant_exceeds_max` (indicator)
+
+### Composite PFS vs. Cause-Specific PFS
+
+The distinction between `ms_pfs` and `pfs` is clinically important:
+
+- **`ms_pfs`** (cause-specific): Only the $0 \to 1$ transition counts as an event; death without progression is censored. This isolates the progression process.
+- **`pfs`** (composite): Both progression ($0 \to 1$) and direct death ($0 \to 2$) count as events. This matches the standard clinical PFS endpoint.
+
+::: {.callout-important}
+## Use `pfs` for Clinical Comparisons
+When comparing model predictions to observed PFS from clinical trial data, always use `pfs_km_est` (composite). Observed PFS includes death without progression as events. Using `ms_pfs_km_est` underestimates PFS event rates because it censors deaths.
+:::
+
+### Radiographic PFS (rPFS) {#sec-rpfs}
+
+**rPFS** is available only in the **full model** (where PSA dynamics inform the multistate hazard). In the full model, the $0 \to 1$ transition represents radiographic progression specifically, because PSA-driven progression is captured by the biomarker model separately. rPFS is defined as:
+
+$$
+T_i^{\text{rPFS}} = \min(T_i^{0 \to 1}, T_i^{0 \to 2})
+$$
+
+In the **standalone multistate model**, the $0 \to 1$ transition mixes all progression types (radiographic and PSA), so `ms_pfs` and `pfs` are available but `rpfs` is not.
+
+### Endpoint Availability by Model
+
+| Endpoint | Standalone Multistate | Full Model |
+|----------|:--------------------:|:----------:|
+| `ms_pfs` | Yes | Yes |
+| `pfs` | Yes | Yes |
+| `rpfs` | No | Yes |
+| `os` | Yes | Yes |
+
+---
+
+## Kaplan-Meier Estimation {#sec-kaplan-meier}
+
+For trial $s$, the Kaplan-Meier survival curve is:
+
+$$
+\hat{S}_s(t) = \prod_{t_j \leq t} \left(1 - \frac{d_j}{n_j}\right)
+$$
+
+where:
+
+- $t_j$: distinct event times
+- $d_j$: number of events at $t_j$
+- $n_j$: number at risk just before $t_j$
+
+KM curves are computed per posterior draw, producing a posterior distribution over the entire survival curve. The Stan implementation uses the `km_curve()` function which takes patient-level event times and censoring indicators and returns a vector of survival probabilities at each week.
+
+---
+
+## Quantiles (Median PFS, OS, etc.) {#sec-quantiles}
+
+The $q$-th quantile of the survival distribution is:
+
+$$
+T_s^{(q)} = \inf\{t: \hat{S}_s(t) \leq 1-q\}
+$$
+
+Standard quantiles are $q \in \{0.25, 0.50, 0.75\}$, where $q = 0.50$ gives the **median**.
+
+When the KM curve does not cross the $1-q$ threshold within the observed follow-up window, the quantile is undefined (the `*_quant_exceeds_max` indicator is set to 1). This commonly occurs for OS in trials with low mortality.
+
+---
+
+## Survival at Fixed Timepoints (PFS-n, OS-n) {#sec-pfs-n}
+
+Survival probability at a fixed timepoint $t^*$ reads off the KM curve:
+
+$$
+\text{Endpoint-}n(t^*) = \hat{S}_s(t^*)
+$$
+
+The set of timepoints is configurable via the `pfs_timepoints` parameter in the targets pipeline. Common choices:
+
+- **SCLC-01**: 6, 9, 12, 15, 18 months
+- **Pioneer**: 6, 12, 18, 24 months
+
+---
+
+## Overall Survival (OS) {#sec-os-computation}
+
+OS computation uses the illness-death model's competing risks structure. The implementation handles both **unconditional** (posterior predictive, `spop_*`) and **conditional** (sample-based, `sample_*`) modes.
+
+### Competing Risks Routing
+
+For each patient, two competing events are evaluated:
+
+- **Transition $0 \to 2$**: Direct death without progression
+- **Transition $0 \to 1$**: Progression (which opens the $1 \to 2$ path)
+
+The routing determines which event fires first:
+
+| Scenario | OS Path |
+|----------|---------|
+| $T_{02} < T_{01}$ (death before progression) | Direct death: $\text{OS} = T_{02}$ |
+| $T_{01} \leq T_{02}$ (progression first) | Post-progression death: $\text{OS} = T_{01} + T_{12}$ |
+| Both censored | Censored: $\text{OS} = \max(T_{01}, T_{02})$ |
+
+**Conditional mode additional rule:** When the patient has an *observed* direct death (`ms_censored_02 = 0`), the observed path is always used regardless of simulated progression time. This ensures the conditional posterior predictive check (PPC) respects the observed illness-death trajectory.
+
+### PFS Update for Competing Risks
+
+When direct death ($0 \to 2$) fires before progression, PFS must be updated:
+
+$$
+\text{PFS}_i = T_{i,02}, \quad \text{censored} = 0
+$$
+
+Death without progression is a PFS event (the patient cannot progress after dying).
+
+---
+
+## Sample-Based vs. Posterior Predictive Estimates {#sec-sample-vs-spop}
+
+When making predictions for a trial, we generate two types of estimates that differ in how they handle observed data:
+
+### Sample-Based Estimates
+
+**Sample-based estimates** (`sample_*`) condition on observed outcomes whenever available:
+
+- Use observed event times when events have occurred
+- Only forecast for right-censored patients (no observed event yet)
+- Reflect what actually happened to the enrolled patients
+- Answer: *"What outcomes did we observe, and what do we predict for censored patients?"*
+
+**Implementation:**
+
+For patient $i$ with observed outcome at time $t_i^{\text{obs}}$:
+
+$$
+y_i^{\text{sample}} = \begin{cases}
+t_i^{\text{obs}} & \text{if event observed} \\
+\text{forecast from model} \mid t > t_i^{\text{obs}} & \text{if right-censored}
+\end{cases}
+$$
+
+### Posterior Predictive Estimates
+
+**Posterior predictive estimates** (`spop_*`) ignore observed outcomes and always use model predictions:
+
+- Always sample from the multistate hazard model for all events
+- Generate unconditional predictions as if no outcomes were observed
+- Still condition on the **same patient-level parameters** from the posterior (including patient random effects $\eta_i^{\text{patient}}$ and covariates $\mathbf{X}_i$)
+- Answer: *"What would the model predict for these patients if we hadn't seen their outcomes?"*
+
+**Implementation:**
+
+For patient $i$:
+
+$$
+y_i^{\text{spop}} \sim p(y \mid \boldsymbol{\beta}_{\text{pop}}, \eta_{s(i)}^{\text{trial}}, \eta_{i}^{\text{patient}}, \mathbf{X}_i)
+$$
+
+where all parameters are the **same** posterior draws used for sample-based estimates.
+
+::: {.callout-important}
+## Not True Superpopulation Estimates
+The `spop_*` quantities are **not** true superpopulation estimates that integrate over patient-level variation. A true superpopulation prediction would require drawing **new** patient random effects from $\mathcal{N}(0, \tau_{\text{patient}}^2)$ and potentially new covariate values from their population distributions.
+
+Instead, `spop_*` represents the **posterior predictive distribution** for the enrolled patients, using their learned parameters but ignoring their observed outcomes. This is useful for model validation (comparing predictions to observations) but does not provide population-level inferences that marginalize over patient heterogeneity.
+:::
+
+### When to Use Each
+
+**Sample-based estimates:**
+
+- Validating model fit against observed trial results
+- Posterior predictive checks (comparing replicated data to observed)
+- Understanding what the model learned from observed events
+- Forecasting only for patients without observed events
+
+**Posterior predictive estimates:**
+
+- Model checking: comparing unconditional predictions to observations
+- Assessing calibration: does the model's prior belief match observed outcomes?
+- Quantifying what the model expected before seeing the data
+- Evaluating surprise: large differences indicate the model didn't anticipate the observed pattern
+
+### Interpretation Example
+
+For a patient who progressed at week 24:
+
+- **Sample-based PFS**: 24 weeks (uses observed progression)
+- **Posterior predictive PFS**: Sampled from model (e.g., 32 weeks, ignoring the observed event)
+
+For trial-level Kaplan-Meier curves:
+
+- **Sample-based**: Mixes observed events with forecasts for censored patients (best estimate of trial outcomes)
+- **Posterior predictive**: Pure model prediction for all patients as if no outcomes were observed (useful for validation)
+
+::: {.callout-note}
+## When Estimates Differ
+Large differences between sample-based and posterior predictive estimates indicate:
+
+- **If spop is better**: The observed data show worse outcomes than the model predicted (unexpected events, earlier progressions)
+- **If sample is better**: The observed data show better outcomes than the model predicted (fewer events, later progressions)
+- **If similar**: The model's predictions align well with observed outcomes (good calibration)
+
+This comparison is a key model validation diagnostic, not a population vs. sample inference.
+:::
