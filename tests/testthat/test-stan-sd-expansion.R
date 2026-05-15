@@ -13,7 +13,7 @@ r_expand_sd <- function(mode, fe_sd, re_sd_values) {
   for (lv in seq_len(n_levels)) {
     if (mode[lv] == 1L) {
       sd_out[lv] <- fe_sd[lv]
-    } else if (mode[lv] == 2L) {
+    } else if (mode[lv] == 2L || mode[lv] == 4L) {
       sd_idx <- sd_idx + 1L
       sd_out[lv] <- re_sd_values[sd_idx]
     } else {
@@ -25,7 +25,7 @@ r_expand_sd <- function(mode, fe_sd, re_sd_values) {
 
 run_sd_expansion_test <- function(mode, fe_sd, re_sd_values) {
   n_levels <- length(mode)
-  n_re_levels <- sum(mode == 2L)
+  n_re_levels <- sum(mode == 2L | mode == 4L)
   stopifnot(length(re_sd_values) == n_re_levels)
 
   stan_data <- list(
@@ -133,5 +133,30 @@ test_that("SD expansion: FE arm level (fe use case)", {
     mode         = c(0L, 1L, 2L),
     fe_sd        = c(0.1, 1e-4, 0.35),
     re_sd_values = c(0.40)
+  )
+})
+
+test_that("SD expansion: all RE_CP (mode=4)", {
+  run_sd_expansion_test(
+    mode         = c(4L, 4L, 4L),
+    fe_sd        = c(0.1, 0.2, 0.3),
+    re_sd_values = c(0.4, 0.5, 0.6)
+  )
+})
+
+test_that("SD expansion: mixed NONE/FE/RE/RE_CP 4-level", {
+  run_sd_expansion_test(
+    mode         = c(0L, 1L, 2L, 4L),
+    fe_sd        = c(0.1, 0.05, 0.2, 0.9),
+    re_sd_values = c(0.35, 0.80)
+  )
+})
+
+test_that("SD expansion: pioneer level-3 CP use case", {
+  # trial=none, arm=re, patient=re_cp (the funnel fix)
+  run_sd_expansion_test(
+    mode         = c(0L, 2L, 4L),
+    fe_sd        = c(0.1, 0.35, 0.5),
+    re_sd_values = c(0.35, 0.42)
   )
 })

@@ -35,6 +35,12 @@ real<lower=0> log_lambda_gp_12_t_pop_rho_beta;
 real log_lambda_gp_12_t_pop_intercept_mean;
 real<lower=0> log_lambda_gp_12_t_pop_intercept_sd;
 
+// Shared dead GP shape hyperparameters (used when share_dead_gp_shape=1)
+real<lower=0> log_lambda_gp_dead_pop_alpha_alpha;
+real<lower=0> log_lambda_gp_dead_pop_alpha_beta;
+real<lower=0> log_lambda_gp_dead_pop_rho_alpha;
+real<lower=0> log_lambda_gp_dead_pop_rho_beta;
+
 // --- Baseline Hazard GP: Level-level (N-level hierarchy) ---
 // SD for level intercepts (per level)
 array[n_levels] real<lower=0> log_lambda_gp_01_level_intercept_sd_sd;

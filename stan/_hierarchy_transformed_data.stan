@@ -7,8 +7,9 @@
 // Level intercept mode constants (consistent across tr, frac, init, ms modules)
 int LEVEL_MODE_NONE  = 0;  // No intercept at this level
 int LEVEL_MODE_FE    = 1;  // Fixed effect: SD is a data hyperparameter (no pooling)
-int LEVEL_MODE_RE    = 2;  // Random effect: SD estimated via NCP (hierarchical pooling)
+int LEVEL_MODE_RE    = 2;  // Random effect, non-centered (NCP): raw ~ std_normal, scaled = sd * raw
 int LEVEL_MODE_RE_GP = 3;  // Random effect + full GP residual (ms module only, for now)
+int LEVEL_MODE_RE_CP = 4;  // Random effect, centered (CP): centered ~ normal(0, sd) directly
 
 // Multi-level hierarchy: computed totals and position arrays
 int n_total_groups = sum(n_groups_per_level);

@@ -13,7 +13,8 @@
 
 if (ms_needs_inline_psa) {
   // ── 0→2: Dense inline computation up to per-patient event time ──────────
-  if (enable_ms_02_time_varying_cov && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
+  // enable_ms_02 gates matrix existence — log_cond_surv_02 is [0,0] when disabled.
+  if (enable_ms_02 && enable_ms_02_time_varying_cov && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
     profile("tv covariate inline 02") {
       for (j in 1:n_forecast_patients) {
         int p = forecast_patient_idx[j];
@@ -58,7 +59,8 @@ if (ms_needs_inline_psa) {
   }
 
   // ── 0→1: Sparse visit-gated latent PSA ──────────────────────────────────
-  if (enable_ms_pop_time_varying_cov && enable_ms_visit_gated_01 && enable_ms_visit_gated_latent_01) {
+  // enable_ms_01 gates matrix existence — log_cond_surv_01 is [0,0] when disabled.
+  if (enable_ms_01 && enable_ms_pop_time_varying_cov && enable_ms_visit_gated_01 && enable_ms_visit_gated_latent_01) {
     profile("tv covariate inline 01") {
       for (j in 1:n_forecast_patients) {
         int p = forecast_patient_idx[j];

@@ -110,12 +110,12 @@ test_that("compute_ms_level_baseline_flags: correct GP routing for all hazard fl
   # 2 groups at each level
   n_forecast_groups_b2 <- c(2L, 3L)
 
-  # Valid combos: all permutations of {0,1,2,3} x {0,1,2,3}
-  valid_grid <- expand.grid(lv1 = 0:3, lv2 = 0:3)
+  # Valid combos: all permutations of {0,1,2,3,4} x {0,1,2,3,4} (RE_CP=4 added)
+  valid_grid <- expand.grid(lv1 = 0:4, lv2 = 0:4)
   n_valid <- nrow(valid_grid)
 
-  # Invalid combos: at least one level has -1 or 4
-  invalid_grid <- expand.grid(lv1 = c(-1L, 4L), lv2 = c(0L, 2L))
+  # Invalid combos: at least one level has -1 or 5
+  invalid_grid <- expand.grid(lv1 = c(-1L, 5L), lv2 = c(0L, 2L))
   n_invalid    <- nrow(invalid_grid)
 
   all_combos <- rbind(valid_grid, invalid_grid)
@@ -151,7 +151,7 @@ test_that("compute_ms_level_baseline_flags: correct GP routing for all hazard fl
     flags <- as.integer(all_combos[ci, ])  # length n_levels_b2
     lbl   <- sprintf("combo %d [%s]", ci, paste(flags, collapse = ","))
 
-    if (any(flags < 0 | flags > 3)) {
+    if (any(flags < 0 | flags > 4)) {
       expect_equal(get_stan_val(d, "out_b2_is_valid", ci), 0L,
         label = paste(lbl, "is_valid"))
     } else {

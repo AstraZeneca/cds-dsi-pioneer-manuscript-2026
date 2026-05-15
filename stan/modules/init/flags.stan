@@ -5,5 +5,5 @@
 int<lower=0,upper=1> enable_pop_cov_init;
 
 // Per-level flags for hierarchical intercepts and slopes
-array[n_levels] int<lower=0,upper=3> enable_level_intercept_init;
+array[n_levels] int<lower=0,upper=4> enable_level_intercept_init;
 array[n_levels] int<lower=0,upper=1> enable_level_cov_init;

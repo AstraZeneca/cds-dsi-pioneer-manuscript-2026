@@ -65,11 +65,19 @@ ms_init_values <- function(env) {
       log_lambda_gp_02_pop_intercept = if (enable_ms_02) {
         array(rnorm(1, log_lambda_gp_02_pop_intercept_mean, log_lambda_gp_02_pop_intercept_sd), dim = 1)
       },
-      log_lambda_gp_02_pop_alpha = if (enable_ms_02) array(1.0, dim = 1),
-      log_lambda_gp_02_pop_rho = if (enable_ms_02) {
+      log_lambda_gp_02_pop_alpha = if (enable_ms_02 && !isTRUE(share_dead_gp_shape == 1L)) array(1.0, dim = 1),
+      log_lambda_gp_02_pop_rho = if (enable_ms_02 && !isTRUE(share_dead_gp_shape == 1L)) {
         array(max(invgamma::rinvgamma(1, log_lambda_gp_02_pop_rho_alpha, log_lambda_gp_02_pop_rho_beta), ms_gp_grid_step), dim = 1)
       },
-      log_lambda_gp_02_pop_eta = if (enable_ms_02) rnorm(n_ms_gp_cal_knots),
+      log_lambda_gp_02_pop_eta = if (enable_ms_02 && !isTRUE(share_dead_gp_shape == 1L)) rnorm(n_ms_gp_cal_knots),
+
+      # --- Shared "dead" GP shape (0→2 + 1→2 clock-forward, when share_dead_gp_shape=1) ---
+      log_lambda_gp_dead_pop_alpha = if (isTRUE(share_dead_gp_shape == 1L)) array(1.0, dim = 1),
+      log_lambda_gp_dead_pop_rho = if (isTRUE(share_dead_gp_shape == 1L)) {
+        array(max(invgamma::rinvgamma(1, log_lambda_gp_dead_pop_rho_alpha,
+                                        log_lambda_gp_dead_pop_rho_beta), ms_gp_grid_step), dim = 1)
+      },
+      log_lambda_gp_dead_pop_eta = if (isTRUE(share_dead_gp_shape == 1L)) rnorm(n_ms_gp_cal_knots),
       log_lambda_gp_02_level_alpha = if (enable_ms_02) rep(1.0, n_levels) else numeric(0),
       log_lambda_gp_02_level_rho = if (enable_ms_02) pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_02_level_rho_alpha, log_lambda_gp_02_level_rho_beta), ms_gp_grid_step) else numeric(0),
       log_lambda_gp_02_level_intercept_sd = if (enable_ms_02 && any_re_level) abs(rnorm(n_levels, sd = log_lambda_gp_02_level_intercept_sd_sd)) else numeric(0),
@@ -103,11 +111,11 @@ ms_init_values <- function(env) {
       log_lambda_gp_12_t_pop_intercept = if (need_12_t_gp) {
         array(rnorm(1, log_lambda_gp_12_t_pop_intercept_mean, log_lambda_gp_12_t_pop_intercept_sd), dim = 1)
       },
-      log_lambda_gp_12_t_pop_alpha = if (need_12_t_gp) array(1.0, dim = 1),
-      log_lambda_gp_12_t_pop_rho = if (need_12_t_gp) {
+      log_lambda_gp_12_t_pop_alpha = if (need_12_t_gp && !isTRUE(share_dead_gp_shape == 1L)) array(1.0, dim = 1),
+      log_lambda_gp_12_t_pop_rho = if (need_12_t_gp && !isTRUE(share_dead_gp_shape == 1L)) {
         array(max(invgamma::rinvgamma(1, log_lambda_gp_12_t_pop_rho_alpha, log_lambda_gp_12_t_pop_rho_beta), ms_gp_grid_step), dim = 1)
       },
-      log_lambda_gp_12_t_pop_eta = if (need_12_t_gp) rnorm(n_ms_gp_cal_knots),
+      log_lambda_gp_12_t_pop_eta = if (need_12_t_gp && !isTRUE(share_dead_gp_shape == 1L)) rnorm(n_ms_gp_cal_knots),
       log_lambda_gp_12_t_level_alpha = if (need_12_t_gp) rep(1.0, n_levels) else numeric(0),
       log_lambda_gp_12_t_level_rho = if (need_12_t_gp) pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_12_t_level_rho_alpha, log_lambda_gp_12_t_level_rho_beta), ms_gp_grid_step) else numeric(0),
       log_lambda_gp_12_t_level_intercept_sd = if (need_12_t_gp && any_re_level) abs(rnorm(n_levels, sd = log_lambda_gp_12_t_level_intercept_sd_sd)) else numeric(0),

@@ -36,3 +36,12 @@ real tr_log_sd_pop_process_noise_pop_mean;     // Prior mean for pop-level log(�
 real tr_log_sd_pop_process_noise_pop_sd;       // Prior SD for pop-level log(σ)
 real tr_logit_phi_pop_process_noise_pop_mean;  // Prior mean for pop-level logit(φ)
 real tr_logit_phi_pop_process_noise_pop_sd;    // Prior SD for pop-level logit(φ)
+
+// ===== SD sub-hierarchy hyperparameters (issue #110) =====
+// Population log-SD prior (per location level L)
+array[n_levels] real tr_log_sd_level_intercept_pop_mean;
+array[n_levels] real<lower=0> tr_log_sd_level_intercept_pop_sd;
+// Hyperscale prior (half-normal via <lower=0>)
+array[n_levels, n_levels] real<lower=0> tr_sd_hyperscale_level_intercept_sd;
+// FE hyperscale values used when mode == FE (data-supplied)
+array[n_levels, n_levels] real<lower=0> tr_fe_sd_hyperscale_level_intercept;

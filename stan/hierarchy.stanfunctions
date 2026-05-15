@@ -45,10 +45,10 @@ tuple(
   array[] int enable_slope
 ) {
   for (lv in 1:n_levels) {
-    if (enable_intercept[lv] < 0 || enable_intercept[lv] > 3)
-      fatal_error("enable_intercept[", lv, "] must be 0-3; got ", enable_intercept[lv]);
-    if (enable_slope[lv] < 0 || enable_slope[lv] > 3)
-      fatal_error("enable_slope[", lv, "] must be 0-3; got ", enable_slope[lv]);
+    if (enable_intercept[lv] < 0 || enable_intercept[lv] > 4)
+      fatal_error("enable_intercept[", lv, "] must be 0-4; got ", enable_intercept[lv]);
+    if (enable_slope[lv] < 0 || enable_slope[lv] > 4)
+      fatal_error("enable_slope[", lv, "] must be 0-4; got ", enable_slope[lv]);
   }
 
   int n_int = compute_n_enabled_groups(n_forecast_groups_per_level, enable_intercept);
@@ -86,4 +86,117 @@ tuple(
   }
 
   return (n_int, pos_int, flat_int, n_slp, pos_slp, flat_slp);
+}
+
+/**
+ * Split level groups into NCP (raw) and CP (cp) buckets by mode.
+ *
+ * Groups at levels with mode in {FE=1, RE=2, RE_GP=3} go into the `_raw_` bucket
+ * (sampled std_normal or student_t(nu,0,1), scaled by sd). Groups at levels with
+ * mode == RE_CP (4) go into the `_cp_` bucket (sampled normal(0, sd) directly).
+ * Groups at levels with mode == NONE (0) are skipped.
+ *
+ * @param n_levels  Number of hierarchy levels
+ * @param n_groups  [n_levels] group counts per level (use n_forecast_groups_per_level)
+ * @param mode      [n_levels] level mode: 0=NONE, 1=FE, 2=RE, 3=RE_GP, 4=RE_CP
+ * @return Tuple:
+ *   (n_raw, raw_pos[n_levels+1], n_cp, cp_pos[n_levels+1])
+ */
+tuple(int, array[] int, int, array[] int) split_cp_ncp_pos(
+  int n_levels,
+  array[] int n_groups,
+  array[] int mode
+) {
+  for (lv in 1:n_levels) {
+    if (mode[lv] < 0 || mode[lv] > 4)
+      fatal_error("mode[", lv, "] must be 0-4; got ", mode[lv]);
+  }
+  array[n_levels] int raw_mask;
+  array[n_levels] int cp_mask;
+  for (lv in 1:n_levels) {
+    raw_mask[lv] = (mode[lv] == 1 || mode[lv] == 2 || mode[lv] == 3) ? 1 : 0;
+    cp_mask[lv]  = (mode[lv] == 4) ? 1 : 0;
+  }
+  int n_raw = compute_n_enabled_groups(n_groups, raw_mask);
+  int n_cp  = compute_n_enabled_groups(n_groups, cp_mask);
+  array[n_levels + 1] int raw_pos = create_enabled_pos(n_groups, raw_mask);
+  array[n_levels + 1] int cp_pos  = create_enabled_pos(n_groups, cp_mask);
+  return (n_raw, raw_pos, n_cp, cp_pos);
+}
+
+/**
+ * Split sub-hierarchy (L, ℓ) pairs into raw and cp buckets by mode.
+ * For each location level L and sub-level ℓ ∈ 1..L-1:
+ *   - modes in {FE=1, RE=2} → raw bucket
+ *   - mode == RE_CP (4)      → cp bucket
+ *   - mode == NONE (0)       → skipped (no storage)
+ * RE_GP (3) is rejected via fatal_error.
+ * Any non-zero entry at (L, ℓ) with ℓ >= L is also rejected.
+ *
+ * @param n_levels            number of levels in the stack
+ * @param n_groups_per_level  group counts per level (used to size buckets)
+ * @param sd_mode             [n_levels, n_levels] matrix; entries (L, ℓ) with ℓ >= L must be 0
+ *
+ * @return tuple(
+ *   int raw_total,
+ *   array[n_levels, n_levels + 1] int raw_pos,
+ *   int cp_total,
+ *   array[n_levels, n_levels + 1] int cp_pos
+ * )
+ *   raw_pos[L, ℓ+1] - raw_pos[L, ℓ] = count of groups for location-level-L, sub-level-ℓ in raw bucket
+ *   (likewise for cp_pos).
+ */
+tuple(int, array[,] int, int, array[,] int) split_sd_cp_ncp_pos(
+  int n_levels,
+  array[] int n_groups_per_level,
+  array[,] int sd_mode
+) {
+  // Validate entries
+  for (L in 1:n_levels) {
+    for (sub_lv in 1:n_levels) {
+      int m = sd_mode[L, sub_lv];
+      if (m < 0 || m > 4)
+        fatal_error("sd_mode[", L, ",", sub_lv, "] must be 0..4 (NONE/FE/RE/RE_GP/RE_CP); got ", m);
+      if (m == 3)
+        fatal_error("sd_mode[", L, ",", sub_lv, "] = RE_GP (3) is not allowed on the sub-hierarchy");
+      if (m != 0 && sub_lv >= L)
+        fatal_error(
+          "sd_mode[", L, ",", sub_lv, "] non-zero but sub_lv (", sub_lv,
+          ") >= L (", L, "); sub-levels must be positionally before L"
+        );
+    }
+  }
+
+  // Build raw_pos and cp_pos as cumulative-offset arrays:
+  // raw_pos[L, ℓ]  = starting flat index for (L, ℓ) block in row L
+  // Position arrays work per-row (per location level L)
+  array[n_levels, n_levels + 1] int raw_pos;
+  array[n_levels, n_levels + 1] int cp_pos;
+
+  int raw_total = 0;
+  int cp_total  = 0;
+  for (L in 1:n_levels) {
+    // Start each row where the previous row left off — positions are global offsets
+    // into the flat parameter vectors tr_raw_log_sd_level_intercept / tr_cp_log_sd_level_intercept.
+    raw_pos[L, 1] = raw_total + 1;
+    cp_pos[L, 1]  = cp_total + 1;
+    for (sub_lv in 1:n_levels) {
+      int m = sd_mode[L, sub_lv];
+      if (m == 1 || m == 2) {
+        raw_total += n_groups_per_level[sub_lv];
+        raw_pos[L, sub_lv + 1] = raw_pos[L, sub_lv] + n_groups_per_level[sub_lv];
+        cp_pos[L, sub_lv + 1]  = cp_pos[L, sub_lv];
+      } else if (m == 4) {
+        cp_total += n_groups_per_level[sub_lv];
+        raw_pos[L, sub_lv + 1] = raw_pos[L, sub_lv];
+        cp_pos[L, sub_lv + 1]  = cp_pos[L, sub_lv] + n_groups_per_level[sub_lv];
+      } else {
+        // mode == 0 or other: no contribution
+        raw_pos[L, sub_lv + 1] = raw_pos[L, sub_lv];
+        cp_pos[L, sub_lv + 1]  = cp_pos[L, sub_lv];
+      }
+    }
+  }
+
+  return (raw_total, raw_pos, cp_total, cp_pos);
 }

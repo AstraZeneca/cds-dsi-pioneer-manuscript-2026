@@ -77,3 +77,11 @@ int<lower=0> n_time_invariant_covar;  // Number of time-invariant covariates
 // In all enabled cases, n_forecast_patients == n_patients for PSA models.
 array[enable_ms_12_entry_psa_cov ? n_patients : 0] real psa_at_entry_12;
 array[enable_ms_32_entry_psa_cov ? n_patients : 0] real psa_at_entry_32;
+
+// MS-cohort subsetting (generic level/group selector)
+// ms_split_level == 0 → MS uses all forecast_patient_idx (default, backwards-compatible)
+// ms_split_level > 0  → restrict MS likelihood to patients whose group ID at this
+//                       hierarchy level matches any entry in ms_target_groups[].
+int<lower=0, upper=n_levels> ms_split_level;
+int<lower=0> n_ms_target_groups;
+array[n_ms_target_groups] int ms_target_groups;
