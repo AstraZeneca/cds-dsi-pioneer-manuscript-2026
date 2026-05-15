@@ -452,17 +452,17 @@ test_that("cutoff_visits and fine_cutoff_visits handle all edge cases and bounda
       expect_equal(
         as.integer(df$last_visit_day),
         expected_cutoff_last_visit_day[i, 1:np],
-        label = paste("last_visit_day, case", i)
+        label = str_glue("last_visit_day, case {i}")
       )
       expect_equal(
         as.integer(df$last_visit_week),
         expected_cutoff_last_visit_week[i, 1:np],
-        label = paste("last_visit_week, case", i)
+        label = str_glue("last_visit_week, case {i}")
       )
       expect_equal(
         as.integer(df$cutoff_last_visit_idx),
         expected_cutoff_last_visit_idx[i, 1:np],
-        label = paste("cutoff_last_visit_idx, case", i)
+        label = str_glue("cutoff_last_visit_idx, case {i}")
       )
     }
     # Check fine_cutoff_visits outputs if expected values are not NA
@@ -470,12 +470,12 @@ test_that("cutoff_visits and fine_cutoff_visits handle all edge cases and bounda
       expect_equal(
         as.integer(df$fine_last_visit_day),
         expected_fine_last_visit_day[i, 1:np],
-        label = paste("fine_last_visit_day, case", i)
+        label = str_glue("fine_last_visit_day, case {i}")
       )
       expect_equal(
         as.integer(df$fine_last_visit_week),
         expected_fine_last_visit_week[i, 1:np],
-        label = paste("fine_last_visit_week, case", i)
+        label = str_glue("fine_last_visit_week, case {i}")
       )
     }
   }

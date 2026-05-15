@@ -216,12 +216,12 @@ test_that("find_first_week and find_first_forecast_week: Stan matches R referenc
     expect_equal(
       get_val("out_week", i),
       exp$week,
-      label = paste0("find_first_week case ", i, " (", cc$name, ") week")
+      label = str_c("find_first_week case ", i, " (", cc$name, ") week")
     )
     expect_equal(
       get_val("out_rc", i),
       exp$right_censored,
-      label = paste0("find_first_week case ", i, " (", cc$name, ") right_censored")
+      label = str_c("find_first_week case ", i, " (", cc$name, ") right_censored")
     )
   }
 
@@ -232,12 +232,12 @@ test_that("find_first_week and find_first_forecast_week: Stan matches R referenc
     expect_equal(
       get_val("out_week_fc", i),
       exp$week,
-      label = paste0("find_first_forecast_week case ", i, " (", cc$name, ") week")
+      label = str_c("find_first_forecast_week case ", i, " (", cc$name, ") week")
     )
     expect_equal(
       get_val("out_rc_fc", i),
       exp$right_censored,
-      label = paste0("find_first_forecast_week case ", i, " (", cc$name, ") right_censored")
+      label = str_c("find_first_forecast_week case ", i, " (", cc$name, ") right_censored")
     )
   }
 })

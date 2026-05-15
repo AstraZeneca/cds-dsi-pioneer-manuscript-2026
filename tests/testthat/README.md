@@ -1,3 +1,35 @@
+# Test Suite Structure
+
+## CI vs Integration Tests
+
+### CI Tests (Automated)
+
+All tests in this directory run automatically in GitHub Actions CI **except** `test-integration-real-data.R`.
+
+**Key characteristics:**
+- ✅ Use synthetic/mock data only
+- ✅ No dependencies on `/mnt/data` or Domino
+- ✅ Fast execution (~2-5 min including Stan compilation)
+- ✅ Reproducible across environments
+
+**Run all CI tests:**
+```bash
+Rscript -e 'testthat::test_dir("tests/testthat")'
+```
+
+### Integration Tests (Manual Only)
+
+File: `test-integration-real-data.R` (template provided)
+
+Tests that load real data from Domino. **Automatically skipped in CI** (no data access).
+
+**Run integration tests on Domino:**
+```bash
+Rscript -e 'Sys.setenv(RUN_INTEGRATION_TESTS="true"); testthat::test_file("tests/testthat/test-integration-real-data.R")'
+```
+
+---
+
 # Stan Function Testing Pattern: All-in-One R/Stan Tests
 
 This repository uses a robust, unified pattern for testing Stan functions (e.g., `cutoff_visits`, `fine_cutoff_visits`, `get_oos_patients_idx`). All test cases for a function are run in a single Stan call, with all data prepared in R and all outputs checked in R.

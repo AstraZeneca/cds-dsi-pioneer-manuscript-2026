@@ -123,5 +123,11 @@ rsconnect::deployDoc(
 )
 ```
 
+**Published sites:**
+- SCLC-01: `rsconnect::deploySite(siteDir = "quarto/sclc/website", server = "az-connect", account = "kmjq089")`
+- Pioneer: `rsconnect::deploySite(siteDir = "quarto/pioneer/website", server = "az-connect", account = "kmjq089")`
+  - URL: https://rstudio-connect.seml.scp.astrazeneca.net/content/4ec50122-5d33-43fa-831c-3df0243084f7/
+  - siteName: `pioneer-pioneer`
+
 **Published presentations:**
 - PIONEER Go/No-Go: https://rstudio-connect.seml.scp.astrazeneca.net/content/71d3bcc6-c677-485b-b8fc-562b0f580c9a/

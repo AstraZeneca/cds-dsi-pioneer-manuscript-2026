@@ -8,6 +8,13 @@ real<lower=0> tr_loc_pop_sd;  // sd prior for population log total rate
 // Hierarchical intercept prior scale hyperparameters - one per level
 array[n_levels] real<lower=0> tr_sd_level_intercept_sd;
 
+// Fixed-effect SD hyperparameter for FE levels (mode=1); unused for RE/disabled levels
+array[n_levels] real<lower=0> tr_fe_sd_level_intercept;
+
+// Student-t hierarchy: nu prior hyperparameters (one per level)
+array[n_levels] real<lower=0> tr_nu_level_prior_alpha;
+array[n_levels] real<lower=0> tr_nu_level_prior_beta;
+
 // QR-space coefficient hyperparameters (applied in model block)
 vector[n_covar] tr_coef_qr_pop_mean;        // mean for QR coefficients (typically 0)
 vector<lower=0>[n_covar] tr_coef_qr_pop_sd; // sd for QR coefficients (typically 1)
@@ -29,3 +36,12 @@ real tr_log_sd_pop_process_noise_pop_mean;     // Prior mean for pop-level log(�
 real tr_log_sd_pop_process_noise_pop_sd;       // Prior SD for pop-level log(σ)
 real tr_logit_phi_pop_process_noise_pop_mean;  // Prior mean for pop-level logit(φ)
 real tr_logit_phi_pop_process_noise_pop_sd;    // Prior SD for pop-level logit(φ)
+
+// ===== SD sub-hierarchy hyperparameters (issue #110) =====
+// Population log-SD prior (per location level L)
+array[n_levels] real tr_log_sd_level_intercept_pop_mean;
+array[n_levels] real<lower=0> tr_log_sd_level_intercept_pop_sd;
+// Hyperscale prior (half-normal via <lower=0>)
+array[n_levels, n_levels] real<lower=0> tr_sd_hyperscale_level_intercept_sd;
+// FE hyperscale values used when mode == FE (data-supplied)
+array[n_levels, n_levels] real<lower=0> tr_fe_sd_hyperscale_level_intercept;
