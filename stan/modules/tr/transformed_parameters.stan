@@ -16,7 +16,8 @@ array[n_levels] real<lower=0> tr_sd_level_intercept;
   for (lv in 1:n_levels) {
     if (enable_level_intercept_tr[lv] == LEVEL_MODE_FE) {
       tr_sd_level_intercept[lv] = tr_fe_sd_level_intercept[lv];
-    } else if (enable_level_intercept_tr[lv] == LEVEL_MODE_RE) {
+    } else if (enable_level_intercept_tr[lv] == LEVEL_MODE_RE ||
+               enable_level_intercept_tr[lv] == LEVEL_MODE_RE_CP) {
       sd_idx += 1;
       tr_sd_level_intercept[lv] = tr_sd_level_intercept_raw[sd_idx];
     } else {
@@ -25,15 +26,29 @@ array[n_levels] real<lower=0> tr_sd_level_intercept;
   }
 }
 
+// SD sub-hierarchy: builds tr_sd_intercept_pergroup[lv] (bit-exact fill when inactive)
+#include "modules/tr/_sd_subhierarchy_transformed_parameters.stan"
+
 // ===== INTERCEPT EFFECTS =====
-// Step 1: Scale all raw effects at once (vectorized per level)
+// Step 1: Assemble scaled intercepts from either raw (NCP) or cp (CP) bucket.
 vector[n_enabled_groups_tr_intercept] tr_scaled_level_intercept;
 for (lv in 1:n_levels) {
-  if (enable_level_intercept_tr[lv]) {
-    int lv_start, lv_end;
-    (lv_start, lv_end) = get_pos(enabled_level_pos_tr_intercept, lv);
-    tr_scaled_level_intercept[lv_start:lv_end] =
-      tr_sd_level_intercept[lv] * tr_raw_level_intercept[lv_start:lv_end];
+  int mode = enable_level_intercept_tr[lv];
+  if (mode == LEVEL_MODE_NONE) continue;
+  int e_lo, e_hi;
+  (e_lo, e_hi) = get_pos(enabled_level_pos_tr_intercept, lv);
+
+  if (mode == LEVEL_MODE_RE_CP) {
+    // CP: scaled = centered (identity — the _cp_ vector is already at natural scale)
+    int c_lo = cp_level_pos_tr_intercept[lv];
+    int c_hi = cp_level_pos_tr_intercept[lv + 1] - 1;
+    tr_scaled_level_intercept[e_lo:e_hi] = tr_cp_level_intercept[c_lo:c_hi];
+  } else {
+    // NCP (FE, RE, RE_GP): scaled = sd[lv] * raw
+    int r_lo = raw_level_pos_tr_intercept[lv];
+    int r_hi = raw_level_pos_tr_intercept[lv + 1] - 1;
+    tr_scaled_level_intercept[e_lo:e_hi] =
+      tr_sd_intercept_pergroup[lv][1:(r_hi - r_lo + 1)] .* tr_raw_level_intercept[r_lo:r_hi];
   }
 }
 
@@ -46,16 +61,25 @@ for (lv in 1:n_levels) {
 }
 
 // ===== COVARIATE SLOPE EFFECTS =====
-// Step 1: Scale all raw slope effects at once
+// Step 1: Assemble scaled slopes from either raw (NCP) or cp (CP) bucket.
 matrix[n_enabled_groups_tr_slope, n_covar] tr_scaled_level_slope;
 if (n_covar > 0 && n_enabled_groups_tr_slope > 0) {
   for (lv in 1:n_levels) {
-    if (enable_level_cov_tr[lv]) {
-      int lv_start, lv_end;
-      (lv_start, lv_end) = get_pos(enabled_level_pos_tr_slope, lv);
-      tr_scaled_level_slope[lv_start:lv_end, :] =
-        tr_raw_level_slope[lv_start:lv_end, :] .*
-        rep_matrix(tr_sd_level_slope[lv]', lv_end - lv_start + 1);
+    if (!enable_level_cov_tr[lv]) continue;
+    int mode = enable_level_intercept_tr[lv];
+    int e_lo, e_hi;
+    (e_lo, e_hi) = get_pos(enabled_level_pos_tr_slope, lv);
+
+    if (mode == LEVEL_MODE_RE_CP) {
+      int c_lo = cp_level_pos_tr_slope[lv];
+      int c_hi = cp_level_pos_tr_slope[lv + 1] - 1;
+      tr_scaled_level_slope[e_lo:e_hi, :] = tr_cp_level_slope[c_lo:c_hi, :];
+    } else {
+      int r_lo = raw_level_pos_tr_slope[lv];
+      int r_hi = raw_level_pos_tr_slope[lv + 1] - 1;
+      tr_scaled_level_slope[e_lo:e_hi, :] =
+        tr_raw_level_slope[r_lo:r_hi, :] .*
+        rep_matrix(tr_sd_level_slope[lv]', r_hi - r_lo + 1);
     }
   }
 }

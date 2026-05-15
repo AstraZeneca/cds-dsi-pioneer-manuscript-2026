@@ -38,6 +38,16 @@ int ms_12_t_has_intercept;
 (ms_flag_b1_valid, need_12_s_gp, need_12_t_gp, ms_12_t_has_intercept) =
   compute_ms_time_scale_flags(enable_ms_12, ms_time_scale_12, 1);
 
+// share_dead_gp_shape constraints
+if (share_dead_gp_shape) {
+  if (ms_time_scale_12 != 0)
+    fatal_error("share_dead_gp_shape requires ms_time_scale_12=0 (Markov); extended mode not supported");
+  if (!need_12_t_gp)
+    fatal_error("share_dead_gp_shape requires need_12_t_gp=1");
+  if (!enable_ms_02)
+    fatal_error("share_dead_gp_shape requires enable_ms_02=1");
+}
+
 // --- Level Baseline Hazard Flags (B2) ---
 // GP-Only Boolean Mask, group counts, and position arrays
 // strict=1: fatal_error on invalid input; is_valid sentinel discarded
@@ -82,6 +92,31 @@ int n_enabled_groups_ms_baseline_32; int n_gp_groups_ms_baseline_32;
     n_enabled_groups_ms_baseline, n_gp_groups_ms_baseline, 1
   );
 
+// --- Per-transition RAW vs CP bucket counts ---
+// All transitions share enable_ms_level_baseline_hazard, so the positions are
+// computed once from the shared mode vector and reused for every transition.
+int n_raw_groups_ms_baseline_shared;
+int n_cp_groups_ms_baseline_shared;
+array[n_levels + 1] int raw_level_pos_ms_baseline_shared;
+array[n_levels + 1] int cp_level_pos_ms_baseline_shared;
+(n_raw_groups_ms_baseline_shared, raw_level_pos_ms_baseline_shared,
+ n_cp_groups_ms_baseline_shared,  cp_level_pos_ms_baseline_shared) =
+  split_cp_ncp_pos(n_levels, n_forecast_groups_per_level, enable_ms_level_baseline_hazard);
+
+// Per-transition raw/cp counts (zero when transition is disabled)
+int n_raw_groups_ms_baseline_01   = enable_ms_01   ? n_raw_groups_ms_baseline_shared : 0;
+int n_cp_groups_ms_baseline_01    = enable_ms_01   ? n_cp_groups_ms_baseline_shared  : 0;
+int n_raw_groups_ms_baseline_02   = enable_ms_02   ? n_raw_groups_ms_baseline_shared : 0;
+int n_cp_groups_ms_baseline_02    = enable_ms_02   ? n_cp_groups_ms_baseline_shared  : 0;
+int n_raw_groups_ms_baseline_12_s = need_12_s_gp   ? n_raw_groups_ms_baseline_shared : 0;
+int n_cp_groups_ms_baseline_12_s  = need_12_s_gp   ? n_cp_groups_ms_baseline_shared  : 0;
+int n_raw_groups_ms_baseline_12_t = need_12_t_gp   ? n_raw_groups_ms_baseline_shared : 0;
+int n_cp_groups_ms_baseline_12_t  = need_12_t_gp   ? n_cp_groups_ms_baseline_shared  : 0;
+int n_raw_groups_ms_baseline_03   = enable_ms_03   ? n_raw_groups_ms_baseline_shared : 0;
+int n_cp_groups_ms_baseline_03    = enable_ms_03   ? n_cp_groups_ms_baseline_shared  : 0;
+int n_raw_groups_ms_baseline_32   = enable_ms_32   ? n_raw_groups_ms_baseline_shared : 0;
+int n_cp_groups_ms_baseline_32    = enable_ms_32   ? n_cp_groups_ms_baseline_shared  : 0;
+
 // --- Enabled Group Counts for Covariate Slopes ---
 int n_enabled_groups_ms_slope = compute_n_enabled_groups(
   n_forecast_groups_per_level, enable_ms_level_cov
@@ -91,6 +126,21 @@ int n_enabled_groups_ms_slope = compute_n_enabled_groups(
 array[n_levels + 1] int enabled_level_pos_ms_slope = create_enabled_pos(
   n_forecast_groups_per_level, enable_ms_level_cov
 );
+
+// --- Slope bucket routing (same pattern as intercepts) ---
+// Slope parameterization follows the intercept mode at that level;
+// slope is only included when enable_ms_level_cov[lv] == 1.
+array[n_levels] int ms_slope_mode;
+for (lv in 1:n_levels) {
+  ms_slope_mode[lv] = enable_ms_level_cov[lv] ? enable_ms_level_baseline_hazard[lv] : 0;
+}
+int n_raw_groups_ms_slope_shared;
+int n_cp_groups_ms_slope_shared;
+array[n_levels + 1] int raw_level_pos_ms_slope_shared;
+array[n_levels + 1] int cp_level_pos_ms_slope_shared;
+(n_raw_groups_ms_slope_shared, raw_level_pos_ms_slope_shared,
+ n_cp_groups_ms_slope_shared,  cp_level_pos_ms_slope_shared) =
+  split_cp_ncp_pos(n_levels, n_forecast_groups_per_level, ms_slope_mode);
 
 // --- GP Coarse Knot Grids ---
 // Knot counts per time domain
@@ -179,6 +229,44 @@ for (i in 1:n_patients) {
     ms_ic_gap_01[i] = 0;
   } else {
     ms_ic_gap_01[i] = interval_censored[i] + 1;
+  }
+}
+
+// Compute ms_patient_idx: compacted index of patients contributing to MS likelihood
+array[n_patients] int<lower=0, upper=1> ms_is_target = rep_array(0, n_patients);
+int n_ms_patients = 0;
+if (ms_split_level == 0) {
+  for (j in 1:n_forecast_patients) {
+    ms_is_target[forecast_patient_idx[j]] = 1;
+  }
+  n_ms_patients = n_forecast_patients;
+} else {
+  for (j in 1:n_forecast_patients) {
+    int p = forecast_patient_idx[j];
+    int grp = patient_level_groups[p, ms_split_level];
+    for (k in 1:n_ms_target_groups) {
+      if (grp == ms_target_groups[k]) {
+        ms_is_target[p] = 1;
+        n_ms_patients += 1;
+        break;
+      }
+    }
+  }
+}
+
+if (fit_multistate_data == 1 && n_ms_patients == 0) {
+  fatal_error("MS likelihood enabled but n_ms_patients == 0 (check ms_split_level/ms_target_groups)");
+}
+
+array[n_ms_patients] int ms_patient_idx;
+{
+  int write_idx = 1;
+  for (j in 1:n_forecast_patients) {
+    int p = forecast_patient_idx[j];
+    if (ms_is_target[p] == 1) {
+      ms_patient_idx[write_idx] = p;
+      write_idx += 1;
+    }
   }
 }
 

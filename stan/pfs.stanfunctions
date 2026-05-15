@@ -500,7 +500,14 @@ tuple(real, int) survival_median(array[] int surv_time, int last_surv_time) {
 tuple(vector, array[] int) km_quantiles(vector km_survival, vector p) {
   int T = num_elements(km_survival);
   int P = num_elements(p);
-  vector[P] quantiles = rep_vector(0.0, P);
+  // Initialize not-reached quantiles to the forecast horizon (T - 1 = max_all_t)
+  // instead of 0. This treats "median not reached" as "at least max_all_t", a
+  // conservative lower bound. Downstream summaries (posterior median, intervals)
+  // then degrade gracefully as the observation window shrinks, rather than
+  // producing spurious bimodal distributions with mass at 0. The cannot_calculate
+  // flag is still returned so callers who care about the exceeds-max fraction
+  // can detect it.
+  vector[P] quantiles = rep_vector(T - 1, P);
   array[P] int cannot_calculate = rep_array(1, P);
   
   // Sort percentiles in descending order to match decreasing survival curve

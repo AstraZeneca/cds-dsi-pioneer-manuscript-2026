@@ -14,8 +14,9 @@ if (enable_pop_cov_frac) {
 {
   int sd_idx = 0;
   for (lv in 1:n_levels) {
-    // SD prior only for RE levels (mode=2); FE levels use fixed hyperparameter
-    if (enable_level_intercept_frac[lv] == LEVEL_MODE_RE) {
+    // SD prior for RE and RE_CP levels; FE levels use fixed hyperparameter
+    if (enable_level_intercept_frac[lv] == LEVEL_MODE_RE ||
+        enable_level_intercept_frac[lv] == LEVEL_MODE_RE_CP) {
       sd_idx += 1;
       frac_sd_level_intercept_raw[sd_idx] ~ normal(0, frac_sd_level_intercept_sd[lv]);
     }
@@ -23,25 +24,47 @@ if (enable_pop_cov_frac) {
       frac_sd_level_slope[lv] ~ normal(0, frac_sd_level_slope_sd[lv]);
     }
 
-    // Intercept raw effects - only apply prior to enabled levels (FE and RE both)
-    // (parameter array is sized by enabled groups only)
+    // Intercept effects — raw-path (FE/RE) or CP-path (RE_CP)
     if (enable_level_intercept_frac[lv]) {
-      int lv_start = enabled_level_pos_frac_intercept[lv];
-      int lv_end = enabled_level_pos_frac_intercept[lv + 1] - 1;
-      if (enable_student_t_hierarchy)
-        frac_raw_level_intercept[lv_start:lv_end] ~ student_t(frac_nu_level[lv], 0, 1);
-      else
-        frac_raw_level_intercept[lv_start:lv_end] ~ std_normal();
+      if (enable_level_intercept_frac[lv] == LEVEL_MODE_RE_CP) {
+        int c_lo = cp_level_pos_frac_intercept[lv];
+        int c_hi = cp_level_pos_frac_intercept[lv + 1] - 1;
+        if (enable_student_t_hierarchy)
+          frac_cp_level_intercept[c_lo:c_hi] ~ student_t(frac_nu_level[lv], 0, frac_sd_level_intercept_raw[sd_idx]);
+        else
+          frac_cp_level_intercept[c_lo:c_hi] ~ normal(0, frac_sd_level_intercept_raw[sd_idx]);
+      } else {
+        int r_lo = raw_level_pos_frac_intercept[lv];
+        int r_hi = raw_level_pos_frac_intercept[lv + 1] - 1;
+        if (enable_student_t_hierarchy)
+          frac_raw_level_intercept[r_lo:r_hi] ~ student_t(frac_nu_level[lv], 0, 1);
+        else
+          frac_raw_level_intercept[r_lo:r_hi] ~ std_normal();
+      }
     }
 
-    // Slope raw effects - only apply prior to enabled levels
+    // Slope effects — raw-path (FE/RE) or CP-path (RE_CP)
     if (enable_level_cov_frac[lv] && n_covar > 0) {
-      int lv_start = enabled_level_pos_frac_slope[lv];
-      int lv_end = enabled_level_pos_frac_slope[lv + 1] - 1;
-      if (enable_student_t_hierarchy)
-        to_vector(frac_raw_level_slope[lv_start:lv_end, :]) ~ student_t(frac_nu_level[lv], 0, 1);
-      else
-        to_vector(frac_raw_level_slope[lv_start:lv_end, :]) ~ std_normal();
+      int mode = enable_level_intercept_frac[lv];
+      if (mode == LEVEL_MODE_RE_CP) {
+        int c_lo = cp_level_pos_frac_slope[lv];
+        int c_hi = cp_level_pos_frac_slope[lv + 1] - 1;
+        if (c_hi >= c_lo) {
+          for (k in 1:n_covar) {
+            if (enable_student_t_hierarchy)
+              frac_cp_level_slope[c_lo:c_hi, k] ~ student_t(frac_nu_level[lv], 0, frac_sd_level_slope[lv, k]);
+            else
+              frac_cp_level_slope[c_lo:c_hi, k] ~ normal(0, frac_sd_level_slope[lv, k]);
+          }
+        }
+      } else {
+        int r_lo = raw_level_pos_frac_slope[lv];
+        int r_hi = raw_level_pos_frac_slope[lv + 1] - 1;
+        if (enable_student_t_hierarchy)
+          to_vector(frac_raw_level_slope[r_lo:r_hi, :]) ~ student_t(frac_nu_level[lv], 0, 1);
+        else
+          to_vector(frac_raw_level_slope[r_lo:r_hi, :]) ~ std_normal();
+      }
     }
   }
 }

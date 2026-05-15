@@ -83,6 +83,12 @@ get_multistate_priors <- function(n_levels, n_time_varying_covar, n_time_invaria
     log_lambda_gp_12_t_pop_rho_alpha = 8.0,
     log_lambda_gp_12_t_pop_rho_beta = 135.0,
 
+    # Shared dead GP shape hyperparameters (used when share_dead_gp_shape=1)
+    log_lambda_gp_dead_pop_alpha_alpha = 3.0,
+    log_lambda_gp_dead_pop_alpha_beta  = 1.0,
+    log_lambda_gp_dead_pop_rho_alpha   = 8.0,
+    log_lambda_gp_dead_pop_rho_beta    = 135.0,
+
     # Level-level rho: invgamma(8, 90) → mode=10w, median≈12w, P(rho>50)=0.05%
     log_lambda_gp_01_level_intercept_sd_sd = rep(0.5, n_levels),
     log_lambda_gp_01_level_alpha_alpha = rep(3.0, n_levels),

@@ -93,7 +93,7 @@ make_visits <- function(usubjid = "PT-001", weeks, psas,
                         psa_pd_confirmed = rep(0L, length(weeks))) {
   map2(weeks, psas, \(w, p) make_raw_trial_visit(
     usubjid = usubjid, week = w, measurement_value = p,
-    psa_pd_confirmed = psa_pd_confirmed[match(w, weeks)]
+    psa_pd_confirmed = psa_pd_confirmed[base::match(w, weeks)]
   )) |>
     bind_rows()
 }

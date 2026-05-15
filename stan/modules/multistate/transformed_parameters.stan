@@ -40,17 +40,28 @@ if (enable_ms_01) {
       int lv_start, lv_end;
       (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
 
-      // Scale intercepts: FE uses fixed data SD, RE uses estimated SD
-      if (enable_ms_level_baseline_hazard[lv] == 1) {
-        // Fixed effects: no pooling
+      // Scale intercepts: route by mode
+      int mode_01 = enable_ms_level_baseline_hazard[lv];
+      if (mode_01 == LEVEL_MODE_RE_CP) {
+        // CP path: centered parameters are already at natural scale
+        int c_lo = cp_level_pos_ms_baseline_shared[lv];
+        int c_hi = cp_level_pos_ms_baseline_shared[lv + 1] - 1;
         log_lambda_gp_01_level_intercept[lv_start:lv_end] =
-          raw_log_lambda_gp_01_level_intercept[lv_start:lv_end] *
-          fe_log_lambda_gp_01_level_intercept_sd[lv];
+          cp_log_lambda_gp_01_level_intercept[c_lo:c_hi];
       } else {
-        // Random effects (2 or 3): hierarchical pooling
-        log_lambda_gp_01_level_intercept[lv_start:lv_end] =
-          raw_log_lambda_gp_01_level_intercept[lv_start:lv_end] *
-          log_lambda_gp_01_level_intercept_sd[lv];
+        int r_lo = raw_level_pos_ms_baseline_shared[lv];
+        int r_hi = raw_level_pos_ms_baseline_shared[lv + 1] - 1;
+        if (mode_01 == LEVEL_MODE_FE) {
+          // Fixed effects: no pooling
+          log_lambda_gp_01_level_intercept[lv_start:lv_end] =
+            raw_log_lambda_gp_01_level_intercept[r_lo:r_hi] *
+            fe_log_lambda_gp_01_level_intercept_sd[lv];
+        } else {
+          // Random effects (2 or 3): hierarchical pooling
+          log_lambda_gp_01_level_intercept[lv_start:lv_end] =
+            raw_log_lambda_gp_01_level_intercept[r_lo:r_hi] *
+            log_lambda_gp_01_level_intercept_sd[lv];
+        }
       }
 
       if (enable_ms_level_baseline_hazard[lv] == 3) {
@@ -89,7 +100,8 @@ if (enable_ms_01) {
   // Time-varying covariate effects
   // -------------------------------------------------------------------------
   // Continuous mode: dense matrix addition across all weeks.
-  if (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 && !enable_ms_visit_gated_01) {
+  if (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 && !enable_ms_visit_gated_01
+      && size(ms_time_varying_covar_01) > 0) {
     for (k in 1:n_time_varying_covar) {
       log_cond_surv_01 += time_varying_coef_01[k] * ms_time_varying_covar_01[k];
     }
@@ -100,7 +112,8 @@ if (enable_ms_01) {
   // When ms_needs_inline_psa && enable_ms_visit_gated_latent_01, the latent PSA path
   // is handled by the PSA-specific inline include. Observed PSA path still runs here.
   if (enable_ms_pop_time_varying_cov && enable_ms_visit_gated_01 &&
-      !(ms_needs_inline_psa && enable_ms_visit_gated_latent_01)) {
+      !(ms_needs_inline_psa && enable_ms_visit_gated_latent_01) &&
+      (!enable_ms_visit_gated_latent_01 || size(ms_time_varying_covar_01) > 0)) {
     for (j in 1:n_forecast_patients) {
       int p = forecast_patient_idx[j];
       int v_start; int v_end;
@@ -126,15 +139,24 @@ if (enable_ms_01) {
 
     // Multi-level random slopes (if enabled)
     if (n_enabled_groups_ms_slope > 0) {
-      // Step 1: Scale all raw slope effects at once
+      // Step 1: Scale all slope effects at once, dispatching by mode
       matrix[n_enabled_groups_ms_slope, n_time_invariant_covar] ms_scaled_level_slope_01;
       for (lv in 1:n_levels) {
         if (enable_ms_level_cov[lv]) {
           int lv_start, lv_end;
           (lv_start, lv_end) = get_pos(enabled_level_pos_ms_slope, lv);
-          ms_scaled_level_slope_01[lv_start:lv_end, :] =
-            raw_level_slope_01[lv_start:lv_end, :] .*
-            rep_matrix(sd_level_slope_01[lv]', lv_end - lv_start + 1);
+          int mode = enable_ms_level_baseline_hazard[lv];
+          if (mode == LEVEL_MODE_RE_CP) {
+            int c_lo = cp_level_pos_ms_slope_shared[lv];
+            int c_hi = cp_level_pos_ms_slope_shared[lv + 1] - 1;
+            ms_scaled_level_slope_01[lv_start:lv_end, :] = cp_level_slope_01[c_lo:c_hi, :];
+          } else {
+            int r_lo = raw_level_pos_ms_slope_shared[lv];
+            int r_hi = raw_level_pos_ms_slope_shared[lv + 1] - 1;
+            ms_scaled_level_slope_01[lv_start:lv_end, :] =
+              raw_level_slope_01[r_lo:r_hi, :] .*
+              rep_matrix(sd_level_slope_01[lv]', lv_end - lv_start + 1);
+          }
         }
       }
 
@@ -169,14 +191,25 @@ matrix[enable_ms_02 ? n_forecast_patients : 0, enable_ms_02 ? max_all_t : 0] log
 
 if (enable_ms_02) {
   // Compute population GP on coarse grid then expand to weekly
-  log_pop_lambda_02 = calc_gp_pred(
-    ms_gp_cal_t,
-    log_lambda_gp_02_pop_intercept[1],
-    log_lambda_gp_02_pop_alpha[1],
-    log_lambda_gp_02_pop_rho[1],
-    delta,
-    log_lambda_gp_02_pop_eta
-  )[knot_of_cal];
+  if (share_dead_gp_shape) {
+    log_pop_lambda_02 = calc_gp_pred(
+      ms_gp_cal_t,
+      log_lambda_gp_02_pop_intercept[1],
+      log_lambda_gp_dead_pop_alpha[1],
+      log_lambda_gp_dead_pop_rho[1],
+      delta,
+      log_lambda_gp_dead_pop_eta
+    )[knot_of_cal];
+  } else {
+    log_pop_lambda_02 = calc_gp_pred(
+      ms_gp_cal_t,
+      log_lambda_gp_02_pop_intercept[1],
+      log_lambda_gp_02_pop_alpha[1],
+      log_lambda_gp_02_pop_rho[1],
+      delta,
+      log_lambda_gp_02_pop_eta
+    )[knot_of_cal];
+  }
 
   // Initialize with population baseline
   log_cond_surv_02 = rep_matrix(log_pop_lambda_02, n_forecast_patients);
@@ -187,17 +220,25 @@ if (enable_ms_02) {
       int lv_start, lv_end;
       (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
 
-      // Scale intercepts: FE uses fixed data SD, RE uses estimated SD
-      if (enable_ms_level_baseline_hazard[lv] == 1) {
-        // Fixed effects: no pooling
+      // Scale intercepts: route by mode
+      int mode_02 = enable_ms_level_baseline_hazard[lv];
+      if (mode_02 == LEVEL_MODE_RE_CP) {
+        int c_lo = cp_level_pos_ms_baseline_shared[lv];
+        int c_hi = cp_level_pos_ms_baseline_shared[lv + 1] - 1;
         log_lambda_gp_02_level_intercept[lv_start:lv_end] =
-          raw_log_lambda_gp_02_level_intercept[lv_start:lv_end] *
-          fe_log_lambda_gp_02_level_intercept_sd[lv];
+          cp_log_lambda_gp_02_level_intercept[c_lo:c_hi];
       } else {
-        // Random effects (2 or 3): hierarchical pooling
-        log_lambda_gp_02_level_intercept[lv_start:lv_end] =
-          raw_log_lambda_gp_02_level_intercept[lv_start:lv_end] *
-          log_lambda_gp_02_level_intercept_sd[lv];
+        int r_lo = raw_level_pos_ms_baseline_shared[lv];
+        int r_hi = raw_level_pos_ms_baseline_shared[lv + 1] - 1;
+        if (mode_02 == LEVEL_MODE_FE) {
+          log_lambda_gp_02_level_intercept[lv_start:lv_end] =
+            raw_log_lambda_gp_02_level_intercept[r_lo:r_hi] *
+            fe_log_lambda_gp_02_level_intercept_sd[lv];
+        } else {
+          log_lambda_gp_02_level_intercept[lv_start:lv_end] =
+            raw_log_lambda_gp_02_level_intercept[r_lo:r_hi] *
+            log_lambda_gp_02_level_intercept_sd[lv];
+        }
       }
 
       if (enable_ms_level_baseline_hazard[lv] == 3) {
@@ -235,7 +276,8 @@ if (enable_ms_02) {
   // 0->2 time-varying covariate: uses modeled PSA (ms_time_varying_covar_01)
   // Controlled by enable_ms_02_time_varying_cov, independent of 0->1 mode.
   // When ms_needs_inline_psa, the PSA-specific inline path handles this instead.
-  if (!ms_needs_inline_psa && enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov && n_time_varying_covar > 0) {
+  if (!ms_needs_inline_psa && enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov
+      && n_time_varying_covar > 0 && size(ms_time_varying_covar_01) > 0) {
     for (k in 1:n_time_varying_covar) {
       log_cond_surv_02 += time_varying_coef_02[k] * ms_time_varying_covar_01[k];
     }
@@ -253,9 +295,18 @@ if (enable_ms_02) {
         if (enable_ms_level_cov[lv]) {
           int lv_start, lv_end;
           (lv_start, lv_end) = get_pos(enabled_level_pos_ms_slope, lv);
-          ms_scaled_level_slope_02[lv_start:lv_end, :] =
-            raw_level_slope_02[lv_start:lv_end, :] .*
-            rep_matrix(sd_level_slope_02[lv]', lv_end - lv_start + 1);
+          int mode = enable_ms_level_baseline_hazard[lv];
+          if (mode == LEVEL_MODE_RE_CP) {
+            int c_lo = cp_level_pos_ms_slope_shared[lv];
+            int c_hi = cp_level_pos_ms_slope_shared[lv + 1] - 1;
+            ms_scaled_level_slope_02[lv_start:lv_end, :] = cp_level_slope_02[c_lo:c_hi, :];
+          } else {
+            int r_lo = raw_level_pos_ms_slope_shared[lv];
+            int r_hi = raw_level_pos_ms_slope_shared[lv + 1] - 1;
+            ms_scaled_level_slope_02[lv_start:lv_end, :] =
+              raw_level_slope_02[r_lo:r_hi, :] .*
+              rep_matrix(sd_level_slope_02[lv]', lv_end - lv_start + 1);
+          }
         }
       }
 
@@ -311,17 +362,25 @@ if (need_12_s_gp) {
       int lv_start, lv_end;
       (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
 
-      // Scale intercepts: FE uses fixed data SD, RE uses estimated SD
-      if (enable_ms_level_baseline_hazard[lv] == 1) {
-        // Fixed effects: no pooling
+      // Scale intercepts: route by mode
+      int mode_12_s = enable_ms_level_baseline_hazard[lv];
+      if (mode_12_s == LEVEL_MODE_RE_CP) {
+        int c_lo = cp_level_pos_ms_baseline_shared[lv];
+        int c_hi = cp_level_pos_ms_baseline_shared[lv + 1] - 1;
         log_lambda_gp_12_s_level_intercept[lv_start:lv_end] =
-          raw_log_lambda_gp_12_s_level_intercept[lv_start:lv_end] *
-          fe_log_lambda_gp_12_s_level_intercept_sd[lv];
+          cp_log_lambda_gp_12_s_level_intercept[c_lo:c_hi];
       } else {
-        // Random effects (2 or 3): hierarchical pooling
-        log_lambda_gp_12_s_level_intercept[lv_start:lv_end] =
-          raw_log_lambda_gp_12_s_level_intercept[lv_start:lv_end] *
-          log_lambda_gp_12_s_level_intercept_sd[lv];
+        int r_lo = raw_level_pos_ms_baseline_shared[lv];
+        int r_hi = raw_level_pos_ms_baseline_shared[lv + 1] - 1;
+        if (mode_12_s == LEVEL_MODE_FE) {
+          log_lambda_gp_12_s_level_intercept[lv_start:lv_end] =
+            raw_log_lambda_gp_12_s_level_intercept[r_lo:r_hi] *
+            fe_log_lambda_gp_12_s_level_intercept_sd[lv];
+        } else {
+          log_lambda_gp_12_s_level_intercept[lv_start:lv_end] =
+            raw_log_lambda_gp_12_s_level_intercept[r_lo:r_hi] *
+            log_lambda_gp_12_s_level_intercept_sd[lv];
+        }
       }
 
       if (enable_ms_level_baseline_hazard[lv] == 3) {
@@ -367,9 +426,18 @@ if (need_12_s_gp) {
         if (enable_ms_level_cov[lv]) {
           int lv_start, lv_end;
           (lv_start, lv_end) = get_pos(enabled_level_pos_ms_slope, lv);
-          ms_scaled_level_slope_12[lv_start:lv_end, :] =
-            raw_level_slope_12[lv_start:lv_end, :] .*
-            rep_matrix(sd_level_slope_12[lv]', lv_end - lv_start + 1);
+          int mode = enable_ms_level_baseline_hazard[lv];
+          if (mode == LEVEL_MODE_RE_CP) {
+            int c_lo = cp_level_pos_ms_slope_shared[lv];
+            int c_hi = cp_level_pos_ms_slope_shared[lv + 1] - 1;
+            ms_scaled_level_slope_12[lv_start:lv_end, :] = cp_level_slope_12[c_lo:c_hi, :];
+          } else {
+            int r_lo = raw_level_pos_ms_slope_shared[lv];
+            int r_hi = raw_level_pos_ms_slope_shared[lv + 1] - 1;
+            ms_scaled_level_slope_12[lv_start:lv_end, :] =
+              raw_level_slope_12[r_lo:r_hi, :] .*
+              rep_matrix(sd_level_slope_12[lv]', lv_end - lv_start + 1);
+          }
         }
       }
 
@@ -394,20 +462,31 @@ if (need_12_s_gp) {
     );
   }
 
-  log_cond_surv_12_s = -exp(fmax(log_cond_surv_12_s, -20.0));
+  log_cond_surv_12_s = -exp(log_cond_surv_12_s);
 }
 
 if (need_12_t_gp) {
   // Clock-forward time GP on coarse grid then expand to weekly
   // In extended mode, intercept is zero (sojourn GP carries it) to avoid non-identifiability
-  log_pop_lambda_12_t = calc_gp_pred(
-    ms_gp_cal_t,
-    ms_12_t_has_intercept ? log_lambda_gp_12_t_pop_intercept[1] : 0.0,
-    log_lambda_gp_12_t_pop_alpha[1],
-    log_lambda_gp_12_t_pop_rho[1],
-    delta,
-    log_lambda_gp_12_t_pop_eta
-  )[knot_of_cal];
+  if (share_dead_gp_shape) {
+    log_pop_lambda_12_t = calc_gp_pred(
+      ms_gp_cal_t,
+      ms_12_t_has_intercept ? log_lambda_gp_12_t_pop_intercept[1] : 0.0,
+      log_lambda_gp_dead_pop_alpha[1],
+      log_lambda_gp_dead_pop_rho[1],
+      delta,
+      log_lambda_gp_dead_pop_eta
+    )[knot_of_cal];
+  } else {
+    log_pop_lambda_12_t = calc_gp_pred(
+      ms_gp_cal_t,
+      ms_12_t_has_intercept ? log_lambda_gp_12_t_pop_intercept[1] : 0.0,
+      log_lambda_gp_12_t_pop_alpha[1],
+      log_lambda_gp_12_t_pop_rho[1],
+      delta,
+      log_lambda_gp_12_t_pop_eta
+    )[knot_of_cal];
+  }
 
   log_cond_surv_12_t = rep_matrix(log_pop_lambda_12_t, n_forecast_patients);
 
@@ -417,17 +496,25 @@ if (need_12_t_gp) {
       int lv_start, lv_end;
       (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
 
-      // Scale intercepts: FE uses fixed data SD, RE uses estimated SD
-      if (enable_ms_level_baseline_hazard[lv] == 1) {
-        // Fixed effects: no pooling
+      // Scale intercepts: route by mode
+      int mode_12_t = enable_ms_level_baseline_hazard[lv];
+      if (mode_12_t == LEVEL_MODE_RE_CP) {
+        int c_lo = cp_level_pos_ms_baseline_shared[lv];
+        int c_hi = cp_level_pos_ms_baseline_shared[lv + 1] - 1;
         log_lambda_gp_12_t_level_intercept[lv_start:lv_end] =
-          raw_log_lambda_gp_12_t_level_intercept[lv_start:lv_end] *
-          fe_log_lambda_gp_12_t_level_intercept_sd[lv];
+          cp_log_lambda_gp_12_t_level_intercept[c_lo:c_hi];
       } else {
-        // Random effects (2 or 3): hierarchical pooling
-        log_lambda_gp_12_t_level_intercept[lv_start:lv_end] =
-          raw_log_lambda_gp_12_t_level_intercept[lv_start:lv_end] *
-          log_lambda_gp_12_t_level_intercept_sd[lv];
+        int r_lo = raw_level_pos_ms_baseline_shared[lv];
+        int r_hi = raw_level_pos_ms_baseline_shared[lv + 1] - 1;
+        if (mode_12_t == LEVEL_MODE_FE) {
+          log_lambda_gp_12_t_level_intercept[lv_start:lv_end] =
+            raw_log_lambda_gp_12_t_level_intercept[r_lo:r_hi] *
+            fe_log_lambda_gp_12_t_level_intercept_sd[lv];
+        } else {
+          log_lambda_gp_12_t_level_intercept[lv_start:lv_end] =
+            raw_log_lambda_gp_12_t_level_intercept[r_lo:r_hi] *
+            log_lambda_gp_12_t_level_intercept_sd[lv];
+        }
       }
 
       if (enable_ms_level_baseline_hazard[lv] == 3) {
@@ -472,9 +559,18 @@ if (need_12_t_gp) {
         if (enable_ms_level_cov[lv]) {
           int lv_start, lv_end;
           (lv_start, lv_end) = get_pos(enabled_level_pos_ms_slope, lv);
-          ms_scaled_level_slope_12[lv_start:lv_end, :] =
-            raw_level_slope_12[lv_start:lv_end, :] .*
-            rep_matrix(sd_level_slope_12[lv]', lv_end - lv_start + 1);
+          int mode = enable_ms_level_baseline_hazard[lv];
+          if (mode == LEVEL_MODE_RE_CP) {
+            int c_lo = cp_level_pos_ms_slope_shared[lv];
+            int c_hi = cp_level_pos_ms_slope_shared[lv + 1] - 1;
+            ms_scaled_level_slope_12[lv_start:lv_end, :] = cp_level_slope_12[c_lo:c_hi, :];
+          } else {
+            int r_lo = raw_level_pos_ms_slope_shared[lv];
+            int r_hi = raw_level_pos_ms_slope_shared[lv + 1] - 1;
+            ms_scaled_level_slope_12[lv_start:lv_end, :] =
+              raw_level_slope_12[r_lo:r_hi, :] .*
+              rep_matrix(sd_level_slope_12[lv]', lv_end - lv_start + 1);
+          }
         }
       }
 
@@ -491,7 +587,7 @@ if (need_12_t_gp) {
     log_cond_surv_12_t += rep_matrix(linpred_pop_12, max_all_t);
   }
 
-  log_cond_surv_12_t = -exp(fmax(log_cond_surv_12_t, -20.0));
+  log_cond_surv_12_t = -exp(log_cond_surv_12_t);
 }
 
 // ============================================================================
@@ -522,17 +618,25 @@ if (enable_ms_03) {
       int lv_start, lv_end;
       (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
 
-      // Scale intercepts: FE uses fixed data SD, RE uses estimated SD
-      if (enable_ms_level_baseline_hazard[lv] == 1) {
-        // Fixed effects: no pooling
+      // Scale intercepts: route by mode
+      int mode_03 = enable_ms_level_baseline_hazard[lv];
+      if (mode_03 == LEVEL_MODE_RE_CP) {
+        int c_lo = cp_level_pos_ms_baseline_shared[lv];
+        int c_hi = cp_level_pos_ms_baseline_shared[lv + 1] - 1;
         log_lambda_gp_03_level_intercept[lv_start:lv_end] =
-          raw_log_lambda_gp_03_level_intercept[lv_start:lv_end] *
-          fe_log_lambda_gp_03_level_intercept_sd[lv];
+          cp_log_lambda_gp_03_level_intercept[c_lo:c_hi];
       } else {
-        // Random effects (2 or 3): hierarchical pooling
-        log_lambda_gp_03_level_intercept[lv_start:lv_end] =
-          raw_log_lambda_gp_03_level_intercept[lv_start:lv_end] *
-          log_lambda_gp_03_level_intercept_sd[lv];
+        int r_lo = raw_level_pos_ms_baseline_shared[lv];
+        int r_hi = raw_level_pos_ms_baseline_shared[lv + 1] - 1;
+        if (mode_03 == LEVEL_MODE_FE) {
+          log_lambda_gp_03_level_intercept[lv_start:lv_end] =
+            raw_log_lambda_gp_03_level_intercept[r_lo:r_hi] *
+            fe_log_lambda_gp_03_level_intercept_sd[lv];
+        } else {
+          log_lambda_gp_03_level_intercept[lv_start:lv_end] =
+            raw_log_lambda_gp_03_level_intercept[r_lo:r_hi] *
+            log_lambda_gp_03_level_intercept_sd[lv];
+        }
       }
 
       if (enable_ms_level_baseline_hazard[lv] == 3) {
@@ -564,8 +668,8 @@ if (enable_ms_03) {
     }
   }
 
-  // Transform log-hazard to log conditional survival probability (clamped)
-  log_cond_surv_03 = -exp(fmax(log_cond_surv_03, -20.0));
+  // Transform log-hazard to log conditional survival probability
+  log_cond_surv_03 = -exp(log_cond_surv_03);
 }
 
 // ============================================================================
@@ -597,17 +701,25 @@ if (enable_ms_32) {
       int lv_start, lv_end;
       (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
 
-      // Scale intercepts: FE uses fixed data SD, RE uses estimated SD
-      if (enable_ms_level_baseline_hazard[lv] == 1) {
-        // Fixed effects: no pooling
+      // Scale intercepts: route by mode
+      int mode_32 = enable_ms_level_baseline_hazard[lv];
+      if (mode_32 == LEVEL_MODE_RE_CP) {
+        int c_lo = cp_level_pos_ms_baseline_shared[lv];
+        int c_hi = cp_level_pos_ms_baseline_shared[lv + 1] - 1;
         log_lambda_gp_32_s_level_intercept[lv_start:lv_end] =
-          raw_log_lambda_gp_32_s_level_intercept[lv_start:lv_end] *
-          fe_log_lambda_gp_32_s_level_intercept_sd[lv];
+          cp_log_lambda_gp_32_s_level_intercept[c_lo:c_hi];
       } else {
-        // Random effects (2 or 3): hierarchical pooling
-        log_lambda_gp_32_s_level_intercept[lv_start:lv_end] =
-          raw_log_lambda_gp_32_s_level_intercept[lv_start:lv_end] *
-          log_lambda_gp_32_s_level_intercept_sd[lv];
+        int r_lo = raw_level_pos_ms_baseline_shared[lv];
+        int r_hi = raw_level_pos_ms_baseline_shared[lv + 1] - 1;
+        if (mode_32 == LEVEL_MODE_FE) {
+          log_lambda_gp_32_s_level_intercept[lv_start:lv_end] =
+            raw_log_lambda_gp_32_s_level_intercept[r_lo:r_hi] *
+            fe_log_lambda_gp_32_s_level_intercept_sd[lv];
+        } else {
+          log_lambda_gp_32_s_level_intercept[lv_start:lv_end] =
+            raw_log_lambda_gp_32_s_level_intercept[r_lo:r_hi] *
+            log_lambda_gp_32_s_level_intercept_sd[lv];
+        }
       }
 
       if (enable_ms_level_baseline_hazard[lv] == 3) {
@@ -648,6 +760,6 @@ if (enable_ms_32) {
   }
 
   // Transform to log conditional survival
-  log_cond_surv_32 = -exp(fmax(log_cond_surv_32, -20.0));
+  log_cond_surv_32 = -exp(log_cond_surv_32);
 }
 

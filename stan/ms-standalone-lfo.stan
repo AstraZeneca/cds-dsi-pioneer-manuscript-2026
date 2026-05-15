@@ -58,6 +58,8 @@ transformed data {
   array[max_all_t] real all_measure_t = linspaced_array(max_all_t, 1, max_all_t);
 
   #include "_qr_decomposition.stan"
+  // Standalone never uses inline PSA (no state-space model)
+  int ms_needs_inline_psa = 0;
   #include "modules/multistate/transformed_data.stan"
   #include "modules/endpoints/transformed_data.stan"
   #include "modules/propensity/transformed_data.stan"
@@ -75,10 +77,15 @@ parameters {
 }
 
 transformed parameters {
-  array[enable_ms_01 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 ? n_time_varying_covar : 0]
-    matrix[n_patients, max_all_t] ms_time_varying_covar_01;
+  // No state-space model in standalone — always zero-sized placeholder.
+  // Latent-PSA variants (visit_gated_latent_01=TRUE) have no trajectory source
+  // here; the TP guard `(!latent || size > 0)` evaluates to FALSE, skipping
+  // that block without NaN.  Non-latent visit-gated variants still use the
+  // observed-PSA path because the same guard becomes `!FALSE || FALSE` = TRUE.
+  array[0] matrix[n_patients, max_all_t] ms_time_varying_covar_01;
 
   #include "modules/multistate/transformed_parameters.stan"
+  #include "modules/multistate/cond_surv_transform.stan"
   #include "modules/propensity/transformed_parameters.stan"
 }
 

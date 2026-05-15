@@ -16,10 +16,16 @@ int<lower=0, upper=1> enable_ms_12;  // 1→2: Post-progression death
 // 2 = Extended (additive: GP_t(t) + GP_s(s))
 int<lower=0, upper=2> ms_time_scale_12;
 
+// Shared GP shape for 0→2 and 1→2 clock-forward death transitions.
+// When enabled, alpha/rho/eta are shared; intercepts remain separate.
+// Only valid when ms_time_scale_12 == 0 (Markov). Sojourn GP unaffected.
+int<lower=0, upper=1> share_dead_gp_shape;
+
 // --- Baseline Hazard Hierarchy ---
 // Uses generic n_levels structure (consistent with tr, frac, init modules)
-// 4-state flag: 0 = no level effect, 1 = FE intercept, 2 = RE intercept, 3 = RE GP
-array[n_levels] int<lower=0, upper=3> enable_ms_level_baseline_hazard;
+// 5-state flag: 0 = no level effect, 1 = FE intercept, 2 = RE intercept (NCP),
+// 3 = RE + GP residual, 4 = RE intercept (CP)
+array[n_levels] int<lower=0, upper=4> enable_ms_level_baseline_hazard;
 
 // --- Dropout / Off-trial Transitions ---
 // 0→3: Dropout (off-trial). Constant hazard (no GP).

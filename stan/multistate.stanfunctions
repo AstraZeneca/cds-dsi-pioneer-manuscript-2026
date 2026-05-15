@@ -70,13 +70,20 @@ tuple(int, int, array[] int, int, array[] int, array[] int) compute_ms_level_bas
   int strict
 ) {
   for (lv in 1:n_levels) {
-    if (enable_ms_level_baseline_hazard[lv] < 0 || enable_ms_level_baseline_hazard[lv] > 3) {
-      if (strict) fatal_error("enable_ms_level_baseline_hazard[", lv, "] must be 0-3; got ", enable_ms_level_baseline_hazard[lv]);
+    if (enable_ms_level_baseline_hazard[lv] < 0 || enable_ms_level_baseline_hazard[lv] > 4) {
+      if (strict) fatal_error("enable_ms_level_baseline_hazard[", lv, "] must be 0-4; got ", enable_ms_level_baseline_hazard[lv]);
       return (0, 0, zeros_int_array(n_levels), 0, zeros_int_array(n_levels + 1), zeros_int_array(n_levels + 1));
     }
   }
-  // any_re_level: 1 if any level has mode >= 2
-  int any_re = max(enable_ms_level_baseline_hazard) >= 2;
+  // any_re_level: 1 if any level has mode >= 2 (RE, RE_GP, or RE_CP all need a free SD)
+  int any_re = 0;
+  for (lv in 1:n_levels) {
+    if (enable_ms_level_baseline_hazard[lv] == 2 ||
+        enable_ms_level_baseline_hazard[lv] == 3 ||
+        enable_ms_level_baseline_hazard[lv] == 4) {
+      any_re = 1;
+    }
+  }
   // is_gp: 1 if level has mode == 3
   array[n_levels] int is_gp;
   for (lv in 1:n_levels) is_gp[lv] = (enable_ms_level_baseline_hazard[lv] == 3);

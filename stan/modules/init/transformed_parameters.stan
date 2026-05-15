@@ -16,7 +16,8 @@ array[n_levels] real<lower=0> init_sd_level_intercept;
   for (lv in 1:n_levels) {
     if (enable_level_intercept_init[lv] == LEVEL_MODE_FE) {
       init_sd_level_intercept[lv] = init_fe_sd_level_intercept[lv];
-    } else if (enable_level_intercept_init[lv] == LEVEL_MODE_RE) {
+    } else if (enable_level_intercept_init[lv] == LEVEL_MODE_RE ||
+               enable_level_intercept_init[lv] == LEVEL_MODE_RE_CP) {
       sd_idx += 1;
       init_sd_level_intercept[lv] = init_sd_level_intercept_raw[sd_idx];
     } else {
@@ -30,10 +31,21 @@ array[n_levels] real<lower=0> init_sd_level_intercept;
 vector[n_enabled_groups_init_intercept] init_scaled_level_intercept;
 for (lv in 1:n_levels) {
   if (enable_level_intercept_init[lv]) {
-    int lv_start, lv_end;
-    (lv_start, lv_end) = get_pos(enabled_level_pos_init_intercept, lv);
-    init_scaled_level_intercept[lv_start:lv_end] =
-      init_sd_level_intercept[lv] * init_raw_level_intercept[lv_start:lv_end];
+    int mode = enable_level_intercept_init[lv];
+    int e_lo, e_hi;
+    (e_lo, e_hi) = get_pos(enabled_level_pos_init_intercept, lv);
+    if (mode == LEVEL_MODE_RE_CP) {
+      // CP: scaled = centered (identity — the _cp_ vector is already at natural scale)
+      int c_lo = cp_level_pos_init_intercept[lv];
+      int c_hi = cp_level_pos_init_intercept[lv + 1] - 1;
+      init_scaled_level_intercept[e_lo:e_hi] = init_cp_level_intercept[c_lo:c_hi];
+    } else {
+      // NCP (FE, RE, RE_GP): scaled = sd[lv] * raw
+      int r_lo = raw_level_pos_init_intercept[lv];
+      int r_hi = raw_level_pos_init_intercept[lv + 1] - 1;
+      init_scaled_level_intercept[e_lo:e_hi] =
+        init_sd_level_intercept[lv] * init_raw_level_intercept[r_lo:r_hi];
+    }
   }
 }
 
@@ -50,12 +62,20 @@ for (lv in 1:n_levels) {
 matrix[n_enabled_groups_init_slope, n_covar] init_scaled_level_slope;
 if (n_covar > 0 && n_enabled_groups_init_slope > 0) {
   for (lv in 1:n_levels) {
-    if (enable_level_cov_init[lv]) {
-      int lv_start, lv_end;
-      (lv_start, lv_end) = get_pos(enabled_level_pos_init_slope, lv);
-      init_scaled_level_slope[lv_start:lv_end, :] =
-        init_raw_level_slope[lv_start:lv_end, :] .*
-        rep_matrix(init_sd_level_slope[lv]', lv_end - lv_start + 1);
+    if (!enable_level_cov_init[lv]) continue;
+    int mode = enable_level_intercept_init[lv];
+    int e_lo, e_hi;
+    (e_lo, e_hi) = get_pos(enabled_level_pos_init_slope, lv);
+    if (mode == LEVEL_MODE_RE_CP) {
+      int c_lo = cp_level_pos_init_slope[lv];
+      int c_hi = cp_level_pos_init_slope[lv + 1] - 1;
+      init_scaled_level_slope[e_lo:e_hi, :] = init_cp_level_slope[c_lo:c_hi, :];
+    } else {
+      int r_lo = raw_level_pos_init_slope[lv];
+      int r_hi = raw_level_pos_init_slope[lv + 1] - 1;
+      init_scaled_level_slope[e_lo:e_hi, :] =
+        init_raw_level_slope[r_lo:r_hi, :] .*
+        rep_matrix(init_sd_level_slope[lv]', r_hi - r_lo + 1);
     }
   }
 }

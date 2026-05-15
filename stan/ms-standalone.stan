@@ -20,6 +20,7 @@ functions {
   #include "gp.stanfunctions"
   #include "pfs.stanfunctions"
   #include "multistate.stanfunctions"
+  #include "hierarchy.stanfunctions"
   #include "modules/state_space/sf.stanfunctions"
 }
 
@@ -77,10 +78,12 @@ parameters {
 }
 
 transformed parameters {
-  // No time-varying covariates in standalone — zero-sized placeholder to
-  // satisfy the compiler's dimension check inside multistate/transformed_parameters.stan.
-  array[enable_ms_01 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 ? n_time_varying_covar : 0]
-    matrix[n_patients, max_all_t] ms_time_varying_covar_01;
+  // No state-space model in standalone — always zero-sized placeholder.
+  // Latent-PSA variants (visit_gated_latent_01=TRUE) have no trajectory source
+  // here; the TP guard `(!latent || size > 0)` evaluates to FALSE, skipping
+  // that block without NaN.  Non-latent visit-gated variants still use the
+  // observed-PSA path because the same guard becomes `!FALSE || FALSE` = TRUE.
+  array[0] matrix[n_patients, max_all_t] ms_time_varying_covar_01;
 
   #include "modules/multistate/transformed_parameters.stan"
   #include "modules/multistate/cond_surv_transform.stan"
