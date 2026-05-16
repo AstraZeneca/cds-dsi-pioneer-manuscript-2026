@@ -1,11 +1,3 @@
 {
-  "mcpServers": {
-    "targets": {
-      "command": "julia",
-      "args": ["--startup-file=no", "--project=/mnt/code/.claude/mcp/targets-mcp", "/mnt/code/.claude/mcp/targets-mcp/server_julia.jl"],
-      "env": {
-        "TAR_PROJECT": "sclc"
-      }
-    }
-  }
+  "mcpServers": {}
 }
