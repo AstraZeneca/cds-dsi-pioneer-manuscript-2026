@@ -1,4 +1,11 @@
 {
+  "env": {
+    "CLAUDE_CODE_USE_BEDROCK": "1",
+    "CLAUDE_CODE_SKIP_BEDROCK_AUTH": "1",
+    "ANTHROPIC_BEDROCK_BASE_URL": "https://ai-gateway.astrazeneca.net/bedrock",
+    "AWS_REGION": "us-east-1",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
   "enabledPlugins": {
     "bayesian-toolkit@pioneer-claude-marketplace": true,
     "worktree-manager@pioneer-claude-marketplace": true,
