@@ -33,13 +33,6 @@ array[n_patients] int<lower=0, upper=1> ms_censored_01;
 // which can overshoot when detection-adjustment pushes pfs past death_week.
 array[n_patients] int<lower=0> ms_os_event_12;
 
-
-// --- Observed 1→2 death calendar week ---
-// Exact calendar week of death for progressed-then-died patients (0 otherwise).
-// Used in GQ to avoid round-trip through pfs + pmax(1, death_week - pfs)
-// which can overshoot when detection-adjustment pushes pfs past death_week.
-array[n_patients] int<lower=0> ms_os_event_12;
-
 // --- 0→3 Transition: Dropout ---
 array[n_patients] int<lower=0> ms_time_03;  // Calendar week of dropout (= patient_max_t for all patients)
 
