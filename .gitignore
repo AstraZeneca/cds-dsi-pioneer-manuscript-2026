@@ -135,3 +135,5 @@ core.*
 
 # Git worktrees
 /worktrees/
+.worktrees/
+.remember/
