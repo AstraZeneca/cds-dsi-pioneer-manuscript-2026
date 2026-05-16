@@ -123,3 +123,63 @@ validate_sd_modes <- function(sd_modes,
 
   invisible(sd_modes)
 }
+
+#' Serialize SD sub-hierarchy mode tibble into Stan data structure
+#'
+#' Converts a tibble with (location_level, sub_level, mode) rows into:
+#' - enable_sd_level_intercept_mode_tr: integer matrix [n_levels, n_levels]
+#' - n_raw_groups_tr_log_sd_intercept: scalar count (for NCP params)
+#' - n_cp_groups_tr_log_sd_intercept: scalar count (for CP params)
+#'
+#' @param tr_sd_intercept_modes Tibble with columns location_level, sub_level, mode.
+#'   NULL or empty tibble produces all-NONE (all zeros).
+#' @param level_stack Character vector of level names in coarse-to-fine order
+#' @param n_groups_per_level Integer vector of group counts per level
+#' @return Named list with enable_sd_level_intercept_mode_tr, n_raw_groups_*, n_cp_groups_*
+serialize_sd_subhierarchy_modes <- function(tr_sd_intercept_modes, level_stack, n_groups_per_level) {
+  if (is.null(tr_sd_intercept_modes)) {
+    tr_sd_intercept_modes <- tibble::tibble(
+      location_level = character(),
+      sub_level = character(),
+      mode = character()
+    )
+  }
+  validate_sd_modes(tr_sd_intercept_modes, level_stack)
+
+  mode_codes <- c(none = 0L, fe = 1L, re = 2L, re_gp = 3L, re_cp = 4L)
+  n_levels <- length(level_stack)
+  enable_sd_level_intercept_mode_tr <- matrix(0L, n_levels, n_levels)
+  for (i in seq_len(nrow(tr_sd_intercept_modes))) {
+    row <- tr_sd_intercept_modes[i, ]
+    L_idx   <- which(level_stack == row$location_level)
+    sub_idx <- which(level_stack == row$sub_level)
+    enable_sd_level_intercept_mode_tr[L_idx, sub_idx] <- mode_codes[[row$mode]]
+  }
+
+  n_raw_groups_tr_log_sd_intercept <- sum(vapply(
+    seq_len(n_levels),
+    \(L) {
+      if (L == 1) return(0L)
+      sub_range <- seq_len(L - 1)
+      sum(n_groups_per_level[sub_range] *
+          as.integer(enable_sd_level_intercept_mode_tr[L, sub_range] %in% c(1L, 2L)))
+    },
+    integer(1)
+  ))
+  n_cp_groups_tr_log_sd_intercept <- sum(vapply(
+    seq_len(n_levels),
+    \(L) {
+      if (L == 1) return(0L)
+      sub_range <- seq_len(L - 1)
+      sum(n_groups_per_level[sub_range] *
+          as.integer(enable_sd_level_intercept_mode_tr[L, sub_range] == 4L))
+    },
+    integer(1)
+  ))
+
+  list(
+    enable_sd_level_intercept_mode_tr = enable_sd_level_intercept_mode_tr,
+    n_raw_groups_tr_log_sd_intercept = n_raw_groups_tr_log_sd_intercept,
+    n_cp_groups_tr_log_sd_intercept = n_cp_groups_tr_log_sd_intercept
+  )
+}
