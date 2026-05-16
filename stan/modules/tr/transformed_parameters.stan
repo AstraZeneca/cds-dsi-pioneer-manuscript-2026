@@ -2,66 +2,110 @@
 // Optimized: uses pre-computed flat indices from transformed_data for direct gather
 
 // Population covariate effects
-vector[n_patients] tr_linpred_pop = enable_pop_cov_tr ?
-  (Q_covar_design_matrix * tr_coef_qr_pop) : zeros_vector(n_patients);
+vector[n_forecast_patients] tr_linpred_pop = enable_pop_cov_tr ?
+  (Q_covar_design_matrix[forecast_patient_idx, :] * tr_coef_qr_pop) : zeros_vector(n_forecast_patients);
+
+// ===== SD EXPANSION =====
+// Assemble full n_levels SD array from RE free params and FE hyperparams.
+// FE levels (mode=1): use fixed tr_fe_sd_level_intercept[lv] from data.
+// RE levels (mode=2): use free parameter tr_sd_level_intercept_raw (sequential counter).
+// Disabled levels (mode=0): set to 0.0 (never used in intercept scaling).
+array[n_levels] real<lower=0> tr_sd_level_intercept;
+{
+  int sd_idx = 0;
+  for (lv in 1:n_levels) {
+    if (enable_level_intercept_tr[lv] == LEVEL_MODE_FE) {
+      tr_sd_level_intercept[lv] = tr_fe_sd_level_intercept[lv];
+    } else if (enable_level_intercept_tr[lv] == LEVEL_MODE_RE ||
+               enable_level_intercept_tr[lv] == LEVEL_MODE_RE_CP) {
+      sd_idx += 1;
+      tr_sd_level_intercept[lv] = tr_sd_level_intercept_raw[sd_idx];
+    } else {
+      tr_sd_level_intercept[lv] = 0.0;
+    }
+  }
+}
+
+// SD sub-hierarchy: builds tr_sd_intercept_pergroup[lv] (bit-exact fill when inactive)
+#include "modules/tr/_sd_subhierarchy_transformed_parameters.stan"
 
 // ===== INTERCEPT EFFECTS =====
-// Step 1: Scale all raw effects at once (vectorized per level)
+// Step 1: Assemble scaled intercepts from either raw (NCP) or cp (CP) bucket.
 vector[n_enabled_groups_tr_intercept] tr_scaled_level_intercept;
 for (lv in 1:n_levels) {
-  if (enable_level_intercept_tr[lv]) {
-    int lv_start, lv_end;
-    (lv_start, lv_end) = get_pos(enabled_level_pos_tr_intercept, lv);
-    tr_scaled_level_intercept[lv_start:lv_end] =
-      tr_sd_level_intercept[lv] * tr_raw_level_intercept[lv_start:lv_end];
+  int mode = enable_level_intercept_tr[lv];
+  if (mode == LEVEL_MODE_NONE) continue;
+  int e_lo, e_hi;
+  (e_lo, e_hi) = get_pos(enabled_level_pos_tr_intercept, lv);
+
+  if (mode == LEVEL_MODE_RE_CP) {
+    // CP: scaled = centered (identity — the _cp_ vector is already at natural scale)
+    int c_lo = cp_level_pos_tr_intercept[lv];
+    int c_hi = cp_level_pos_tr_intercept[lv + 1] - 1;
+    tr_scaled_level_intercept[e_lo:e_hi] = tr_cp_level_intercept[c_lo:c_hi];
+  } else {
+    // NCP (FE, RE, RE_GP): scaled = sd[lv] * raw
+    int r_lo = raw_level_pos_tr_intercept[lv];
+    int r_hi = raw_level_pos_tr_intercept[lv + 1] - 1;
+    tr_scaled_level_intercept[e_lo:e_hi] =
+      tr_sd_intercept_pergroup[lv][1:(r_hi - r_lo + 1)] .* tr_raw_level_intercept[r_lo:r_hi];
   }
 }
 
 // Step 2: Gather using pre-computed flat indices (no intermediate array creation)
-vector[n_patients] tr_linpred_level_intercepts = zeros_vector(n_patients);
+vector[n_forecast_patients] tr_linpred_level_intercepts = zeros_vector(n_forecast_patients);
 for (lv in 1:n_levels) {
   if (enable_level_intercept_tr[lv]) {
-    tr_linpred_level_intercepts += tr_scaled_level_intercept[patient_tr_intercept_flat_idx[, lv]];
+    tr_linpred_level_intercepts += tr_scaled_level_intercept[patient_tr_intercept_flat_idx[forecast_patient_idx, lv]];
   }
 }
 
 // ===== COVARIATE SLOPE EFFECTS =====
-// Step 1: Scale all raw slope effects at once
+// Step 1: Assemble scaled slopes from either raw (NCP) or cp (CP) bucket.
 matrix[n_enabled_groups_tr_slope, n_covar] tr_scaled_level_slope;
 if (n_covar > 0 && n_enabled_groups_tr_slope > 0) {
   for (lv in 1:n_levels) {
-    if (enable_level_cov_tr[lv]) {
-      int lv_start, lv_end;
-      (lv_start, lv_end) = get_pos(enabled_level_pos_tr_slope, lv);
-      tr_scaled_level_slope[lv_start:lv_end, :] =
-        tr_raw_level_slope[lv_start:lv_end, :] .*
-        rep_matrix(tr_sd_level_slope[lv]', lv_end - lv_start + 1);
+    if (!enable_level_cov_tr[lv]) continue;
+    int mode = enable_level_intercept_tr[lv];
+    int e_lo, e_hi;
+    (e_lo, e_hi) = get_pos(enabled_level_pos_tr_slope, lv);
+
+    if (mode == LEVEL_MODE_RE_CP) {
+      int c_lo = cp_level_pos_tr_slope[lv];
+      int c_hi = cp_level_pos_tr_slope[lv + 1] - 1;
+      tr_scaled_level_slope[e_lo:e_hi, :] = tr_cp_level_slope[c_lo:c_hi, :];
+    } else {
+      int r_lo = raw_level_pos_tr_slope[lv];
+      int r_hi = raw_level_pos_tr_slope[lv + 1] - 1;
+      tr_scaled_level_slope[e_lo:e_hi, :] =
+        tr_raw_level_slope[r_lo:r_hi, :] .*
+        rep_matrix(tr_sd_level_slope[lv]', r_hi - r_lo + 1);
     }
   }
 }
 
 // Step 2: Gather and compute dot products using pre-computed flat indices
-vector[n_patients] tr_linpred_level_slopes = zeros_vector(n_patients);
+vector[n_forecast_patients] tr_linpred_level_slopes = zeros_vector(n_forecast_patients);
 if (n_covar > 0) {
   for (lv in 1:n_levels) {
     if (enable_level_cov_tr[lv]) {
       tr_linpred_level_slopes += rows_dot_product(
-        Q_covar_design_matrix,
-        tr_scaled_level_slope[patient_tr_slope_flat_idx[, lv], :]
+        Q_covar_design_matrix[forecast_patient_idx, :],
+        tr_scaled_level_slope[patient_tr_slope_flat_idx[forecast_patient_idx, lv], :]
       );
     }
   }
 }
 
 // ===== FINAL LINEAR PREDICTOR =====
-vector[n_patients] tr_loc_patient = tr_loc_pop
+vector[n_forecast_patients] tr_loc_patient = tr_loc_pop
   + tr_linpred_pop
   + tr_linpred_level_intercepts
   + tr_linpred_level_slopes; 
 
-vector[enable_patient_process_noise_tr ? n_patients : 0] tr_log_sd_patient_process_noise; 
-vector[enable_patient_process_noise_tr ? n_patients : 0] tr_phi_patient_process_noise; 
-matrix[enable_patient_process_noise_tr ? n_patients : 0, max_t_width] tr_patient_process_noise; 
+vector[enable_patient_process_noise_tr ? n_forecast_patients : 0] tr_log_sd_patient_process_noise;
+vector[enable_patient_process_noise_tr ? n_forecast_patients : 0] tr_phi_patient_process_noise;
+matrix[enable_patient_process_noise_tr ? n_forecast_patients : 0, max_t_width] tr_patient_process_noise;
 
 if (enable_patient_process_noise_tr) {
   // Non-centered parameterization: work in log-space, exponentiate once at the end
@@ -69,7 +113,7 @@ if (enable_patient_process_noise_tr) {
   if (enable_patient_process_noise_sd_tr) {
     tr_log_sd_patient_process_noise = tr_log_sd_pop_process_noise[1] + tr_sd_patient_log_sd_process_noise[1] * tr_raw_patient_log_sd_process_noise;
   } else {
-    tr_log_sd_patient_process_noise = rep_vector(tr_log_sd_pop_process_noise[1], n_patients);
+    tr_log_sd_patient_process_noise = rep_vector(tr_log_sd_pop_process_noise[1], n_forecast_patients);
   }
 
   // Map to [0,1] via inv_logit link function
@@ -79,10 +123,10 @@ if (enable_patient_process_noise_tr) {
       tr_logit_phi_pop_process_noise[1] + tr_sd_patient_phi_process_noise[1] * tr_raw_patient_phi_process_noise
     );
   } else {
-    tr_phi_patient_process_noise = rep_vector(inv_logit(tr_logit_phi_pop_process_noise[1]), n_patients);
+    tr_phi_patient_process_noise = rep_vector(inv_logit(tr_logit_phi_pop_process_noise[1]), n_forecast_patients);
   }
 
-  vector[n_patients] tr_sd_patient_process_noise = exp(tr_log_sd_patient_process_noise);
+  vector[n_forecast_patients] tr_sd_patient_process_noise = exp(tr_log_sd_patient_process_noise);
 
   // AR(1) process: deviation[t] = phi * deviation[t-1] + sigma * innovation[t]
   // This creates time-varying deviations with mean 0 that revert to baseline

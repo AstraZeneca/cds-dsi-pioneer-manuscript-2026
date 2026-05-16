@@ -38,7 +38,7 @@ test_that("classify_first_exit: all 40 scenarios produce expected outputs (n_fai
     n_failures,
     0L,
     label = "n_failures",
-    info  = paste0(
+    info  = str_c(
       "One or more classify-first scenarios produced unexpected outputs. ",
       "See Stan print() messages above for which scenarios failed."
     )

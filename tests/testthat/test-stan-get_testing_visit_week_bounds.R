@@ -504,32 +504,32 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
       for (case_idx in valid_cases) {
         case     <- test_cases[[case_idx]]
         expected <- expected_by_case[[case_idx]]
-        lbl      <- paste("Case", case_idx, case$case_name)
+        lbl      <- str_glue("Case {case_idx} {case$case_name}")
 
-        expect_equal(get_val("case_status", case_idx), 0, label = paste(lbl, "no error"))
+        expect_equal(get_val("case_status", case_idx), 0, label = str_c(lbl, " no error"))
 
         for (n in 1:case$n_cutoffs) {
           for (i in 1:case$n_patients) {
             expect_equal(
               get_val("first_testing_visit_week", case_idx, n, i),
               expected$first_testing_visit_week[n, i],
-              label = paste(lbl, "first_testing_visit_week n", n, "i", i)
+              label = str_glue("{lbl} first_testing_visit_week n {n} i {i}")
             )
             expect_equal(
               get_val("testing_start_idx", case_idx, n, i),
               expected$testing_start_idx[n, i],
-              label = paste(lbl, "testing_start_idx n", n, "i", i)
+              label = str_glue("{lbl} testing_start_idx n {n} i {i}")
             )
             for (m in 1:case$n_cutoffs) {
               expect_equal(
                 get_val("last_testing_visit_week", case_idx, n, m, i),
                 expected$last_testing_visit_week[n, m, i],
-                label = paste(lbl, "last_testing_visit_week n", n, "m", m, "i", i)
+                label = str_glue("{lbl} last_testing_visit_week n {n} m {m} i {i}")
               )
               expect_equal(
                 get_val("testing_end_idx", case_idx, n, m, i),
                 expected$testing_end_idx[n, m, i],
-                label = paste(lbl, "testing_end_idx n", n, "m", m, "i", i)
+                label = str_glue("{lbl} testing_end_idx n {n} m {m} i {i}")
               )
             }
           }
@@ -542,12 +542,7 @@ test_that("get_testing_visit_week_bounds stress test - all edge cases and failur
         expect_equal(
           get_val("case_status", case_idx),
           1,
-          label = paste(
-            "Case",
-            case_idx,
-            case$case_name,
-            "should be marked as error"
-          )
+          label = str_glue("Case {case_idx} {case$case_name} should be marked as error")
         )
       }
 

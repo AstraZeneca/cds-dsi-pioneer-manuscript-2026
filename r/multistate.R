@@ -372,7 +372,6 @@ derive_ms_fields <- function(
     as.integer(analysis_data$death_week),
     as.integer(analysis_data$patient_max_t)
   )
-  ms_censored_02 <- as.integer(!is_02_event)
 
   # -------------------------------------------------------------------------
   # 1→2 transition (post-progression sojourn)
@@ -387,7 +386,6 @@ derive_ms_fields <- function(
       pmax(1L, as.integer(analysis_data$patient_max_t - analysis_data$pfs)),
     TRUE ~ 0L
   )
-  ms_censored_12 <- as.integer(pat != "progressed_died")
 
   # Exact death calendar week for observed 1→2 deaths — avoids round-trip
 
@@ -408,7 +406,6 @@ derive_ms_fields <- function(
     as.integer(analysis_data$death_week - analysis_data$patient_max_t),
     0L
   )
-  ms_censored_32 <- as.integer(pat != "died_off_trial")
 
   # -------------------------------------------------------------------------
   # Final state (pattern × mode lookup)
@@ -436,14 +433,12 @@ derive_ms_fields <- function(
     ms_final_state        = ms_final_state,
     ms_time_01            = ms_time_01,
     ms_time_02            = ms_time_02,
+    ms_max_time_02        = as.integer(pmin(ms_time_01, ms_time_02)),
     ms_time_12            = ms_time_12,
     ms_censored_01        = ms_censored_01,
-    ms_censored_02        = ms_censored_02,
-    ms_censored_12        = ms_censored_12,
     ms_os_event_12        = ms_os_event_12,
     ms_time_03            = ms_time_03,
     ms_time_32            = ms_time_32,
-    ms_censored_32        = ms_censored_32,
     ms_prog_deterministic = analysis_data$ms_prog_deterministic,
     interval_censored     = analysis_data$interval_censored,
     ms_max_sojourn_t      = ms_max_sojourn_t,

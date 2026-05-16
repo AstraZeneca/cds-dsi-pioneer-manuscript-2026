@@ -81,18 +81,14 @@ CLAUDE.local.md
 /plan/
 
 # VS Code
-.vscode/User/
-.vscode/CachedExtensionVSIXs/
-.vscode/CachedProfilesData/
-.vscode/logs/
-.vscode/code-server-ipc.sock
-.vscode/coder.json
-.vscode/Machine/
-.vscode/settings.json
+.vscode/
+
 quarto/**/*.rmarkdown
 
 **/*.quarto_ipynb
 quarto/.posit/
+quarto/**/site_libs/
+quarto/**/_site/
 
 *_files/
 
@@ -127,6 +123,10 @@ core.*
 presentation_images/
 presentation_pages/
 
+# From roger/FI_pipeline
+brads_code/
+output/
+
 # Core dump files
 core.*
 
@@ -137,3 +137,5 @@ core.*
 /worktrees/
 .worktrees/
 .remember/
+.worktrees/
+docs/burden-endpoints-ablation.md
