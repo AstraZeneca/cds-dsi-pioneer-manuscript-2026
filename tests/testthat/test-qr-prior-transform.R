@@ -1,3 +1,6 @@
+library(purrr)
+library(tibble)
+
 test_that("transform_priors_to_qr_space round-trips correctly", {
   source(here::here("r/priors.R"))
 
@@ -9,7 +12,7 @@ test_that("transform_priors_to_qr_space round-trips correctly", {
   X <- matrix(rnorm(n * p), nrow = n, ncol = p)
   # Introduce correlation: col 2 is correlated with col 1
   X[, 2] <- X[, 1] * 0.7 + X[, 2] * 0.3
-  colnames(X) <- paste0("x", seq_len(p))
+  colnames(X) <- str_c("x", seq_len(p))
 
   # Elicited priors in original space
   coef_mean_orig <- c(0.5, -0.3, 0.0, 0.8)
@@ -47,7 +50,7 @@ test_that("transform_priors_to_qr_space handles isotropic prior (identity case)"
   p <- 3
   # Orthogonal design matrix (no rotation effect on isotropic prior)
   X <- matrix(rnorm(n * p), nrow = n, ncol = p)
-  colnames(X) <- paste0("x", seq_len(p))
+  colnames(X) <- str_c("x", seq_len(p))
 
   # Isotropic prior: N(0, I) — should change under rotation
   coef_mean <- rep(0, p)
@@ -70,7 +73,7 @@ test_that("get_tumor_priors uses QR-transformed priors when design matrix provid
   n <- 50
   p <- 3
   X <- matrix(rnorm(n * p), nrow = n, ncol = p)
-  colnames(X) <- paste0("x", seq_len(p))
+  colnames(X) <- str_c("x", seq_len(p))
 
   coef_elicited <- list(
     coef_mean = c(0.5, -0.3, 0.0),

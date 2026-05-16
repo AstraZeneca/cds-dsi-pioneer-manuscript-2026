@@ -7,6 +7,7 @@
 // Output: n_failures (count of failed assertions). R test asserts n_failures == 0.
 
 functions {
+  #include "multistate.stanfunctions"
   #include "util.stanfunctions"
   #include "pos.stanfunctions"
   #include "pfs.stanfunctions"

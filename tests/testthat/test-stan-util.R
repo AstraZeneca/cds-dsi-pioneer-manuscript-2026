@@ -105,17 +105,17 @@ draws_array <- as_draws_array(fit$draws())
 
 # Helper to extract a vector for a given variable and case
 extract_vec <- function(var, case, max_len = MAX_LEN) {
-  as.numeric(draws_array[1, 1, paste0(var, "[", case, ",", 1:max_len, "]")])
+  as.numeric(draws_array[1, 1, str_c(var, "[", case, ",", 1:max_len, "]")])
 }
 
 # Helper to extract a scalar for a given variable and case
 extract_scalar <- function(var, case) {
-  as.numeric(draws_array[1, 1, paste0(var, "[", case, "]")])
+  as.numeric(draws_array[1, 1, str_c(var, "[", case, "]")])
 }
 
 # Helper to extract a vector for a given variable (no case)
 extract_vec_nocase <- function(var, len) {
-  as.numeric(draws_array[1, 1, paste0(var, "[", 1:len, "]")])
+  as.numeric(draws_array[1, 1, str_c(var, "[", 1:len, "]")])
 }
 
 # Helper to extract a scalar variable (no case)
