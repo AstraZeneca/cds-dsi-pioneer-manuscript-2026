@@ -33,6 +33,7 @@ usage() {
     echo "  -u: Specify custom username (default: \$DOMINO_STARTING_USERNAME)"
     echo "  -l: Enable Laplace marginalization (sets ENABLE_LAPLACE=TRUE)"
     echo "  -k: Skip renv::restore()"
+    echo "  -t: Subsample to N patients for testing (sets TEST_PATIENTS env var)"
     echo ""
     echo "Arguments:"
     echo "  PROJECT_NAME: Name of targets project (e.g., sclc, pioneer)"
@@ -53,9 +54,10 @@ sclc_exp_subdir=""
 skip_restore="FALSE"
 custom_username=""
 enable_laplace="FALSE"
+test_patients=""
 
 # Parse command-line options
-while getopts "i:m:r:b:p:u:h:sncdvklD" flag; do
+while getopts "i:m:r:b:p:u:h:t:sncdvklD" flag; do
     case "${flag}" in
         i) targets=${OPTARG};;
         m) make_targets=${OPTARG};;
@@ -71,6 +73,7 @@ while getopts "i:m:r:b:p:u:h:sncdvklD" flag; do
         u) custom_username=${OPTARG};;
         l) enable_laplace="TRUE";;
         k) skip_restore="TRUE";;
+        t) test_patients=${OPTARG};;
         h) usage;;
         *) usage;;
     esac
@@ -168,6 +171,11 @@ fi
 # Enable Laplace marginalization if -l flag set
 if [ "$enable_laplace" = "TRUE" ]; then
     rscript_cmd+=" -e \"Sys.setenv(ENABLE_LAPLACE = 'TRUE')\""
+fi
+
+# Set TEST_PATIENTS if provided (subsamples to N patients for fast testing)
+if [ -n "$test_patients" ]; then
+    rscript_cmd+=" -e \"Sys.setenv(TEST_PATIENTS = '$test_patients')\""
 fi
 
 # Add project name if provided
