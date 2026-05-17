@@ -32,7 +32,3 @@ array[n_patients] int<lower = 1> calendar_day;
 // Time Horizon Extension. Sometimes we want to extrapolate beyond the latest
 // visit observed in the data, we extend it by this number of weeks.
 int<lower = 1> extend_max_all_t;
-
-// Measurement noise degrees of freedom (Student-t). Shared across all biomarkers.
-// Use ~5 for robust noise, positive_infinity() → Gaussian.
-real<lower=2> measure_nu;

@@ -248,11 +248,6 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     # mode = beta/(alpha+1) = 0.75/6 = 0.125 (at typical posterior)
     measure_sd_sld_alpha = 5,
     measure_sd_sld_beta = 0.75,
-    # Student-t degrees of freedom for measurement noise (fixed, not estimated; shared across biomarkers)
-    # nu=5: robust against outliers, enough tail weight to downweight erratic measurements
-    # without being as heavy-tailed as nu=3. Increase toward 30+ to approach Gaussian.
-    measure_nu = 5,
-
     # Process parameters
     decrease_process_alpha = 9.7,
     decrease_process_beta = 38.4,

@@ -138,11 +138,9 @@ tuple(row_vector, row_vector) sf_log_space_transition_ncp(row_vector current_x,
  * @param x State values (log-space)
  * @param measure_sd Measurement noise scale (analogous to Gaussian SD)
  * @param log_lod Log of limit of detection (for censoring)
- * @param measure_nu Degrees of freedom for Student-t (fixed; ~5 = robust, large → Gaussian)
- *
  * @return Log probability density
  */
-real sf_log_space_obs_lpdf(vector normalized_y, matrix x, real measure_sd, real log_normalized_lod, real measure_nu) {
+real sf_log_space_obs_lpdf(vector normalized_y, matrix x, real measure_sd, real log_normalized_lod) {
   assert_equal(rows(normalized_y), rows(x));
   int T = rows(normalized_y);
   real lp = 0;
@@ -153,9 +151,9 @@ real sf_log_space_obs_lpdf(vector normalized_y, matrix x, real measure_sd, real 
 
     // Handle censoring
     if (normalized_y[t] > 0) {
-      lp += student_t_lpdf(log(normalized_y[t]) | measure_nu, log_pred, measure_sd);
+      lp += normal_lpdf(log(normalized_y[t]) | log_pred, measure_sd);
     } else {
-      lp += student_t_lcdf(log_normalized_lod | measure_nu, log_pred, measure_sd);
+      lp += normal_lcdf(log_normalized_lod | log_pred, measure_sd);
     }
   }
 
@@ -858,8 +856,7 @@ tuple(
   real forecast_growth_transition,    // growth transition for forecast (was hardcoded to 1)
   matrix forecast_process_noise,      // process noise for forecast (was generated internally)
   // Global parameters
-  real measure_sd,
-  real measure_nu
+  real measure_sd
 ) {
   int n_patient_visits = rows(patient_states);
   // Calculate replicated observations for observed visits
@@ -868,9 +865,9 @@ tuple(
   // First visit uses baseline measurement
   rep_log_obs[1] = log(baseline_obs_value);
 
-  // Subsequent visits are generated from states with measurement noise (Student-t)
+  // Subsequent visits are generated from states with measurement noise
   if (n_patient_visits > 1) {
-    rep_log_obs[2:] = to_vector(student_t_rng(measure_nu, calc_log_burden_mean(patient_states[2:], baseline_obs_value), measure_sd));
+    rep_log_obs[2:] = to_vector(normal_rng(calc_log_burden_mean(patient_states[2:], baseline_obs_value), measure_sd));
   }
 
   int forecast_size = size(forecast_time) - 1;
@@ -886,10 +883,10 @@ tuple(
     0 // No debug
   );
 
-  // Calculate forecast observations with measurement noise (Student-t)
+  // Calculate forecast observations with measurement noise
   vector[forecast_size] forecast_log_obs = zeros_vector(forecast_size);
   if (forecast_size > 0) {
-    forecast_log_obs = to_vector(student_t_rng(measure_nu, calc_log_burden_mean(forecast_states[2:], baseline_obs_value), measure_sd));
+    forecast_log_obs = to_vector(normal_rng(calc_log_burden_mean(forecast_states[2:], baseline_obs_value), measure_sd));
   }
 
   return (forecast_states[2:], rep_log_obs, forecast_log_obs);
@@ -984,8 +981,7 @@ tuple(
   real forecast_growth_lag,
   real forecast_growth_transition,
   matrix forecast_process_noise,
-  real measure_sd,
-  real measure_nu
+  real measure_sd
 ) {
   int n_patient_visits = rows(patient_states);
   int forecast_size = size(forecast_time) - 1;
@@ -1005,8 +1001,7 @@ tuple(
       forecast_growth_lag,
       forecast_growth_transition,
       forecast_process_noise,
-      measure_sd,
-      measure_nu
+      measure_sd
     );
 
   // Calculate mean log observations (deterministic, no measurement noise)
@@ -1075,7 +1070,6 @@ tuple(
   array[] int t_patient_visit_idx,
   vector baseline_obs_per_patient,
   real measure_sd,
-  real measure_nu,
   array[] int n_patient_screening_visits
 ) {
   // j indexes states_full_grid (HMC-local); p = patient_idx[j] indexes data arrays.
@@ -1126,12 +1120,11 @@ tuple(
       temp_forecast_patient_states[, 2] = to_vector(states_full_grid[2][j, forecast_time_abs[2:]]);
     }
 
-    // Calculate replicated observations for observed visits (Student-t noise)
+    // Calculate replicated observations for observed visits
     vector[visit_size] temp_rep_patient_log_obs = zeros_vector(visit_size);
     temp_rep_patient_log_obs[1] = log(baseline_obs_per_patient[p]);
     if (visit_size > 1) {
-      temp_rep_patient_log_obs[2:] = to_vector(student_t_rng(
-        measure_nu,
+      temp_rep_patient_log_obs[2:] = to_vector(normal_rng(
         calc_log_burden_mean(patient_states[2:], baseline_obs_per_patient[p]),
         measure_sd
       ));
@@ -1147,8 +1140,7 @@ tuple(
     if (forecast_size > 0) {
       temp_forecast_mean_patient_log_obs =
         calc_log_burden_mean(temp_forecast_patient_states, baseline_obs_per_patient[p]);
-      temp_forecast_patient_log_obs = to_vector(student_t_rng(
-        measure_nu,
+      temp_forecast_patient_log_obs = to_vector(normal_rng(
         temp_forecast_mean_patient_log_obs,
         measure_sd
       ));

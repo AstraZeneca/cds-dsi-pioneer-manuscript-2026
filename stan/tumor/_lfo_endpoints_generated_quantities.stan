@@ -138,7 +138,6 @@ profile("gen_quant") {
         cutoff_t_patient_visit_idx,
         cutoff_baseline_obs_per_patient,
         measure_sd_sld,
-        measure_nu,
         cutoff_n_patient_screening_visits
       );
   } else {
@@ -188,8 +187,7 @@ profile("gen_quant") {
           negative_infinity(),
           1.0,
           rep_matrix(0.0, forecast_size, 2),
-          measure_sd_sld,
-          measure_nu
+          measure_sd_sld
         );
 
       // Store results
