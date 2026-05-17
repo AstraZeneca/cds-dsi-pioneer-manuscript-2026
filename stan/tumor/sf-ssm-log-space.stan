@@ -81,7 +81,7 @@ model {
         for (i in 1:n_patients) {
           int visit_start, visit_end;
           (visit_start, visit_end) = get_pos(patient_visit_pos, i);
-          normalized_sld[visit_start:visit_end] ~ sf_log_space_obs(states[visit_start:visit_end], measure_sd_sld, log_lod - log_baseline_sld[i], measure_nu);
+          normalized_sld[visit_start:visit_end] ~ sf_log_space_obs(states[visit_start:visit_end], measure_sd_sld, log_lod - log_baseline_sld[i]);
         }
       }
     }
@@ -186,7 +186,6 @@ generated quantities {
 
   // Set generic measure_sd for state_space module
   real measure_sd_obs = measure_sd_sld;
-  real measure_nu_obs = measure_nu;
 
   // Biomarker-agnostic trajectory generation
   #include "modules/state_space/generated_quantities.stan"

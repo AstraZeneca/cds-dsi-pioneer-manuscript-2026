@@ -28,7 +28,6 @@ profile("gen_quant_trajectories") {
         t_patient_visit_idx,
         baseline_obs_per_patient,
         measure_sd_obs,
-        measure_nu_obs,
         n_patient_screening_visits
       );
   } else {
@@ -76,8 +75,7 @@ profile("gen_quant_trajectories") {
           negative_infinity(),  // growth lag (disabled)
           1.0,                  // growth transition
           rep_matrix(0.0, forecast_size, 2),  // No forecast process noise
-          measure_sd_obs,
-          measure_nu_obs
+          measure_sd_obs
         );
 
       // Store results at unified data positions

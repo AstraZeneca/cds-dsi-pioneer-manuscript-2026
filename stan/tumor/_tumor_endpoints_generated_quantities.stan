@@ -120,7 +120,6 @@ profile("gen_quant") {
         t_patient_visit_idx,
         sum_tumor_size,
         measure_sd_sld,
-        measure_nu,
         n_patient_screening_visits
       );
   } else {
@@ -160,8 +159,7 @@ profile("gen_quant") {
           negative_infinity(),  // growth lag (disabled)
           1.0,                  // growth transition
           rep_matrix(0.0, forecast_size, 2),  // No forecast process noise
-          measure_sd_sld,
-          measure_nu
+          measure_sd_sld
         );
 
       // Store results
@@ -204,7 +202,7 @@ profile("gen_quant") {
 
       // Apply measurement noise at assessment visits only
       forecast_obs_log_sld[assess_start:assess_end] =
-        to_vector(student_t_rng(measure_nu, obs_visit_mean, measure_sd_sld));
+        to_vector(normal_rng(obs_visit_mean, measure_sd_sld));
     }
   }
 

@@ -87,7 +87,7 @@ model {
 
         int cutoff_idx = cutoff_last_visit_idx[i];
 
-        normalized_sld[visit_start:cutoff_idx] ~ sf_log_space_obs(states[visit_start:cutoff_idx], measure_sd_sld, log_lod - log_baseline_sld[i], measure_nu);
+        normalized_sld[visit_start:cutoff_idx] ~ sf_log_space_obs(states[visit_start:cutoff_idx], measure_sd_sld, log_lod - log_baseline_sld[i]);
       }
     }
 
@@ -300,7 +300,7 @@ generated quantities {
           // Component 1: Tumor model log-likelihood using observed SLD
           real tumor_ll = sf_log_space_obs_lpdf(
               normalized_sld[start_idx:end_idx] | states[start_idx:end_idx],
-              measure_sd_sld, log_lod - log_baseline_sld[i], measure_nu);
+              measure_sd_sld, log_lod - log_baseline_sld[i]);
 
           patient_log_lik_tumor[n, m_rel, patient_idx] = tumor_ll;
 
