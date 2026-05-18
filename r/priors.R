@@ -454,8 +454,8 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     log_lod_sd = 0.2
   ) |>
     list_assign(!!!get_multistate_priors(n_levels, n_time_varying_covar, n_time_invariant_covar,
-                                        enable_ms_visit_gated_01     = stan_data$enable_ms_visit_gated_01 %||% 0L,
-                                        enable_ms_02_time_varying_cov = stan_data$enable_ms_02_time_varying_cov %||% 1L))
+                                        enable_ms_visit_gated_01      = stan_data$enable_ms_visit_gated_01 %||% 0L,
+                                        enable_ms_02_time_varying_cov = stan_data$enable_ms_02_time_varying_cov %||% 0L))
 }
 
 get_pfs_priors <- function() {
