@@ -342,11 +342,11 @@ for (i in seq_along(recist_cases)) {
       cat("Case:", i, "\n")
       cat(
         "SLD:",
-        paste(recist_cases[[i]]$sld_trajectory, collapse = ", "),
+        str_c(recist_cases[[i]]$sld_trajectory, collapse = ", "),
         "\n"
       )
-      cat("R output:", paste(r_out, collapse = ", "), "\n")
-      cat("Stan output:", paste(stan_out, collapse = ", "), "\n")
+      cat("R output:", str_c(r_out, collapse = ", "), "\n")
+      cat("Stan output:", str_c(stan_out, collapse = ", "), "\n")
       # Step-by-step for R
       sld <- recist_cases[[i]]$sld_trajectory
       nadir <- cummin(sld)

@@ -94,7 +94,7 @@ test_that("get_oos_patients_idx: all cases produce correct OOS start indices", {
       expect_equal(
         get_val("oos_idx_out", i, c),
         cc$expected[c],
-        label = paste0("case ", i, " (", cc$case_name, ") cutoff ", c)
+        label = str_c("case ", i, " (", cc$case_name, ") cutoff ", c)
       )
     }
   }

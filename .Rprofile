@@ -29,6 +29,11 @@ conflicts_prefer(
 
 options(yaml.eval.expr = TRUE)
 
+# Set default TAR_RUN if not provided by the shell environment
+if (Sys.getenv("TAR_RUN") == "") {
+  Sys.setenv(TAR_RUN = "main")
+}
+
 # Set AZ colour scheme
 AZ_plum <- "#830051"
 AZ_gold <- "#F0AB00"
@@ -81,6 +86,7 @@ init_project <- function(output_path = output_path, artifacts_path = artifacts_p
   library(autometric)
   library(here)
   library(cmdstanr)
+  set_cmdstan_path("~/.cmdstan/cmdstan-2.38.0")
   library(posterior)
   library(tidybayes)
   library(qs2)
@@ -91,17 +97,31 @@ init_project <- function(output_path = output_path, artifacts_path = artifacts_p
   source(here("r", "priors.R"))
   source(here("r", "posterior.R"))
   source(here("r", "prepare_analysis_data.R"))
+  source(here("r", "initializers_ms.R"))
   source(here("r", "initializers.R"))
   source(here("r", "accuracy.R"))
   source(here("r", "state_space.R"))
   source(here("r", "plot_functions.R"))
   source(here("r", "parquet_draws.R"))
+  source(here("r", "diagnostics.R"))
 
-  source(here("r", "sclc", "priors.R"))
-  source(here("r", "multistate.R"))
-  source(here("r", "sclc", "prepare_analysis_data.R"))
-  source(here("r", "sclc", "accuracy.R"))
-  source(here("r", "sclc", "plot_functions.R"))
+  tar_project <- Sys.getenv("TAR_PROJECT", "sclc")
+
+  if (tar_project == "sclc") {
+    source(here("r", "sclc", "priors.R"))
+    source(here("r", "multistate.R"))
+    source(here("r", "sclc", "prepare_analysis_data.R"))
+    source(here("r", "sclc", "accuracy.R"))
+    source(here("r", "sclc", "initializers.R"))
+    source(here("r", "sclc", "plot_functions.R"))
+  } else if (tar_project == "pioneer") {
+    source(here("r", "pioneer", "prepare_analysis_data.R"))
+    source(here("r", "pioneer", "prepare_laplace_data.R"))
+    source(here("r", "pioneer", "priors.R"))
+    source(here("r", "pioneer", "initializers.R"))
+    source(here("r", "pioneer", "plot_functions.R"))
+    source(here("r", "pioneer", "prepare_ms_standalone_lfo_data.R"))
+  }
 
   source(here("r", "targets_tidyselect.R"))
 }

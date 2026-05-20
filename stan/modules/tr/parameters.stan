@@ -11,29 +11,41 @@ vector[enable_pop_cov_tr ? n_covar : 0] tr_coef_qr_pop;
 
 // ===== UNIFIED LEVEL STRUCTURE =====
 
-// Intercept SD hyperparameters - one per level (always n_levels for simplicity)
-array[n_levels] real<lower=0> tr_sd_level_intercept;
+// Intercept SD free parameters - sized to RE levels only (mode=2)
+// FE levels (mode=1) use tr_fe_sd_level_intercept from hyperparams; disabled levels use 0.
+// Full n_levels array tr_sd_level_intercept is assembled in transformed_parameters.
+array[n_re_levels_tr_intercept] real<lower=0> tr_sd_level_intercept_raw;
 
-// Raw standard normal draws for intercepts - sized by ENABLED groups only
-// Size: n_enabled_groups_tr_intercept (sum of groups at enabled levels)
-vector[n_enabled_groups_tr_intercept] tr_raw_level_intercept;
+// Raw standard normal draws for intercepts at FE/RE/RE_GP levels
+vector[n_raw_groups_tr_intercept] tr_raw_level_intercept;
+
+// Centered draws for intercepts at RE_CP levels — sampled ~normal(0, sd) directly
+vector[n_cp_groups_tr_intercept] tr_cp_level_intercept;
 
 // Slope SD hyperparameters - one vector per level (always n_levels for simplicity)
 array[n_levels] vector<lower=0>[n_covar] tr_sd_level_slope;
 
-// Raw standard normal draws for slopes - sized by ENABLED groups only
-matrix[n_enabled_groups_tr_slope, n_covar] tr_raw_level_slope;
+// Raw slope effects at FE/RE/RE_GP levels
+matrix[n_raw_groups_tr_slope, n_covar] tr_raw_level_slope;
+
+// Centered slope effects at RE_CP levels
+matrix[n_cp_groups_tr_slope,  n_covar] tr_cp_level_slope;
 
 // Patient-level process noise parameters - only declared when feature is enabled
-matrix[enable_patient_process_noise_tr ? n_patients : 0, max_t_width] tr_raw_patient_process_noise;
+matrix[enable_patient_process_noise_tr ? n_forecast_patients : 0, max_t_width] tr_raw_patient_process_noise;
 array[enable_patient_process_noise_tr ? 1 : 0] real tr_log_sd_pop_process_noise;
 array[enable_patient_process_noise_tr ? 1 : 0] real<lower=0> tr_sd_patient_log_sd_process_noise;
-vector[enable_patient_process_noise_sd_tr ? n_patients : 0] tr_raw_patient_log_sd_process_noise;
+vector[enable_patient_process_noise_sd_tr ? n_forecast_patients : 0] tr_raw_patient_log_sd_process_noise;
 array[enable_patient_process_noise_tr ? 1 : 0] real tr_logit_phi_pop_process_noise;
 array[enable_patient_process_noise_tr ? 1 : 0] real<lower=0> tr_sd_patient_phi_process_noise;
-vector[enable_patient_process_noise_phi_tr ? n_patients : 0] tr_raw_patient_phi_process_noise;
+vector[enable_patient_process_noise_phi_tr ? n_forecast_patients : 0] tr_raw_patient_phi_process_noise;
 
 // Population-level time-varying process noise parameters (shared AR(1) across all patients)
 array[enable_pop_process_noise_tr ? 1 : 0] real tr_log_sd_pop_process_noise_pop;
 array[enable_pop_process_noise_tr ? 1 : 0] real tr_logit_phi_pop_process_noise_pop;
 row_vector[enable_pop_process_noise_tr ? max_t_width : 0] tr_raw_pop_process_noise;
+
+// Student-t hierarchy: degrees of freedom per level (size 0 when disabled)
+array[enable_student_t_hierarchy ? n_levels : 0] real<lower=2> tr_nu_level;
+
+#include "modules/tr/_sd_subhierarchy_parameters.stan"

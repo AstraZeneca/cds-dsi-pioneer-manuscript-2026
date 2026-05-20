@@ -36,7 +36,7 @@ test_that("compute_trial_cif: all scenarios produce expected CIF values (n_failu
     n_failures,
     0L,
     label = "n_failures",
-    info  = paste0(
+    info  = str_c(
       "One or more CIF scenarios produced unexpected outputs. ",
       "See Stan print() messages above for which scenarios failed."
     )
