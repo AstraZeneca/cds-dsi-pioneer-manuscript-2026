@@ -30,6 +30,164 @@ transform_priors_to_qr_space <- function(coef_mean, coef_sd, design_matrix) {
   )
 }
 
+#' Get shared multistate GP hyperpriors
+#'
+#' Returns hyperparameters for all multistate transitions (0→1, 0→2, 1→2,
+#' 0→3, 3→2) declared unconditionally in multistate/hyperparams.stan.
+#' Used by both get_tumor_priors() and get_pioneer_priors().
+#'
+#' @param n_levels Number of hierarchy levels
+#' @param n_time_varying_covar Number of time-varying covariates
+#' @param n_time_invariant_covar Number of time-invariant covariates
+#' @return Named list of multistate hyperparameter values
+get_multistate_priors <- function(n_levels, n_time_varying_covar, n_time_invariant_covar,
+                                   enable_ms_visit_gated_01 = 0L,
+                                   enable_ms_02_time_varying_cov = 1L) {
+  n_tv_01 <- if (enable_ms_visit_gated_01) 1L else n_time_varying_covar
+  n_tv_02 <- if (enable_ms_02_time_varying_cov) n_time_varying_covar else 0L
+  lst(
+    # 0→1 transition
+    log_lambda_gp_01_pop_intercept_mean = -4.5,
+    log_lambda_gp_01_pop_intercept_sd = 1.0,
+    log_lambda_gp_01_pop_alpha_alpha = 3.0,
+    log_lambda_gp_01_pop_alpha_beta = 1.0,
+    # Pop-level rho: invgamma(8, 135) → mode=15w, median≈18w, P(rho>50)=0.7%
+    # Raised alpha from 3→8 to tame the heavy right tail of invgamma.
+    # With alpha=3 and ~16 rho params, P(any rho>50)≈87% → GP kernel overflow
+    # at init. alpha=8 preserves the mode and boundary-avoiding behavior while
+    # keeping P(any rho>50)≈3%.
+    log_lambda_gp_01_pop_rho_alpha = 8.0,
+    log_lambda_gp_01_pop_rho_beta = 135.0,
+
+    # 0→2 transition
+    log_lambda_gp_02_pop_intercept_mean = -4.5,
+    log_lambda_gp_02_pop_intercept_sd = 1.0,
+    log_lambda_gp_02_pop_alpha_alpha = 3.0,
+    log_lambda_gp_02_pop_alpha_beta = 1.0,
+    log_lambda_gp_02_pop_rho_alpha = 8.0,
+    log_lambda_gp_02_pop_rho_beta = 135.0,
+
+    # 1→2 transition (sojourn time GP)
+    log_lambda_gp_12_s_pop_intercept_mean = -4.5,
+    log_lambda_gp_12_s_pop_intercept_sd = 1.0,
+    log_lambda_gp_12_s_pop_alpha_alpha = 3.0,
+    log_lambda_gp_12_s_pop_alpha_beta = 1.0,
+    log_lambda_gp_12_s_pop_rho_alpha = 8.0,
+    log_lambda_gp_12_s_pop_rho_beta = 135.0,
+
+    # 1→2 transition (clock-forward time GP)
+    log_lambda_gp_12_t_pop_intercept_mean = -4.5,
+    log_lambda_gp_12_t_pop_intercept_sd = 1.0,
+    log_lambda_gp_12_t_pop_alpha_alpha = 3.0,
+    log_lambda_gp_12_t_pop_alpha_beta = 1.0,
+    log_lambda_gp_12_t_pop_rho_alpha = 8.0,
+    log_lambda_gp_12_t_pop_rho_beta = 135.0,
+
+    # Shared dead GP shape hyperparameters (used when share_dead_gp_shape=1)
+    log_lambda_gp_dead_pop_alpha_alpha = 3.0,
+    log_lambda_gp_dead_pop_alpha_beta  = 1.0,
+    log_lambda_gp_dead_pop_rho_alpha   = 8.0,
+    log_lambda_gp_dead_pop_rho_beta    = 135.0,
+
+    # Level-level rho: invgamma(8, 90) → mode=10w, median≈12w, P(rho>50)=0.05%
+    log_lambda_gp_01_level_intercept_sd_sd = rep(0.5, n_levels),
+    log_lambda_gp_01_level_alpha_alpha = rep(3.0, n_levels),
+    log_lambda_gp_01_level_alpha_beta = rep(1.0, n_levels),
+    log_lambda_gp_01_level_rho_alpha = rep(8.0, n_levels),
+    log_lambda_gp_01_level_rho_beta = rep(90.0, n_levels),
+
+    log_lambda_gp_02_level_intercept_sd_sd = rep(0.5, n_levels),
+    log_lambda_gp_02_level_alpha_alpha = rep(3.0, n_levels),
+    log_lambda_gp_02_level_alpha_beta = rep(1.0, n_levels),
+    log_lambda_gp_02_level_rho_alpha = rep(8.0, n_levels),
+    log_lambda_gp_02_level_rho_beta = rep(90.0, n_levels),
+
+    log_lambda_gp_12_s_level_intercept_sd_sd = rep(0.5, n_levels),
+    log_lambda_gp_12_s_level_alpha_alpha = rep(3.0, n_levels),
+    log_lambda_gp_12_s_level_alpha_beta = rep(1.0, n_levels),
+    log_lambda_gp_12_s_level_rho_alpha = rep(8.0, n_levels),
+    log_lambda_gp_12_s_level_rho_beta = rep(90.0, n_levels),
+
+    log_lambda_gp_12_t_level_intercept_sd_sd = rep(0.5, n_levels),
+    log_lambda_gp_12_t_level_alpha_alpha = rep(3.0, n_levels),
+    log_lambda_gp_12_t_level_alpha_beta = rep(1.0, n_levels),
+    log_lambda_gp_12_t_level_rho_alpha = rep(8.0, n_levels),
+    log_lambda_gp_12_t_level_rho_beta = rep(90.0, n_levels),
+
+    # 0→3 Dropout GP
+    log_lambda_gp_03_pop_intercept_mean = -4.5,
+    log_lambda_gp_03_pop_intercept_sd = 1.0,
+    log_lambda_gp_03_pop_alpha_alpha = 3.0,
+    log_lambda_gp_03_pop_alpha_beta = 1.0,
+    log_lambda_gp_03_pop_rho_alpha = 8.0,
+    log_lambda_gp_03_pop_rho_beta = 135.0,
+    log_lambda_gp_03_level_intercept_sd_sd = rep(2.0, n_levels),
+    log_lambda_gp_03_level_alpha_alpha = rep(3.0, n_levels),
+    log_lambda_gp_03_level_alpha_beta = rep(1.0, n_levels),
+    log_lambda_gp_03_level_rho_alpha = rep(8.0, n_levels),
+    log_lambda_gp_03_level_rho_beta = rep(90.0, n_levels),
+
+    # 3→2 Off-trial death GP (sojourn time, semi-Markov)
+    log_lambda_gp_32_s_pop_intercept_mean = -4.5,
+    log_lambda_gp_32_s_pop_intercept_sd = 1.0,
+    log_lambda_gp_32_s_pop_alpha_alpha = 3.0,
+    log_lambda_gp_32_s_pop_alpha_beta = 1.0,
+    log_lambda_gp_32_s_pop_rho_alpha = 8.0,
+    log_lambda_gp_32_s_pop_rho_beta = 135.0,
+    log_lambda_gp_32_s_level_intercept_sd_sd = rep(0.5, n_levels),
+    log_lambda_gp_32_s_level_alpha_alpha = rep(3.0, n_levels),
+    log_lambda_gp_32_s_level_alpha_beta = rep(1.0, n_levels),
+    log_lambda_gp_32_s_level_rho_alpha = rep(8.0, n_levels),
+    log_lambda_gp_32_s_level_rho_beta = rep(90.0, n_levels),
+
+    # Fixed-effect prior SD for level intercepts (used when flag == 1)
+    fe_log_lambda_gp_01_level_intercept_sd = rep(1.0, n_levels),
+    fe_log_lambda_gp_02_level_intercept_sd = rep(1.0, n_levels),
+    fe_log_lambda_gp_12_s_level_intercept_sd = rep(1.0, n_levels),
+    fe_log_lambda_gp_12_t_level_intercept_sd = rep(1.0, n_levels),
+    fe_log_lambda_gp_03_level_intercept_sd = rep(1.0, n_levels),
+    fe_log_lambda_gp_32_s_level_intercept_sd = rep(1.0, n_levels),
+
+    # Time-varying covariate coefficient hyperparameters
+    # as.array() ensures length-1 vectors are passed as 1-element arrays to CmdStan,
+    # not as scalars — required when visit-gated mode sets vector size to 1.
+    time_varying_coef_01_mean = as.array(rep(0, n_tv_01)),
+    time_varying_coef_01_sd = as.array(rep(0.5, n_tv_01)),
+    time_varying_coef_02_mean = as.array(rep(0, n_tv_02)),
+    time_varying_coef_02_sd = as.array(rep(0.5, n_tv_02)),
+    time_varying_coef_12_mean = as.array(rep(0, n_time_varying_covar)),
+    time_varying_coef_12_sd = as.array(rep(0.5, n_time_varying_covar)),
+
+    # Time-invariant covariate coefficient hyperparameters (QR space)
+    time_invariant_coef_01_mean = rep(0, n_time_invariant_covar),
+    time_invariant_coef_01_sd = rep(1, n_time_invariant_covar),
+    time_invariant_coef_02_mean = rep(0, n_time_invariant_covar),
+    time_invariant_coef_02_sd = rep(1, n_time_invariant_covar),
+    time_invariant_coef_12_mean = rep(0, n_time_invariant_covar),
+    time_invariant_coef_12_sd = rep(1, n_time_invariant_covar),
+
+    # Multi-level random slope SD hyperpriors
+    sd_level_slope_01_sd = lapply(seq_len(n_levels), function(lv) rep(0.15, n_time_invariant_covar)),
+    sd_level_slope_02_sd = lapply(seq_len(n_levels), function(lv) rep(0.15, n_time_invariant_covar)),
+    sd_level_slope_12_sd = lapply(seq_len(n_levels), function(lv) rep(0.15, n_time_invariant_covar)),
+
+    # PSA-at-state-entry covariate coefficient hyperparameters
+    # Normal(0, 0.5): matches the scale of standardized log-PSA (~1 IQR unit = 1 SD
+    # after standardization), so a unit change in standardized log-PSA gives a
+    # hazard ratio of exp(±0.5) ≈ 1.65, allowing meaningful but not extreme effects.
+    coef_log_psa_12_mean = 0.0,
+    coef_log_psa_12_sd   = 0.5,
+    coef_log_psa_32_mean = 0.0,
+    coef_log_psa_32_sd   = 0.5,
+
+    # Student-t hierarchy nu hyperparameters for multistate
+    ms_nu_baseline_level_prior_alpha = rep(2, n_levels),
+    ms_nu_baseline_level_prior_beta  = rep(0.1, n_levels),
+    ms_nu_slope_level_prior_alpha    = rep(2, n_levels),
+    ms_nu_slope_level_prior_beta     = rep(0.1, n_levels)
+  )
+}
+
 get_tumor_priors <- function(stan_data, coef_elicited_priors,
                              covar_design_matrix = NULL) {
   # Directly specified priors (simplified)
@@ -90,11 +248,6 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     # mode = beta/(alpha+1) = 0.75/6 = 0.125 (at typical posterior)
     measure_sd_sld_alpha = 5,
     measure_sd_sld_beta = 0.75,
-    # Student-t degrees of freedom for SLD observation model (fixed, not estimated)
-    # nu=5: robust against outliers, enough tail weight to downweight erratic measurements
-    # without being as heavy-tailed as nu=3. Increase toward 30+ to approach Gaussian.
-    measure_nu_sld = 5,
-
     # Process parameters
     decrease_process_alpha = 9.7,
     decrease_process_beta = 38.4,
@@ -104,7 +257,15 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     # Total rate module hyperparams (multi-level): c(trial, patient)
     tr_loc_pop_mean = tr_loc_pop_mean,
     tr_loc_pop_sd = tr_loc_pop_sd,
-    tr_sd_level_intercept_sd = c(0.35, 0.35),
+    tr_sd_level_intercept_sd = rep(0.35, n_levels),
+    tr_fe_sd_level_intercept = rep(0, n_levels),
+    # SD sub-hierarchy hyperparameters (issue #110)
+    tr_log_sd_level_intercept_pop_mean  = rep(log(1.0), n_levels),
+    tr_log_sd_level_intercept_pop_sd    = rep(0.5, n_levels),
+    tr_sd_hyperscale_level_intercept_sd = matrix(0.3, n_levels, n_levels),
+    tr_fe_sd_hyperscale_level_intercept = matrix(0.3, n_levels, n_levels),
+    tr_nu_level_prior_alpha = rep(2, n_levels),
+    tr_nu_level_prior_beta = rep(0.1, n_levels),
     tr_coef_qr_pop_mean = as.array(rep(0, n_covar)),
     tr_coef_qr_pop_sd = as.array(rep(1, n_covar)),
     tr_sd_level_slope_sd = list(
@@ -131,7 +292,10 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     # Fraction module hyperparams (multi-level): c(trial, patient)
     frac_logit_loc_pop_mean = frac_logit_loc_pop_mean,
     frac_logit_loc_pop_sd = frac_logit_loc_pop_sd,
-    frac_sd_level_intercept_sd = c(0.25, 0.25),
+    frac_sd_level_intercept_sd = rep(0.25, n_levels),
+    frac_fe_sd_level_intercept = rep(0, n_levels),
+    frac_nu_level_prior_alpha = rep(2, n_levels),
+    frac_nu_level_prior_beta = rep(0.1, n_levels),
     frac_coef_qr_pop_mean = as.array(qr_frac$coef_mean_qr),
     frac_coef_qr_pop_sd = as.array(qr_frac$coef_sd_qr),
     frac_sd_level_slope_sd = list(
@@ -143,6 +307,9 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     init_logit_loc_pop_mean = init_logit_loc_pop_mean,
     init_logit_loc_pop_sd = init_logit_loc_pop_sd,
     init_sd_level_intercept_sd = c(0.6, 0.5),
+    init_fe_sd_level_intercept = rep(0, n_levels),
+    init_nu_level_prior_alpha = rep(2, n_levels),
+    init_nu_level_prior_beta = rep(0.1, n_levels),
     init_coef_qr_pop_mean = as.array(qr_init$coef_mean_qr),
     init_coef_qr_pop_sd = as.array(qr_init$coef_sd_qr),
     init_sd_level_slope_sd = list(
@@ -263,12 +430,12 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     log_lambda_gp_32_s_level_rho_beta = rep(4.0, n_levels),
 
     # --- Time-varying covariate coefficient hyperparameters ---
-    time_varying_coef_01_mean = rep(0, n_time_varying_covar),
-    time_varying_coef_01_sd = rep(0.5, n_time_varying_covar),
-    time_varying_coef_02_mean = rep(0, n_time_varying_covar),
-    time_varying_coef_02_sd = rep(0.5, n_time_varying_covar),
-    time_varying_coef_12_mean = rep(0, n_time_varying_covar),
-    time_varying_coef_12_sd = rep(0.5, n_time_varying_covar),
+    time_varying_coef_01_mean = as.array(rep(0, n_time_varying_covar)),
+    time_varying_coef_01_sd = as.array(rep(0.5, n_time_varying_covar)),
+    time_varying_coef_02_mean = as.array(rep(0, n_time_varying_covar)),
+    time_varying_coef_02_sd = as.array(rep(0.5, n_time_varying_covar)),
+    time_varying_coef_12_mean = as.array(rep(0, n_time_varying_covar)),
+    time_varying_coef_12_sd = as.array(rep(0.5, n_time_varying_covar)),
 
     # --- Time-invariant covariate coefficient hyperparameters (QR space) ---
     time_invariant_coef_01_mean = rep(0, n_time_invariant_covar),
@@ -290,7 +457,10 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     }),
 
     log_lod_sd = 0.2
-  )
+  ) |>
+    list_assign(!!!get_multistate_priors(n_levels, n_time_varying_covar, n_time_invariant_covar,
+                                        enable_ms_visit_gated_01      = stan_data$enable_ms_visit_gated_01 %||% 0L,
+                                        enable_ms_02_time_varying_cov = stan_data$enable_ms_02_time_varying_cov %||% 0L))
 }
 
 get_pfs_priors <- function() {

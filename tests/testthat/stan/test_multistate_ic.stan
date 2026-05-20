@@ -21,8 +21,6 @@ data {
   array[n_patients] int time_03;
   array[n_patients] int time_32;
   array[n_patients] int censored_01;
-  array[n_patients] int censored_02;
-  array[n_patients] int censored_12;
   array[n_patients] int prog_deterministic;
   array[n_patients] int ms_ic_gap_01;
 
@@ -56,31 +54,31 @@ parameters { real dummy; }
 model { dummy ~ normal(0, 1); }
 generated quantities {
   real ll_ic = multistate_lpmf(
-    final_state | 1, 1, 1, 1,   // enable_01, 02, 12, time_scale=semi-Markov
+    final_state | rep_vector(1.0, n_patients), 1, 1, 1, 1,   // weight=1, enable_01, 02, 12, time_scale=semi-Markov
     enable_03, 0,                 // enable_03 (data), enable_32=0
     time_01, time_02, time_12,
     time_03, time_32,
-    censored_01, censored_02, censored_12,
-    rep_array(1, n_patients),    // censored_32 unused
+    censored_01,
     prog_deterministic,
     ms_ic_gap_01,
     t_patient_visits,
     patient_visit_pos,
-    lcs_01, lcs_02, lcs_12_s, lcs_12_t, lcs_03, lcs_32
+    lcs_01, lcs_02, lcs_12_s, lcs_12_t, lcs_03, lcs_32,
+    0                             // enable_ms_visit_gated_01=0
   );
 
   // Reference: same call with all gaps zeroed (current no-IC behavior)
   real ll_no_ic = multistate_lpmf(
-    final_state | 1, 1, 1, 1,
+    final_state | rep_vector(1.0, n_patients), 1, 1, 1, 1,
     enable_03, 0,
     time_01, time_02, time_12,
     time_03, time_32,
-    censored_01, censored_02, censored_12,
-    rep_array(1, n_patients),
+    censored_01,
     prog_deterministic,
     rep_array(0, n_patients),    // gaps all zero -> no-IC path
     t_patient_visits,
     patient_visit_pos,
-    lcs_01, lcs_02, lcs_12_s, lcs_12_t, lcs_03, lcs_32
+    lcs_01, lcs_02, lcs_12_s, lcs_12_t, lcs_03, lcs_32,
+    0                             // enable_ms_visit_gated_01=0
   );
 }
