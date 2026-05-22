@@ -37,7 +37,7 @@ if (ms_needs_inline_psa) {
           for (t in 1:T_max) {
             real s_d = base_d - rate_d * t;
             real s_g = base_g + rate_g * t;
-            real std_psa = standardize_log_psa(
+            real std_psa = standardize_log_burden(
               log_sum_exp(s_d, s_g), log_bpsa, median_log_psa_obs, iqr_log_psa_obs);
             log_cond_surv_02[j, t] += time_varying_coef_02[1] * std_psa;
           }
@@ -78,7 +78,7 @@ if (ms_needs_inline_psa) {
           if (wk >= 1 && wk <= max_all_t) {
             real s_d = base_d - rate_d * wk;
             real s_g = base_g + rate_g * wk;
-            real psa_covar = standardize_log_psa(
+            real psa_covar = standardize_log_burden(
               log_sum_exp(s_d, s_g), log_bpsa, median_log_psa_obs, iqr_log_psa_obs);
             log_cond_surv_01[j, wk] += time_varying_coef_01[1] * psa_covar;
           }

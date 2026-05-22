@@ -8,6 +8,7 @@ functions {
   #include "pfs.stanfunctions"
   #include "lfo.stanfunctions"
   #include "multistate.stanfunctions"
+  #include "_burden.stanfunctions"
   #include "modules/state_space/sf.stanfunctions"
   #include "modules/tumor/tumor.stanfunctions"
 }
