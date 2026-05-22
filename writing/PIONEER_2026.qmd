@@ -33,7 +33,7 @@ format:
 
 <!-- The problem: predicting survival from immature trial data -->
 
-Modern oncology trials must make high-stakes decisions early long before survival data matures. At a typical interim data cut-off (DCO), tumour measurements are plentiful but progression-free survival (PFS) and overall survival (OS) remain heavily censored. What is needed is a model that can forecast what the survival curves will look like at the final analysis, quantify how uncertain that forecast is, and transfer what it learns from one trial to the next.
+Modern oncology trials must make high-stakes decisions -- dosage, patient cohort, and phase III go/no-go -- early long before survival data matures. At a typical interim data cut-off (DCO), tumour measurements are plentiful but progression-free survival (PFS) and overall survival (OS) remain heavily censored. What is needed is a model that can forecast what the survival curves will look like at the final analysis, quantify how uncertain that forecast is, and transfer what it learns from one trial to the next.
 
 <!-- Related work -->
 
