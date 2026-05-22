@@ -668,6 +668,57 @@ if (enable_ms_03) {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Time-varying covariate effects for 0->3 (tumor bridge: modeled PSA)
+  // -------------------------------------------------------------------------
+  // Uses ms_time_varying_covar_01 (modeled PSA matrix), independent of 0->1 mode.
+  if (!ms_needs_inline_psa && enable_ms_pop_time_varying_cov && enable_ms_03_time_varying_cov
+      && n_time_varying_covar > 0 && size(ms_time_varying_covar_01) > 0) {
+    for (k in 1:n_time_varying_covar) {
+      log_cond_surv_03 += time_varying_coef_03[k] * ms_time_varying_covar_01[k];
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Time-invariant covariate effects (QR space with multi-level random slopes)
+  // -------------------------------------------------------------------------
+  if (enable_ms_pop_time_invariant_cov && enable_ms_03_time_invariant_cov && n_time_invariant_covar > 0) {
+    vector[n_forecast_patients] linpred_pop_03 = Q_covar_design_matrix[forecast_patient_idx, :] * time_invariant_coef_qr_03;
+
+    if (n_enabled_groups_ms_slope > 0) {
+      matrix[n_enabled_groups_ms_slope, n_time_invariant_covar] ms_scaled_level_slope_03;
+      for (lv in 1:n_levels) {
+        if (enable_ms_level_cov[lv]) {
+          int lv_start, lv_end;
+          (lv_start, lv_end) = get_pos(enabled_level_pos_ms_slope, lv);
+          int mode = enable_ms_level_baseline_hazard[lv];
+          if (mode == LEVEL_MODE_RE_CP) {
+            int c_lo = cp_level_pos_ms_slope_shared[lv];
+            int c_hi = cp_level_pos_ms_slope_shared[lv + 1] - 1;
+            ms_scaled_level_slope_03[lv_start:lv_end, :] = cp_level_slope_03[c_lo:c_hi, :];
+          } else {
+            int r_lo = raw_level_pos_ms_slope_shared[lv];
+            int r_hi = raw_level_pos_ms_slope_shared[lv + 1] - 1;
+            ms_scaled_level_slope_03[lv_start:lv_end, :] =
+              raw_level_slope_03[r_lo:r_hi, :] .*
+              rep_matrix(sd_level_slope_03[lv]', lv_end - lv_start + 1);
+          }
+        }
+      }
+
+      for (lv in 1:n_levels) {
+        if (enable_ms_level_cov[lv]) {
+          linpred_pop_03 += rows_dot_product(
+            Q_covar_design_matrix[forecast_patient_idx, :],
+            ms_scaled_level_slope_03[patient_ms_slope_flat_idx[forecast_patient_idx, lv], :]
+          );
+        }
+      }
+    }
+
+    log_cond_surv_03 += rep_matrix(linpred_pop_03, max_all_t);
+  }
+
   // Transform log-hazard to log conditional survival probability
   log_cond_surv_03 = -exp(log_cond_surv_03);
 }
@@ -749,6 +800,48 @@ if (enable_ms_32) {
         log_cond_surv_32[j] += log_level_lambda_32_residual[patient_ms_baseline_flat_idx[p, lv]];
       }
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Time-invariant covariate effects (QR space with multi-level random slopes)
+  // -------------------------------------------------------------------------
+  // Time-varying covariates not implemented for 3->2: would require sojourn-clock
+  // indexing of the modeled PSA matrix.
+  if (enable_ms_pop_time_invariant_cov && enable_ms_32_time_invariant_cov && n_time_invariant_covar > 0) {
+    vector[n_forecast_patients] linpred_pop_32 = Q_covar_design_matrix[forecast_patient_idx, :] * time_invariant_coef_qr_32;
+
+    if (n_enabled_groups_ms_slope > 0) {
+      matrix[n_enabled_groups_ms_slope, n_time_invariant_covar] ms_scaled_level_slope_32;
+      for (lv in 1:n_levels) {
+        if (enable_ms_level_cov[lv]) {
+          int lv_start, lv_end;
+          (lv_start, lv_end) = get_pos(enabled_level_pos_ms_slope, lv);
+          int mode = enable_ms_level_baseline_hazard[lv];
+          if (mode == LEVEL_MODE_RE_CP) {
+            int c_lo = cp_level_pos_ms_slope_shared[lv];
+            int c_hi = cp_level_pos_ms_slope_shared[lv + 1] - 1;
+            ms_scaled_level_slope_32[lv_start:lv_end, :] = cp_level_slope_32[c_lo:c_hi, :];
+          } else {
+            int r_lo = raw_level_pos_ms_slope_shared[lv];
+            int r_hi = raw_level_pos_ms_slope_shared[lv + 1] - 1;
+            ms_scaled_level_slope_32[lv_start:lv_end, :] =
+              raw_level_slope_32[r_lo:r_hi, :] .*
+              rep_matrix(sd_level_slope_32[lv]', lv_end - lv_start + 1);
+          }
+        }
+      }
+
+      for (lv in 1:n_levels) {
+        if (enable_ms_level_cov[lv]) {
+          linpred_pop_32 += rows_dot_product(
+            Q_covar_design_matrix[forecast_patient_idx, :],
+            ms_scaled_level_slope_32[patient_ms_slope_flat_idx[forecast_patient_idx, lv], :]
+          );
+        }
+      }
+    }
+
+    log_cond_surv_32 += rep_matrix(linpred_pop_32, ms_max_sojourn_t_32);
   }
 
   // PSA-at-entry covariate: shift sojourn hazard per patient based on PSA
