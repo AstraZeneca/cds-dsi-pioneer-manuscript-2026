@@ -21,7 +21,8 @@ publication_artifacts_path <- str_replace(
 )
 
 fs::dir_create(file.path(publication_output_path, "fit"))
-fs::dir_create(publication_artifacts_path)
+fs::dir_create(file.path(publication_artifacts_path, "models"))
+fs::dir_create(file.path(publication_artifacts_path, "crew_logs"))
 
 controller_default <- crew_controller_local(name = "default", workers = 4)
 controller_fit <- crew_controller_local(name = "fit", workers = 4)
