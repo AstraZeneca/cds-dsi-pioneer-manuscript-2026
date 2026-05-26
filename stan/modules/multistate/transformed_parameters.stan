@@ -1,9 +1,9 @@
 // ============================================================================
 // Multistate Hazard Model Transformed Parameters
 // ============================================================================
-// When ms_needs_inline_psa = TRUE, burden models compute time-varying covariates
+// When ms_needs_inline_burden = TRUE, burden models compute time-varying covariates
 // inline in _ms_burden_inline_tv_covar.stan instead of via the grid-based
-// ms_time_varying_covar_01 matrix. Guards on !ms_needs_inline_psa below prevent
+// ms_time_varying_covar_01 matrix. Guards on !ms_needs_inline_burden below prevent
 // double-counting.
 
 // ============================================================================
@@ -109,10 +109,10 @@ if (enable_ms_01) {
   // Visit-gated mode: sparse update at observed visit weeks only (before -exp,
   // same log-hazard-level addition as continuous mode — no special handling needed).
   // PSA source: observed (default) or latent trajectory (enable_ms_visit_gated_latent_01).
-  // When ms_needs_inline_psa && enable_ms_visit_gated_latent_01, the latent PSA path
+  // When ms_needs_inline_burden && enable_ms_visit_gated_latent_01, the latent PSA path
   // is handled by the PSA-specific inline include. Observed PSA path still runs here.
   if (enable_ms_pop_time_varying_cov && enable_ms_visit_gated_01 &&
-      !(ms_needs_inline_psa && enable_ms_visit_gated_latent_01) &&
+      !(ms_needs_inline_burden && enable_ms_visit_gated_latent_01) &&
       (!enable_ms_visit_gated_latent_01 || size(ms_time_varying_covar_01) > 0)) {
     for (j in 1:n_forecast_patients) {
       int p = forecast_patient_idx[j];
@@ -275,8 +275,8 @@ if (enable_ms_02) {
   // -------------------------------------------------------------------------
   // 0->2 time-varying covariate: uses modeled PSA (ms_time_varying_covar_01)
   // Controlled by enable_ms_02_time_varying_cov, independent of 0->1 mode.
-  // When ms_needs_inline_psa, the PSA-specific inline path handles this instead.
-  if (!ms_needs_inline_psa && enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov
+  // When ms_needs_inline_burden, the PSA-specific inline path handles this instead.
+  if (!ms_needs_inline_burden && enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov
       && n_time_varying_covar > 0 && size(ms_time_varying_covar_01) > 0) {
     for (k in 1:n_time_varying_covar) {
       log_cond_surv_02 += time_varying_coef_02[k] * ms_time_varying_covar_01[k];
@@ -672,7 +672,7 @@ if (enable_ms_03) {
   // Time-varying covariate effects for 0->3 (tumor bridge: modeled PSA)
   // -------------------------------------------------------------------------
   // Uses ms_time_varying_covar_01 (modeled PSA matrix), independent of 0->1 mode.
-  if (!ms_needs_inline_psa && enable_ms_pop_time_varying_cov && enable_ms_03_time_varying_cov
+  if (!ms_needs_inline_burden && enable_ms_pop_time_varying_cov && enable_ms_03_time_varying_cov
       && n_time_varying_covar > 0 && size(ms_time_varying_covar_01) > 0) {
     for (k in 1:n_time_varying_covar) {
       log_cond_surv_03 += time_varying_coef_03[k] * ms_time_varying_covar_01[k];

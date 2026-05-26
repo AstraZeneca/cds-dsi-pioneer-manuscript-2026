@@ -8,17 +8,19 @@
  * need_states_full_grid is true when any of these hold:
  *   - Process noise (AR(1) state noise) is enabled
  *   - The explicit full-grid flag is set
- *   - Time-varying covariates flow through the multistate 0→1 transition
- *     (ungated or gated+latent) or the 0→2 transition
+ *   - Time-varying covariates flow through the multistate 0->1 transition
+ *     (ungated or gated+latent), 0->2, or 0->3 transitions, AND the inline
+ *     burden path cannot be used (process noise ON)
  *
- * ms_needs_inline_psa is true when:
- *   - Process noise is disabled (no grid for state-space)
- *   - Time-varying covariates are enabled
- *   - Either 0→2 TV cov OR (visit-gated 0→1 + latent PSA)
+ * ms_needs_inline_burden is true when:
+ *   - Process noise is disabled (no states_full_grid built by state_space)
+ *   - Population TV covariates are enabled with at least one covariate
+ *   - Any of: 0->2 TV cov, 0->3 TV cov, or visit-gated 0->1 with latent burden
  *
- * This signals "compute PSA inline, don't build states_full_grid".
+ * This signals "compute burden trajectory analytically per-patient, don't
+ * materialise states_full_grid". Works for both PSA and SLD burden models.
  *
- * @return (enable_any_process_noise_tr, need_states_full_grid, ms_needs_inline_psa)
+ * @return (enable_any_process_noise_tr, need_states_full_grid, ms_needs_inline_burden)
  */
 tuple(int, int, int) compute_full_model_grid_flags(
   int enable_pop_process_noise_tr,
@@ -29,24 +31,25 @@ tuple(int, int, int) compute_full_model_grid_flags(
   int enable_ms_01,
   int enable_ms_visit_gated_01,
   int enable_ms_visit_gated_latent_01,
-  int enable_ms_02_time_varying_cov
+  int enable_ms_02_time_varying_cov,
+  int enable_ms_03_time_varying_cov
 ) {
-  int any_pn    = enable_pop_process_noise_tr || enable_patient_process_noise_tr;
+  int any_pn = enable_pop_process_noise_tr || enable_patient_process_noise_tr;
 
-  // Inline PSA: MS needs modeled PSA but process noise is OFF
+  // Inline burden: TV covariates needed but no process noise -> compute
+  // analytically rather than building a dense states_full_grid.
   int needs_inline = !any_pn &&
     enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
-    (enable_ms_02_time_varying_cov ||
+    (enable_ms_02_time_varying_cov || enable_ms_03_time_varying_cov ||
      (enable_ms_visit_gated_01 && enable_ms_visit_gated_latent_01));
 
-  // Full grid: process noise OR explicit flag OR MS needs continuous grid
-  // (ungated 0→1, or gated+latent 0→1, or 0→2 TV cov)
-  // Exclude cases handled by inline computation
+  // Full grid needed when: process noise OR explicit flag OR any transition
+  // needs the continuous burden trajectory and cannot go inline.
   int need_grid = any_pn || enable_states_full_grid ||
     (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 && !needs_inline &&
      ((enable_ms_01 && !enable_ms_visit_gated_01) ||
       (enable_ms_visit_gated_01 && enable_ms_visit_gated_latent_01) ||
-      enable_ms_02_time_varying_cov));
+      enable_ms_02_time_varying_cov || enable_ms_03_time_varying_cov));
 
   return (any_pn, need_grid, needs_inline);
 }

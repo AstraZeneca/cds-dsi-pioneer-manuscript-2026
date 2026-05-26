@@ -24,19 +24,19 @@
 // arrays such as t_patient_visits, patient_visit_pos, log_baseline_burden.
 
 // Allocate covariate matrix only when the multistate machinery actually
-// consumes it. When ms_needs_inline_psa, the burden trajectory is computed
+// consumes it. When ms_needs_inline_burden, the burden trajectory is computed
 // inline in _ms_burden_inline_tv_covar.stan instead, so this matrix is sized
 // to 0. Otherwise it is needed when any of:
 //   - 0->1 continuous mode (not visit-gated)
 //   - 0->1 visit-gated with latent burden trajectory
 //   - 0->2 with TV covariate
-array[!ms_needs_inline_psa && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
+array[!ms_needs_inline_burden && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
     ((enable_ms_01 && !enable_ms_visit_gated_01) || enable_ms_02_time_varying_cov ||
      (enable_ms_visit_gated_01 && enable_ms_visit_gated_latent_01))
     ? n_time_varying_covar : 0]
   matrix[n_forecast_patients, max_all_t] ms_time_varying_covar_01;
 
-if (!ms_needs_inline_psa && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
+if (!ms_needs_inline_burden && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
     ((enable_ms_01 && !enable_ms_visit_gated_01) || enable_ms_02_time_varying_cov ||
      (enable_ms_visit_gated_01 && enable_ms_visit_gated_latent_01))) {
   profile("tv covariate") {

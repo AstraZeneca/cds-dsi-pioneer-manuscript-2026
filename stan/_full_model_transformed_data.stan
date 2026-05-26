@@ -45,23 +45,23 @@ for (t in 2:max_t_width) {
 // and whether the full states grid [n_patients × max_t_width] is needed:
 //   - process noise: rates vary by timepoint, need states at every week
 //   - enable_states_full_grid: explicit flag (future-proofing)
-//   - ungated continuous time-varying covariate for 0→1 multistate transition
-//   - gated+latent 0→1 or 0→2 TV cov (requires grid when process noise ON)
-// ms_needs_inline_psa: when process noise OFF but MS needs modeled PSA,
-//   compute PSA inline instead of building full grid
+//   - ungated continuous time-varying covariate for 0->1 multistate transition
+//   - gated+latent 0->1, 0->2, or 0->3 TV cov (requires grid when process noise ON)
+// ms_needs_inline_burden: when process noise OFF but MS needs modeled burden,
+//   compute burden trajectory analytically per-patient instead of building full grid
 int enable_any_process_noise_tr;
 int need_states_full_grid;
-int ms_needs_inline_psa;
-(enable_any_process_noise_tr, need_states_full_grid, ms_needs_inline_psa) = compute_full_model_grid_flags(
+int ms_needs_inline_burden;
+(enable_any_process_noise_tr, need_states_full_grid, ms_needs_inline_burden) = compute_full_model_grid_flags(
   enable_pop_process_noise_tr, enable_patient_process_noise_tr,
   enable_states_full_grid,
   enable_ms_pop_time_varying_cov, n_time_varying_covar,
   enable_ms_01, enable_ms_visit_gated_01, enable_ms_visit_gated_latent_01,
-  enable_ms_02_time_varying_cov
+  enable_ms_02_time_varying_cov, enable_ms_03_time_varying_cov
 );
 print("need_states_full_grid = ", need_states_full_grid,
       " (process_noise=", enable_any_process_noise_tr,
-      ", ms_needs_inline_psa=", ms_needs_inline_psa, ")");
+      ", ms_needs_inline_burden=", ms_needs_inline_burden, ")");
 
 // ============================================================================
 // POPULATION UNIQUE VISITS
