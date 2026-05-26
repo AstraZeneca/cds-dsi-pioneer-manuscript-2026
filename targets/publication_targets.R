@@ -231,7 +231,11 @@ publication_targets <- list(
       enable_ms_pop_time_varying_cov = TRUE,
       enable_ms_pop_time_invariant_cov = TRUE,
       enable_ms_level_cov = c(trial = FALSE, patient = FALSE),
-      enable_ms_visit_gated_01 = 1L,
+      # Visit-gated 0->1 disabled. The tumor-side wiring works for data
+      # validation but produces a non-finite log-probability gradient at
+      # initialization (cause not yet isolated; tracked in a separate issue).
+      # Use the continuous-time path that sclc also uses.
+      enable_ms_visit_gated_01 = 0L,
       enable_ms_visit_gated_latent_01 = 0L,
       share_dead_gp_shape = 0L,
       enable_ms_02_time_varying_cov = 0L,
