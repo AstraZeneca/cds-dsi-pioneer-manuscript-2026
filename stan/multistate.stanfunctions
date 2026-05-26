@@ -157,7 +157,7 @@ tuple(int, int, int, int, int, int, int, int, int, int, int, int, int) compute_m
  * @param n_visits                         Total number of assessment visits across all patients
  * @return Size of the flat covariate vector (0 or n_visits)
  */
-int compute_ms_obs_psa_covar_size(
+int compute_ms_obs_visit_covar_size(
   int enable_ms_visit_gated_01,
   int enable_ms_visit_gated_latent_01,
   int n_visits

@@ -151,7 +151,7 @@ array[n_levels] real<lower=0> ms_nu_slope_level_prior_beta;
 
 // --- PSA-at-State-Entry Coefficient Hyperparameters ---
 // Prior for the scalar log-PSA coefficient on 1→2 and 3→2 sojourn hazards.
-real coef_log_psa_12_mean;
-real<lower=0> coef_log_psa_12_sd;
-real coef_log_psa_32_mean;
-real<lower=0> coef_log_psa_32_sd;
+real coef_log_entry_covar_12_mean;
+real<lower=0> coef_log_entry_covar_12_sd;
+real coef_log_entry_covar_32_mean;
+real<lower=0> coef_log_entry_covar_32_sd;

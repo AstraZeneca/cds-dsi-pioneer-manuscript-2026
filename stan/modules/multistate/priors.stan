@@ -505,11 +505,11 @@ if (enable_student_t_hierarchy) {
 }
 
 // PSA-at-entry covariate priors
-if (enable_ms_12 && enable_ms_12_entry_psa_cov) {
-  coef_log_psa_12[1] ~ normal(coef_log_psa_12_mean, coef_log_psa_12_sd);
+if (enable_ms_12 && enable_ms_12_entry_covar) {
+  coef_log_entry_covar_12[1] ~ normal(coef_log_entry_covar_12_mean, coef_log_entry_covar_12_sd);
 }
-if (enable_ms_32 && enable_ms_32_entry_psa_cov) {
-  coef_log_psa_32[1] ~ normal(coef_log_psa_32_mean, coef_log_psa_32_sd);
+if (enable_ms_32 && enable_ms_32_entry_covar) {
+  coef_log_entry_covar_32[1] ~ normal(coef_log_entry_covar_32_mean, coef_log_entry_covar_32_sd);
 }
 
 // 1→2 covariate priors
