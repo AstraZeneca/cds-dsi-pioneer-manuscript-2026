@@ -1,10 +1,10 @@
 // ============================================================================
 // Multistate Hazard Model Transformed Parameters
 // ============================================================================
-// When ms_needs_inline_psa = TRUE, PSA models compute time-varying covariates
-// inline in psa/_psa_inline_tv_covar.stan instead of via the grid-based
+// When ms_needs_inline_psa = TRUE, burden models compute time-varying covariates
+// inline in _ms_burden_inline_tv_covar.stan instead of via the grid-based
 // ms_time_varying_covar_01 matrix. Guards on !ms_needs_inline_psa below prevent
-// double-counting. Non-PSA models (tumor) always have ms_needs_inline_psa = 0.
+// double-counting.
 
 // ============================================================================
 // 0→1 TRANSITION: Log Conditional Survival
