@@ -74,8 +74,8 @@ int<lower=0> n_time_invariant_covar;  // Number of time-invariant covariates
 // declaration works in both full models (where n_forecast_patients is in scope)
 // and the standalone model (where n_forecast_patients is a transformed constant).
 // In all enabled cases, n_forecast_patients == n_patients for PSA models.
-array[enable_ms_12_entry_psa_cov ? n_patients : 0] real psa_at_entry_12;
-array[enable_ms_32_entry_psa_cov ? n_patients : 0] real psa_at_entry_32;
+array[enable_ms_12_entry_covar ? n_patients : 0] real entry_covar_12;
+array[enable_ms_32_entry_covar ? n_patients : 0] real entry_covar_32;
 
 // MS-cohort subsetting (generic level/group selector)
 // ms_split_level == 0 → MS uses all forecast_patient_idx (default, backwards-compatible)

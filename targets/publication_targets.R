@@ -210,11 +210,6 @@ publication_targets <- list(
   ),
 
   tar_target(
-    tumor_priors,
-    get_tumor_priors(all_stan_data, elicited_priors, covar_design_matrix)
-  ),
-
-  tar_target(
     default_stan_data_settings,
     lst(
       fit_tumor_data = TRUE,
@@ -240,10 +235,10 @@ publication_targets <- list(
       enable_ms_visit_gated_latent_01 = 0L,
       share_dead_gp_shape = 0L,
       enable_ms_02_time_varying_cov = 0L,
-      enable_ms_12_entry_psa_cov = 0L,
-      enable_ms_32_entry_psa_cov = 0L,
-      psa_at_entry_12 = numeric(0),
-      psa_at_entry_32 = numeric(0),
+      enable_ms_12_entry_covar = 0L,
+      enable_ms_32_entry_covar = 0L,
+      entry_covar_12 = numeric(0),
+      entry_covar_32 = numeric(0),
 
       enable_level_intercept_tr = c(trial = level_intercept_mode["none"], patient = level_intercept_mode["re"]),
       enable_level_cov_tr = c(trial = FALSE, patient = FALSE),
@@ -265,6 +260,18 @@ publication_targets <- list(
       n_pfs_timepoints = nrow(pfs_timepoints_pub),
 
       n_shards = 1L
+    )
+  ),
+
+  # tumor_priors must be computed *after* default_stan_data_settings so
+  # get_tumor_priors() sees enable_ms_visit_gated_01 / enable_ms_02_time_varying_cov
+  # (those flags determine the dimension of the time_varying_coef_* hyperprior arrays).
+  tar_target(
+    tumor_priors,
+    get_tumor_priors(
+      c(all_stan_data, default_stan_data_settings),
+      elicited_priors,
+      covar_design_matrix
     )
   ),
 
