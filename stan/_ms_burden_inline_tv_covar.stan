@@ -1,7 +1,7 @@
 // ============================================================================
 // SHARED INLINE BURDEN TIME-VARYING COVARIATE (no states_full_grid)
 // ============================================================================
-// When ms_needs_inline_psa = TRUE (process noise OFF), compute the burden
+// When ms_needs_inline_burden = TRUE (process noise OFF), compute the burden
 // trajectory analytically per-patient and add the TV covariate contributions
 // directly into log_cond_surv_{01,02,03}. This avoids materializing the dense
 // states_full_grid matrix, which can be hundreds of thousands of autodiff vars.
@@ -16,7 +16,7 @@
 // MUST be included BEFORE: modules/multistate/cond_surv_transform.stan
 //   (which applies -exp() to convert log-hazard to log conditional survival)
 
-if (ms_needs_inline_psa) {
+if (ms_needs_inline_burden) {
   // ── 0→2: Dense inline up to per-patient event time ────────────────────────
   if (enable_ms_02 && enable_ms_02_time_varying_cov &&
       enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
