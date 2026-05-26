@@ -718,9 +718,8 @@ if (enable_ms_03) {
 
     log_cond_surv_03 += rep_matrix(linpred_pop_03, max_all_t);
   }
-
-  // Transform log-hazard to log conditional survival probability
-  log_cond_surv_03 = -exp(log_cond_surv_03);
+  // log_cond_surv_03 is transformed by cond_surv_transform.stan (after any
+  // inline burden TV-covariate contributions are added).
 }
 
 // ============================================================================
