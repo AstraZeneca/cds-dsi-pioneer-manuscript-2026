@@ -12,11 +12,23 @@
 
 // Declare covariate matrix (sized by n_time_varying_covar from data)
 // Structure: array[n_covar] of matrix[n_patients, max_all_t]
-// Only allocated when both multistate and time-varying covariates are enabled
-array[enable_ms_01 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 ? n_time_varying_covar : 0]
+// Only allocated when a downstream consumer of the dense grid actually exists:
+//   - continuous-time 0->1 hazard (visit-gating off)
+//   - visit-gated 0->1 in latent mode (reads dense grid at visit times)
+//   - 0->2 time-varying covariate path (always uses dense grid)
+// Visit-gated 0->1 in observed mode reads ms_obs_visit_covar_flat instead, so
+// the dense grid is unnecessary then.
+array[enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
+      ((enable_ms_01 && !enable_ms_visit_gated_01) ||
+       (enable_ms_01 && enable_ms_visit_gated_01 && enable_ms_visit_gated_latent_01) ||
+       (enable_ms_02 && enable_ms_02_time_varying_cov))
+      ? n_time_varying_covar : 0]
   matrix[n_patients, max_all_t] ms_time_varying_covar_01;
 
-if (enable_ms_01 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
+if (enable_ms_pop_time_varying_cov && n_time_varying_covar > 0 &&
+    ((enable_ms_01 && !enable_ms_visit_gated_01) ||
+     (enable_ms_01 && enable_ms_visit_gated_01 && enable_ms_visit_gated_latent_01) ||
+     (enable_ms_02 && enable_ms_02_time_varying_cov))) {
   for (i in 1:n_patients) {
     int visit_start, visit_end;
     (visit_start, visit_end) = get_pos(patient_visit_pos, i);

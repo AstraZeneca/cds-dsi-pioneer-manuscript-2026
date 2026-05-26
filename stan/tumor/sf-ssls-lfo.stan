@@ -50,6 +50,7 @@ transformed data {
   #include "modules/init/transformed_data.stan"
   #include "modules/state_space/transformed_data.stan"
   #include "modules/multistate/transformed_data.stan"
+  #include "_tumor_observed_covar_transformed_data.stan"
   #include "_lfo_transformed_data.stan"
 }
 

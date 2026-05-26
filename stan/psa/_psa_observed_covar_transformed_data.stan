@@ -1,21 +1,19 @@
 // ============================================================================
-// OBSERVED-PSA COVARIATE FOR VISIT-GATED 0->1 TRANSITION
+// PSA → SHARED OBSERVED-BURDEN COVARIATE ADAPTER
 // ============================================================================
-// Populates ms_obs_visit_covar_flat (declared in modules/multistate/transformed_data.stan)
-// from OBSERVED PSA values (data), not from the modeled state-space trajectory.
-//
-// No carry-forward: the value at unmeasured visits is 0 (placeholder), but
-// unmeasured visits are skipped by the likelihood (psa_measured[v] check).
+// Aliases the PSA-side names (log_psa_values, median_log_psa_obs,
+// iqr_log_psa_obs, psa_measured) onto the burden-agnostic names expected by
+// stan/_observed_covar_transformed_data.stan, then includes the shared
+// populator.
 //
 // MUST be included AFTER: modules/psa/transformed_data.stan
-//   (needs log_psa_values, psa_measured, median_log_psa_obs, iqr_log_psa_obs)
+//   (provides log_psa_values, psa_measured, median_log_psa_obs, iqr_log_psa_obs)
 // MUST be included AFTER: modules/multistate/transformed_data.stan
 //   (declares ms_obs_visit_covar_flat)
 
-if (enable_ms_visit_gated_01 && !enable_ms_visit_gated_latent_01) {
-  for (v in 1:sum(n_patient_visits)) {
-    ms_obs_visit_covar_flat[v] = psa_measured[v]
-      ? (log_psa_values[v] - median_log_psa_obs) / iqr_log_psa_obs
-      : 0.0;
-  }
-}
+vector[sum(n_patient_visits)] log_burden_obs = log_psa_values;
+real median_log_burden_obs = median_log_psa_obs;
+real iqr_log_burden_obs = iqr_log_psa_obs;
+array[sum(n_patient_visits)] int burden_measured = psa_measured;
+
+#include "../_observed_covar_transformed_data.stan"
