@@ -17,12 +17,23 @@
 // MUST be included AFTER: modules/multistate/transformed_data.stan
 //   (declares ms_obs_visit_covar_flat)
 
-vector[sum(n_patient_visits)] log_burden_obs = log_sum_tumor_size;
-real median_log_burden_obs = median_log_sld_obs;
-real iqr_log_burden_obs = iqr_log_sld_obs;
+// Build burden_measured mask + a finite log_burden_obs vector. We can't
+// reuse log_sum_tumor_size directly because it contains log(0) = -inf at
+// zero / below-LOD visits — even though those entries are masked out in
+// the standardization, Stan's autodiff still evaluates the masked branch
+// of the ternary and propagates -inf into the log probability gradient.
+vector[sum(n_patient_visits)] log_burden_obs;
 array[sum(n_patient_visits)] int burden_measured;
 for (v in 1:sum(n_patient_visits)) {
-  burden_measured[v] = sum_tumor_size[v] > 0 ? 1 : 0;
+  if (sum_tumor_size[v] > 0) {
+    burden_measured[v] = 1;
+    log_burden_obs[v] = log(sum_tumor_size[v]);
+  } else {
+    burden_measured[v] = 0;
+    log_burden_obs[v] = 0.0;  // placeholder; never read because mask is 0
+  }
 }
+real median_log_burden_obs = median_log_sld_obs;
+real iqr_log_burden_obs = iqr_log_sld_obs;
 
 #include "../_observed_covar_transformed_data.stan"
