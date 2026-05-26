@@ -121,10 +121,10 @@ if (enable_ms_01) {
       for (v in v_start:v_end) {
         int wk = t_patient_visits[v];
         if (wk >= 1 && wk <= max_all_t) {
-          real psa_covar = enable_ms_visit_gated_latent_01
+          real obs_covar = enable_ms_visit_gated_latent_01
             ? ms_time_varying_covar_01[1][j, wk]
-            : ms_obs_psa_covar_flat[v];
-          log_cond_surv_01[j, wk] += time_varying_coef_01[1] * psa_covar;
+            : ms_obs_visit_covar_flat[v];
+          log_cond_surv_01[j, wk] += time_varying_coef_01[1] * obs_covar;
         }
       }
     }
@@ -456,9 +456,9 @@ if (need_12_s_gp) {
 
   // PSA-at-entry covariate: shift sojourn hazard per patient based on PSA
   // burden at the moment of progression (entry into state 1).
-  if (enable_ms_12_entry_psa_cov) {
+  if (enable_ms_12_entry_covar) {
     log_cond_surv_12_s += rep_matrix(
-      coef_log_psa_12[1] * to_vector(psa_at_entry_12), ms_max_sojourn_t
+      coef_log_entry_covar_12[1] * to_vector(entry_covar_12), ms_max_sojourn_t
     );
   }
 
@@ -845,9 +845,9 @@ if (enable_ms_32) {
 
   // PSA-at-entry covariate: shift sojourn hazard per patient based on PSA
   // burden at the moment of dropout (entry into state 3).
-  if (enable_ms_32_entry_psa_cov) {
+  if (enable_ms_32_entry_covar) {
     log_cond_surv_32 += rep_matrix(
-      coef_log_psa_32[1] * to_vector(psa_at_entry_32), ms_max_sojourn_t_32
+      coef_log_entry_covar_32[1] * to_vector(entry_covar_32), ms_max_sojourn_t_32
     );
   }
 

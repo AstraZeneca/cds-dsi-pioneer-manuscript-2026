@@ -189,10 +189,10 @@ get_multistate_priors <- function(n_levels, n_time_varying_covar, n_time_invaria
     # Normal(0, 0.5): matches the scale of standardized log-PSA (~1 IQR unit = 1 SD
     # after standardization), so a unit change in standardized log-PSA gives a
     # hazard ratio of exp(±0.5) ≈ 1.65, allowing meaningful but not extreme effects.
-    coef_log_psa_12_mean = 0.0,
-    coef_log_psa_12_sd   = 0.5,
-    coef_log_psa_32_mean = 0.0,
-    coef_log_psa_32_sd   = 0.5,
+    coef_log_entry_covar_12_mean = 0.0,
+    coef_log_entry_covar_12_sd   = 0.5,
+    coef_log_entry_covar_32_mean = 0.0,
+    coef_log_entry_covar_32_sd   = 0.5,
 
     # Student-t hierarchy nu hyperparameters for multistate
     ms_nu_baseline_level_prior_alpha = rep(2, n_levels),

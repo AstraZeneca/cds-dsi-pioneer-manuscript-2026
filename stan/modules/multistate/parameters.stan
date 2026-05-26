@@ -152,8 +152,8 @@ array[enable_student_t_hierarchy ? n_levels : 0] real<lower=2> ms_nu_slope_level
 // ============================================================================
 // Scalar coefficient for standardized log-PSA at state entry.
 // Shifts the entire sojourn hazard up/down per patient based on PSA burden.
-array[enable_ms_12 && enable_ms_12_entry_psa_cov ? 1 : 0] real coef_log_psa_12;
-array[enable_ms_32 && enable_ms_32_entry_psa_cov ? 1 : 0] real coef_log_psa_32;
+array[enable_ms_12 && enable_ms_12_entry_covar ? 1 : 0] real coef_log_entry_covar_12;
+array[enable_ms_32 && enable_ms_32_entry_covar ? 1 : 0] real coef_log_entry_covar_32;
 
 // ============================================================================
 // 3→2 TRANSITION PARAMETERS (Sojourn time GP baseline hazard, semi-Markov)

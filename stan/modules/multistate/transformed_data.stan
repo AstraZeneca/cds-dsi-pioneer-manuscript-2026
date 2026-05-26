@@ -277,7 +277,7 @@ array[n_ms_patients] int ms_patient_idx;
 // Indexed identically to log_psa_values[v]: visit v in [1, sum(n_patient_visits)].
 // Only psa_measured[v]==1 entries are meaningful; others are 0 (never used).
 // Not allocated when enable_ms_visit_gated_latent_01=1 (latent PSA used instead).
-vector[compute_ms_obs_psa_covar_size(
+vector[compute_ms_obs_visit_covar_size(
   enable_ms_visit_gated_01, enable_ms_visit_gated_latent_01, size(t_patient_visits)
-)] ms_obs_psa_covar_flat;
+)] ms_obs_visit_covar_flat;
 
