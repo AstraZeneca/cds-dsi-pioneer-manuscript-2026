@@ -70,6 +70,7 @@ transformed parameters {
   real iqr_log_burden_obs = iqr_log_sld_obs;
   #include "_ms_burden_tv_covar.stan"
   #include "modules/multistate/transformed_parameters.stan"
+  #include "_ms_burden_inline_tv_covar.stan"
   #include "modules/multistate/cond_surv_transform.stan"
 }
 
