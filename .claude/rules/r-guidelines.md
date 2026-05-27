@@ -62,6 +62,7 @@ Rscript -e 'rsconnect::deploySite(siteDir = "quarto/publication/website", server
 
 **Published URLs:**
 - Pioneer: https://rstudio-connect.seml.scp.astrazeneca.net/content/4ec50122-5d33-43fa-831c-3df0243084f7/
+- Publication: https://rstudio-connect.seml.scp.astrazeneca.net/content/fdee3ad4-616a-42b4-b258-47dfb14ba50f/
 
 ### Key Configuration Files
 - `_quarto.yml` - Site configuration, navigation, theme settings (per-trial)
