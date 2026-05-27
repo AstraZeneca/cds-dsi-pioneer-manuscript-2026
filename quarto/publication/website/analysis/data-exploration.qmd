@@ -1,0 +1,79 @@
+---
+title: "Data Exploration"
+subtitle: "Overview of the publication analysis dataset"
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+source("_setup.R")
+all_analysis_data <- targets::tar_read(all_analysis_data, store = pub_store)
+```
+
+This page provides an overview of the publication dataset.
+
+## Patient Characteristics {#sec-patients}
+
+```{r}
+#| label: tbl-patient-characteristics
+#| tbl-cap: Summary of patient baseline characteristics in the publication dataset.
+
+all_analysis_data |>
+  distinct(usubjid, age, male, ecog, hgb, ldh_log, albumin) |>
+  summary()
+```
+
+## Enrollment Timeline {#sec-enrollment}
+
+```{r}
+#| label: fig-enrollment-timeline
+#| fig-cap: Patient treatment start dates in the publication dataset.
+#| fig-width: 10
+#| fig-height: 4
+
+all_analysis_data |>
+  distinct(usubjid, trtsdt) |>
+  ggplot(aes(x = trtsdt)) +
+  geom_histogram(binwidth = 14, fill = "#003865") +
+  scale_x_date("Treatment Start Date") +
+  scale_y_continuous("Patients enrolled") +
+  labs(title = "Publication cohort enrollment") +
+  NULL
+```
+
+## SLD Measurements {#sec-sld}
+
+```{r}
+#| label: fig-sld-observations
+#| fig-cap: Observed SLD trajectories for all patients.
+#| fig-width: 10
+#| fig-height: 6
+
+all_analysis_data |>
+  filter(!is.na(sld)) |>
+  ggplot(aes(x = t, y = sld, group = usubjid)) +
+  geom_line(alpha = 0.2, linewidth = 0.3, color = "#003865") +
+  scale_x_continuous("Weeks") +
+  scale_y_continuous("SLD [cm]") +
+  NULL
+```
+
+## Survival Follow-up {#sec-survival}
+
+```{r}
+#| label: fig-survival-followup
+#| fig-cap: PFS and follow-up time distribution.
+#| fig-width: 8
+#| fig-height: 4
+
+all_analysis_data |>
+  distinct(usubjid, pfs, right_censored) |>
+  ggplot(aes(x = pfs, fill = !right_censored)) +
+  geom_histogram(binwidth = 4, position = "stack") +
+  scale_x_continuous("PFS [Weeks]", breaks = seq(0, 200, 26)) +
+  scale_y_continuous("Patients") +
+  scale_fill_manual("Event", values = c("TRUE" = "#F0AB00", "FALSE" = "#003865"),
+                    labels = c("TRUE" = "Progression/Death", "FALSE" = "Censored")) +
+  NULL
+```
