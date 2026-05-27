@@ -72,7 +72,7 @@ decrease_prop |>
 coef_data |>
   filter(fit_type == "posterior") |>
   ggplot() +
-  stat_pointinterval(aes(xdist = .value, y = factor(n), color = .name),
+  stat_pointinterval(aes(xdist = .value, y = factor(n), color = .variable),
                      .width = c(0.5, 0.9)) +
   geom_vline(xintercept = 0, linetype = "dashed", alpha = 0.5) +
   scale_color_discrete("Parameter", type = AZ_palette) +
