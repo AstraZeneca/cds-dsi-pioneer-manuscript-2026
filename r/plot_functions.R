@@ -618,7 +618,7 @@ plot_level_decrease_prop <- function(res_data) {
     NULL
 }
 
-plot_confusion_matrix <- function(data, recorded, calculated, p, n = NULL) {
+plot_confusion_matrix <- function(data, recorded, calculated, p, n = NULL, label_size = 5) {
   nq <- enquo(n)
 
   data |>
@@ -634,7 +634,7 @@ plot_confusion_matrix <- function(data, recorded, calculated, p, n = NULL) {
     ) |>
     ggplot(aes(x = {{ recorded }}, y = {{ calculated }})) +
     geom_tile(aes(fill = {{ recorded }}, alpha = {{ p }}), color = "white", linewidth = 1.5) +
-    geom_text(aes(label = size_label), color = AZ_darkpurple, size = 5, lineheight = 0.9, fontface = "bold") +
+    geom_text(aes(label = size_label), color = AZ_darkpurple, size = label_size, lineheight = 0.9, fontface = "bold") +
     scale_fill_recist(guide = "none") +
     scale_alpha_continuous(range = c(0, 0.9), guide = "none") +
     scale_x_discrete(limits = fct_rev, drop = FALSE) +
