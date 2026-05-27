@@ -497,6 +497,46 @@ publication_targets <- list(
     ),
 
     tar_target(
+      tumor_ssls_noise_sd_rvar,
+      gather_rvars(tumor_ssls_draws_pop, measure_sd_sld) |>
+        mutate(fit_type = type)
+    ),
+
+    tar_map(
+      tibble(level = c("patient")),
+      names = "level",
+
+      tar_target(
+        tumor_ssls_rates_bpi,
+        get_tumor_ssls_level_param_binned(
+          tumor_ssls_draws_patient_params,
+          level,
+          param = str_c(
+            "{level}_",
+            c("log_decrease_rate", "log_growth_rate",
+              "log_growth_rate_residual", "log_decrease_rate_residual")
+          ),
+          type,
+          breaks = seq(-3, 3, 0.05),
+          inv_link_breaks = seq(0, 25, 0.5)
+        )
+      ),
+
+      tar_target(
+        tumor_ssls_decrease_prop_bpi,
+        get_tumor_ssls_level_param_binned(
+          tumor_ssls_draws_patient_params,
+          level,
+          param = str_c("frac_logit_loc_{level}"),
+          type,
+          breaks = seq(-5, 5, 0.05),
+          inv_link = rvar_plogis,
+          inv_link_breaks = seq(0, 1, 0.01)
+        )
+      )
+    ),
+
+    tar_target(
       tumor_ssls_coef,
       if (base_tumor_ssls_stan_data$n_covar > 0) {
         gather_rvars(
@@ -543,6 +583,24 @@ publication_targets <- list(
   tar_target(
     all_tumor_ssls_coef,
     bind_rows(tumor_ssls_coef_prior, tumor_ssls_coef_posterior)
+  ),
+  tar_target(
+    all_tumor_ssls_noise_sd_rvar,
+    bind_rows(tumor_ssls_noise_sd_rvar_prior, tumor_ssls_noise_sd_rvar_posterior)
+  ),
+  tar_target(
+    all_tumor_ssls_patient_rates_bpi,
+    bind_rows(
+      tumor_ssls_rates_bpi_patient_prior,
+      tumor_ssls_rates_bpi_patient_posterior
+    )
+  ),
+  tar_target(
+    all_tumor_ssls_patient_decrease_prop_bpi,
+    bind_rows(
+      tumor_ssls_decrease_prop_bpi_patient_prior,
+      tumor_ssls_decrease_prop_bpi_patient_posterior
+    )
   )
 )
 
