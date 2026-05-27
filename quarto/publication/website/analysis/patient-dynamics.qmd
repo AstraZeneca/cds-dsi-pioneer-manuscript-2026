@@ -28,13 +28,17 @@ sld_rc |> plot_sld_forecast_censored()
 
 ## SLD Posterior Predictive Check — Uncensored Patients {#sec-sld-ppc}
 
+Replicated vs observed SLD for patients who had a PFS event. Only the observed window is shown — no forecast beyond the event.
+
 ```{r}
 #| label: fig-sld-ppc
-#| fig-cap: Observed vs posterior-predicted SLD for uncensored patients.
+#| fig-cap: Observed vs posterior-predicted SLD for uncensored patients (observation window only).
 #| fig-width: 10
 #| fig-height: 12
 
-sld_unc |> plot_sld_forecast_censored()
+sld_unc |>
+  filter(stage == "obs") |>
+  plot_sld_forecast_censored()
 ```
 
 ## RECIST Predictions — Right-Censored Patients {#sec-recist-censored}
