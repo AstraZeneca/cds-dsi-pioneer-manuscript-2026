@@ -33,6 +33,9 @@ quarto render quarto/sclc/website
 
 # From project root — Pioneer
 quarto render quarto/pioneer/website
+
+# From project root — Publication
+quarto render quarto/publication/website
 ```
 
 Rendered sites are output to `quarto/<trial>/website/_site/`. To preview:
@@ -54,6 +57,7 @@ quarto render quarto/pioneer/website
 # Deploy via R
 Rscript -e 'rsconnect::deploySite(siteDir = "quarto/sclc/website", server = "az-connect", account = "kmjq089")'
 Rscript -e 'rsconnect::deploySite(siteDir = "quarto/pioneer/website", server = "az-connect", account = "kmjq089")'
+Rscript -e 'rsconnect::deploySite(siteDir = "quarto/publication/website", server = "az-connect", account = "kmjq089")'
 ```
 
 **Published URLs:**
@@ -63,6 +67,7 @@ Rscript -e 'rsconnect::deploySite(siteDir = "quarto/pioneer/website", server = "
 - `_quarto.yml` - Site configuration, navigation, theme settings (per-trial)
 - `quarto/_shared/az-colors.scss` - AstraZeneca color scheme (navy, gold, turquoise, etc.)
 - `quarto/sclc/website/az-theme.scss` - SCLC-01 theme (extends az-colors.scss)
+- `quarto/publication/website/az-theme.scss` — Publication site theme (same as pioneer)
 - `styles.css` - Custom CSS for hero section and layout
 - `_freeze/` - Cache directory for executed R code (speeds up rebuilds)
 - `quarto/_shared/images/` - PIONEER helmet logo
