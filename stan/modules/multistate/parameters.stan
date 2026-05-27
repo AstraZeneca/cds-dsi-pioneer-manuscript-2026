@@ -22,9 +22,15 @@ vector[n_raw_groups_ms_baseline_01] raw_log_lambda_gp_01_level_intercept;
 vector[n_cp_groups_ms_baseline_01]  cp_log_lambda_gp_01_level_intercept;
 
 // --- Population-level Time-varying Covariates ---
-// 0->1: 1 feature in visit-gated mode, n_time_varying_covar in continuous mode
+// 0->1 dimensioning rules:
+//   continuous mode (visit_gated_01 = 0): n_time_varying_covar features (full
+//     SLD + decrease + growth covariate set, evaluated continuously over weeks).
+//   latent visit-gated mode (visit_gated_01 = 1, latent = 1): n_time_varying_covar
+//     features (same modeled covariates, just evaluated at visit weeks).
+//   observed visit-gated mode (visit_gated_01 = 1, latent = 0): single feature
+//     (one observed biomarker via ms_obs_visit_covar_flat per visit).
 vector[enable_ms_01 && enable_ms_pop_time_varying_cov
-    ? (enable_ms_visit_gated_01 ? 1 : n_time_varying_covar) : 0] time_varying_coef_01;
+    ? (enable_ms_visit_gated_01 && !enable_ms_visit_gated_latent_01 ? 1 : n_time_varying_covar) : 0] time_varying_coef_01;
 
 // --- Population-level Time-invariant Covariates (QR space) ---
 vector[enable_ms_01 && enable_ms_pop_time_invariant_cov ? n_time_invariant_covar : 0] time_invariant_coef_qr_01;

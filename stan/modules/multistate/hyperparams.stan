@@ -107,10 +107,13 @@ array[n_levels] real<lower=0> fe_log_lambda_gp_32_s_level_intercept_sd;
 
 // --- Covariate Coefficient Hyperparameters ---
 // Time-varying coefficients (population-level)
+// 0->1 dimensioning matches parameters.stan:
+//   single coefficient only in observed visit-gated mode; full
+//   n_time_varying_covar in continuous mode and latent visit-gated mode.
 vector[enable_ms_pop_time_varying_cov
-    ? (enable_ms_visit_gated_01 ? 1 : n_time_varying_covar) : 0] time_varying_coef_01_mean;
+    ? (enable_ms_visit_gated_01 && !enable_ms_visit_gated_latent_01 ? 1 : n_time_varying_covar) : 0] time_varying_coef_01_mean;
 vector<lower=0>[enable_ms_pop_time_varying_cov
-    ? (enable_ms_visit_gated_01 ? 1 : n_time_varying_covar) : 0] time_varying_coef_01_sd;
+    ? (enable_ms_visit_gated_01 && !enable_ms_visit_gated_latent_01 ? 1 : n_time_varying_covar) : 0] time_varying_coef_01_sd;
 vector[enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov
     ? n_time_varying_covar : 0] time_varying_coef_02_mean;
 vector<lower=0>[enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov
