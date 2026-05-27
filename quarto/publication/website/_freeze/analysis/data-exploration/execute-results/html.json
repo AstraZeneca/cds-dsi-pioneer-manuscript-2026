@@ -1,0 +1,17 @@
+{
+  "hash": "7f4e0375feea12917743442bb5b8b85c",
+  "result": {
+    "engine": "knitr",
+    "markdown": "---\ntitle: \"Data Exploration\"\nsubtitle: \"Overview of the publication analysis dataset\"\n---\n\n\n\nThis page provides an overview of the publication dataset.\n\n## Patient Characteristics {#sec-patients}\n\n\n::: {#tbl-patient-characteristics .cell tbl-cap='Summary of patient baseline characteristics in the publication dataset.'}\n\n```{.r .cell-code}\nall_analysis_data |>\n  distinct(usubjid, age, male, ecog, hgb, ldh_log, albumin) |>\n  summary()\n```\n\n::: {.cell-output .cell-output-stdout}\n\n```\n   usubjid               age             male             ecog      \n Length:497         Min.   :28.00   Min.   :0.0000   Min.   :0.000  \n Class :character   1st Qu.:55.00   1st Qu.:0.0000   1st Qu.:0.000  \n Mode  :character   Median :61.00   Median :1.0000   Median :0.000  \n                    Mean   :61.32   Mean   :0.6298   Mean   :0.165  \n                    3rd Qu.:68.00   3rd Qu.:1.0000   3rd Qu.:0.000  \n                    Max.   :84.10   Max.   :1.0000   Max.   :1.000  \n      hgb           ldh_log         albumin     \n Min.   : 7.60   Min.   :4.682   Min.   :23.00  \n 1st Qu.:11.40   1st Qu.:5.657   1st Qu.:34.00  \n Median :12.20   Median :6.010   Median :37.00  \n Mean   :12.13   Mean   :6.096   Mean   :37.23  \n 3rd Qu.:12.80   3rd Qu.:6.491   3rd Qu.:40.90  \n Max.   :17.00   Max.   :8.868   Max.   :49.20  \n```\n\n\n:::\n:::\n\n\n## Follow-up Duration {#sec-followup}\n\n\n::: {.cell}\n\n```{.r .cell-code}\nall_analysis_data |>\n  ggplot(aes(x = patient_max_t)) +\n  geom_histogram(binwidth = 4, fill = \"#003865\") +\n  scale_x_continuous(\"Follow-up [Weeks]\", breaks = seq(0, 200, 26)) +\n  scale_y_continuous(\"Patients\") +\n  NULL\n```\n\n::: {.cell-output-display}\n![Distribution of patient follow-up duration (calendar weeks).](data-exploration_files/figure-html/fig-followup-duration-1.png){#fig-followup-duration width=768}\n:::\n:::\n\n\n## SLD Measurements {#sec-sld}\n\n\n::: {.cell}\n\n```{.r .cell-code}\nvisit_data |>\n  filter(!is.na(mmsumdiam)) |>\n  ggplot(aes(x = week, y = mmsumdiam, group = usubjid)) +\n  geom_line(alpha = 0.2, linewidth = 0.3, color = \"#003865\") +\n  scale_x_continuous(\"Weeks\") +\n  scale_y_continuous(\"SLD [mm]\") +\n  NULL\n```\n\n::: {.cell-output-display}\n![Observed SLD trajectories for all patients (mm sum of diameters).](data-exploration_files/figure-html/fig-sld-observations-1.png){#fig-sld-observations width=960}\n:::\n:::\n\n\n## Survival Follow-up {#sec-survival}\n\n\n::: {.cell}\n\n```{.r .cell-code}\nall_analysis_data |>\n  distinct(usubjid, pfs, right_censored) |>\n  ggplot(aes(x = pfs, fill = !right_censored)) +\n  geom_histogram(binwidth = 4, position = \"stack\") +\n  scale_x_continuous(\"PFS [Weeks]\", breaks = seq(0, 200, 26)) +\n  scale_y_continuous(\"Patients\") +\n  scale_fill_manual(\"Event\", values = c(\"TRUE\" = \"#F0AB00\", \"FALSE\" = \"#003865\"),\n                    labels = c(\"TRUE\" = \"Progression/Death\", \"FALSE\" = \"Censored\")) +\n  NULL\n```\n\n::: {.cell-output-display}\n![PFS distribution by censoring status.](data-exploration_files/figure-html/fig-survival-followup-1.png){#fig-survival-followup width=768}\n:::\n:::\n\n",
+    "supporting": [
+      "data-exploration_files"
+    ],
+    "filters": [
+      "rmarkdown/pagebreak.lua"
+    ],
+    "includes": {},
+    "engineDependencies": {},
+    "preserve": {},
+    "postProcess": true
+  }
+}
