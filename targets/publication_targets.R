@@ -1,0 +1,511 @@
+if (!exists("init_project")) source(here::here(".Rprofile"))
+init_project()
+
+# The publication pipeline reuses the sclc model code (Stan model,
+# multistate logic, initializers, priors, prepare_tumor_stan_data). init_project()
+# only sources these when TAR_PROJECT == "sclc", so source them explicitly
+# here for TAR_PROJECT == "publication".
+source(here::here("r", "sclc", "priors.R"))
+source(here::here("r", "multistate.R"))
+source(here::here("r", "sclc", "prepare_analysis_data.R"))
+source(here::here("r", "sclc", "accuracy.R"))
+source(here::here("r", "sclc", "initializers.R"))
+source(here::here("r", "publication", "prepare_analysis_data.R"))
+
+publication_data_path <- "/mnt/data/PUBLICATION"
+publication_output_path <- tar_path_store() |> fs::path_dir()
+publication_artifacts_path <- str_replace(
+  publication_output_path,
+  "^/mnt/data/analysis-results",
+  "/mnt/artifacts/"
+)
+
+fs::dir_create(file.path(publication_output_path, "fit"))
+fs::dir_create(file.path(publication_artifacts_path, "models"))
+fs::dir_create(file.path(publication_artifacts_path, "crew_logs"))
+
+controller_default <- crew_controller_local(name = "default", workers = 4)
+controller_fit <- crew_controller_local(name = "fit", workers = 4)
+controller_many_samples <- crew_controller_local(name = "many samples", workers = 4)
+
+tar_option_set(
+  packages = c(
+    "magrittr",
+    "tidyverse",
+    "rlang",
+    "here",
+    "targets",
+    "cmdstanr",
+    "tidybayes",
+    "posterior",
+    "loo",
+    "recipes",
+    "arrow"
+  ),
+  controller = crew_controller_group(
+    controller_default,
+    controller_fit,
+    controller_many_samples
+  ),
+  resources = tar_resources(crew = tar_resources_crew(controller = "default")),
+  memory = "transient",
+  garbage_collection = TRUE,
+  format = rvar_safe_qs2_format,
+  error = "continue",
+  seed = 26091468
+)
+
+cat("TAR_PROJECT =", Sys.getenv("TAR_PROJECT"), "\n")
+cat("Current git branch =", gert::git_branch(), "\n")
+cat("User =", Sys.getenv("DOMINO_STARTING_USERNAME"), "\n")
+cat("Targets store =", tar_path_store(), "\n")
+cat("publication_output_path =", publication_output_path, "\n")
+
+km_quant <- seq(0.2, 0.8, by = 0.05)
+
+pfs_timepoints_pub <- enframe(c(6, 9, 12, 15, 18), name = "n", value = "timepoint")
+
+# Covariates available in the publication data (no pdl1/histology/ctdna)
+covar_formula_pub <- ~ age + male + ecog + hgb + ldh_log + albumin
+
+publication_targets <- list(
+
+  # Track initializer file so changes invalidate the initializer targets
+  tar_target(
+    initializers_fixed_file,
+    "r/sclc/initializers_fixed.R",
+    format = "file"
+  ),
+
+  # Model -----------------------------------------------------------------------
+
+  tar_target(
+    tumor_ssls_model_file,
+    here("stan", "tumor", "sf-ssm-log-space.stan"),
+    format = "file"
+  ),
+  tar_target(
+    tumor_ssls_include_files,
+    find_stan_includes(tumor_ssls_model_file),
+    format = "file"
+  ),
+  tar_target(
+    tumor_ssls_exe_hash,
+    build_model_exe_hash(
+      tumor_ssls_model_file,
+      tumor_ssls_include_files,
+      publication_artifacts_path,
+      include_paths = c(here("stan"), here("stan", "tumor"))
+    ),
+    error = "stop",
+    cue = tar_cue("always")
+  ),
+
+  # Data ------------------------------------------------------------------------
+
+  tar_target(
+    target_patient_data_file,
+    file.path(publication_data_path, "target", "cooked_patient_data.csv"),
+    format = "file"
+  ),
+  tar_target(
+    target_visit_data_file,
+    file.path(publication_data_path, "target", "assessment_visit_data.csv"),
+    format = "file"
+  ),
+  tar_target(
+    historical_patient_data_file,
+    file.path(publication_data_path, "historical", "cooked_patient_data.csv"),
+    format = "file"
+  ),
+  tar_target(
+    historical_visit_data_file,
+    file.path(publication_data_path, "historical", "assessment_visit_data.csv"),
+    format = "file"
+  ),
+
+  tar_target(
+    target_patient_data,
+    read_csv(target_patient_data_file, col_types = cols(studyid = "c", usubjid = "c"), show_col_types = FALSE) |>
+      mutate(across(where(is.character), as_factor))
+  ),
+  tar_target(
+    historical_patient_data,
+    read_csv(historical_patient_data_file, col_types = cols(studyid = "c", usubjid = "c"), show_col_types = FALSE) |>
+      mutate(across(where(is.character), as_factor))
+  ),
+
+  tar_target(
+    target_visit_data,
+    read_csv(target_visit_data_file, col_types = cols(studyid = "c", usubjid = "c"), show_col_types = FALSE) |>
+      filter(!is.na(mmsumdiam)) |>
+      determine_visit_data_response()
+  ),
+  tar_target(
+    historical_visit_data,
+    read_csv(historical_visit_data_file, col_types = cols(studyid = "c", usubjid = "c"), show_col_types = FALSE) |>
+      filter(!is.na(mmsumdiam)) |>
+      determine_visit_data_response()
+  ),
+
+  tar_target(
+    all_analysis_data,
+    prepare_publication_analysis_data(
+      target_patient_data,
+      historical_patient_data,
+      target_visit_data,
+      historical_visit_data
+    )
+  ),
+
+  # Observed KM curves ----------------------------------------------------------
+
+  tar_target(
+    km_trial_pfs,
+    get_km_res(all_analysis_data, pfs, right_censored, probs = km_quant)
+  ),
+  tar_target(
+    km_trial_os,
+    all_analysis_data |>
+      mutate(
+        os_time = if_else(death, death_week, patient_max_t),
+        os_censored = !death,
+        interval_censored = 0L
+      ) |>
+      get_km_res(os_time, os_censored, probs = km_quant)
+  ),
+
+  # Covariates ------------------------------------------------------------------
+
+  tar_target(
+    covar_design_matrix,
+    prepare_covar_design_matrix(all_analysis_data, covar_formula_pub)
+  ),
+
+  tar_target(
+    elicited_priors,
+    prepare_publication_elicited_priors(
+      covar_design_matrix,
+      shrink_mean = 1 / 2,
+      shrink_sd = 1 / 2
+    )
+  ),
+
+  # No conditioning subgroups (no pdl1/histology in publication data)
+  tar_target(cond_groups, list()),
+
+  # Stan data -------------------------------------------------------------------
+
+  tar_target(
+    all_stan_data,
+    prepare_tumor_stan_data(
+      all_analysis_data,
+      covar_design_matrix,
+      cond_groups,
+      km_quant,
+      extend_max_all_t = 200L,
+      forecast_observation_interval = 6L
+    ),
+    error = "stop"
+  ),
+
+  tar_target(
+    default_stan_data_settings,
+    lst(
+      fit_tumor_data = TRUE,
+      fit_multistate_data = TRUE,
+      enable_states_full_grid = FALSE,
+      sf_rep_T = 20,
+      debug = FALSE,
+
+      enable_ms_01 = TRUE,
+      enable_ms_02 = TRUE,
+      enable_ms_12 = TRUE,
+      enable_ms_03 = TRUE,
+      enable_ms_32 = TRUE,
+
+      ms_time_scale_12 = 1L,
+
+      enable_ms_level_baseline_hazard = c(trial = 3L, patient = 0L),
+
+      enable_ms_pop_time_varying_cov = TRUE,
+      enable_ms_pop_time_invariant_cov = TRUE,
+      enable_ms_level_cov = c(trial = FALSE, patient = FALSE),
+      # Visit-gated 0->1 disabled. The tumor-side wiring works for data
+      # validation but produces a non-finite log-probability gradient at
+      # initialization (cause not yet isolated; tracked in a separate issue).
+      # Use the continuous-time path that sclc also uses.
+      enable_ms_visit_gated_01 = 0L,
+      enable_ms_visit_gated_latent_01 = 0L,
+      share_dead_gp_shape = 0L,
+      enable_ms_02_time_varying_cov = 0L,
+      enable_ms_12_entry_covar = 0L,
+      enable_ms_32_entry_covar = 0L,
+      entry_covar_12 = numeric(0),
+      entry_covar_32 = numeric(0),
+
+      enable_level_intercept_tr = c(trial = level_intercept_mode["none"], patient = level_intercept_mode["re"]),
+      enable_level_cov_tr = c(trial = FALSE, patient = FALSE),
+      enable_pop_cov_tr = FALSE,
+      enable_pop_process_noise_tr = FALSE,
+      enable_patient_process_noise_tr = FALSE,
+      enable_patient_process_noise_sd_tr = FALSE,
+      enable_patient_process_noise_phi_tr = FALSE,
+
+      enable_level_intercept_frac = c(trial = level_intercept_mode["none"], patient = level_intercept_mode["re"]),
+      enable_level_cov_frac = c(trial = FALSE, patient = FALSE),
+      enable_pop_cov_frac = TRUE,
+
+      enable_level_intercept_init = c(trial = level_intercept_mode["none"], patient = level_intercept_mode["re"]),
+      enable_level_cov_init = c(trial = FALSE, patient = FALSE),
+      enable_pop_cov_init = TRUE,
+
+      pfs_timepoints = pfs_timepoints_pub$timepoint,
+      n_pfs_timepoints = nrow(pfs_timepoints_pub),
+
+      n_shards = 1L
+    )
+  ),
+
+  # tumor_priors must be computed *after* default_stan_data_settings so
+  # get_tumor_priors() sees enable_ms_visit_gated_01 / enable_ms_02_time_varying_cov
+  # (those flags determine the dimension of the time_varying_coef_* hyperprior arrays).
+  tar_target(
+    tumor_priors,
+    get_tumor_priors(
+      c(all_stan_data, default_stan_data_settings),
+      elicited_priors,
+      covar_design_matrix
+    )
+  ),
+
+  tar_target(
+    base_tumor_ssls_stan_data,
+    all_stan_data |>
+      add_tumor_priors(tumor_priors) |>
+      c(default_stan_data_settings) |>
+      c(derive_ms_fields(all_analysis_data, "full"))
+  ),
+
+  # Fits ------------------------------------------------------------------------
+
+  tar_map(
+    tibble(
+      type = c("prior", "posterior"),
+      fit_data = c(FALSE, TRUE),
+      base_name = c("prior_tumor_ssls", "tumor_ssls"),
+      iter_sampling = 500,
+      iter_warmup = c(300L, 500L),
+      chains = 4L
+    ),
+    names = "type",
+
+    tar_target(
+      tumor_ssls_stan_data,
+      base_tumor_ssls_stan_data |>
+        list_assign(
+          fit_tumor_data = fit_data,
+          fit_multistate_data = fit_data,
+          forecast = TRUE
+        )
+    ),
+
+    tar_target(
+      tumor_ssls_initializer,
+      {
+        source(initializers_fixed_file)
+        create_tumor_ssls_initializer_fixed(tumor_ssls_stan_data)
+      }
+    ),
+
+    tar_target(
+      tumor_ssls_res,
+      sample_and_save(
+        tumor_ssls_exe_hash$exe_file,
+        tumor_ssls_stan_data,
+        iter_warmup = iter_warmup,
+        iter_sampling = iter_sampling,
+        save_warmup = TRUE,
+        parallel_chains = chains,
+        chains = chains,
+        threads_per_chain = tumor_ssls_stan_data$n_shards,
+        init = tumor_ssls_initializer,
+        adapt_delta = 0.8,
+        save_metric = TRUE,
+        output_dir = file.path(publication_output_path, "fit", base_name),
+        timestamp = fit_output_timestamp
+      ),
+      storage = "main",
+      resources = tar_resources(
+        crew = tar_resources_crew(controller = "fit")
+      )
+    ),
+
+    tar_target(
+      tumor_ssls_nuts_param,
+      bayesplot::nuts_params(tumor_ssls_res)
+    ),
+
+    tar_target(
+      tumor_ssls_nuts_summary,
+      summarize_nuts(tumor_ssls_nuts_param)
+    ),
+
+    # Draw extraction -----------------------------------------------------------
+
+    tar_target(
+      tumor_ssls_draws_pop,
+      select_draws(
+        tumor_ssls_res,
+        ends_with("_pop"),
+        starts_with("pop_"),
+        measure_sd_sld,
+        matches("_sd_level_"),
+        matches("^(time_invariant|time_varying)_coef")
+      ),
+      resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
+    ),
+
+    tar_target(
+      tumor_ssls_draws_patient_params,
+      select_draws(
+        tumor_ssls_res,
+        matches("^(frac|init|tr)_.+_patient"),
+        matches("patient_log_(growth|decrease)_rate")
+      ),
+      resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
+    ),
+
+    tar_target(
+      tumor_ssls_draws_sld_recist,
+      select_draws(
+        tumor_ssls_res,
+        rep_patient_log_sld,
+        forecast_patient_log_sld,
+        rep_recist,
+        forecast_obs_recist
+      ),
+      resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
+    ),
+
+    tar_target(
+      tumor_ssls_draws_endpoints,
+      select_draws(
+        tumor_ssls_res,
+        matches("(spop|sample)(_target|_ms)?_(((quant_)?(pfs|os))|km_est|right_censored|(pfs|os)_n)"),
+        matches("(spop|sample)_target_(((un)?confirmed_response)|orr)"),
+        matches("(spop|sample)_(os|pfs)_(quant|km_est|n)"),
+        matches("(spop|sample)_os(_censored)?"),
+        matches("(spop|sample)_(os|pfs)_quant_exceeds_max"),
+        recist_confusion_matrix
+      ),
+      resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
+    ),
+
+    tar_target(
+      tumor_ssls_convergence,
+      check_convergence(tumor_ssls_draws_pop, tumor_ssls_draws_patient_params)
+    ),
+
+    # KM curves -----------------------------------------------------------------
+
+    tar_target(
+      tumor_ssls_km_rvar,
+      tumor_ssls_draws_endpoints |>
+        recover_types(select(all_analysis_data, trial)) |>
+        spread_rvars(
+          sample_target_km_est[trial, t],
+          spop_target_km_est[trial, t],
+          sample_ms_pfs_km_est[trial, t],
+          spop_ms_pfs_km_est[trial, t],
+          sample_pfs_km_est[trial, t],
+          spop_pfs_km_est[trial, t]
+        ) |>
+        mutate(fit_type = type)
+    ),
+
+    tar_target(
+      tumor_ssls_km_os_rvar,
+      tumor_ssls_draws_endpoints |>
+        recover_types(select(all_analysis_data, trial)) |>
+        spread_rvars(
+          sample_os_km_est[trial, t],
+          spop_os_km_est[trial, t]
+        ) |>
+        mutate(fit_type = type)
+    ),
+
+    tar_target(
+      tumor_ssls_trial_pfs_quant,
+      tumor_ssls_draws_endpoints |>
+        recover_types(select(all_analysis_data, trial)) |>
+        spread_rvars(
+          sample_target_pfs_quant[trial, q],
+          spop_target_pfs_quant[trial, q],
+          sample_ms_pfs_quant[trial, q],
+          spop_ms_pfs_quant[trial, q],
+          sample_pfs_quant[trial, q],
+          spop_pfs_quant[trial, q]
+        ) |>
+        left_join(
+          enframe(tumor_ssls_stan_data$pfs_quantiles, name = "q", value = "quantile"),
+          by = "q"
+        ) |>
+        mutate(fit_type = type)
+    ),
+
+    # Population parameters -----------------------------------------------------
+
+    tar_target(
+      tumor_ssls_rates_rvar,
+      gather_rvars(
+        tumor_ssls_draws_pop,
+        tr_loc_pop,
+        frac_logit_loc_pop,
+        tr_sd_level_intercept,
+        pop_log_decrease_rate,
+        pop_log_growth_rate
+      ) |>
+        mutate(.value_exp = exp(.value), fit_type = type)
+    ),
+
+    tar_target(
+      tumor_ssls_coef,
+      if (base_tumor_ssls_stan_data$n_covar > 0) {
+        gather_rvars(
+          tumor_ssls_draws_pop,
+          frac_coef_qr_pop[n],
+          init_coef_qr_pop[n],
+          time_invariant_coef_qr_01[n],
+          time_varying_coef_01[n]
+        ) |>
+          mutate(fit_type = type, .exp_value = exp(.value))
+      }
+    )
+  ),
+
+  # Combined prior + posterior --------------------------------------------------
+
+  tar_target(
+    all_tumor_ssls_km_rvar,
+    bind_rows(tumor_ssls_km_rvar_prior, tumor_ssls_km_rvar_posterior)
+  ),
+  tar_target(
+    all_tumor_ssls_km_os_rvar,
+    bind_rows(tumor_ssls_km_os_rvar_prior, tumor_ssls_km_os_rvar_posterior)
+  ),
+  tar_target(
+    all_tumor_ssls_trial_pfs_quant,
+    bind_rows(tumor_ssls_trial_pfs_quant_prior, tumor_ssls_trial_pfs_quant_posterior)
+  ),
+  tar_target(
+    all_tumor_ssls_rates_rvar,
+    bind_rows(tumor_ssls_rates_rvar_prior, tumor_ssls_rates_rvar_posterior)
+  ),
+  tar_target(
+    all_tumor_ssls_coef,
+    bind_rows(tumor_ssls_coef_prior, tumor_ssls_coef_posterior)
+  )
+)
+
+publication_targets

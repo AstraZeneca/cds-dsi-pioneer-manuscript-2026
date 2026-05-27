@@ -240,11 +240,11 @@ ms_init_values <- function(env) {
       },
 
       # PSA-at-state-entry covariate coefficients
-      coef_log_psa_12 = if (enable_ms_12 && isTRUE(enable_ms_12_entry_psa_cov == 1L)) {
-        array(rnorm(1, coef_log_psa_12_mean, coef_log_psa_12_sd * 0.3), dim = 1)
+      coef_log_entry_covar_12 = if (enable_ms_12 && isTRUE(enable_ms_12_entry_covar == 1L)) {
+        array(rnorm(1, coef_log_entry_covar_12_mean, coef_log_entry_covar_12_sd * 0.3), dim = 1)
       },
-      coef_log_psa_32 = if (enable_ms_32 && isTRUE(enable_ms_32_entry_psa_cov == 1L)) {
-        array(rnorm(1, coef_log_psa_32_mean, coef_log_psa_32_sd * 0.3), dim = 1)
+      coef_log_entry_covar_32 = if (enable_ms_32 && isTRUE(enable_ms_32_entry_covar == 1L)) {
+        array(rnorm(1, coef_log_entry_covar_32_mean, coef_log_entry_covar_32_sd * 0.3), dim = 1)
       },
     )
   })

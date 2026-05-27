@@ -290,10 +290,10 @@ test_that("compute_ms_transition_group_counts: correct group counts for all tran
 })
 
 # ============================================================================
-# B4: compute_ms_obs_psa_covar_size
+# B4: compute_ms_obs_visit_covar_size
 # ============================================================================
 
-test_that("compute_ms_obs_psa_covar_size: size is n_visits only for visit_gated=1, latent=0", {
+test_that("compute_ms_obs_visit_covar_size: size is n_visits only for visit_gated=1, latent=0", {
   n_visits <- 42L
 
   combos_b4 <- expand.grid(

@@ -57,5 +57,5 @@ int<lower=0, upper=1> enable_ms_02_time_varying_cov;
 // When enabled, the last observed log-PSA before entering state 1 (1→2) or
 // state 3 (3→2) is used as a time-invariant patient-level covariate, shifting
 // the entire sojourn hazard up/down based on PSA burden at transition entry.
-int<lower=0, upper=1> enable_ms_12_entry_psa_cov;
-int<lower=0, upper=1> enable_ms_32_entry_psa_cov;
+int<lower=0, upper=1> enable_ms_12_entry_covar;
+int<lower=0, upper=1> enable_ms_32_entry_covar;
