@@ -57,6 +57,6 @@ test_that("visit_calendar_day equals calendar_day + ady - 1", {
   target_row <- result |> filter(fct_match(trial, "lilly_cxcr4"))
   expect_equal(
     target_row$visit_data[[1]]$visit_calendar_day,
-    100L + target_row$visit_data[[1]]$ady - 1L
+    100L  # calendar_day=100, ady=1 => 100 + 1 - 1 = 100
   )
 })
