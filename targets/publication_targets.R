@@ -536,6 +536,85 @@ publication_targets <- list(
       )
     ),
 
+    tar_map(
+      tibble(
+        event_type   = c("right_censored", "uncensored"),
+        event_cond   = c(expr(right_censored), expr(!right_censored)),
+        event_slicer = c(\(d, n) d, \(d, n) slice_sample(d, n = n))
+      ),
+      names = "event_type",
+
+      tar_target(
+        state_patient_subsample,
+        get_state_patients(
+          all_analysis_data,
+          by = trial,
+          cond = event_cond,
+          slicer = event_slicer,
+          sample_size = 40
+        )
+      ),
+
+      tar_target(
+        tumor_ssls_rep_sld_rvar,
+        get_sld(tumor_ssls_draws_sld_recist, state_patient_subsample) |>
+          mutate(fit_type = type),
+        resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
+      ),
+
+      tar_target(
+        tumor_ssls_forecast_sld_rvar,
+        get_forecast_sld(
+          tumor_ssls_draws_sld_recist,
+          all_analysis_data,
+          state_patient_subsample,
+          forecast_extent = extend_max_all_t
+        ) |>
+          mutate(fit_type = type),
+        resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
+      ),
+
+      tar_target(
+        tumor_ssls_staged_sld_rvar,
+        bind_rows(
+          obs      = tumor_ssls_rep_sld_rvar |> rename(patient_sld = rep_patient_sld),
+          forecast = tumor_ssls_forecast_sld_rvar |> rename(patient_sld = forecast_patient_sld),
+          .id = "stage"
+        )
+      ),
+
+      tar_target(
+        tumor_ssls_recist_rvar,
+        get_recist(tumor_ssls_draws_sld_recist, state_patient_subsample) |>
+          mutate(fit_type = type),
+        resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
+      ),
+
+      tar_target(
+        tumor_ssls_forecast_recist_rvar,
+        get_forecast_recist(
+          tumor_ssls_draws_sld_recist,
+          all_analysis_data,
+          state_patient_subsample,
+          forecast_extent = extend_max_all_t
+        ) |>
+          mutate(fit_type = type),
+        resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
+      ),
+
+      tar_target(
+        tumor_ssls_staged_recist_rvar,
+        bind_rows(
+          obs      = tumor_ssls_recist_rvar |>
+            filter(!is.na(response)) |>
+            rename(recist = rep_recist),
+          forecast = tumor_ssls_forecast_recist_rvar |>
+            rename(recist = forecast_obs_recist),
+          .id = "stage"
+        )
+      )
+    ),
+
     tar_target(
       tumor_ssls_coef,
       if (base_tumor_ssls_stan_data$n_covar > 0) {
