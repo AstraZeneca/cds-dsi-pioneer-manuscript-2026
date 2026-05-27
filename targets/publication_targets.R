@@ -711,6 +711,103 @@ publication_targets <- list(
       tumor_ssls_decrease_prop_bpi_patient_prior,
       tumor_ssls_decrease_prop_bpi_patient_posterior
     )
+  ),
+
+  # LFO cross-validation -------------------------------------------------------
+
+  tar_target(
+    lfo_cutoffs,
+    get_lfo_cutoffs(
+      all_analysis_data,
+      lfo_step,
+      target_trial = levels(all_analysis_data$trial)[1]
+    )
+  ),
+
+  tar_target(
+    cutoff_all_analysis_data,
+    apply_calendar_cutoff(
+      all_analysis_data,
+      lfo_cutoffs$cutoff_calendar_day,
+      require_post_baseline = TRUE
+    ) |>
+      mutate(cutoff_calendar_day = lfo_cutoffs$cutoff_calendar_day),
+    pattern = map(lfo_cutoffs),
+    iteration = "list"
+  ),
+
+  tar_group_count(grouped_lfo_cutoffs, lfo_cutoffs, lfo_groups),
+
+  tar_target(
+    tumor_ssls_lfo,
+    lfo(
+      base_tumor_ssls_stan_data,
+      lfo_tumor_ssls_exe_hash$exe_file,
+      grouped_lfo_cutoffs,
+      lfo_cutoffs,
+      publication_output_path,
+      "lfo_tumor_ssls",
+      NULL,
+      fit_output_timestamp,
+      verbose = TRUE,
+      fit_only = FALSE,
+      exact = TRUE,
+      iter_warmup = 500,
+      iter_sampling = 500,
+      save_warmup = lfo_save_warmup,
+      parallel_chains = 4,
+      adapt_delta = 0.8,
+      threads_per_chain = base_tumor_ssls_stan_data$n_shards,
+      future_window = 2,
+      initializer_factory = function(stan_data, save_dir, run_id) {
+        source(initializers_fixed_file)
+        create_tumor_ssls_initializer_fixed(stan_data, save_dir, run_id)
+      }
+    ),
+    resources = tar_resources(crew = tar_resources_crew(controller = "lfo")),
+    pattern = map(grouped_lfo_cutoffs)
+  ),
+
+  tar_target(
+    tumor_ssls_lfo_clean,
+    clean_lfo_results(tumor_ssls_lfo) |>
+      select(refit_n, n, starts_with("E_"), fit) |>
+      left_join(lfo_cutoffs, by = "n")
+  ),
+
+  tar_target(
+    tumor_ssls_lfo_clean_lite,
+    select(tumor_ssls_lfo_clean, !fit)
+  ),
+
+  tar_target(
+    full_oos_confusion_matrix,
+    get_oos_confusion_marix(
+      tumor_ssls_lfo_clean,
+      recover_data = all_analysis_data |>
+        select(trial, visit_data) |>
+        unnest(visit_data) |>
+        transmute(trial, response, pred_response = response)
+    ),
+    pattern = map(tumor_ssls_lfo_clean)
+  ),
+
+  tar_target(
+    oos_confusion_matrix,
+    full_oos_confusion_matrix |>
+      group_by(n, m, response) |>
+      mutate(
+        total = rvar_sum(oos_recist_confusion_matrix),
+        prop  = oos_recist_confusion_matrix / total
+      ) |>
+      group_by(response, pred_response) |>
+      summarize(
+        count     = rvar_sum(oos_recist_confusion_matrix),
+        mean_pred = rvar_weighted_mean(prop, w),
+        cell_size = n(),
+        .groups   = "drop"
+      ) |>
+      mutate(se = sd(mean_pred) / sqrt(cell_size))
   )
 )
 
