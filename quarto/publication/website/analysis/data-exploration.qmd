@@ -9,6 +9,9 @@ subtitle: "Overview of the publication analysis dataset"
 
 source("_setup.R")
 all_analysis_data <- targets::tar_read(all_analysis_data, store = pub_store)
+visit_data <- all_analysis_data |>
+  select(usubjid, trial, visit_data) |>
+  unnest(visit_data)
 ```
 
 This page provides an overview of the publication dataset.
@@ -24,21 +27,19 @@ all_analysis_data |>
   summary()
 ```
 
-## Enrollment Timeline {#sec-enrollment}
+## Follow-up Duration {#sec-followup}
 
 ```{r}
-#| label: fig-enrollment-timeline
-#| fig-cap: Patient treatment start dates in the publication dataset.
-#| fig-width: 10
+#| label: fig-followup-duration
+#| fig-cap: Distribution of patient follow-up duration (calendar weeks).
+#| fig-width: 8
 #| fig-height: 4
 
 all_analysis_data |>
-  distinct(usubjid, trtsdt) |>
-  ggplot(aes(x = trtsdt)) +
-  geom_histogram(binwidth = 14, fill = "#003865") +
-  scale_x_date("Treatment Start Date") +
-  scale_y_continuous("Patients enrolled") +
-  labs(title = "Publication cohort enrollment") +
+  ggplot(aes(x = patient_max_t)) +
+  geom_histogram(binwidth = 4, fill = "#003865") +
+  scale_x_continuous("Follow-up [Weeks]", breaks = seq(0, 200, 26)) +
+  scale_y_continuous("Patients") +
   NULL
 ```
 
@@ -46,16 +47,16 @@ all_analysis_data |>
 
 ```{r}
 #| label: fig-sld-observations
-#| fig-cap: Observed SLD trajectories for all patients.
+#| fig-cap: Observed SLD trajectories for all patients (mm sum of diameters).
 #| fig-width: 10
 #| fig-height: 6
 
-all_analysis_data |>
-  filter(!is.na(sld)) |>
-  ggplot(aes(x = t, y = sld, group = usubjid)) +
+visit_data |>
+  filter(!is.na(mmsumdiam)) |>
+  ggplot(aes(x = week, y = mmsumdiam, group = usubjid)) +
   geom_line(alpha = 0.2, linewidth = 0.3, color = "#003865") +
   scale_x_continuous("Weeks") +
-  scale_y_continuous("SLD [cm]") +
+  scale_y_continuous("SLD [mm]") +
   NULL
 ```
 
@@ -63,7 +64,7 @@ all_analysis_data |>
 
 ```{r}
 #| label: fig-survival-followup
-#| fig-cap: PFS and follow-up time distribution.
+#| fig-cap: PFS distribution by censoring status.
 #| fig-width: 8
 #| fig-height: 4
 
