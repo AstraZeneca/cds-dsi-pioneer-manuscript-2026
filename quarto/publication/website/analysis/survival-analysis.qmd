@@ -1,0 +1,67 @@
+---
+title: "Survival Analysis"
+subtitle: "Kaplan-Meier forecasts and observed PFS"
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+source("../_setup.R")
+km_data     <- targets::tar_read(all_tumor_ssls_km_rvar, store = pub_store)
+obs_km_data <- targets::tar_read(km_trial_pfs,           store = pub_store)
+```
+
+## PFS Kaplan-Meier Curves {#sec-pfs-km}
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+```{r}
+#| label: fig-pfs-km-sample
+#| fig-cap: Sample-based PFS Kaplan-Meier curves (posterior). Shaded bands show 50% and 90% credible intervals.
+
+km_data |>
+  filter(fit_type == "posterior") |>
+  plot_km(
+    km_est_var = sample_pfs_km_est,
+    obs_km_data = obs_km_data |>
+      filter(fct_match(btype, "ub")) |>
+      select(!quantiles) |>
+      unnest(km_data)
+  )
+```
+
+### Superpopulation
+
+```{r}
+#| label: fig-pfs-km-spop
+#| fig-cap: Superpopulation PFS Kaplan-Meier curves (posterior).
+
+km_data |>
+  filter(fit_type == "posterior") |>
+  plot_km(
+    km_est_var = spop_pfs_km_est,
+    obs_km_data = obs_km_data |>
+      filter(fct_match(btype, "ub")) |>
+      select(!quantiles) |>
+      unnest(km_data)
+  )
+```
+
+### Prior vs Posterior
+
+```{r}
+#| label: fig-pfs-km-prior-post
+#| fig-cap: Prior vs posterior PFS KM comparison.
+
+km_data |>
+  plot_km(
+    km_est_var = sample_pfs_km_est,
+    group = fit_type,
+    alpha_group = fit_type
+  )
+```
+
+:::
