@@ -1,0 +1,63 @@
+---
+title: "Overall Survival"
+subtitle: "OS Kaplan-Meier forecasts and observed data"
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+source("../_setup.R")
+os_km_data  <- targets::tar_read(all_tumor_ssls_km_os_rvar, store = pub_store)
+obs_os_data <- targets::tar_read(km_trial_os,               store = pub_store)
+```
+
+## OS Kaplan-Meier Curves {#sec-os-km}
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+```{r}
+#| label: fig-os-km-sample
+#| fig-cap: Sample-based OS Kaplan-Meier curves (posterior).
+
+os_km_data |>
+  filter(fit_type == "posterior") |>
+  plot_km(
+    km_est_var = sample_os_km_est,
+    obs_km_data = obs_os_data |>
+      filter(fct_match(btype, "ub")) |>
+      select(!quantiles) |>
+      unnest(km_data)
+  )
+```
+
+### Superpopulation
+
+```{r}
+#| label: fig-os-km-spop
+#| fig-cap: Superpopulation OS Kaplan-Meier curves (posterior).
+
+os_km_data |>
+  filter(fit_type == "posterior") |>
+  plot_km(
+    km_est_var = spop_os_km_est,
+    obs_km_data = obs_os_data |>
+      filter(fct_match(btype, "ub")) |>
+      select(!quantiles) |>
+      unnest(km_data)
+  )
+```
+
+### Prior vs Posterior
+
+```{r}
+#| label: fig-os-km-prior-post
+#| fig-cap: Prior vs posterior OS KM comparison.
+
+os_km_data |>
+  plot_km(km_est_var = sample_os_km_est, group = fit_type, alpha_group = fit_type)
+```
+
+:::
