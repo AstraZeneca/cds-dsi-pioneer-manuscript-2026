@@ -9,7 +9,7 @@ project:
 website:
   title: "PIONEER: Publication"
   description: "Bayesian hierarchical modeling for tumor dynamics and survival — publication analysis"
-  favicon: ../../_shared/images/pioneer-helmet.png
+  favicon: images/pioneer-helmet.png
   navbar:
     background: primary
     left:
