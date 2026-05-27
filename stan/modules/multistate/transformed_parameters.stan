@@ -108,9 +108,14 @@ if (enable_ms_01) {
   }
   // Visit-gated mode: sparse update at observed visit weeks only (before -exp,
   // same log-hazard-level addition as continuous mode — no special handling needed).
-  // PSA source: observed (default) or latent trajectory (enable_ms_visit_gated_latent_01).
-  // When ms_needs_inline_burden && enable_ms_visit_gated_latent_01, the latent PSA path
-  // is handled by the PSA-specific inline include. Observed PSA path still runs here.
+  // Two sub-paths:
+  //   Latent: read all n_time_varying_covar components of the modeled trajectory
+  //     (ms_time_varying_covar_01) at the visit week.
+  //   Observed: read the single biomarker stored in ms_obs_visit_covar_flat at
+  //     the visit position v.
+  // When ms_needs_inline_burden && enable_ms_visit_gated_latent_01, the latent
+  // path is handled by the model's inline include — skip here. Observed path
+  // still runs.
   if (enable_ms_pop_time_varying_cov && enable_ms_visit_gated_01 &&
       !(ms_needs_inline_burden && enable_ms_visit_gated_latent_01) &&
       (!enable_ms_visit_gated_latent_01 || size(ms_time_varying_covar_01) > 0)) {
@@ -121,10 +126,15 @@ if (enable_ms_01) {
       for (v in v_start:v_end) {
         int wk = t_patient_visits[v];
         if (wk >= 1 && wk <= max_all_t) {
-          real obs_covar = enable_ms_visit_gated_latent_01
-            ? ms_time_varying_covar_01[1][j, wk]
-            : ms_obs_visit_covar_flat[v];
-          log_cond_surv_01[j, wk] += time_varying_coef_01[1] * obs_covar;
+          if (enable_ms_visit_gated_latent_01) {
+            // Latent: dot-product over all modeled time-varying covariates
+            for (k in 1:n_time_varying_covar) {
+              log_cond_surv_01[j, wk] += time_varying_coef_01[k] * ms_time_varying_covar_01[k][j, wk];
+            }
+          } else {
+            // Observed: single biomarker per visit
+            log_cond_surv_01[j, wk] += time_varying_coef_01[1] * ms_obs_visit_covar_flat[v];
+          }
         }
       }
     }

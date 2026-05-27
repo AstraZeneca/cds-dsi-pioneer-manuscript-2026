@@ -42,11 +42,19 @@ transform_priors_to_qr_space <- function(coef_mean, coef_sd, design_matrix) {
 #' @return Named list of multistate hyperparameter values
 get_multistate_priors <- function(n_levels, n_time_varying_covar, n_time_invariant_covar,
                                    enable_ms_visit_gated_01 = 0L,
+                                   enable_ms_visit_gated_latent_01 = 0L,
                                    enable_ms_02_time_varying_cov = 1L,
                                    enable_ms_03_time_varying_cov = 0L,
                                    enable_ms_03_time_invariant_cov = 0L,
                                    enable_ms_32_time_invariant_cov = 0L) {
-  n_tv_01 <- if (enable_ms_visit_gated_01) 1L else n_time_varying_covar
+  # 0->1 dimensioning matches stan/modules/multistate/parameters.stan:
+  #   single coefficient only in observed visit-gated mode; full
+  #   n_time_varying_covar in continuous mode and latent visit-gated mode.
+  n_tv_01 <- if (enable_ms_visit_gated_01 && !enable_ms_visit_gated_latent_01) {
+    1L
+  } else {
+    n_time_varying_covar
+  }
   n_tv_02 <- if (enable_ms_02_time_varying_cov) n_time_varying_covar else 0L
   n_tv_03 <- if (enable_ms_03_time_varying_cov) n_time_varying_covar else 0L
   n_ti_03 <- if (enable_ms_03_time_invariant_cov) n_time_invariant_covar else 0L
@@ -474,6 +482,7 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
   ) |>
     list_assign(!!!get_multistate_priors(n_levels, n_time_varying_covar, n_time_invariant_covar,
                                         enable_ms_visit_gated_01        = stan_data$enable_ms_visit_gated_01 %||% 0L,
+                                        enable_ms_visit_gated_latent_01 = stan_data$enable_ms_visit_gated_latent_01 %||% 0L,
                                         enable_ms_02_time_varying_cov   = stan_data$enable_ms_02_time_varying_cov %||% 0L,
                                         enable_ms_03_time_varying_cov   = stan_data$enable_ms_03_time_varying_cov %||% 0L,
                                         enable_ms_03_time_invariant_cov = stan_data$enable_ms_03_time_invariant_cov %||% 0L,

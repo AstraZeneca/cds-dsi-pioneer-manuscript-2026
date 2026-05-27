@@ -233,12 +233,15 @@ publication_targets <- list(
       enable_ms_pop_time_varying_cov = TRUE,
       enable_ms_pop_time_invariant_cov = TRUE,
       enable_ms_level_cov = c(trial = FALSE, patient = FALSE),
-      # Visit-gated 0->1 disabled. The tumor-side wiring works for data
-      # validation but produces a non-finite log-probability gradient at
-      # initialization (cause not yet isolated; tracked in a separate issue).
-      # Use the continuous-time path that sclc also uses.
-      enable_ms_visit_gated_01 = 0L,
-      enable_ms_visit_gated_latent_01 = 0L,
+      # Latent visit-gated 0->1: hazard contributions only at observed visit
+      # weeks, but the time-varying covariates (log SLD, log decrease rate,
+      # log growth rate) come from the modeled state-space trajectory rather
+      # than raw observations. This avoids the log(0) problem that observed
+      # mode hits at complete-response visits and aligns the survival
+      # likelihood with the actual measurement schedule (lilly_cxcr4 ~6w vs
+      # amgen_darbe weekly).
+      enable_ms_visit_gated_01 = 1L,
+      enable_ms_visit_gated_latent_01 = 1L,
       share_dead_gp_shape = 0L,
       enable_ms_02_time_varying_cov = 0L,
       enable_ms_12_entry_covar = 0L,

@@ -178,9 +178,14 @@ ms_init_values <- function(env) {
       # Use a conservative init scale: Q row norms ~ sqrt(n_patients), so even
       # prior-SD draws can produce Q*coef >> hazard cap. Scale to keep Q*coef < 10.
       qr_init_scale = min(1.0, 10.0 / (sqrt(n_patients - 1) * sqrt(max(n_time_invariant_covar, 1L)))),
-      # Compute sizes locally from flags
+      # Compute sizes locally from flags. 0->1 dimensioning matches
+      # stan/modules/multistate/parameters.stan: single coefficient only in
+      # observed visit-gated mode; full n_time_varying_covar in continuous
+      # and latent visit-gated modes.
       time_varying_coef_01 = {
-        n_tv_01 <- if (isTRUE(enable_ms_visit_gated_01 == 1L)) 1L else n_time_varying_covar
+        observed_vg <- isTRUE(enable_ms_visit_gated_01 == 1L) &&
+          !isTRUE(enable_ms_visit_gated_latent_01 == 1L)
+        n_tv_01 <- if (observed_vg) 1L else n_time_varying_covar
         if (enable_ms_01 && enable_ms_pop_time_varying_cov && n_tv_01 > 0)
           as.array(rnorm(n_tv_01, time_varying_coef_01_mean, time_varying_coef_01_sd * qr_init_scale))
         else NULL

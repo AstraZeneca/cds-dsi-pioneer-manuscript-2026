@@ -46,9 +46,14 @@ for (t in 2:max_t_width) {
 //   - process noise: rates vary by timepoint, need states at every week
 //   - enable_states_full_grid: explicit flag (future-proofing)
 //   - ungated continuous time-varying covariate for 0->1 multistate transition
-//   - gated+latent 0->1, 0->2, or 0->3 TV cov (requires grid when process noise ON)
-// ms_needs_inline_burden: when process noise OFF but MS needs modeled burden,
-//   compute burden trajectory analytically per-patient instead of building full grid
+//   - gated+latent 0->1, 0->2, or 0->3 TV cov (requires grid when process noise ON,
+//     OR when the calling model has no inline TV-covariate path)
+// ms_needs_inline_burden: when process noise OFF but MS needs modeled burden
+//   AND the calling model provides an inline path, compute the burden
+//   covariate inline instead of building the full grid.
+//
+// The calling model file MUST declare `int has_inline_tv_covar = ...;`
+// before this include. PSA models set it to 1; tumor models set it to 0.
 int enable_any_process_noise_tr;
 int need_states_full_grid;
 int ms_needs_inline_burden;
@@ -57,11 +62,13 @@ int ms_needs_inline_burden;
   enable_states_full_grid,
   enable_ms_pop_time_varying_cov, n_time_varying_covar,
   enable_ms_01, enable_ms_visit_gated_01, enable_ms_visit_gated_latent_01,
-  enable_ms_02_time_varying_cov, enable_ms_03_time_varying_cov
+  enable_ms_02_time_varying_cov, enable_ms_03_time_varying_cov,
+  has_inline_tv_covar
 );
 print("need_states_full_grid = ", need_states_full_grid,
       " (process_noise=", enable_any_process_noise_tr,
-      ", ms_needs_inline_burden=", ms_needs_inline_burden, ")");
+      ", ms_needs_inline_burden=", ms_needs_inline_burden,
+      ", has_inline_tv_covar=", has_inline_tv_covar, ")");
 
 // ============================================================================
 // POPULATION UNIQUE VISITS
