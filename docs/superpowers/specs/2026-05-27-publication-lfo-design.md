@@ -10,6 +10,8 @@
 
 The publication pipeline (`targets/publication_targets.R`) runs the joint tumor-survival model on the `lilly_cxcr4` target trial + historical controls. It currently has no LFO infrastructure. The sclc pipeline has a fully working LFO setup that we port here with minimal adaptation.
 
+**Training/test split:** The Stan LFO model handles the training/test boundary internally via `cutoff_calendar_day`. Each patient's in-sample visits are those with `visit_calendar_day <= cutoff_calendar_day[n]`; out-of-sample log-likelihoods are computed for visits after that. Historical patients (e.g., `amgen_darbe`) have `calendar_day = 1` so all their visits are always in-sample — they always train on full data, and are never part of the OOS evaluation. No R-side trial filtering is needed for the LFO fit itself. The `lfo()` function receives `base_tumor_ssls_stan_data` (full data) with `cutoff_calendar_day` appended; Stan does the rest.
+
 Key differences between publication and sclc data:
 - Publication visit data uses `ady` (study day); sclc targets adds `visit_calendar_day = trt_calendar_day + ady - 1` to nested visit data.
 - Publication patient data has no `trtsdt`, `patient_first_visit`, or `patient_last_visit`; it has pre-computed `calendar_day` (1-indexed from first patient), `patient_min_t`, `patient_max_t`.
