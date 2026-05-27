@@ -29,7 +29,7 @@ data {
   array[n_combos_b3] int enable_ms_03_combos_b3;
   array[n_combos_b3] int enable_ms_32_combos_b3;
 
-  // ── B4: compute_ms_obs_psa_covar_size ─────────────────────────────────────
+  // ── B4: compute_ms_obs_visit_covar_size ─────────────────────────────────────
   int<lower=0> n_combos_b4;
   int<lower=0> n_visits_b4;
   array[n_combos_b4] int enable_ms_visit_gated_01_combos_b4;
@@ -154,7 +154,7 @@ generated quantities {
   array[n_combos_b4] int out_b4_size;
 
   for (ci in 1:n_combos_b4) {
-    out_b4_size[ci] = compute_ms_obs_psa_covar_size(
+    out_b4_size[ci] = compute_ms_obs_visit_covar_size(
       enable_ms_visit_gated_01_combos_b4[ci],
       enable_ms_visit_gated_latent_01_combos_b4[ci],
       n_visits_b4
