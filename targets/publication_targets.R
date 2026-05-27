@@ -28,6 +28,12 @@ controller_default <- crew_controller_local(name = "default", workers = 4)
 controller_fit <- crew_controller_local(name = "fit", workers = 4)
 controller_many_samples <- crew_controller_local(name = "many samples", workers = 4)
 
+lfo_workers <- as.integer(Sys.getenv("LFO_WORKERS", 24))
+controller_lfo <- crew_controller_local(name = "lfo", workers = lfo_workers)
+
+lfo_groups <- Sys.getenv("LFO_GROUPS", 24)
+lfo_save_warmup <- Sys.getenv("LFO_SAVE_WARMUP", "false") == "true"
+
 tar_option_set(
   packages = c(
     "magrittr",
@@ -45,7 +51,8 @@ tar_option_set(
   controller = crew_controller_group(
     controller_default,
     controller_fit,
-    controller_many_samples
+    controller_many_samples,
+    controller_lfo
   ),
   resources = tar_resources(crew = tar_resources_crew(controller = "default")),
   memory = "transient",
