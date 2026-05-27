@@ -99,19 +99,35 @@ all_analysis_data |>
 
 ```{r}
 #| label: fig-target-vs-recorded-pfs
-#| fig-cap: Deterministic target lesion PFS (from SLD dynamics) vs recorded clinical PFS. Points above the diagonal had SLD-defined PD before clinical PFS.
+#| fig-cap: "Deterministic target lesion PFS vs recorded clinical PFS, coloured by event type. Points well below the diagonal: clinical event was death or non-target/new-lesion PD while target SLD never crossed the PD threshold."
 #| fig-width: 10
 #| fig-height: 5
 
 all_analysis_data |>
-  ggplot(aes(pfs + interval_censored + 1, det_pfs)) +
-  geom_abline(slope = 1, linetype = "dashed", alpha = 0.5) +
-  geom_point(color = AZ_platinum, alpha = 0.5) +
-  scale_x_continuous("Recorded PFS [Months]",
-                     breaks = months_to_weeks(seq(0, 36, 6)),
-                     label  = label_weeks_to_months) +
-  scale_y_continuous("Target Tumour PFS [Weeks]") +
-  facet_wrap(vars(trial), labeller = labeller(trial = str_to_upper))
+  mutate(event_type = case_when(
+    right_censored                          ~ "Censored",
+    !det_right_censored                     ~ "Target PD",
+    progression_before_death                ~ "Non-target / New lesion PD",
+    death                                   ~ "Death without PD"
+  )) |>
+  mutate(recorded_pfs_months = (pfs + interval_censored + 1) / (52 / 12),
+         det_pfs_months = det_pfs / (52 / 12)) |>
+  ggplot(aes(recorded_pfs_months, det_pfs_months, color = event_type)) +
+  geom_abline(slope = 1, linetype = "dashed", alpha = 0.4) +
+  geom_point(alpha = 0.6, size = 1.2) +
+  scale_color_manual(
+    "Event Type",
+    values = c(
+      "Censored"                   = AZ_platinum,
+      "Target PD"                  = AZ_navy,
+      "Non-target / New lesion PD" = AZ_gold,
+      "Death without PD"           = AZ_pink
+    )
+  ) +
+  scale_x_continuous("Recorded PFS [Months]", breaks = seq(0, 36, 6)) +
+  scale_y_continuous("Target Tumour PFS [Months]", breaks = seq(0, 36, 6)) +
+  facet_wrap(vars(trial), labeller = labeller(trial = str_to_upper)) +
+  theme(legend.position = "bottom")
 ```
 
 ## Baseline Characteristics {#sec-baseline}
