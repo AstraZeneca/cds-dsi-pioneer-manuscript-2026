@@ -108,6 +108,28 @@ publication_targets <- list(
     cue = tar_cue("always")
   ),
 
+  tar_target(lfo_step, 30L),
+
+  tar_target(
+    lfo_tumor_ssls_model_file,
+    here("stan", "tumor", "sf-ssls-lfo.stan"),
+    format = "file"
+  ),
+  tar_target(
+    lfo_tumor_ssls_include_files,
+    find_stan_includes(lfo_tumor_ssls_model_file),
+    format = "file"
+  ),
+  tar_target(
+    lfo_tumor_ssls_exe_hash,
+    build_model_exe_hash(
+      lfo_tumor_ssls_model_file,
+      lfo_tumor_ssls_include_files,
+      publication_artifacts_path,
+      include_paths = c(here("stan"), here("stan", "tumor"))
+    )
+  ),
+
   # Data ------------------------------------------------------------------------
 
   tar_target(
