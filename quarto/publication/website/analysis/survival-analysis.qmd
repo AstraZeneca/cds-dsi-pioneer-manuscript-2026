@@ -9,7 +9,10 @@ subtitle: "Kaplan-Meier forecasts and observed PFS"
 
 source("_setup.R")
 km_data     <- targets::tar_read(all_tumor_ssls_km_rvar, store = pub_store)
-obs_km_data <- targets::tar_read(km_trial_pfs,           store = pub_store)
+obs_km_data <- targets::tar_read(km_trial_pfs,           store = pub_store) |>
+  filter(fct_match(btype, "ub")) |>
+  select(!quantiles) |>
+  unnest(km_data)
 ```
 
 ## PFS Kaplan-Meier Curves {#sec-pfs-km}
@@ -20,16 +23,16 @@ obs_km_data <- targets::tar_read(km_trial_pfs,           store = pub_store)
 
 ```{r}
 #| label: fig-pfs-km-sample
-#| fig-cap: Sample-based PFS Kaplan-Meier curves (posterior). Shaded bands show 50% and 90% credible intervals.
+#| fig-cap: Sample-based PFS KM (posterior) by trial. Shaded band shows 80% credible interval.
+#| fig-width: 10
+#| fig-height: 5
 
 km_data |>
   filter(fit_type == "posterior") |>
   plot_km(
-    km_est_var = sample_pfs_km_est,
-    obs_km_data = obs_km_data |>
-      filter(fct_match(btype, "ub")) |>
-      select(!quantiles) |>
-      unnest(km_data)
+    km_est_var  = sample_pfs_km_est,
+    facet_col   = trial,
+    obs_km_data = obs_km_data
   )
 ```
 
@@ -37,16 +40,16 @@ km_data |>
 
 ```{r}
 #| label: fig-pfs-km-spop
-#| fig-cap: Superpopulation PFS Kaplan-Meier curves (posterior).
+#| fig-cap: Superpopulation PFS KM (posterior) by trial. Wider uncertainty than sample-based as it reflects a new patient drawn from the population.
+#| fig-width: 10
+#| fig-height: 5
 
 km_data |>
   filter(fit_type == "posterior") |>
   plot_km(
-    km_est_var = spop_pfs_km_est,
-    obs_km_data = obs_km_data |>
-      filter(fct_match(btype, "ub")) |>
-      select(!quantiles) |>
-      unnest(km_data)
+    km_est_var  = spop_pfs_km_est,
+    facet_col   = trial,
+    obs_km_data = obs_km_data
   )
 ```
 
@@ -54,12 +57,15 @@ km_data |>
 
 ```{r}
 #| label: fig-pfs-km-prior-post
-#| fig-cap: Prior vs posterior PFS KM comparison.
+#| fig-cap: Prior vs posterior PFS KM (sample-based) by trial.
+#| fig-width: 10
+#| fig-height: 5
 
 km_data |>
   plot_km(
-    km_est_var = sample_pfs_km_est,
-    group = fit_type,
+    km_est_var  = sample_pfs_km_est,
+    facet_col   = trial,
+    group       = fit_type,
     alpha_group = fit_type
   )
 ```
