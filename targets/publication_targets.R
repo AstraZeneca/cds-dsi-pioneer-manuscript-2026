@@ -194,6 +194,8 @@ publication_targets <- list(
   # No conditioning subgroups (no pdl1/histology in publication data)
   tar_target(cond_groups, list()),
 
+  tar_target(extend_max_all_t, 200L),
+
   # Stan data -------------------------------------------------------------------
 
   tar_target(
