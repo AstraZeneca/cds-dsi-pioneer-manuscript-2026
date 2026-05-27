@@ -61,26 +61,6 @@ We present PIONEER, a framework built to close these gaps. The model couples a *
 
 The novelty has four facets. First, each transition in the illness-death model has its own tumour-derived covariate vector with transition-specific coefficients — the model can express, for example, that growth rate predicts progression hazard but only modestly affects post-progression death hazard, a distinction that single-hazard joint models cannot make. Second, the decrease/growth decomposition is the *latent state* of a state-space model fitted *jointly* with the multistate — not a two-stage plug-in — which avoids endogeneity bias and correctly propagates uncertainty. Third, the hierarchy is level-agnostic: borrowing across trials drops out of the design without needing a separate meta-analytic step, and covariate effects are entered via QR-decomposed design matrices with elicited priors mapped through the rotation. Fourth, all endpoints are read off the joint posterior, producing both unconditional ("super-population") and observed-data-conditioned predictive distributions without re-fitting.
 
-<!-- Roadmap -->
-
-The remainder of this paper is organised as follows. @sec-motivating describes the SCLC-01 trial that motivates the framework. @sec-model gives the full model specification: notation (@sec-notation), the mechanistic state-space submodel (@sec-mechanistic), the multistate hazard submodel (@sec-multistate), their joint specification (@sec-joint), and the prior structure (@sec-priors). @sec-inference discusses computational inference. @sec-simulation presents a simulation study assessing operating characteristics. @sec-application reports the primary application to SCLC-01 with leave-future-out cross-validation and cross-trial borrowing. @sec-discussion concludes.
-
-## Motivating example: SCLC-01 {#sec-motivating}
-
-*[To be drafted.]*
-
-This section describes the clinical context that motivates the framework:
-
-- **Trial design.** SCLC-01 is a Phase III, randomised, double-blind trial evaluating durvalumab in combination with chemotherapy as first-line treatment for advanced NSCLC. Patients were stratified by PD-L1 expression, histology, and ctDNA status.
-- **Available data.** Longitudinal SLD measurements at approximately 6-week intervals (RECIST 1.1); baseline patient covariates (demographics, lab values, biomarkers including ctDNA); event histories (progression, death, dropout). Historical data from the HISTORICAL trial (same indication, overlapping patient population) is available for hierarchical borrowing.
-- **Forecasting target.** At the immature DCO (data cut-off 3, January 2026), a substantial fraction of patients remain progression-free and alive. The target is to forecast PFS and OS Kaplan–Meier curves at the mature DCO, together with calibrated prediction intervals, using only data available at the immature cut-off.
-- **Why standard methods are insufficient.** At the immature DCO, the Kaplan–Meier estimator plateaus with wide confidence bands; parametric extrapolations (e.g. Weibull, log-normal) are untethered to the patient-level longitudinal dynamics. The mechanistic submodel provides structure for the extrapolation; the multistate submodel distinguishes clinical endpoints that would otherwise be conflated.
-
-**Figures.**
-
-- Fig. 2.1 — SCLC-01 trial schema (treatment arms, stratification factors, endpoints).
-- Fig. 2.2 — Observed PFS/OS KM at the immature DCO (the starting point for the forecast).
-
 ## Model {#sec-model}
 
 This section specifies the joint model in full. We organise the description around the data flow shown in @fig-model-overview: patient-level inputs (longitudinal SLD, baseline covariates, event histories) are routed through two coupled submodels — a mechanistic state-space submodel for the SLD trajectory (@sec-mechanistic) and a multistate hazard submodel for the clinical events (@sec-multistate) — linked by a small set of time-varying tumour-derived covariates (the *bridge*). All clinical endpoints are read off the joint posterior in a single generated-quantities pass, with no two-stage plug-in.
