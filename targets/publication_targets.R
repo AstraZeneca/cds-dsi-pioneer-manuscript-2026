@@ -454,6 +454,33 @@ publication_targets <- list(
         mutate(fit_type = type)
     ),
 
+    tar_target(
+      tumor_ssls_orr_rvar,
+      tumor_ssls_draws_endpoints |>
+        recover_types(select(all_analysis_data, trial)) |>
+        spread_rvars(
+          sample_target_orr[trial],
+          spop_target_orr[trial]
+        ) |>
+        mutate(fit_type = type)
+    ),
+
+    tar_target(
+      tumor_ssls_forecast_target_pfs_n_rvar,
+      tumor_ssls_draws_endpoints |>
+        recover_types(select(all_analysis_data, trial)) |>
+        spread_rvars(
+          sample_target_pfs_n[trial, n],
+          spop_target_pfs_n[trial, n],
+          sample_ms_pfs_n[trial, n],
+          spop_ms_pfs_n[trial, n],
+          sample_pfs_n[trial, n],
+          spop_pfs_n[trial, n]
+        ) |>
+        left_join(pfs_timepoints_pub, by = "n") |>
+        mutate(fit_type = type)
+    ),
+
     # Population parameters -----------------------------------------------------
 
     tar_target(
@@ -497,6 +524,17 @@ publication_targets <- list(
   tar_target(
     all_tumor_ssls_trial_pfs_quant,
     bind_rows(tumor_ssls_trial_pfs_quant_prior, tumor_ssls_trial_pfs_quant_posterior)
+  ),
+  tar_target(
+    all_tumor_ssls_orr_rvar,
+    bind_rows(tumor_ssls_orr_rvar_prior, tumor_ssls_orr_rvar_posterior)
+  ),
+  tar_target(
+    all_tumor_ssls_forecast_target_pfs_n_rvar,
+    bind_rows(
+      tumor_ssls_forecast_target_pfs_n_rvar_prior,
+      tumor_ssls_forecast_target_pfs_n_rvar_posterior
+    )
   ),
   tar_target(
     all_tumor_ssls_rates_rvar,
