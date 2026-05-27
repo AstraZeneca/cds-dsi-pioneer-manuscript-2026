@@ -60,3 +60,52 @@ test_that("visit_calendar_day equals calendar_day + ady - 1", {
     100L  # calendar_day=100, ady=1 => 100 + 1 - 1 = 100
   )
 })
+
+source(here::here("r/accuracy.R"))
+source(here::here("r/sclc/accuracy.R"))
+
+test_that("get_lfo_cutoffs works for a non-sclc target_trial", {
+  # Two patients: target trial lilly_cxcr4 (calendar_day 100, 130),
+  # historical amgen_darbe (calendar_day 1)
+  d <- tibble(
+    trial = as_factor(c("lilly_cxcr4", "lilly_cxcr4", "amgen_darbe")),
+    calendar_day = c(100L, 130L, 1L),
+    patient_max_t = c(10L, 5L, 20L),
+    visit_data = list(
+      tibble(ady = c(1L, 7L), week = c(1L, 2L),
+             visit_calendar_day = 100L + c(1L, 7L) - 1L),
+      tibble(ady = c(1L, 7L), week = c(1L, 2L),
+             visit_calendar_day = 130L + c(1L, 7L) - 1L),
+      tibble(ady = c(1L, 7L), week = c(1L, 2L),
+             visit_calendar_day = 1L + c(1L, 7L) - 1L)
+    )
+  )
+  result <- get_lfo_cutoffs(d, lfo_step = 30L,
+                             target_trial = "lilly_cxcr4")
+  expect_s3_class(result, "data.frame")
+  expect_true(all(c("n", "cutoff_date", "cutoff_calendar_day") %in% names(result)))
+  expect_true(nrow(result) >= 1L)
+  # All cutoff_calendar_days should be within the target trial's calendar_day range
+  expect_true(all(result$cutoff_calendar_day >= min(d$calendar_day[d$trial == "lilly_cxcr4"])))
+})
+
+test_that("get_lfo_cutoffs default target_trial='sclc' still works", {
+  # Sclc data has trtsdt — origin recovery branch must fire
+  d <- tibble(
+    trial = as_factor(c("sclc", "historical")),
+    trtsdt = as.Date(c("2020-01-01", "2019-06-01")),
+    calendar_day = c(215L, 1L),
+    patient_max_t = c(10L, 20L),
+    visit_data = list(
+      tibble(ady = c(1L, 7L), week = c(1L, 2L),
+             visit_calendar_day = 215L + c(1L, 7L) - 1L),
+      tibble(ady = c(1L, 7L), week = c(1L, 2L),
+             visit_calendar_day = 1L + c(1L, 7L) - 1L)
+    )
+  )
+  result <- get_lfo_cutoffs(d, lfo_step = 30L)
+  expect_s3_class(result, "data.frame")
+  expect_true(nrow(result) >= 1L)
+  # cutoff_date should be a real Date
+  expect_s3_class(result$cutoff_date, "Date")
+})
