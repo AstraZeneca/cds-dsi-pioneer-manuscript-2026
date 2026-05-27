@@ -7,7 +7,7 @@ subtitle: "Population and patient-level posterior distributions"
 #| label: setup
 #| include: false
 
-source("../_setup.R")
+source("_setup.R")
 rates_rvar    <- targets::tar_read(all_tumor_ssls_rates_rvar,                 store = pub_store)
 noise_sd      <- targets::tar_read(all_tumor_ssls_noise_sd_rvar,              store = pub_store)
 patient_rates <- targets::tar_read(all_tumor_ssls_patient_rates_bpi,          store = pub_store)

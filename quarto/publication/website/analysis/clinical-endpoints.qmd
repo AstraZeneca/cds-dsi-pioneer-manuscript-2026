@@ -7,7 +7,7 @@ subtitle: "Overall Response Rate and Progression-Free Survival results"
 #| label: setup
 #| include: false
 
-source("../_setup.R")
+source("_setup.R")
 orr_data       <- targets::tar_read(all_tumor_ssls_orr_rvar,                  store = pub_store)
 pfs_quant      <- targets::tar_read(all_tumor_ssls_trial_pfs_quant,            store = pub_store)
 pfs_n_data     <- targets::tar_read(all_tumor_ssls_forecast_target_pfs_n_rvar, store = pub_store)
