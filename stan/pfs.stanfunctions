@@ -1778,21 +1778,24 @@ tuple(
     array[n_spop_visits] int spop_visit_weeks =
       append_array(treat_curr_visits, obs_visit_time);
 
-    // Forecast PSA covariate for visit-gated 0->1 GQ sampling.
+    // Forecast observed-burden covariate for visit-gated 0->1 GQ sampling.
+    // PSA models populate this from forecast_obs_log_psa (standardized).
+    // Tumor models pass an empty vector here because they bake the latent
+    // burden contribution into log_cond_surv_01 directly (see latent VG path).
     // Indexed 1..n_spop_visits, matching spop_visit_weeks.
     // For observed visits (first n_obs_treat_visits), set to 0.0 — these weeks
     // are behind pfs[p] for censored patients and get skipped by the conditional
     // overload of sample_at_visits_rng (wk <= obs_time guard).
     // For forecast assessment visits, use forecast_obs_log_psa normalised by
     // (median_log_psa_obs, iqr_log_psa_obs) — same transform as training data.
-    vector[enable_ms_visit_gated_01 ? n_spop_visits : 0] spop_ms01_psa_covar;
+    vector[enable_ms_visit_gated_01 ? n_spop_visits : 0] spop_ms01_obs_covar;
     if (enable_ms_visit_gated_01) {
       for (a in 1:n_obs_treat_visits) {
-        spop_ms01_psa_covar[a] = 0.0;  // behind obs_time; skipped by conditional overload
+        spop_ms01_obs_covar[a] = 0.0;  // behind obs_time; skipped by conditional overload
       }
       for (a in 1:n_assessment) {
         real log_psa_v = forecast_obs_log_psa[assess_start + a - 1];
-        spop_ms01_psa_covar[n_obs_treat_visits + a] =
+        spop_ms01_obs_covar[n_obs_treat_visits + a] =
           (log_psa_v - median_log_psa_obs) / iqr_log_psa_obs;
       }
     }
@@ -1889,7 +1892,7 @@ tuple(
         if (enable_ms_visit_gated_01) {
           (sample_ms_pfs[j], sample_ms_right_censored[j]) = sample_at_visits_rng(
               ms_log_cond_surv[j], spop_visit_weeks, max_all_t,
-              pfs[p], 1, spop_ms01_psa_covar, tv_coef_01_val);
+              pfs[p], 1, spop_ms01_obs_covar, tv_coef_01_val);
         } else {
           (sample_ms_pfs[j], sample_ms_right_censored[j]) = assessment_gated_survival_time_rng(
               ms_log_cond_surv[j], spop_visit_weeks, max_all_t, pfs[p], 1);
@@ -1912,7 +1915,7 @@ tuple(
       if (enable_ms_visit_gated_01) {
         (t_ms01_spop, c_ms01_spop) = sample_at_visits_rng(
             ms_log_cond_surv[j], spop_visit_weeks, max_all_t,
-            spop_ms01_psa_covar, tv_coef_01_val);
+            spop_ms01_obs_covar, tv_coef_01_val);
       } else {
         (t_ms01_spop, c_ms01_spop) = assessment_gated_survival_time_rng(
             ms_log_cond_surv[j], spop_visit_weeks, max_all_t);

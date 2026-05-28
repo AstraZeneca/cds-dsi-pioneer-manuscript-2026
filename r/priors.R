@@ -193,10 +193,11 @@ get_multistate_priors <- function(n_levels, n_time_varying_covar, n_time_invaria
     sd_level_slope_03_sd = lapply(seq_len(n_levels), function(lv) rep(0.15, n_time_invariant_covar)),
     sd_level_slope_32_sd = lapply(seq_len(n_levels), function(lv) rep(0.15, n_time_invariant_covar)),
 
-    # PSA-at-state-entry covariate coefficient hyperparameters
-    # Normal(0, 0.5): matches the scale of standardized log-PSA (~1 IQR unit = 1 SD
-    # after standardization), so a unit change in standardized log-PSA gives a
-    # hazard ratio of exp(±0.5) ≈ 1.65, allowing meaningful but not extreme effects.
+    # Burden-at-state-entry covariate coefficient hyperparameters
+    # Normal(0, 0.5): matches the scale of standardized log-burden (~1 IQR unit
+    # = 1 SD after standardization), so a unit change in standardized log-burden
+    # gives a hazard ratio of exp(±0.5) ≈ 1.65, allowing meaningful but not
+    # extreme effects. PSA (pioneer) is the only model wired up to use these.
     coef_log_entry_covar_12_mean = 0.0,
     coef_log_entry_covar_12_sd   = 0.5,
     coef_log_entry_covar_32_mean = 0.0,
