@@ -194,6 +194,12 @@ ms_init_values <- function(env) {
       time_varying_coef_12 = if (enable_ms_12 && enable_ms_pop_time_varying_cov && n_time_varying_covar > 0) {
         as.array(rnorm(n_time_varying_covar, time_varying_coef_12_mean, time_varying_coef_12_sd * qr_init_scale))
       },
+      time_varying_coef_03 = {
+        n_tv_03 <- if (isTRUE(enable_ms_03_time_varying_cov == 1L)) n_time_varying_covar else 0L
+        if (enable_ms_03 && enable_ms_pop_time_varying_cov && n_tv_03 > 0)
+          as.array(rnorm(n_tv_03, time_varying_coef_03_mean, time_varying_coef_03_sd * qr_init_scale))
+        else NULL
+      },
 
       # --- Time-invariant Covariate Coefficients (QR space) ---
       time_invariant_coef_qr_01 = if (enable_ms_01 && enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0) {
@@ -204,6 +210,16 @@ ms_init_values <- function(env) {
       },
       time_invariant_coef_qr_12 = if (enable_ms_12 && enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0) {
         rnorm(n_time_invariant_covar, time_invariant_coef_12_mean, time_invariant_coef_12_sd * qr_init_scale)
+      },
+      time_invariant_coef_qr_03 = if (enable_ms_03 && enable_ms_pop_time_invariant_cov &&
+                                       isTRUE(enable_ms_03_time_invariant_cov == 1L) &&
+                                       n_time_invariant_covar > 0) {
+        rnorm(n_time_invariant_covar, time_invariant_coef_03_mean, time_invariant_coef_03_sd * qr_init_scale)
+      },
+      time_invariant_coef_qr_32 = if (enable_ms_32 && enable_ms_pop_time_invariant_cov &&
+                                       isTRUE(enable_ms_32_time_invariant_cov == 1L) &&
+                                       n_time_invariant_covar > 0) {
+        rnorm(n_time_invariant_covar, time_invariant_coef_32_mean, time_invariant_coef_32_sd * qr_init_scale)
       },
 
       # --- Multi-level Random Slope SDs ---
@@ -216,6 +232,12 @@ ms_init_values <- function(env) {
       sd_level_slope_12 = if (enable_ms_12 && n_time_invariant_covar > 0) {
         lapply(seq_len(n_levels), function(lv) abs(rnorm(n_time_invariant_covar, sd = sd_level_slope_12_sd[[lv]])))
       },
+      sd_level_slope_03 = if (enable_ms_03 && isTRUE(enable_ms_03_time_invariant_cov == 1L) && n_time_invariant_covar > 0) {
+        lapply(seq_len(n_levels), function(lv) abs(rnorm(n_time_invariant_covar, sd = sd_level_slope_03_sd[[lv]])))
+      },
+      sd_level_slope_32 = if (enable_ms_32 && isTRUE(enable_ms_32_time_invariant_cov == 1L) && n_time_invariant_covar > 0) {
+        lapply(seq_len(n_levels), function(lv) abs(rnorm(n_time_invariant_covar, sd = sd_level_slope_32_sd[[lv]])))
+      },
 
       # --- Multi-level Raw Random Slopes ---
       raw_level_slope_01 = if (enable_ms_01 && n_time_invariant_covar > 0) {
@@ -227,6 +249,14 @@ ms_init_values <- function(env) {
                nrow = n_enabled_groups_ms_slope, ncol = n_time_invariant_covar)
       },
       raw_level_slope_12 = if (enable_ms_12 && n_time_invariant_covar > 0) {
+        matrix(rnorm(n_enabled_groups_ms_slope * n_time_invariant_covar, sd = 0.5),
+               nrow = n_enabled_groups_ms_slope, ncol = n_time_invariant_covar)
+      },
+      raw_level_slope_03 = if (enable_ms_03 && isTRUE(enable_ms_03_time_invariant_cov == 1L) && n_time_invariant_covar > 0) {
+        matrix(rnorm(n_enabled_groups_ms_slope * n_time_invariant_covar, sd = 0.5),
+               nrow = n_enabled_groups_ms_slope, ncol = n_time_invariant_covar)
+      },
+      raw_level_slope_32 = if (enable_ms_32 && isTRUE(enable_ms_32_time_invariant_cov == 1L) && n_time_invariant_covar > 0) {
         matrix(rnorm(n_enabled_groups_ms_slope * n_time_invariant_covar, sd = 0.5),
                nrow = n_enabled_groups_ms_slope, ncol = n_time_invariant_covar)
       },

@@ -1,0 +1,114 @@
+% Compile: pdflatex -output-directory=writing/figures writing/figures/model-overview.tex
+% Convert : pdf2svg writing/figures/model-overview.pdf writing/figures/model-overview.svg
+\documentclass[tikz,border=8pt]{standalone}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows.meta,positioning,fit,calc,backgrounds}
+\usepackage{amsmath,amssymb}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{sfmath}
+
+\begin{document}
+
+% AstraZeneca palette
+\definecolor{azNavy}{HTML}{003865}
+\definecolor{azGold}{HTML}{F0AB00}
+\definecolor{azTurq}{HTML}{68D2DF}
+\definecolor{azPlum}{HTML}{830051}
+\definecolor{azPlat}{HTML}{9DB0AC}
+
+\tikzset{
+  data/.style   = {rectangle, rounded corners=2pt, draw=azPlat, line width=0.6pt,
+                   fill=azPlat!10, font=\footnotesize, align=center, inner sep=5pt,
+                   minimum width=3.4cm, minimum height=1.2cm},
+  submodel/.style = {rectangle, rounded corners=4pt, draw=azNavy, line width=1pt,
+                   fill=azNavy!8, font=\small, align=center, inner sep=8pt,
+                   minimum width=5.6cm, minimum height=2.6cm},
+  bridge/.style = {rectangle, rounded corners=2pt, draw=azGold, line width=0.8pt,
+                   fill=azGold!15, font=\footnotesize, align=center, inner sep=5pt,
+                   minimum width=4.0cm, minimum height=1.2cm},
+  endpoint/.style = {rectangle, rounded corners=2pt, draw=azPlum, line width=0.8pt,
+                   fill=azPlum!8, font=\footnotesize, align=center, inner sep=5pt,
+                   minimum width=3.4cm, minimum height=1.2cm},
+  flow/.style   = {-{Stealth[length=2.5mm]}, line width=0.7pt, draw=azNavy!80},
+  flowback/.style = {-{Stealth[length=2.5mm]}, line width=0.6pt, draw=azPlum!70, dashed},
+  lbl/.style    = {font=\scriptsize, inner sep=1pt, fill=white}
+}
+
+\begin{tikzpicture}[node distance=0.8cm and 1.2cm]
+
+% --------------------------------- INPUTS ---------------------------------
+\node[data] (sld) at (-7.5,2.4)
+  {\textbf{SLD trajectory}\\[1pt]
+   $y_{i,j}$ at weeks $t_{i,j}$};
+\node[data] (cov) at (-7.5,0)
+  {\textbf{Baseline covariates}\\[1pt]
+   $\mathbf{x}_i$ (clinical, biomarker, ctDNA)};
+\node[data] (events) at (-7.5,-2.4)
+  {\textbf{Event history}\\[1pt]
+   progression, death, dropout};
+
+% --------------------------------- SUBMODELS ---------------------------------
+\node[submodel] (mech) at (-1.0, 2.4) {%
+  \textbf{Mechanistic submodel}\\[2pt]
+  Two-component state-space SLD\\[3pt]
+  $D_i(t),\ G_i(t)$ \ (latent log-states)\\[2pt]
+  rates $r^{\text{dec}}_i,\ r^{\text{gro}}_i \mid \mathbf{x}_i$
+};
+
+\node[submodel] (multi) at (-1.0,-2.4) {%
+  \textbf{Multistate submodel}\\[2pt]
+  Illness-death + dropout\\[3pt]
+  $\lambda_{jk}(t \mid \mathbf{W}_i(t),\, \mathbf{x}_i)$ \\[2pt]
+  with GP baseline hazards
+};
+
+% --------------------------------- BRIDGE ---------------------------------
+\node[bridge] (bridge) at (-1.0, 0)
+  {\textbf{Time-varying covariates}\\[1pt]
+   $\mathbf{W}_i(t)=\big(\log B_i(t),\,\log r^{\text{dec}}_i,\,\log r^{\text{gro}}_i\big)$};
+
+% --------------------------------- ENDPOINTS ---------------------------------
+\node[endpoint] (pfs)  at (5.5, 2.4)
+  {\textbf{PFS}\\[1pt]
+   composite \&\\
+   cause-specific};
+\node[endpoint] (os)   at (5.5, 0)
+  {\textbf{OS}\\[1pt]
+   illness-death\\
+   routing};
+\node[endpoint] (orr)  at (5.5,-2.4)
+  {\textbf{Response \& other}\\[1pt]
+   ORR, hazard ratios,\\
+   landmark survival};
+
+% --------------------------------- FLOWS ---------------------------------
+\draw[flow] (sld.east)    -- (mech.west);
+\draw[flow] (cov.east)    -- (mech.west);
+\draw[flow] (cov.east)    -- (multi.west);
+\draw[flow] (events.east) -- (multi.west);
+
+% Mechanistic -> bridge -> multistate (the joint coupling)
+\draw[flow] (mech.south)  -- (bridge.north);
+\draw[flow] (bridge.south) -- (multi.north);
+
+% Likelihood feedback (multistate informs latent state via joint posterior)
+\draw[flowback] (multi.east) to[bend right=22] node[lbl, pos=0.5]{joint likelihood} (mech.east);
+
+% Outputs
+\draw[flow] (mech.east)  -- (pfs.west);
+\draw[flow] (multi.east) -- (os.west);
+\draw[flow] (multi.east) -- (orr.west);
+
+% --------------------------------- BACKGROUND BOXES ---------------------------------
+\begin{scope}[on background layer]
+  \node[draw=azPlat!50, dashed, line width=0.4pt, rounded corners=4pt,
+        fit=(sld) (cov) (events), inner sep=4pt,
+        label={[font=\scriptsize\itshape, text=azPlat]above:Patient-level inputs}] {};
+  \node[draw=azPlum!50, dashed, line width=0.4pt, rounded corners=4pt,
+        fit=(pfs) (os) (orr), inner sep=4pt,
+        label={[font=\scriptsize\itshape, text=azPlum]above:Posterior endpoints}] {};
+\end{scope}
+
+\end{tikzpicture}
+\end{document}

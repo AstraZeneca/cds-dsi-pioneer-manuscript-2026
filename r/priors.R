@@ -42,9 +42,15 @@ transform_priors_to_qr_space <- function(coef_mean, coef_sd, design_matrix) {
 #' @return Named list of multistate hyperparameter values
 get_multistate_priors <- function(n_levels, n_time_varying_covar, n_time_invariant_covar,
                                    enable_ms_visit_gated_01 = 0L,
-                                   enable_ms_02_time_varying_cov = 1L) {
+                                   enable_ms_02_time_varying_cov = 1L,
+                                   enable_ms_03_time_varying_cov = 0L,
+                                   enable_ms_03_time_invariant_cov = 0L,
+                                   enable_ms_32_time_invariant_cov = 0L) {
   n_tv_01 <- if (enable_ms_visit_gated_01) 1L else n_time_varying_covar
   n_tv_02 <- if (enable_ms_02_time_varying_cov) n_time_varying_covar else 0L
+  n_tv_03 <- if (enable_ms_03_time_varying_cov) n_time_varying_covar else 0L
+  n_ti_03 <- if (enable_ms_03_time_invariant_cov) n_time_invariant_covar else 0L
+  n_ti_32 <- if (enable_ms_32_time_invariant_cov) n_time_invariant_covar else 0L
   lst(
     # 0→1 transition
     log_lambda_gp_01_pop_intercept_mean = -4.5,
@@ -157,6 +163,8 @@ get_multistate_priors <- function(n_levels, n_time_varying_covar, n_time_invaria
     time_varying_coef_02_sd = as.array(rep(0.5, n_tv_02)),
     time_varying_coef_12_mean = as.array(rep(0, n_time_varying_covar)),
     time_varying_coef_12_sd = as.array(rep(0.5, n_time_varying_covar)),
+    time_varying_coef_03_mean = as.array(rep(0, n_tv_03)),
+    time_varying_coef_03_sd = as.array(rep(0.5, n_tv_03)),
 
     # Time-invariant covariate coefficient hyperparameters (QR space)
     time_invariant_coef_01_mean = rep(0, n_time_invariant_covar),
@@ -165,11 +173,17 @@ get_multistate_priors <- function(n_levels, n_time_varying_covar, n_time_invaria
     time_invariant_coef_02_sd = rep(1, n_time_invariant_covar),
     time_invariant_coef_12_mean = rep(0, n_time_invariant_covar),
     time_invariant_coef_12_sd = rep(1, n_time_invariant_covar),
+    time_invariant_coef_03_mean = rep(0, n_ti_03),
+    time_invariant_coef_03_sd = rep(1, n_ti_03),
+    time_invariant_coef_32_mean = rep(0, n_ti_32),
+    time_invariant_coef_32_sd = rep(1, n_ti_32),
 
     # Multi-level random slope SD hyperpriors
     sd_level_slope_01_sd = lapply(seq_len(n_levels), function(lv) rep(0.15, n_time_invariant_covar)),
     sd_level_slope_02_sd = lapply(seq_len(n_levels), function(lv) rep(0.15, n_time_invariant_covar)),
     sd_level_slope_12_sd = lapply(seq_len(n_levels), function(lv) rep(0.15, n_time_invariant_covar)),
+    sd_level_slope_03_sd = lapply(seq_len(n_levels), function(lv) rep(0.15, n_time_invariant_covar)),
+    sd_level_slope_32_sd = lapply(seq_len(n_levels), function(lv) rep(0.15, n_time_invariant_covar)),
 
     # PSA-at-state-entry covariate coefficient hyperparameters
     # Normal(0, 0.5): matches the scale of standardized log-PSA (~1 IQR unit = 1 SD
@@ -459,8 +473,11 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     log_lod_sd = 0.2
   ) |>
     list_assign(!!!get_multistate_priors(n_levels, n_time_varying_covar, n_time_invariant_covar,
-                                        enable_ms_visit_gated_01      = stan_data$enable_ms_visit_gated_01 %||% 0L,
-                                        enable_ms_02_time_varying_cov = stan_data$enable_ms_02_time_varying_cov %||% 0L))
+                                        enable_ms_visit_gated_01        = stan_data$enable_ms_visit_gated_01 %||% 0L,
+                                        enable_ms_02_time_varying_cov   = stan_data$enable_ms_02_time_varying_cov %||% 0L,
+                                        enable_ms_03_time_varying_cov   = stan_data$enable_ms_03_time_varying_cov %||% 0L,
+                                        enable_ms_03_time_invariant_cov = stan_data$enable_ms_03_time_invariant_cov %||% 0L,
+                                        enable_ms_32_time_invariant_cov = stan_data$enable_ms_32_time_invariant_cov %||% 0L))
 }
 
 get_pfs_priors <- function() {

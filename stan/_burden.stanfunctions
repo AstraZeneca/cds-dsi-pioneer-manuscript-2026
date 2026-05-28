@@ -1,0 +1,40 @@
+// ============================================================================
+// SHARED BURDEN INTERFACE (PSA / SLD agnostic)
+// ============================================================================
+// Helpers operating on a generic "log burden" — log(absolute marker value)
+// where the marker is either tumor SLD (cm) or PSA (ng/mL). Both biomarkers
+// share the same shrinkage-fraction state representation:
+//   log(burden / baseline) = log_sum_exp(state_d, state_g)
+// so all downstream covariate machinery only needs the (baseline, median, iqr)
+// triple to standardize.
+//
+// Lives at top-level (stan/_burden.stanfunctions) — included by both
+// stan/tumor/sf-ssm-log-space.stan and stan/psa/pioneer.stan inside
+// their `functions {}` blocks, after the basic util/pos includes.
+
+/**
+ * Standardize log(burden) for use as a time-varying covariate.
+ *
+ * Converts a log(normalized burden) value — i.e. log(burden / baseline) from
+ * the two-component state — into a standardized absolute log(burden) suitable
+ * for the multistate hazard model.
+ *
+ * Caps log_burden_normalized at 10 (burden up to exp(10)x baseline ~ 22000x)
+ * to prevent the downstream log-hazard cap from binding during HMC warmup.
+ * Same numerical guard for both PSA and SLD: untreated growth excursions
+ * during early warmup can otherwise drive the linear predictor to extreme
+ * magnitudes and stall adaptation.
+ *
+ * @param log_burden_normalized  log(exp(state_d) + exp(state_g)) - ratio scale
+ * @param log_baseline_burden    log(baseline burden in marker units)
+ * @param median_log_burden_obs  Population median of log(absolute burden)
+ * @param iqr_log_burden_obs     Population IQR of log(absolute burden)
+ * @return Standardized log(burden) value
+ */
+real standardize_log_burden(real log_burden_normalized,
+                            real log_baseline_burden,
+                            real median_log_burden_obs,
+                            real iqr_log_burden_obs) {
+  real log_burden_abs = log_baseline_burden + fmin(log_burden_normalized, 10.0);
+  return (log_burden_abs - median_log_burden_obs) / iqr_log_burden_obs;
+}
