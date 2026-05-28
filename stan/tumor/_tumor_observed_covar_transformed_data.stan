@@ -1,10 +1,22 @@
 // ============================================================================
 // TUMOR (SLD) → SHARED OBSERVED-BURDEN COVARIATE ADAPTER
 // ============================================================================
-// Aliases the tumor-side names (log_sum_tumor_size, median_log_sld_obs,
-// iqr_log_sld_obs) onto the burden-agnostic names expected by
-// stan/_observed_covar_transformed_data.stan, then includes the shared
-// populator.
+// Two responsibilities:
+//
+//   (1) Declare the burden-agnostic aliases that downstream shared includes
+//       expect — `median_log_burden_obs`, `iqr_log_burden_obs` — using the
+//       tumor-side data values (`median_log_sld_obs`, `iqr_log_sld_obs`).
+//       These aliases are referenced from `transformed parameters` by
+//       `_ms_burden_tv_covar.stan` even when the observed populator below
+//       is gated off, so this file is REQUIRED for the tumor model whether
+//       visit-gating runs in observed or latent mode.
+//
+//   (2) When `enable_ms_visit_gated_01 && !enable_ms_visit_gated_latent_01`
+//       (observed visit-gated mode), populate `ms_obs_visit_covar_flat`
+//       from the standardized observed log-SLD values. In latent visit-
+//       gated mode this populator is a no-op — the shared file's `if`
+//       gate skips it — and the multistate likelihood reads the latent
+//       trajectory from `ms_time_varying_covar_01` instead.
 //
 // Tumor SLD: a visit is "measured" when sum_tumor_size > 0. Zero-valued
 // visits represent missing/below-LOD readings — log(0) is -inf, so feeding

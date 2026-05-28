@@ -244,6 +244,21 @@ publication_targets <- list(
       enable_ms_visit_gated_latent_01 = 1L,
       share_dead_gp_shape = 0L,
       enable_ms_02_time_varying_cov = 0L,
+      # 0->3 dropout hazard with patient-level discrimination (added 2026-05-28).
+      # The previous fit had no per-patient discrimination on the 0->3 path
+      # (only the trial-level GP), so died_off_trial patients were routed
+      # to 0->1 too quickly in the spop simulation. Enabling both:
+      #   - TI: baseline covariates (age, ECOG, hgb, LDH, albumin, sex)
+      #     give static dropout-risk signal.
+      #   - TV: latent log SLD / decrease rate / growth rate let dropout
+      #     risk track tumor dynamics (e.g. patients on a deteriorating
+      #     trajectory may drop out faster).
+      # With only 57 dropout events the TV path is identification-limited;
+      # priors are kept tight (Normal(0, 0.5)) to avoid overfit. 3->2 TI
+      # left off — only 57 events with another competing hazard to model.
+      enable_ms_03_time_invariant_cov = 1L,
+      enable_ms_03_time_varying_cov = 1L,
+      enable_ms_32_time_invariant_cov = 0L,
       enable_ms_12_entry_covar = 0L,
       enable_ms_32_entry_covar = 0L,
       entry_covar_12 = numeric(0),

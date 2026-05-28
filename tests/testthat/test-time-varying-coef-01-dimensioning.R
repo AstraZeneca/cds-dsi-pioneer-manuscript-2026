@@ -93,6 +93,9 @@ minimal_ms_stan_data <- function(visit_gated_01, visit_gated_latent_01,
     enable_ms_visit_gated_01  = visit_gated_01,
     enable_ms_visit_gated_latent_01 = visit_gated_latent_01,
     enable_ms_02_time_varying_cov = 0L,
+    enable_ms_03_time_invariant_cov = 0L,
+    enable_ms_03_time_varying_cov = 0L,
+    enable_ms_32_time_invariant_cov = 0L,
     enable_ms_12_entry_covar  = 0L,
     enable_ms_32_entry_covar  = 0L,
     max_all_t                 = 50L,
@@ -125,4 +128,76 @@ test_that("ms_init_values_fixed: observed visit-gated init has length 1", {
                               n_time_varying_covar = 3L)
   init <- ms_init_values_fixed(env)
   expect_length(init$time_varying_coef_01, 1L)
+})
+
+# ---------------------------------------------------------------------------
+# State-3 covariate dimensioning rule
+# ---------------------------------------------------------------------------
+#
+# 0->3 and 3->2 covariates are gated by per-transition flags
+# (enable_ms_03_time_invariant_cov, enable_ms_03_time_varying_cov,
+# enable_ms_32_time_invariant_cov). When the flag is OFF, both the Stan
+# parameter declaration and the priors hyperparam declaration must be
+# length 0 so R-side priors that send length 0 round-trip cleanly. When ON,
+# they're full length (n_time_varying_covar / n_time_invariant_covar).
+#
+# Pre-merge bug B1: hyperparams.stan declared TI hyperparam vectors as
+# unconditional `vector[n_time_invariant_covar]` while parameters.stan and
+# priors.R both followed the gated rule, causing data-load failure.
+
+test_that("get_multistate_priors: 0->3 TV coef length follows enable_ms_03_time_varying_cov", {
+  off <- get_multistate_priors(
+    n_levels = 1L, n_time_varying_covar = 3L, n_time_invariant_covar = 2L,
+    enable_ms_03_time_varying_cov = 0L
+  )
+  expect_length(off$time_varying_coef_03_mean, 0L)
+  expect_length(off$time_varying_coef_03_sd, 0L)
+
+  on <- get_multistate_priors(
+    n_levels = 1L, n_time_varying_covar = 3L, n_time_invariant_covar = 2L,
+    enable_ms_03_time_varying_cov = 1L
+  )
+  expect_length(on$time_varying_coef_03_mean, 3L)
+  expect_length(on$time_varying_coef_03_sd, 3L)
+})
+
+test_that("get_multistate_priors: 0->3 TI coef length follows enable_ms_03_time_invariant_cov", {
+  off <- get_multistate_priors(
+    n_levels = 1L, n_time_varying_covar = 3L, n_time_invariant_covar = 2L,
+    enable_ms_03_time_invariant_cov = 0L
+  )
+  expect_length(off$time_invariant_coef_03_mean, 0L)
+  expect_length(off$time_invariant_coef_03_sd, 0L)
+
+  on <- get_multistate_priors(
+    n_levels = 1L, n_time_varying_covar = 3L, n_time_invariant_covar = 2L,
+    enable_ms_03_time_invariant_cov = 1L
+  )
+  expect_length(on$time_invariant_coef_03_mean, 2L)
+  expect_length(on$time_invariant_coef_03_sd, 2L)
+})
+
+test_that("get_multistate_priors: 3->2 TI coef length follows enable_ms_32_time_invariant_cov", {
+  off <- get_multistate_priors(
+    n_levels = 1L, n_time_varying_covar = 3L, n_time_invariant_covar = 2L,
+    enable_ms_32_time_invariant_cov = 0L
+  )
+  expect_length(off$time_invariant_coef_32_mean, 0L)
+  expect_length(off$time_invariant_coef_32_sd, 0L)
+
+  on <- get_multistate_priors(
+    n_levels = 1L, n_time_varying_covar = 3L, n_time_invariant_covar = 2L,
+    enable_ms_32_time_invariant_cov = 1L
+  )
+  expect_length(on$time_invariant_coef_32_mean, 2L)
+  expect_length(on$time_invariant_coef_32_sd, 2L)
+})
+
+test_that("get_multistate_priors: defaults disable all state-3 covariates", {
+  res <- get_multistate_priors(
+    n_levels = 1L, n_time_varying_covar = 3L, n_time_invariant_covar = 2L
+  )
+  expect_length(res$time_varying_coef_03_mean, 0L)
+  expect_length(res$time_invariant_coef_03_mean, 0L)
+  expect_length(res$time_invariant_coef_32_mean, 0L)
 })

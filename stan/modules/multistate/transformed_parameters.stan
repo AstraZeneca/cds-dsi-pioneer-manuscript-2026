@@ -186,8 +186,8 @@ if (enable_ms_01) {
   }
 
   // NOTE: -exp() transform for log_cond_surv_01 is deferred to
-  // modules/multistate/cond_surv_transform.stan to allow PSA-specific
-  // inline TV covariate insertion before the transform.
+  // modules/multistate/cond_surv_transform.stan to allow inline burden
+  // TV-covariate insertion (e.g. PSA inline path) before the transform.
 }
 
 // ============================================================================
@@ -283,9 +283,9 @@ if (enable_ms_02) {
   // -------------------------------------------------------------------------
   // Time-varying covariate effects (same pattern as 0→1)
   // -------------------------------------------------------------------------
-  // 0->2 time-varying covariate: uses modeled PSA (ms_time_varying_covar_01)
+  // 0->2 time-varying covariate: uses modeled burden (ms_time_varying_covar_01)
   // Controlled by enable_ms_02_time_varying_cov, independent of 0->1 mode.
-  // When ms_needs_inline_burden, the PSA-specific inline path handles this instead.
+  // When ms_needs_inline_burden, the inline burden path handles this instead.
   if (!ms_needs_inline_burden && enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov
       && n_time_varying_covar > 0 && size(ms_time_varying_covar_01) > 0) {
     for (k in 1:n_time_varying_covar) {
@@ -464,8 +464,8 @@ if (need_12_s_gp) {
     log_cond_surv_12_s += rep_matrix(linpred_pop_12, ms_max_sojourn_t);
   }
 
-  // PSA-at-entry covariate: shift sojourn hazard per patient based on PSA
-  // burden at the moment of progression (entry into state 1).
+  // Burden-at-entry covariate: shift sojourn hazard per patient based on the
+  // (PSA or other) burden value at the moment of progression (entry into state 1).
   if (enable_ms_12_entry_covar) {
     log_cond_surv_12_s += rep_matrix(
       coef_log_entry_covar_12[1] * to_vector(entry_covar_12), ms_max_sojourn_t
@@ -679,9 +679,10 @@ if (enable_ms_03) {
   }
 
   // -------------------------------------------------------------------------
-  // Time-varying covariate effects for 0->3 (tumor bridge: modeled PSA)
+  // Time-varying covariate effects for 0->3 (modeled burden trajectory)
   // -------------------------------------------------------------------------
-  // Uses ms_time_varying_covar_01 (modeled PSA matrix), independent of 0->1 mode.
+  // Uses ms_time_varying_covar_01 (modeled biomarker matrix; PSA for pioneer,
+  // SLD-derived for tumor models), independent of 0->1 mode.
   if (!ms_needs_inline_burden && enable_ms_pop_time_varying_cov && enable_ms_03_time_varying_cov
       && n_time_varying_covar > 0 && size(ms_time_varying_covar_01) > 0) {
     for (k in 1:n_time_varying_covar) {
@@ -815,7 +816,7 @@ if (enable_ms_32) {
   // Time-invariant covariate effects (QR space with multi-level random slopes)
   // -------------------------------------------------------------------------
   // Time-varying covariates not implemented for 3->2: would require sojourn-clock
-  // indexing of the modeled PSA matrix.
+  // indexing of the modeled burden matrix.
   if (enable_ms_pop_time_invariant_cov && enable_ms_32_time_invariant_cov && n_time_invariant_covar > 0) {
     vector[n_forecast_patients] linpred_pop_32 = Q_covar_design_matrix[forecast_patient_idx, :] * time_invariant_coef_qr_32;
 
@@ -853,8 +854,8 @@ if (enable_ms_32) {
     log_cond_surv_32 += rep_matrix(linpred_pop_32, ms_max_sojourn_t_32);
   }
 
-  // PSA-at-entry covariate: shift sojourn hazard per patient based on PSA
-  // burden at the moment of dropout (entry into state 3).
+  // Burden-at-entry covariate: shift sojourn hazard per patient based on the
+  // (PSA or other) burden value at the moment of dropout (entry into state 3).
   if (enable_ms_32_entry_covar) {
     log_cond_surv_32 += rep_matrix(
       coef_log_entry_covar_32[1] * to_vector(entry_covar_32), ms_max_sojourn_t_32
