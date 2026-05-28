@@ -5,19 +5,19 @@ library(tidyverse)
 
 r_full_model_grid_flags <- function(pop_pn, pat_pn, states_grid,
                                      ms_tv_cov, n_tv, ms_01, visit_gated,
-                                     visit_gated_latent, tv_02_cov) {
+                                     visit_gated_latent, tv_02_cov, tv_03_cov) {
   any_pn <- as.integer(pop_pn || pat_pn)
   needs_inline <- as.integer(
     !any_pn &&
     ms_tv_cov && n_tv > 0 &&
-    (tv_02_cov || (visit_gated && visit_gated_latent))
+    (tv_02_cov || tv_03_cov || (visit_gated && visit_gated_latent))
   )
   need_grid <- as.integer(
     any_pn || states_grid ||
     (ms_tv_cov && n_tv > 0 && !needs_inline &&
      ((ms_01 && !visit_gated) ||
       (visit_gated && visit_gated_latent) ||
-      tv_02_cov))
+      tv_02_cov || tv_03_cov))
   )
   list(any_pn = any_pn, need_grid = need_grid, needs_inline = needs_inline)
 }
@@ -31,7 +31,8 @@ combos <- expand.grid(
   ms_01               = 0:1,
   visit_gated         = 0:1,
   visit_gated_latent  = 0:1,
-  tv_02_cov           = 0:1
+  tv_02_cov           = 0:1,
+  tv_03_cov           = 0:1
 ) |> as.data.frame()
 
 fit <- test_stan_function(
@@ -46,7 +47,8 @@ fit <- test_stan_function(
     enable_ms_01                = combos$ms_01,
     enable_visit_gated          = combos$visit_gated,
     enable_visit_gated_latent   = combos$visit_gated_latent,
-    enable_02_tv_cov            = combos$tv_02_cov
+    enable_02_tv_cov            = combos$tv_02_cov,
+    enable_03_tv_cov            = combos$tv_03_cov
   )
 )
 d <- posterior::as_draws_df(fit$draws())
@@ -57,7 +59,7 @@ test_that("compute_full_model_grid_flags: all combos correct", {
     exp <- r_full_model_grid_flags(r$pop_pn, r$pat_pn, r$states_grid,
                                     r$ms_tv_cov, r$n_tv, r$ms_01,
                                     r$visit_gated, r$visit_gated_latent,
-                                    r$tv_02_cov)
+                                    r$tv_02_cov, r$tv_03_cov)
     expect_equal(get_stan_val(d, "out_any_process_noise", c),     exp$any_pn,
                  label = sprintf("any_pn[%d]", c))
     expect_equal(get_stan_val(d, "out_need_states_full_grid", c), exp$need_grid,
@@ -87,7 +89,7 @@ test_that("compute_full_model_grid_flags: need_grid=0 when all gates off", {
     exp <- r_full_model_grid_flags(r$pop_pn, r$pat_pn, r$states_grid,
                                    r$ms_tv_cov, r$n_tv, r$ms_01,
                                    r$visit_gated, r$visit_gated_latent,
-                                   r$tv_02_cov)
+                                   r$tv_02_cov, r$tv_03_cov)
     exp$need_grid == 0L
   }, logical(1)))
   for (c in off_combos)
