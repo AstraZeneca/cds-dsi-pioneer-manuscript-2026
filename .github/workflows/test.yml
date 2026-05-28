@@ -96,7 +96,7 @@ jobs:
         if: github.event_name == 'push'
         run: |
           # Quick smoke tests on push - R helpers and critical Stan functions only
-          Rscript -e "testthat::test_dir('tests/testthat', filter = '^test-helper|^test-multistate|^test-trial-data', perl = TRUE)"
+          Rscript -e "testthat::test_dir('tests/testthat', filter = '^helper|^multistate|^trial-data', perl = TRUE)"
         env:
           CMDSTAN: ~/.cmdstan/cmdstan-2.38.0
 
