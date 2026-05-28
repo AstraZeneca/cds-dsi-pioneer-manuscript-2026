@@ -115,6 +115,10 @@ vector[enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov
     ? n_time_varying_covar : 0] time_varying_coef_02_mean;
 vector<lower=0>[enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov
     ? n_time_varying_covar : 0] time_varying_coef_02_sd;
+vector[enable_ms_pop_time_varying_cov && enable_ms_03_time_varying_cov
+    ? n_time_varying_covar : 0] time_varying_coef_03_mean;
+vector<lower=0>[enable_ms_pop_time_varying_cov && enable_ms_03_time_varying_cov
+    ? n_time_varying_covar : 0] time_varying_coef_03_sd;
 vector[n_time_varying_covar] time_varying_coef_12_mean;
 vector<lower=0>[n_time_varying_covar] time_varying_coef_12_sd;
 
@@ -123,13 +127,19 @@ vector[n_time_invariant_covar] time_invariant_coef_01_mean;
 vector<lower=0>[n_time_invariant_covar] time_invariant_coef_01_sd;
 vector[n_time_invariant_covar] time_invariant_coef_02_mean;
 vector<lower=0>[n_time_invariant_covar] time_invariant_coef_02_sd;
+vector[n_time_invariant_covar] time_invariant_coef_03_mean;
+vector<lower=0>[n_time_invariant_covar] time_invariant_coef_03_sd;
 vector[n_time_invariant_covar] time_invariant_coef_12_mean;
 vector<lower=0>[n_time_invariant_covar] time_invariant_coef_12_sd;
+vector[n_time_invariant_covar] time_invariant_coef_32_mean;
+vector<lower=0>[n_time_invariant_covar] time_invariant_coef_32_sd;
 
 // Multi-level random slope SDs (per level)
 array[n_levels] row_vector<lower=0>[n_time_invariant_covar] sd_level_slope_01_sd;
 array[n_levels] row_vector<lower=0>[n_time_invariant_covar] sd_level_slope_02_sd;
+array[n_levels] row_vector<lower=0>[n_time_invariant_covar] sd_level_slope_03_sd;
 array[n_levels] row_vector<lower=0>[n_time_invariant_covar] sd_level_slope_12_sd;
+array[n_levels] row_vector<lower=0>[n_time_invariant_covar] sd_level_slope_32_sd;
 
 // --- Student-t hierarchy: nu prior hyperparameters for multistate ---
 // Baseline intercepts (one per level)

@@ -8,6 +8,7 @@ functions {
   #include "pfs.stanfunctions"
   #include "lfo.stanfunctions"
   #include "multistate.stanfunctions"
+  #include "_burden.stanfunctions"
   #include "modules/state_space/sf.stanfunctions"
   #include "modules/tumor/tumor.stanfunctions"
 }
@@ -63,8 +64,13 @@ transformed parameters {
   #include "modules/frac/transformed_parameters.stan"
   #include "modules/init/transformed_parameters.stan"
   #include "modules/state_space/transformed_parameters.stan"
-  #include "_ms_time_varying_covar.stan"
+  // Burden interface: tumor SLD as the generic burden marker.
+  vector[n_patients] log_baseline_burden = log_baseline_sld;
+  real median_log_burden_obs = median_log_sld_obs;
+  real iqr_log_burden_obs = iqr_log_sld_obs;
+  #include "_ms_burden_tv_covar.stan"
   #include "modules/multistate/transformed_parameters.stan"
+  #include "_ms_burden_inline_tv_covar.stan"
   #include "modules/multistate/cond_surv_transform.stan"
 }
 
