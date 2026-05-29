@@ -16,32 +16,77 @@ ms_init_values <- function(env) {
     need_12_s_gp <- enable_ms_12 && (ms_time_scale_12 == 1 || ms_time_scale_12 == 2)
     need_12_t_gp <- enable_ms_12 && (ms_time_scale_12 == 0 || ms_time_scale_12 == 2)
 
-    # Enabled group counts: truthy (> 0) — both intercept-only (1) and GP (2) count
-    n_enabled_groups_ms_baseline <- sum(n_groups_per_level[enable_ms_level_baseline_hazard > 0])
-    n_enabled_groups_ms_baseline_01 <- if (enable_ms_01) n_enabled_groups_ms_baseline else 0L
-    n_enabled_groups_ms_baseline_02 <- if (enable_ms_02) n_enabled_groups_ms_baseline else 0L
-    n_enabled_groups_ms_baseline_12_s <- if (need_12_s_gp) n_enabled_groups_ms_baseline else 0L
-    n_enabled_groups_ms_baseline_12_t <- if (need_12_t_gp) n_enabled_groups_ms_baseline else 0L
-    n_enabled_groups_ms_baseline_03 <- if (enable_ms_03) n_enabled_groups_ms_baseline else 0L
-    n_enabled_groups_ms_baseline_32 <- if (enable_ms_32) n_enabled_groups_ms_baseline else 0L
-    n_enabled_groups_ms_slope <- sum(n_groups_per_level[enable_ms_level_cov == 1])
-    any_re_level <- any(enable_ms_level_baseline_hazard >= 2L)
+    # --- Decomposed baseline-hazard schema (per-transition x per-level) ---
+    # Reconstruct each slot's legacy 0-4 mode from the decomposed arrays so the
+    # per-slot group counts mirror Stan's transformed_data.stan exactly.
+    # Slot order matches flags.stan: 1=01,2=02,3=03,4=12_s,5=12_t,6=32.
+    ms_slot_active <- c(
+      as.integer(enable_ms_01), as.integer(enable_ms_02), as.integer(enable_ms_03),
+      as.integer(need_12_s_gp), as.integer(need_12_t_gp), as.integer(enable_ms_32)
+    )
+    reconstruct_legacy_mode <- function(slot_idx) {
+      if (!ms_slot_active[slot_idx]) return(rep(0L, n_levels))
+      gp_row <- enable_ms_level_gp[slot_idx, ]
+      mode_row <- ms_level_intercept_mode[slot_idx, ]
+      dplyr::case_when(
+        gp_row == 1L   ~ 3L,   # RE_GP
+        mode_row == 0L ~ 0L,   # NONE
+        mode_row == 1L ~ 1L,   # FE
+        mode_row == 2L ~ 2L,   # RE_NCP
+        TRUE           ~ 4L    # RE_CP (decomposed mode 3)
+      )
+    }
+    ms_legacy_mode <- lapply(seq_len(6L), reconstruct_legacy_mode)
 
-    # GP-only group counts (mode == 3): used for _level_eta matrix sizing
-    n_gp_groups_ms_baseline <- sum(n_groups_per_level[enable_ms_level_baseline_hazard == 3L])
-    n_gp_groups_ms_baseline_01 <- if (enable_ms_01) n_gp_groups_ms_baseline else 0L
-    n_gp_groups_ms_baseline_02 <- if (enable_ms_02) n_gp_groups_ms_baseline else 0L
-    n_gp_groups_ms_baseline_12_s <- if (need_12_s_gp) n_gp_groups_ms_baseline else 0L
-    n_gp_groups_ms_baseline_12_t <- if (need_12_t_gp) n_gp_groups_ms_baseline else 0L
-    n_gp_groups_ms_baseline_03 <- if (enable_ms_03) n_gp_groups_ms_baseline else 0L
-    n_gp_groups_ms_baseline_32 <- if (enable_ms_32) n_gp_groups_ms_baseline else 0L
+    n_enabled_slot <- vapply(ms_legacy_mode,
+      function(m) sum(n_groups_per_level[m > 0L]), integer(1))
+    n_gp_slot <- vapply(ms_legacy_mode,
+      function(m) sum(n_groups_per_level[m == 3L]), integer(1))
+    any_re_slot <- vapply(ms_legacy_mode,
+      function(m) any(m == 2L | m == 3L | m == 4L), logical(1))
+
+    # Enabled group counts: truthy (> 0) — both intercept-only and GP count.
+    n_enabled_groups_ms_baseline_01 <- n_enabled_slot[1]
+    n_enabled_groups_ms_baseline_02 <- n_enabled_slot[2]
+    n_enabled_groups_ms_baseline_03 <- n_enabled_slot[3]
+    n_enabled_groups_ms_baseline_12_s <- n_enabled_slot[4]
+    n_enabled_groups_ms_baseline_12_t <- n_enabled_slot[5]
+    n_enabled_groups_ms_baseline_32 <- n_enabled_slot[6]
+    n_enabled_groups_ms_slope <- sum(n_groups_per_level[enable_ms_level_cov == 1])
+    # any_re per slot (used to gate the per-slot intercept-SD inits)
+    any_re_level_01   <- any_re_slot[1]
+    any_re_level_02   <- any_re_slot[2]
+    any_re_level_03   <- any_re_slot[3]
+    any_re_level_12_s <- any_re_slot[4]
+    any_re_level_12_t <- any_re_slot[5]
+    any_re_level_32   <- any_re_slot[6]
+
+    # GP-only group counts (legacy mode == 3): used for _level_eta matrix sizing
+    n_gp_groups_ms_baseline_01 <- n_gp_slot[1]
+    n_gp_groups_ms_baseline_02 <- n_gp_slot[2]
+    n_gp_groups_ms_baseline_03 <- n_gp_slot[3]
+    n_gp_groups_ms_baseline_12_s <- n_gp_slot[4]
+    n_gp_groups_ms_baseline_12_t <- n_gp_slot[5]
+    n_gp_groups_ms_baseline_32 <- n_gp_slot[6]
 
     # GP knot counts (coarse grid, matches Stan transformed_data ceiling division)
     n_ms_gp_cal_knots        <- ceiling(max_all_t / ms_gp_grid_step)
     n_ms_gp_sojourn_knots    <- ceiling(ms_max_sojourn_t / ms_gp_grid_step)
     n_ms_gp_sojourn_32_knots <- ceiling(ms_max_sojourn_t_32 / ms_gp_grid_step)
 
-    tibble::lst(
+    # --- Correlated intercept block inits (Phase 2) ---
+    # Patient (last) level uses the forecast-patient count, mirroring Stan's
+    # n_forecast_groups_per_level. Empty when no block is configured.
+    n_forecast_groups_per_level <- n_groups_per_level
+    if (exists("n_forecast_patients", inherits = FALSE)) {
+      n_forecast_groups_per_level[n_levels] <- n_forecast_patients
+    }
+    .ms_corr <- ms_corr_blocks(
+      ms_level_intercept_corr_group, ms_slot_active, n_forecast_groups_per_level
+    )
+    .ms_corr_inits <- ms_corr_block_inits(.ms_corr, z_sd = 0.3)
+
+    c(tibble::lst(
       # --- 0→1 Transition (Progression / PFS event) ---
       log_lambda_gp_01_pop_intercept = if (enable_ms_01) {
         array(rnorm(1, log_lambda_gp_01_pop_intercept_mean, log_lambda_gp_01_pop_intercept_sd), dim = 1)
@@ -53,7 +98,7 @@ ms_init_values <- function(env) {
       log_lambda_gp_01_pop_eta = if (enable_ms_01) rnorm(n_ms_gp_cal_knots),
       log_lambda_gp_01_level_alpha = if (enable_ms_01) rep(1.0, n_levels) else numeric(0),
       log_lambda_gp_01_level_rho = if (enable_ms_01) pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_01_level_rho_alpha, log_lambda_gp_01_level_rho_beta), ms_gp_grid_step) else numeric(0),
-      log_lambda_gp_01_level_intercept_sd = if (enable_ms_01 && any_re_level) abs(rnorm(n_levels, sd = log_lambda_gp_01_level_intercept_sd_sd)) else numeric(0),
+      log_lambda_gp_01_level_intercept_sd = if (enable_ms_01 && any_re_level_01) abs(rnorm(n_levels, sd = log_lambda_gp_01_level_intercept_sd_sd)) else numeric(0),
       log_lambda_gp_01_level_eta = if (enable_ms_01 && n_gp_groups_ms_baseline_01 > 0) {
         matrix(rnorm(n_gp_groups_ms_baseline_01 * n_ms_gp_cal_knots), nrow = n_gp_groups_ms_baseline_01, ncol = n_ms_gp_cal_knots)
       },
@@ -80,7 +125,7 @@ ms_init_values <- function(env) {
       log_lambda_gp_dead_pop_eta = if (isTRUE(share_dead_gp_shape == 1L)) rnorm(n_ms_gp_cal_knots),
       log_lambda_gp_02_level_alpha = if (enable_ms_02) rep(1.0, n_levels) else numeric(0),
       log_lambda_gp_02_level_rho = if (enable_ms_02) pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_02_level_rho_alpha, log_lambda_gp_02_level_rho_beta), ms_gp_grid_step) else numeric(0),
-      log_lambda_gp_02_level_intercept_sd = if (enable_ms_02 && any_re_level) abs(rnorm(n_levels, sd = log_lambda_gp_02_level_intercept_sd_sd)) else numeric(0),
+      log_lambda_gp_02_level_intercept_sd = if (enable_ms_02 && any_re_level_02) abs(rnorm(n_levels, sd = log_lambda_gp_02_level_intercept_sd_sd)) else numeric(0),
       log_lambda_gp_02_level_eta = if (enable_ms_02 && n_gp_groups_ms_baseline_02 > 0) {
         matrix(rnorm(n_gp_groups_ms_baseline_02 * n_ms_gp_cal_knots), nrow = n_gp_groups_ms_baseline_02, ncol = n_ms_gp_cal_knots)
       },
@@ -99,7 +144,7 @@ ms_init_values <- function(env) {
       log_lambda_gp_12_s_pop_eta = if (need_12_s_gp) rnorm(n_ms_gp_sojourn_knots),
       log_lambda_gp_12_s_level_alpha = if (need_12_s_gp) rep(1.0, n_levels) else numeric(0),
       log_lambda_gp_12_s_level_rho = if (need_12_s_gp) pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_12_s_level_rho_alpha, log_lambda_gp_12_s_level_rho_beta), ms_gp_grid_step) else numeric(0),
-      log_lambda_gp_12_s_level_intercept_sd = if (need_12_s_gp && any_re_level) abs(rnorm(n_levels, sd = log_lambda_gp_12_s_level_intercept_sd_sd)) else numeric(0),
+      log_lambda_gp_12_s_level_intercept_sd = if (need_12_s_gp && any_re_level_12_s) abs(rnorm(n_levels, sd = log_lambda_gp_12_s_level_intercept_sd_sd)) else numeric(0),
       log_lambda_gp_12_s_level_eta = if (need_12_s_gp && n_gp_groups_ms_baseline_12_s > 0) {
         matrix(rnorm(n_gp_groups_ms_baseline_12_s * n_ms_gp_sojourn_knots), nrow = n_gp_groups_ms_baseline_12_s, ncol = n_ms_gp_sojourn_knots)
       },
@@ -118,7 +163,7 @@ ms_init_values <- function(env) {
       log_lambda_gp_12_t_pop_eta = if (need_12_t_gp && !isTRUE(share_dead_gp_shape == 1L)) rnorm(n_ms_gp_cal_knots),
       log_lambda_gp_12_t_level_alpha = if (need_12_t_gp) rep(1.0, n_levels) else numeric(0),
       log_lambda_gp_12_t_level_rho = if (need_12_t_gp) pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_12_t_level_rho_alpha, log_lambda_gp_12_t_level_rho_beta), ms_gp_grid_step) else numeric(0),
-      log_lambda_gp_12_t_level_intercept_sd = if (need_12_t_gp && any_re_level) abs(rnorm(n_levels, sd = log_lambda_gp_12_t_level_intercept_sd_sd)) else numeric(0),
+      log_lambda_gp_12_t_level_intercept_sd = if (need_12_t_gp && any_re_level_12_t) abs(rnorm(n_levels, sd = log_lambda_gp_12_t_level_intercept_sd_sd)) else numeric(0),
       log_lambda_gp_12_t_level_eta = if (need_12_t_gp && n_gp_groups_ms_baseline_12_t > 0) {
         matrix(rnorm(n_gp_groups_ms_baseline_12_t * n_ms_gp_cal_knots), nrow = n_gp_groups_ms_baseline_12_t, ncol = n_ms_gp_cal_knots)
       },
@@ -139,7 +184,7 @@ ms_init_values <- function(env) {
       log_lambda_gp_03_level_rho = if (enable_ms_03) {
         pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_03_level_rho_alpha, log_lambda_gp_03_level_rho_beta), ms_gp_grid_step)
       } else numeric(0),
-      log_lambda_gp_03_level_intercept_sd = if (enable_ms_03 && any_re_level) {
+      log_lambda_gp_03_level_intercept_sd = if (enable_ms_03 && any_re_level_03) {
         abs(rnorm(n_levels, sd = log_lambda_gp_03_level_intercept_sd_sd))
       } else numeric(0),
       log_lambda_gp_03_level_eta = if (enable_ms_03 && n_gp_groups_ms_baseline_03 > 0) {
@@ -163,7 +208,7 @@ ms_init_values <- function(env) {
       log_lambda_gp_32_s_level_rho = if (enable_ms_32) {
         pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_32_s_level_rho_alpha, log_lambda_gp_32_s_level_rho_beta), ms_gp_grid_step)
       } else numeric(0),
-      log_lambda_gp_32_s_level_intercept_sd = if (enable_ms_32 && any_re_level) {
+      log_lambda_gp_32_s_level_intercept_sd = if (enable_ms_32 && any_re_level_32) {
         abs(rnorm(n_levels, sd = log_lambda_gp_32_s_level_intercept_sd_sd))
       } else numeric(0),
       log_lambda_gp_32_s_level_eta = if (enable_ms_32 && n_gp_groups_ms_baseline_32 > 0) {
@@ -281,7 +326,7 @@ ms_init_values <- function(env) {
       coef_log_entry_covar_32 = if (enable_ms_32 && isTRUE(enable_ms_32_entry_covar == 1L)) {
         array(rnorm(1, coef_log_entry_covar_32_mean, coef_log_entry_covar_32_sd * 0.3), dim = 1)
       },
-    )
+    ), .ms_corr_inits)
   })
 }
 

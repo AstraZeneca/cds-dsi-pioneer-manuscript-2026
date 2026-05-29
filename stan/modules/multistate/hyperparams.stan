@@ -166,3 +166,10 @@ real coef_log_entry_covar_12_mean;
 real<lower=0> coef_log_entry_covar_12_sd;
 real coef_log_entry_covar_32_mean;
 real<lower=0> coef_log_entry_covar_32_sd;
+
+// --- Correlated Intercept Block Hyperparameter (Phase 2) ---
+// LKJ shape for the cross-transition frailty correlation Cholesky factors.
+// eta = 2 (default): gently concentrates toward the identity, symmetric about
+// zero. Single scalar shared by every correlated block. Unused (but always in
+// scope) when n_ms_corr_blocks == 0.
+real<lower=0> ms_intercept_corr_eta;

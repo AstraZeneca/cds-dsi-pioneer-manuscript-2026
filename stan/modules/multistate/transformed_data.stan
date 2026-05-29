@@ -48,74 +48,249 @@ if (share_dead_gp_shape) {
     fatal_error("share_dead_gp_shape requires enable_ms_02=1");
 }
 
-// --- Level Baseline Hazard Flags (B2) ---
-// GP-Only Boolean Mask, group counts, and position arrays
-// strict=1: fatal_error on invalid input; is_valid sentinel discarded
+// --- Intercept Slot Indexing (decomposed schema) ---
+// N_TRANS = 6 intercept slots over the additive hazard-intercept channels.
+// Order matches flags.stan (enable_ms_level_gp / ms_level_intercept_mode /
+// ms_level_intercept_corr_group rows).
+int N_MS_INTERCEPT_SLOTS = 6;
+int MS_SLOT_01   = 1;
+int MS_SLOT_02   = 2;
+int MS_SLOT_03   = 3;
+int MS_SLOT_12_S = 4;
+int MS_SLOT_12_T = 5;
+int MS_SLOT_32   = 6;
+
+// --- Per-slot "active" flags (transition gate) ---
+// A slot contributes only when its transition channel is live. The 12_s / 12_t
+// slots are gated by the time-scale-derived need flags (B1), not enable_ms_12.
+array[N_MS_INTERCEPT_SLOTS] int ms_slot_active;
+ms_slot_active[MS_SLOT_01]   = enable_ms_01;
+ms_slot_active[MS_SLOT_02]   = enable_ms_02;
+ms_slot_active[MS_SLOT_03]   = enable_ms_03;
+ms_slot_active[MS_SLOT_12_S] = need_12_s_gp;
+ms_slot_active[MS_SLOT_12_T] = need_12_t_gp;
+ms_slot_active[MS_SLOT_32]   = enable_ms_32;
+
+// --- Reconstruct legacy 0-4 baseline-mode vector per slot ---
+// Each slot reconstructs the legacy mode vector the downstream sizing and
+// residual/prior dispatch machinery still consumes. When corr_group is all-zero
+// and every slot shares the same decomposed config (the bit-identical legacy
+// path), these vectors all equal the old enable_ms_level_baseline_hazard.
+array[N_MS_INTERCEPT_SLOTS, n_levels] int ms_legacy_mode;
+for (k in 1:N_MS_INTERCEPT_SLOTS) {
+  ms_legacy_mode[k] = ms_reconstruct_legacy_mode(
+    n_levels, ms_slot_active[k],
+    enable_ms_level_gp[k], ms_level_intercept_mode[k], 1
+  );
+}
+
+// --- Validation: enable_ms_32 requires enable_ms_03 (was B3 strict check) ---
+if (enable_ms_32 && !enable_ms_03)
+  fatal_error("enable_ms_32 requires enable_ms_03");
+
+// --- Validation: corr_group members must be RE, and share a group partition ---
+for (lv in 1:n_levels) {
+  // collect distinct positive corr groups at this level and validate members
+  for (k in 1:N_MS_INTERCEPT_SLOTS) {
+    int g = ms_level_intercept_corr_group[k, lv];
+    if (g < 0) fatal_error("ms_level_intercept_corr_group[", k, ",", lv, "] must be >= 0");
+    // Codes are bounded by the slot count: there can be at most N_MS_INTERCEPT_SLOTS
+    // distinct groups at a level, so the block-discovery scan over 1..N covers all
+    // realizable codes. Reject larger codes so a typo can't silently drop a block.
+    if (g > N_MS_INTERCEPT_SLOTS)
+      fatal_error("ms_level_intercept_corr_group[", k, ",", lv, "] = ", g,
+                  " exceeds N_MS_INTERCEPT_SLOTS (", N_MS_INTERCEPT_SLOTS, ")");
+    if (g > 0) {
+      // member must be RE non-centered at this level when active. The MVN
+      // assembly u = diag_pre_multiply(sigma, L) * z is itself the NCP form, so
+      // only decomposed intercept_mode == 2 (RE-NCP) is admissible; RE-CP (3) and
+      // GP (enable_ms_level_gp) would double-parameterize the same channel.
+      if (ms_slot_active[k]) {
+        if (ms_level_intercept_mode[k, lv] != 2) {
+          fatal_error("corr_group member slot ", k, " at level ", lv,
+                      " must have ms_level_intercept_mode == 2 (RE-NCP); got ",
+                      ms_level_intercept_mode[k, lv]);
+        }
+        if (enable_ms_level_gp[k, lv]) {
+          fatal_error("corr_group member slot ", k, " at level ", lv,
+                      " cannot also enable_ms_level_gp (GP residual conflicts ",
+                      "with the correlated NCP intercept)");
+        }
+      }
+      // Student-t marginals are incompatible with the MVN/Gaussian-copula path.
+      if (enable_student_t_hierarchy && ms_slot_active[k]) {
+        fatal_error("corr_group member slot ", k, " at level ", lv,
+                    " cannot use enable_student_t_hierarchy (correlated blocks ",
+                    "require Gaussian marginals)");
+      }
+    }
+  }
+}
+
+// ============================================================================
+// CORRELATED INTERCEPT BLOCKS (Phase 2 — cross-transition frailty)
+// ============================================================================
+// A correlation "block" is a distinct positive corr_group code at a given level
+// whose ACTIVE members number >= 2 (a singleton collapses to the scalar path).
+// Each block is one MVN row per member transition, sampled via a Cholesky LKJ
+// factor and an NCP std-normal matrix:
+//     u = diag_pre_multiply(sigma_members, L) * z
+// scattered back to each member transition's level-lv intercept vector.
+//
+// Stan requires uniform inner dimensions across an array of cholesky_factor_corr
+// / matrix parameters, so every configured block must share the same dimension
+// `ms_corr_dim` (number of active members) and the same group count
+// `ms_corr_n_groups` (= n_forecast_groups_per_level at the block's level). Both
+// are enforced with fatal_error below. The realistic configuration is a single
+// d=2 patient-level block (0->1 correlated with 0->3); the machinery is fully
+// general for any homogeneous-dimension set of blocks at any levels.
+
+// First pass: count blocks and determine the (uniform) member dimension. A block
+// is keyed by (level, positive group code); we discover distinct codes per level
+// by treating the first active member slot that carries a code as the canonical
+// representative and counting how many active slots share it.
+int n_ms_corr_blocks = 0;
+int ms_corr_dim = 0;        // uniform member count across all blocks (0 if none)
+int ms_corr_n_groups = 0;   // uniform group count across all blocks (0 if none)
+for (lv in 1:n_levels) {
+  for (g in 1:N_MS_INTERCEPT_SLOTS) {
+    // candidate group code `g` (corr_group codes are small positive ints; we
+    // scan the code space using the slot range as an upper bound, since a code
+    // can only be shared by <= N_MS_INTERCEPT_SLOTS members).
+    int d_g = 0;
+    for (k in 1:N_MS_INTERCEPT_SLOTS) {
+      if (ms_slot_active[k] && ms_level_intercept_corr_group[k, lv] == g) {
+        d_g += 1;
+      }
+    }
+    if (d_g >= 2) {
+      n_ms_corr_blocks += 1;
+      if (ms_corr_dim == 0) {
+        ms_corr_dim = d_g;
+        ms_corr_n_groups = n_forecast_groups_per_level[lv];
+      } else {
+        if (d_g != ms_corr_dim)
+          fatal_error("all correlated intercept blocks must share the same ",
+                      "member dimension; found ", ms_corr_dim, " and ", d_g);
+        if (n_forecast_groups_per_level[lv] != ms_corr_n_groups)
+          fatal_error("all correlated intercept blocks must share the same ",
+                      "group count; found ", ms_corr_n_groups, " and ",
+                      n_forecast_groups_per_level[lv]);
+      }
+    }
+  }
+}
+
+// Second pass: record each block's level and member slots (in slot order),
+// and build a reverse lookup so each transition's intercept-assembly branch can
+// ask "am I a correlated member at this level, and if so which (block, row)?"
+//   ms_corr_member_block[k, lv]  = block index b (0 if slot k @ lv not correlated)
+//   ms_corr_member_row[k, lv]    = MVN row m within that block (0 otherwise)
+array[n_ms_corr_blocks] int ms_corr_block_level;
+array[n_ms_corr_blocks, ms_corr_dim] int ms_corr_block_member_slot;
+array[N_MS_INTERCEPT_SLOTS, n_levels] int ms_corr_member_block =
+  rep_array(0, N_MS_INTERCEPT_SLOTS, n_levels);
+array[N_MS_INTERCEPT_SLOTS, n_levels] int ms_corr_member_row =
+  rep_array(0, N_MS_INTERCEPT_SLOTS, n_levels);
+{
+  int b = 0;
+  for (lv in 1:n_levels) {
+    for (g in 1:N_MS_INTERCEPT_SLOTS) {
+      int d_g = 0;
+      for (k in 1:N_MS_INTERCEPT_SLOTS) {
+        if (ms_slot_active[k] && ms_level_intercept_corr_group[k, lv] == g) d_g += 1;
+      }
+      if (d_g >= 2) {
+        b += 1;
+        ms_corr_block_level[b] = lv;
+        int m = 0;
+        for (k in 1:N_MS_INTERCEPT_SLOTS) {
+          if (ms_slot_active[k] && ms_level_intercept_corr_group[k, lv] == g) {
+            m += 1;
+            ms_corr_block_member_slot[b, m] = k;
+            ms_corr_member_block[k, lv] = b;
+            ms_corr_member_row[k, lv]   = m;
+          }
+        }
+      }
+    }
+  }
+}
+
+// --- Per-Slot Level Baseline Hazard Flags (B2, generalized) ---
+// GP mask / group counts / position arrays, one set per intercept slot.
+// strict=1: fatal_error on invalid input; is_valid sentinel discarded.
 int ms_flag_b2_valid;
-int any_re_level;
-array[n_levels] int ms_level_baseline_is_gp;
-int n_gp_groups_ms_baseline;
-array[n_levels + 1] int gp_level_pos_ms_baseline;
-array[n_levels + 1] int enabled_level_pos_ms_baseline;
-(ms_flag_b2_valid, any_re_level, ms_level_baseline_is_gp, n_gp_groups_ms_baseline,
- gp_level_pos_ms_baseline, enabled_level_pos_ms_baseline) =
-  compute_ms_level_baseline_flags(
-    n_levels, n_forecast_groups_per_level, enable_ms_level_baseline_hazard, 1
+array[N_MS_INTERCEPT_SLOTS] int any_re_level_slot;
+array[N_MS_INTERCEPT_SLOTS, n_levels] int ms_level_baseline_is_gp_slot;
+array[N_MS_INTERCEPT_SLOTS] int n_gp_groups_ms_baseline_slot;
+array[N_MS_INTERCEPT_SLOTS, n_levels + 1] int gp_level_pos_ms_baseline_slot;
+array[N_MS_INTERCEPT_SLOTS, n_levels + 1] int enabled_level_pos_ms_baseline_slot;
+array[N_MS_INTERCEPT_SLOTS] int n_enabled_groups_ms_baseline_slot;
+// raw/cp buckets per slot
+array[N_MS_INTERCEPT_SLOTS] int n_raw_groups_ms_baseline_slot;
+array[N_MS_INTERCEPT_SLOTS] int n_cp_groups_ms_baseline_slot;
+array[N_MS_INTERCEPT_SLOTS, n_levels + 1] int raw_level_pos_ms_baseline_slot;
+array[N_MS_INTERCEPT_SLOTS, n_levels + 1] int cp_level_pos_ms_baseline_slot;
+for (k in 1:N_MS_INTERCEPT_SLOTS) {
+  int valid_k;
+  array[n_levels] int is_gp_k;
+  int n_gp_k;
+  array[n_levels + 1] int gp_pos_k;
+  array[n_levels + 1] int en_pos_k;
+  (valid_k, any_re_level_slot[k], is_gp_k, n_gp_k, gp_pos_k, en_pos_k) =
+    compute_ms_level_baseline_flags(
+      n_levels, n_forecast_groups_per_level, ms_legacy_mode[k], 1
+    );
+  ms_level_baseline_is_gp_slot[k]      = is_gp_k;
+  n_gp_groups_ms_baseline_slot[k]      = n_gp_k;
+  gp_level_pos_ms_baseline_slot[k]     = gp_pos_k;
+  enabled_level_pos_ms_baseline_slot[k] = en_pos_k;
+  n_enabled_groups_ms_baseline_slot[k] = compute_n_enabled_groups(
+    n_forecast_groups_per_level, ms_legacy_mode[k]
   );
+  int n_raw_k;
+  array[n_levels + 1] int raw_pos_k;
+  int n_cp_k;
+  array[n_levels + 1] int cp_pos_k;
+  (n_raw_k, raw_pos_k, n_cp_k, cp_pos_k) =
+    split_cp_ncp_pos(n_levels, n_forecast_groups_per_level, ms_legacy_mode[k]);
+  n_raw_groups_ms_baseline_slot[k]  = n_raw_k;
+  n_cp_groups_ms_baseline_slot[k]   = n_cp_k;
+  raw_level_pos_ms_baseline_slot[k] = raw_pos_k;
+  cp_level_pos_ms_baseline_slot[k]  = cp_pos_k;
+}
+ms_flag_b2_valid = 1;
 
-// --- Shared enabled group count (needed by B3) ---
-int n_enabled_groups_ms_baseline = compute_n_enabled_groups(
-  n_forecast_groups_per_level, enable_ms_level_baseline_hazard
-);
+// --- Per-transition scalar aliases ---
+// Named per-transition views into the per-slot arrays, used by parameters.stan,
+// transformed_parameters.stan, and priors.stan. (Each slot now has its own
+// enabled / GP / raw / cp counts; nothing is shared across transitions.)
+int n_enabled_groups_ms_baseline_01   = n_enabled_groups_ms_baseline_slot[MS_SLOT_01];
+int n_gp_groups_ms_baseline_01        = n_gp_groups_ms_baseline_slot[MS_SLOT_01];
+int n_enabled_groups_ms_baseline_02   = n_enabled_groups_ms_baseline_slot[MS_SLOT_02];
+int n_gp_groups_ms_baseline_02        = n_gp_groups_ms_baseline_slot[MS_SLOT_02];
+int n_enabled_groups_ms_baseline_12_s = n_enabled_groups_ms_baseline_slot[MS_SLOT_12_S];
+int n_gp_groups_ms_baseline_12_s      = n_gp_groups_ms_baseline_slot[MS_SLOT_12_S];
+int n_enabled_groups_ms_baseline_12_t = n_enabled_groups_ms_baseline_slot[MS_SLOT_12_T];
+int n_gp_groups_ms_baseline_12_t      = n_gp_groups_ms_baseline_slot[MS_SLOT_12_T];
+int n_enabled_groups_ms_baseline_03   = n_enabled_groups_ms_baseline_slot[MS_SLOT_03];
+int n_gp_groups_ms_baseline_03        = n_gp_groups_ms_baseline_slot[MS_SLOT_03];
+int n_enabled_groups_ms_baseline_32   = n_enabled_groups_ms_baseline_slot[MS_SLOT_32];
+int n_gp_groups_ms_baseline_32        = n_gp_groups_ms_baseline_slot[MS_SLOT_32];
 
-// --- Per-Transition Group Counts (B3) ---
-// Validates enable_ms_32 requires enable_ms_03 (strict=1: fatal_error on violation)
-// is_valid sentinel discarded
-int ms_flag_b3_valid;
-int n_enabled_groups_ms_baseline_01; int n_gp_groups_ms_baseline_01;
-int n_enabled_groups_ms_baseline_02; int n_gp_groups_ms_baseline_02;
-int n_enabled_groups_ms_baseline_12_s; int n_gp_groups_ms_baseline_12_s;
-int n_enabled_groups_ms_baseline_12_t; int n_gp_groups_ms_baseline_12_t;
-int n_enabled_groups_ms_baseline_03; int n_gp_groups_ms_baseline_03;
-int n_enabled_groups_ms_baseline_32; int n_gp_groups_ms_baseline_32;
-(ms_flag_b3_valid,
- n_enabled_groups_ms_baseline_01, n_gp_groups_ms_baseline_01,
- n_enabled_groups_ms_baseline_02, n_gp_groups_ms_baseline_02,
- n_enabled_groups_ms_baseline_12_s, n_gp_groups_ms_baseline_12_s,
- n_enabled_groups_ms_baseline_12_t, n_gp_groups_ms_baseline_12_t,
- n_enabled_groups_ms_baseline_03, n_gp_groups_ms_baseline_03,
- n_enabled_groups_ms_baseline_32, n_gp_groups_ms_baseline_32) =
-  compute_ms_transition_group_counts(
-    enable_ms_01, enable_ms_02,
-    need_12_s_gp, need_12_t_gp,
-    enable_ms_03, enable_ms_32,
-    n_enabled_groups_ms_baseline, n_gp_groups_ms_baseline, 1
-  );
-
-// --- Per-transition RAW vs CP bucket counts ---
-// All transitions share enable_ms_level_baseline_hazard, so the positions are
-// computed once from the shared mode vector and reused for every transition.
-int n_raw_groups_ms_baseline_shared;
-int n_cp_groups_ms_baseline_shared;
-array[n_levels + 1] int raw_level_pos_ms_baseline_shared;
-array[n_levels + 1] int cp_level_pos_ms_baseline_shared;
-(n_raw_groups_ms_baseline_shared, raw_level_pos_ms_baseline_shared,
- n_cp_groups_ms_baseline_shared,  cp_level_pos_ms_baseline_shared) =
-  split_cp_ncp_pos(n_levels, n_forecast_groups_per_level, enable_ms_level_baseline_hazard);
-
-// Per-transition raw/cp counts (zero when transition is disabled)
-int n_raw_groups_ms_baseline_01   = enable_ms_01   ? n_raw_groups_ms_baseline_shared : 0;
-int n_cp_groups_ms_baseline_01    = enable_ms_01   ? n_cp_groups_ms_baseline_shared  : 0;
-int n_raw_groups_ms_baseline_02   = enable_ms_02   ? n_raw_groups_ms_baseline_shared : 0;
-int n_cp_groups_ms_baseline_02    = enable_ms_02   ? n_cp_groups_ms_baseline_shared  : 0;
-int n_raw_groups_ms_baseline_12_s = need_12_s_gp   ? n_raw_groups_ms_baseline_shared : 0;
-int n_cp_groups_ms_baseline_12_s  = need_12_s_gp   ? n_cp_groups_ms_baseline_shared  : 0;
-int n_raw_groups_ms_baseline_12_t = need_12_t_gp   ? n_raw_groups_ms_baseline_shared : 0;
-int n_cp_groups_ms_baseline_12_t  = need_12_t_gp   ? n_cp_groups_ms_baseline_shared  : 0;
-int n_raw_groups_ms_baseline_03   = enable_ms_03   ? n_raw_groups_ms_baseline_shared : 0;
-int n_cp_groups_ms_baseline_03    = enable_ms_03   ? n_cp_groups_ms_baseline_shared  : 0;
-int n_raw_groups_ms_baseline_32   = enable_ms_32   ? n_raw_groups_ms_baseline_shared : 0;
-int n_cp_groups_ms_baseline_32    = enable_ms_32   ? n_cp_groups_ms_baseline_shared  : 0;
+int n_raw_groups_ms_baseline_01   = n_raw_groups_ms_baseline_slot[MS_SLOT_01];
+int n_cp_groups_ms_baseline_01    = n_cp_groups_ms_baseline_slot[MS_SLOT_01];
+int n_raw_groups_ms_baseline_02   = n_raw_groups_ms_baseline_slot[MS_SLOT_02];
+int n_cp_groups_ms_baseline_02    = n_cp_groups_ms_baseline_slot[MS_SLOT_02];
+int n_raw_groups_ms_baseline_12_s = n_raw_groups_ms_baseline_slot[MS_SLOT_12_S];
+int n_cp_groups_ms_baseline_12_s  = n_cp_groups_ms_baseline_slot[MS_SLOT_12_S];
+int n_raw_groups_ms_baseline_12_t = n_raw_groups_ms_baseline_slot[MS_SLOT_12_T];
+int n_cp_groups_ms_baseline_12_t  = n_cp_groups_ms_baseline_slot[MS_SLOT_12_T];
+int n_raw_groups_ms_baseline_03   = n_raw_groups_ms_baseline_slot[MS_SLOT_03];
+int n_cp_groups_ms_baseline_03    = n_cp_groups_ms_baseline_slot[MS_SLOT_03];
+int n_raw_groups_ms_baseline_32   = n_raw_groups_ms_baseline_slot[MS_SLOT_32];
+int n_cp_groups_ms_baseline_32    = n_cp_groups_ms_baseline_slot[MS_SLOT_32];
 
 // --- Enabled Group Counts for Covariate Slopes ---
 int n_enabled_groups_ms_slope = compute_n_enabled_groups(
@@ -130,9 +305,15 @@ array[n_levels + 1] int enabled_level_pos_ms_slope = create_enabled_pos(
 // --- Slope bucket routing (same pattern as intercepts) ---
 // Slope parameterization follows the intercept mode at that level;
 // slope is only included when enable_ms_level_cov[lv] == 1.
+// Slopes follow the intercept mode at that level. With the legacy single flag
+// removed, the slope mode is sourced from the 0->1 slot's reconstructed legacy
+// mode vector (slots share one config on the bit-identical legacy path, so this
+// reproduces the old enable_ms_level_baseline_hazard[lv] exactly). Slopes are
+// not themselves per-transition in the raw/cp routing, so a single
+// representative slot drives ms_slope_mode.
 array[n_levels] int ms_slope_mode;
 for (lv in 1:n_levels) {
-  ms_slope_mode[lv] = enable_ms_level_cov[lv] ? enable_ms_level_baseline_hazard[lv] : 0;
+  ms_slope_mode[lv] = enable_ms_level_cov[lv] ? ms_legacy_mode[MS_SLOT_01, lv] : 0;
 }
 int n_raw_groups_ms_slope_shared;
 int n_cp_groups_ms_slope_shared;
@@ -187,17 +368,20 @@ for (t in 1:ms_max_sojourn_t_32) {
 }
 
 // --- Pre-computed Flat Indices for Patient Lookups ---
-// Baseline hazard level indices
-array[n_patients, n_levels] int patient_ms_baseline_flat_idx;
+// Baseline hazard level indices, one gather table per intercept slot (which
+// levels are enabled now varies by transition). Indexed [slot, patient, level].
+array[N_MS_INTERCEPT_SLOTS, n_patients, n_levels] int patient_ms_baseline_flat_idx_slot;
 {
-  for (i in 1:n_patients) {
-    for (lv in 1:n_levels) {
-      if (enable_ms_level_baseline_hazard[lv]) {
-        patient_ms_baseline_flat_idx[i, lv] =
-          (lv == n_levels && patient_level_groups[i, lv] > n_forecast_patients) ? 1
-          : get_global_group_idx(enabled_level_pos_ms_baseline, lv, patient_level_groups[i, lv]);
-      } else {
-        patient_ms_baseline_flat_idx[i, lv] = 1;
+  for (k in 1:N_MS_INTERCEPT_SLOTS) {
+    for (i in 1:n_patients) {
+      for (lv in 1:n_levels) {
+        if (ms_legacy_mode[k, lv]) {
+          patient_ms_baseline_flat_idx_slot[k, i, lv] =
+            (lv == n_levels && patient_level_groups[i, lv] > n_forecast_patients) ? 1
+            : get_global_group_idx(enabled_level_pos_ms_baseline_slot[k], lv, patient_level_groups[i, lv]);
+        } else {
+          patient_ms_baseline_flat_idx_slot[k, i, lv] = 1;
+        }
       }
     }
   }

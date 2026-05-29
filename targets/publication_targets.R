@@ -228,6 +228,13 @@ publication_targets <- list(
 
       ms_time_scale_12 = 1L,
 
+      # Legacy baseline-hazard mode (per level, 0-4). Kept here as the
+      # human-readable config knob; decomposed into the three per-transition x
+      # per-level arrays (enable_ms_level_gp / ms_level_intercept_mode /
+      # ms_level_intercept_corr_group) at the base_tumor_ssls_stan_data assembly
+      # point via decompose_ms_level_baseline_hazard(). corr_group stays all-zero
+      # in Phase 1, so the decomposed config reproduces this legacy flag
+      # bit-identically.
       enable_ms_level_baseline_hazard = c(trial = 3L, patient = 0L),
 
       enable_ms_pop_time_varying_cov = TRUE,
@@ -301,10 +308,39 @@ publication_targets <- list(
 
   tar_target(
     base_tumor_ssls_stan_data,
-    all_stan_data |>
-      add_tumor_priors(tumor_priors) |>
-      c(default_stan_data_settings) |>
-      c(derive_ms_fields(all_analysis_data, "full"))
+    {
+      assembled <- all_stan_data |>
+        add_tumor_priors(tumor_priors) |>
+        c(default_stan_data_settings) |>
+        c(derive_ms_fields(all_analysis_data, "full"))
+      # Translate the legacy single baseline-hazard flag into the three
+      # decomposed per-transition x per-level arrays the Stan model consumes,
+      # then drop the legacy key (no longer declared in flags.stan).
+      decomposed <- decompose_ms_level_baseline_hazard(
+        assembled$enable_ms_level_baseline_hazard
+      )
+      assembled$enable_ms_level_baseline_hazard <- NULL
+
+      # --- Correlated patient-level frailty on 0->1 and 0->3 (Phase 2) ---
+      # Add an RE-NCP patient-level intercept to slots 01 and 03 and place both
+      # in correlation group 1 at the patient level. The abundant 0->1
+      # progression/censoring history (497 patients) feeds sigma_01; the
+      # negatively-learned correlation transmits that evidence to the data-poor
+      # 0->3 dropout hazard (57 events), so died_off_trial patients route to
+      # dropout (long PFS) instead of a fast 0->1 progression. Slot order:
+      # 1=01, 2=02, 3=03, 4=12_s, 5=12_t, 6=32; patient level = last column.
+      n_levels_ms <- ncol(decomposed$ms_level_intercept_mode)
+      patient_lv <- n_levels_ms
+      MS_SLOT_01 <- 1L; MS_SLOT_03 <- 3L
+      decomposed$ms_level_intercept_mode[MS_SLOT_01, patient_lv] <- 2L  # RE-NCP
+      decomposed$ms_level_intercept_mode[MS_SLOT_03, patient_lv] <- 2L  # RE-NCP
+      decomposed$enable_ms_level_gp[MS_SLOT_01, patient_lv] <- 0L
+      decomposed$enable_ms_level_gp[MS_SLOT_03, patient_lv] <- 0L
+      decomposed$ms_level_intercept_corr_group[MS_SLOT_01, patient_lv] <- 1L
+      decomposed$ms_level_intercept_corr_group[MS_SLOT_03, patient_lv] <- 1L
+
+      c(assembled, decomposed)
+    }
   ),
 
   # Fits ------------------------------------------------------------------------
