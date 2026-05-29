@@ -7,6 +7,38 @@
 // double-counting.
 
 // ============================================================================
+// CORRELATED INTERCEPT BLOCKS (Phase 2 — cross-transition frailty)
+// ============================================================================
+// Assemble the MVN-correlated level intercepts once, up front. Row m of block b
+// holds the correlated intercept for that member's transition, one column per
+// GROUP at the block's level. Each member-row is scattered into its transition's
+// own log_lambda_gp_<slot>_level_intercept slice further below (replacing the
+// scalar sigma*raw path for correlated members only).
+//   u_b = diag_pre_multiply(sigma_members, L_b) * z_b
+// sigma_members[m] reuses the existing per-transition level-lv intercept SD
+// (no new scale hyperparameters). When n_ms_corr_blocks == 0 this block is empty.
+array[n_ms_corr_blocks] matrix[ms_corr_dim, ms_corr_n_groups] ms_corr_u;
+for (b in 1:n_ms_corr_blocks) {
+  int lv = ms_corr_block_level[b];
+  vector[ms_corr_dim] sigma_members;
+  for (m in 1:ms_corr_dim) {
+    int k = ms_corr_block_member_slot[b, m];
+    // Gather the member transition's level-lv intercept SD. Dispatch on slot;
+    // the SD arrays are the same ones the scalar NCP path multiplies by.
+    real s;
+    if (k == MS_SLOT_01)        s = log_lambda_gp_01_level_intercept_sd[lv];
+    else if (k == MS_SLOT_02)   s = log_lambda_gp_02_level_intercept_sd[lv];
+    else if (k == MS_SLOT_03)   s = log_lambda_gp_03_level_intercept_sd[lv];
+    else if (k == MS_SLOT_12_S) s = log_lambda_gp_12_s_level_intercept_sd[lv];
+    else if (k == MS_SLOT_12_T) s = log_lambda_gp_12_t_level_intercept_sd[lv];
+    else                        s = log_lambda_gp_32_s_level_intercept_sd[lv];
+    sigma_members[m] = s;
+  }
+  ms_corr_u[b] = diag_pre_multiply(sigma_members, L_ms_intercept_corr[b])
+                 * z_ms_intercept[b];
+}
+
+// ============================================================================
 // 0→1 TRANSITION: Log Conditional Survival
 // ============================================================================
 
@@ -36,26 +68,33 @@ if (enable_ms_01) {
 
   // Add level-level residuals (intercept-only or full GP)
   for (lv in 1:n_levels) {
-    if (enable_ms_level_baseline_hazard[lv]) {
+    if (ms_legacy_mode[MS_SLOT_01, lv]) {
       int lv_start, lv_end;
-      (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
+      (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline_slot[MS_SLOT_01], lv);
 
       // Scale intercepts: route by mode
-      int mode_01 = enable_ms_level_baseline_hazard[lv];
+      int mode_01 = ms_legacy_mode[MS_SLOT_01, lv];
       if (mode_01 == LEVEL_MODE_RE_CP) {
         // CP path: centered parameters are already at natural scale
-        int c_lo = cp_level_pos_ms_baseline_shared[lv];
-        int c_hi = cp_level_pos_ms_baseline_shared[lv + 1] - 1;
+        int c_lo = cp_level_pos_ms_baseline_slot[MS_SLOT_01][lv];
+        int c_hi = cp_level_pos_ms_baseline_slot[MS_SLOT_01][lv + 1] - 1;
         log_lambda_gp_01_level_intercept[lv_start:lv_end] =
           cp_log_lambda_gp_01_level_intercept[c_lo:c_hi];
       } else {
-        int r_lo = raw_level_pos_ms_baseline_shared[lv];
-        int r_hi = raw_level_pos_ms_baseline_shared[lv + 1] - 1;
+        int r_lo = raw_level_pos_ms_baseline_slot[MS_SLOT_01][lv];
+        int r_hi = raw_level_pos_ms_baseline_slot[MS_SLOT_01][lv + 1] - 1;
         if (mode_01 == LEVEL_MODE_FE) {
           // Fixed effects: no pooling
           log_lambda_gp_01_level_intercept[lv_start:lv_end] =
             raw_log_lambda_gp_01_level_intercept[r_lo:r_hi] *
             fe_log_lambda_gp_01_level_intercept_sd[lv];
+        } else if (ms_corr_member_block[MS_SLOT_01, lv] > 0) {
+          // Correlated RE member: take this transition's MVN row (already scaled
+          // by sigma in ms_corr_u). One column per group at level lv.
+          int b = ms_corr_member_block[MS_SLOT_01, lv];
+          int row = ms_corr_member_row[MS_SLOT_01, lv];
+          log_lambda_gp_01_level_intercept[lv_start:lv_end] =
+            ms_corr_u[b][row, ]';
         } else {
           // Random effects (2 or 3): hierarchical pooling
           log_lambda_gp_01_level_intercept[lv_start:lv_end] =
@@ -64,10 +103,10 @@ if (enable_ms_01) {
         }
       }
 
-      if (enable_ms_level_baseline_hazard[lv] == 3) {
+      if (ms_legacy_mode[MS_SLOT_01, lv] == 3) {
         // GP mode: full time-varying residual via calc_gp_pred
         int gp_start, gp_end;
-        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
+        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline_slot[MS_SLOT_01], lv);
         for (g in lv_start:lv_end) {
           int g_gp = gp_start + (g - lv_start);
           log_level_lambda_01_residual[g] = calc_gp_pred(
@@ -91,7 +130,7 @@ if (enable_ms_01) {
       // Add level residuals to patient hazards
       for (j in 1:n_forecast_patients) {
         int p = forecast_patient_idx[j];
-        log_cond_surv_01[j] += log_level_lambda_01_residual[patient_ms_baseline_flat_idx[p, lv]];
+        log_cond_surv_01[j] += log_level_lambda_01_residual[patient_ms_baseline_flat_idx_slot[MS_SLOT_01, p, lv]];
       }
     }
   }
@@ -155,7 +194,7 @@ if (enable_ms_01) {
         if (enable_ms_level_cov[lv]) {
           int lv_start, lv_end;
           (lv_start, lv_end) = get_pos(enabled_level_pos_ms_slope, lv);
-          int mode = enable_ms_level_baseline_hazard[lv];
+          int mode = ms_legacy_mode[MS_SLOT_01, lv];
           if (mode == LEVEL_MODE_RE_CP) {
             int c_lo = cp_level_pos_ms_slope_shared[lv];
             int c_hi = cp_level_pos_ms_slope_shared[lv + 1] - 1;
@@ -226,24 +265,29 @@ if (enable_ms_02) {
 
   // Add level-level residuals (intercept-only or full GP, same pattern as 0→1)
   for (lv in 1:n_levels) {
-    if (enable_ms_level_baseline_hazard[lv]) {
+    if (ms_legacy_mode[MS_SLOT_02, lv]) {
       int lv_start, lv_end;
-      (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
+      (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline_slot[MS_SLOT_02], lv);
 
       // Scale intercepts: route by mode
-      int mode_02 = enable_ms_level_baseline_hazard[lv];
+      int mode_02 = ms_legacy_mode[MS_SLOT_02, lv];
       if (mode_02 == LEVEL_MODE_RE_CP) {
-        int c_lo = cp_level_pos_ms_baseline_shared[lv];
-        int c_hi = cp_level_pos_ms_baseline_shared[lv + 1] - 1;
+        int c_lo = cp_level_pos_ms_baseline_slot[MS_SLOT_02][lv];
+        int c_hi = cp_level_pos_ms_baseline_slot[MS_SLOT_02][lv + 1] - 1;
         log_lambda_gp_02_level_intercept[lv_start:lv_end] =
           cp_log_lambda_gp_02_level_intercept[c_lo:c_hi];
       } else {
-        int r_lo = raw_level_pos_ms_baseline_shared[lv];
-        int r_hi = raw_level_pos_ms_baseline_shared[lv + 1] - 1;
+        int r_lo = raw_level_pos_ms_baseline_slot[MS_SLOT_02][lv];
+        int r_hi = raw_level_pos_ms_baseline_slot[MS_SLOT_02][lv + 1] - 1;
         if (mode_02 == LEVEL_MODE_FE) {
           log_lambda_gp_02_level_intercept[lv_start:lv_end] =
             raw_log_lambda_gp_02_level_intercept[r_lo:r_hi] *
             fe_log_lambda_gp_02_level_intercept_sd[lv];
+        } else if (ms_corr_member_block[MS_SLOT_02, lv] > 0) {
+          int b = ms_corr_member_block[MS_SLOT_02, lv];
+          int row = ms_corr_member_row[MS_SLOT_02, lv];
+          log_lambda_gp_02_level_intercept[lv_start:lv_end] =
+            ms_corr_u[b][row, ]';
         } else {
           log_lambda_gp_02_level_intercept[lv_start:lv_end] =
             raw_log_lambda_gp_02_level_intercept[r_lo:r_hi] *
@@ -251,9 +295,9 @@ if (enable_ms_02) {
         }
       }
 
-      if (enable_ms_level_baseline_hazard[lv] == 3) {
+      if (ms_legacy_mode[MS_SLOT_02, lv] == 3) {
         int gp_start, gp_end;
-        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
+        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline_slot[MS_SLOT_02], lv);
         for (g in lv_start:lv_end) {
           int g_gp = gp_start + (g - lv_start);
           log_level_lambda_02_residual[g] = calc_gp_pred(
@@ -275,7 +319,7 @@ if (enable_ms_02) {
 
       for (j in 1:n_forecast_patients) {
         int p = forecast_patient_idx[j];
-        log_cond_surv_02[j] += log_level_lambda_02_residual[patient_ms_baseline_flat_idx[p, lv]];
+        log_cond_surv_02[j] += log_level_lambda_02_residual[patient_ms_baseline_flat_idx_slot[MS_SLOT_02, p, lv]];
       }
     }
   }
@@ -305,7 +349,7 @@ if (enable_ms_02) {
         if (enable_ms_level_cov[lv]) {
           int lv_start, lv_end;
           (lv_start, lv_end) = get_pos(enabled_level_pos_ms_slope, lv);
-          int mode = enable_ms_level_baseline_hazard[lv];
+          int mode = ms_legacy_mode[MS_SLOT_02, lv];
           if (mode == LEVEL_MODE_RE_CP) {
             int c_lo = cp_level_pos_ms_slope_shared[lv];
             int c_hi = cp_level_pos_ms_slope_shared[lv + 1] - 1;
@@ -368,24 +412,29 @@ if (need_12_s_gp) {
 
   // Add level residuals (intercept-only or full GP)
   for (lv in 1:n_levels) {
-    if (enable_ms_level_baseline_hazard[lv]) {
+    if (ms_legacy_mode[MS_SLOT_12_S, lv]) {
       int lv_start, lv_end;
-      (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
+      (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline_slot[MS_SLOT_12_S], lv);
 
       // Scale intercepts: route by mode
-      int mode_12_s = enable_ms_level_baseline_hazard[lv];
+      int mode_12_s = ms_legacy_mode[MS_SLOT_12_S, lv];
       if (mode_12_s == LEVEL_MODE_RE_CP) {
-        int c_lo = cp_level_pos_ms_baseline_shared[lv];
-        int c_hi = cp_level_pos_ms_baseline_shared[lv + 1] - 1;
+        int c_lo = cp_level_pos_ms_baseline_slot[MS_SLOT_12_S][lv];
+        int c_hi = cp_level_pos_ms_baseline_slot[MS_SLOT_12_S][lv + 1] - 1;
         log_lambda_gp_12_s_level_intercept[lv_start:lv_end] =
           cp_log_lambda_gp_12_s_level_intercept[c_lo:c_hi];
       } else {
-        int r_lo = raw_level_pos_ms_baseline_shared[lv];
-        int r_hi = raw_level_pos_ms_baseline_shared[lv + 1] - 1;
+        int r_lo = raw_level_pos_ms_baseline_slot[MS_SLOT_12_S][lv];
+        int r_hi = raw_level_pos_ms_baseline_slot[MS_SLOT_12_S][lv + 1] - 1;
         if (mode_12_s == LEVEL_MODE_FE) {
           log_lambda_gp_12_s_level_intercept[lv_start:lv_end] =
             raw_log_lambda_gp_12_s_level_intercept[r_lo:r_hi] *
             fe_log_lambda_gp_12_s_level_intercept_sd[lv];
+        } else if (ms_corr_member_block[MS_SLOT_12_S, lv] > 0) {
+          int b = ms_corr_member_block[MS_SLOT_12_S, lv];
+          int row = ms_corr_member_row[MS_SLOT_12_S, lv];
+          log_lambda_gp_12_s_level_intercept[lv_start:lv_end] =
+            ms_corr_u[b][row, ]';
         } else {
           log_lambda_gp_12_s_level_intercept[lv_start:lv_end] =
             raw_log_lambda_gp_12_s_level_intercept[r_lo:r_hi] *
@@ -393,9 +442,9 @@ if (need_12_s_gp) {
         }
       }
 
-      if (enable_ms_level_baseline_hazard[lv] == 3) {
+      if (ms_legacy_mode[MS_SLOT_12_S, lv] == 3) {
         int gp_start, gp_end;
-        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
+        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline_slot[MS_SLOT_12_S], lv);
         for (g in lv_start:lv_end) {
           int g_gp = gp_start + (g - lv_start);
           log_level_lambda_12_s_residual[g] = calc_gp_pred(
@@ -417,7 +466,7 @@ if (need_12_s_gp) {
 
       for (j in 1:n_forecast_patients) {
         int p = forecast_patient_idx[j];
-        log_cond_surv_12_s[j] += log_level_lambda_12_s_residual[patient_ms_baseline_flat_idx[p, lv]];
+        log_cond_surv_12_s[j] += log_level_lambda_12_s_residual[patient_ms_baseline_flat_idx_slot[MS_SLOT_12_S, p, lv]];
       }
     }
   }
@@ -436,7 +485,7 @@ if (need_12_s_gp) {
         if (enable_ms_level_cov[lv]) {
           int lv_start, lv_end;
           (lv_start, lv_end) = get_pos(enabled_level_pos_ms_slope, lv);
-          int mode = enable_ms_level_baseline_hazard[lv];
+          int mode = ms_legacy_mode[MS_SLOT_12_S, lv];
           if (mode == LEVEL_MODE_RE_CP) {
             int c_lo = cp_level_pos_ms_slope_shared[lv];
             int c_hi = cp_level_pos_ms_slope_shared[lv + 1] - 1;
@@ -502,24 +551,29 @@ if (need_12_t_gp) {
 
   // Add level residuals (intercept-only or full GP)
   for (lv in 1:n_levels) {
-    if (enable_ms_level_baseline_hazard[lv]) {
+    if (ms_legacy_mode[MS_SLOT_12_T, lv]) {
       int lv_start, lv_end;
-      (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
+      (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline_slot[MS_SLOT_12_T], lv);
 
       // Scale intercepts: route by mode
-      int mode_12_t = enable_ms_level_baseline_hazard[lv];
+      int mode_12_t = ms_legacy_mode[MS_SLOT_12_T, lv];
       if (mode_12_t == LEVEL_MODE_RE_CP) {
-        int c_lo = cp_level_pos_ms_baseline_shared[lv];
-        int c_hi = cp_level_pos_ms_baseline_shared[lv + 1] - 1;
+        int c_lo = cp_level_pos_ms_baseline_slot[MS_SLOT_12_T][lv];
+        int c_hi = cp_level_pos_ms_baseline_slot[MS_SLOT_12_T][lv + 1] - 1;
         log_lambda_gp_12_t_level_intercept[lv_start:lv_end] =
           cp_log_lambda_gp_12_t_level_intercept[c_lo:c_hi];
       } else {
-        int r_lo = raw_level_pos_ms_baseline_shared[lv];
-        int r_hi = raw_level_pos_ms_baseline_shared[lv + 1] - 1;
+        int r_lo = raw_level_pos_ms_baseline_slot[MS_SLOT_12_T][lv];
+        int r_hi = raw_level_pos_ms_baseline_slot[MS_SLOT_12_T][lv + 1] - 1;
         if (mode_12_t == LEVEL_MODE_FE) {
           log_lambda_gp_12_t_level_intercept[lv_start:lv_end] =
             raw_log_lambda_gp_12_t_level_intercept[r_lo:r_hi] *
             fe_log_lambda_gp_12_t_level_intercept_sd[lv];
+        } else if (ms_corr_member_block[MS_SLOT_12_T, lv] > 0) {
+          int b = ms_corr_member_block[MS_SLOT_12_T, lv];
+          int row = ms_corr_member_row[MS_SLOT_12_T, lv];
+          log_lambda_gp_12_t_level_intercept[lv_start:lv_end] =
+            ms_corr_u[b][row, ]';
         } else {
           log_lambda_gp_12_t_level_intercept[lv_start:lv_end] =
             raw_log_lambda_gp_12_t_level_intercept[r_lo:r_hi] *
@@ -527,9 +581,9 @@ if (need_12_t_gp) {
         }
       }
 
-      if (enable_ms_level_baseline_hazard[lv] == 3) {
+      if (ms_legacy_mode[MS_SLOT_12_T, lv] == 3) {
         int gp_start, gp_end;
-        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
+        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline_slot[MS_SLOT_12_T], lv);
         for (g in lv_start:lv_end) {
           int g_gp = gp_start + (g - lv_start);
           // In extended mode, level intercept is zero (sojourn GP carries it)
@@ -552,7 +606,7 @@ if (need_12_t_gp) {
 
       for (j in 1:n_forecast_patients) {
         int p = forecast_patient_idx[j];
-        log_cond_surv_12_t[j] += log_level_lambda_12_t_residual[patient_ms_baseline_flat_idx[p, lv]];
+        log_cond_surv_12_t[j] += log_level_lambda_12_t_residual[patient_ms_baseline_flat_idx_slot[MS_SLOT_12_T, p, lv]];
       }
     }
   }
@@ -569,7 +623,7 @@ if (need_12_t_gp) {
         if (enable_ms_level_cov[lv]) {
           int lv_start, lv_end;
           (lv_start, lv_end) = get_pos(enabled_level_pos_ms_slope, lv);
-          int mode = enable_ms_level_baseline_hazard[lv];
+          int mode = ms_legacy_mode[MS_SLOT_12_T, lv];
           if (mode == LEVEL_MODE_RE_CP) {
             int c_lo = cp_level_pos_ms_slope_shared[lv];
             int c_hi = cp_level_pos_ms_slope_shared[lv + 1] - 1;
@@ -624,24 +678,30 @@ if (enable_ms_03) {
 
   // Add level-level residuals (intercept-only or full GP)
   for (lv in 1:n_levels) {
-    if (enable_ms_level_baseline_hazard[lv]) {
+    if (ms_legacy_mode[MS_SLOT_03, lv]) {
       int lv_start, lv_end;
-      (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
+      (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline_slot[MS_SLOT_03], lv);
 
       // Scale intercepts: route by mode
-      int mode_03 = enable_ms_level_baseline_hazard[lv];
+      int mode_03 = ms_legacy_mode[MS_SLOT_03, lv];
       if (mode_03 == LEVEL_MODE_RE_CP) {
-        int c_lo = cp_level_pos_ms_baseline_shared[lv];
-        int c_hi = cp_level_pos_ms_baseline_shared[lv + 1] - 1;
+        int c_lo = cp_level_pos_ms_baseline_slot[MS_SLOT_03][lv];
+        int c_hi = cp_level_pos_ms_baseline_slot[MS_SLOT_03][lv + 1] - 1;
         log_lambda_gp_03_level_intercept[lv_start:lv_end] =
           cp_log_lambda_gp_03_level_intercept[c_lo:c_hi];
       } else {
-        int r_lo = raw_level_pos_ms_baseline_shared[lv];
-        int r_hi = raw_level_pos_ms_baseline_shared[lv + 1] - 1;
+        int r_lo = raw_level_pos_ms_baseline_slot[MS_SLOT_03][lv];
+        int r_hi = raw_level_pos_ms_baseline_slot[MS_SLOT_03][lv + 1] - 1;
         if (mode_03 == LEVEL_MODE_FE) {
           log_lambda_gp_03_level_intercept[lv_start:lv_end] =
             raw_log_lambda_gp_03_level_intercept[r_lo:r_hi] *
             fe_log_lambda_gp_03_level_intercept_sd[lv];
+        } else if (ms_corr_member_block[MS_SLOT_03, lv] > 0) {
+          // Correlated RE member: take this transition's MVN row.
+          int b = ms_corr_member_block[MS_SLOT_03, lv];
+          int row = ms_corr_member_row[MS_SLOT_03, lv];
+          log_lambda_gp_03_level_intercept[lv_start:lv_end] =
+            ms_corr_u[b][row, ]';
         } else {
           log_lambda_gp_03_level_intercept[lv_start:lv_end] =
             raw_log_lambda_gp_03_level_intercept[r_lo:r_hi] *
@@ -649,9 +709,9 @@ if (enable_ms_03) {
         }
       }
 
-      if (enable_ms_level_baseline_hazard[lv] == 3) {
+      if (ms_legacy_mode[MS_SLOT_03, lv] == 3) {
         int gp_start, gp_end;
-        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
+        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline_slot[MS_SLOT_03], lv);
         for (g in lv_start:lv_end) {
           int g_gp = gp_start + (g - lv_start);
           log_level_lambda_03_residual[g] = calc_gp_pred(
@@ -673,7 +733,7 @@ if (enable_ms_03) {
 
       for (j in 1:n_forecast_patients) {
         int p = forecast_patient_idx[j];
-        log_cond_surv_03[j] += log_level_lambda_03_residual[patient_ms_baseline_flat_idx[p, lv]];
+        log_cond_surv_03[j] += log_level_lambda_03_residual[patient_ms_baseline_flat_idx_slot[MS_SLOT_03, p, lv]];
       }
     }
   }
@@ -702,7 +762,7 @@ if (enable_ms_03) {
         if (enable_ms_level_cov[lv]) {
           int lv_start, lv_end;
           (lv_start, lv_end) = get_pos(enabled_level_pos_ms_slope, lv);
-          int mode = enable_ms_level_baseline_hazard[lv];
+          int mode = ms_legacy_mode[MS_SLOT_03, lv];
           if (mode == LEVEL_MODE_RE_CP) {
             int c_lo = cp_level_pos_ms_slope_shared[lv];
             int c_hi = cp_level_pos_ms_slope_shared[lv + 1] - 1;
@@ -758,24 +818,29 @@ if (enable_ms_32) {
 
   // Add level-level residuals (intercept-only or full GP)
   for (lv in 1:n_levels) {
-    if (enable_ms_level_baseline_hazard[lv]) {
+    if (ms_legacy_mode[MS_SLOT_32, lv]) {
       int lv_start, lv_end;
-      (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline, lv);
+      (lv_start, lv_end) = get_pos(enabled_level_pos_ms_baseline_slot[MS_SLOT_32], lv);
 
       // Scale intercepts: route by mode
-      int mode_32 = enable_ms_level_baseline_hazard[lv];
+      int mode_32 = ms_legacy_mode[MS_SLOT_32, lv];
       if (mode_32 == LEVEL_MODE_RE_CP) {
-        int c_lo = cp_level_pos_ms_baseline_shared[lv];
-        int c_hi = cp_level_pos_ms_baseline_shared[lv + 1] - 1;
+        int c_lo = cp_level_pos_ms_baseline_slot[MS_SLOT_32][lv];
+        int c_hi = cp_level_pos_ms_baseline_slot[MS_SLOT_32][lv + 1] - 1;
         log_lambda_gp_32_s_level_intercept[lv_start:lv_end] =
           cp_log_lambda_gp_32_s_level_intercept[c_lo:c_hi];
       } else {
-        int r_lo = raw_level_pos_ms_baseline_shared[lv];
-        int r_hi = raw_level_pos_ms_baseline_shared[lv + 1] - 1;
+        int r_lo = raw_level_pos_ms_baseline_slot[MS_SLOT_32][lv];
+        int r_hi = raw_level_pos_ms_baseline_slot[MS_SLOT_32][lv + 1] - 1;
         if (mode_32 == LEVEL_MODE_FE) {
           log_lambda_gp_32_s_level_intercept[lv_start:lv_end] =
             raw_log_lambda_gp_32_s_level_intercept[r_lo:r_hi] *
             fe_log_lambda_gp_32_s_level_intercept_sd[lv];
+        } else if (ms_corr_member_block[MS_SLOT_32, lv] > 0) {
+          int b = ms_corr_member_block[MS_SLOT_32, lv];
+          int row = ms_corr_member_row[MS_SLOT_32, lv];
+          log_lambda_gp_32_s_level_intercept[lv_start:lv_end] =
+            ms_corr_u[b][row, ]';
         } else {
           log_lambda_gp_32_s_level_intercept[lv_start:lv_end] =
             raw_log_lambda_gp_32_s_level_intercept[r_lo:r_hi] *
@@ -783,9 +848,9 @@ if (enable_ms_32) {
         }
       }
 
-      if (enable_ms_level_baseline_hazard[lv] == 3) {
+      if (ms_legacy_mode[MS_SLOT_32, lv] == 3) {
         int gp_start, gp_end;
-        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline, lv);
+        (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline_slot[MS_SLOT_32], lv);
         for (g in lv_start:lv_end) {
           int g_gp = gp_start + (g - lv_start);
           log_level_lambda_32_residual[g] = calc_gp_pred(
@@ -807,7 +872,7 @@ if (enable_ms_32) {
 
       for (j in 1:n_forecast_patients) {
         int p = forecast_patient_idx[j];
-        log_cond_surv_32[j] += log_level_lambda_32_residual[patient_ms_baseline_flat_idx[p, lv]];
+        log_cond_surv_32[j] += log_level_lambda_32_residual[patient_ms_baseline_flat_idx_slot[MS_SLOT_32, p, lv]];
       }
     }
   }
@@ -826,7 +891,7 @@ if (enable_ms_32) {
         if (enable_ms_level_cov[lv]) {
           int lv_start, lv_end;
           (lv_start, lv_end) = get_pos(enabled_level_pos_ms_slope, lv);
-          int mode = enable_ms_level_baseline_hazard[lv];
+          int mode = ms_legacy_mode[MS_SLOT_32, lv];
           if (mode == LEVEL_MODE_RE_CP) {
             int c_lo = cp_level_pos_ms_slope_shared[lv];
             int c_hi = cp_level_pos_ms_slope_shared[lv + 1] - 1;

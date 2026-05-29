@@ -21,6 +21,9 @@ library(rlang)         # for is_null() etc.
 library(stringr)       # for str_c() used inside priors.R
 
 source(here::here("r", "priors.R"))
+# ms_corr_blocks() / ms_corr_block_inits() live here and are called by the
+# initializers; in production multistate.R is always sourced alongside them.
+source(here::here("r", "multistate.R"))
 
 # ---------------------------------------------------------------------------
 # get_multistate_priors: prior length matches the rule
@@ -73,11 +76,14 @@ test_that("get_multistate_priors: default args treat both flags as off (continuo
 # as a placeholder.
 
 minimal_ms_stan_data <- function(visit_gated_01, visit_gated_latent_01,
-                                  n_time_varying_covar = 3L) {
-  list(
+                                  n_time_varying_covar = 3L,
+                                  ms_level_baseline_hazard = c(patient = 0L)) {
+  source(here::here("r", "multistate.R"), local = TRUE)
+  ms_baseline <- decompose_ms_level_baseline_hazard(ms_level_baseline_hazard)
+  c(list(
     n_time_varying_covar      = n_time_varying_covar,
     n_time_invariant_covar    = 0L,
-    n_levels                  = 1L,
+    n_levels                  = length(ms_level_baseline_hazard),
     n_groups_per_level        = c(patient = 10L),
     n_patients                = 10L,
     enable_ms_01              = 1L,
@@ -86,7 +92,6 @@ minimal_ms_stan_data <- function(visit_gated_01, visit_gated_latent_01,
     enable_ms_12              = 0L,
     enable_ms_32              = 0L,
     ms_time_scale_12          = 1L,
-    enable_ms_level_baseline_hazard = c(patient = 0L),
     enable_ms_level_cov       = c(patient = 0L),
     enable_ms_pop_time_varying_cov = 1L,
     enable_ms_pop_time_invariant_cov = 0L,
@@ -103,7 +108,7 @@ minimal_ms_stan_data <- function(visit_gated_01, visit_gated_latent_01,
     ms_max_sojourn_t_32       = 50L,
     ms_gp_grid_step           = 4L,
     enable_states_full_grid   = 0L
-  )
+  ), ms_baseline)
 }
 
 test_that("ms_init_values_fixed: continuous mode init has length n_time_varying_covar", {
