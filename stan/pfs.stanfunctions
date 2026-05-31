@@ -1957,14 +1957,15 @@ tuple(
 
     spop_is_dropout[j] = (spop_cause == 3);
 
-    (spop_pfs[j], spop_right_censored[j], spop_ms_pfs[j], spop_ms_right_censored[j]) =
-        derive_spop_pfs(spop_cause, spop_exit,
-                        spop_target_pfs[j], spop_target_right_censored[j],
-                        t_ms01_spop, c_ms01_spop,
-                        spop_time_03,
-                        enable_ms_02, enable_ms_03);
+    // Retain the pre-graft cause-3 exit week so the 3->2 sojourn KM can be
+    // recovered downstream after the PFS-from-OS graft overwrites spop_pfs.
+    if (spop_cause == 3) spop_dropout_week[j] = spop_time_03;
 
-    // --- RNG Step 5: spop OS ---
+    // --- RNG Step 5: spop OS (drawn BEFORE the PFS derivation so a 0->3
+    //     dropout's PFS can reuse the OS outcome — see graft below) ---
+    // derive_spop_os_rng depends only on spop_cause, spop_exit, and the survival
+    // rows (all computed above) and is the only RNG step here; moving it before
+    // the RNG-free derive_spop_pfs does not perturb the RNG stream.
     // Guard: sojourn matrix is [0,0] when ms_time_scale_12==0 (Markov-only)
     row_vector[cols(log_cond_surv_12_s)] surv_12_s_i =
       rows(log_cond_surv_12_s) > 0 ? log_cond_surv_12_s[j] : rep_row_vector(0, 0);
@@ -1980,6 +1981,25 @@ tuple(
         surv_12_s_i, surv_12_t_i,
         surv_32_i,
         t_01_spop, spop_time_02, spop_time_03);
+
+    // --- Classify and derive spop PFS atomically (no RNG) ---
+    (spop_pfs[j], spop_right_censored[j], spop_ms_pfs[j], spop_ms_right_censored[j]) =
+        derive_spop_pfs(spop_cause, spop_exit,
+                        spop_target_pfs[j], spop_target_right_censored[j],
+                        t_ms01_spop, c_ms01_spop,
+                        spop_time_03,
+                        enable_ms_02, enable_ms_03);
+
+    // PFS-from-OS convention for dropouts: a 0->3 patient's PFS is its OS
+    // outcome — event at the 3->2 death week if death occurs in-window, else
+    // censored at the forecast horizon. Reuses spop_os so PFS == OS by
+    // construction (preserves PFS <= OS). See spec 2026-05-30.
+    if (spop_cause == 3) {
+      spop_pfs[j]               = spop_os[j];
+      spop_right_censored[j]    = spop_os_censored[j];
+      spop_ms_pfs[j]            = spop_os[j];
+      spop_ms_right_censored[j] = spop_os_censored[j];
+    }
 
     // --- RNG Step 6: sample 0→2 (use observed data if available) ---
     int sample_time_02 = max_all_t + 1; int sample_cens_02 = 1;
