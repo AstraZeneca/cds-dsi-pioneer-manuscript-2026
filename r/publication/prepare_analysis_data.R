@@ -54,10 +54,9 @@ prepare_publication_analysis_data <- function(
       # the column name used in the existing publication fit and to bypass
       # prepare_covar_design_matrix's factor-relevel branch
       male = sex,
-      # Median-impute missing covariates (matches the existing publication fit's
-      # preprocessing — see /mnt/data/PUBLICATION/fit/fit_log_covariates.txt)
+      # Median-impute missing covariates across all datasets
       across(
-        c(ecog, hgb, ldh_log, albumin),
+        c(age, ecog, hgb, ldh_log, albumin),
         \(x) replace_na(x, median(x, na.rm = TRUE))
       ),
       # Stubs required by classify_ms_patients / validate_ms_inputs:
