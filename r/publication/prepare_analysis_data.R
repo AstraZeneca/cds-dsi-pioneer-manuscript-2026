@@ -38,6 +38,9 @@ prepare_publication_analysis_data <- function(
   historical_visit_data
 ) {
   bind_rows(target_patient_data, historical_patient_data) |>
+    # Drop patients with no usable timing data: pfs and death_week both NA with
+    # right_censored=FALSE indicates a corrupt source record (seen in sanofi_efc5505_crc).
+    filter(!(!right_censored & is.na(pfs))) |>
     nest_join(
       bind_rows(target_visit_data, historical_visit_data),
       by = c("studyid", "usubjid"),
