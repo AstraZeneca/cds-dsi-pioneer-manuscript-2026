@@ -63,12 +63,16 @@ prepare_publication_analysis_data <- function(
       # potential_followup: conservative assumption — patient was followed until
       # their last recorded visit (satisfies the >= patient_max_t invariant)
       potential_followup = patient_max_t,
+      # Some source datasets leave progression_before_death NA when pfs == death_week
+      # (same-week progression and death). Treat as FALSE (0->2 direct death) since
+      # no prior documented progression event exists.
+      progression_before_death = replace_na(progression_before_death, FALSE),
       # ms_prog_deterministic: TRUE if target-lesion PD was observed AND patient
       # progressed before death — Stan reads this to skip the stochastic hazard
       # contribution at T_01 for these patients (matches sclc convention)
       ms_prog_deterministic = as.integer(replace_na(
         map_lgl(visit_data, \(d) any(fct_match(d$det_response, "PD"), na.rm = TRUE)) &
-          replace_na(progression_before_death, FALSE),
+          progression_before_death,
         FALSE
       )),
       # Adjust pfs upward by interval_censored for event patients (match sclc logic)
