@@ -21,6 +21,7 @@ array[n_forecast_patients] int<lower = 0, upper = 1> sample_os_censored, spop_os
 
 // Dropout flags — 1 if patient exited via cause 3 in this draw (for CIF computation)
 array[n_patients] int<lower = 0, upper = 1> spop_is_dropout, sample_is_dropout;
+array[n_patients] int<lower = 0> spop_dropout_week;
 
 // Forecasting for right censored patients 
 array[sum(target_right_censored)] int<lower = 0> forecast_target_pfs;
@@ -231,7 +232,8 @@ profile("gen_quant") {
    forecast_target_pfs, forecast_target_right_censored,
    sample_os, sample_os_censored,
    spop_os, spop_os_censored,
-   spop_is_dropout, sample_is_dropout
+   spop_is_dropout, sample_is_dropout,
+   spop_dropout_week
   ) = calculate_all_patients_endpoints_rng(
     forecast_patient_idx,
     recist,
@@ -402,12 +404,16 @@ for (s in 1:n_trials) {
     }
 
     {
-      int n_prog = n_tr - sum(spop_ms_right_censored[tr_start:tr_end]);
+      // Dropout-deaths now have spop_ms_right_censored == 0; exclude them so
+      // only genuine 1->2 (post-progression) sojourns enter this curve.
+      int n_prog = 0;
+      for (i in tr_start:tr_end)
+        if (!spop_ms_right_censored[i] && !spop_is_dropout[i]) n_prog += 1;
       if (n_prog > 0) {
         array[n_prog] int soj; array[n_prog] int cens;
         int idx = 1;
         for (i in tr_start:tr_end) {
-          if (!spop_ms_right_censored[i]) {
+          if (!spop_ms_right_censored[i] && !spop_is_dropout[i]) {
             soj[idx]  = max(1, spop_os[i] - spop_ms_pfs[i]);
             cens[idx] = spop_os_censored[i];
             idx += 1;
@@ -440,7 +446,10 @@ for (s in 1:n_trials) {
         int idx = 1;
         for (i in tr_start:tr_end) {
           if (spop_is_dropout[i]) {
-            soj[idx]  = max(1, spop_os[i] - spop_pfs[i]);
+            // After the PFS-from-OS graft spop_pfs == spop_os for dropouts, so the
+            // old (spop_os - spop_pfs) form collapses to 1; use the pre-graft
+            // dropout week to recover the true 3->2 sojourn.
+            soj[idx]  = max(1, spop_os[i] - spop_dropout_week[i]);
             cens[idx] = spop_os_censored[i];
             idx += 1;
           }
