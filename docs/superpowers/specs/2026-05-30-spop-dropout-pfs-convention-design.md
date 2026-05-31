@@ -162,6 +162,14 @@ Three coupled sites, changed in lockstep:
    After the graft `spop_os == spop_pfs` for dropouts, collapsing this to
    `max(1, 0) = 1` and destroying the sojourn KM. Recompute from the dropout
    week: `soj = max(1, spop_os[i] − spop_dropout_week[i])`.
+4. **`spop_km_12` sojourn KM block
+   (`stan/tumor/_tumor_endpoints_generated_quantities.stan:404–418`):** the
+   1→2 (post-progression) sojourn filters on `!spop_ms_right_censored[i]`
+   (line 410). After the graft flips `spop_ms_right_censored` to 0 for
+   dropout-deaths, those patients would leak into the 1→2 progression-sojourn
+   curve (with a spurious `soj = max(1, spop_os − spop_ms_pfs) = 1`). Exclude
+   dropouts: add `&& !spop_is_dropout[i]` to the filter so only genuine 1→2
+   progressors contribute. (Surfaced during planning; not in the original review.)
 
 **`derive_spop_pfs` cause-3 branch is unreachable, not "superseded".** The inner
 SLD-PD branch (`pfs.stanfunctions:1395–1397`) can never fire for a cause-3
