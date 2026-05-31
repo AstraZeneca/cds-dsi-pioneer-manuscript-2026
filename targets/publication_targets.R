@@ -71,9 +71,9 @@ covar_formula_scc <- ~ age + male + ecog + hgb + ldh_log + albumin
 covar_formula_crc <- ~ age + male + hgb + ldh_log + albumin
 
 disease_map <- tibble::tribble(
-  ~disease, ~disease_data_path,  ~covar_formula,
-  "scc",    publication_data_path,               covar_formula_scc,
-  "crc",    file.path(publication_data_path, "crc"), covar_formula_crc
+  ~disease, ~disease_data_path,                    ~covar_formula,    ~trial_re,
+  "scc",    publication_data_path,                  covar_formula_scc, FALSE,
+  "crc",    file.path(publication_data_path, "crc"), covar_formula_crc, TRUE
 )
 
 publication_targets <- list(
@@ -285,7 +285,10 @@ publication_targets <- list(
         entry_covar_12 = numeric(0),
         entry_covar_32 = numeric(0),
 
-        enable_level_intercept_tr = c(trial = level_intercept_mode["none"], patient = level_intercept_mode["re"]),
+        enable_level_intercept_tr = c(
+          trial   = level_intercept_mode[if (trial_re) "re" else "none"],
+          patient = level_intercept_mode["re"]
+        ),
         enable_level_cov_tr = c(trial = FALSE, patient = FALSE),
         enable_pop_cov_tr = FALSE,
         enable_pop_process_noise_tr = FALSE,
@@ -293,11 +296,17 @@ publication_targets <- list(
         enable_patient_process_noise_sd_tr = FALSE,
         enable_patient_process_noise_phi_tr = FALSE,
 
-        enable_level_intercept_frac = c(trial = level_intercept_mode["none"], patient = level_intercept_mode["re"]),
+        enable_level_intercept_frac = c(
+          trial   = level_intercept_mode[if (trial_re) "re" else "none"],
+          patient = level_intercept_mode["re"]
+        ),
         enable_level_cov_frac = c(trial = FALSE, patient = FALSE),
         enable_pop_cov_frac = TRUE,
 
-        enable_level_intercept_init = c(trial = level_intercept_mode["none"], patient = level_intercept_mode["re"]),
+        enable_level_intercept_init = c(
+          trial   = level_intercept_mode[if (trial_re) "re" else "none"],
+          patient = level_intercept_mode["re"]
+        ),
         enable_level_cov_init = c(trial = FALSE, patient = FALSE),
         enable_pop_cov_init = TRUE,
 

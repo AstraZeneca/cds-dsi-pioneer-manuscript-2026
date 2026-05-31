@@ -42,15 +42,18 @@ prepare_publication_analysis_data <- function(
     # right_censored=FALSE indicates a corrupt source record (seen in sanofi_efc5505_crc).
     filter(!(!right_censored & is.na(pfs))) |>
     nest_join(
-      bind_rows(target_visit_data, historical_visit_data) |>
-        filter(week >= 0),
+      bind_rows(target_visit_data, historical_visit_data),
       by = c("studyid", "usubjid"),
       name = "visit_data"
     ) |>
+    # Drop patients with no screening visit (week <= 0): Stan requires >= 1
+    # pre-screening measurement to anchor the tumor state-space model.
+    filter(map_lgl(visit_data, \(v) any(v$week <= 0))) |>
     mutate(
       trial = as_factor(trial),
-      # Derive det_pfs fields from target-lesion RECIST in visit_data
-      map_dfr(visit_data, \(d) determine_pfs(d, 1)),
+      # determine_pfs only on on-study visits (week >= 0): pre-baseline PD at
+      # negative weeks produces negative det_interval_censored -> target_pfs < 0.
+      map_dfr(visit_data, \(d) determine_pfs(filter(d, week >= 0), 1)),
       # Rename sex (already 0/1 numeric in publication CSVs) to `male` to match
       # the column name used in the existing publication fit and to bypass
       # prepare_covar_design_matrix's factor-relevel branch
