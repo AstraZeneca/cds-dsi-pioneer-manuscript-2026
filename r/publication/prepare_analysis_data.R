@@ -41,6 +41,8 @@ prepare_publication_analysis_data <- function(
     # Drop patients with no usable timing data: pfs and death_week both NA with
     # right_censored=FALSE indicates a corrupt source record (seen in sanofi_efc5505_crc).
     filter(!(!right_censored & is.na(pfs))) |>
+    # Drop patients with pfs == 0 (right-censored at time 0, no follow-up).
+    filter(is.na(pfs) | pfs > 0) |>
     nest_join(
       bind_rows(target_visit_data, historical_visit_data),
       by = c("studyid", "usubjid"),
@@ -56,7 +58,8 @@ prepare_publication_analysis_data <- function(
       group = fct_drop(interaction(trial, arm, sep = "_")),
       # determine_pfs only on on-study visits (week >= 0): pre-baseline PD at
       # negative weeks produces negative det_interval_censored -> target_pfs < 0.
-      map_dfr(visit_data, \(d) determine_pfs(filter(d, week >= 0), 1)),
+      map_dfr(visit_data, \(d) determine_pfs(filter(d, week >= 0), 1)) |>
+        mutate(det_interval_censored = pmax(0L, det_interval_censored)),
       # Rename sex (already 0/1 numeric in publication CSVs) to `male` to match
       # the column name used in the existing publication fit and to bypass
       # prepare_covar_design_matrix's factor-relevel branch
