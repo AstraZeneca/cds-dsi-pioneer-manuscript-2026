@@ -16,6 +16,7 @@ array[n_forecast_patients] int<lower=0, upper=1>
 array[n_forecast_patients] int<lower=0> sample_os, spop_os;
 array[n_forecast_patients] int<lower=0, upper=1> sample_os_censored, spop_os_censored;
 array[n_forecast_patients] int<lower=0, upper=1> spop_is_dropout, sample_is_dropout;
+array[n_forecast_patients] int<lower=0> spop_dropout_week;
 // In standalone all patients are target-censored (no biomarker-based target PFS).
 array[n_forecast_patients] int<lower=0> forecast_target_pfs;
 array[n_forecast_patients] int<lower=0, upper=1> forecast_target_right_censored;

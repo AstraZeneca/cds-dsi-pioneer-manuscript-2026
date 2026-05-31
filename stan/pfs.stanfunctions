@@ -1634,7 +1634,8 @@ tuple(
   array[] int,  // spop_os
   array[] int,  // spop_os_censored
   array[] int,  // spop_is_dropout
-  array[] int   // sample_is_dropout
+  array[] int,  // sample_is_dropout
+  array[] int   // spop_dropout_week (pre-graft cause-3 exit week; 0 otherwise)
 ) calculate_all_patients_endpoints_rng(
   array[] int patient_idx,         // maps loop index j -> unified patient index p
   array[] int biomarker_category,
@@ -1740,6 +1741,7 @@ tuple(
   // Dropout flags (1 if patient exited via cause 3; used for CIF computation)
   array[n_patients] int spop_is_dropout;
   array[n_patients] int sample_is_dropout;
+  array[n_patients] int spop_dropout_week = zeros_int_array(n_patients);
 
   int right_censored_idx = 1;
 
@@ -2075,7 +2077,8 @@ tuple(
     spop_os,
     spop_os_censored,
     spop_is_dropout,
-    sample_is_dropout
+    sample_is_dropout,
+    spop_dropout_week
   );
 }
 
