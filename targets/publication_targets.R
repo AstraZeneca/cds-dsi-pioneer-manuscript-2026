@@ -73,7 +73,7 @@ covar_formula_crc <- ~ age + male + hgb + ldh_log + albumin
 disease_map <- tibble::tribble(
   ~disease, ~disease_data_path,                    ~covar_formula,    ~trial_re,
   "scc",    publication_data_path,                  covar_formula_scc, FALSE,
-  "crc",    file.path(publication_data_path, "crc"), covar_formula_crc, TRUE
+  "crc",    file.path(publication_data_path, "crc"), covar_formula_crc, FALSE
 )
 
 publication_targets <- list(
