@@ -45,6 +45,15 @@ The distinction between `ms_pfs` and `pfs` is clinically important:
 When comparing model predictions to observed PFS from clinical trial data, always use `pfs_km_est` (composite). Observed PFS includes death without progression as events. Using `ms_pfs_km_est` underestimates PFS event rates because it censors deaths.
 :::
 
+### Operational PFS for Off-Trial Deaths {#sec-operational-pfs}
+
+The model's composite PFS follows SCLC-01's **operational** PFS definition, not canonical RECIST/FDA PFS. The two definitions differ precisely for patients who **die off-trial** — those who exit the trial (dropout, $0 \to 3$) and later die ($3 \to 2$) after a lost-to-follow-up gap.
+
+- **Operational PFS (used here):** a death without recorded progression is a PFS **event dated at the death week**, regardless of how long after the last on-trial assessment it occurs. A $0 \to 3 \to 2$ patient therefore contributes a PFS event at the modeled $3 \to 2$ death week; if death is not reached within the forecast horizon, PFS is censored at the horizon. In the simulation this is realised by setting the dropout patient's PFS equal to its OS outcome, so $\text{PFS} \le \text{OS}$ holds by construction.
+- **Canonical RECIST/FDA PFS (not used):** a death that follows a long lost-to-follow-up gap is censored at the last tumor assessment, not counted as an event at the death week.
+
+This is a **deliberate estimand choice**: the observed-data PFS derivation also dates death-without-progression at the death week, so the model and the observed comparator share a single PFS definition. The two curves are therefore directly comparable. (The cause-specific `ms_pfs` is unaffected — it continues to isolate the $0 \to 1$ progression process and treats dropouts as the $0 \to 3$ exit.)
+
 ### Radiographic PFS (rPFS) {#sec-rpfs}
 
 **rPFS** is available only in the **full model** (where PSA dynamics inform the multistate hazard). In the full model, the $0 \to 1$ transition represents radiographic progression specifically, because PSA-driven progression is captured by the biomarker model separately. rPFS is defined as:
