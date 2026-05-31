@@ -1391,14 +1391,12 @@ tuple(int, int, int, int) derive_spop_pfs(
     return (exit_time, 0, exit_time, 0);
 
   } else if (cause == 3) {
-    // Dropout (0→3): ms_pfs censored at dropout time; PFS event only if SLD PD arrived before dropout
-    if (!c_target && t_target <= t_03) {
-      // SLD progression before dropout — counts as a PFS event
-      return (t_target, 0, t_03, 1);
-    } else {
-      // No SLD PD before dropout — censored at dropout
-      return (t_03, 1, t_03, 1);
-    }
+    // Dropout (0->3): the inner "SLD PD before dropout" case is UNREACHABLE here
+    // — classify_spop_exit only returns cause 3 when no uncensored target PD
+    // precedes t_03 (else progression wins the priority order). For the spop
+    // path the caller overwrites this result with the OS outcome (PFS-from-OS
+    // graft); this return is the censored-at-dropout fallback.
+    return (t_03, 1, t_03, 1);
 
   } else {
     // All censored (cause == 0): combined PFS = min(target, ms01); ms_pfs = raw ms01 sample
