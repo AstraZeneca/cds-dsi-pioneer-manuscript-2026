@@ -220,7 +220,8 @@ publication_targets <- list(
         cond_groups,
         km_quant,
         extend_max_all_t = 200L,
-        forecast_observation_interval = 6L
+        forecast_observation_interval = 6L,
+        group_col = "group"
       ),
       error = "stop"
     ),
@@ -491,7 +492,7 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_km_rvar,
         tumor_ssls_draws_endpoints |>
-          recover_types(select(all_analysis_data, trial)) |>
+          recover_types(select(all_analysis_data, trial = group)) |>
           spread_rvars(
             sample_target_km_est[trial, t],
             spop_target_km_est[trial, t],
@@ -506,7 +507,7 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_km_os_rvar,
         tumor_ssls_draws_endpoints |>
-          recover_types(select(all_analysis_data, trial)) |>
+          recover_types(select(all_analysis_data, trial = group)) |>
           spread_rvars(
             sample_os_km_est[trial, t],
             spop_os_km_est[trial, t]
@@ -517,7 +518,7 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_trial_pfs_quant,
         tumor_ssls_draws_endpoints |>
-          recover_types(select(all_analysis_data, trial)) |>
+          recover_types(select(all_analysis_data, trial = group)) |>
           spread_rvars(
             sample_target_pfs_quant[trial, q],
             spop_target_pfs_quant[trial, q],
@@ -536,7 +537,7 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_orr_rvar,
         tumor_ssls_draws_endpoints |>
-          recover_types(select(all_analysis_data, trial)) |>
+          recover_types(select(all_analysis_data, trial = group)) |>
           spread_rvars(
             sample_target_orr[trial],
             spop_target_orr[trial]
@@ -547,7 +548,7 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_forecast_target_pfs_n_rvar,
         tumor_ssls_draws_endpoints |>
-          recover_types(select(all_analysis_data, trial)) |>
+          recover_types(select(all_analysis_data, trial = group)) |>
           spread_rvars(
             sample_target_pfs_n[trial, n],
             spop_target_pfs_n[trial, n],
@@ -627,7 +628,7 @@ publication_targets <- list(
           state_patient_subsample,
           get_state_patients(
             all_analysis_data,
-            by = trial,
+            by = group,
             cond = event_cond,
             slicer = event_slicer,
             sample_size = 40
