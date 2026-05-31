@@ -189,11 +189,20 @@ only to the spop re-roll — the curve compared against observed PFS.
 
 ### Section 4 — Validation & cost
 
-- **No re-fit.** Generated-quantities + downstream change only. The posterior
-  draws are unchanged; only the endpoint *derivation* changes. Regenerate
-  downstream targets (GQ → KM rvars → CIF), not the MCMC.
-- **Build sequence:** Stan syntax check (`stanc`) → regenerate
-  `tumor_ssls_draws_endpoints` / `km_rvar` / CIF / sojourn-KM targets → checks below.
+- **Re-fit IS required (correction).** An earlier draft claimed "no re-fit", but
+  the publication pipeline runs the generated-quantities block **inline with
+  sampling** (`tumor_ssls_res` = `sample_and_save(...)`; `tumor_ssls_draws_endpoints`
+  merely `select_draws()`-reads columns from the fit CSVs). There is no standalone
+  `generate_quantities` step, and the existing one (`generate_quantities_from_fit`,
+  `r/util.R:125`) was abandoned as unreliable on the full model (37+ min/target,
+  crashes — the expensive `generate_all_patients_states_with_means_rng` reruns).
+  So emitting the new GQ requires a **full re-fit** (~same cost as Job #1795). The
+  *parameter posterior is identical* (model/data/priors unchanged — only the GQ
+  block changed); we pay the sampling cost only to re-emit generated quantities.
+  Splitting the endpoint GQ into a cheap standalone step is tracked as separate
+  future work (does not block this change).
+- **Build sequence:** Stan syntax check (`stanc`) → re-fit the publication model
+  on this commit (`-D` rebuilds KM rvars / CIF / sojourn downstream) → checks below.
 - **Validation (beyond the median):**
   1. `died_off_trial` spop median PFS rises from 17 toward observed 42.
   2. **CIF_03 count == n_dropout per trial**, and `cif_01 + cif_02 + cif_03 +
@@ -223,7 +232,8 @@ change, so readers know what the model's PFS means.
 - 3→2 sojourn-hazard re-calibration. The sojourn timing now drives PFS-event
   timing for dropouts; if the gap only partially closes, that is the *next*
   separable lever — not part of this change.
-- Re-fitting the MCMC.
+- Splitting the endpoint GQ into a standalone `generate_quantities` step (tracked
+  as separate future work; this change accepts a full re-fit to emit the new GQ).
 - Any change to the observed-data PFS derivation (`death_week − 1` convention is
   the target we align to, not change).
 - Sample/conditional-path PFS or OS.
