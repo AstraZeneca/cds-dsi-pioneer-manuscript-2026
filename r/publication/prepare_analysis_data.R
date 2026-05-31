@@ -42,7 +42,8 @@ prepare_publication_analysis_data <- function(
     # right_censored=FALSE indicates a corrupt source record (seen in sanofi_efc5505_crc).
     filter(!(!right_censored & is.na(pfs))) |>
     nest_join(
-      bind_rows(target_visit_data, historical_visit_data),
+      bind_rows(target_visit_data, historical_visit_data) |>
+        filter(week >= 0),
       by = c("studyid", "usubjid"),
       name = "visit_data"
     ) |>
