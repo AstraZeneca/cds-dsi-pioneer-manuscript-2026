@@ -50,8 +50,8 @@ prepare_publication_analysis_data <- function(
     # pre-screening measurement to anchor the tumor state-space model.
     filter(map_lgl(visit_data, \(v) any(v$week <= 0))) |>
     mutate(
-      # Use trial_arm as the hierarchy grouping so amgen control and experimental
-      # are separate groups — without this both amgen arms pool under one node.
+      # Each trial×arm is a separate hierarchy group (5 groups: 1 experimental
+      # + 4 historical controls). Keeps amgen control and experimental separate.
       trial = fct_drop(interaction(trial, arm, sep = "_")),
       # determine_pfs only on on-study visits (week >= 0): pre-baseline PD at
       # negative weeks produces negative det_interval_censored -> target_pfs < 0.
