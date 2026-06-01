@@ -68,6 +68,17 @@ pfs_timepoints_pub <- enframe(c(6, 9, 12, 15, 18), name = "n", value = "timepoin
 # Covariates available in the publication data (no pdl1/histology/ctdna)
 covar_formula_pub <- ~ age + male + ecog + hgb + ldh_log + albumin
 
+# Warm-start metrics for the posterior fit. The model density is unchanged since
+# job #1795 (only generated-quantities edits for the PFS-from-OS convention), so
+# #1795's adapted per-chain inv-metrics are valid mass matrices for re-fits. Warm-
+# starting from them makes warmup fast AND robust (starts in good geometry rather
+# than searching for it from random inits — which is where a cold re-fit fell over
+# in job #1805). One file per chain; prior fit does NOT warm-start (different data).
+publication_metric_files <- file.path(
+  "data",
+  sprintf("inv_metric_publication_tumor_ssls_chain%d.json", 1:4)
+)
+
 publication_targets <- list(
 
   # Track initializer file so changes invalidate the initializer targets
@@ -351,7 +362,11 @@ publication_targets <- list(
       fit_data = c(FALSE, TRUE),
       base_name = c("prior_tumor_ssls", "tumor_ssls"),
       iter_sampling = 500,
-      iter_warmup = c(300L, 500L),
+      # Posterior warm-starts from #1795's adapted metric, so it needs far less
+      # warmup; prior fit cold-starts (no valid posterior metric for it).
+      iter_warmup = c(300L, 150L),
+      # List-column: prior = no warm-start; posterior = per-chain inv-metric files.
+      metric_files = list(NULL, publication_metric_files),
       chains = 4L
     ),
     names = "type",
@@ -388,6 +403,8 @@ publication_targets <- list(
         init = tumor_ssls_initializer,
         adapt_delta = 0.8,
         save_metric = TRUE,
+        # Warm-start from #1795's adapted inv-metrics (posterior only; NULL = cold).
+        metric_file = if (length(metric_files) > 0) metric_files,
         output_dir = file.path(publication_output_path, "fit", base_name),
         timestamp = fit_output_timestamp
       ),
