@@ -1,0 +1,15 @@
+{
+  "hash": "f85459d9e770f70999f78f19ed475d4d",
+  "result": {
+    "engine": "knitr",
+    "markdown": "---\ntitle: \"PIONEER: Publication\"\nsubtitle: \"Bayesian Hierarchical Modeling for Tumor Dynamics and Survival\"\npage-layout: full\ntoc: false\nnumber-sections: false\n---\n\n\n\n<style>\n.quarto-title-block { display: none; }\n</style>\n\n::: {.column-page}\n::: {.hero-section}\n::: {.hero-content}\n::: {.hero-text}\n# PIONEER Publication Analysis\n\nBayesian hierarchical model for tumor dynamics and progression-free survival — publication dataset (497 patients, 6 covariates).\n:::\n::: {.hero-image}\n![](images/pioneer-helmet.png)\n:::\n:::\n:::\n:::\n\n::: {.column-page}\n## Quick Navigation\n\n::: {.card-grid}\n\n::: {.feature-card}\n### [Data Exploration](analysis/data-exploration.qmd)\nOverview of the publication dataset: patient characteristics, tumor measurements, and survival follow-up.\n:::\n\n::: {.feature-card}\n### [Clinical Endpoints](analysis/clinical-endpoints.qmd)\nOverall Response Rate (ORR), Median PFS, and PFS at fixed timepoints from the publication model.\n:::\n\n::: {.feature-card}\n### [Survival Analysis](analysis/survival-analysis.qmd)\nKaplan-Meier survival curves comparing model forecasts to observed PFS.\n:::\n\n::: {.feature-card}\n### [Overall Survival](analysis/overall-survival.qmd)\nOS model forecasts and observed Kaplan-Meier curves.\n:::\n\n::: {.feature-card}\n### [Parameter Inference](analysis/parameter-inference.qmd)\nPopulation-level and patient-level posterior parameter distributions.\n:::\n\n::: {.feature-card}\n### [Patient Dynamics](analysis/patient-dynamics.qmd)\nIndividual patient tumor trajectories and RECIST predictions.\n:::\n\n:::\n:::\n\n::: {.column-page}\n## About This Analysis\n\nThis website presents results from the publication pipeline running the SF-SSM Stan model on 497 patients with 6 covariates (age, sex, ECOG, haemoglobin, log-LDH, albumin). No PDL1 stratification or external historical trial borrowing. For model documentation, see the [SCLC-01 site](https://rstudio-connect.seml.scp.astrazeneca.net/content/084c017e-8ec4-4efd-ae02-e4a86c9dc51f/).\n:::\n",
+    "supporting": [],
+    "filters": [
+      "rmarkdown/pagebreak.lua"
+    ],
+    "includes": {},
+    "engineDependencies": {},
+    "preserve": {},
+    "postProcess": true
+  }
+}

@@ -194,6 +194,8 @@ publication_targets <- list(
   # No conditioning subgroups (no pdl1/histology in publication data)
   tar_target(cond_groups, list()),
 
+  tar_target(extend_max_all_t, 200L),
+
   # Stan data -------------------------------------------------------------------
 
   tar_target(
@@ -231,14 +233,32 @@ publication_targets <- list(
       enable_ms_pop_time_varying_cov = TRUE,
       enable_ms_pop_time_invariant_cov = TRUE,
       enable_ms_level_cov = c(trial = FALSE, patient = FALSE),
-      # Visit-gated 0->1 disabled. The tumor-side wiring works for data
-      # validation but produces a non-finite log-probability gradient at
-      # initialization (cause not yet isolated; tracked in a separate issue).
-      # Use the continuous-time path that sclc also uses.
-      enable_ms_visit_gated_01 = 0L,
-      enable_ms_visit_gated_latent_01 = 0L,
+      # Latent visit-gated 0->1: hazard contributions only at observed visit
+      # weeks, but the time-varying covariates (log SLD, log decrease rate,
+      # log growth rate) come from the modeled state-space trajectory rather
+      # than raw observations. This avoids the log(0) problem that observed
+      # mode hits at complete-response visits and aligns the survival
+      # likelihood with the actual measurement schedule (lilly_cxcr4 ~6w vs
+      # amgen_darbe weekly).
+      enable_ms_visit_gated_01 = 1L,
+      enable_ms_visit_gated_latent_01 = 1L,
       share_dead_gp_shape = 0L,
       enable_ms_02_time_varying_cov = 0L,
+      # 0->3 dropout hazard with patient-level discrimination (added 2026-05-28).
+      # The previous fit had no per-patient discrimination on the 0->3 path
+      # (only the trial-level GP), so died_off_trial patients were routed
+      # to 0->1 too quickly in the spop simulation. Enabling both:
+      #   - TI: baseline covariates (age, ECOG, hgb, LDH, albumin, sex)
+      #     give static dropout-risk signal.
+      #   - TV: latent log SLD / decrease rate / growth rate let dropout
+      #     risk track tumor dynamics (e.g. patients on a deteriorating
+      #     trajectory may drop out faster).
+      # With only 57 dropout events the TV path is identification-limited;
+      # priors are kept tight (Normal(0, 0.5)) to avoid overfit. 3->2 TI
+      # left off — only 57 events with another competing hazard to model.
+      enable_ms_03_time_invariant_cov = 1L,
+      enable_ms_03_time_varying_cov = 1L,
+      enable_ms_32_time_invariant_cov = 0L,
       enable_ms_12_entry_covar = 0L,
       enable_ms_32_entry_covar = 0L,
       entry_covar_12 = numeric(0),
@@ -454,6 +474,33 @@ publication_targets <- list(
         mutate(fit_type = type)
     ),
 
+    tar_target(
+      tumor_ssls_orr_rvar,
+      tumor_ssls_draws_endpoints |>
+        recover_types(select(all_analysis_data, trial)) |>
+        spread_rvars(
+          sample_target_orr[trial],
+          spop_target_orr[trial]
+        ) |>
+        mutate(fit_type = type)
+    ),
+
+    tar_target(
+      tumor_ssls_forecast_target_pfs_n_rvar,
+      tumor_ssls_draws_endpoints |>
+        recover_types(select(all_analysis_data, trial)) |>
+        spread_rvars(
+          sample_target_pfs_n[trial, n],
+          spop_target_pfs_n[trial, n],
+          sample_ms_pfs_n[trial, n],
+          spop_ms_pfs_n[trial, n],
+          sample_pfs_n[trial, n],
+          spop_pfs_n[trial, n]
+        ) |>
+        left_join(pfs_timepoints_pub, by = "n") |>
+        mutate(fit_type = type)
+    ),
+
     # Population parameters -----------------------------------------------------
 
     tar_target(
@@ -467,6 +514,125 @@ publication_targets <- list(
         pop_log_growth_rate
       ) |>
         mutate(.value_exp = exp(.value), fit_type = type)
+    ),
+
+    tar_target(
+      tumor_ssls_noise_sd_rvar,
+      gather_rvars(tumor_ssls_draws_pop, measure_sd_sld) |>
+        mutate(fit_type = type)
+    ),
+
+    tar_map(
+      tibble(level = c("patient")),
+      names = "level",
+
+      tar_target(
+        tumor_ssls_rates_bpi,
+        get_tumor_ssls_level_param_binned(
+          tumor_ssls_draws_patient_params,
+          level,
+          param = str_c(
+            "{level}_",
+            c("log_decrease_rate", "log_growth_rate",
+              "log_growth_rate_residual", "log_decrease_rate_residual")
+          ),
+          type,
+          breaks = seq(-3, 3, 0.05),
+          inv_link_breaks = seq(0, 25, 0.5)
+        )
+      ),
+
+      tar_target(
+        tumor_ssls_decrease_prop_bpi,
+        get_tumor_ssls_level_param_binned(
+          tumor_ssls_draws_patient_params,
+          level,
+          param = str_c("frac_logit_loc_{level}"),
+          type,
+          breaks = seq(-5, 5, 0.05),
+          inv_link = rvar_plogis,
+          inv_link_breaks = seq(0, 1, 0.01)
+        )
+      )
+    ),
+
+    tar_map(
+      tibble(
+        event_type   = c("right_censored", "uncensored"),
+        event_cond   = c(expr(right_censored), expr(!right_censored)),
+        event_slicer = c(\(d, n) d, \(d, n) slice_sample(d, n = n))
+      ),
+      names = "event_type",
+
+      tar_target(
+        state_patient_subsample,
+        get_state_patients(
+          all_analysis_data,
+          by = trial,
+          cond = event_cond,
+          slicer = event_slicer,
+          sample_size = 40
+        )
+      ),
+
+      tar_target(
+        tumor_ssls_rep_sld_rvar,
+        get_sld(tumor_ssls_draws_sld_recist, state_patient_subsample) |>
+          mutate(fit_type = type),
+        resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
+      ),
+
+      tar_target(
+        tumor_ssls_forecast_sld_rvar,
+        get_forecast_sld(
+          tumor_ssls_draws_sld_recist,
+          all_analysis_data,
+          state_patient_subsample,
+          forecast_extent = extend_max_all_t
+        ) |>
+          mutate(fit_type = type),
+        resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
+      ),
+
+      tar_target(
+        tumor_ssls_staged_sld_rvar,
+        bind_rows(
+          obs      = tumor_ssls_rep_sld_rvar |> rename(patient_sld = rep_patient_sld),
+          forecast = tumor_ssls_forecast_sld_rvar |> rename(patient_sld = forecast_patient_sld),
+          .id = "stage"
+        )
+      ),
+
+      tar_target(
+        tumor_ssls_recist_rvar,
+        get_recist(tumor_ssls_draws_sld_recist, state_patient_subsample) |>
+          mutate(fit_type = type),
+        resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
+      ),
+
+      tar_target(
+        tumor_ssls_forecast_recist_rvar,
+        get_forecast_recist(
+          tumor_ssls_draws_sld_recist,
+          all_analysis_data,
+          state_patient_subsample,
+          forecast_extent = extend_max_all_t
+        ) |>
+          mutate(fit_type = type),
+        resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
+      ),
+
+      tar_target(
+        tumor_ssls_staged_recist_rvar,
+        bind_rows(
+          obs      = tumor_ssls_recist_rvar |>
+            filter(!is.na(response)) |>
+            rename(recist = rep_recist),
+          forecast = tumor_ssls_forecast_recist_rvar |>
+            rename(recist = forecast_obs_recist),
+          .id = "stage"
+        )
+      )
     ),
 
     tar_target(
@@ -499,12 +665,41 @@ publication_targets <- list(
     bind_rows(tumor_ssls_trial_pfs_quant_prior, tumor_ssls_trial_pfs_quant_posterior)
   ),
   tar_target(
+    all_tumor_ssls_orr_rvar,
+    bind_rows(tumor_ssls_orr_rvar_prior, tumor_ssls_orr_rvar_posterior)
+  ),
+  tar_target(
+    all_tumor_ssls_forecast_target_pfs_n_rvar,
+    bind_rows(
+      tumor_ssls_forecast_target_pfs_n_rvar_prior,
+      tumor_ssls_forecast_target_pfs_n_rvar_posterior
+    )
+  ),
+  tar_target(
     all_tumor_ssls_rates_rvar,
     bind_rows(tumor_ssls_rates_rvar_prior, tumor_ssls_rates_rvar_posterior)
   ),
   tar_target(
     all_tumor_ssls_coef,
     bind_rows(tumor_ssls_coef_prior, tumor_ssls_coef_posterior)
+  ),
+  tar_target(
+    all_tumor_ssls_noise_sd_rvar,
+    bind_rows(tumor_ssls_noise_sd_rvar_prior, tumor_ssls_noise_sd_rvar_posterior)
+  ),
+  tar_target(
+    all_tumor_ssls_patient_rates_bpi,
+    bind_rows(
+      tumor_ssls_rates_bpi_patient_prior,
+      tumor_ssls_rates_bpi_patient_posterior
+    )
+  ),
+  tar_target(
+    all_tumor_ssls_patient_decrease_prop_bpi,
+    bind_rows(
+      tumor_ssls_decrease_prop_bpi_patient_prior,
+      tumor_ssls_decrease_prop_bpi_patient_posterior
+    )
   )
 )
 

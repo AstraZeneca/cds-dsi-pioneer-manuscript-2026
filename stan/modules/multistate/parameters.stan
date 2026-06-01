@@ -22,9 +22,15 @@ vector[n_raw_groups_ms_baseline_01] raw_log_lambda_gp_01_level_intercept;
 vector[n_cp_groups_ms_baseline_01]  cp_log_lambda_gp_01_level_intercept;
 
 // --- Population-level Time-varying Covariates ---
-// 0->1: 1 feature in visit-gated mode, n_time_varying_covar in continuous mode
+// 0->1 dimensioning rules:
+//   continuous mode (visit_gated_01 = 0): n_time_varying_covar features (full
+//     SLD + decrease + growth covariate set, evaluated continuously over weeks).
+//   latent visit-gated mode (visit_gated_01 = 1, latent = 1): n_time_varying_covar
+//     features (same modeled covariates, just evaluated at visit weeks).
+//   observed visit-gated mode (visit_gated_01 = 1, latent = 0): single feature
+//     (one observed biomarker via ms_obs_visit_covar_flat per visit).
 vector[enable_ms_01 && enable_ms_pop_time_varying_cov
-    ? (enable_ms_visit_gated_01 ? 1 : n_time_varying_covar) : 0] time_varying_coef_01;
+    ? (enable_ms_visit_gated_01 && !enable_ms_visit_gated_latent_01 ? 1 : n_time_varying_covar) : 0] time_varying_coef_01;
 
 // --- Population-level Time-invariant Covariates (QR space) ---
 vector[enable_ms_01 && enable_ms_pop_time_invariant_cov ? n_time_invariant_covar : 0] time_invariant_coef_qr_01;
@@ -128,6 +134,19 @@ matrix[n_gp_groups_ms_baseline_03, enable_ms_03 ? n_ms_gp_cal_knots : 0] log_lam
 vector[n_raw_groups_ms_baseline_03] raw_log_lambda_gp_03_level_intercept;
 vector[n_cp_groups_ms_baseline_03]  cp_log_lambda_gp_03_level_intercept;
 
+// --- Population-level Time-varying Covariates for 0->3 (tumor bridge) ---
+vector[enable_ms_03 && enable_ms_pop_time_varying_cov && enable_ms_03_time_varying_cov
+    ? n_time_varying_covar : 0] time_varying_coef_03;
+
+// --- Population-level Time-invariant Covariates for 0->3 (QR space) ---
+vector[enable_ms_03 && enable_ms_pop_time_invariant_cov && enable_ms_03_time_invariant_cov
+    ? n_time_invariant_covar : 0] time_invariant_coef_qr_03;
+
+// --- Multi-level Random Slopes for 0->3 ---
+array[n_levels] vector<lower=0>[enable_ms_03 && enable_ms_03_time_invariant_cov ? n_time_invariant_covar : 0] sd_level_slope_03;
+matrix[enable_ms_03 && enable_ms_03_time_invariant_cov ? n_raw_groups_ms_slope_shared : 0, n_time_invariant_covar] raw_level_slope_03;
+matrix[enable_ms_03 && enable_ms_03_time_invariant_cov ? n_cp_groups_ms_slope_shared  : 0, n_time_invariant_covar] cp_level_slope_03;
+
 // ============================================================================
 // STUDENT-T HIERARCHY: DEGREES OF FREEDOM (size 0 when disabled)
 // ============================================================================
@@ -159,3 +178,12 @@ array[enable_ms_32 && any_re_level ? n_levels : 0] real<lower=0> log_lambda_gp_3
 matrix[n_gp_groups_ms_baseline_32, enable_ms_32 ? n_ms_gp_sojourn_32_knots : 0] log_lambda_gp_32_s_level_eta;
 vector[n_raw_groups_ms_baseline_32] raw_log_lambda_gp_32_s_level_intercept;
 vector[n_cp_groups_ms_baseline_32]  cp_log_lambda_gp_32_s_level_intercept;
+
+// --- Population-level Time-invariant Covariates for 3->2 (QR space) ---
+vector[enable_ms_32 && enable_ms_pop_time_invariant_cov && enable_ms_32_time_invariant_cov
+    ? n_time_invariant_covar : 0] time_invariant_coef_qr_32;
+
+// --- Multi-level Random Slopes for 3->2 ---
+array[n_levels] vector<lower=0>[enable_ms_32 && enable_ms_32_time_invariant_cov ? n_time_invariant_covar : 0] sd_level_slope_32;
+matrix[enable_ms_32 && enable_ms_32_time_invariant_cov ? n_raw_groups_ms_slope_shared : 0, n_time_invariant_covar] raw_level_slope_32;
+matrix[enable_ms_32 && enable_ms_32_time_invariant_cov ? n_cp_groups_ms_slope_shared  : 0, n_time_invariant_covar] cp_level_slope_32;
