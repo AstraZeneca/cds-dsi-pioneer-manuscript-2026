@@ -1547,7 +1547,15 @@ tuple(vector, vector, vector) compute_trial_cif(
 
   for (j in 1:n) {
     if (is_dropout[j]) {
-      cnt_03[pfs[j]] += 1;          // 0->3 dropout (dead or alive) — checked FIRST
+      // 0->3 dropout (dead or alive) — checked FIRST. Under the PFS-from-OS
+      // convention a dropout's pfs == its OS outcome, which can exceed the CIF
+      // horizon max_t when the 3->2 death lands beyond the window. Such an event
+      // is not observed within [0, max_t], so it contributes nothing to the
+      // in-window CIF (same treatment as a beyond-horizon censoring). Guard the
+      // index to avoid out-of-range access (cnt_03 has length max_t + 1).
+      if (pfs[j] <= max_t) {
+        cnt_03[pfs[j]] += 1;
+      }
     } else if (!right_censored[j]) {
       // PFS event for a non-dropout: distinguish direct death (0->2) from progression (0->1)
       if (!os_censored[j] && pfs[j] == os[j]) {
