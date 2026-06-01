@@ -833,7 +833,7 @@ publication_targets <- list(
       iter_warmup = 500,
       iter_sampling = 500,
       save_warmup = lfo_save_warmup,
-      parallel_chains = 1,
+      parallel_chains = 4,
       adapt_delta = 0.8,
       threads_per_chain = base_tumor_ssls_stan_data$n_shards,
       future_window = 2,
