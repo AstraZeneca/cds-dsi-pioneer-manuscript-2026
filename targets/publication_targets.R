@@ -396,7 +396,7 @@ publication_targets <- list(
         tumor_ssls_stan_data,
         iter_warmup = iter_warmup,
         iter_sampling = iter_sampling,
-        save_warmup = TRUE,
+        save_warmup = FALSE,
         parallel_chains = chains,
         chains = chains,
         threads_per_chain = tumor_ssls_stan_data$n_shards,
