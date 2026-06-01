@@ -65,15 +65,15 @@ km_quant <- seq(0.2, 0.8, by = 0.05)
 
 pfs_timepoints_pub <- enframe(c(6, 9, 12, 15, 18), name = "n", value = "timepoint")
 
-# SCC covariates: age, sex, ECOG, hgb, LDH, albumin
-covar_formula_scc <- ~ age + male + ecog + hgb + ldh_log + albumin
+# SCLC covariates: age, sex, ECOG, hgb, LDH, albumin
+covar_formula_sclc <- ~ age + male + ecog + hgb + ldh_log + albumin
 # CRC covariates: ECOG is constant (all zeros) so excluded; otherwise same set
 covar_formula_crc <- ~ age + male + hgb + ldh_log + albumin
 
 disease_map <- tibble::tribble(
-  ~disease, ~disease_data_path,                    ~covar_formula,    ~trial_re,
-  "scc",    publication_data_path,                  covar_formula_scc, FALSE,
-  "crc",    file.path(publication_data_path, "crc"), covar_formula_crc, FALSE
+  ~disease, ~disease_data_path,                    ~covar_formula,     ~trial_re,
+  "sclc",   publication_data_path,                  covar_formula_sclc, FALSE,
+  "crc",    file.path(publication_data_path, "crc"), covar_formula_crc,  FALSE
 )
 
 publication_targets <- list(
