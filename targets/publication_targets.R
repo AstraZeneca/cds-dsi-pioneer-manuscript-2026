@@ -29,7 +29,8 @@ controller_fit <- crew_controller_local(name = "fit", workers = 4)
 controller_many_samples <- crew_controller_local(name = "many samples", workers = 4)
 
 lfo_workers <- as.integer(Sys.getenv("LFO_WORKERS", 24))
-controller_lfo <- crew_controller_local(name = "lfo", workers = lfo_workers)
+controller_lfo <- crew_controller_local(name = "lfo", workers = lfo_workers,
+  seconds_launch = 120)
 
 lfo_groups <- Sys.getenv("LFO_GROUPS", 24)
 lfo_save_warmup <- Sys.getenv("LFO_SAVE_WARMUP", "false") == "true"
