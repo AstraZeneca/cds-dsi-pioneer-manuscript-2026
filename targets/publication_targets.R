@@ -141,7 +141,9 @@ publication_targets <- list(
       lfo_tumor_ssls_include_files,
       publication_artifacts_path,
       include_paths = c(here("stan"), here("stan", "tumor"))
-    )
+    ),
+    error = "stop",
+    cue = tar_cue("always")
   ),
 
 
