@@ -1,10 +1,10 @@
 // ============================================================================
 // Multistate Hazard Model Transformed Parameters
 // ============================================================================
-// When ms_needs_inline_psa = TRUE, PSA models compute time-varying covariates
-// inline in psa/_psa_inline_tv_covar.stan instead of via the grid-based
-// ms_time_varying_covar_01 matrix. Guards on !ms_needs_inline_psa below prevent
-// double-counting. Non-PSA models (tumor) always have ms_needs_inline_psa = 0.
+// When ms_needs_inline_burden = TRUE, burden models compute time-varying covariates
+// inline in _ms_burden_inline_tv_covar.stan instead of via the grid-based
+// ms_time_varying_covar_01 matrix. Guards on !ms_needs_inline_burden below prevent
+// double-counting.
 
 // ============================================================================
 // 0→1 TRANSITION: Log Conditional Survival
@@ -108,11 +108,16 @@ if (enable_ms_01) {
   }
   // Visit-gated mode: sparse update at observed visit weeks only (before -exp,
   // same log-hazard-level addition as continuous mode — no special handling needed).
-  // PSA source: observed (default) or latent trajectory (enable_ms_visit_gated_latent_01).
-  // When ms_needs_inline_psa && enable_ms_visit_gated_latent_01, the latent PSA path
-  // is handled by the PSA-specific inline include. Observed PSA path still runs here.
+  // Two sub-paths:
+  //   Latent: read all n_time_varying_covar components of the modeled trajectory
+  //     (ms_time_varying_covar_01) at the visit week.
+  //   Observed: read the single biomarker stored in ms_obs_visit_covar_flat at
+  //     the visit position v.
+  // When ms_needs_inline_burden && enable_ms_visit_gated_latent_01, the latent
+  // path is handled by the model's inline include — skip here. Observed path
+  // still runs.
   if (enable_ms_pop_time_varying_cov && enable_ms_visit_gated_01 &&
-      !(ms_needs_inline_psa && enable_ms_visit_gated_latent_01) &&
+      !(ms_needs_inline_burden && enable_ms_visit_gated_latent_01) &&
       (!enable_ms_visit_gated_latent_01 || size(ms_time_varying_covar_01) > 0)) {
     for (j in 1:n_forecast_patients) {
       int p = forecast_patient_idx[j];
@@ -121,10 +126,15 @@ if (enable_ms_01) {
       for (v in v_start:v_end) {
         int wk = t_patient_visits[v];
         if (wk >= 1 && wk <= max_all_t) {
-          real obs_covar = enable_ms_visit_gated_latent_01
-            ? ms_time_varying_covar_01[1][j, wk]
-            : ms_obs_visit_covar_flat[v];
-          log_cond_surv_01[j, wk] += time_varying_coef_01[1] * obs_covar;
+          if (enable_ms_visit_gated_latent_01) {
+            // Latent: dot-product over all modeled time-varying covariates
+            for (k in 1:n_time_varying_covar) {
+              log_cond_surv_01[j, wk] += time_varying_coef_01[k] * ms_time_varying_covar_01[k][j, wk];
+            }
+          } else {
+            // Observed: single biomarker per visit
+            log_cond_surv_01[j, wk] += time_varying_coef_01[1] * ms_obs_visit_covar_flat[v];
+          }
         }
       }
     }
@@ -176,8 +186,8 @@ if (enable_ms_01) {
   }
 
   // NOTE: -exp() transform for log_cond_surv_01 is deferred to
-  // modules/multistate/cond_surv_transform.stan to allow PSA-specific
-  // inline TV covariate insertion before the transform.
+  // modules/multistate/cond_surv_transform.stan to allow inline burden
+  // TV-covariate insertion (e.g. PSA inline path) before the transform.
 }
 
 // ============================================================================
@@ -273,10 +283,10 @@ if (enable_ms_02) {
   // -------------------------------------------------------------------------
   // Time-varying covariate effects (same pattern as 0→1)
   // -------------------------------------------------------------------------
-  // 0->2 time-varying covariate: uses modeled PSA (ms_time_varying_covar_01)
+  // 0->2 time-varying covariate: uses modeled burden (ms_time_varying_covar_01)
   // Controlled by enable_ms_02_time_varying_cov, independent of 0->1 mode.
-  // When ms_needs_inline_psa, the PSA-specific inline path handles this instead.
-  if (!ms_needs_inline_psa && enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov
+  // When ms_needs_inline_burden, the inline burden path handles this instead.
+  if (!ms_needs_inline_burden && enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov
       && n_time_varying_covar > 0 && size(ms_time_varying_covar_01) > 0) {
     for (k in 1:n_time_varying_covar) {
       log_cond_surv_02 += time_varying_coef_02[k] * ms_time_varying_covar_01[k];
@@ -454,8 +464,8 @@ if (need_12_s_gp) {
     log_cond_surv_12_s += rep_matrix(linpred_pop_12, ms_max_sojourn_t);
   }
 
-  // PSA-at-entry covariate: shift sojourn hazard per patient based on PSA
-  // burden at the moment of progression (entry into state 1).
+  // Burden-at-entry covariate: shift sojourn hazard per patient based on the
+  // (PSA or other) burden value at the moment of progression (entry into state 1).
   if (enable_ms_12_entry_covar) {
     log_cond_surv_12_s += rep_matrix(
       coef_log_entry_covar_12[1] * to_vector(entry_covar_12), ms_max_sojourn_t
@@ -668,8 +678,59 @@ if (enable_ms_03) {
     }
   }
 
-  // Transform log-hazard to log conditional survival probability
-  log_cond_surv_03 = -exp(log_cond_surv_03);
+  // -------------------------------------------------------------------------
+  // Time-varying covariate effects for 0->3 (modeled burden trajectory)
+  // -------------------------------------------------------------------------
+  // Uses ms_time_varying_covar_01 (modeled biomarker matrix; PSA for pioneer,
+  // SLD-derived for tumor models), independent of 0->1 mode.
+  if (!ms_needs_inline_burden && enable_ms_pop_time_varying_cov && enable_ms_03_time_varying_cov
+      && n_time_varying_covar > 0 && size(ms_time_varying_covar_01) > 0) {
+    for (k in 1:n_time_varying_covar) {
+      log_cond_surv_03 += time_varying_coef_03[k] * ms_time_varying_covar_01[k];
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Time-invariant covariate effects (QR space with multi-level random slopes)
+  // -------------------------------------------------------------------------
+  if (enable_ms_pop_time_invariant_cov && enable_ms_03_time_invariant_cov && n_time_invariant_covar > 0) {
+    vector[n_forecast_patients] linpred_pop_03 = Q_covar_design_matrix[forecast_patient_idx, :] * time_invariant_coef_qr_03;
+
+    if (n_enabled_groups_ms_slope > 0) {
+      matrix[n_enabled_groups_ms_slope, n_time_invariant_covar] ms_scaled_level_slope_03;
+      for (lv in 1:n_levels) {
+        if (enable_ms_level_cov[lv]) {
+          int lv_start, lv_end;
+          (lv_start, lv_end) = get_pos(enabled_level_pos_ms_slope, lv);
+          int mode = enable_ms_level_baseline_hazard[lv];
+          if (mode == LEVEL_MODE_RE_CP) {
+            int c_lo = cp_level_pos_ms_slope_shared[lv];
+            int c_hi = cp_level_pos_ms_slope_shared[lv + 1] - 1;
+            ms_scaled_level_slope_03[lv_start:lv_end, :] = cp_level_slope_03[c_lo:c_hi, :];
+          } else {
+            int r_lo = raw_level_pos_ms_slope_shared[lv];
+            int r_hi = raw_level_pos_ms_slope_shared[lv + 1] - 1;
+            ms_scaled_level_slope_03[lv_start:lv_end, :] =
+              raw_level_slope_03[r_lo:r_hi, :] .*
+              rep_matrix(sd_level_slope_03[lv]', lv_end - lv_start + 1);
+          }
+        }
+      }
+
+      for (lv in 1:n_levels) {
+        if (enable_ms_level_cov[lv]) {
+          linpred_pop_03 += rows_dot_product(
+            Q_covar_design_matrix[forecast_patient_idx, :],
+            ms_scaled_level_slope_03[patient_ms_slope_flat_idx[forecast_patient_idx, lv], :]
+          );
+        }
+      }
+    }
+
+    log_cond_surv_03 += rep_matrix(linpred_pop_03, max_all_t);
+  }
+  // log_cond_surv_03 is transformed by cond_surv_transform.stan (after any
+  // inline burden TV-covariate contributions are added).
 }
 
 // ============================================================================
@@ -751,8 +812,50 @@ if (enable_ms_32) {
     }
   }
 
-  // PSA-at-entry covariate: shift sojourn hazard per patient based on PSA
-  // burden at the moment of dropout (entry into state 3).
+  // -------------------------------------------------------------------------
+  // Time-invariant covariate effects (QR space with multi-level random slopes)
+  // -------------------------------------------------------------------------
+  // Time-varying covariates not implemented for 3->2: would require sojourn-clock
+  // indexing of the modeled burden matrix.
+  if (enable_ms_pop_time_invariant_cov && enable_ms_32_time_invariant_cov && n_time_invariant_covar > 0) {
+    vector[n_forecast_patients] linpred_pop_32 = Q_covar_design_matrix[forecast_patient_idx, :] * time_invariant_coef_qr_32;
+
+    if (n_enabled_groups_ms_slope > 0) {
+      matrix[n_enabled_groups_ms_slope, n_time_invariant_covar] ms_scaled_level_slope_32;
+      for (lv in 1:n_levels) {
+        if (enable_ms_level_cov[lv]) {
+          int lv_start, lv_end;
+          (lv_start, lv_end) = get_pos(enabled_level_pos_ms_slope, lv);
+          int mode = enable_ms_level_baseline_hazard[lv];
+          if (mode == LEVEL_MODE_RE_CP) {
+            int c_lo = cp_level_pos_ms_slope_shared[lv];
+            int c_hi = cp_level_pos_ms_slope_shared[lv + 1] - 1;
+            ms_scaled_level_slope_32[lv_start:lv_end, :] = cp_level_slope_32[c_lo:c_hi, :];
+          } else {
+            int r_lo = raw_level_pos_ms_slope_shared[lv];
+            int r_hi = raw_level_pos_ms_slope_shared[lv + 1] - 1;
+            ms_scaled_level_slope_32[lv_start:lv_end, :] =
+              raw_level_slope_32[r_lo:r_hi, :] .*
+              rep_matrix(sd_level_slope_32[lv]', lv_end - lv_start + 1);
+          }
+        }
+      }
+
+      for (lv in 1:n_levels) {
+        if (enable_ms_level_cov[lv]) {
+          linpred_pop_32 += rows_dot_product(
+            Q_covar_design_matrix[forecast_patient_idx, :],
+            ms_scaled_level_slope_32[patient_ms_slope_flat_idx[forecast_patient_idx, lv], :]
+          );
+        }
+      }
+    }
+
+    log_cond_surv_32 += rep_matrix(linpred_pop_32, ms_max_sojourn_t_32);
+  }
+
+  // Burden-at-entry covariate: shift sojourn hazard per patient based on the
+  // (PSA or other) burden value at the moment of dropout (entry into state 3).
   if (enable_ms_32_entry_covar) {
     log_cond_surv_32 += rep_matrix(
       coef_log_entry_covar_32[1] * to_vector(entry_covar_32), ms_max_sojourn_t_32

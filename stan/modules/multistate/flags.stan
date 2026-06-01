@@ -53,6 +53,15 @@ int<lower=0, upper=1> enable_ms_visit_gated_latent_01;
 // When disabled, 0->2 uses GP baseline + time-invariant covariates only.
 int<lower=0, upper=1> enable_ms_02_time_varying_cov;
 
+// --- 0->3 / 3->2 Population-Level Covariate Flags ---
+// Per-transition switches that gate population covariate effects on top of the
+// existing module-wide enable_ms_pop_time_invariant_cov / enable_ms_pop_time_varying_cov.
+// 0->3 supports both time-invariant and time-varying (tumor bridge) covariates.
+// 3->2 supports time-invariant only (sojourn-clock indexing for time-varying not implemented).
+int<lower=0, upper=1> enable_ms_03_time_invariant_cov;
+int<lower=0, upper=1> enable_ms_32_time_invariant_cov;
+int<lower=0, upper=1> enable_ms_03_time_varying_cov;
+
 // --- PSA-at-State-Entry Covariates ---
 // When enabled, the last observed log-PSA before entering state 1 (1→2) or
 // state 3 (3→2) is used as a time-invariant patient-level covariate, shifting

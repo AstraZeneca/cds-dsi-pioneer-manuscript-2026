@@ -555,3 +555,87 @@ if (enable_ms_12) {
     }
   }
 }
+
+// 0→3 covariate priors (time-varying tumor bridge + time-invariant)
+if (enable_ms_03) {
+  if (enable_ms_pop_time_varying_cov && enable_ms_03_time_varying_cov && n_time_varying_covar > 0) {
+    time_varying_coef_03 ~ normal(time_varying_coef_03_mean, time_varying_coef_03_sd);
+  }
+
+  if (enable_ms_pop_time_invariant_cov && enable_ms_03_time_invariant_cov && n_time_invariant_covar > 0) {
+    time_invariant_coef_qr_03 ~ normal(time_invariant_coef_03_mean, time_invariant_coef_03_sd);
+  }
+
+  for (lv in 1:n_levels) {
+    if (enable_ms_03_time_invariant_cov && n_time_invariant_covar > 0) {
+      sd_level_slope_03[lv] ~ normal(0, sd_level_slope_03_sd[lv]');
+    }
+    if (enable_ms_03_time_invariant_cov && enable_ms_level_cov[lv] && n_time_invariant_covar > 0) {
+      int mode = enable_ms_level_baseline_hazard[lv];
+      if (mode == LEVEL_MODE_FE || mode == LEVEL_MODE_RE || mode == LEVEL_MODE_RE_GP) {
+        int r_lo = raw_level_pos_ms_slope_shared[lv];
+        int r_hi = raw_level_pos_ms_slope_shared[lv + 1] - 1;
+        if (r_hi >= r_lo) {
+          if (enable_student_t_hierarchy)
+            to_vector(raw_level_slope_03[r_lo:r_hi, :]) ~ student_t(ms_nu_slope_level[lv], 0, 1);
+          else
+            to_vector(raw_level_slope_03[r_lo:r_hi, :]) ~ std_normal();
+        }
+      }
+      if (mode == LEVEL_MODE_RE_CP) {
+        int c_lo = cp_level_pos_ms_slope_shared[lv];
+        int c_hi = cp_level_pos_ms_slope_shared[lv + 1] - 1;
+        if (c_hi >= c_lo) {
+          for (k in 1:n_time_invariant_covar) {
+            if (enable_student_t_hierarchy)
+              cp_level_slope_03[c_lo:c_hi, k]
+                ~ student_t(ms_nu_slope_level[lv], 0, sd_level_slope_03[lv, k]);
+            else
+              cp_level_slope_03[c_lo:c_hi, k]
+                ~ normal(0, sd_level_slope_03[lv, k]);
+          }
+        }
+      }
+    }
+  }
+}
+
+// 3→2 covariate priors (time-invariant only — sojourn-clock TV not implemented)
+if (enable_ms_32) {
+  if (enable_ms_pop_time_invariant_cov && enable_ms_32_time_invariant_cov && n_time_invariant_covar > 0) {
+    time_invariant_coef_qr_32 ~ normal(time_invariant_coef_32_mean, time_invariant_coef_32_sd);
+  }
+
+  for (lv in 1:n_levels) {
+    if (enable_ms_32_time_invariant_cov && n_time_invariant_covar > 0) {
+      sd_level_slope_32[lv] ~ normal(0, sd_level_slope_32_sd[lv]');
+    }
+    if (enable_ms_32_time_invariant_cov && enable_ms_level_cov[lv] && n_time_invariant_covar > 0) {
+      int mode = enable_ms_level_baseline_hazard[lv];
+      if (mode == LEVEL_MODE_FE || mode == LEVEL_MODE_RE || mode == LEVEL_MODE_RE_GP) {
+        int r_lo = raw_level_pos_ms_slope_shared[lv];
+        int r_hi = raw_level_pos_ms_slope_shared[lv + 1] - 1;
+        if (r_hi >= r_lo) {
+          if (enable_student_t_hierarchy)
+            to_vector(raw_level_slope_32[r_lo:r_hi, :]) ~ student_t(ms_nu_slope_level[lv], 0, 1);
+          else
+            to_vector(raw_level_slope_32[r_lo:r_hi, :]) ~ std_normal();
+        }
+      }
+      if (mode == LEVEL_MODE_RE_CP) {
+        int c_lo = cp_level_pos_ms_slope_shared[lv];
+        int c_hi = cp_level_pos_ms_slope_shared[lv + 1] - 1;
+        if (c_hi >= c_lo) {
+          for (k in 1:n_time_invariant_covar) {
+            if (enable_student_t_hierarchy)
+              cp_level_slope_32[c_lo:c_hi, k]
+                ~ student_t(ms_nu_slope_level[lv], 0, sd_level_slope_32[lv, k]);
+            else
+              cp_level_slope_32[c_lo:c_hi, k]
+                ~ normal(0, sd_level_slope_32[lv, k]);
+          }
+        }
+      }
+    }
+  }
+}
