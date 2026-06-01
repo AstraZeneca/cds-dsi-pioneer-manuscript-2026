@@ -64,8 +64,8 @@ transformed data {
   array[max_all_t] real all_measure_t = linspaced_array(max_all_t, 1, max_all_t);
 
   #include "_qr_decomposition.stan"
-  // Standalone never uses inline PSA (no state-space model)
-  int ms_needs_inline_psa = 0;
+  // Standalone never uses inline burden (no state-space model)
+  int ms_needs_inline_burden = 0;
 
   #include "modules/multistate/transformed_data.stan"
   #include "modules/endpoints/transformed_data.stan"

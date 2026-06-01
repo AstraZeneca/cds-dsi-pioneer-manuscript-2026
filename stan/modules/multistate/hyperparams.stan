@@ -107,29 +107,49 @@ array[n_levels] real<lower=0> fe_log_lambda_gp_32_s_level_intercept_sd;
 
 // --- Covariate Coefficient Hyperparameters ---
 // Time-varying coefficients (population-level)
+// 0->1 dimensioning matches parameters.stan:
+//   single coefficient only in observed visit-gated mode; full
+//   n_time_varying_covar in continuous mode and latent visit-gated mode.
 vector[enable_ms_pop_time_varying_cov
-    ? (enable_ms_visit_gated_01 ? 1 : n_time_varying_covar) : 0] time_varying_coef_01_mean;
+    ? (enable_ms_visit_gated_01 && !enable_ms_visit_gated_latent_01 ? 1 : n_time_varying_covar) : 0] time_varying_coef_01_mean;
 vector<lower=0>[enable_ms_pop_time_varying_cov
-    ? (enable_ms_visit_gated_01 ? 1 : n_time_varying_covar) : 0] time_varying_coef_01_sd;
+    ? (enable_ms_visit_gated_01 && !enable_ms_visit_gated_latent_01 ? 1 : n_time_varying_covar) : 0] time_varying_coef_01_sd;
 vector[enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov
     ? n_time_varying_covar : 0] time_varying_coef_02_mean;
 vector<lower=0>[enable_ms_pop_time_varying_cov && enable_ms_02_time_varying_cov
     ? n_time_varying_covar : 0] time_varying_coef_02_sd;
+vector[enable_ms_pop_time_varying_cov && enable_ms_03_time_varying_cov
+    ? n_time_varying_covar : 0] time_varying_coef_03_mean;
+vector<lower=0>[enable_ms_pop_time_varying_cov && enable_ms_03_time_varying_cov
+    ? n_time_varying_covar : 0] time_varying_coef_03_sd;
 vector[n_time_varying_covar] time_varying_coef_12_mean;
 vector<lower=0>[n_time_varying_covar] time_varying_coef_12_sd;
 
 // Time-invariant coefficients (population-level, QR space)
+// 0->3 / 3->2 dimensioning matches parameters.stan: gated by per-transition
+// flag so length-0 input from priors.R (when flag off) round-trips cleanly.
+// 0->1 / 0->2 / 1->2 do not have per-transition TI flags, so always full length.
 vector[n_time_invariant_covar] time_invariant_coef_01_mean;
 vector<lower=0>[n_time_invariant_covar] time_invariant_coef_01_sd;
 vector[n_time_invariant_covar] time_invariant_coef_02_mean;
 vector<lower=0>[n_time_invariant_covar] time_invariant_coef_02_sd;
+vector[enable_ms_03 && enable_ms_pop_time_invariant_cov && enable_ms_03_time_invariant_cov
+    ? n_time_invariant_covar : 0] time_invariant_coef_03_mean;
+vector<lower=0>[enable_ms_03 && enable_ms_pop_time_invariant_cov && enable_ms_03_time_invariant_cov
+    ? n_time_invariant_covar : 0] time_invariant_coef_03_sd;
 vector[n_time_invariant_covar] time_invariant_coef_12_mean;
 vector<lower=0>[n_time_invariant_covar] time_invariant_coef_12_sd;
+vector[enable_ms_32 && enable_ms_pop_time_invariant_cov && enable_ms_32_time_invariant_cov
+    ? n_time_invariant_covar : 0] time_invariant_coef_32_mean;
+vector<lower=0>[enable_ms_32 && enable_ms_pop_time_invariant_cov && enable_ms_32_time_invariant_cov
+    ? n_time_invariant_covar : 0] time_invariant_coef_32_sd;
 
 // Multi-level random slope SDs (per level)
 array[n_levels] row_vector<lower=0>[n_time_invariant_covar] sd_level_slope_01_sd;
 array[n_levels] row_vector<lower=0>[n_time_invariant_covar] sd_level_slope_02_sd;
+array[n_levels] row_vector<lower=0>[n_time_invariant_covar] sd_level_slope_03_sd;
 array[n_levels] row_vector<lower=0>[n_time_invariant_covar] sd_level_slope_12_sd;
+array[n_levels] row_vector<lower=0>[n_time_invariant_covar] sd_level_slope_32_sd;
 
 // --- Student-t hierarchy: nu prior hyperparameters for multistate ---
 // Baseline intercepts (one per level)
@@ -139,9 +159,17 @@ array[n_levels] real<lower=0> ms_nu_baseline_level_prior_beta;
 array[n_levels] real<lower=0> ms_nu_slope_level_prior_alpha;
 array[n_levels] real<lower=0> ms_nu_slope_level_prior_beta;
 
-// --- PSA-at-State-Entry Coefficient Hyperparameters ---
-// Prior for the scalar log-PSA coefficient on 1→2 and 3→2 sojourn hazards.
+// --- Burden-at-State-Entry Coefficient Hyperparameters ---
+// Prior for the scalar log-burden coefficient on 1→2 and 3→2 sojourn hazards.
+// (PSA in pioneer; symbol generic for any future per-trial burden marker.)
 real coef_log_entry_covar_12_mean;
 real<lower=0> coef_log_entry_covar_12_sd;
 real coef_log_entry_covar_32_mean;
 real<lower=0> coef_log_entry_covar_32_sd;
+
+// --- Correlated Intercept Block Hyperparameter (Phase 2) ---
+// LKJ shape for the cross-transition frailty correlation Cholesky factors.
+// eta = 2 (default): gently concentrates toward the identity, symmetric about
+// zero. Single scalar shared by every correlated block. Unused (but always in
+// scope) when n_ms_corr_blocks == 0.
+real<lower=0> ms_intercept_corr_eta;

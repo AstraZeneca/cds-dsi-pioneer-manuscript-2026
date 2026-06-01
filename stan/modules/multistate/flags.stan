@@ -21,11 +21,26 @@ int<lower=0, upper=2> ms_time_scale_12;
 // Only valid when ms_time_scale_12 == 0 (Markov). Sojourn GP unaffected.
 int<lower=0, upper=1> share_dead_gp_shape;
 
-// --- Baseline Hazard Hierarchy ---
-// Uses generic n_levels structure (consistent with tr, frac, init modules)
-// 5-state flag: 0 = no level effect, 1 = FE intercept, 2 = RE intercept (NCP),
-// 3 = RE + GP residual, 4 = RE intercept (CP)
-array[n_levels] int<lower=0, upper=4> enable_ms_level_baseline_hazard;
+// --- Baseline Hazard Hierarchy (decomposed, per-transition x per-level) ---
+// The legacy single shared flag `enable_ms_level_baseline_hazard[n_levels]`
+// (0-4) conflated three orthogonal decisions and forced every transition to
+// share one mode. It is replaced by three orthogonal arrays indexed by
+// (intercept slot, level). N_TRANS = 6 intercept slots, ordered:
+//   1 = 01, 2 = 02, 3 = 03, 4 = 12_s (sojourn), 5 = 12_t (clock-fwd), 6 = 32.
+// (Slot-index constants MS_SLOT_* are defined in transformed_data.stan.)
+//
+// 1. Hierarchical baseline GP residual per transition x level (was bundled in
+//    legacy mode == 3 / RE_GP).
+array[6, n_levels] int<lower=0, upper=1> enable_ms_level_gp;
+//
+// 2. Level intercept mode per transition x level (was bundled in legacy
+//    mode 1/2/4). Codes: 0 = none, 1 = FE, 2 = RE (NCP), 3 = RE (CP).
+array[6, n_levels] int<lower=0, upper=3> ms_level_intercept_mode;
+//
+// 3. Correlation grouping (cross-transition frailty). Same positive code at a
+//    level => shared MVN/LKJ block; 0 = independent singleton (legacy
+//    behavior). Phase 1 (decomposition) keeps this all-zero.
+array[6, n_levels] int<lower=0> ms_level_intercept_corr_group;
 
 // --- Dropout / Off-trial Transitions ---
 // 0→3: Dropout (off-trial). Constant hazard (no GP).
@@ -52,6 +67,15 @@ int<lower=0, upper=1> enable_ms_visit_gated_latent_01;
 // When enabled, 0->2 uses modeled PSA trajectory as time-varying covariate.
 // When disabled, 0->2 uses GP baseline + time-invariant covariates only.
 int<lower=0, upper=1> enable_ms_02_time_varying_cov;
+
+// --- 0->3 / 3->2 Population-Level Covariate Flags ---
+// Per-transition switches that gate population covariate effects on top of the
+// existing module-wide enable_ms_pop_time_invariant_cov / enable_ms_pop_time_varying_cov.
+// 0->3 supports both time-invariant and time-varying (tumor bridge) covariates.
+// 3->2 supports time-invariant only (sojourn-clock indexing for time-varying not implemented).
+int<lower=0, upper=1> enable_ms_03_time_invariant_cov;
+int<lower=0, upper=1> enable_ms_32_time_invariant_cov;
+int<lower=0, upper=1> enable_ms_03_time_varying_cov;
 
 // --- PSA-at-State-Entry Covariates ---
 // When enabled, the last observed log-PSA before entering state 1 (1→2) or

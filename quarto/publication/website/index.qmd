@@ -26,7 +26,7 @@ source("_setup.R")
 Bayesian hierarchical model for tumor dynamics and progression-free survival — publication dataset (497 patients, 6 covariates).
 :::
 ::: {.hero-image}
-![](../../_shared/images/pioneer-helmet.png)
+![](images/pioneer-helmet.png)
 :::
 :::
 :::
