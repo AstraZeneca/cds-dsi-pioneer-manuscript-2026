@@ -45,6 +45,15 @@ The distinction between `ms_pfs` and `pfs` is clinically important:
 When comparing model predictions to observed PFS from clinical trial data, always use `pfs_km_est` (composite). Observed PFS includes death without progression as events. Using `ms_pfs_km_est` underestimates PFS event rates because it censors deaths.
 :::
 
+### Operational PFS for Off-Trial Deaths {#sec-operational-pfs}
+
+The model's composite PFS follows SCLC-01's **operational** PFS definition, not canonical RECIST/FDA PFS. The two definitions differ precisely for patients who **die off-trial** — those who exit the trial (dropout, $0 \to 3$) and later die ($3 \to 2$) after a lost-to-follow-up gap.
+
+- **Operational PFS (used here):** a death without recorded progression is a PFS **event dated at the death week**, regardless of how long after the last on-trial assessment it occurs. A $0 \to 3 \to 2$ patient therefore contributes a PFS event at the modeled $3 \to 2$ death week; if death is not reached within the forecast horizon, PFS is censored at the horizon. In the simulation this is realised by setting the dropout patient's PFS equal to its OS outcome, so $\text{PFS} \le \text{OS}$ holds by construction.
+- **Canonical RECIST/FDA PFS (not used):** a death that follows a long lost-to-follow-up gap is censored at the last tumor assessment, not counted as an event at the death week.
+
+This is a **deliberate estimand choice**: the observed-data PFS derivation also dates death-without-progression at the death week, so the model and the observed comparator share a single PFS definition. The two curves are therefore directly comparable. (The cause-specific `ms_pfs` is unaffected — it continues to isolate the $0 \to 1$ progression process and treats dropouts as the $0 \to 3$ exit.)
+
 ### Radiographic PFS (rPFS) {#sec-rpfs}
 
 **rPFS** is available only in the **full model** (where PSA dynamics inform the multistate hazard). In the full model, the $0 \to 1$ transition represents radiographic progression specifically, because PSA-driven progression is captured by the biomarker model separately. rPFS is defined as:
@@ -234,3 +243,48 @@ Large differences between sample-based and posterior predictive estimates indica
 
 This comparison is a key model validation diagnostic, not a population vs. sample inference.
 :::
+
+### Why the Posterior-Predictive PFS KM Sits Below the Observed KM {#sec-spop-pessimism}
+
+In the published fits the posterior-predictive (`spop_*`) PFS Kaplan–Meier curve
+lies **uniformly below** the observed KM, while the sample-based (`sample_*`)
+curve tracks it closely. This is a **known, expected property of the current
+model — not a bug or a sign of miscalibration.** It has two compounding causes.
+
+**1. Construction asymmetry (by design).** The sample-based path *copies the
+observed event time* for any patient who actually progressed (it only re-rolls
+the censored patients, from their last visit). So `sample_*` reproduces the
+observed curve almost by construction. The `spop_*` path re-rolls **every**
+patient's event time from week 1 using their fitted hazard, conditioning on no
+observed outcome. A predictive re-roll of a process with any hazard uncertainty
+or right-skew in event times produces a KM that sits below the single observed
+realization — the observed curve is one draw; the spop curve is the predictive
+average. This is the intended meaning of the two estimators
+(@sec-sample-vs-spop), not a discrepancy to fix.
+
+**2. Weakly identified patient-level 0→1 frailty (the dominant effect).** The
+only patient-level random effects in the multistate model are the cross-transition
+**frailty intercepts** on the state-0 exits (0→1 and 0→3); there are no
+patient-level random effects on the per-transition covariate slopes or GP
+baselines, because the event counts do not support identifying them. The
+patient-level **0→1** frailty SD is strongly shrunk toward zero in the posterior
+(`log_lambda_gp_01_level_intercept_sd[patient] ≈ 0.4`, with the 5% quantile near
+0.03), reflecting that progression events alone carry little per-patient
+rate signal once the population covariates and trial-level baseline are fitted.
+
+The consequence: in the spop re-roll, every patient's 0→1 hazard sits close to
+the covariate-predicted population mean, so the model **cannot reproduce the
+realized cohort's slow-progressor tail**. Patients who progressed late in reality
+are re-rolled toward the average rate and progress earlier, shifting the whole
+`spop` PFS curve down. (Contrast the **0→3** frailty SD, which *is* identified —
+`≈ 2.9` — off the larger dropout-event count in the historical arm.)
+
+**Why we accept it.** Strengthening the 0→1 patient frailty would require either
+an informative prior that resists the data-driven shrinkage, or tying the 0→1
+frailty to the well-identified tumour-dynamics patient random effects (growth /
+decrease rates from the SLD trajectories), which carry the slow-progressor signal
+the 0→1 event channel lacks. Both are deferred. For now the `spop` PFS KM should
+be read as an honest, slightly-pessimistic generative forecast, and the
+`sample_*` KM as the within-sample fit; the gap quantifies how much of the
+realized PFS the model attributes to patient-level heterogeneity it cannot
+resolve from progression events alone.

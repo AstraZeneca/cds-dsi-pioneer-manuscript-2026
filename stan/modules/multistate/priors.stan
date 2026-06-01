@@ -32,7 +32,7 @@ if (enable_ms_01) {
     // non-RE slots of log_lambda_gp_*_level_intercept_sd are free parameters
     // with no prior and drift to numerical infinity, distorting mass-matrix
     // adaptation for the rest of the model.
-    if (any_re_level) {
+    if (any_re_level_slot[MS_SLOT_01]) {
       log_lambda_gp_01_level_intercept_sd[lv] ~ normal(
         0, log_lambda_gp_01_level_intercept_sd_sd[lv]
       );
@@ -41,13 +41,13 @@ if (enable_ms_01) {
 
   // Group-level intercepts: per-level dispatch on mode
   for (lv in 1:n_levels) {
-    int mode = enable_ms_level_baseline_hazard[lv];
+    int mode = ms_legacy_mode[MS_SLOT_01, lv];
     if (!mode) continue;
 
     // RAW path: FE, RE, RE_GP sample from std_normal / student_t(nu, 0, 1)
     if (mode == LEVEL_MODE_FE || mode == LEVEL_MODE_RE || mode == LEVEL_MODE_RE_GP) {
-      int r_lo = raw_level_pos_ms_baseline_shared[lv];
-      int r_hi = raw_level_pos_ms_baseline_shared[lv + 1] - 1;
+      int r_lo = raw_level_pos_ms_baseline_slot[MS_SLOT_01][lv];
+      int r_hi = raw_level_pos_ms_baseline_slot[MS_SLOT_01][lv + 1] - 1;
       if (r_hi >= r_lo) {
         if (enable_student_t_hierarchy)
           raw_log_lambda_gp_01_level_intercept[r_lo:r_hi]
@@ -59,8 +59,8 @@ if (enable_ms_01) {
 
     // CP path: RE_CP samples at natural scale
     if (mode == LEVEL_MODE_RE_CP) {
-      int c_lo = cp_level_pos_ms_baseline_shared[lv];
-      int c_hi = cp_level_pos_ms_baseline_shared[lv + 1] - 1;
+      int c_lo = cp_level_pos_ms_baseline_slot[MS_SLOT_01][lv];
+      int c_hi = cp_level_pos_ms_baseline_slot[MS_SLOT_01][lv + 1] - 1;
       if (c_hi >= c_lo) {
         if (enable_student_t_hierarchy)
           cp_log_lambda_gp_01_level_intercept[c_lo:c_hi]
@@ -93,7 +93,7 @@ if (enable_ms_01) {
       sd_level_slope_01[lv] ~ normal(0, sd_level_slope_01_sd[lv]');
     }
     if (enable_ms_level_cov[lv] && n_time_invariant_covar > 0) {
-      int mode = enable_ms_level_baseline_hazard[lv];
+      int mode = ms_slope_mode[lv];
       // RAW path: FE, RE, RE_GP sample from std_normal / student_t(nu, 0, 1)
       if (mode == LEVEL_MODE_FE || mode == LEVEL_MODE_RE || mode == LEVEL_MODE_RE_GP) {
         int r_lo = raw_level_pos_ms_slope_shared[lv];
@@ -151,18 +151,18 @@ if (enable_ms_02) {
     log_lambda_gp_02_level_rho[lv] ~ inv_gamma(
       log_lambda_gp_02_level_rho_alpha[lv], log_lambda_gp_02_level_rho_beta[lv]
     );
-    if (any_re_level) {
+    if (any_re_level_slot[MS_SLOT_02]) {
       log_lambda_gp_02_level_intercept_sd[lv] ~ normal(
         0, log_lambda_gp_02_level_intercept_sd_sd[lv]
       );
     }
   }
   for (lv in 1:n_levels) {
-    int mode = enable_ms_level_baseline_hazard[lv];
+    int mode = ms_legacy_mode[MS_SLOT_02, lv];
     if (!mode) continue;
     if (mode == LEVEL_MODE_FE || mode == LEVEL_MODE_RE || mode == LEVEL_MODE_RE_GP) {
-      int r_lo = raw_level_pos_ms_baseline_shared[lv];
-      int r_hi = raw_level_pos_ms_baseline_shared[lv + 1] - 1;
+      int r_lo = raw_level_pos_ms_baseline_slot[MS_SLOT_02][lv];
+      int r_hi = raw_level_pos_ms_baseline_slot[MS_SLOT_02][lv + 1] - 1;
       if (r_hi >= r_lo) {
         if (enable_student_t_hierarchy)
           raw_log_lambda_gp_02_level_intercept[r_lo:r_hi]
@@ -172,8 +172,8 @@ if (enable_ms_02) {
       }
     }
     if (mode == LEVEL_MODE_RE_CP) {
-      int c_lo = cp_level_pos_ms_baseline_shared[lv];
-      int c_hi = cp_level_pos_ms_baseline_shared[lv + 1] - 1;
+      int c_lo = cp_level_pos_ms_baseline_slot[MS_SLOT_02][lv];
+      int c_hi = cp_level_pos_ms_baseline_slot[MS_SLOT_02][lv + 1] - 1;
       if (c_hi >= c_lo) {
         if (enable_student_t_hierarchy)
           cp_log_lambda_gp_02_level_intercept[c_lo:c_hi]
@@ -205,7 +205,7 @@ if (enable_ms_02) {
       sd_level_slope_02[lv] ~ normal(0, sd_level_slope_02_sd[lv]');
     }
     if (enable_ms_level_cov[lv] && n_time_invariant_covar > 0) {
-      int mode = enable_ms_level_baseline_hazard[lv];
+      int mode = ms_slope_mode[lv];
       if (mode == LEVEL_MODE_FE || mode == LEVEL_MODE_RE || mode == LEVEL_MODE_RE_GP) {
         int r_lo = raw_level_pos_ms_slope_shared[lv];
         int r_hi = raw_level_pos_ms_slope_shared[lv + 1] - 1;
@@ -257,18 +257,18 @@ if (need_12_s_gp) {
     log_lambda_gp_12_s_level_rho[lv] ~ inv_gamma(
       log_lambda_gp_12_s_level_rho_alpha[lv], log_lambda_gp_12_s_level_rho_beta[lv]
     );
-    if (any_re_level) {
+    if (any_re_level_slot[MS_SLOT_12_S]) {
       log_lambda_gp_12_s_level_intercept_sd[lv] ~ normal(
         0, log_lambda_gp_12_s_level_intercept_sd_sd[lv]
       );
     }
   }
   for (lv in 1:n_levels) {
-    int mode = enable_ms_level_baseline_hazard[lv];
+    int mode = ms_legacy_mode[MS_SLOT_12_S, lv];
     if (!mode) continue;
     if (mode == LEVEL_MODE_FE || mode == LEVEL_MODE_RE || mode == LEVEL_MODE_RE_GP) {
-      int r_lo = raw_level_pos_ms_baseline_shared[lv];
-      int r_hi = raw_level_pos_ms_baseline_shared[lv + 1] - 1;
+      int r_lo = raw_level_pos_ms_baseline_slot[MS_SLOT_12_S][lv];
+      int r_hi = raw_level_pos_ms_baseline_slot[MS_SLOT_12_S][lv + 1] - 1;
       if (r_hi >= r_lo) {
         if (enable_student_t_hierarchy)
           raw_log_lambda_gp_12_s_level_intercept[r_lo:r_hi]
@@ -278,8 +278,8 @@ if (need_12_s_gp) {
       }
     }
     if (mode == LEVEL_MODE_RE_CP) {
-      int c_lo = cp_level_pos_ms_baseline_shared[lv];
-      int c_hi = cp_level_pos_ms_baseline_shared[lv + 1] - 1;
+      int c_lo = cp_level_pos_ms_baseline_slot[MS_SLOT_12_S][lv];
+      int c_hi = cp_level_pos_ms_baseline_slot[MS_SLOT_12_S][lv + 1] - 1;
       if (c_hi >= c_lo) {
         if (enable_student_t_hierarchy)
           cp_log_lambda_gp_12_s_level_intercept[c_lo:c_hi]
@@ -320,18 +320,18 @@ if (need_12_t_gp) {
     log_lambda_gp_12_t_level_rho[lv] ~ inv_gamma(
       log_lambda_gp_12_t_level_rho_alpha[lv], log_lambda_gp_12_t_level_rho_beta[lv]
     );
-    if (any_re_level) {
+    if (any_re_level_slot[MS_SLOT_12_T]) {
       log_lambda_gp_12_t_level_intercept_sd[lv] ~ normal(
         0, log_lambda_gp_12_t_level_intercept_sd_sd[lv]
       );
     }
   }
   for (lv in 1:n_levels) {
-    int mode = enable_ms_level_baseline_hazard[lv];
+    int mode = ms_legacy_mode[MS_SLOT_12_T, lv];
     if (!mode) continue;
     if (mode == LEVEL_MODE_FE || mode == LEVEL_MODE_RE || mode == LEVEL_MODE_RE_GP) {
-      int r_lo = raw_level_pos_ms_baseline_shared[lv];
-      int r_hi = raw_level_pos_ms_baseline_shared[lv + 1] - 1;
+      int r_lo = raw_level_pos_ms_baseline_slot[MS_SLOT_12_T][lv];
+      int r_hi = raw_level_pos_ms_baseline_slot[MS_SLOT_12_T][lv + 1] - 1;
       if (r_hi >= r_lo) {
         if (enable_student_t_hierarchy)
           raw_log_lambda_gp_12_t_level_intercept[r_lo:r_hi]
@@ -341,8 +341,8 @@ if (need_12_t_gp) {
       }
     }
     if (mode == LEVEL_MODE_RE_CP) {
-      int c_lo = cp_level_pos_ms_baseline_shared[lv];
-      int c_hi = cp_level_pos_ms_baseline_shared[lv + 1] - 1;
+      int c_lo = cp_level_pos_ms_baseline_slot[MS_SLOT_12_T][lv];
+      int c_hi = cp_level_pos_ms_baseline_slot[MS_SLOT_12_T][lv + 1] - 1;
       if (c_hi >= c_lo) {
         if (enable_student_t_hierarchy)
           cp_log_lambda_gp_12_t_level_intercept[c_lo:c_hi]
@@ -393,7 +393,7 @@ if (enable_ms_03) {
     log_lambda_gp_03_level_rho[lv] ~ inv_gamma(
       log_lambda_gp_03_level_rho_alpha[lv], log_lambda_gp_03_level_rho_beta[lv]
     );
-    if (any_re_level) {
+    if (any_re_level_slot[MS_SLOT_03]) {
       log_lambda_gp_03_level_intercept_sd[lv] ~ normal(
         0, log_lambda_gp_03_level_intercept_sd_sd[lv]
       );
@@ -401,11 +401,11 @@ if (enable_ms_03) {
   }
 
   for (lv in 1:n_levels) {
-    int mode = enable_ms_level_baseline_hazard[lv];
+    int mode = ms_legacy_mode[MS_SLOT_03, lv];
     if (!mode) continue;
     if (mode == LEVEL_MODE_FE || mode == LEVEL_MODE_RE || mode == LEVEL_MODE_RE_GP) {
-      int r_lo = raw_level_pos_ms_baseline_shared[lv];
-      int r_hi = raw_level_pos_ms_baseline_shared[lv + 1] - 1;
+      int r_lo = raw_level_pos_ms_baseline_slot[MS_SLOT_03][lv];
+      int r_hi = raw_level_pos_ms_baseline_slot[MS_SLOT_03][lv + 1] - 1;
       if (r_hi >= r_lo) {
         if (enable_student_t_hierarchy)
           raw_log_lambda_gp_03_level_intercept[r_lo:r_hi]
@@ -415,8 +415,8 @@ if (enable_ms_03) {
       }
     }
     if (mode == LEVEL_MODE_RE_CP) {
-      int c_lo = cp_level_pos_ms_baseline_shared[lv];
-      int c_hi = cp_level_pos_ms_baseline_shared[lv + 1] - 1;
+      int c_lo = cp_level_pos_ms_baseline_slot[MS_SLOT_03][lv];
+      int c_hi = cp_level_pos_ms_baseline_slot[MS_SLOT_03][lv + 1] - 1;
       if (c_hi >= c_lo) {
         if (enable_student_t_hierarchy)
           cp_log_lambda_gp_03_level_intercept[c_lo:c_hi]
@@ -456,18 +456,18 @@ if (enable_ms_32) {
     log_lambda_gp_32_s_level_rho[lv] ~ inv_gamma(
       log_lambda_gp_32_s_level_rho_alpha[lv], log_lambda_gp_32_s_level_rho_beta[lv]
     );
-    if (any_re_level) {
+    if (any_re_level_slot[MS_SLOT_32]) {
       log_lambda_gp_32_s_level_intercept_sd[lv] ~ normal(
         0, log_lambda_gp_32_s_level_intercept_sd_sd[lv]
       );
     }
   }
   for (lv in 1:n_levels) {
-    int mode = enable_ms_level_baseline_hazard[lv];
+    int mode = ms_legacy_mode[MS_SLOT_32, lv];
     if (!mode) continue;
     if (mode == LEVEL_MODE_FE || mode == LEVEL_MODE_RE || mode == LEVEL_MODE_RE_GP) {
-      int r_lo = raw_level_pos_ms_baseline_shared[lv];
-      int r_hi = raw_level_pos_ms_baseline_shared[lv + 1] - 1;
+      int r_lo = raw_level_pos_ms_baseline_slot[MS_SLOT_32][lv];
+      int r_hi = raw_level_pos_ms_baseline_slot[MS_SLOT_32][lv + 1] - 1;
       if (r_hi >= r_lo) {
         if (enable_student_t_hierarchy)
           raw_log_lambda_gp_32_s_level_intercept[r_lo:r_hi]
@@ -477,8 +477,8 @@ if (enable_ms_32) {
       }
     }
     if (mode == LEVEL_MODE_RE_CP) {
-      int c_lo = cp_level_pos_ms_baseline_shared[lv];
-      int c_hi = cp_level_pos_ms_baseline_shared[lv + 1] - 1;
+      int c_lo = cp_level_pos_ms_baseline_slot[MS_SLOT_32][lv];
+      int c_hi = cp_level_pos_ms_baseline_slot[MS_SLOT_32][lv + 1] - 1;
       if (c_hi >= c_lo) {
         if (enable_student_t_hierarchy)
           cp_log_lambda_gp_32_s_level_intercept[c_lo:c_hi]
@@ -504,6 +504,19 @@ if (enable_student_t_hierarchy) {
   }
 }
 
+// ============================================================================
+// CORRELATED INTERCEPT BLOCK PRIORS (Phase 2 — cross-transition frailty)
+// ============================================================================
+// LKJ(eta) on each block's correlation Cholesky factor + std_normal on the NCP
+// matrix. eta = ms_intercept_corr_eta (default 2): gently concentrates toward
+// the identity (rho ~ 0), symmetric about zero (does not bake in a sign). The
+// per-transition sigma scales reuse their existing priors (set above). Empty
+// loop when n_ms_corr_blocks == 0 -> density bit-identical to the scalar path.
+for (b in 1:n_ms_corr_blocks) {
+  L_ms_intercept_corr[b] ~ lkj_corr_cholesky(ms_intercept_corr_eta);
+  to_vector(z_ms_intercept[b]) ~ std_normal();
+}
+
 // PSA-at-entry covariate priors
 if (enable_ms_12 && enable_ms_12_entry_covar) {
   coef_log_entry_covar_12[1] ~ normal(coef_log_entry_covar_12_mean, coef_log_entry_covar_12_sd);
@@ -527,7 +540,7 @@ if (enable_ms_12) {
       sd_level_slope_12[lv] ~ normal(0, sd_level_slope_12_sd[lv]');
     }
     if (enable_ms_level_cov[lv] && n_time_invariant_covar > 0) {
-      int mode = enable_ms_level_baseline_hazard[lv];
+      int mode = ms_slope_mode[lv];
       if (mode == LEVEL_MODE_FE || mode == LEVEL_MODE_RE || mode == LEVEL_MODE_RE_GP) {
         int r_lo = raw_level_pos_ms_slope_shared[lv];
         int r_hi = raw_level_pos_ms_slope_shared[lv + 1] - 1;
@@ -549,6 +562,90 @@ if (enable_ms_12) {
             else
               cp_level_slope_12[c_lo:c_hi, k]
                 ~ normal(0, sd_level_slope_12[lv, k]);
+          }
+        }
+      }
+    }
+  }
+}
+
+// 0→3 covariate priors (time-varying tumor bridge + time-invariant)
+if (enable_ms_03) {
+  if (enable_ms_pop_time_varying_cov && enable_ms_03_time_varying_cov && n_time_varying_covar > 0) {
+    time_varying_coef_03 ~ normal(time_varying_coef_03_mean, time_varying_coef_03_sd);
+  }
+
+  if (enable_ms_pop_time_invariant_cov && enable_ms_03_time_invariant_cov && n_time_invariant_covar > 0) {
+    time_invariant_coef_qr_03 ~ normal(time_invariant_coef_03_mean, time_invariant_coef_03_sd);
+  }
+
+  for (lv in 1:n_levels) {
+    if (enable_ms_03_time_invariant_cov && n_time_invariant_covar > 0) {
+      sd_level_slope_03[lv] ~ normal(0, sd_level_slope_03_sd[lv]');
+    }
+    if (enable_ms_03_time_invariant_cov && enable_ms_level_cov[lv] && n_time_invariant_covar > 0) {
+      int mode = ms_slope_mode[lv];
+      if (mode == LEVEL_MODE_FE || mode == LEVEL_MODE_RE || mode == LEVEL_MODE_RE_GP) {
+        int r_lo = raw_level_pos_ms_slope_shared[lv];
+        int r_hi = raw_level_pos_ms_slope_shared[lv + 1] - 1;
+        if (r_hi >= r_lo) {
+          if (enable_student_t_hierarchy)
+            to_vector(raw_level_slope_03[r_lo:r_hi, :]) ~ student_t(ms_nu_slope_level[lv], 0, 1);
+          else
+            to_vector(raw_level_slope_03[r_lo:r_hi, :]) ~ std_normal();
+        }
+      }
+      if (mode == LEVEL_MODE_RE_CP) {
+        int c_lo = cp_level_pos_ms_slope_shared[lv];
+        int c_hi = cp_level_pos_ms_slope_shared[lv + 1] - 1;
+        if (c_hi >= c_lo) {
+          for (k in 1:n_time_invariant_covar) {
+            if (enable_student_t_hierarchy)
+              cp_level_slope_03[c_lo:c_hi, k]
+                ~ student_t(ms_nu_slope_level[lv], 0, sd_level_slope_03[lv, k]);
+            else
+              cp_level_slope_03[c_lo:c_hi, k]
+                ~ normal(0, sd_level_slope_03[lv, k]);
+          }
+        }
+      }
+    }
+  }
+}
+
+// 3→2 covariate priors (time-invariant only — sojourn-clock TV not implemented)
+if (enable_ms_32) {
+  if (enable_ms_pop_time_invariant_cov && enable_ms_32_time_invariant_cov && n_time_invariant_covar > 0) {
+    time_invariant_coef_qr_32 ~ normal(time_invariant_coef_32_mean, time_invariant_coef_32_sd);
+  }
+
+  for (lv in 1:n_levels) {
+    if (enable_ms_32_time_invariant_cov && n_time_invariant_covar > 0) {
+      sd_level_slope_32[lv] ~ normal(0, sd_level_slope_32_sd[lv]');
+    }
+    if (enable_ms_32_time_invariant_cov && enable_ms_level_cov[lv] && n_time_invariant_covar > 0) {
+      int mode = ms_slope_mode[lv];
+      if (mode == LEVEL_MODE_FE || mode == LEVEL_MODE_RE || mode == LEVEL_MODE_RE_GP) {
+        int r_lo = raw_level_pos_ms_slope_shared[lv];
+        int r_hi = raw_level_pos_ms_slope_shared[lv + 1] - 1;
+        if (r_hi >= r_lo) {
+          if (enable_student_t_hierarchy)
+            to_vector(raw_level_slope_32[r_lo:r_hi, :]) ~ student_t(ms_nu_slope_level[lv], 0, 1);
+          else
+            to_vector(raw_level_slope_32[r_lo:r_hi, :]) ~ std_normal();
+        }
+      }
+      if (mode == LEVEL_MODE_RE_CP) {
+        int c_lo = cp_level_pos_ms_slope_shared[lv];
+        int c_hi = cp_level_pos_ms_slope_shared[lv + 1] - 1;
+        if (c_hi >= c_lo) {
+          for (k in 1:n_time_invariant_covar) {
+            if (enable_student_t_hierarchy)
+              cp_level_slope_32[c_lo:c_hi, k]
+                ~ student_t(ms_nu_slope_level[lv], 0, sd_level_slope_32[lv, k]);
+            else
+              cp_level_slope_32[c_lo:c_hi, k]
+                ~ normal(0, sd_level_slope_32[lv, k]);
           }
         }
       }
