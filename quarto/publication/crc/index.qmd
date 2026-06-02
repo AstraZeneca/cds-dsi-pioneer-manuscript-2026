@@ -21,9 +21,9 @@ source("_setup.R")
 ::: {.hero-section}
 ::: {.hero-content}
 ::: {.hero-text}
-# PIONEER Publication — SCLC
+# PIONEER Publication — CRC
 
-Bayesian hierarchical model for tumor dynamics and progression-free survival — SCLC publication dataset (497 patients, 6 covariates).
+Bayesian hierarchical model for tumor dynamics and progression-free survival — CRC publication dataset.
 :::
 ::: {.hero-image}
 ![](images/pioneer-helmet.png)
@@ -73,5 +73,5 @@ Individual patient tumor trajectories and RECIST predictions.
 ::: {.column-page}
 ## About This Analysis
 
-This website presents SCLC results from the publication pipeline running the SF-SSM Stan model on 497 patients with 6 covariates (age, sex, ECOG, haemoglobin, log-LDH, albumin). No PDL1 stratification or external historical trial borrowing. For model documentation, see the [SCLC-01 site](https://rstudio-connect.seml.scp.astrazeneca.net/content/084c017e-8ec4-4efd-ae02-e4a86c9dc51f/).
+This website presents CRC results from the publication pipeline running the SF-SSM Stan model. Results will appear here once the CRC fit (`tumor_ssls_res_posterior_crc`) completes.
 :::
