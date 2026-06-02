@@ -16,7 +16,7 @@ row_vector[enable_ms_01 ? n_ms_gp_cal_knots : 0] log_lambda_gp_01_pop_eta;
 // --- Level-level Baseline Hazard GP (N-level hierarchy) ---
 array[enable_ms_01 ? n_levels : 0] real<lower=0> log_lambda_gp_01_level_alpha;
 array[enable_ms_01 ? n_levels : 0] real<lower=0> log_lambda_gp_01_level_rho;
-array[enable_ms_01 && any_re_level ? n_levels : 0] real<lower=0> log_lambda_gp_01_level_intercept_sd;
+array[enable_ms_01 && any_re_level_slot[MS_SLOT_01] ? n_levels : 0] real<lower=0> log_lambda_gp_01_level_intercept_sd;
 matrix[n_gp_groups_ms_baseline_01, enable_ms_01 ? n_ms_gp_cal_knots : 0] log_lambda_gp_01_level_eta;
 vector[n_raw_groups_ms_baseline_01] raw_log_lambda_gp_01_level_intercept;
 vector[n_cp_groups_ms_baseline_01]  cp_log_lambda_gp_01_level_intercept;
@@ -54,7 +54,7 @@ row_vector[enable_ms_02 && !share_dead_gp_shape ? n_ms_gp_cal_knots : 0] log_lam
 // Conditional on transition being enabled to avoid improper posteriors
 array[enable_ms_02 ? n_levels : 0] real<lower=0> log_lambda_gp_02_level_alpha;
 array[enable_ms_02 ? n_levels : 0] real<lower=0> log_lambda_gp_02_level_rho;
-array[enable_ms_02 && any_re_level ? n_levels : 0] real<lower=0> log_lambda_gp_02_level_intercept_sd;
+array[enable_ms_02 && any_re_level_slot[MS_SLOT_02] ? n_levels : 0] real<lower=0> log_lambda_gp_02_level_intercept_sd;
 matrix[n_gp_groups_ms_baseline_02, enable_ms_02 ? n_ms_gp_cal_knots : 0] log_lambda_gp_02_level_eta;
 vector[n_raw_groups_ms_baseline_02] raw_log_lambda_gp_02_level_intercept;
 vector[n_cp_groups_ms_baseline_02]  cp_log_lambda_gp_02_level_intercept;
@@ -85,7 +85,7 @@ row_vector[need_12_s_gp ? n_ms_gp_sojourn_knots : 0] log_lambda_gp_12_s_pop_eta;
 // Level hierarchy for sojourn GP (conditional on need_12_s_gp)
 array[need_12_s_gp ? n_levels : 0] real<lower=0> log_lambda_gp_12_s_level_alpha;
 array[need_12_s_gp ? n_levels : 0] real<lower=0> log_lambda_gp_12_s_level_rho;
-array[need_12_s_gp && any_re_level ? n_levels : 0] real<lower=0> log_lambda_gp_12_s_level_intercept_sd;
+array[need_12_s_gp && any_re_level_slot[MS_SLOT_12_S] ? n_levels : 0] real<lower=0> log_lambda_gp_12_s_level_intercept_sd;
 matrix[n_gp_groups_ms_baseline_12_s, need_12_s_gp ? n_ms_gp_sojourn_knots : 0] log_lambda_gp_12_s_level_eta;
 vector[n_raw_groups_ms_baseline_12_s] raw_log_lambda_gp_12_s_level_intercept;
 vector[n_cp_groups_ms_baseline_12_s]  cp_log_lambda_gp_12_s_level_intercept;
@@ -106,7 +106,7 @@ row_vector[need_12_t_gp && !share_dead_gp_shape ? n_ms_gp_cal_knots : 0] log_lam
 // Level hierarchy for clock-forward GP (conditional on need_12_t_gp)
 array[need_12_t_gp ? n_levels : 0] real<lower=0> log_lambda_gp_12_t_level_alpha;
 array[need_12_t_gp ? n_levels : 0] real<lower=0> log_lambda_gp_12_t_level_rho;
-array[need_12_t_gp && any_re_level ? n_levels : 0] real<lower=0> log_lambda_gp_12_t_level_intercept_sd;
+array[need_12_t_gp && any_re_level_slot[MS_SLOT_12_T] ? n_levels : 0] real<lower=0> log_lambda_gp_12_t_level_intercept_sd;
 matrix[n_gp_groups_ms_baseline_12_t, need_12_t_gp ? n_ms_gp_cal_knots : 0] log_lambda_gp_12_t_level_eta;
 vector[n_raw_groups_ms_baseline_12_t] raw_log_lambda_gp_12_t_level_intercept;
 vector[n_cp_groups_ms_baseline_12_t]  cp_log_lambda_gp_12_t_level_intercept;
@@ -129,7 +129,7 @@ array[enable_ms_03 ? 1 : 0] real<lower=0> log_lambda_gp_03_pop_rho;
 row_vector[enable_ms_03 ? n_ms_gp_cal_knots : 0] log_lambda_gp_03_pop_eta;
 array[enable_ms_03 ? n_levels : 0] real<lower=0> log_lambda_gp_03_level_alpha;
 array[enable_ms_03 ? n_levels : 0] real<lower=0> log_lambda_gp_03_level_rho;
-array[enable_ms_03 && any_re_level ? n_levels : 0] real<lower=0> log_lambda_gp_03_level_intercept_sd;
+array[enable_ms_03 && any_re_level_slot[MS_SLOT_03] ? n_levels : 0] real<lower=0> log_lambda_gp_03_level_intercept_sd;
 matrix[n_gp_groups_ms_baseline_03, enable_ms_03 ? n_ms_gp_cal_knots : 0] log_lambda_gp_03_level_eta;
 vector[n_raw_groups_ms_baseline_03] raw_log_lambda_gp_03_level_intercept;
 vector[n_cp_groups_ms_baseline_03]  cp_log_lambda_gp_03_level_intercept;
@@ -146,6 +146,17 @@ vector[enable_ms_03 && enable_ms_pop_time_invariant_cov && enable_ms_03_time_inv
 array[n_levels] vector<lower=0>[enable_ms_03 && enable_ms_03_time_invariant_cov ? n_time_invariant_covar : 0] sd_level_slope_03;
 matrix[enable_ms_03 && enable_ms_03_time_invariant_cov ? n_raw_groups_ms_slope_shared : 0, n_time_invariant_covar] raw_level_slope_03;
 matrix[enable_ms_03 && enable_ms_03_time_invariant_cov ? n_cp_groups_ms_slope_shared  : 0, n_time_invariant_covar] cp_level_slope_03;
+
+// ============================================================================
+// CORRELATED INTERCEPT BLOCKS (Phase 2 — cross-transition frailty)
+// ============================================================================
+// One Cholesky LKJ correlation factor + one NCP std-normal matrix per block.
+// All blocks share the (uniform) dimension ms_corr_dim and group count
+// ms_corr_n_groups (enforced in transformed_data.stan). When no correlation is
+// configured n_ms_corr_blocks == 0 and both arrays are empty — the model is then
+// bit-identical to the decomposed (Phase 1) scalar path.
+array[n_ms_corr_blocks] cholesky_factor_corr[ms_corr_dim] L_ms_intercept_corr;
+array[n_ms_corr_blocks] matrix[ms_corr_dim, ms_corr_n_groups] z_ms_intercept;
 
 // ============================================================================
 // STUDENT-T HIERARCHY: DEGREES OF FREEDOM (size 0 when disabled)
@@ -174,7 +185,7 @@ row_vector[enable_ms_32 ? n_ms_gp_sojourn_32_knots : 0] log_lambda_gp_32_s_pop_e
 // --- Level-level Baseline Hazard GP ---
 array[enable_ms_32 ? n_levels : 0] real<lower=0> log_lambda_gp_32_s_level_alpha;
 array[enable_ms_32 ? n_levels : 0] real<lower=0> log_lambda_gp_32_s_level_rho;
-array[enable_ms_32 && any_re_level ? n_levels : 0] real<lower=0> log_lambda_gp_32_s_level_intercept_sd;
+array[enable_ms_32 && any_re_level_slot[MS_SLOT_32] ? n_levels : 0] real<lower=0> log_lambda_gp_32_s_level_intercept_sd;
 matrix[n_gp_groups_ms_baseline_32, enable_ms_32 ? n_ms_gp_sojourn_32_knots : 0] log_lambda_gp_32_s_level_eta;
 vector[n_raw_groups_ms_baseline_32] raw_log_lambda_gp_32_s_level_intercept;
 vector[n_cp_groups_ms_baseline_32]  cp_log_lambda_gp_32_s_level_intercept;

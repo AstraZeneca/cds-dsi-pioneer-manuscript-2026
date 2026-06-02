@@ -44,6 +44,64 @@ tuple(int, int, int, int) compute_ms_time_scale_flags(
 }
 
 /**
+ * Reconstruct a legacy 0-4 baseline-mode vector for one intercept slot.
+ *
+ * The decomposed schema (flags.stan) splits the legacy single 0-4 mode into
+ * an orthogonal GP-enable flag and a 0-3 intercept mode. Downstream sizing
+ * (compute_ms_level_baseline_flags, split_cp_ncp_pos) and the per-transition
+ * residual/prior dispatch still speak the legacy 0-4 convention
+ * (0=NONE, 1=FE, 2=RE_NCP, 3=RE_GP, 4=RE_CP). This helper rebuilds that vector
+ * for a single slot, gated by whether the slot's transition is active, so the
+ * existing machinery can be reused unchanged per slot.
+ *
+ * Mapping per level (slot active):
+ *   gp == 1                     -> 3 (RE_GP)  [GP implies an RE intercept]
+ *   gp == 0 && mode == 0        -> 0 (NONE)
+ *   gp == 0 && mode == 1        -> 1 (FE)
+ *   gp == 0 && mode == 2        -> 2 (RE_NCP)
+ *   gp == 0 && mode == 3        -> 4 (RE_CP)
+ * Slot inactive => 0 at every level.
+ *
+ * @param n_levels       Number of hierarchy levels
+ * @param slot_active    1 if this slot's transition is enabled, else 0
+ * @param gp_row         [n_levels] enable_ms_level_gp[slot, :] (0/1)
+ * @param mode_row       [n_levels] ms_level_intercept_mode[slot, :] (0-3)
+ * @param strict         If 1, fatal_error on out-of-range input
+ * @return [n_levels] legacy 0-4 mode vector
+ */
+array[] int ms_reconstruct_legacy_mode(
+  int n_levels,
+  int slot_active,
+  array[] int gp_row,
+  array[] int mode_row,
+  int strict
+) {
+  array[n_levels] int legacy = zeros_int_array(n_levels);
+  for (lv in 1:n_levels) {
+    if (gp_row[lv] < 0 || gp_row[lv] > 1) {
+      if (strict) fatal_error("enable_ms_level_gp[", lv, "] must be 0-1; got ", gp_row[lv]);
+    }
+    if (mode_row[lv] < 0 || mode_row[lv] > 3) {
+      if (strict) fatal_error("ms_level_intercept_mode[", lv, "] must be 0-3; got ", mode_row[lv]);
+    }
+    if (!slot_active) {
+      legacy[lv] = 0;
+    } else if (gp_row[lv] == 1) {
+      legacy[lv] = 3;          // RE_GP
+    } else if (mode_row[lv] == 0) {
+      legacy[lv] = 0;          // NONE
+    } else if (mode_row[lv] == 1) {
+      legacy[lv] = 1;          // FE
+    } else if (mode_row[lv] == 2) {
+      legacy[lv] = 2;          // RE_NCP
+    } else {
+      legacy[lv] = 4;          // RE_CP (decomposed mode 3)
+    }
+  }
+  return legacy;
+}
+
+/**
  * Compute level baseline flags for the multistate hazard N-level hierarchy.
  *
  * Determines which levels use GP (mode 3), which use any RE (mode >= 2),
@@ -1695,6 +1753,7 @@ array[] vector compute_ms_os_km_rng(
   array[n_forecast_patients] int spop_os_censored;
   array[n_forecast_patients] int spop_is_dropout;
   array[n_forecast_patients] int sample_is_dropout;
+  array[n_forecast_patients] int spop_dropout_week;
 
   (sample_target_pfs, sample_target_right_censored,
    spop_target_pfs, spop_target_right_censored,
@@ -1708,7 +1767,8 @@ array[] vector compute_ms_os_km_rng(
    forecast_target_pfs, forecast_target_right_censored,
    sample_os, sample_os_censored,
    spop_os, spop_os_censored,
-   spop_is_dropout, sample_is_dropout
+   spop_is_dropout, sample_is_dropout,
+   spop_dropout_week
   ) = calculate_all_patients_endpoints_rng(
     forecast_patient_idx,
     obs_biomarker_cat,

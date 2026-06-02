@@ -451,4 +451,155 @@ derive_ms_fields <- function(
   stan_fields
 }
 
+# Number and ordering of multistate intercept slots. Must match flags.stan and
+# the MS_SLOT_* constants in modules/multistate/transformed_data.stan:
+#   1 = 01, 2 = 02, 3 = 03, 4 = 12_s, 5 = 12_t, 6 = 32.
+MS_N_INTERCEPT_SLOTS <- 6L
+
+#' Decompose the legacy multistate baseline-hazard flag into the three
+#' per-transition x per-level arrays consumed by the decomposed Stan schema.
+#'
+#' The legacy `enable_ms_level_baseline_hazard[lv]` was a single per-level mode
+#' (0 = none, 1 = FE, 2 = RE-NCP, 3 = RE + GP residual, 4 = RE-CP) shared across
+#' all transitions. The decomposed schema (flags.stan) splits this into:
+#'   - `enable_ms_level_gp[k, lv]`            0/1  (was legacy mode == 3)
+#'   - `ms_level_intercept_mode[k, lv]`       0-3  (0=none, 1=FE, 2=RE-NCP, 3=RE-CP)
+#'   - `ms_level_intercept_corr_group[k, lv]` >=0  (0 = independent singleton)
+#'
+#' This helper fills all `MS_N_INTERCEPT_SLOTS` slots identically from the single
+#' legacy vector, with `corr_group` all-zero. Combined with the slot-active
+#' gating on the Stan side, this reproduces the legacy single-flag model
+#' bit-identically (the degeneracy guarantee). It is NOT an alias: the legacy
+#' flag is removed from the Stan data; only the three arrays are passed.
+#'
+#' @param enable_ms_level_baseline_hazard Integer vector (length n_levels) of
+#'   legacy modes 0-4. Names (e.g. c(trial = 3L, patient = 0L)) are tolerated
+#'   and dropped.
+#' @return Named list with three integer matrices, each `MS_N_INTERCEPT_SLOTS`
+#'   rows x n_levels cols, ready to pass straight into the Stan data list.
+decompose_ms_level_baseline_hazard <- function(enable_ms_level_baseline_hazard) {
+  legacy <- as.integer(unname(enable_ms_level_baseline_hazard))
+  n_levels <- length(legacy)
+  if (any(legacy < 0L | legacy > 4L)) {
+    stop("enable_ms_level_baseline_hazard entries must be in 0-4; got: ",
+         paste(legacy, collapse = ", "))
+  }
+
+  # Per-level decomposition (shared across all slots).
+  gp_row   <- as.integer(legacy == 3L)
+  mode_row <- dplyr::case_when(
+    legacy == 0L ~ 0L,   # none
+    legacy == 1L ~ 1L,   # FE
+    legacy == 2L ~ 2L,   # RE-NCP
+    legacy == 3L ~ 2L,   # RE + GP residual -> RE-NCP intercept (GP carried separately)
+    legacy == 4L ~ 3L    # RE-CP
+  )
+
+  enable_ms_level_gp <- matrix(
+    rep(gp_row, each = MS_N_INTERCEPT_SLOTS),
+    nrow = MS_N_INTERCEPT_SLOTS, ncol = n_levels
+  )
+  ms_level_intercept_mode <- matrix(
+    rep(mode_row, each = MS_N_INTERCEPT_SLOTS),
+    nrow = MS_N_INTERCEPT_SLOTS, ncol = n_levels
+  )
+  ms_level_intercept_corr_group <- matrix(
+    0L,
+    nrow = MS_N_INTERCEPT_SLOTS, ncol = n_levels
+  )
+
+  storage.mode(enable_ms_level_gp) <- "integer"
+  storage.mode(ms_level_intercept_mode) <- "integer"
+
+  list(
+    enable_ms_level_gp            = enable_ms_level_gp,
+    ms_level_intercept_mode       = ms_level_intercept_mode,
+    ms_level_intercept_corr_group = ms_level_intercept_corr_group
+  )
+}
+
+#' Enumerate correlated multistate intercept blocks from the decomposed config.
+#'
+#' Mirrors the block-discovery logic in
+#' `stan/modules/multistate/transformed_data.stan`: a block is a distinct
+#' positive `ms_level_intercept_corr_group` code at a level whose ACTIVE members
+#' number >= 2 (a singleton collapses to the scalar path). All blocks must share
+#' the same member dimension `dim` and group count `n_groups` (Stan array typing
+#' requirement); this helper returns those uniform values plus the per-block
+#' level and member slot rows.
+#'
+#' @param ms_level_intercept_corr_group Integer matrix (MS_N_INTERCEPT_SLOTS x
+#'   n_levels) of corr-group codes (0 = independent singleton).
+#' @param ms_slot_active Integer/logical length-MS_N_INTERCEPT_SLOTS vector: is
+#'   each intercept slot's transition channel live? Slot order 1=01,2=02,3=03,
+#'   4=12_s,5=12_t,6=32.
+#' @param n_groups_per_level Integer vector (length n_levels): groups at each
+#'   level (the patient level uses the forecast-patient count).
+#' @return List with `n_blocks`, `dim`, `n_groups`, and `blocks` (a list of
+#'   per-block lists with `level` and `member_slots`).
+ms_corr_blocks <- function(ms_level_intercept_corr_group, ms_slot_active,
+                           n_groups_per_level) {
+  ms_slot_active <- as.integer(ms_slot_active)
+  n_levels <- ncol(ms_level_intercept_corr_group)
+  n_slots <- nrow(ms_level_intercept_corr_group)
+  if (any(ms_level_intercept_corr_group < 0L | ms_level_intercept_corr_group > n_slots)) {
+    stop("ms_level_intercept_corr_group codes must be in 0..", n_slots)
+  }
+  blocks <- list()
+  dim_uniform <- 0L
+  n_groups_uniform <- 0L
+  for (lv in seq_len(n_levels)) {
+    for (g in seq_len(n_slots)) {
+      members <- which(ms_slot_active == 1L &
+                         ms_level_intercept_corr_group[, lv] == g)
+      d_g <- length(members)
+      if (d_g >= 2L) {
+        if (dim_uniform == 0L) {
+          dim_uniform <- d_g
+          n_groups_uniform <- as.integer(n_groups_per_level[lv])
+        } else {
+          if (d_g != dim_uniform) {
+            stop("all correlated intercept blocks must share the same member ",
+                 "dimension; found ", dim_uniform, " and ", d_g)
+          }
+          if (as.integer(n_groups_per_level[lv]) != n_groups_uniform) {
+            stop("all correlated intercept blocks must share the same group ",
+                 "count; found ", n_groups_uniform, " and ", n_groups_per_level[lv])
+          }
+        }
+        blocks[[length(blocks) + 1L]] <- list(
+          level = lv, member_slots = as.integer(members)
+        )
+      }
+    }
+  }
+  list(
+    n_blocks = length(blocks),
+    dim = dim_uniform,
+    n_groups = n_groups_uniform,
+    blocks = blocks
+  )
+}
+
+#' Build init values for the correlated multistate intercept blocks.
+#'
+#' Identity-Cholesky `L_ms_intercept_corr` (chains start uncorrelated, discover
+#' correlation in warmup) and small-spread `z_ms_intercept` ~ N(0, z_sd) (zero
+#' spread causes the lp=-1e50 stuck-chain failure). Returns an EMPTY list when no
+#' block is configured so the init list omits these symbols entirely (Stan then
+#' has zero-length parameter arrays and ignores them).
+#'
+#' @param corr Output of `ms_corr_blocks()`.
+#' @param z_sd SD for the NCP std-normal init draws (default 0.3).
+ms_corr_block_inits <- function(corr, z_sd = 0.3) {
+  if (corr$n_blocks == 0L) return(list())
+  list(
+    L_ms_intercept_corr = lapply(seq_len(corr$n_blocks),
+      function(b) diag(corr$dim)),
+    z_ms_intercept = lapply(seq_len(corr$n_blocks),
+      function(b) matrix(rnorm(corr$dim * corr$n_groups, sd = z_sd),
+                         nrow = corr$dim, ncol = corr$n_groups))
+  )
+}
+
 # nolint end: object_usage_linter
