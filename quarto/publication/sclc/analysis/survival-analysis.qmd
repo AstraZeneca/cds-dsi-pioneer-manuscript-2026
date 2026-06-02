@@ -8,8 +8,8 @@ subtitle: "Kaplan-Meier forecasts and observed PFS"
 #| include: false
 
 source("_setup.R")
-km_data     <- targets::tar_read(all_tumor_ssls_km_rvar, store = pub_store)
-obs_km_data <- targets::tar_read(km_trial_pfs,           store = pub_store) |>
+km_data     <- pub_tar_read("all_tumor_ssls_km_rvar")
+obs_km_data <- pub_tar_read("km_trial_pfs") |>
   filter(fct_match(btype, "ub")) |>
   select(!quantiles) |>
   unnest(km_data)

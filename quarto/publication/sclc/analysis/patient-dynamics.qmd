@@ -8,9 +8,9 @@ subtitle: "Individual tumor trajectories and RECIST predictions"
 #| include: false
 
 source("_setup.R")
-sld_rc    <- targets::tar_read(tumor_ssls_staged_sld_rvar_right_censored_posterior,    store = pub_store)
-sld_unc   <- targets::tar_read(tumor_ssls_staged_sld_rvar_uncensored_posterior,        store = pub_store)
-recist_rc <- targets::tar_read(tumor_ssls_staged_recist_rvar_right_censored_posterior, store = pub_store)
+sld_rc    <- pub_tar_read("tumor_ssls_staged_sld_rvar_right_censored_posterior")
+sld_unc   <- pub_tar_read("tumor_ssls_staged_sld_rvar_uncensored_posterior")
+recist_rc <- pub_tar_read("tumor_ssls_staged_recist_rvar_right_censored_posterior")
 ```
 
 ## SLD Forecasts — Right-Censored Patients {#sec-sld-censored}
