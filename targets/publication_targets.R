@@ -241,7 +241,14 @@ publication_targets <- list(
   # No conditioning subgroups (no pdl1/histology in publication data)
   tar_target(cond_groups, list()),
 
-  tar_target(extend_max_all_t, 200L),
+  # Forecast/state grid ceiling. The SLD visit window ends at week ~62, but PFS
+  # and death events extend to ~170; the multistate hazard reads the tumor burden
+  # (states_full_grid) as a time-varying covariate across that full survival
+  # follow-up, so the grid must reach the max event time. 172 = just above the
+  # max observed event (death_week 170, pfs 167). The previous 200 inflated the
+  # per-leapfrog states_full_grid build (n_patients x max_t_width x 2) by ~15%
+  # for no coverage benefit, which compounded badly in the LFO fits.
+  tar_target(extend_max_all_t, 172L),
 
   # Stan data -------------------------------------------------------------------
 
@@ -252,7 +259,7 @@ publication_targets <- list(
       covar_design_matrix,
       cond_groups,
       km_quant,
-      extend_max_all_t = 200L,
+      extend_max_all_t = extend_max_all_t,
       forecast_observation_interval = 6L
     ),
     error = "stop"
