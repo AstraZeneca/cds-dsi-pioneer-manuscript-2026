@@ -1,0 +1,67 @@
+// Import shared AZ color palette
+@import "../../_shared/az-colors";
+
+/*-- scss:defaults --*/
+
+$font-family-sans-serif: Arial, "Helvetica Neue", Helvetica, sans-serif;
+
+$primary: $az-navy;
+$secondary: $az-platinum;
+$success: $az-green;
+$info: $az-turquoise;
+$warning: $az-gold;
+$danger: $az-pink;
+$light: #f8f9fa;
+$dark: $az-darkgrey;
+
+$link-color: $az-navy;
+$link-hover-color: $az-plum;
+
+$navbar-bg: $az-navy;
+$navbar-fg: white;
+
+/*-- scss:rules --*/
+
+:root {
+  --az-plum: #{$az-plum};
+  --az-gold: #{$az-gold};
+  --az-turquoise: #{$az-turquoise};
+  --az-darkpurple: #{$az-darkpurple};
+  --az-green: #{$az-green};
+  --az-navy: #{$az-navy};
+  --az-platinum: #{$az-platinum};
+  --az-darkgrey: #{$az-darkgrey};
+  --az-pink: #{$az-pink};
+  --az-lightpurple: #{$az-lightpurple};
+}
+
+.navbar {
+  background-color: $az-navy !important;
+  border-bottom: 2px solid $az-gold;
+}
+
+.navbar-brand, .navbar-nav .nav-link {
+  color: white !important;
+}
+
+.navbar-nav .nav-link:hover {
+  color: $az-turquoise !important;
+}
+
+.sidebar-navigation .sidebar-item .sidebar-item-text:hover {
+  color: $az-navy;
+}
+
+.callout-note      { border-left-color: $az-navy; }
+.callout-tip       { border-left-color: $az-turquoise; }
+.callout-warning   { border-left-color: $az-gold; }
+.callout-important { border-left-color: $az-pink; }
+
+.feature-card:hover { border-color: $az-navy; }
+
+.hero-section { border-bottom: 3px solid $az-gold; }
+.hero-image img { border: 3px solid $az-gold; }
+
+hr { border-color: $az-gold; opacity: 0.5; }
+
+.table thead th { border-bottom: 2px solid $az-gold; }
