@@ -26,7 +26,7 @@ fs::dir_create(file.path(publication_artifacts_path, "crew_logs"))
 
 controller_default <- crew_controller_local(name = "default", workers = 4)
 controller_fit <- crew_controller_local(name = "fit", workers = 4)
-controller_many_samples <- crew_controller_local(name = "many samples", workers = 4)
+controller_many_samples <- crew_controller_local(name = "many samples", workers = 32)
 
 tar_option_set(
   packages = c(
