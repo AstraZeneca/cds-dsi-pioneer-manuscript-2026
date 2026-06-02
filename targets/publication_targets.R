@@ -68,6 +68,17 @@ pfs_timepoints_pub <- enframe(c(6, 9, 12, 15, 18), name = "n", value = "timepoin
 # Covariates available in the publication data (no pdl1/histology/ctdna)
 covar_formula_pub <- ~ age + male + ecog + hgb + ldh_log + albumin
 
+# Warm-start metrics for the posterior fit. The model density is unchanged since
+# job #1795 (only generated-quantities edits for the PFS-from-OS convention), so
+# #1795's adapted per-chain inv-metrics are valid mass matrices for re-fits. Warm-
+# starting from them makes warmup fast AND robust (starts in good geometry rather
+# than searching for it from random inits — which is where a cold re-fit fell over
+# in job #1805). One file per chain; prior fit does NOT warm-start (different data).
+publication_metric_files <- file.path(
+  "data",
+  sprintf("inv_metric_publication_tumor_ssls_chain%d.json", 1:4)
+)
+
 publication_targets <- list(
 
   # Track initializer file so changes invalidate the initializer targets
@@ -228,6 +239,13 @@ publication_targets <- list(
 
       ms_time_scale_12 = 1L,
 
+      # Legacy baseline-hazard mode (per level, 0-4). Kept here as the
+      # human-readable config knob; decomposed into the three per-transition x
+      # per-level arrays (enable_ms_level_gp / ms_level_intercept_mode /
+      # ms_level_intercept_corr_group) at the base_tumor_ssls_stan_data assembly
+      # point via decompose_ms_level_baseline_hazard(). corr_group stays all-zero
+      # in Phase 1, so the decomposed config reproduces this legacy flag
+      # bit-identically.
       enable_ms_level_baseline_hazard = c(trial = 3L, patient = 0L),
 
       enable_ms_pop_time_varying_cov = TRUE,
@@ -301,10 +319,39 @@ publication_targets <- list(
 
   tar_target(
     base_tumor_ssls_stan_data,
-    all_stan_data |>
-      add_tumor_priors(tumor_priors) |>
-      c(default_stan_data_settings) |>
-      c(derive_ms_fields(all_analysis_data, "full"))
+    {
+      assembled <- all_stan_data |>
+        add_tumor_priors(tumor_priors) |>
+        c(default_stan_data_settings) |>
+        c(derive_ms_fields(all_analysis_data, "full"))
+      # Translate the legacy single baseline-hazard flag into the three
+      # decomposed per-transition x per-level arrays the Stan model consumes,
+      # then drop the legacy key (no longer declared in flags.stan).
+      decomposed <- decompose_ms_level_baseline_hazard(
+        assembled$enable_ms_level_baseline_hazard
+      )
+      assembled$enable_ms_level_baseline_hazard <- NULL
+
+      # --- Correlated patient-level frailty on 0->1 and 0->3 (Phase 2) ---
+      # Add an RE-NCP patient-level intercept to slots 01 and 03 and place both
+      # in correlation group 1 at the patient level. The abundant 0->1
+      # progression/censoring history (497 patients) feeds sigma_01; the
+      # negatively-learned correlation transmits that evidence to the data-poor
+      # 0->3 dropout hazard (57 events), so died_off_trial patients route to
+      # dropout (long PFS) instead of a fast 0->1 progression. Slot order:
+      # 1=01, 2=02, 3=03, 4=12_s, 5=12_t, 6=32; patient level = last column.
+      n_levels_ms <- ncol(decomposed$ms_level_intercept_mode)
+      patient_lv <- n_levels_ms
+      MS_SLOT_01 <- 1L; MS_SLOT_03 <- 3L
+      decomposed$ms_level_intercept_mode[MS_SLOT_01, patient_lv] <- 2L  # RE-NCP
+      decomposed$ms_level_intercept_mode[MS_SLOT_03, patient_lv] <- 2L  # RE-NCP
+      decomposed$enable_ms_level_gp[MS_SLOT_01, patient_lv] <- 0L
+      decomposed$enable_ms_level_gp[MS_SLOT_03, patient_lv] <- 0L
+      decomposed$ms_level_intercept_corr_group[MS_SLOT_01, patient_lv] <- 1L
+      decomposed$ms_level_intercept_corr_group[MS_SLOT_03, patient_lv] <- 1L
+
+      c(assembled, decomposed)
+    }
   ),
 
   # Fits ------------------------------------------------------------------------
@@ -315,7 +362,11 @@ publication_targets <- list(
       fit_data = c(FALSE, TRUE),
       base_name = c("prior_tumor_ssls", "tumor_ssls"),
       iter_sampling = 500,
-      iter_warmup = c(300L, 500L),
+      # Posterior warm-starts from #1795's adapted metric, so it needs far less
+      # warmup; prior fit cold-starts (no valid posterior metric for it).
+      iter_warmup = c(300L, 150L),
+      # List-column: prior = no warm-start; posterior = per-chain inv-metric files.
+      metric_files = list(NULL, publication_metric_files),
       chains = 4L
     ),
     names = "type",
@@ -345,13 +396,15 @@ publication_targets <- list(
         tumor_ssls_stan_data,
         iter_warmup = iter_warmup,
         iter_sampling = iter_sampling,
-        save_warmup = TRUE,
+        save_warmup = FALSE,
         parallel_chains = chains,
         chains = chains,
         threads_per_chain = tumor_ssls_stan_data$n_shards,
         init = tumor_ssls_initializer,
         adapt_delta = 0.8,
         save_metric = TRUE,
+        # Warm-start from #1795's adapted inv-metrics (posterior only; NULL = cold).
+        metric_file = if (length(metric_files) > 0) metric_files,
         output_dir = file.path(publication_output_path, "fit", base_name),
         timestamp = fit_output_timestamp
       ),

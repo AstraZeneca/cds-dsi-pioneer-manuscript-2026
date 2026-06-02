@@ -207,7 +207,14 @@ get_multistate_priors <- function(n_levels, n_time_varying_covar, n_time_invaria
     ms_nu_baseline_level_prior_alpha = rep(2, n_levels),
     ms_nu_baseline_level_prior_beta  = rep(0.1, n_levels),
     ms_nu_slope_level_prior_alpha    = rep(2, n_levels),
-    ms_nu_slope_level_prior_beta     = rep(0.1, n_levels)
+    ms_nu_slope_level_prior_beta     = rep(0.1, n_levels),
+
+    # Correlated intercept block (cross-transition frailty) LKJ shape.
+    # eta = 2 gently concentrates toward the identity (rho ~ 0), symmetric about
+    # zero — does not bake in the expected negative sign; the data reveal it.
+    # Shared by every configured (level, group) block. Harmless when no block is
+    # configured (no L_ms_intercept_corr parameter exists in that case).
+    ms_intercept_corr_eta = 2
   )
 }
 
