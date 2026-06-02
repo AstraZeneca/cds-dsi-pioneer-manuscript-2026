@@ -450,6 +450,7 @@ publication_targets <- list(
           matches("^(time_invariant|time_varying)_coef")
         ),
         pattern = map(tumor_ssls_fit_csv_files),
+        iteration = "list",
         resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
       ),
 
@@ -466,6 +467,7 @@ publication_targets <- list(
           matches("patient_log_(growth|decrease)_rate")
         ),
         pattern = map(tumor_ssls_fit_csv_files),
+        iteration = "list",
         resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
       ),
 
@@ -484,6 +486,7 @@ publication_targets <- list(
           forecast_obs_recist
         ),
         pattern = map(tumor_ssls_fit_csv_files),
+        iteration = "list",
         resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
       ),
 
@@ -504,6 +507,7 @@ publication_targets <- list(
           recist_confusion_matrix
         ),
         pattern = map(tumor_ssls_fit_csv_files),
+        iteration = "list",
         resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
       ),
 
