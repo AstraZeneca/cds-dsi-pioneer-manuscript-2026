@@ -34,8 +34,11 @@ quarto render quarto/sclc/website
 # From project root — Pioneer
 quarto render quarto/pioneer/website
 
-# From project root — Publication
-quarto render quarto/publication/website
+# From project root — Publication (SCLC)
+quarto render quarto/publication/sclc
+
+# From project root — Publication (CRC)
+quarto render quarto/publication/crc
 ```
 
 Rendered sites are output to `quarto/<trial>/website/_site/`. To preview:
@@ -57,18 +60,21 @@ quarto render quarto/pioneer/website
 # Deploy via R
 Rscript -e 'rsconnect::deploySite(siteDir = "quarto/sclc/website", server = "az-connect", account = "kmjq089")'
 Rscript -e 'rsconnect::deploySite(siteDir = "quarto/pioneer/website", server = "az-connect", account = "kmjq089")'
-Rscript -e 'rsconnect::deploySite(siteDir = "quarto/publication/website", server = "az-connect", account = "kmjq089")'
+Rscript -e 'rsconnect::deploySite(siteDir = "quarto/publication/sclc", server = "az-connect", account = "kmjq089")'
+Rscript -e 'rsconnect::deploySite(siteDir = "quarto/publication/crc",  server = "az-connect", account = "kmjq089")'
 ```
 
 **Published URLs:**
 - Pioneer: https://rstudio-connect.seml.scp.astrazeneca.net/content/4ec50122-5d33-43fa-831c-3df0243084f7/
-- Publication: https://rstudio-connect.seml.scp.astrazeneca.net/content/fdee3ad4-616a-42b4-b258-47dfb14ba50f/
+- Publication (SCLC): https://rstudio-connect.seml.scp.astrazeneca.net/content/fdee3ad4-616a-42b4-b258-47dfb14ba50f/
+- Publication (CRC): (new Connect item — created on first deploy)
 
 ### Key Configuration Files
 - `_quarto.yml` - Site configuration, navigation, theme settings (per-trial)
 - `quarto/_shared/az-colors.scss` - AstraZeneca color scheme (navy, gold, turquoise, etc.)
 - `quarto/sclc/website/az-theme.scss` - SCLC-01 theme (extends az-colors.scss)
-- `quarto/publication/website/az-theme.scss` — Publication site theme (same as pioneer)
+- `quarto/publication/sclc/az-theme.scss` — Publication SCLC site theme (same as pioneer)
+- `quarto/publication/crc/az-theme.scss` — Publication CRC site theme
 - `styles.css` - Custom CSS for hero section and layout
 - `_freeze/` - Cache directory for executed R code (speeds up rebuilds)
 - `quarto/_shared/images/` - PIONEER helmet logo
