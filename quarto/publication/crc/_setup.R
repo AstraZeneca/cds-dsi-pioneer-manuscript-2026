@@ -1,6 +1,6 @@
-pub_disease_suffix <- ""  # blank: SCLC store predates tar_map disease suffix
+pub_disease_suffix <- "crc"
 
-here::i_am("quarto/publication/sclc/_setup.R")
+here::i_am("quarto/publication/crc/_setup.R")
 
 source(here::here("quarto", "_shared", "_setup.R"))
 
