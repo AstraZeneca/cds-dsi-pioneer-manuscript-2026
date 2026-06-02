@@ -67,7 +67,7 @@ pub_tar_read <- function(name, store = pub_store) {
   } else {
     name
   }
-  targets::tar_read(!!rlang::sym(full_name), store = store)
+  targets::tar_read_raw(full_name, store = store)
 }
 ```
 
