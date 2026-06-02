@@ -301,8 +301,16 @@ generated quantities {
         int start_idx = testing_start_idx[n, i];
         int end_idx = m_abs < n_cutoffs ? testing_end_idx[n, m_abs + 1, i] : visit_end;
 
-        // Only evaluate patients enrolled at this cutoff (not just cutoff 1)
-        if (start_idx > 0 && end_idx >= start_idx && calendar_day[i] <= cutoff_calendar_day[n]) {
+        // Only evaluate patients who were actually observed at/before the cutoff
+        // (cutoff_observed_mask[i]) AND have allocated OOS testing visits
+        // (n_patient_testing_visits[i] > 0). A patient whose only visits fall after
+        // the cutoff has n_patient_testing_visits == 0 and an empty oos_recist slice
+        // (oos_recist_end == oos_recist_start - 1); admitting them here overruns that
+        // slice and trips the assert_greater_than_or_equal below. This matches the
+        // guard on the prediction-write block and the n_patient_testing_visits
+        // allocation in _lfo_transformed_data.stan.
+        if (start_idx > 0 && end_idx >= start_idx && calendar_day[i] <= cutoff_calendar_day[n]
+            && cutoff_observed_mask[i] && n_patient_testing_visits[i] > 0) {
           int patient_idx = curr_first_testing_patient_idx + i_idx - 1;
 
           // Component 1: Tumor model log-likelihood using observed SLD
