@@ -7,7 +7,7 @@ project:
     - "**/*.qmd"
 
 website:
-  title: "PIONEER: Publication — SCLC"
+  title: "PIONEER: Publication — CRC"
   description: "Bayesian hierarchical modeling for tumor dynamics and survival — publication analysis"
   favicon: images/pioneer-helmet.png
   navbar:
@@ -69,7 +69,7 @@ website:
     type: overlay
   page-footer:
     left: "Last updated: {{< meta date-modified >}}"
-    center: "PIONEER: Publication — SCLC"
+    center: "PIONEER: Publication — CRC"
     right: "Analysis v1.0.0"
 
 metadata-files:
