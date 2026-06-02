@@ -8,69 +8,7 @@ subtitle: "OS Kaplan-Meier forecasts and observed data"
 #| include: false
 
 source("_setup.R")
-os_km_data  <- pub_tar_read("all_tumor_ssls_km_os_rvar")
-obs_os_data <- pub_tar_read("km_trial_os") |>
-  filter(fct_match(btype, "ub")) |>
-  select(!quantiles) |>
-  unnest(km_data)
 ```
 
-## OS Kaplan-Meier Curves {#sec-os-km}
-
-::: {.panel-tabset}
-
-### Sample-Based
-
-```{r}
-#| label: fig-os-km-sample
-#| fig-cap: Sample-based OS KM (posterior) by trial.
-#| fig-width: 10
-#| fig-height: 5
-
-os_km_data |>
-  filter(fit_type == "posterior") |>
-  plot_km(
-    km_est_var  = sample_os_km_est,
-    facet_col   = trial,
-    obs_km_data = obs_os_data,
-    endpoint    = "os"
-  )
-```
-
-### Superpopulation
-
-```{r}
-#| label: fig-os-km-spop
-#| fig-cap: Superpopulation OS KM (posterior) by trial.
-#| fig-width: 10
-#| fig-height: 5
-
-os_km_data |>
-  filter(fit_type == "posterior") |>
-  plot_km(
-    km_est_var  = spop_os_km_est,
-    facet_col   = trial,
-    obs_km_data = obs_os_data,
-    endpoint    = "os"
-  )
-```
-
-### Prior vs Posterior
-
-```{r}
-#| label: fig-os-km-prior-post
-#| fig-cap: Prior vs posterior OS KM (sample-based) by trial.
-#| fig-width: 10
-#| fig-height: 5
-
-os_km_data |>
-  plot_km(
-    km_est_var  = sample_os_km_est,
-    facet_col   = trial,
-    group       = fit_type,
-    alpha_group = fit_type,
-    endpoint    = "os"
-  )
-```
-
-:::
+> **CRC results pending** — the `tumor_ssls_res_posterior_crc` fit is currently
+> running. This page will be updated once results are available.
