@@ -1,0 +1,15 @@
+{
+  "hash": "21d4bdb16d5d8657540d30be70b7b6f0",
+  "result": {
+    "engine": "knitr",
+    "markdown": "---\ntitle: \"Sampling Diagnostics\"\nsubtitle: \"MCMC convergence and sampling quality assessment\"\n---\n\n\n\n> **CRC results pending** — the `tumor_ssls_res_posterior_crc` fit is currently\n> running. This page will be updated once results are available.\n",
+    "supporting": [],
+    "filters": [
+      "rmarkdown/pagebreak.lua"
+    ],
+    "includes": {},
+    "engineDependencies": {},
+    "preserve": {},
+    "postProcess": true
+  }
+}

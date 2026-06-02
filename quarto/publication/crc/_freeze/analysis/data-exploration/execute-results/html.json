@@ -1,0 +1,15 @@
+{
+  "hash": "453b77a6293c0ea15eb75ab1424f48ce",
+  "result": {
+    "engine": "knitr",
+    "markdown": "---\ntitle: \"Data Exploration\"\nsubtitle: \"Overview of the publication analysis dataset\"\n---\n\n\n\n> **CRC results pending** — the `tumor_ssls_res_posterior_crc` fit is currently\n> running. This page will be updated once results are available.\n",
+    "supporting": [],
+    "filters": [
+      "rmarkdown/pagebreak.lua"
+    ],
+    "includes": {},
+    "engineDependencies": {},
+    "preserve": {},
+    "postProcess": true
+  }
+}

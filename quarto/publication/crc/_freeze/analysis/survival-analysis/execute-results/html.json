@@ -1,0 +1,15 @@
+{
+  "hash": "f06e5d58c60adc591a84b98c34ede5b2",
+  "result": {
+    "engine": "knitr",
+    "markdown": "---\ntitle: \"Survival Analysis\"\nsubtitle: \"Kaplan-Meier forecasts and observed PFS\"\n---\n\n\n\n> **CRC results pending** — the `tumor_ssls_res_posterior_crc` fit is currently\n> running. This page will be updated once results are available.\n",
+    "supporting": [],
+    "filters": [
+      "rmarkdown/pagebreak.lua"
+    ],
+    "includes": {},
+    "engineDependencies": {},
+    "preserve": {},
+    "postProcess": true
+  }
+}

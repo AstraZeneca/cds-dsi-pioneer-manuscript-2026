@@ -1,0 +1,15 @@
+{
+  "hash": "797acc5843f907e98cfde64c58be6fed",
+  "result": {
+    "engine": "knitr",
+    "markdown": "---\ntitle: \"Clinical Endpoints\"\nsubtitle: \"Overall Response Rate and Progression-Free Survival results\"\n---\n\n\n\n> **CRC results pending** — the `tumor_ssls_res_posterior_crc` fit is currently\n> running. This page will be updated once results are available.\n",
+    "supporting": [],
+    "filters": [
+      "rmarkdown/pagebreak.lua"
+    ],
+    "includes": {},
+    "engineDependencies": {},
+    "preserve": {},
+    "postProcess": true
+  }
+}
