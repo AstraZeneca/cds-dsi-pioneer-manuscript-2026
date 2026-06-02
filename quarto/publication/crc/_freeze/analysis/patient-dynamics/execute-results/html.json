@@ -1,0 +1,15 @@
+{
+  "hash": "15c3ea27488ca670eafc69a51a130275",
+  "result": {
+    "engine": "knitr",
+    "markdown": "---\ntitle: \"Patient Dynamics\"\nsubtitle: \"Individual tumor trajectories and RECIST predictions\"\n---\n\n\n\n> **CRC results pending** — the `tumor_ssls_res_posterior_crc` fit is currently\n> running. This page will be updated once results are available.\n",
+    "supporting": [],
+    "filters": [
+      "rmarkdown/pagebreak.lua"
+    ],
+    "includes": {},
+    "engineDependencies": {},
+    "preserve": {},
+    "postProcess": true
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "hash": "da422ecaa2c3f962236f09e7f6a639fc",
+  "result": {
+    "engine": "knitr",
+    "markdown": "---\ntitle: \"Parameter Inference\"\nsubtitle: \"Population and patient-level posterior distributions\"\n---\n\n\n\n> **CRC results pending** — the `tumor_ssls_res_posterior_crc` fit is currently\n> running. This page will be updated once results are available.\n",
+    "supporting": [],
+    "filters": [
+      "rmarkdown/pagebreak.lua"
+    ],
+    "includes": {},
+    "engineDependencies": {},
+    "preserve": {},
+    "postProcess": true
+  }
+}
