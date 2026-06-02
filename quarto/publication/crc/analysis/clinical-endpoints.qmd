@@ -1,0 +1,119 @@
+---
+title: "Clinical Endpoints"
+subtitle: "Overall Response Rate and Progression-Free Survival results"
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+source("_setup.R")
+orr_data       <- pub_tar_read("all_tumor_ssls_orr_rvar")
+pfs_quant      <- pub_tar_read("all_tumor_ssls_trial_pfs_quant")
+pfs_n_data     <- pub_tar_read("all_tumor_ssls_forecast_target_pfs_n_rvar")
+pfs_timepoints <- tibble::tibble(n = 1:5, timepoint = c(6, 9, 12, 15, 18))
+obs_km_data    <- pub_tar_read("km_trial_pfs")
+```
+
+## Overall Response Rate (ORR) {#sec-orr}
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+```{r}
+#| label: fig-orr-sample
+#| fig-cap: Sample-based ORR (posterior).
+
+orr_data |>
+  filter(fit_type == "posterior") |>
+  ggplot() +
+  stat_pointinterval(aes(xdist = sample_target_orr, y = trial, color = fit_type),
+                     .width = c(0.5, 0.9)) +
+  scale_color_discrete("", type = AZ_palette, label = str_to_title) +
+  scale_x_continuous("Overall Response Rate (ORR)", limits = c(0, 1)) +
+  labs(y = "") +
+  NULL
+```
+
+### Prior vs Posterior
+
+```{r}
+#| label: fig-orr-prior-post
+#| fig-cap: Prior vs posterior ORR comparison.
+
+orr_data |>
+  ggplot() +
+  stat_pointinterval(aes(xdist = sample_target_orr, y = fit_type, color = fit_type),
+                     .width = c(0.5, 0.9)) +
+  scale_color_discrete("", type = AZ_palette, label = str_to_title) +
+  scale_x_continuous("Overall Response Rate (ORR)", limits = c(0, 1)) +
+  labs(y = "") +
+  NULL
+```
+
+:::
+
+## Median PFS {#sec-median-pfs}
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+```{r}
+#| label: fig-median-pfs-sample
+#| fig-cap: Sample-based median PFS (posterior). Weeks converted to months for display.
+
+pfs_quant |>
+  filter(fit_type == "posterior", quantile == 0.5) |>
+  ggplot() +
+  stat_pointinterval(aes(xdist = sample_pfs_quant, y = trial, color = fit_type),
+                     .width = c(0.5, 0.9)) +
+  scale_x_continuous("Median PFS [Months]",
+                     breaks = months_to_weeks(seq(0, 30, 3)),
+                     label  = label_weeks_to_months) +
+  scale_color_discrete("", type = AZ_palette, label = str_to_title) +
+  labs(y = "") +
+  NULL
+```
+
+### Prior vs Posterior
+
+```{r}
+#| label: fig-median-pfs-prior-post
+#| fig-cap: Prior vs posterior median PFS comparison.
+
+pfs_quant |>
+  filter(quantile == 0.5) |>
+  ggplot() +
+  stat_pointinterval(aes(xdist = sample_pfs_quant, y = fit_type, color = fit_type),
+                     .width = c(0.5, 0.9)) +
+  scale_x_continuous("Median PFS [Months]",
+                     breaks = months_to_weeks(seq(0, 30, 3)),
+                     label  = label_weeks_to_months) +
+  scale_color_discrete("", type = AZ_palette, label = str_to_title) +
+  labs(y = "") +
+  NULL
+```
+
+:::
+
+## PFS at Fixed Timepoints {#sec-pfs-n}
+
+```{r}
+#| label: fig-pfs-n
+#| fig-cap: PFS probability at fixed timepoints (posterior, sample-based).
+
+pfs_n_data |>
+  filter(fit_type == "posterior") |>
+  ggplot() +
+  stat_pointinterval(
+    aes(ydist = sample_pfs_n, x = timepoint, color = fit_type,
+        group = interaction(fit_type, timepoint)),
+    position = "dodge", .width = c(0.5, 0.8)
+  ) +
+  scale_x_continuous("Timepoint [Months]", breaks = pfs_timepoints$timepoint) +
+  scale_y_continuous("PFS Probability", limits = c(0, 1)) +
+  scale_color_discrete("", type = AZ_palette, label = str_to_title) +
+  NULL
+```
