@@ -8,7 +8,7 @@ subtitle: "Overview of the publication analysis dataset"
 #| include: false
 
 source("_setup.R")
-all_analysis_data <- targets::tar_read(all_analysis_data, store = pub_store)
+all_analysis_data <- pub_tar_read("all_analysis_data")
 ```
 
 This page provides an overview of the combined publication dataset (497 patients across two trials).

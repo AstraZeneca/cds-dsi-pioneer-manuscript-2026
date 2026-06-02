@@ -25,7 +25,7 @@ This page presents MCMC sampling diagnostics for the publication model fit.
 ```{r}
 #| label: diagnostics-summary
 
-targets::tar_read(tumor_ssls_nuts_summary_posterior, store = pub_store)
+pub_tar_read("tumor_ssls_nuts_summary_posterior")
 ```
 
 ## Convergence Check {#sec-convergence}
@@ -33,7 +33,7 @@ targets::tar_read(tumor_ssls_nuts_summary_posterior, store = pub_store)
 ```{r}
 #| label: convergence-check
 
-targets::tar_read(tumor_ssls_convergence_posterior, store = pub_store)
+pub_tar_read("tumor_ssls_convergence_posterior")
 ```
 
 ## Detailed Inspection {#sec-detailed}
@@ -41,7 +41,7 @@ targets::tar_read(tumor_ssls_convergence_posterior, store = pub_store)
 For detailed parameter-level diagnostics, trace plots, and pair plots, load the fit object:
 
 ```r
-fit <- targets::tar_read(tumor_ssls_res_posterior, store = pub_store)
+fit <- pub_tar_read("tumor_ssls_res_posterior")
 fit$summary()
 fit$diagnostic_summary()
 ```

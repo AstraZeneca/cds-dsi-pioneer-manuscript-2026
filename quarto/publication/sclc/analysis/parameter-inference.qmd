@@ -8,11 +8,11 @@ subtitle: "Population and patient-level posterior distributions"
 #| include: false
 
 source("_setup.R")
-rates_rvar    <- targets::tar_read(all_tumor_ssls_rates_rvar,                 store = pub_store)
-noise_sd      <- targets::tar_read(all_tumor_ssls_noise_sd_rvar,              store = pub_store)
-patient_rates <- targets::tar_read(all_tumor_ssls_patient_rates_bpi,          store = pub_store)
-decrease_prop <- targets::tar_read(all_tumor_ssls_patient_decrease_prop_bpi,  store = pub_store)
-coef_data     <- targets::tar_read(all_tumor_ssls_coef,                       store = pub_store)
+rates_rvar    <- pub_tar_read("all_tumor_ssls_rates_rvar")
+noise_sd      <- pub_tar_read("all_tumor_ssls_noise_sd_rvar")
+patient_rates <- pub_tar_read("all_tumor_ssls_patient_rates_bpi")
+decrease_prop <- pub_tar_read("all_tumor_ssls_patient_decrease_prop_bpi")
+coef_data     <- pub_tar_read("all_tumor_ssls_coef")
 ```
 
 ## Population-Level Rates {#sec-pop-rates}
