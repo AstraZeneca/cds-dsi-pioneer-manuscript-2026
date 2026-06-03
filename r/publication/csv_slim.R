@@ -104,7 +104,7 @@ build_crc_keep_col_names <- function(input_csv) {
 
   matched <- unique(c(
     all_cols[base_names %in% CRC_SLIM_KEEP_COLS],
-    unlist(lapply(patterns, function(p) all_cols[grepl(p, base_names)]))
+    purrr::map(patterns, \(p) all_cols[grepl(p, base_names)]) |> purrr::list_c()
   ))
   matched
 }

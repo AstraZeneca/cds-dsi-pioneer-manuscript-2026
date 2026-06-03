@@ -107,3 +107,63 @@ test_that("slim_cmdstan_csv_files writes to output_dir with same filename", {
   data_lines <- out_lines[!startsWith(out_lines, "#")]
   expect_equal(strsplit(data_lines[[1]], ",")[[1]], c("lp__", "accept_stat__", "param_1"))
 })
+
+test_that("build_crc_keep_col_names matches expected publication column families", {
+  tmp_csv <- withr::local_tempfile(fileext = ".csv")
+
+  # Synthetic header covering the key pattern families
+  # Include index suffixes like real CmdStan output
+  header_cols <- c(
+    # sampler (exact match via CRC_SLIM_KEEP_COLS)
+    "lp__", "accept_stat__", "stepsize__", "treedepth__",
+    "n_leapfrog__", "divergent__", "energy__",
+    # exact named cols
+    "measure_sd_sld", "rep_patient_log_sld.1", "forecast_patient_log_sld.2",
+    "rep_recist.3", "forecast_obs_recist.4", "recist_confusion_matrix",
+    # _pop$ family
+    "tr_loc_pop", "frac_logit_loc_pop",
+    # pop_ family
+    "pop_log_decrease_rate.1",
+    # _sd_level_ family
+    "tr_sd_level_intercept.1.2",
+    # time_invariant/time_varying_coef
+    "time_invariant_coef_01.1", "time_varying_coef_12.2",
+    # patient family
+    "tr_loc_patient.1", "frac_log_growth_patient.2",
+    # patient_log rate
+    "patient_log_decrease_rate.1.3", "patient_log_growth_rate.2.4",
+    # spop/sample KM
+    "sample_target_km_est.1.200", "spop_pfs_km_est.2.100",
+    # os endpoints
+    "sample_os.1", "spop_os_censored.2",
+    # should NOT be kept
+    "log_cond_surv_01.1.200", "states_full_grid.1.1.218",
+    "ms_time_varying_covar_01.1.200"
+  )
+  content <- paste(c("# num_samples = 1",
+                     paste(header_cols, collapse = ","),
+                     paste(rep("0.1", length(header_cols)), collapse = ",")),
+                   collapse = "\n")
+  writeLines(content, tmp_csv)
+
+  kept <- build_crc_keep_col_names(tmp_csv)
+
+  # All expected columns kept
+  expect_true("lp__" %in% kept)
+  expect_true("measure_sd_sld" %in% kept)
+  expect_true("rep_patient_log_sld.1" %in% kept)
+  expect_true("tr_loc_pop" %in% kept)
+  expect_true("pop_log_decrease_rate.1" %in% kept)
+  expect_true("tr_sd_level_intercept.1.2" %in% kept)
+  expect_true("time_invariant_coef_01.1" %in% kept)
+  expect_true("tr_loc_patient.1" %in% kept)
+  expect_true("patient_log_decrease_rate.1.3" %in% kept)
+  expect_true("sample_target_km_est.1.200" %in% kept)
+  expect_true("sample_os.1" %in% kept)
+  expect_true("spop_os_censored.2" %in% kept)
+
+  # Columns that should NOT be kept
+  expect_false("log_cond_surv_01.1.200" %in% kept)
+  expect_false("states_full_grid.1.1.218" %in% kept)
+  expect_false("ms_time_varying_covar_01.1.200" %in% kept)
+})
