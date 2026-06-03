@@ -9,41 +9,43 @@
 #' @param output_csv Path for the projected output CSV (created/overwritten).
 #' @param keep_col_names Character vector of column base-names to retain.
 #'   These must match the header field names exactly (no index suffixes).
-#'   The 7 sampler columns (lp__, accept_stat__, ..., energy__) are always
-#'   retained regardless; include them in keep_col_names to be explicit.
+#'   Include the 7 sampler diagnostics (lp__, accept_stat__, ..., energy__)
+#'   explicitly — they are not auto-retained.
 #' @return `output_csv` invisibly.
 project_cmdstan_csv <- function(input_csv, output_csv, keep_col_names) {
+  # Validate keep_col_names before creating output file
+  keep_idx <- .resolve_keep_idx(input_csv, keep_col_names)
+
   con_in  <- file(input_csv,  open = "r", encoding = "UTF-8")
   con_out <- file(output_csv, open = "w", encoding = "UTF-8")
   on.exit({ close(con_in); close(con_out) }, add = TRUE)
 
-  keep_idx <- NULL  # resolved on first header line
-
   repeat {
     line <- readLines(con_in, n = 1L, warn = FALSE)
     if (length(line) == 0L) break
-
     if (startsWith(line, "#")) {
       writeLines(line, con_out)
       next
     }
-
-    fields <- strsplit(line, ",", fixed = TRUE)[[1]]
-
-    if (is.null(keep_idx)) {
-      # First non-comment line: this is the header.
-      missing_cols <- setdiff(keep_col_names, fields)
-      if (length(missing_cols) > 0L) {
-        stop(
-          "keep_col_names columns not found in CSV header: ",
-          paste(missing_cols, collapse = ", ")
-        )
-      }
-      keep_idx <- match(keep_col_names, fields)
-    }
-
-    writeLines(paste(fields[keep_idx], collapse = ","), con_out)
+    writeLines(paste(strsplit(line, ",", fixed = TRUE)[[1]][keep_idx], collapse = ","), con_out)
   }
 
   invisible(output_csv)
+}
+
+.resolve_keep_idx <- function(input_csv, keep_col_names) {
+  con <- file(input_csv, open = "r", encoding = "UTF-8")
+  on.exit(close(con), add = TRUE)
+  repeat {
+    line <- readLines(con, n = 1L, warn = FALSE)
+    if (length(line) == 0L) stop("No header line found in ", input_csv)
+    if (!startsWith(line, "#")) break
+  }
+  fields <- strsplit(line, ",", fixed = TRUE)[[1]]
+  missing_cols <- setdiff(keep_col_names, fields)
+  if (length(missing_cols) > 0L) {
+    stop("keep_col_names columns not found in CSV header: ",
+         paste(missing_cols, collapse = ", "))
+  }
+  match(keep_col_names, fields)
 }
