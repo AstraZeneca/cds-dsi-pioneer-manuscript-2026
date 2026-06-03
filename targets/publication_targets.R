@@ -11,6 +11,7 @@ source(here::here("r", "sclc", "prepare_analysis_data.R"))
 source(here::here("r", "sclc", "accuracy.R"))
 source(here::here("r", "sclc", "initializers.R"))
 source(here::here("r", "publication", "prepare_analysis_data.R"))
+source(here::here("r", "publication", "csv_slim.R"))
 
 publication_data_path <- "/mnt/data/PUBLICATION"
 publication_output_path <- tar_path_store() |> fs::path_dir()
@@ -82,6 +83,12 @@ publication_targets <- list(
   tar_target(
     initializers_fixed_file,
     "r/sclc/initializers_fixed.R",
+    format = "file"
+  ),
+
+  tar_target(
+    csv_slim_file,
+    "r/publication/csv_slim.R",
     format = "file"
   ),
 
@@ -440,16 +447,44 @@ publication_targets <- list(
       ),
 
       tar_target(
+        tumor_ssls_slim_keep_cols,
+        if (disease == "crc") {
+          build_crc_keep_col_names(tumor_ssls_fit_csv_files[[1]])
+        } else {
+          character(0)
+        }
+      ),
+
+      tar_target(
+        tumor_ssls_read_csv_files,
+        if (disease == "crc") {
+          slim_cmdstan_csv_files(
+            tumor_ssls_fit_csv_files,
+            output_dir = file.path(
+              publication_output_path, "fit",
+              stringr::str_c(base_name, "_", disease, "_slim")
+            ),
+            keep_col_names = tumor_ssls_slim_keep_cols
+          )
+        } else {
+          tumor_ssls_fit_csv_files
+        },
+        pattern = map(tumor_ssls_fit_csv_files),
+        iteration = "list",
+        resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
+      ),
+
+      tar_target(
         tumor_ssls_draws_pop_chain,
         select_draws_single_chain(
-          tumor_ssls_fit_csv_files,
+          tumor_ssls_read_csv_files,
           ends_with("_pop"),
           starts_with("pop_"),
           measure_sd_sld,
           matches("_sd_level_"),
           matches("^(time_invariant|time_varying)_coef")
         ),
-        pattern = map(tumor_ssls_fit_csv_files),
+        pattern = map(tumor_ssls_read_csv_files),
         iteration = "list",
         resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
       ),
@@ -462,11 +497,11 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_draws_patient_params_chain,
         select_draws_single_chain(
-          tumor_ssls_fit_csv_files,
+          tumor_ssls_read_csv_files,
           matches("^(frac|init|tr)_.+_patient"),
           matches("patient_log_(growth|decrease)_rate")
         ),
-        pattern = map(tumor_ssls_fit_csv_files),
+        pattern = map(tumor_ssls_read_csv_files),
         iteration = "list",
         resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
       ),
@@ -479,13 +514,13 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_draws_sld_recist_chain,
         select_draws_single_chain(
-          tumor_ssls_fit_csv_files,
+          tumor_ssls_read_csv_files,
           rep_patient_log_sld,
           forecast_patient_log_sld,
           rep_recist,
           forecast_obs_recist
         ),
-        pattern = map(tumor_ssls_fit_csv_files),
+        pattern = map(tumor_ssls_read_csv_files),
         iteration = "list",
         resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
       ),
@@ -498,7 +533,7 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_draws_endpoints_chain,
         select_draws_single_chain(
-          tumor_ssls_fit_csv_files,
+          tumor_ssls_read_csv_files,
           matches("(spop|sample)(_target|_ms)?_(((quant_)?(pfs|os))|km_est|right_censored|(pfs|os)_n)"),
           matches("(spop|sample)_target_(((un)?confirmed_response)|orr)"),
           matches("(spop|sample)_(os|pfs)_(quant|km_est|n)"),
@@ -506,7 +541,7 @@ publication_targets <- list(
           matches("(spop|sample)_(os|pfs)_quant_exceeds_max"),
           recist_confusion_matrix
         ),
-        pattern = map(tumor_ssls_fit_csv_files),
+        pattern = map(tumor_ssls_read_csv_files),
         iteration = "list",
         resources = tar_resources(crew = tar_resources_crew(controller = "many samples"))
       ),
