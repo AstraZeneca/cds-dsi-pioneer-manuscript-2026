@@ -81,3 +81,29 @@ test_that("project_cmdstan_csv preserves all data values for kept columns", {
   expect_equal(row1, c(1.1, 3.3))
   expect_equal(row2, c(4.4, 6.6))
 })
+
+test_that("slim_cmdstan_csv_files writes to output_dir with same filename", {
+  tmp_in_dir  <- withr::local_tempdir()
+  tmp_out_dir <- withr::local_tempdir()
+
+  # Write a fake CSV with a CmdStan-style filename
+  fake_csv <- file.path(tmp_in_dir, "model-202601010000-1-abc123.csv")
+  content <- paste(c(
+    "# num_samples = 1",
+    "lp__,accept_stat__,param_1,param_2",
+    "1.1,0.9,2.2,3.3"
+  ), collapse = "\n")
+  writeLines(content, fake_csv)
+
+  result <- slim_cmdstan_csv_files(
+    input_csv    = fake_csv,
+    output_dir   = tmp_out_dir,
+    keep_col_names = c("lp__", "accept_stat__", "param_1")
+  )
+
+  expect_equal(basename(result), "model-202601010000-1-abc123.csv")
+  expect_true(file.exists(result))
+  out_lines <- readLines(result)
+  data_lines <- out_lines[!startsWith(out_lines, "#")]
+  expect_equal(strsplit(data_lines[[1]], ",")[[1]], c("lp__", "accept_stat__", "param_1"))
+})
