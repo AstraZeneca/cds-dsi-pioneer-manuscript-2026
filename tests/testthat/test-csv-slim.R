@@ -55,6 +55,7 @@ test_that("project_cmdstan_csv errors when keep_col_names has unknown columns", 
     project_cmdstan_csv(tmp_in, tmp_out, keep_col_names = c("lp__", "nonexistent_col")),
     "not found in CSV header"
   )
+  expect_false(file.exists(tmp_out))
 })
 
 test_that("project_cmdstan_csv preserves all data values for kept columns", {
