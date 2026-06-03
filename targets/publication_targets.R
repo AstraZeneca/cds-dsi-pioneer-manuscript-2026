@@ -177,7 +177,7 @@ publication_targets <- list(
 
     tar_target(
       km_trial_pfs,
-      get_km_res(all_analysis_data, pfs, right_censored, probs = km_quant)
+      get_km_res(rename(all_analysis_data, trial = group), pfs, right_censored, probs = km_quant)
     ),
     tar_target(
       km_trial_os,
@@ -187,6 +187,7 @@ publication_targets <- list(
           os_censored = !death,
           interval_censored = 0L
         ) |>
+        rename(trial = group) |>
         get_km_res(os_time, os_censored, probs = km_quant)
     ),
 
