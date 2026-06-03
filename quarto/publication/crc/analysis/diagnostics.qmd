@@ -10,5 +10,38 @@ subtitle: "MCMC convergence and sampling quality assessment"
 source("_setup.R")
 ```
 
-> **CRC results pending** — the `tumor_ssls_res_posterior_crc` fit is currently
-> running. This page will be updated once results are available.
+This page presents MCMC sampling diagnostics for the publication model fit.
+
+::: {.callout-note}
+## Interpretation
+- **Divergences**: Should be 0 or very low
+- **E-BFMI**: Should be > 0.3
+- **R-hat**: Should be < 1.01 for all parameters
+- **ESS**: Effective sample size — should be sufficiently large
+:::
+
+## Diagnostics Summary {#sec-summary}
+
+```{r}
+#| label: diagnostics-summary
+
+pub_tar_read("tumor_ssls_nuts_summary_posterior")
+```
+
+## Convergence Check {#sec-convergence}
+
+```{r}
+#| label: convergence-check
+
+pub_tar_read("tumor_ssls_convergence_posterior")
+```
+
+## Detailed Inspection {#sec-detailed}
+
+For detailed parameter-level diagnostics, trace plots, and pair plots, load the fit object:
+
+```r
+fit <- pub_tar_read("tumor_ssls_res_posterior")
+fit$summary()
+fit$diagnostic_summary()
+```
