@@ -1,0 +1,86 @@
+% Compile: pdflatex -output-directory=writing/figures writing/figures/multistate-diagram.tex
+% Convert : pdf2svg writing/figures/multistate-diagram.pdf writing/figures/multistate-diagram.svg
+\documentclass[tikz,border=10pt]{standalone}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows.meta,positioning,calc}
+\usepackage{amsmath,amssymb}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{sfmath}
+
+\begin{document}
+
+% AstraZeneca palette
+\definecolor{azNavy}{HTML}{003865}
+\definecolor{azGold}{HTML}{F0AB00}
+\definecolor{azPlum}{HTML}{830051}
+\definecolor{azPlat}{HTML}{9DB0AC}
+\definecolor{azTurq}{HTML}{68D2DF}
+
+\begin{tikzpicture}[
+  state/.style={
+    rectangle, rounded corners=4pt,
+    minimum width=3.6cm, minimum height=1.8cm,
+    text centered, draw=azNavy, line width=1pt, fill=azNavy!6,
+    font=\small, align=center, inner sep=6pt
+  },
+  absorbing/.style={
+    rectangle, rounded corners=4pt,
+    minimum width=3.6cm, minimum height=1.8cm,
+    text centered, draw=azPlum, line width=1pt, fill=azPlum!6,
+    font=\small, align=center, inner sep=6pt
+  },
+  offtrial/.style={
+    rectangle, rounded corners=4pt, dashed,
+    minimum width=3.6cm, minimum height=1.8cm,
+    text centered, draw=azPlat, line width=1pt, fill=azPlat!6,
+    font=\small, align=center, inner sep=6pt
+  },
+  trans/.style={-{Stealth[length=2.5mm]}, line width=0.8pt, draw=azNavy!85},
+  hazlbl/.style={font=\footnotesize, fill=white, inner sep=2pt},
+  clocklbl/.style={font=\scriptsize\itshape, text=azPlat, fill=white, inner sep=1pt}
+]
+
+% ============================ STATES ============================
+% State 0: top centre
+\node[state]     (s0) at (0, 0)         {\textbf{State 0}\\Alive,\\progression-free};
+% State 1: middle-left
+\node[state]     (s1) at (-4.5, -3.6)   {\textbf{State 1}\\Progressed,\\alive};
+% State 3: middle-right (off-trial, dashed)
+\node[offtrial]  (s3) at ( 4.5, -3.6)   {\textbf{State 3}\\Off-trial};
+% State 2: bottom centre (absorbing) — sink for 0→2, 1→2, 3→2
+\node[absorbing] (s2) at (0, -7.2)      {\textbf{State 2}\\Dead\\(absorbing)};
+
+% ============================ TRANSITIONS ============================
+% 0 -> 1 (clock-forward) — west of state 0 down to north of state 1
+\draw[trans] (s0.west) to[out=180, in=90]
+  node[hazlbl, pos=0.55] {$\lambda_{01}(t)$}
+  node[clocklbl, pos=0.85, left=1pt] {clock $t$}
+  (s1.north);
+
+% 0 -> 3 (clock-forward) — east of state 0 down to north of state 3
+\draw[trans] (s0.east) to[out=0, in=90]
+  node[hazlbl, pos=0.55] {$\lambda_{03}(t)$}
+  node[clocklbl, pos=0.85, right=1pt] {clock $t$}
+  (s3.north);
+
+% 0 -> 2 (clock-forward) — south of state 0 straight down to north of state 2
+\draw[trans] (s0.south) --
+  node[hazlbl, pos=0.5, right=2pt] {$\lambda_{02}(t)$}
+  node[clocklbl, pos=0.92, right=1pt] {clock $t$}
+  (s2.north);
+
+% 1 -> 2 (sojourn time u_1 = t - T_01) — south of state 1 down to west of state 2
+\draw[trans] (s1.south) to[out=270, in=180]
+  node[hazlbl, pos=0.4, left=1pt] {$\lambda_{12}(u_1)$}
+  node[clocklbl, pos=0.65, left=1pt] {sojourn $u_1 = t - T_{01}$}
+  (s2.west);
+
+% 3 -> 2 (sojourn time u_3 = t - T_03) — south of state 3 down to east of state 2
+\draw[trans] (s3.south) to[out=270, in=0]
+  node[hazlbl, pos=0.4, right=1pt] {$\lambda_{32}(u_3)$}
+  node[clocklbl, pos=0.65, right=1pt] {sojourn $u_3 = t - T_{03}$}
+  (s2.east);
+
+\end{tikzpicture}
+\end{document}

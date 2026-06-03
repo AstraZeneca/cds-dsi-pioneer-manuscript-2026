@@ -258,10 +258,10 @@ publication_targets <- list(
       # mode hits at complete-response visits and aligns the survival
       # likelihood with the actual measurement schedule (lilly_cxcr4 ~6w vs
       # amgen_darbe weekly).
-      enable_ms_visit_gated_01 = 1L,
-      enable_ms_visit_gated_latent_01 = 1L,
-      share_dead_gp_shape = 0L,
-      enable_ms_02_time_varying_cov = 0L,
+      enable_ms_visit_gated_01 = TRUE,
+      enable_ms_visit_gated_latent_01 = TRUE,
+      share_dead_gp_shape = FALSE,
+      enable_ms_02_time_varying_cov = FALSE,
       # 0->3 dropout hazard with patient-level discrimination (added 2026-05-28).
       # The previous fit had no per-patient discrimination on the 0->3 path
       # (only the trial-level GP), so died_off_trial patients were routed
@@ -274,11 +274,11 @@ publication_targets <- list(
       # With only 57 dropout events the TV path is identification-limited;
       # priors are kept tight (Normal(0, 0.5)) to avoid overfit. 3->2 TI
       # left off — only 57 events with another competing hazard to model.
-      enable_ms_03_time_invariant_cov = 1L,
-      enable_ms_03_time_varying_cov = 1L,
-      enable_ms_32_time_invariant_cov = 0L,
-      enable_ms_12_entry_covar = 0L,
-      enable_ms_32_entry_covar = 0L,
+      enable_ms_03_time_invariant_cov = TRUE,
+      enable_ms_03_time_varying_cov = TRUE,
+      enable_ms_32_time_invariant_cov = FALSE,
+      enable_ms_12_entry_covar = FALSE,
+      enable_ms_32_entry_covar = FALSE,
       entry_covar_12 = numeric(0),
       entry_covar_32 = numeric(0),
 
