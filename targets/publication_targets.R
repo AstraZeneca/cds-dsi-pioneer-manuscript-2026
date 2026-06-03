@@ -177,7 +177,7 @@ publication_targets <- list(
 
     tar_target(
       km_trial_pfs,
-      get_km_res(rename(all_analysis_data, trial = group), pfs, right_censored, probs = km_quant)
+      get_km_res(all_analysis_data, pfs, right_censored, by = group, probs = km_quant)
     ),
     tar_target(
       km_trial_os,
@@ -187,8 +187,7 @@ publication_targets <- list(
           os_censored = !death,
           interval_censored = 0L
         ) |>
-        rename(trial = group) |>
-        get_km_res(os_time, os_censored, probs = km_quant)
+        get_km_res(os_time, os_censored, by = group, probs = km_quant)
     ),
 
     # Covariates -----------------------------------------------------------------
@@ -684,7 +683,7 @@ publication_targets <- list(
         tibble(
           event_type   = c("right_censored", "uncensored"),
           event_cond   = c(expr(right_censored), expr(!right_censored)),
-          event_slicer = c(\(d, n) d, \(d, n) slice_sample(d, n = n))
+          event_slicer = c(\(d, n) slice_sample(d, n = n), \(d, n) slice_sample(d, n = n))
         ),
         names = "event_type",
 
@@ -695,7 +694,7 @@ publication_targets <- list(
             by = group,
             cond = event_cond,
             slicer = event_slicer,
-            sample_size = 40
+            sample_size = 10
           )
         ),
 
