@@ -919,6 +919,7 @@ get_km_res <- function(
   censored_sym <- rlang::ensym(censored_var)
 
   analysis_data |>
+    select(!any_of("trial")) |>
     rename(trial = {{ by }}) |>
     group_by(trial, ...) |>
     group_map(
