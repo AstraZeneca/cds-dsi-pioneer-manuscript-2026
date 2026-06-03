@@ -8,7 +8,74 @@ subtitle: "Population and patient-level posterior distributions"
 #| include: false
 
 source("_setup.R")
+rates_rvar    <- pub_tar_read("all_tumor_ssls_rates_rvar")
+noise_sd      <- pub_tar_read("all_tumor_ssls_noise_sd_rvar")
+patient_rates <- pub_tar_read("all_tumor_ssls_patient_rates_bpi")
+decrease_prop <- pub_tar_read("all_tumor_ssls_patient_decrease_prop_bpi")
+coef_data     <- pub_tar_read("all_tumor_ssls_coef")
 ```
 
-> **CRC results pending** — the `tumor_ssls_res_posterior_crc` fit is currently
-> running. This page will be updated once results are available.
+## Population-Level Rates {#sec-pop-rates}
+
+```{r}
+#| label: fig-pop-rates
+#| fig-cap: Population-level log growth and regression rates — prior vs posterior.
+
+rates_rvar |>
+  plot_prior_post_dens(.value, normalize = "groups") +
+  labs(x = "") +
+  facet_wrap(vars(.variable), scales = "free",
+             labeller = labeller(.variable = \(l) str_remove(l, "log_"))) +
+  NULL
+```
+
+## Measurement Noise {#sec-noise}
+
+```{r}
+#| label: fig-noise-sd
+#| fig-cap: Measurement noise SD (SLD observation error) — prior vs posterior.
+
+noise_sd |>
+  plot_prior_post_hist(normalize = "groups") +
+  labs(x = "Measurement SD") +
+  NULL
+```
+
+## Patient-Level Rate Distributions {#sec-patient-rates}
+
+```{r}
+#| label: fig-patient-rates
+#| fig-cap: Distribution of patient-level posterior growth and regression rates.
+
+patient_rates |>
+  filter(fit_type == "posterior") |>
+  plot_level_rates()
+```
+
+## Growth Fraction {#sec-growth-fraction}
+
+```{r}
+#| label: fig-decrease-prop
+#| fig-cap: Distribution of patient-level initial growth fraction (posterior).
+
+decrease_prop |>
+  filter(fit_type == "posterior") |>
+  plot_level_decrease_prop()
+```
+
+## Covariate Effects {#sec-covariate-effects}
+
+```{r}
+#| label: fig-covariate-effects
+#| fig-cap: Covariate coefficient posterior distributions (QR-space).
+
+coef_data |>
+  filter(fit_type == "posterior") |>
+  ggplot() +
+  stat_pointinterval(aes(xdist = .value, y = factor(n), color = .variable),
+                     .width = c(0.5, 0.9)) +
+  geom_vline(xintercept = 0, linetype = "dashed", alpha = 0.5) +
+  scale_color_discrete("Parameter", type = AZ_palette) +
+  labs(x = "Coefficient (QR space)", y = "Covariate index") +
+  NULL
+```
