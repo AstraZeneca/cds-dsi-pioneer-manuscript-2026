@@ -86,6 +86,10 @@ publication_targets <- list(
     format = "file"
   ),
 
+  # csv_slim.R is sourced at construction time (top of this file) so functions
+  # are available to all targets. This tracker detects file changes in tar_outdated()
+  # but does NOT auto-invalidate downstream targets — manually tar_invalidate()
+  # tumor_ssls_read_csv_files_crc if csv_slim.R logic changes.
   tar_target(
     csv_slim_file,
     "r/publication/csv_slim.R",
