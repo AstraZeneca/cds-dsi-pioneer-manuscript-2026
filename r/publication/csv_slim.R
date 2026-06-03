@@ -94,7 +94,9 @@ build_crc_keep_col_names <- function(input_csv) {
     "_sd_level_",
     "^(time_invariant|time_varying)_coef",
     "^(frac|init|tr)_.+_patient",
-    "patient_log_(growth|decrease)_rate",
+    # patient_log_(growth|decrease)_rate — 1D [patient]. Exclude _residual variants
+    # which are 2D [patient, time] and add 463k columns each; handled separately below.
+    "^patient_log_(growth|decrease)_rate$",
     "(spop|sample)(_target|_ms)?_(((quant_)?(pfs|os))|km_est|right_censored|(pfs|os)_n)",
     "(spop|sample)_target_(((un)?confirmed_response)|orr)",
     "(spop|sample)_(os|pfs)_(quant|km_est|n)",
@@ -102,9 +104,17 @@ build_crc_keep_col_names <- function(input_csv) {
     "(spop|sample)_(os|pfs)_quant_exceeds_max"
   )
 
+  # patient_log_(growth|decrease)_rate_residual is 2D [patient, time] — only keep
+  # timepoint 1 (used by get_tumor_ssls_level_param with time_index = 1).
+  residual_t1 <- all_cols[grepl(
+    "^patient_log_(growth|decrease)_rate_residual\\.([0-9]+)\\.1$",
+    all_cols
+  )]
+
   matched <- unique(c(
     all_cols[base_names %in% CRC_SLIM_KEEP_COLS],
-    purrr::map(patterns, \(p) all_cols[grepl(p, base_names)]) |> purrr::list_c()
+    purrr::map(patterns, \(p) all_cols[grepl(p, base_names)]) |> purrr::list_c(),
+    residual_t1
   ))
   matched
 }
