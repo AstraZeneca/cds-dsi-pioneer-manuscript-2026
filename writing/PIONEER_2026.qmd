@@ -9,6 +9,10 @@ author:
     affiliation: AstraZeneca, Oncology R&D, Data Science & AI
   - name: Antonia Bevan
     affiliation: AstraZeneca, Oncology R&D, Data Science & AI
+  - name: Sajan Khosla
+    affiliation: AstraZeneca, Oncology R&D, Data Science & AI
+  - name: Jessica Davies
+    affiliation: AstraZeneca, Oncology R&D, Data Science & AI
   - name: Paul Metcalfe
     affiliation: AstraZeneca, Oncology R&D, Data Science & AI
 date: "2026"
@@ -41,7 +45,7 @@ A substantial body of work has addressed this problem from different angles. The
 
 <!-- Joint methodology: latent variable + endogeneity -->
 
-The natural starting point for survival analysis is the Cox proportional-hazards model, fitted with treatment arm and baseline covariates. Extending it to incorporate a longitudinal biomarker like SLD requires the time-varying-covariate form. But naïve insertion of a patient-specific, noisily observed biomarker is biased: the biomarker is endogenous because it shares patient-level frailty with the survival outcome. The two-stage TGI workflow above suffers from the same problem in a different guise — the plugged-in summary statistics are functions of the same patient parameters that drive survival, and the second-stage model treats them as fixed inputs without propagating their uncertainty. The principled fix is a *joint longitudinal-survival* model: introduce the biomarker's underlying latent trajectory as a hidden patient-level variable, and let both the longitudinal observations and the survival hazard depend on it through shared patient-level parameters. The hazard then sees the latent trajectory rather than the noisy measurement, and the patient parameters are inferred from each patient's biomarker history and event history simultaneously — removing both the endogeneity bias and the uncertainty-propagation gap. The textbook treatment is @rizopoulos2012, with @hickey2016 reviewing extensions to multiple longitudinal outcomes and competing risks.
+The natural starting point for survival analysis is the Cox proportional-hazards model, fitted with treatment arm and baseline covariates. Extending it to incorporate a longitudinal biomarker like SLD requires the time-varying-covariate form. Doing so correctly is, however, non-trivial for two reasons. First, the observed SLD is a noisy measurement of the patient's true tumour trajectory; plugging in the observed values as a covariate attenuates the estimated SLD–hazard association in proportion to the measurement noise — a direct errors-in-variables problem. Second, a patient's unmeasured characteristics — intrinsic disease aggressiveness, treatment sensitivity, immune competence — jointly determine both their tumour dynamics and their risk of progression and death. Any model that omits this shared latent structure is misspecified: the SLD covariate absorbs variation that rightly belongs to the unmeasured individual, and the resulting coefficient is inconsistent. The two-stage TGI workflow compounds both problems — summary statistics derived from a first-stage kinetic fit are treated as fixed inputs in the survival stage, inheriting the measurement noise of the SLD data and discarding uncertainty about the kinetic parameters themselves. The principled fix is a *joint longitudinal-survival* model: introduce the biomarker's underlying latent trajectory as a shared patient-level latent variable, and let both the longitudinal observations and the survival hazard depend on it simultaneously. The hazard then conditions on the smooth, noise-free latent state; the shared patient parameters are informed by both the SLD record and the event history at once; and the misspecification from omitting unmeasured individual heterogeneity is eliminated by construction. The textbook treatment is @rizopoulos2012, with @hickey2016 reviewing extensions to multiple longitudinal outcomes and competing risks.
 
 <!-- TGI papers that adopt the joint-model architecture -->
 
