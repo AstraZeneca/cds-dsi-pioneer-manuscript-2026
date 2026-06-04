@@ -35,6 +35,17 @@ controller_lfo <- crew_controller_local(name = "lfo", workers = lfo_workers,
 lfo_groups <- Sys.getenv("LFO_GROUPS", 24)
 lfo_save_warmup <- Sys.getenv("LFO_SAVE_WARMUP", "false") == "true"
 
+# GQ-only rerun: when LFO_GQ_ONLY=true, the LFO target re-executes only the
+# generated-quantities block against the prior run's sample draws (no warmup /
+# sampling). Source draws are read from LFO_GQ_SOURCE_PATH (defaults to the
+# current store's output path). Used to cheaply refresh GQ output after a
+# GQ-block code change (e.g. the target-trial OOS filter).
+lfo_gq_only <- Sys.getenv("LFO_GQ_ONLY", "false") == "true"
+lfo_gq_source_path <- {
+  p <- Sys.getenv("LFO_GQ_SOURCE_PATH", "")
+  if (nzchar(p)) p else NULL
+}
+
 
 tar_option_set(
   packages = c(
@@ -847,7 +858,9 @@ publication_targets <- list(
       initializer_factory = function(stan_data, save_dir, run_id) {
         source(initializers_fixed_file)
         create_tumor_ssls_initializer_fixed(stan_data, save_dir, run_id)
-      }
+      },
+      gq_only = lfo_gq_only,
+      gq_source_path = lfo_gq_source_path
     ),
     resources = tar_resources(crew = tar_resources_crew(controller = "lfo")),
     pattern = map(grouped_lfo_cutoffs)

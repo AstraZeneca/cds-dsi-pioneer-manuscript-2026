@@ -219,6 +219,37 @@ get_lfo_cutoff_days <- function(
   )
 }
 
+#' Locate the most recent sampling-run CSVs in an LFO fit directory
+#'
+#' Returns the 4 chain CSVs belonging to the latest `method = sample` run in
+#' `fit_dir`, excluding metric/profile sidecar files and any `generate_quantities`
+#' output. Used by the GQ-only LFO path to find valid `fitted_params` draws.
+#'
+#' @param fit_dir Directory containing one or more LFO sampling runs.
+#' @return Character vector of CSV paths (one per chain) for the newest run,
+#'   or `character(0)` if none are found.
+lfo_latest_sample_csvs <- function(fit_dir) {
+  if (!fs::dir_exists(fit_dir)) {
+    return(character(0))
+  }
+
+  csvs <- fs::dir_ls(fit_dir, glob = "*.csv", type = "file")
+  # Drop metric / profile sidecar files; keep only the per-chain sample CSVs,
+  # whose names embed a 12-digit run timestamp: <prefix>-<YYYYMMDDHHMM>-<chain>-<hash>.csv
+  csvs <- csvs |>
+    str_subset("_metric|profile", negate = TRUE) |>
+    str_subset(r"{-\d{12}-\d+-[^-/]+\.csv$}")
+
+  if (length(csvs) == 0) {
+    return(character(0))
+  }
+
+  # Pick the newest run by its embedded timestamp, then return its chain files.
+  run_ids <- str_extract(fs::path_file(csvs), r"{\d{12}}")
+  latest <- max(run_ids)
+  sort(csvs[run_ids == latest])
+}
+
 #' Perform Leave-Future-Out (LFO) Cross-Validation
 #'
 #' This function implements Leave-Future-Out cross-validation for time series or longitudinal data,
@@ -274,6 +305,8 @@ lfo <- function(
   adapt_delta = 0.9,
   future_window = 1,
   initializer_factory = NULL,
+  gq_only = FALSE,
+  gq_source_path = NULL,
   ...
 ) {
   if (verbose) {
@@ -313,28 +346,68 @@ lfo <- function(
     max_forecast_horizon <- n_cutoffs
   }
 
-  fit <- stan_data |>
+  lfo_stan_data <- stan_data |>
     list_assign(
       cutoff_calendar_day = as.array(remaining_all_cutoffs$cutoff_calendar_day),
       n_cutoffs = n_cutoffs,
       max_n_rows = max_n_rows,
       max_forecast_horizon = max_forecast_horizon,
       lfo_eval_trial = stan_data$lfo_eval_trial %||% 1L
-    ) %>%
-    sample_and_save(
-      exe_file,
-      .,
-      iter_warmup = iter_warmup,
-      iter_sampling = iter_sampling,
-      save_warmup = save_warmup,
-      parallel_chains = parallel_chains,
-      adapt_delta = adapt_delta,
-      init = initializer,
-      output_dir = fit_output_dir,
-      save_profiles = FALSE,
-      timestamp = output_timestamp,
-      ...
     )
+
+  if (gq_only) {
+    # GQ-only rerun: re-execute the (updated) generated quantities block against
+    # the parameter draws from a prior sampling run, skipping warmup + sampling.
+    # The parameters block is unchanged, so the old sample CSVs are valid
+    # fitted_params. Source CSVs default to this branch's own fit dir, but a
+    # different store can be supplied via gq_source_path (e.g. reuse a prior
+    # run's draws with a freshly compiled binary).
+    source_dir <- file.path(
+      gq_source_path %||% output_path,
+      "fit",
+      str_glue("{basename}-{refit_n}")
+    )
+    source_csvs <- lfo_latest_sample_csvs(source_dir)
+    if (length(source_csvs) == 0) {
+      stop("gq_only: no sample CSVs found under '", source_dir, "'.")
+    }
+
+    prior_fit <- cmdstanr::as_cmdstan_fit(
+      source_csvs,
+      check_diagnostics = FALSE
+    )
+
+    # Write GQ output to a separate gq/ tree so it never collides with the
+    # source sample CSVs (which would confuse lfo_latest_sample_csvs on reruns).
+    gq_output_dir <- file.path(
+      output_path,
+      "gq",
+      str_glue("{basename}-{refit_n}")
+    )
+    fit <- generate_quantities_from_fit(
+      exe_file,
+      prior_fit,
+      lfo_stan_data,
+      output_dir = gq_output_dir,
+      parallel_chains = parallel_chains
+    )
+  } else {
+    fit <- lfo_stan_data %>%
+      sample_and_save(
+        exe_file,
+        .,
+        iter_warmup = iter_warmup,
+        iter_sampling = iter_sampling,
+        save_warmup = save_warmup,
+        parallel_chains = parallel_chains,
+        adapt_delta = adapt_delta,
+        init = initializer,
+        output_dir = fit_output_dir,
+        save_profiles = FALSE,
+        timestamp = output_timestamp,
+        ...
+      )
+  }
 
   # Select only the needed log_lik variables for memory efficiency
   draws <- select_draws(fit, matches("^patient.*log_lik"))
@@ -403,6 +476,8 @@ lfo <- function(
       adapt_delta,
       future_window,
       initializer_factory = initializer_factory,
+      gq_only = gq_only,
+      gq_source_path = gq_source_path,
       ...
     )
 
