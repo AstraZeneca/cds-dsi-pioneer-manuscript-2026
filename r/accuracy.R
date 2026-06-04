@@ -413,7 +413,7 @@ lfo <- function(
   draws <- select_draws(fit, matches("^patient.*log_lik"))
 
   psis_results <- draws |>
-    lfo_log_lik(future_window = future_window) |>
+    lfo_log_lik(future_window = future_window, exact = exact) |>
     mutate(across(c(n, m), \(x) x + refit_n - 1)) |>
     left_join(
       select(remaining_all_cutoffs, n, cutoff_date, cutoff_calendar_day),
@@ -505,13 +505,13 @@ log_mean_exp <- function(x) {
   log_sum_exp(x) - log(length(x))
 }
 
-lfo_log_lik <- function(res, max_n = Inf, future_window = 1) {
+lfo_log_lik <- function(res, max_n = Inf, future_window = 1, exact = FALSE) {
   res |>
     spread_rvars(patient_log_lik[n, m, i]) |>
     # Convert m from relative (array index) to absolute (cutoff index)
     # Stan stores arrays as [n, m_rel] where m_rel = m_abs - n + 1
     mutate(m = n + m - 1) |>
-    lfo_log_lik_rvar(max_n, future_window)
+    lfo_log_lik_rvar(max_n, future_window, exact = exact)
 }
 
 psis_resample <- function(l, w, recalc_full = FALSE) {
@@ -558,8 +558,9 @@ psis_resample <- function(l, w, recalc_full = FALSE) {
 #'
 #' This function is crucial for assessing model performance in a time-series context.
 #'
-lfo_log_lik_rvar <- function(log_lik_rvar, max_n = Inf, future_window = 1) {
-  log_lik_rvar |>
+lfo_log_lik_rvar <- function(log_lik_rvar, max_n = Inf, future_window = 1,
+                             exact = FALSE) {
+  base <- log_lik_rvar |>
     filter(m >= n) |>
     group_by(n, m) |>
     summarize(
@@ -593,51 +594,81 @@ lfo_log_lik_rvar <- function(log_lik_rvar, max_n = Inf, future_window = 1) {
           })
         },
         .names = "mean_{.col}"
-      ),
-      across(
-        matches("^patient(_.+)?_log_lik_log_ratio$"),
-        \(l) map(l, \(ln) suppressWarnings(loo::psis(rowSums(ln)))),
-        .names = "psis_{.col}"
-      ),
-      across(
-        starts_with("psis"),
-        lst(k = \(po) map_dbl(po, loo::pareto_k_values), lwt = \(po) {
-          map(po, \(pon) weights(pon, normalize = TRUE)[, 1])
-        }),
-        .names = "{.fn}_{.col}"
-      ),
-      across(matches("^(psis|lwt|k)"), lag),
-    ) |>
-    rename_with(\(n) {
-      str_replace_all(
-        n,
-        c(
-          r"{log_lik_log_ratio}" = "log_ratio",
-          r"{(k|lwt)_psis_patient(_.+)?_log_ratio}" = r"{\1\2}",
-          r"{^psis_patient(_.+)?_log_ratio}" = r"{psis\1}"
+      )
+    )
+
+  if (exact) {
+    # Exact LFO: PSIS is dead work — its outputs (psis_/k_/lwt_) are lag-ed to
+    # NA and clean_lfo_results always takes the is.na(k) branch, using the exact
+    # E_patient_* columns rather than the approx_E_patient_* columns. Skip the
+    # loo::psis() / weights() / resample calls entirely (a single NaN in the
+    # log-ratio input would otherwise hard-error and abort the whole lfo()
+    # recursion). We still materialise k = NA and approx_E_* placeholder columns
+    # so the downstream if_else() in clean_lfo_results resolves cleanly; the
+    # placeholders mirror the exact mean_* columns and are never selected.
+    base |>
+      mutate(
+        k = NA_real_,
+        across(
+          matches("^mean_patient(_.+)?_log_lik(_w)?$"),
+          \(x) x,
+          .names = "approx_{.col}"
+        ),
+        across(
+          matches("^(approx_)?mean"),
+          \(m) map_dbl(m, \(mn) if (!is_null(mn)) sum(mn) else NA_real_),
+          .names = "E_{.col}"
         )
-      )
-    }) |>
-    mutate(
-      dplyover::across2(
-        matches("^patient(_.+)?_log_lik$"),
-        matches("^lwt(_.+)?"),
-        psis_resample,
-        .names = "approx_mean_{xcol}"
-      ),
-      dplyover::across2(
-        matches("^patient(_.+)?_log_lik_w$"),
-        matches("^lwt(_+)?"),
-        psis_resample,
-        .names = "approx_mean_{xcol}"
-      ),
-      across(
-        matches("^(approx_)?mean"),
-        \(m) map_dbl(m, \(mn) if (!is_null(mn)) sum(mn) else NA_real_),
-        .names = "E_{.col}"
-      )
-    ) |>
-    rename_with(\(n) str_replace(n, r"{E_(approx_)?mean}", r"{\1E}"))
+      ) |>
+      rename_with(\(n) str_replace(n, r"{E_(approx_)?mean}", r"{\1E}"))
+  } else {
+    base |>
+      mutate(
+        across(
+          matches("^patient(_.+)?_log_lik_log_ratio$"),
+          \(l) map(l, \(ln) suppressWarnings(loo::psis(rowSums(ln)))),
+          .names = "psis_{.col}"
+        ),
+        across(
+          starts_with("psis"),
+          lst(k = \(po) map_dbl(po, loo::pareto_k_values), lwt = \(po) {
+            map(po, \(pon) weights(pon, normalize = TRUE)[, 1])
+          }),
+          .names = "{.fn}_{.col}"
+        ),
+        across(matches("^(psis|lwt|k)"), lag),
+      ) |>
+      rename_with(\(n) {
+        str_replace_all(
+          n,
+          c(
+            r"{log_lik_log_ratio}" = "log_ratio",
+            r"{(k|lwt)_psis_patient(_.+)?_log_ratio}" = r"{\1\2}",
+            r"{^psis_patient(_.+)?_log_ratio}" = r"{psis\1}"
+          )
+        )
+      }) |>
+      mutate(
+        dplyover::across2(
+          matches("^patient(_.+)?_log_lik$"),
+          matches("^lwt(_.+)?"),
+          psis_resample,
+          .names = "approx_mean_{xcol}"
+        ),
+        dplyover::across2(
+          matches("^patient(_.+)?_log_lik_w$"),
+          matches("^lwt(_+)?"),
+          psis_resample,
+          .names = "approx_mean_{xcol}"
+        ),
+        across(
+          matches("^(approx_)?mean"),
+          \(m) map_dbl(m, \(mn) if (!is_null(mn)) sum(mn) else NA_real_),
+          .names = "E_{.col}"
+        )
+      ) |>
+      rename_with(\(n) str_replace(n, r"{E_(approx_)?mean}", r"{\1E}"))
+  }
 }
 
 redo_lfo_results <- function(lfo_res, lean = FALSE) {

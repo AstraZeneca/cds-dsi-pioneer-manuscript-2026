@@ -12,6 +12,19 @@ array[n_patients] int cutoff_last_visit_idx;
 cutoff_calendar_day[1], calendar_day, t_patient_visits, t_patient_visits_day, patient_visit_pos
 );
 
+// C-EXT: Historical (non-eval-trial) patients are prior knowledge and must train
+// on their FULL uncensored visit history. cutoff_visits() applied the global calendar
+// cutoff to them (all have calendar_day==1 → study-day==cutoff), wrongly truncating them.
+// Override the two censoring fields so downstream compact arrays treat them as fully observed.
+for (i in 1:n_patients) {
+  if (patient_trial[i] != lfo_eval_trial) {
+    int visit_start, visit_end;
+    (visit_start, visit_end) = get_pos(patient_visit_pos, i);
+    cutoff_last_visit_idx[i]  = visit_end;                 // last visit index (full history)
+    cutoff_last_visit_week[i] = t_patient_visits[visit_end]; // last visit week (full history)
+  }
+}
+
 // This is an array of patient IDs (sorted by last visit calendar day)
 array[n_patients] int<lower = 1, upper = n_patients> last_visit_calendar_day_sort_idx = sort_indices_asc(last_visit_calendar_day);
 
