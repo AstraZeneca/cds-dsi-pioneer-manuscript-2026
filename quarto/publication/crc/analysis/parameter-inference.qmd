@@ -8,13 +8,28 @@ subtitle: "Population and patient-level posterior distributions"
 #| include: false
 
 source("_setup.R")
-rates_rvar    <- pub_tar_read("all_tumor_ssls_rates_rvar")
-noise_sd      <- pub_tar_read("all_tumor_ssls_noise_sd_rvar")
-patient_rates <- pub_tar_read("all_tumor_ssls_patient_rates_bpi")
-decrease_prop <- pub_tar_read("all_tumor_ssls_patient_decrease_prop_bpi")
-coef_names    <- colnames(pub_tar_read("covar_design_matrix"))
-coef_data     <- pub_tar_read("all_tumor_ssls_coef") |>
+noise_sd   <- pub_tar_read("all_tumor_ssls_noise_sd_rvar")
+coef_names <- colnames(pub_tar_read("covar_design_matrix"))
+coef_data  <- pub_tar_read("all_tumor_ssls_coef") |>
   dplyr::mutate(covariate = coef_names[n])
+
+# Rebuild rates_rvar fresh from draws_pop, using only scalar pop params.
+# Cannot use the pre-built all_tumor_ssls_rates_rvar target because
+# tr_sd_level_intercept[1,2] is indexed, forcing the whole .value column to a
+# list-of-rvars which ggdist cannot render.
+.scalar_vars <- c("tr_loc_pop", "frac_logit_loc_pop",
+                  "pop_log_decrease_rate", "pop_log_growth_rate")
+.make_rates <- function(draws, fit_type) {
+  draws |>
+    posterior::subset_draws(variable = .scalar_vars) |>
+    tidybayes::gather_rvars(tr_loc_pop, frac_logit_loc_pop,
+                            pop_log_decrease_rate, pop_log_growth_rate) |>
+    dplyr::mutate(fit_type = fit_type)
+}
+rates_rvar <- dplyr::bind_rows(
+  .make_rates(pub_tar_read("tumor_ssls_draws_pop_prior"),     "prior"),
+  .make_rates(pub_tar_read("tumor_ssls_draws_pop_posterior"), "posterior")
+)
 ```
 
 ## Population-Level Rates {#sec-pop-rates}
@@ -41,28 +56,6 @@ noise_sd |>
   plot_prior_post_hist(normalize = "groups") +
   labs(x = "Measurement SD") +
   NULL
-```
-
-## Patient-Level Rate Distributions {#sec-patient-rates}
-
-```{r}
-#| label: fig-patient-rates
-#| fig-cap: Distribution of patient-level posterior growth and regression rates.
-
-patient_rates |>
-  filter(fit_type == "posterior") |>
-  plot_level_rates()
-```
-
-## Growth Fraction {#sec-growth-fraction}
-
-```{r}
-#| label: fig-decrease-prop
-#| fig-cap: Distribution of patient-level initial growth fraction (posterior).
-
-decrease_prop |>
-  filter(fit_type == "posterior") |>
-  plot_level_decrease_prop()
 ```
 
 ## Covariate Effects {#sec-covariate-effects}
