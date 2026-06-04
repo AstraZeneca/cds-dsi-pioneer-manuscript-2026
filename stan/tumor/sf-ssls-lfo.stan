@@ -274,6 +274,20 @@ generated quantities {
   //   - max_forecast_horizon controls the forecast window size (2 for exact LFO, n_cutoffs for PSIS)
   //   - m_rel is the relative column index for array storage (1, 2, ...)
   //   - m_abs is the absolute cutoff index for data access (n, n+1, ...)
+  // H3: Zero-initialize ALL array cells over the full [max_n_rows, max_forecast_horizon]
+  // range BEFORE the conditional fill. The fill loop below only writes cells with
+  // m_abs in [n, min(n + max_forecast_horizon - 1, n_cutoffs)]; at the global last
+  // cutoff (n_cutoffs == 1) only [.,1] is reached, leaving [.,2] uninitialized (NaN).
+  // Pre-zeroing every cell guarantees unreached cells are zeros, not NaN.
+  for (n in 1:max_n_rows) {
+    for (m_rel in 1:max_forecast_horizon) {
+      patient_log_lik_tumor[n, m_rel] = zeros_vector(n_all_testing_patients);
+      patient_log_lik_oe[n, m_rel] = zeros_vector(n_all_testing_patients);
+      patient_log_lik[n, m_rel] = zeros_vector(n_all_testing_patients);
+      oos_recist_confusion_matrix[n, m_rel] = rep_matrix(0, PD, PD);
+    }
+  }
+
   for (n in 1:max_n_rows) {
     int n_curr_patients = n_patients - testing_patient_idx[n] + 1; // How many patients after the current patient index
     array[n_curr_patients] int curr_patients = last_visit_calendar_day_sort_idx[testing_patient_idx[n]:]; // Who are these patients
@@ -283,11 +297,6 @@ generated quantities {
     for (m_abs in n:m_end) {
       // m_rel is the relative column index for array storage (1-based: 1, 2, ...)
       int m_rel = m_abs - n + 1;
-
-      patient_log_lik_tumor[n, m_rel] = zeros_vector(n_all_testing_patients);
-      patient_log_lik_oe[n, m_rel] = zeros_vector(n_all_testing_patients);
-      patient_log_lik[n, m_rel] = zeros_vector(n_all_testing_patients);
-      oos_recist_confusion_matrix[n, m_rel] = rep_matrix(0, PD, PD);
 
       for (i_idx in 1:n_curr_patients) {
         // Note: i is the original patient ID (1-based index from input data), not a sort position.
@@ -328,8 +337,13 @@ generated quantities {
             int test_end_week = t_patient_visits[end_idx];
 
             // Use ACTUAL observed multistate PFS (not cutoff-censored)
-            // This ensures proper OOS evaluation against real outcomes
-            array[1] int obs_ms_time = {ms_time_01[i]};
+            // This ensures proper OOS evaluation against real outcomes.
+            // calc_pch_loglik expects last-surviving-week; mirror the fit-time
+            // convention (calc_ms_single_transition_loglik): for an observed
+            // 0→1 event, last_surv_week = detection_week - 1 (survived up to the
+            // week before detection); for a censored patient, last_surv_week =
+            // detection_week. Passing ms_time_01[i] directly was an off-by-one.
+            array[1] int obs_ms_time = {ms_censored_01[i] ? ms_time_01[i] : ms_time_01[i] - 1};
             array[1] int obs_ms_censored = {ms_censored_01[i]};
             array[1] int test_start = {test_start_week};
             array[1] int test_end = {test_end_week};

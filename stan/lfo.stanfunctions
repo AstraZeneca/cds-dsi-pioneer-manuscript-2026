@@ -1,8 +1,11 @@
 /**
  * Determine which patient visits occurred before a given calendar day cutoff
  *
- * IMPORTANT: The cutoff is defined as the first day/week that is out-of-sample and NOT trained on.
- * All data on or after the cutoff is excluded from training and considered for testing/forecasting only.
+ * IMPORTANT: The boundary convention is inclusive on the training side. The last visit on or
+ * before the cutoff day is the final training visit; the first visit strictly after the cutoff
+ * is the first testing visit. There is no overlap and no leakage: a visit ON the cutoff day is
+ * trained on (<=) and is excluded from testing, while a visit strictly after the cutoff is
+ * testing-only.
  *
  * This version works with patient visits rather than individual tumor measurements.
  * It finds the last visit where SLD was measured across all tumors before the cutoff.
