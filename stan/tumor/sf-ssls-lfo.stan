@@ -276,7 +276,6 @@ generated quantities {
   //   - m_abs is the absolute cutoff index for data access (n, n+1, ...)
   for (n in 1:max_n_rows) {
     int n_curr_patients = n_patients - testing_patient_idx[n] + 1; // How many patients after the current patient index
-    int curr_first_testing_patient_idx = n_all_testing_patients - n_curr_patients + 1;
     array[n_curr_patients] int curr_patients = last_visit_calendar_day_sort_idx[testing_patient_idx[n]:]; // Who are these patients
 
     // Only compute for forecast window: m_abs in [n, min(n + max_forecast_horizon - 1, n_cutoffs)]
@@ -301,17 +300,16 @@ generated quantities {
         int start_idx = testing_start_idx[n, i];
         int end_idx = m_abs < n_cutoffs ? testing_end_idx[n, m_abs + 1, i] : visit_end;
 
-        // Only evaluate patients who were actually observed at/before the cutoff
-        // (cutoff_observed_mask[i]) AND have allocated OOS testing visits
-        // (n_patient_testing_visits[i] > 0). A patient whose only visits fall after
-        // the cutoff has n_patient_testing_visits == 0 and an empty oos_recist slice
-        // (oos_recist_end == oos_recist_start - 1); admitting them here overruns that
-        // slice and trips the assert_greater_than_or_equal below. This matches the
-        // guard on the prediction-write block and the n_patient_testing_visits
-        // allocation in _lfo_transformed_data.stan.
+        // Only evaluate patients who:
+        // 1) Have post-cutoff visits (start_idx > 0 && end_idx >= start_idx)
+        // 2) Were observed before/at the cutoff (cutoff_observed_mask[i])
+        // 3) Have allocated OOS testing visits (n_patient_testing_visits[i] > 0)
+        // 4) Belong to the eval trial (lfo_testing_patient_idx[i] > 0)
+        // Non-eval-trial patients are excluded from the log-lik output vectors.
         if (start_idx > 0 && end_idx >= start_idx && calendar_day[i] <= cutoff_calendar_day[n]
-            && cutoff_observed_mask[i] && n_patient_testing_visits[i] > 0) {
-          int patient_idx = curr_first_testing_patient_idx + i_idx - 1;
+            && cutoff_observed_mask[i] && n_patient_testing_visits[i] > 0
+            && lfo_testing_patient_idx[i] > 0) {
+          int patient_idx = lfo_testing_patient_idx[i];
 
           // Component 1: Tumor model log-likelihood using observed SLD
           real tumor_ll = sf_log_space_obs_lpdf(

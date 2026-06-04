@@ -393,7 +393,7 @@ publication_targets <- list(
       decomposed$ms_level_intercept_corr_group[MS_SLOT_01, patient_lv] <- 1L
       decomposed$ms_level_intercept_corr_group[MS_SLOT_03, patient_lv] <- 1L
 
-      c(assembled, decomposed)
+      c(assembled, decomposed, list(lfo_eval_trial = 1L))
     }
   ),
 
