@@ -83,7 +83,8 @@ coef_data |>
   filter(fit_type == "posterior") |>
   ggplot() +
   stat_pointinterval(aes(xdist = .value, y = covariate, color = .variable),
-                     .width = c(0.5, 0.9)) +
+                     .width = c(0.5, 0.9),
+                     position = position_dodge(width = 0.6)) +
   geom_vline(xintercept = 0, linetype = "dashed", alpha = 0.5) +
   scale_color_discrete("Parameter", type = AZ_palette) +
   labs(x = "Coefficient (QR space)", y = "") +
