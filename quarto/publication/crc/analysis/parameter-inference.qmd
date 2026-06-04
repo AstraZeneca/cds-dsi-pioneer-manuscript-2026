@@ -10,8 +10,23 @@ subtitle: "Population and patient-level posterior distributions"
 source("_setup.R")
 noise_sd   <- pub_tar_read("all_tumor_ssls_noise_sd_rvar")
 coef_names <- colnames(pub_tar_read("covar_design_matrix"))
-coef_data  <- pub_tar_read("all_tumor_ssls_coef") |>
-  dplyr::mutate(covariate = coef_names[n])
+
+# Build coef data inline — the pre-built target only has _01 variants but CRC
+# also has _02, _12, _03 transitions. as_draws_rvars() is fast on draws_array.
+.make_coef <- function(draws, fit_type) {
+  pat     <- "^(frac_coef_qr_pop|init_coef_qr_pop|(time_invariant|time_varying)_coef_qr)"
+  coef_rv <- posterior::as_draws_rvars(draws)
+  coef_rv <- coef_rv[grepl(pat, names(coef_rv))]
+  purrr::imap_dfr(coef_rv, \(v, nm) {
+    tibble::tibble(.variable = nm, n = seq_along(v), .value = v,
+                   covariate = coef_names[n], fit_type = fit_type)
+  })
+}
+
+coef_data <- dplyr::bind_rows(
+  .make_coef(pub_tar_read("tumor_ssls_draws_pop_prior"),     "prior"),
+  .make_coef(pub_tar_read("tumor_ssls_draws_pop_posterior"), "posterior")
+)
 
 # Rebuild rates_rvar fresh from draws_pop, using only scalar pop params.
 # Cannot use the pre-built all_tumor_ssls_rates_rvar target because

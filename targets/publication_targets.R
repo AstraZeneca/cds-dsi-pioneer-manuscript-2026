@@ -772,15 +772,15 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_coef,
         if (base_tumor_ssls_stan_data$n_covar > 0) {
-          tumor_ssls_draws_pop |>
-            posterior::subset_draws(variable = "^(frac|init)_coef_qr_pop|^(time_invariant|time_varying)_coef") |>
-            gather_rvars(
-              frac_coef_qr_pop[n],
-              init_coef_qr_pop[n],
-              time_invariant_coef_qr_01[n],
-              time_varying_coef_01[n]
-            ) |>
-            mutate(fit_type = type, .exp_value = exp(.value))
+          # Use as_draws_rvars (fast) to get all coef variants including
+          # _02, _12, _03 transitions that vary by model configuration.
+          pat     <- "^(frac_coef_qr_pop|init_coef_qr_pop|(time_invariant|time_varying)_coef_qr)"
+          coef_rv <- posterior::as_draws_rvars(tumor_ssls_draws_pop)
+          coef_rv <- coef_rv[grepl(pat, names(coef_rv))]
+          purrr::imap_dfr(coef_rv, \(v, nm) {
+            tibble::tibble(.variable = nm, n = seq_along(v), .value = v)
+          }) |>
+            dplyr::mutate(fit_type = type, .exp_value = exp(.value))
         }
       )
     ),
