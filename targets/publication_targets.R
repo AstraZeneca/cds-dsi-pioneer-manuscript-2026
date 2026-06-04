@@ -211,6 +211,17 @@ publication_targets <- list(
 
   tar_target(
     all_stan_data,
+    # Burden-only hazard bridge experiment: override n_time_varying_covar from 3
+    # to 1, keeping only standardised burden and dropping the log-decrease and
+    # log-growth rate covariates from every multistate transition. In the main
+    # fit the 0->1 growth-rate coefficient is strongly identified but negative
+    # (-0.248) -- a collinearity sign-flip against B(t) (burden is a deterministic
+    # function of the rates), not biology -- which partly cancels the positive
+    # burden term and mutes the slow-progressor signal in lambda_01, contributing
+    # to the spop PFS KM pessimism. The decrease/growth coefs on 0->2 and 0->3 are
+    # prior-like (unidentified off sparse events), so dropping them there is free.
+    # Stan covariate builders guard rate features on n_time_varying_covar >= 2/3,
+    # so 1L cleanly removes them with no Stan edits.
     prepare_tumor_stan_data(
       all_analysis_data,
       covar_design_matrix,
@@ -218,7 +229,8 @@ publication_targets <- list(
       km_quant,
       extend_max_all_t = 200L,
       forecast_observation_interval = 6L
-    ),
+    ) |>
+      list_assign(n_time_varying_covar = 1L),
     error = "stop"
   ),
 
