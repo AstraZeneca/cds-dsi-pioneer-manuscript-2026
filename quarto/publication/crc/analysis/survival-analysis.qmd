@@ -71,3 +71,40 @@ km_data |>
 ```
 
 :::
+
+## Sanofi EFC5505 Model-Observed Discrepancy {#sec-sanofi-note}
+
+::: {.callout-note}
+## Why the model under-predicts PFS in the Sanofi control arm
+
+The Sanofi EFC5505 trial (xaliproden vs placebo in mCRC) shows a substantial gap between
+the observed KM (median ~16 months) and the model's posterior prediction (~10 months). This
+is not a model failure — it reflects a structural PFS ascertainment bias in that trial's design.
+
+**The mechanism:**
+
+1. Patients discontinue oxaliplatin early (due to neuropathy — EFC5505 is a neuroprotection
+   trial, so early chemo stops are driven by PSN toxicity, not progression).
+2. Tumour scans continue every 8 weeks but only up to month 13.
+3. After month 13, no further scans are performed. Patients without documented progression
+   are censored at their last scan date.
+4. Patients who die later (e.g. month 15–18) have their deaths captured for OS (survival
+   follow-up continues every 3 months indefinitely after PD), but not for PFS — if no scan
+   documented progression before the 13-month cap, the PFS event is never recorded.
+
+**Why this disproportionately affects the control arm:**
+
+The xaliproden arm was designed to keep patients on oxaliplatin longer (less neuropathy →
+more treatment cycles → more scans → more chances to document progression before the cap).
+The placebo arm experienced more early oxaliplatin discontinuation, fewer total scans before
+the 13-month ceiling, and more patients hitting that ceiling without documented progression.
+Those patients are censored for PFS even if they die shortly after.
+
+This creates **informative censoring** in the control arm: patients sick enough to die at
+months 15–18 appear as PFS-censored at month 12–13 because no scan caught progression in
+the narrowing assessment window. The model, which infers PFS from tumour dynamics without
+knowledge of the scan-schedule truncation, correctly predicts a shorter true PFS — the
+inflated observed KM reflects ascertainment artefact rather than genuine long-term control.
+:::
+
+
