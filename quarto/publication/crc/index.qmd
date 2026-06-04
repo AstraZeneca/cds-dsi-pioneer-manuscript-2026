@@ -73,5 +73,7 @@ Individual patient tumor trajectories and RECIST predictions.
 ::: {.column-page}
 ## About This Analysis
 
-This website presents CRC results from the publication pipeline running the SF-SSM Stan model. Results will appear here once the CRC fit (`tumor_ssls_res_posterior_crc`) completes.
+This website presents CRC results from the publication pipeline running the SF-SSM Stan model.
+
+**Authors:** Karim Naguib, Roger Berché, Antonia Bevan, Sajan Khosla, Jessica Davies, Paul Metcalfe (AstraZeneca)
 :::
