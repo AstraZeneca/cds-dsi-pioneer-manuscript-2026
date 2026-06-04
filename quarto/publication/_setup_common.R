@@ -15,22 +15,21 @@ pub_tar_read <- function(name, store = pub_store) {
   .repair_rvar_dims(obj)
 }
 
-# qs2 serialisation corrupts rvar dim during deserialisation: either drops it
-# (length=0) or produces a spurious trailing dimension (length > nrow). Repair
-# by reconstructing the rvar from its draws matrix, which is always correct.
+# qs2 drops the dim attribute on rvar wrappers during deserialisation (length=0).
+# Repair by reconstructing from the draws matrix, which is always correct.
 .repair_rvar_dims <- function(obj) {
   if (!is.data.frame(obj)) return(obj)
   rvar_cols <- which(vapply(obj, inherits, logical(1), "rvar"))
   for (j in rvar_cols) {
     rv <- obj[[j]]
-    if (length(rv) != nrow(obj)) {
+    if (length(rv) == 0L) {
       dm <- posterior::draws_of(rv)
-      n  <- nrow(obj)
-      if (length(dm) > 0L && ncol(dm) >= n) {
+      n  <- ncol(dm)
+      if (n > 0L) {
         ndraws <- nrow(dm)
         nch    <- posterior::nchains(rv)
         obj[[j]] <- posterior::rvar(
-          array(dm[, seq_len(n)], dim = c(ndraws, n)),
+          array(dm, dim = c(ndraws, n)),
           nchains = nch
         )
       }
