@@ -633,20 +633,26 @@ publication_targets <- list(
 
       tar_target(
         tumor_ssls_rates_rvar,
-        gather_rvars(
-          tumor_ssls_draws_pop,
-          tr_loc_pop,
-          frac_logit_loc_pop,
-          tr_sd_level_intercept,
-          pop_log_decrease_rate,
-          pop_log_growth_rate
-        ) |>
+        tumor_ssls_draws_pop |>
+          posterior::subset_draws(variable = c(
+            "tr_loc_pop", "frac_logit_loc_pop", "tr_sd_level_intercept",
+            "pop_log_decrease_rate", "pop_log_growth_rate"
+          )) |>
+          gather_rvars(
+            tr_loc_pop,
+            frac_logit_loc_pop,
+            tr_sd_level_intercept,
+            pop_log_decrease_rate,
+            pop_log_growth_rate
+          ) |>
           mutate(.value_exp = exp(.value), fit_type = type)
       ),
 
       tar_target(
         tumor_ssls_noise_sd_rvar,
-        gather_rvars(tumor_ssls_draws_pop, measure_sd_sld) |>
+        tumor_ssls_draws_pop |>
+          posterior::subset_draws(variable = "measure_sd_sld") |>
+          gather_rvars(measure_sd_sld) |>
           mutate(fit_type = type)
       ),
 
@@ -766,13 +772,14 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_coef,
         if (base_tumor_ssls_stan_data$n_covar > 0) {
-          gather_rvars(
-            tumor_ssls_draws_pop,
-            frac_coef_qr_pop[n],
-            init_coef_qr_pop[n],
-            time_invariant_coef_qr_01[n],
-            time_varying_coef_01[n]
-          ) |>
+          tumor_ssls_draws_pop |>
+            posterior::subset_draws(variable = "^(frac|init)_coef_qr_pop|^(time_invariant|time_varying)_coef") |>
+            gather_rvars(
+              frac_coef_qr_pop[n],
+              init_coef_qr_pop[n],
+              time_invariant_coef_qr_01[n],
+              time_varying_coef_01[n]
+            ) |>
             mutate(fit_type = type, .exp_value = exp(.value))
         }
       )
