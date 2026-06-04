@@ -12,7 +12,9 @@ rates_rvar    <- pub_tar_read("all_tumor_ssls_rates_rvar")
 noise_sd      <- pub_tar_read("all_tumor_ssls_noise_sd_rvar")
 patient_rates <- pub_tar_read("all_tumor_ssls_patient_rates_bpi")
 decrease_prop <- pub_tar_read("all_tumor_ssls_patient_decrease_prop_bpi")
-coef_data     <- pub_tar_read("all_tumor_ssls_coef")
+coef_names    <- colnames(pub_tar_read("covar_design_matrix"))
+coef_data     <- pub_tar_read("all_tumor_ssls_coef") |>
+  dplyr::mutate(covariate = coef_names[n])
 ```
 
 ## Population-Level Rates {#sec-pop-rates}
@@ -72,10 +74,10 @@ decrease_prop |>
 coef_data |>
   filter(fit_type == "posterior") |>
   ggplot() +
-  stat_pointinterval(aes(xdist = .value, y = factor(n), color = .variable),
+  stat_pointinterval(aes(xdist = .value, y = covariate, color = .variable),
                      .width = c(0.5, 0.9)) +
   geom_vline(xintercept = 0, linetype = "dashed", alpha = 0.5) +
   scale_color_discrete("Parameter", type = AZ_palette) +
-  labs(x = "Coefficient (QR space)", y = "Covariate index") +
+  labs(x = "Coefficient (QR space)", y = "") +
   NULL
 ```
