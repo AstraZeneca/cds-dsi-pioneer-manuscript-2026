@@ -323,6 +323,17 @@ array[n_levels + 1] int cp_level_pos_ms_slope_shared;
  n_cp_groups_ms_slope_shared,  cp_level_pos_ms_slope_shared) =
   split_cp_ncp_pos(n_levels, n_forecast_groups_per_level, ms_slope_mode);
 
+// --- 0->1 Baseline Log-Time Trend Centering Constant ---
+// g(t) = log(t) - ms_log_t_centering, where ms_log_t_centering = mean(log(1..max_all_t)).
+// Centering keeps the slope mean-zero and preserves the GP intercept's meaning.
+// Always computed (cheap); only consumed when enable_ms_baseline_trend_01 == 1.
+real ms_log_t_centering;
+{
+  real log_t_sum = 0;
+  for (t in 1:max_all_t) log_t_sum += log(t);
+  ms_log_t_centering = log_t_sum / max_all_t;
+}
+
 // --- GP Coarse Knot Grids ---
 // Knot counts per time domain
 int n_ms_gp_cal_knots      = (max_all_t          + ms_gp_grid_step - 1) %/% ms_gp_grid_step;

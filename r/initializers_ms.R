@@ -96,6 +96,25 @@ ms_init_values <- function(env) {
         array(max(invgamma::rinvgamma(1, log_lambda_gp_01_pop_rho_alpha, log_lambda_gp_01_pop_rho_beta), ms_gp_grid_step), dim = 1)
       },
       log_lambda_gp_01_pop_eta = if (enable_ms_01) rnorm(n_ms_gp_cal_knots),
+      # 0->1 baseline log-time trend (Fix A, hierarchical — mirrors the GP):
+      # population slope, per-group raw slope deviation (NCP, zeros — same length
+      # as the GP intercept raw vector, n_enabled_groups_ms_baseline_01), and
+      # per-level slope SD. All size-0 when the flag is off, matching the Stan
+      # parameter sizing exactly.
+      log_lambda_trend_01_pop_slope =
+        if (isTRUE(enable_ms_baseline_trend_01 == 1L)) array(0.1, dim = 1) else numeric(0),
+      raw_log_lambda_trend_01_level =
+        if (isTRUE(enable_ms_baseline_trend_01 == 1L) && n_enabled_groups_ms_baseline_01 > 0) {
+          as.array(rep(0, n_enabled_groups_ms_baseline_01))
+        } else {
+          numeric(0)
+        },
+      log_lambda_trend_01_level_sd =
+        if (isTRUE(enable_ms_baseline_trend_01 == 1L) && any_re_level_01) {
+          rep(0.1, n_levels)
+        } else {
+          numeric(0)
+        },
       log_lambda_gp_01_level_alpha = if (enable_ms_01) rep(1.0, n_levels) else numeric(0),
       log_lambda_gp_01_level_rho = if (enable_ms_01) pmax(invgamma::rinvgamma(n_levels, log_lambda_gp_01_level_rho_alpha, log_lambda_gp_01_level_rho_beta), ms_gp_grid_step) else numeric(0),
       log_lambda_gp_01_level_intercept_sd = if (enable_ms_01 && any_re_level_01) abs(rnorm(n_levels, sd = log_lambda_gp_01_level_intercept_sd_sd)) else numeric(0),
