@@ -53,7 +53,16 @@ vector[n_enabled_groups_ms_baseline_01] log_lambda_gp_01_level_intercept;
 matrix[enable_ms_01 ? n_forecast_patients : 0, enable_ms_01 ? max_all_t : 0] log_cond_surv_01;
 
 if (enable_ms_01) {
-  // Compute population GP on coarse grid then expand to weekly
+  // -------------------------------------------------------------------------
+  // Baseline temporal unit: intercept + trend + GP residual
+  // -------------------------------------------------------------------------
+  // Sibling terms forming the 0->1 population baseline log-hazard over weeks:
+  //   log_pop_lambda_01(t) = intercept + slope * g(t) + GP_residual(t)
+  // The trend is added AFTER calc_gp_pred (not folded into the GP mean) and
+  // BEFORE/separate from the time-varying covariate loop — it is NOT a covariate
+  // and must not go through ms_time_varying_covar.
+  //
+  // Compute population GP on coarse grid then expand to weekly (intercept + GP residual)
   log_pop_lambda_01 = calc_gp_pred(
     ms_gp_cal_t,
     log_lambda_gp_01_pop_intercept[1],
@@ -62,6 +71,16 @@ if (enable_ms_01) {
     delta,
     log_lambda_gp_01_pop_eta
   )[knot_of_cal];
+
+  // Monotone log-time trend (sibling term), centered so intercept semantics are
+  // preserved. Size-0 parameter when the flag is off → no effect on existing fits.
+  if (enable_ms_baseline_trend_01) {
+    for (t in 1:max_all_t) {
+      real g_t = log(t) - ms_log_t_centering;
+      log_pop_lambda_01[t] += log_lambda_trend_01_pop_slope[1] * g_t;
+    }
+  }
+  // -------------------------------------------------------------------------
 
   // Initialize patient hazards with population baseline
   log_cond_surv_01 = rep_matrix(log_pop_lambda_01, n_forecast_patients);
@@ -107,6 +126,11 @@ if (enable_ms_01) {
         // GP mode: full time-varying residual via calc_gp_pred
         int gp_start, gp_end;
         (gp_start, gp_end) = get_pos(gp_level_pos_ms_baseline_slot[MS_SLOT_01], lv);
+        // Per-level log-time trend deviation (NCP), sibling to the GP residual
+        // and active ONLY where the baseline GP is active — mirroring the GP
+        // hierarchy. Reuses the SAME raw-group indexing as the GP intercept
+        // (raw_level_pos_ms_baseline_slot[MS_SLOT_01]); size-0 / no-op when off.
+        int r_lo_trend = raw_level_pos_ms_baseline_slot[MS_SLOT_01][lv];
         for (g in lv_start:lv_end) {
           int g_gp = gp_start + (g - lv_start);
           log_level_lambda_01_residual[g] = calc_gp_pred(
@@ -117,6 +141,13 @@ if (enable_ms_01) {
             delta,
             log_lambda_gp_01_level_eta[g_gp]
           )[knot_of_cal];
+          if (enable_ms_baseline_trend_01 && enable_ms_level_gp[MS_SLOT_01, lv]) {
+            real slope_g = raw_log_lambda_trend_01_level[r_lo_trend + (g - lv_start)]
+                           * log_lambda_trend_01_level_sd[lv];
+            for (t in 1:max_all_t) {
+              log_level_lambda_01_residual[g, t] += slope_g * (log(t) - ms_log_t_centering);
+            }
+          }
         }
       } else {
         // Intercept-only mode: constant shift across all time points

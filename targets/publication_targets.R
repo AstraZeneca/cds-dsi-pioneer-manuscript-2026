@@ -248,6 +248,17 @@ publication_targets <- list(
       # bit-identically.
       enable_ms_level_baseline_hazard = c(trial = 3L, patient = 0L),
 
+      # 0->1 baseline log-time trend (Fix A, 2026-06-05): a monotone log(t)
+      # slope added as a sibling term to the population 0->1 baseline temporal
+      # block (intercept + slope*g(t) + GP residual). Lets the early-week hazard
+      # ramp be captured parametrically so the GP residual shrinks and the
+      # wk12-36 spop PFS pessimism closes. HIERARCHICAL: mirrors the baseline GP
+      # (population slope + per-level slope deviation, active at the trial level
+      # where the GP is on). Publication opts in; pioneer and sclc set
+      # this to 0L at their own stan-data assembly sites so their fits remain
+      # bit-identical (size-0 parameter arrays when off).
+      enable_ms_baseline_trend_01 = 1L,
+
       enable_ms_pop_time_varying_cov = TRUE,
       enable_ms_pop_time_invariant_cov = TRUE,
       enable_ms_level_cov = c(trial = FALSE, patient = FALSE),

@@ -21,6 +21,17 @@ matrix[n_gp_groups_ms_baseline_01, enable_ms_01 ? n_ms_gp_cal_knots : 0] log_lam
 vector[n_raw_groups_ms_baseline_01] raw_log_lambda_gp_01_level_intercept;
 vector[n_cp_groups_ms_baseline_01]  cp_log_lambda_gp_01_level_intercept;
 
+// --- 0->1 Baseline Log-Time Trend (hierarchical, mirrors the baseline GP) ---
+// Population slope: sibling term to the GP residual in the 0->1 baseline
+// temporal unit. Per-level slope deviation (NCP) reuses the SAME enabled-group
+// infrastructure as the GP intercept (n_raw_groups_ms_baseline_01,
+// raw_level_pos_ms_baseline_slot[MS_SLOT_01]), pooled by a per-level SD. Every
+// term is size 0 when the flag is off → parameter space bit-identical to
+// existing fits.
+array[enable_ms_baseline_trend_01 ? 1 : 0] real log_lambda_trend_01_pop_slope;
+vector[enable_ms_baseline_trend_01 ? n_raw_groups_ms_baseline_01 : 0] raw_log_lambda_trend_01_level;
+array[enable_ms_baseline_trend_01 && any_re_level_slot[MS_SLOT_01] ? n_levels : 0] real<lower=0> log_lambda_trend_01_level_sd;
+
 // --- Population-level Time-varying Covariates ---
 // 0->1 dimensioning rules:
 //   continuous mode (visit_gated_01 = 0): n_time_varying_covar features (full
