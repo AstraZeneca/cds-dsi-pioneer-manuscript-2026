@@ -129,9 +129,12 @@ generated quantities {
     int start_idx = testing_start_idx[1, i];
     // Only generate OOS predictions for patients who:
     // 1) Have post-cutoff visits at the first cutoff (start_idx > 0), AND
-    // 2) Were observed before/at the cutoff (cutoff_observed_mask[i] == 1)
-    // This excludes newly enrolled patients who entered the study after the cutoff.
-    if (start_idx > 0 && cutoff_observed_mask[i]) {
+    // 2) Were observed before/at the cutoff (cutoff_observed_mask[i] == 1), AND
+    // 3) Belong to the eval trial (lfo_testing_patient_idx[i] > 0)
+    // Historical (non-eval-trial) patients are given full training history by C-EXT
+    // but must NOT fill oos_recist — n_patient_testing_visits[i]==0 for them, so
+    // testing_visit_pos has no slot allocated and get_pos() returns a degenerate range.
+    if (start_idx > 0 && cutoff_observed_mask[i] && lfo_testing_patient_idx[i] > 0) {
       int n_oos_visits = visit_end - start_idx + 1; 
     
       array[n_oos_visits + 1] int forecast_time = get_int_sub_array(t_patient_visits, patient_visit_pos, i)[visit_size:];      
