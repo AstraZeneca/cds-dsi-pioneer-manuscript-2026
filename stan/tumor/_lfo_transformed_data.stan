@@ -150,9 +150,12 @@ for (i in 1:n_patients) {
   
   // Only allocate OOS visits for patients who:
   // 1) Have post-cutoff visits (start_idx > 0), AND
-  // 2) Were observed before/at the cutoff (cutoff_observed_mask[i] == 1)
-  // This matches the condition in sf-ssls-lfo.stan where predictions are generated
-  n_patient_testing_visits[i] = (start_idx > 0 && cutoff_observed_mask[i]) ? (visit_end - start_idx + 1) : 0;
+  // 2) Were observed before/at the cutoff (cutoff_observed_mask[i] == 1), AND
+  // 3) Belong to the eval trial (patient_trial[i] == lfo_eval_trial)
+  // Historical patients may have start_idx > 0 after C-EXT sets their full training window,
+  // but must NOT get a slot — the fill loop in sf-ssls-lfo.stan skips them, leaving
+  // slots uninitialized (sentinel PD+1 leaks into the output).
+  n_patient_testing_visits[i] = (start_idx > 0 && cutoff_observed_mask[i] && patient_trial[i] == lfo_eval_trial) ? (visit_end - start_idx + 1) : 0;
 }
 
 print("n_cutoff_observed_patients = ", n_cutoff_observed_patients);
