@@ -211,36 +211,28 @@ publication_targets <- list(
   # MUST be fixed upstream of tumor_priors).
   #
   #   - "full"        : n_time_varying_covar = 3 (standardised burden + log
-  #                     decrease rate + log growth rate). The published baseline.
-  #   - "burden_only" : n_time_varying_covar = 1 (standardised burden only). Drops
-  #                     the two rate covariates from EVERY multistate transition.
-  #                     Tests whether removing the collinear rate re-entry (the
-  #                     0->1 growth-rate coef is a strongly-identified but negative
-  #                     B(t)-collinearity sign-flip that mutes the slow-progressor
-  #                     signal) lifts the spop PFS KM toward the observed curve.
-  #   - "trend"       : full 3-covar bridge PLUS the hierarchical 0->1 baseline
-  #                     log-time trend (Fix A, 2026-06-05). enable_trend = 1L sets
-  #                     enable_ms_baseline_trend_01; a monotone log(t) slope is
-  #                     added as a sibling to the population 0->1 baseline temporal
-  #                     block (intercept + slope*g(t) + GP residual), hierarchical
-  #                     over the trial level like the GP. Tests whether letting the
-  #                     early-week hazard ramp be captured parametrically (so the
-  #                     zero-mean GP residual shrinks) lifts the wk12-36 spop PFS
-  #                     KM toward observed. Compare _trend vs _full (same commit).
+  #                     decrease rate + log growth rate) PLUS the hierarchical
+  #                     0->1 baseline log-time trend (Fix A, 2026-06-05).
+  #                     enable_trend = 1L sets enable_ms_baseline_trend_01; a
+  #                     monotone log(t) slope is added as a sibling to the
+  #                     population 0->1 baseline temporal block (intercept +
+  #                     slope*g(t) + GP residual), hierarchical over the trial
+  #                     level like the GP. This is the published model: the trend
+  #                     ablation diagnostics (formerly the "trend" vs "full" and
+  #                     "burden_only" variants) are complete, so the tribble is
+  #                     collapsed to the single chosen configuration.
   #
-  # warmstart: the posterior fit warm-starts from #1795's adapted inv-metric,
-  # whose dimension matches the FULL (3-covar) parameter space. The burden_only
-  # model has length-1 coef arrays -> different mass-matrix dimension -> the
-  # warm-start metric is invalid, so burden_only must cold-start. The trend model
-  # adds new (size>0) trend parameters -> also a different mass-matrix dimension,
-  # so it cold-starts too (and gets extra warmup, since the 150-iter posterior
-  # warmup assumes a warm start; cf #1805).
+  # warmstart: the posterior fit warm-starts from job #1868's adapted inv-metric
+  # (the prior trend fit), whose dimension matches this 3-covar + trend parameter
+  # space. The PFS-from-OS sample-pathway graft (commit b8b6e170) is a
+  # generated-quantities-only change, so it does not alter the parameter space and
+  # #1868's mass matrix remains dimensionally valid for warm-starting.
   tar_map(
     tibble(
-      bridge_variant = c("full", "burden_only", "trend"),
-      n_tv_covar     = c(3L,     1L,            3L),
-      enable_trend   = c(0L,     0L,            1L),
-      warmstart      = c(TRUE,   FALSE,         FALSE)
+      bridge_variant = "full",
+      n_tv_covar     = 3L,
+      enable_trend   = 1L,
+      warmstart      = TRUE
     ),
     names = "bridge_variant",
     tar_target(
@@ -280,10 +272,9 @@ publication_targets <- list(
         # bit-identically.
         enable_ms_level_baseline_hazard = c(trial = 3L, patient = 0L),
 
-        # 0->1 baseline log-time trend (Fix A, 2026-06-05). Set per-variant from
-        # the tribble's enable_trend column: 0L for full/burden_only (size-0 trend
-        # params -> bit-identical to the no-trend fit), 1L for the "trend" arm.
-        # When on, a monotone log(t) slope is added as a sibling term to the
+        # 0->1 baseline log-time trend (Fix A, 2026-06-05). Set from the tribble's
+        # enable_trend column (1L for the single "full" variant). When on, a
+        # monotone log(t) slope is added as a sibling term to the
         # population 0->1 baseline temporal block, HIERARCHICAL over the trial
         # level (mirrors the baseline GP). pioneer/sclc set this to 0L at
         # their own stan-data assembly sites.
@@ -426,9 +417,10 @@ publication_targets <- list(
         sample_and_save(
           tumor_ssls_exe_hash$exe_file,
           tumor_ssls_stan_data,
-          # A cold start (burden_only) needs full warmup to find the mass matrix;
-          # the warm-started full posterior's 150 iters assume #1795's geometry
-          # (a cold re-fit at 150 fell over in #1805). Prior fits always cold-start.
+          # Posterior warm-starts from job #1868's adapted trend metric, so the
+          # 150-iter warmup (from the type tribble) suffices. A cold start needs
+          # full warmup to find the mass matrix (a cold re-fit at 150 fell over in
+          # #1805). Prior fits always cold-start.
           iter_warmup = if (warmstart) iter_warmup else max(iter_warmup, 300L),
           iter_sampling = iter_sampling,
           save_warmup = FALSE,
@@ -438,13 +430,12 @@ publication_targets <- list(
           init = tumor_ssls_initializer,
           adapt_delta = 0.8,
           save_metric = TRUE,
-          # Warm-start from #1795's adapted inv-metrics, but ONLY for the full
-          # (3-covar) bridge: the metric's mass-matrix dimension matches the full
-          # parameter space. The burden_only model has length-1 coef arrays, so the
-          # metric is the wrong dimension and must be skipped (cold start).
+          # Warm-start from job #1868's adapted trend inv-metrics (data/
+          # inv_metric_publication_tumor_ssls_chain*.json). The metric dimension
+          # matches this 3-covar + trend parameter space; the PFS-from-OS graft is
+          # a generated-quantities-only change and does not perturb it.
           metric_file = if (warmstart && length(metric_files) > 0) metric_files,
-          # Variant-specific output dir so the two bridge variants never overwrite
-          # each other's chain CSVs (both share base_name "tumor_ssls").
+          # Variant-suffixed output dir (single "full" variant now).
           output_dir = file.path(publication_output_path, "fit", paste0(base_name, "_", bridge_variant)),
           timestamp = fit_output_timestamp
         ),
@@ -723,10 +714,9 @@ publication_targets <- list(
     ),
 
     # Combined prior + posterior ------------------------------------------------
-    # Inside the outer bridge map, so each variant gets its own combined
-    # aggregation (e.g. all_tumor_ssls_km_rvar_full / _burden_only). tar_map
-    # rewrites the bare _prior/_posterior references to the variant-suffixed
-    # inner-map outputs automatically.
+    # Inside the outer variant map, so the combined aggregation is variant-suffixed
+    # (all_tumor_ssls_km_rvar_full). tar_map rewrites the bare _prior/_posterior
+    # references to the variant-suffixed inner-map outputs automatically.
 
     tar_target(
       all_tumor_ssls_km_rvar,
