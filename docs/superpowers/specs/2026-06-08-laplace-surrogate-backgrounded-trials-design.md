@@ -82,10 +82,13 @@ the true latent covariance — so patient-to-patient variability the trial sees 
 transmitted to `tr_sd`/`frac_sd`/`init_sd`, not just the mean trajectory. `Σ_β`
 becomes the prior covariance `K` passed to `laplace_marginal_tol` (non-identity).
 
-- **Jacobian source:** Stan's **built-in autodiff** (`jacobian`) of the anchor
-  map. `g` is a 3-input/3-output smooth closed-form map, so the Jacobian is cheap
-  and tape-safe. (Can be swapped for a hand-derived analytic `∂g/∂θ` later if
-  profiling shows it matters — not needed initially.)
+- **Jacobian source:** **analytic** `∂g/∂θ`. NOTE — the original intent was
+  Stan's built-in autodiff, but Stan has *no callable autodiff Jacobian of a user
+  function* (the `jacobian` block / `jacobian +=` are for custom-transform log-det
+  adjustments, not a returnable matrix). Since `g = log_sum_exp(a, b)` is closed
+  form, `∂g = w_dec·∂a + w_gro·∂b` (softmax weights) is elementary, and
+  `J = Vinv · [∂g(t_k)/∂θ]_k`. A finite-difference unit test guards the
+  hand-derivation against typos.
 - **`Σ_β` rank:** `J·diag(·)·Jᵀ` with `J` 3×3 is generically full-rank → `K` is
   PD as Laplace wants. Degrades gracefully toward rank-2 as any SD → 0.
 
