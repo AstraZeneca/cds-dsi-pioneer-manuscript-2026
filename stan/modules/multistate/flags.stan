@@ -77,6 +77,14 @@ int<lower=0, upper=1> enable_ms_03_time_invariant_cov;
 int<lower=0, upper=1> enable_ms_32_time_invariant_cov;
 int<lower=0, upper=1> enable_ms_03_time_varying_cov;
 
+// --- 0->1 Baseline Log-Time Trend ---
+// When enabled, the 0->1 population baseline log-hazard gets an additive
+// monotone log-time trend term, a sibling to the GP residual in the baseline
+// temporal unit: log_pop_lambda_01(t) = intercept + slope*g(t) + GP_resid(t),
+// where g(t) = log(t) - ms_log_t_centering. OFF by default → size-0 parameter
+// space, bit-identical to all existing fits. 0->1 transition only.
+int<lower=0, upper=1> enable_ms_baseline_trend_01;  // 0→1 baseline log-time trend
+
 // --- PSA-at-State-Entry Covariates ---
 // When enabled, the last observed log-PSA before entering state 1 (1→2) or
 // state 3 (3→2) is used as a time-invariant patient-level covariate, shifting

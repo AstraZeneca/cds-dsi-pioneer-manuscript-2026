@@ -48,14 +48,18 @@ for (s in 1:n_trials) {
       }
     }
 
-    // spop: all patients get a simulated post-progression sojourn
+    // spop: genuine 1→2 progressors only. Dropout-deaths now have
+    // spop_ms_right_censored == 0 (PFS-from-OS graft), so exclude them — else
+    // they leak into the post-progression sojourn with a spurious soj of 1.
     {
-      int n_prog = n_tr - sum(spop_ms_right_censored[tr_start:tr_end]);
+      int n_prog = 0;
+      for (i in tr_start:tr_end)
+        if (!spop_ms_right_censored[i] && !spop_is_dropout[i]) n_prog += 1;
       if (n_prog > 0) {
         array[n_prog] int soj; array[n_prog] int cens;
         int idx = 1;
         for (i in tr_start:tr_end) {
-          if (!spop_ms_right_censored[i]) {
+          if (!spop_ms_right_censored[i] && !spop_is_dropout[i]) {
             soj[idx]  = max(1, spop_os[i] - spop_ms_pfs[i]);
             cens[idx] = spop_os_censored[i];
             idx += 1;
@@ -91,7 +95,10 @@ for (s in 1:n_trials) {
         int idx = 1;
         for (i in tr_start:tr_end) {
           if (spop_is_dropout[i]) {
-            soj[idx]  = max(1, spop_os[i] - spop_pfs[i]);
+            // PFS-from-OS graft makes spop_pfs == spop_os for dropouts, so the
+            // sojourn must be recovered from the retained dropout week, not
+            // spop_pfs (which would collapse to max(1,0)=1). See spec 2026-05-30.
+            soj[idx]  = max(1, spop_os[i] - spop_dropout_week[i]);
             cens[idx] = spop_os_censored[i];
             idx += 1;
           }
