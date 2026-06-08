@@ -41,9 +41,12 @@ log_burden_i(t) = β_i0 + β_i1·t + β_i2·t²  +  ε,   ε ~ N(0, measure_sd²
   in a linear mean, so it does NOT reintroduce the pathology.
 - `β_i ~ MVN(β_pop, Σ_β)`, where `(β_pop, Σ_β)` are NOT free parameters; they are
   the mechanistic-bridge image of the real population rate parameters (§3).
-- Normalization fixes `β_i0`'s population mean at 0 (burden normalized to
-  baseline), but `β_i0` is kept as a free per-patient latent to absorb baseline
-  measurement noise → **3 latents per patient**, matching `hessian_block_size=3`.
+- **Intercept `β_i0` is pinned at 0, NOT marginalized** (REVISED — see §3a). The
+  burden is normalized to baseline so `g(t=0) = 0` *identically for every θ*, and
+  the first anchor sits at `t=0`. That makes `β_i0`'s bridge variance structurally
+  zero → `Σ_β` rank-deficient → solver 1 fails to factor a singular prior. So we
+  integrate out only the slope/curvature `(β_i1, β_i2)` → **2 latents per patient,
+  `hessian_block_size = 2`**. The intercept contributes `μ_i(0)=0` exactly.
 
 ## 3. Mechanistic bridge (anchor-matched quadratic, fixed calendar anchors)
 
@@ -69,34 +72,52 @@ Solve the 3×3 Vandermonde system for the quadratic through `(tₖ, g(tₖ))`:
 product per iteration. `β_pop` is a smooth deterministic function of `θ_pop`, so
 AD flows through and borrowing lands in the real population parameters.
 
-**Covariance — Jacobian propagation.**
-Per-patient spread comes from `{tr_sd, frac_sd, init_sd}`. Propagate through the
-same anchor map via its Jacobian `J = ∂β_pop/∂θ`:
+**Covariance — Gauss–Hermite pushforward (REVISED — see §3a).**
+Per-patient spread comes from `{tr_sd, frac_sd, init_sd}` propagated to `(β_1,
+β_2)`. The original plan used a **first-order** linearization
+`Σ_β = J·diag(sd²)·Jᵀ`. The Phase-1 gate showed this understates the true spread
+by ~12% (slope) to ~20% (curvature) — capturing only **87.8%** of the true
+variance — which biased `tr_sd` low (0.506 → 0.432) and failed the gate. So we
+replace it with a **3-point Gauss–Hermite quadrature** of the exact pushforward
+`Cov[β(θ)]`, `θ ~ N(θ_pop, diag(sd²))`:
 
 ```
-Σ_β = J · diag(tr_sd², frac_sd², init_sd²) · Jᵀ
+Σ_β = Σ_q w_q · (β(θ_q) − β̄)(β(θ_q) − β̄)ᵀ ,   β̄ = Σ_q w_q · β(θ_q)
 ```
 
-`Σ_β` is the surrogate's random-effect covariance — the **linearized image** of
-the true latent covariance — so patient-to-patient variability the trial sees is
-transmitted to `tr_sd`/`frac_sd`/`init_sd`, not just the mean trajectory. `Σ_β`
-becomes the prior covariance `K` passed to `laplace_marginal_tol` (non-identity).
+over the tensor grid of 3 nodes per dimension (27 evaluations of the closed-form
+`β(·)`; GH nodes `±√3, 0`, weights `1/6, 2/3, 1/6`). Verified to recover **99.9%**
+of the true variance (vs 87.8% first-order, and — notably — 80–83% for the
+unscented transform, which was worse). Fully deterministic → AD-friendly.
 
-- **Jacobian source:** **analytic** `∂g/∂θ`. NOTE — the original intent was
-  Stan's built-in autodiff, but Stan has *no callable autodiff Jacobian of a user
-  function* (the `jacobian` block / `jacobian +=` are for custom-transform log-det
-  adjustments, not a returnable matrix). Since `g = log_sum_exp(a, b)` is closed
-  form, `∂g = w_dec·∂a + w_gro·∂b` (softmax weights) is elementary, and
-  `J = Vinv · [∂g(t_k)/∂θ]_k`. A finite-difference unit test guards the
-  hand-derivation against typos.
-- **`Σ_β` rank:** `J·diag(·)·Jᵀ` with `J` 3×3 is generically full-rank → `K` is
-  PD as Laplace wants. Degrades gracefully toward rank-2 as any SD → 0.
+`Σ_β` is the surrogate's random-effect covariance — patient-to-patient
+variability transmitted to `tr_sd`/`frac_sd`/`init_sd`. It becomes the prior
+covariance `K` passed to `laplace_marginal_tol` (non-identity, now 2×2).
 
-Why fixed anchors compose well with the tight bridge: `V⁻¹` is constant and `J`
-is a small closed-form Jacobian. Nadir-tracking anchors would make `V` itself
-depend on θ and `J` gain terms through the moving anchor times — the fragile AD
-that sank the old hand-coded solver. Both earlier decisions (tight bridge, fixed
-anchors) are what keep this section tractable.
+Why fixed anchors still compose well: `V⁻¹` and the GH nodes/weights are all
+compile-time constants; the per-iteration cost is 27 closed-form `g` evaluations.
+
+## 3a. Revisions from the Phase-1 gate (2026-06-08)
+
+The first gate run FAILED on one quantity (`tr_sd`), with a clean fit otherwise
+(0 divergences, R-hat 1.00, ESS 2594, SD-ratio 0.99, corr-diff 0.082). Pure-R
+diagnostics localized two independent causes and their fixes — **neither is the
+plan's "FAIL → spline" path; the quadratic basis was never the problem**:
+
+1. **Solver-1 → solver-2 fallback (was misread as non-log-concavity).** The data
+   Hessian is well-conditioned (cond 8.6e5 ≪ 4.5e15 break point) and PD — the
+   likelihood *is* log-concave. The real cause: `g(0)=0` identically (baseline
+   normalization) with the first anchor at `t=0` makes the intercept's bridge
+   variance structurally zero, so `Σ_β` is rank-2 and the `1e-8` jitter leaves a
+   near-singular `K`. **Fix:** drop the intercept from the marginalized latents
+   (pin `β_0 = 0`); integrate out only `(β_1, β_2)`, `hessian_block_size = 2`.
+   Diagnostic: full-rank, cond ≈ 1.6e3 — solver 1 holds.
+2. **`tr_sd` underestimate (first-order bridge bias).** First-order `Σ_β`
+   captured only 87.8% of the true pushforward variance. **Fix:** GH-3 quadrature
+   (above), 99.9%.
+
+`tr_sd` reaches the data only through the slope/curvature `(β_1, β_2)`, so both
+fixes target exactly the failing quantity.
 
 ## 4. Integration into `sf-ssls-lfo.stan`
 
