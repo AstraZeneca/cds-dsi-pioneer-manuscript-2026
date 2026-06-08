@@ -77,6 +77,18 @@ disease_map <- tibble::tribble(
   "crc",    file.path(publication_data_path, "crc"), covar_formula_crc,  FALSE
 )
 
+# Warm-start metric files for the posterior fit. Each disease needs its own
+# per-chain inv_metric files because the mass matrix dimension equals the
+# total unconstrained parameter count, which scales with n_patients.
+#
+# SCLC: data/inv_metric_publication_tumor_ssls_chain*.json (job #1868, 4812 params)
+# CRC:  TODO — no valid files yet. The pre-trend CRC metrics (job ~202605312138)
+#       have wrong dimension (16433 params, pre-trend model). Save new ones after
+#       the first successful CRC posterior run with enable_ms_baseline_trend_01=1.
+#
+# Set to NULL → cold start (iter_warmup guard uses max(iter_warmup, 300L)).
+publication_metric_files <- NULL
+
 publication_targets <- list(
 
   # Track initializer file so changes invalidate the initializer targets
