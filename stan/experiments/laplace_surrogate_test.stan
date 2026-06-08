@@ -3,15 +3,25 @@
 // ============================================================================
 // Backgrounded patients' normalized log-burden is modeled as a quadratic in t:
 //     log_burden_i(t) = beta_i0 + beta_i1*t + beta_i2*t^2 + N(0, measure_sd^2)
-// Latents beta_i enter LINEARLY => Gaussian marginal => Laplace is EXACT
-// => solver 1 (PD-Hessian Cholesky) is valid (unlike the bi-exponential, which
-//    needed solver 3 just to survive).
+// Latents enter LINEARLY => Gaussian marginal => Laplace is EXACT => solver 1
+// (PD-Hessian Cholesky) is valid (the bi-exponential needed solver 3 to survive).
+//
+// REVISED after the first gate FAIL (see spec section 3a):
+//   (1) The intercept beta_0 is PINNED at beta_pop[1] (= g(0) = 0 by baseline
+//       normalization), NOT marginalized. g(0)=0 for all theta makes its bridge
+//       variance structurally zero => Sigma_beta rank-deficient => solver 1 fails
+//       to factor a singular prior. So we integrate out only (beta_1, beta_2):
+//       hessian_block_size = 2, latent_dim = n_patients * 2.
+//   (2) Sigma_beta is the GAUSS-HERMITE pushforward Cov[beta(theta)] over
+//       theta ~ N(theta_pop, diag(sd^2)) (3 nodes/dim, 27 evals), NOT the
+//       first-order J diag(sd^2) J'. First-order captured only ~88% of the true
+//       variance (biasing tr_sd low); GH-3 captures ~99.9%.
 //
 // (beta_pop, Sigma_beta) are NOT free: they are the mechanistic-bridge image of
-// the population rate params (tr_loc_pop, frac_logit_pop, init_logit_pop) and
-// the per-patient SDs (tr_sd, frac_sd, init_sd):
-//   beta_pop = Vinv * [g(t0), g(t1), g(t2)]   (g = exact bi-exponential log-burden)
-//   Sigma_beta = J * diag(sd^2) * J'          (J = d beta_pop / d theta_pop, autodiff)
+// the population rate params (tr_loc_pop, frac_logit_pop, init_logit_pop) and the
+// per-patient SDs (tr_sd, frac_sd, init_sd):
+//   beta_pop   = Vinv * [g(t0), g(t1), g(t2)]   (g = exact bi-exponential log-burden)
+//   Sigma_beta = GH-3 pushforward of (beta_1, beta_2)
 //
 // Modes (laplace_mode): 0 = full-HMC bi-exponential reference, 1 = surrogate-Laplace.
 // ============================================================================
@@ -32,9 +42,9 @@ functions {
     return log_sum_exp(state_dec, state_gro);
   }
 
-  // Quadratic coefficients (beta0, beta1, beta2) that interpolate the exact
+  // Quadratic coefficients (beta0, beta1, beta2) interpolating the exact
   // bi-exponential log-burden at the 3 fixed anchor times. Vinv is the constant
-  // inverse Vandermonde passed in as data.
+  // inverse Vandermonde passed in as data. (beta0 == g(t0) == 0 when t0 == 0.)
   vector surrogate_anchor_betas(real tr_loc_pop, real frac_logit_pop,
                                 real init_logit_pop,
                                 data matrix Vinv, data vector anchor_times) {
@@ -45,60 +55,48 @@ functions {
     return Vinv * g;
   }
 
-  // Analytic Jacobian of the exact bi-exponential log-burden g(t) w.r.t. the
-  // population location params (tr_loc, frac_logit, init_logit), at a single t.
-  // g = log_sum_exp(a, b), a = init_log_dec - dec_rate*t, b = init_log_gro + gro_rate*t.
-  // dg = w_dec*da + w_gro*db with w_dec = softmax weight on the decay branch.
-  // (Stan has NO callable autodiff Jacobian of a user function — the `jacobian`
-  //  block/`jacobian +=` are for custom transforms, not a returnable matrix — so
-  //  we differentiate the closed form directly. It is elementary here.)
-  row_vector bi_exp_log_burden_grad(real t, real tr_loc, real frac_logit,
-                                    real init_logit) {
-    real p = inv_logit(frac_logit);          // dec fraction
-    real q = inv_logit(init_logit);           // initial dec share
-    real log_dec_frac = log_inv_logit(frac_logit);
-    real log_gro_frac = log1m_inv_logit(frac_logit);
-    real dec_rate = exp(tr_loc + log_dec_frac);
-    real gro_rate = exp(tr_loc + log_gro_frac);
-    real a = log_inv_logit(init_logit) - dec_rate * t;
-    real b = fmin(log1m_inv_logit(init_logit) + gro_rate * t, 500.0);
-    real m = fmax(a, b);
-    real w_dec = exp(a - m) / (exp(a - m) + exp(b - m));
-    real w_gro = 1 - w_dec;
-    // partials of a, b w.r.t. (tr_loc, frac_logit, init_logit)
-    real da_dtr  = -t * dec_rate;             real db_dtr  =  t * gro_rate;
-    real da_dfr  = -t * dec_rate * (1 - p);   real db_dfr  = -t * gro_rate * p;
-    real da_din  = 1 - q;                     real db_din  = -q;
-    row_vector[3] g_grad;
-    g_grad[1] = w_dec * da_dtr + w_gro * db_dtr;
-    g_grad[2] = w_dec * da_dfr + w_gro * db_dfr;
-    g_grad[3] = w_dec * da_din + w_gro * db_din;
-    return g_grad;
-  }
-
-  // Bridge covariance Sigma_beta = J diag(sd^2) J', J = d beta_pop / d theta_pop.
-  // beta_pop = Vinv * g(anchors), so J = Vinv * [grad g(t_k)]_k (a 3x3 stack of
-  // the per-anchor gradients). A diagonal jitter keeps K PD if an sd -> 0.
+  // Bridge covariance of the MARGINALIZED coefficients (beta_1, beta_2), via a
+  // Gauss-Hermite pushforward of beta(theta) under theta ~ N(theta_pop,diag(sd^2)).
+  // gh_x / gh_w are the constant standard-normal GH nodes/weights (weights sum 1).
+  // Returns a 2x2 covariance; a diagonal jitter keeps it PD if an sd -> 0.
   matrix surrogate_bridge_cov(real tr_loc_pop, real frac_logit_pop,
                               real init_logit_pop,
                               real tr_sd, real frac_sd, real init_sd,
                               data matrix Vinv, data vector anchor_times,
+                              data vector gh_x, data vector gh_w,
                               data real jitter) {
-    matrix[3, 3] g_jac;   // row k = d g(t_k) / d theta
-    for (k in 1:3)
-      g_jac[k] = bi_exp_log_burden_grad(anchor_times[k], tr_loc_pop,
-                                        frac_logit_pop, init_logit_pop);
-    matrix[3, 3] J = Vinv * g_jac;
-    matrix[3, 3] D = diag_matrix(square([tr_sd, frac_sd, init_sd]'));
-    return J * D * J' + diag_matrix(rep_vector(jitter, 3));
+    int m = num_elements(gh_x);
+    int nq = m * m * m;
+    array[nq] vector[2] beta_pts;
+    vector[nq] w;
+    vector[2] mean_b = rep_vector(0.0, 2);
+    int q = 1;
+    for (i in 1:m) {
+      for (j in 1:m) {
+        for (k in 1:m) {
+          real th1 = tr_loc_pop     + tr_sd   * gh_x[i];
+          real th2 = frac_logit_pop + frac_sd * gh_x[j];
+          real th3 = init_logit_pop + init_sd * gh_x[k];
+          vector[3] beta_full =
+            surrogate_anchor_betas(th1, th2, th3, Vinv, anchor_times);
+          beta_pts[q] = beta_full[2:3];        // (beta_1, beta_2) only
+          w[q] = gh_w[i] * gh_w[j] * gh_w[k];
+          mean_b += w[q] * beta_pts[q];
+          q += 1;
+        }
+      }
+    }
+    matrix[2, 2] S = rep_matrix(0.0, 2, 2);
+    for (r in 1:nq)
+      S += w[r] * (beta_pts[r] - mean_b) * (beta_pts[r] - mean_b)';
+    return S + diag_matrix(rep_vector(jitter, 2));
   }
 
-  // laplace_marginal_tol functor. theta = stacked per-patient [b0,b1,b2] latents
-  // in the WHITENED coordinate (K = identity, mean 0); we map to the bridged
-  // distribution inside via the Cholesky of Sigma_beta passed through phi.
-  // Here we use the simpler route: K_fn returns Sigma_beta directly, so theta is
-  // in the natural beta coordinate centered at beta_pop. So the functor receives
-  // beta_pop and adds (theta_i - 0) usage: latents are deviations from beta_pop.
+  // laplace_marginal_tol functor. theta = stacked per-patient [db1, db2] latents
+  // (deviations of the slope/curvature from beta_pop). The intercept is pinned at
+  // beta_pop[1] (= 0); only beta_1, beta_2 are marginalized. K_fn returns the
+  // block-diagonal Sigma_beta, so theta is in the natural (b1,b2) coordinate
+  // centered at (beta_pop[2], beta_pop[3]).
   real surrogate_ll(vector theta,
                     vector beta_pop,
                     real measure_sd, real log_lod,
@@ -107,12 +105,12 @@ functions {
                     data array[] int patient_visit_pos,
                     data array[] int visit_time,
                     data array[] int patient_of_visit) {
-    int d = 3;
+    int d = 2;                       // marginalized latents per patient: b1, b2
     real lp = 0;
     for (i in 1:n_patients) {
-      real b0 = beta_pop[1] + theta[(i - 1) * d + 1];
-      real b1 = beta_pop[2] + theta[(i - 1) * d + 2];
-      real b2 = beta_pop[3] + theta[(i - 1) * d + 3];
+      real b0 = beta_pop[1];                                  // pinned (= 0)
+      real b1 = beta_pop[2] + theta[(i - 1) * d + 1];
+      real b2 = beta_pop[3] + theta[(i - 1) * d + 2];
       int v_start = patient_visit_pos[i];
       int v_end   = patient_visit_pos[i + 1] - 1;
       for (v in v_start:v_end) {
@@ -127,11 +125,10 @@ functions {
     return lp;
   }
 
-  // Prior covariance functor for laplace_marginal_tol: the bridged Sigma_beta,
-  // block-replicated per patient is handled by hessian_block_size=3 + this K
-  // returning the per-block covariance tiled. We return a full block-diagonal.
+  // Prior covariance functor: the bridged 2x2 Sigma_beta tiled block-diagonally,
+  // one 2x2 block per patient (matches hessian_block_size = 2).
   matrix surrogate_K_fn(matrix Sigma_beta, int n_patients) {
-    int d = 3;
+    int d = 2;
     matrix[n_patients * d, n_patients * d] K =
       rep_matrix(0, n_patients * d, n_patients * d);
     for (i in 1:n_patients) {
@@ -156,15 +153,15 @@ data {
 }
 
 transformed data {
-  int latent_dim = n_patients * 3;
+  int latent_dim = n_patients * 2;             // marginalize (b1, b2) per patient
   vector[latent_dim] theta_0 = rep_vector(0.0, latent_dim);
   real tolerance = 1e-8;
   int max_num_steps = 100;        // log-concave => Newton converges fast
-  int hessian_block_size = 3;
+  int hessian_block_size = 2;     // 2 marginalized latents per patient
   int solver = 1;                 // PD-Hessian Cholesky: valid for log-concave
   int max_steps_line_search = 0;  // not needed when well-conditioned
   int allow_fallback = 1;
-  real jitter = 1e-8;
+  real jitter = 1e-10;
 
   // Constant inverse Vandermonde for the 3 fixed anchors.
   matrix[3, 3] V;
@@ -174,6 +171,10 @@ transformed data {
     V[k, 3] = anchor_times[k] * anchor_times[k];
   }
   matrix[3, 3] Vinv = inverse(V);
+
+  // 3-point Gauss-Hermite nodes/weights for the standard normal (weights sum 1).
+  vector[3] gh_x = [-sqrt(3.0), 0.0, sqrt(3.0)]';
+  vector[3] gh_w = [1.0 / 6.0, 2.0 / 3.0, 1.0 / 6.0]';
 }
 
 parameters {
@@ -221,9 +222,9 @@ model {
     // MODE 1: surrogate-Laplace (the thing under test)
     vector[3] beta_pop = surrogate_anchor_betas(
       tr_loc_pop, frac_logit_pop, init_logit_pop, Vinv, anchor_times);
-    matrix[3, 3] Sigma_beta = surrogate_bridge_cov(
+    matrix[2, 2] Sigma_beta = surrogate_bridge_cov(
       tr_loc_pop, frac_logit_pop, init_logit_pop,
-      tr_sd, frac_sd, init_sd, Vinv, anchor_times, jitter);
+      tr_sd, frac_sd, init_sd, Vinv, anchor_times, gh_x, gh_w, jitter);
 
     target += laplace_marginal_tol(
       surrogate_ll,
