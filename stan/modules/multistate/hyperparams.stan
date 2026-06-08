@@ -167,6 +167,14 @@ real<lower=0> coef_log_entry_covar_12_sd;
 real coef_log_entry_covar_32_mean;
 real<lower=0> coef_log_entry_covar_32_sd;
 
+// --- 0->1 Baseline Log-Time Trend Hyperparameters ---
+// Priors for the hierarchical log-time trend on the 0->1 baseline hazard,
+// mirroring the baseline GP hierarchy (population slope + per-level slope
+// deviation). Only consumed when enable_ms_baseline_trend_01 == 1.
+real log_lambda_trend_01_pop_mean;          // prior mean, population slope (e.g. 0)
+real<lower=0> log_lambda_trend_01_pop_sd;   // prior sd,  population slope (e.g. 0.5)
+array[n_levels] real<lower=0> log_lambda_trend_01_level_sd_sd;  // half-normal scale for per-level slope SD (e.g. 0.25)
+
 // --- Correlated Intercept Block Hyperparameter (Phase 2) ---
 // LKJ shape for the cross-transition frailty correlation Cholesky factors.
 // eta = 2 (default): gently concentrates toward the identity, symmetric about

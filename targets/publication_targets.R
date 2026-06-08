@@ -253,6 +253,12 @@ publication_targets <- list(
         # bit-identically.
         enable_ms_level_baseline_hazard = c(trial = 3L, patient = 0L),
 
+        # 0->1 baseline log-time trend (Fix A, 2026-06-05). A monotone log(t)
+        # slope is added as a sibling term to the population 0->1 baseline
+        # temporal block, HIERARCHICAL over the trial level (mirrors the GP).
+        # pioneer/sclc set this to 0L at their own stan-data assembly sites.
+        enable_ms_baseline_trend_01 = 1L,
+
         enable_ms_pop_time_varying_cov = TRUE,
         enable_ms_pop_time_invariant_cov = TRUE,
         enable_ms_level_cov = c(trial = FALSE, patient = FALSE),
@@ -376,7 +382,11 @@ publication_targets <- list(
         fit_data = c(FALSE, TRUE),
         base_name = c("prior_tumor_ssls", "tumor_ssls"),
         iter_sampling = 500,
-        iter_warmup = c(300L, 500L),
+        # Posterior warm-starts from #1868's adapted trend metric so needs far
+        # less warmup; prior cold-starts (no valid posterior metric for it).
+        iter_warmup = c(300L, 150L),
+        # List-column: prior = no warm-start; posterior = per-chain inv-metric files.
+        metric_files = list(NULL, publication_metric_files),
         chains = 4L
       ),
       names = "type",
@@ -404,15 +414,18 @@ publication_targets <- list(
         sample_and_save(
           tumor_ssls_exe_hash$exe_file,
           tumor_ssls_stan_data,
-          iter_warmup = iter_warmup,
+          # Posterior warm-starts from job #1868's adapted trend metric, so the
+          # 150-iter warmup (from the type tribble) suffices. Prior always cold-starts.
+          iter_warmup = if (!is.null(metric_files)) iter_warmup else max(iter_warmup, 300L),
           iter_sampling = iter_sampling,
-          save_warmup = TRUE,
+          save_warmup = FALSE,
           parallel_chains = chains,
           chains = chains,
           threads_per_chain = tumor_ssls_stan_data$n_shards,
           init = tumor_ssls_initializer,
           adapt_delta = 0.8,
           save_metric = TRUE,
+          metric_file = metric_files,
           output_dir = file.path(publication_output_path, "fit", str_c(base_name, "_", disease)),
           timestamp = fit_output_timestamp
         ),

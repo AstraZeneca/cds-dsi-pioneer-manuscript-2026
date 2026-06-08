@@ -43,6 +43,7 @@ array[n_cutoff_observed_patients] int<lower=0, upper=1>
   sample_ms_right_censored, spop_ms_right_censored,
   sample_right_censored, spop_right_censored;
 array[n_cutoff_observed_patients] int<lower=0> sample_os, spop_os;
+array[n_cutoff_observed_patients] int<lower=0> spop_dropout_week;
 array[n_cutoff_observed_patients] int<lower=0, upper=1>
   sample_os_censored, spop_os_censored,
   spop_is_dropout, sample_is_dropout,
@@ -155,7 +156,8 @@ vector<lower=0, upper=1>[n_cond_group]
    forecast_target_pfs_local, forecast_target_right_censored_local,
    sample_os, sample_os_censored,
    spop_os, spop_os_censored,
-   spop_is_dropout, sample_is_dropout
+   spop_is_dropout, sample_is_dropout,
+   spop_dropout_week
   ) = calculate_all_patients_endpoints_rng(
     cutoff_observed_patients,
     obs_biomarker_cat,

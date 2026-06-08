@@ -1391,14 +1391,12 @@ tuple(int, int, int, int) derive_spop_pfs(
     return (exit_time, 0, exit_time, 0);
 
   } else if (cause == 3) {
-    // Dropout (0→3): ms_pfs censored at dropout time; PFS event only if SLD PD arrived before dropout
-    if (!c_target && t_target <= t_03) {
-      // SLD progression before dropout — counts as a PFS event
-      return (t_target, 0, t_03, 1);
-    } else {
-      // No SLD PD before dropout — censored at dropout
-      return (t_03, 1, t_03, 1);
-    }
+    // Dropout (0->3): the inner "SLD PD before dropout" case is UNREACHABLE here
+    // — classify_spop_exit only returns cause 3 when no uncensored target PD
+    // precedes t_03 (else progression wins the priority order). For the spop
+    // path the caller overwrites this result with the OS outcome (PFS-from-OS
+    // graft); this return is the censored-at-dropout fallback.
+    return (t_03, 1, t_03, 1);
 
   } else {
     // All censored (cause == 0): combined PFS = min(target, ms01); ms_pfs = raw ms01 sample
@@ -1512,11 +1510,12 @@ tuple(int, int, int, int) derive_sample_pfs(
 /**
  * Compute empirical cumulative incidence functions for one trial cohort.
  *
- * Classification rule (identical for spop and sample pathways):
- *   0→2 direct death : PFS event AND OS event AND pfs_time == os_time
- *   0→1 progression  : PFS event AND NOT 0→2
- *   0→3 dropout      : right_censored AND is_dropout (explicit cause flag)
- *   admin censored   : right_censored AND NOT is_dropout (no CIF contribution)
+ * Classification rule (is_dropout checked FIRST so grafted dropout-deaths,
+ * which have right_censored==0 after the PFS-from-OS graft, stay in CIF_03):
+ *   0→3 dropout      : is_dropout (dead or alive), regardless of PFS event status
+ *   0→2 direct death : NOT dropout AND PFS event AND OS event AND pfs == os
+ *   0→1 progression  : NOT dropout AND PFS event AND NOT 0→2
+ *   admin censored   : NOT dropout AND right_censored (no CIF contribution)
  *
  * NOTE: is_dropout must be set explicitly from the cause computed upstream
  * (spop_cause==3 or spop_dropped_out). Do NOT use pfs<=max_t as a proxy —
@@ -1547,17 +1546,25 @@ tuple(vector, vector, vector) compute_trial_cif(
   array[max_t + 1] int cnt_03 = zeros_int_array(max_t + 1);
 
   for (j in 1:n) {
-    if (!right_censored[j]) {
-      // PFS event: distinguish direct death (0→2) from progression (0→1)
+    if (is_dropout[j]) {
+      // 0->3 dropout (dead or alive) — checked FIRST. Under the PFS-from-OS
+      // convention a dropout's pfs == its OS outcome, which can exceed the CIF
+      // horizon max_t when the 3->2 death lands beyond the window. Such an event
+      // is not observed within [0, max_t], so it contributes nothing to the
+      // in-window CIF (same treatment as a beyond-horizon censoring). Guard the
+      // index to avoid out-of-range access (cnt_03 has length max_t + 1).
+      if (pfs[j] <= max_t) {
+        cnt_03[pfs[j]] += 1;
+      }
+    } else if (!right_censored[j]) {
+      // PFS event for a non-dropout: distinguish direct death (0->2) from progression (0->1)
       if (!os_censored[j] && pfs[j] == os[j]) {
         cnt_02[pfs[j]] += 1;
       } else {
         cnt_01[pfs[j]] += 1;
       }
-    } else if (is_dropout[j]) {
-      cnt_03[pfs[j]] += 1;   // genuine dropout (cause 3)
     }
-    // else: admin-censored — no CIF contribution
+    // else: admin-censored non-dropout — no CIF contribution
   }
 
   int c01 = 0; int c02 = 0; int c03 = 0;
@@ -1634,7 +1641,8 @@ tuple(
   array[] int,  // spop_os
   array[] int,  // spop_os_censored
   array[] int,  // spop_is_dropout
-  array[] int   // sample_is_dropout
+  array[] int,  // sample_is_dropout
+  array[] int   // spop_dropout_week (pre-graft cause-3 exit week; 0 otherwise)
 ) calculate_all_patients_endpoints_rng(
   array[] int patient_idx,         // maps loop index j -> unified patient index p
   array[] int biomarker_category,
@@ -1740,6 +1748,7 @@ tuple(
   // Dropout flags (1 if patient exited via cause 3; used for CIF computation)
   array[n_patients] int spop_is_dropout;
   array[n_patients] int sample_is_dropout;
+  array[n_patients] int spop_dropout_week = zeros_int_array(n_patients);
 
   int right_censored_idx = 1;
 
@@ -1955,14 +1964,15 @@ tuple(
 
     spop_is_dropout[j] = (spop_cause == 3);
 
-    (spop_pfs[j], spop_right_censored[j], spop_ms_pfs[j], spop_ms_right_censored[j]) =
-        derive_spop_pfs(spop_cause, spop_exit,
-                        spop_target_pfs[j], spop_target_right_censored[j],
-                        t_ms01_spop, c_ms01_spop,
-                        spop_time_03,
-                        enable_ms_02, enable_ms_03);
+    // Retain the pre-graft cause-3 exit week so the 3->2 sojourn KM can be
+    // recovered downstream after the PFS-from-OS graft overwrites spop_pfs.
+    if (spop_cause == 3) spop_dropout_week[j] = spop_time_03;
 
-    // --- RNG Step 5: spop OS ---
+    // --- RNG Step 5: spop OS (drawn BEFORE the PFS derivation so a 0->3
+    //     dropout's PFS can reuse the OS outcome — see graft below) ---
+    // derive_spop_os_rng depends only on spop_cause, spop_exit, and the survival
+    // rows (all computed above) and is the only RNG step here; moving it before
+    // the RNG-free derive_spop_pfs does not perturb the RNG stream.
     // Guard: sojourn matrix is [0,0] when ms_time_scale_12==0 (Markov-only)
     row_vector[cols(log_cond_surv_12_s)] surv_12_s_i =
       rows(log_cond_surv_12_s) > 0 ? log_cond_surv_12_s[j] : rep_row_vector(0, 0);
@@ -1978,6 +1988,25 @@ tuple(
         surv_12_s_i, surv_12_t_i,
         surv_32_i,
         t_01_spop, spop_time_02, spop_time_03);
+
+    // --- Classify and derive spop PFS atomically (no RNG) ---
+    (spop_pfs[j], spop_right_censored[j], spop_ms_pfs[j], spop_ms_right_censored[j]) =
+        derive_spop_pfs(spop_cause, spop_exit,
+                        spop_target_pfs[j], spop_target_right_censored[j],
+                        t_ms01_spop, c_ms01_spop,
+                        spop_time_03,
+                        enable_ms_02, enable_ms_03);
+
+    // PFS-from-OS convention for dropouts: a 0->3 patient's PFS is its OS
+    // outcome — event at the 3->2 death week if death occurs in-window, else
+    // censored at the forecast horizon. Reuses spop_os so PFS == OS by
+    // construction (preserves PFS <= OS). See spec 2026-05-30.
+    if (spop_cause == 3) {
+      spop_pfs[j]               = spop_os[j];
+      spop_right_censored[j]    = spop_os_censored[j];
+      spop_ms_pfs[j]            = spop_os[j];
+      spop_ms_right_censored[j] = spop_os_censored[j];
+    }
 
     // --- RNG Step 6: sample 0→2 (use observed data if available) ---
     int sample_time_02 = max_all_t + 1; int sample_cens_02 = 1;
@@ -2030,14 +2059,12 @@ tuple(
 
     sample_is_dropout[j] = (sample_cause == 3);
 
-    (sample_pfs[j], sample_right_censored[j], sample_ms_pfs[j], sample_ms_right_censored[j]) =
-        derive_sample_pfs(sample_cause, sample_exit,
-                          sample_target_pfs[j], sample_target_right_censored[j],
-                          sample_ms_pfs[j], sample_ms_right_censored[j],
-                          sample_time_03,
-                          enable_ms_02, enable_ms_03);
-
-    // --- RNG Step 7: sample OS ---
+    // --- RNG Step 7: sample OS (drawn BEFORE the PFS derivation so a 0->3
+    //     dropout's PFS can reuse the OS outcome — see graft below) ---
+    // derive_sample_os_rng depends only on sample_cause, sample_exit, the
+    // survival rows and observed-OS data (all computed above) and is the only
+    // RNG step here; moving it before the RNG-free derive_sample_pfs does not
+    // perturb the RNG stream. Mirrors the spop reorder (OS before PFS).
     (sample_os[j], sample_os_censored[j]) = derive_sample_os_rng(
         sample_cause, sample_exit,
         enable_ms_12, enable_ms_32, ms_time_scale_12,
@@ -2047,6 +2074,24 @@ tuple(
         pfs[p],
         ms_censored_12[p], ms_time_12[p], ms_os_event_12[p],
         ms_censored_32[p], sample_time_03, ms_time_32[p]);
+
+    (sample_pfs[j], sample_right_censored[j], sample_ms_pfs[j], sample_ms_right_censored[j]) =
+        derive_sample_pfs(sample_cause, sample_exit,
+                          sample_target_pfs[j], sample_target_right_censored[j],
+                          sample_ms_pfs[j], sample_ms_right_censored[j],
+                          sample_time_03,
+                          enable_ms_02, enable_ms_03);
+
+    // PFS-from-OS convention for sample-pathway dropouts (mirror of spop above):
+    // a 0->3 dropout's PFS is its OS outcome — honors the observed/forecast death
+    // as the PFS event week. Operational-PFS estimand (clinical-endpoints-spec
+    // line 52); preserves PFS <= OS by construction.
+    if (sample_cause == 3) {
+      sample_pfs[j]               = sample_os[j];
+      sample_right_censored[j]    = sample_os_censored[j];
+      sample_ms_pfs[j]            = sample_os[j];
+      sample_ms_right_censored[j] = sample_os_censored[j];
+    }
   }
 
   return (
@@ -2075,7 +2120,8 @@ tuple(
     spop_os,
     spop_os_censored,
     spop_is_dropout,
-    sample_is_dropout
+    sample_is_dropout,
+    spop_dropout_week
   );
 }
 

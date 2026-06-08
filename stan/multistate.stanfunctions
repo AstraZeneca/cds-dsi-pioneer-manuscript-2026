@@ -1753,6 +1753,7 @@ array[] vector compute_ms_os_km_rng(
   array[n_forecast_patients] int spop_os_censored;
   array[n_forecast_patients] int spop_is_dropout;
   array[n_forecast_patients] int sample_is_dropout;
+  array[n_forecast_patients] int spop_dropout_week;
 
   (sample_target_pfs, sample_target_right_censored,
    spop_target_pfs, spop_target_right_censored,
@@ -1766,7 +1767,8 @@ array[] vector compute_ms_os_km_rng(
    forecast_target_pfs, forecast_target_right_censored,
    sample_os, sample_os_censored,
    spop_os, spop_os_censored,
-   spop_is_dropout, sample_is_dropout
+   spop_is_dropout, sample_is_dropout,
+   spop_dropout_week
   ) = calculate_all_patients_endpoints_rng(
     forecast_patient_idx,
     obs_biomarker_cat,
