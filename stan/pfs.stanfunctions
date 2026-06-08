@@ -2059,14 +2059,12 @@ tuple(
 
     sample_is_dropout[j] = (sample_cause == 3);
 
-    (sample_pfs[j], sample_right_censored[j], sample_ms_pfs[j], sample_ms_right_censored[j]) =
-        derive_sample_pfs(sample_cause, sample_exit,
-                          sample_target_pfs[j], sample_target_right_censored[j],
-                          sample_ms_pfs[j], sample_ms_right_censored[j],
-                          sample_time_03,
-                          enable_ms_02, enable_ms_03);
-
-    // --- RNG Step 7: sample OS ---
+    // --- RNG Step 7: sample OS (drawn BEFORE the PFS derivation so a 0->3
+    //     dropout's PFS can reuse the OS outcome — see graft below) ---
+    // derive_sample_os_rng depends only on sample_cause, sample_exit, the
+    // survival rows and observed-OS data (all computed above) and is the only
+    // RNG step here; moving it before the RNG-free derive_sample_pfs does not
+    // perturb the RNG stream. Mirrors the spop reorder (OS before PFS).
     (sample_os[j], sample_os_censored[j]) = derive_sample_os_rng(
         sample_cause, sample_exit,
         enable_ms_12, enable_ms_32, ms_time_scale_12,
@@ -2076,6 +2074,24 @@ tuple(
         pfs[p],
         ms_censored_12[p], ms_time_12[p], ms_os_event_12[p],
         ms_censored_32[p], sample_time_03, ms_time_32[p]);
+
+    (sample_pfs[j], sample_right_censored[j], sample_ms_pfs[j], sample_ms_right_censored[j]) =
+        derive_sample_pfs(sample_cause, sample_exit,
+                          sample_target_pfs[j], sample_target_right_censored[j],
+                          sample_ms_pfs[j], sample_ms_right_censored[j],
+                          sample_time_03,
+                          enable_ms_02, enable_ms_03);
+
+    // PFS-from-OS convention for sample-pathway dropouts (mirror of spop above):
+    // a 0->3 dropout's PFS is its OS outcome — honors the observed/forecast death
+    // as the PFS event week. Operational-PFS estimand (clinical-endpoints-spec
+    // line 52); preserves PFS <= OS by construction.
+    if (sample_cause == 3) {
+      sample_pfs[j]               = sample_os[j];
+      sample_right_censored[j]    = sample_os_censored[j];
+      sample_ms_pfs[j]            = sample_os[j];
+      sample_ms_right_censored[j] = sample_os_censored[j];
+    }
   }
 
   return (
