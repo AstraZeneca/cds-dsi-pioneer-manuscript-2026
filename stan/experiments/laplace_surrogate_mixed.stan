@@ -90,7 +90,7 @@ functions {
 
   real surrogate_ll(vector theta,
                     vector beta_pop,
-                    real measure_sd, real log_lod,
+                    real measure_sd, data vector log_lod_per_visit,
                     data int n_bg,
                     data vector bg_obs,
                     data array[] int bg_pos,
@@ -109,7 +109,7 @@ functions {
         if (bg_obs[v] > 0)
           lp += normal_lpdf(log(bg_obs[v]) | mu, measure_sd);
         else
-          lp += normal_lcdf(log_lod | mu, measure_sd);
+          lp += normal_lcdf(log_lod_per_visit[v] | mu, measure_sd);
       }
     }
     return lp;
@@ -149,6 +149,10 @@ transformed data {
   vector[n_bg_visits] bg_obs = normalized_obs[bg_v_start:bg_v_end];
   array[n_bg_visits] int bg_time;
   for (v in 1:n_bg_visits) bg_time[v] = visit_time[bg_v_start + v - 1];
+  // Constant per-visit LOD vector (toy uses a single global log_lod). Mirrors
+  // the production per-visit signature exactly: a constant vector reproduces the
+  // validated PASS.
+  vector[n_bg_visits] bg_log_lod = rep_vector(log_lod, n_bg_visits);
   array[n_background + 1] int bg_pos;
   for (j in 1:(n_background + 1))
     bg_pos[j] = patient_visit_pos[n_forecast + j] - bg_v_start + 1;
@@ -230,7 +234,7 @@ model {
 
     target += laplace_marginal_tol(
       surrogate_ll,
-      (beta_pop, measure_sd, log_lod, n_background, bg_obs, bg_pos, bg_time),
+      (beta_pop, measure_sd, bg_log_lod, n_background, bg_obs, bg_pos, bg_time),
       hessian_block_size,
       surrogate_K_fn,
       (Sigma_beta, n_background),
