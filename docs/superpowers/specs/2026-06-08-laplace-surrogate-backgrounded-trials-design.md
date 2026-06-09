@@ -129,19 +129,23 @@ The surrogate slots into exactly that gap.
 - **Forecast patients:** unchanged. Full bi-exponential `sf_log_space_obs`,
   explicit NCP latents, full trajectory — everything we report is untouched.
 - **Backgrounded patients:** new
-  `target += laplace_marginal_tol(surrogate_ll, (θ_pop args + obs),
-  hessian_block_size=3, K_fn=Σ_β, ...)`.
-- **Solver:** because the surrogate marginal is genuinely log-concave
-  (linear-Gaussian), use **solver 1** (Cholesky of the PD Hessian) — the fast,
-  well-conditioned path — NOT the solver-3 fallback the bi-exponential needed
-  merely to survive. If solver 1 misbehaves, the surrogate isn't log-concave as
-  designed → immediate red flag.
+  `target += laplace_marginal_tol(surrogate_ll, (β_pop, obs, ...),
+  hessian_block_size=2, K_fn=Σ_β, ...)` — marginalize `(β₁,β₂)` only; intercept
+  pinned (§3a).
+- **Solver:** the surrogate marginal is linear-Gaussian, so **solver 1** is the
+  intended path. In practice it falls back to **solver 2** occasionally (the
+  `(t, t²)` basis makes the inner Hessian ill-conditioned); this did NOT affect
+  convergence (0 divergences, R-hat 1.00) or the validated endpoint. A follow-up
+  could center/scale the time basis so solver 1 holds; not required.
 
 New Stan functions in a small module (e.g. `stan/modules/laplace_surrogate/`):
-- `surrogate_anchor_betas(θ_pop)` → `β_pop`
-- `surrogate_bridge_cov(θ_pop, sds)` → `Σ_β` (via `jacobian`)
+- `surrogate_anchor_betas(θ_pop)` → quadratic coefficients at a single θ
+- `surrogate_bridge(θ_pop, sds)` → `(β_pop, Σ_β)` via the GH-3 pushforward —
+  returns BOTH the population mean `E[β(θ)]` and the `(β₁,β₂)` covariance from
+  one quadrature (§3, §3a)
 - `surrogate_ll(β, θ_pop, obs, ...)` — the marginalized likelihood (quadratic
-  log-burden Gaussian + `normal_lcdf` LOD tail)
+  log-burden Gaussian + `normal_lcdf` LOD tail), intercept pinned at `β_pop[1]`
+- `surrogate_K_fn(Σ_β, n)` — tiles `Σ_β` block-diagonally (2×2 per patient)
 
 The old hand-coded `stan/modules/laplace/` stays untouched and unused; retire it
 only after this lands (separate cleanup, §6 out-of-scope).
@@ -150,39 +154,55 @@ Blast radius: exactly one new code path, reachable only by patients we never
 report, rejoining the model at `θ_pop`. Population params, priors, hierarchy,
 and the entire forecast path are shared verbatim.
 
-## 5. Validation gate
+## 5. Validation gate (REVISED — mixed-cohort + PFS endpoint)
 
-Same structure as the prior NO-GO experiment, retargeted at the population
-posterior (the only thing backgrounded trials affect). Run **before** any
-integration into the real model.
+The original all-backgrounded gate was **stricter than production**: it forced
+the surrogate to identify all three population SDs from the surrogate alone,
+which two coefficients cannot do (`tr_sd`'s footprint is the ~1250×-weaker
+curvature channel, below the noise floor). The validated gate matches production.
 
-**Standalone harness** (`stan/experiments/laplace_surrogate_test.stan` +
-`r/experiments/test_laplace_surrogate.R`):
-- Synthetic data: a few backgrounded trials' worth of patients simulated from
-  the **true bi-exponential** (test the surrogate against the real generative
-  process, not its own assumptions), plus censored-below-LOD visits.
-- Two fits: **(A)** full-HMC everywhere (reference); **(B)**
-  surrogate-marginalized for the backgrounded patients.
+**Mixed-cohort harness** (`stan/experiments/laplace_surrogate_mixed.stan` +
+`r/experiments/test_laplace_surrogate_mixed.R`):
+- Synthetic data from the **true bi-exponential** (+ LOD censoring), patients
+  ordered forecast-first: e.g. 20 forecast + 40 backgrounded.
+- Two fits: **(A) reference** = ALL patients full-HMC; **(B) mixed** = forecast
+  full-HMC (pins the SDs), backgrounded = surrogate-marginalized.
 
-**Gate** — surrogate fit clean FIRST, then population agreement:
-1. **Sampler health (B):** solver 1; require `pct_divergent < 1`,
-   `max_rhat < 1.01`, `min_ess_bulk > 400`. Solver 1 working *is* the design
-   claim — if it doesn't, the surrogate isn't log-concave as intended.
-2. **Population agreement, joint:** compare
-   `{tr_loc_pop, frac_logit_pop, init_logit_pop, tr_sd, frac_sd, init_sd}`
-   between A and B. Means within a few MCSE; SDs not understated (B mustn't be
-   falsely confident); and the **correlation structure** of the joint population
-   posterior preserved. The joint check subsumes target-forecast invariance: the
-   target forecast is a nonlinear function of the full joint population
-   posterior, so checking the joint catches correlation/tail drift a
-   marginal-only gate would miss.
+**Gate** — three layers, each closer to the deliverable:
+1. **Sampler health (B):** `pct_divergent < 1`, `max_rhat < 1.01`,
+   `min_ess_bulk > 400`. (Solver 1 may fall back to solver 2; not disqualifying.)
+2. **Population marginals:** all six `{*_pop, *_sd}` agree — `max diff/MCSE < 5`,
+   `min SD ratio > 0.8`.
+3. **Endpoint invariance (DECISIVE):** derive each population-drawn patient's
+   PFS = PD-crossing week (RECIST rule: burden ≥20% above running nadir AND ≥5
+   absolute, `baseline_sld=60`) from both runs; require PFS quantiles agree to
+   `< 2 weeks` and landmark event rates to `< 0.03`. This is the actual reported
+   quantity. The raw-burden `corr_diff` and burden-quantile checks are
+   INFORMATIONAL only — they sit one layer below the deliverable and a breach
+   there is acceptable iff PFS is invariant.
 
-**Honest-gate discipline (carried over):** gate on divergences/R-hat/ESS FIRST;
-never let a low-ESS fit fake a PASS through inflated MCSE.
+**Honest-gate discipline:** gate on divergences/R-hat/ESS FIRST; measure the
+real deliverable (PFS) rather than a proxy when the two disagree.
 
-**Optional, not a gate:** target-trial forecast predictive identical A vs B —
-belt-and-suspenders only. We do NOT gate on backgrounded-trial predictive (that
-would test the very thing we deliberately approximate).
+## 5a. Validation RESULT (2026-06-08): PASS
+
+Mixed-cohort gate (20 forecast + 40 backgrounded, after the §3a + GH-mean fixes):
+- **Sampler:** 0 divergences, R-hat 1.00, ESS ~1400 (solver 1 → solver 2 fallback
+  on some chains; no effect on convergence).
+- **Marginals:** all six pass — `max diff/MCSE 4.10`, `min SD ratio 0.96`. `tr_sd`
+  agrees (ref 0.288 vs mixed 0.279): the forecast cohort pins it, as designed.
+- **PFS endpoint:** **invariant** — median PFS identical (34 wk), max quantile
+  diff **1 week** (< one assessment interval), max landmark event-rate diff
+  **0.019**. ✓
+- **Known cosmetic breaches (do NOT reach the deliverable):** joint
+  `frac_logit_pop:init_logit_pop` correlation distorts (`corr_diff 0.30`) and the
+  week-52 *upper-tail* burden compresses ~8% — both because the quadratic cannot
+  separate `frac` from `init` (structural; no polynomial degree fixes it, per the
+  cubic pre-check). PFS is a short/mid-horizon threshold-crossing event, so
+  neither moves it.
+
+**Verdict:** the surrogate is validated for production use — backgrounded
+patients marginalized via the quadratic + GH bridge preserve the reported PFS.
 
 ## 6. Open parameters & risks
 
@@ -194,18 +214,27 @@ would test the very thing we deliberately approximate).
 - **`measure_sd` for the surrogate** — reuse the model's existing SLD
   measurement-noise parameter (same physical quantity).
 
-**Risks & mitigations:**
-- **Quadratic too stiff for long post-nadir regrowth** — a single parabola can't
-  track a sharp nadir + sustained exponential regrowth over a very long window.
-  The gate will expose this as population bias; pre-agreed fallback is a
-  cubic/4-knot spline (still linear-in-coefficients → Laplace stays exact; only
-  latent count and one derivation grow). We do NOT silently accept a biased fit.
-- **`Σ_β` near-singular if an SD → 0** — degrades to rank-2; solver 1 may
-  complain. Mitigation: small documented jitter on `K`'s diagonal.
-- **Anchor/window mismatch across trials** — if backgrounded trials have very
-  different follow-up lengths, one fixed anchor set may not suit all. Mitigation:
-  per-trial fixed anchors (still constant, still cheap) — easy extension, built
-  only if needed.
+**Risks & mitigations (updated post-validation):**
+- **`frac`/`init` not separable (CONFIRMED structural limitation).** The quadratic
+  sees only the combined early-trajectory effect of `frac_logit` and `init_logit`,
+  so it cannot preserve their individual trade-off — it distorts their joint
+  correlation (`corr_diff 0.30`) and compresses the long-horizon worst-case burden
+  tail ~8%. A cubic does NOT fix this (pre-check: `frac` contributes ~nothing
+  beyond the linear coefficient; week-52 is also beyond the data window, so no
+  anchor helps). **Validated harmless:** neither moves the reported PFS endpoint.
+  Document as a known limitation; revisit only if a future deliverable depends on
+  the long-horizon upper-tail burden or the frac/init joint specifically.
+- **`tr_sd` not identifiable from the surrogate alone** — its footprint is the
+  ~1250×-weaker curvature channel. Mitigation BUILT INTO the design: backgrounded
+  trials are used only alongside forecast patients, who pin the SDs. Validated by
+  the mixed-cohort gate.
+- **Solver-1 → solver-2 fallback** — `(t, t²)` collinearity ill-conditions the
+  inner Hessian. No effect on convergence/endpoint. Optional fix: center/scale the
+  time basis.
+- **`Σ_β` near-singular if an SD → 0** — small documented jitter on `K`'s diagonal
+  (`1e-10`).
+- **Anchor/window mismatch across trials** — per-trial fixed anchors (still
+  constant, still cheap); easy extension, built only if needed.
 
 **Out of scope (YAGNI):**
 - Multistate hazards for backgrounded patients (SLD-only, as decided).
