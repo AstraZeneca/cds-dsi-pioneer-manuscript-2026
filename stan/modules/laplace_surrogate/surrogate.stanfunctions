@@ -1,0 +1,116 @@
+// Laplace surrogate functions for backgrounded-trial patients.
+// ============================================================================
+// Validated design (source of truth: stan/experiments/laplace_surrogate_mixed.stan,
+// Phase 1 PASSED). Quadratic-in-time surrogate for the per-patient log-burden
+// trajectory: intercept pinned at g(0)=0 (b0 = beta_pop[1]), marginalize only
+// (beta_1, beta_2) => hessian_block_size = 2. The population mean coefficients
+// beta_pop = E[beta(theta)] and the marginalized-coef covariance
+// Sigma_beta = Cov[(beta_1,beta_2)] both come from ONE GH-3 pushforward bridge
+// (27-point quadrature), which kills the Jensen-gap location bias.
+//
+// The five functions below are promoted VERBATIM from the validated experiment,
+// EXCEPT surrogate_ll takes a per-visit `data vector log_lod_per_visit` instead
+// of a scalar `real log_lod` (the production likelihood applies a per-patient
+// LOD offset because burden is normalized to each patient's baseline).
+// ============================================================================
+real bi_exp_log_burden(real t,
+                       real tr_loc, real frac_logit, real init_logit) {
+  real log_dec_frac = log_inv_logit(frac_logit);
+  real log_gro_frac = log1m_inv_logit(frac_logit);
+  real dec_rate = exp(tr_loc + log_dec_frac);
+  real gro_rate = exp(tr_loc + log_gro_frac);
+  real init_log_dec = log_inv_logit(init_logit);
+  real init_log_gro = log1m_inv_logit(init_logit);
+  real state_dec = init_log_dec - dec_rate * t;
+  real state_gro = fmin(init_log_gro + gro_rate * t, 500.0);
+  return log_sum_exp(state_dec, state_gro);
+}
+
+// Quadratic coefficients interpolating g at the anchors, for a SINGLE theta.
+vector surrogate_anchor_betas(real tr_loc_pop, real frac_logit_pop,
+                              real init_logit_pop,
+                              data matrix Vinv, data vector anchor_times) {
+  vector[3] g;
+  for (k in 1:3)
+    g[k] = bi_exp_log_burden(anchor_times[k], tr_loc_pop,
+                             frac_logit_pop, init_logit_pop);
+  return Vinv * g;
+}
+
+// GH-3 pushforward of beta(theta), theta ~ N(theta_pop, diag(sd^2)). Returns
+// BOTH the population mean E[beta] AND the marginalized-coef covariance
+// Cov[(beta_1,beta_2)] from the SAME quadrature:
+//   - mean E[beta] (NOT g(theta_pop)): the population mean log-burden is the
+//     average of trajectories, not the trajectory of the average patient. g is
+//     nonlinear so these differ by a Jensen gap that biases the location params
+//     when many backgrounded patients make them precise (the mixed-gate FAIL).
+//   - Cov[(beta_1,beta_2)]: the random-effect spread (intercept pinned at 0).
+// Tuple return: (mean_beta[3], cov_beta12[2,2]).
+tuple(vector, matrix) surrogate_bridge(real tr_loc_pop, real frac_logit_pop,
+                                       real init_logit_pop,
+                                       real tr_sd, real frac_sd, real init_sd,
+                                       data matrix Vinv, data vector anchor_times,
+                                       data vector gh_x, data vector gh_w,
+                                       data real jitter) {
+  int m = num_elements(gh_x);
+  int nq = m * m * m;
+  array[nq] vector[3] beta_pts;
+  vector[nq] w;
+  vector[3] mean_full = rep_vector(0.0, 3);
+  int q = 1;
+  for (i in 1:m) {
+    for (j in 1:m) {
+      for (k in 1:m) {
+        real th1 = tr_loc_pop     + tr_sd   * gh_x[i];
+        real th2 = frac_logit_pop + frac_sd * gh_x[j];
+        real th3 = init_logit_pop + init_sd * gh_x[k];
+        beta_pts[q] = surrogate_anchor_betas(th1, th2, th3, Vinv, anchor_times);
+        w[q] = gh_w[i] * gh_w[j] * gh_w[k];
+        mean_full += w[q] * beta_pts[q];
+        q += 1;
+      }
+    }
+  }
+  vector[2] mean12 = mean_full[2:3];
+  matrix[2, 2] S = rep_matrix(0.0, 2, 2);
+  for (r in 1:nq)
+    S += w[r] * (beta_pts[r][2:3] - mean12) * (beta_pts[r][2:3] - mean12)';
+  return (mean_full, S + diag_matrix(rep_vector(jitter, 2)));
+}
+
+real surrogate_ll(vector theta,
+                  vector beta_pop,
+                  real measure_sd, data vector log_lod_per_visit,
+                  data int n_bg,
+                  data vector bg_obs,
+                  data array[] int bg_pos,
+                  data array[] int bg_time) {
+  int d = 2;
+  real lp = 0;
+  for (i in 1:n_bg) {
+    real b0 = beta_pop[1];
+    real b1 = beta_pop[2] + theta[(i - 1) * d + 1];
+    real b2 = beta_pop[3] + theta[(i - 1) * d + 2];
+    int v_start = bg_pos[i];
+    int v_end   = bg_pos[i + 1] - 1;
+    for (v in v_start:v_end) {
+      real t = bg_time[v] - 1.0;
+      real mu = b0 + b1 * t + b2 * t * t;
+      if (bg_obs[v] > 0)
+        lp += normal_lpdf(log(bg_obs[v]) | mu, measure_sd);
+      else
+        lp += normal_lcdf(log_lod_per_visit[v] | mu, measure_sd);
+    }
+  }
+  return lp;
+}
+
+matrix surrogate_K_fn(matrix Sigma_beta, int n_bg) {
+  int d = 2;
+  matrix[n_bg * d, n_bg * d] K = rep_matrix(0, n_bg * d, n_bg * d);
+  for (i in 1:n_bg) {
+    int s = (i - 1) * d + 1;
+    K[s:(s + d - 1), s:(s + d - 1)] = Sigma_beta;
+  }
+  return K;
+}
