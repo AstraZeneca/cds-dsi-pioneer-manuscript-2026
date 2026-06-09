@@ -869,7 +869,7 @@ publication_targets <- list(
   tar_target(
     tumor_ssls_lfo_clean,
     clean_lfo_results(tumor_ssls_lfo) |>
-      select(refit_n, n, m, n_visits_added, n_future_visits, starts_with("E_"), fit) |>
+      select(refit_n, n, m, starts_with("E_"), fit) |>
       left_join(lfo_cutoffs, by = "n")
   ),
 
