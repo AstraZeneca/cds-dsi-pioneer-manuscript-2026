@@ -232,7 +232,14 @@ publication_targets <- list(
       bridge_variant = "full",
       n_tv_covar     = 3L,
       enable_trend   = 1L,
-      warmstart      = TRUE
+      # COLD START for the surrogate run: enabling enable_background_surrogate
+      # marginalizes the 419 backgrounded patients' NCP latents, SHRINKING the
+      # sampled parameter space. The saved inv-metric (data/inv_metric_publication
+      # _tumor_ssls_chain*.json) was adapted on the old all-forecast parameter
+      # space and has the WRONG dimension — CmdStan would reject it at startup.
+      # warmstart=FALSE drops the metric AND restores full warmup to adapt a fresh
+      # mass matrix. Re-enable (with regenerated metrics) once this run converges.
+      warmstart      = FALSE
     ),
     names = "bridge_variant",
     tar_target(
