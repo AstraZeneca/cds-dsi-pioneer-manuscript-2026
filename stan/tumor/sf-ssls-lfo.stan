@@ -99,13 +99,41 @@ model {
       }
     }
 
-    // Multistate likelihood contribution (cutoff-aware)
-    if (enable_ms_01) {
-      target += sum(calc_ms_single_transition_loglik(
-        cutoff_ms_time_01,
-        cutoff_ms_censored_01,
-        log_cond_surv_01[cutoff_observed_patients]
-      ));
+    // Multistate likelihood contribution (cutoff-aware, ALL enabled transitions).
+    // Mirrors the full model (sf-ssm-log-space.stan:101) via multistate_lpmf,
+    // fed cutoff-censored lfo_ms_* arrays from recensor_ms_at_cutoff (issue #92).
+    // No propensity module here, so weights are all 1.0 (like the full tumor model).
+    //
+    // B2 GUARD: log_cond_surv_* are forecast-row-sized and indexed forecast-local.
+    // The publication LFO runs forecast_split_level == 0 (identity row map), so
+    // indexing by full patient IDs is correct. Background/forecast split (B2) must
+    // reconcile the row space before lifting this guard.
+    if (fit_multistate_data) {
+      if (forecast_split_level != 0)
+        fatal_error("sf-ssls-lfo all-transition MS likelihood requires ",
+                    "forecast_split_level == 0 (got ", forecast_split_level,
+                    "); background/forecast split (B2) not yet implemented.");
+
+      lfo_ms_final_state[forecast_patient_idx] ~ multistate(
+        ones_vector(n_forecast_patients),
+        enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
+        enable_ms_03, enable_ms_32,
+        lfo_ms_time_01[forecast_patient_idx], lfo_ms_time_02[forecast_patient_idx],
+        lfo_ms_time_12[forecast_patient_idx],
+        lfo_ms_time_03[forecast_patient_idx], lfo_ms_time_32[forecast_patient_idx],
+        lfo_ms_censored_01[forecast_patient_idx],
+        lfo_ms_prog_deterministic[forecast_patient_idx],
+        lfo_ms_ic_gap_01[forecast_patient_idx],
+        t_patient_visits,
+        patient_visit_pos,
+        log_cond_surv_01,
+        log_cond_surv_02,
+        log_cond_surv_12_s,
+        log_cond_surv_12_t,
+        log_cond_surv_03,
+        log_cond_surv_32,
+        enable_ms_visit_gated_01
+      );
     }
   }
 }
