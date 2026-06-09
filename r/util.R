@@ -457,6 +457,30 @@ build_model <- function(
   # Compute hash of all source file contents to detect changes
   source_hash <- compute_stan_source_hash(model_file, include_files)
 
+  # Guard: the embedded Laplace functions (laplace_marginal_tol / laplace_marginal)
+  # only exist in stanc >= 2.39. Compiling a model that uses them under an older
+  # CmdStan silently produces a binary whose chains crash at init with swallowed
+  # stderr ("No chains finished successfully") — hours to diagnose. Fail loudly at
+  # compile time instead, but ONLY when the source actually uses the feature (so
+  # non-surrogate models still build on 2.38).
+  uses_laplace <- c(model_file, include_files) |>
+    map(read_lines) |>
+    unlist() |>
+    str_detect("laplace_marginal") |>
+    any()
+  if (uses_laplace) {
+    cmdstan_v <- cmdstanr::cmdstan_version()
+    if (cmdstan_v < "2.39.0") {
+      stop(
+        "Model '", model_file, "' uses laplace_marginal_tol, which requires ",
+        "CmdStan >= 2.39.0, but the active CmdStan is ", cmdstan_v, " (path: ",
+        cmdstanr::cmdstan_path(), "). Point cmdstanr at a >= 2.39 install ",
+        "(e.g. set_cmdstan_path('~/.cmdstan/cmdstan-2.39.0') or the CMDSTAN env ",
+        "var) before building the surrogate model."
+      )
+    }
+  }
+
   # Determine expected executable path
   model_name <- tools::file_path_sans_ext(fs::path_file(model_file))
   exe_dir <- dir %||% fs::path_dir(model_file)
