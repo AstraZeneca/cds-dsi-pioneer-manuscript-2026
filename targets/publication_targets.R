@@ -367,13 +367,16 @@ publication_targets <- list(
       {
         assembled <- all_stan_data |>
           add_tumor_priors(tumor_priors) |>
-          # list_modify (override) not c() (append): default_stan_data_settings
-          # are run-specific overrides of the generic priors. Behavior-identical to
-          # c() for keys unique to one side, but lets settings WIN on shared keys
-          # (e.g. enable_background_surrogate/surrogate_anchor_times, which also
-          # carry a default-off value in get_tumor_priors) instead of producing a
-          # duplicate-name error in the Stan data list.
-          list_modify(!!!default_stan_data_settings) |>
+          # modifyList (override) not c() (append): default_stan_data_settings are
+          # run-specific overrides of the generic priors. Behavior-identical to c()
+          # for keys unique to one side, but lets settings WIN on shared keys (e.g.
+          # enable_background_surrogate/surrogate_anchor_times, which also carry a
+          # default-off value in get_tumor_priors) instead of producing a
+          # duplicate-name error in the Stan data list. NB: modifyList takes the
+          # list as a plain argument so `default_stan_data_settings` stays a normal
+          # target dependency — `list_modify(!!!...)` would splice-evaluate it at
+          # manifest-parse time, before targets resolves deps (object-not-found).
+          modifyList(default_stan_data_settings) |>
           c(derive_ms_fields(all_analysis_data, "full"))
         # Translate the legacy single baseline-hazard flag into the three
         # decomposed per-transition x per-level arrays the Stan model consumes,
