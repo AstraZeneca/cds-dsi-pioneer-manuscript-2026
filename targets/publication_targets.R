@@ -243,7 +243,13 @@ publication_targets <- list(
         cond_groups,
         km_quant,
         extend_max_all_t = 200L,
-        forecast_observation_interval = 6L
+        forecast_observation_interval = 6L,
+        # Forecast/background split: target trial lilly_cxcr4 (factor level 1) is
+        # forecast (full bi-exponential); historical amgen_darbe (level 2) is
+        # backgrounded and marginalized via the Laplace surrogate. forecast_group
+        # is the integer factor level of the forecast (target) trial.
+        forecast_split_level = 1L,
+        forecast_group = 1L
       ) |>
         list_assign(n_time_varying_covar = n_tv_covar),
       error = "stop"
@@ -262,6 +268,12 @@ publication_targets <- list(
         enable_ms_03 = TRUE,
         enable_ms_32 = TRUE,
         ms_time_scale_12 = 1L,
+
+        # Marginalize the backgrounded historical trial (amgen_darbe) via the
+        # log-concave quadratic Laplace surrogate. Anchors (weeks) span the
+        # historical visit window (0-36, median 12); first anchor MUST be 0.
+        enable_background_surrogate = 1L,
+        surrogate_anchor_times = c(0, 12, 28),
 
         # Legacy baseline-hazard mode (per level, 0-4). Kept here as the
         # human-readable config knob; decomposed into the three per-transition x
