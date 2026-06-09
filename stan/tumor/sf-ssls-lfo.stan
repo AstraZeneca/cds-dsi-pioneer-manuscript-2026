@@ -10,6 +10,7 @@ functions {
   #include "_burden.stanfunctions"
   #include "modules/state_space/sf.stanfunctions"
   #include "modules/tumor/tumor.stanfunctions"
+  #include "modules/laplace_surrogate/surrogate.stanfunctions"
 }
 
 data {
@@ -33,6 +34,8 @@ data {
   int<lower = 0, upper = 1> fit_multistate_data;
 
   #include "modules/state_space/lfo_data.stan"
+  #include "modules/laplace_surrogate/flags.stan"
+  #include "modules/laplace_surrogate/data.stan"
 }
 
 transformed data {
@@ -55,6 +58,7 @@ transformed data {
   #include "modules/multistate/transformed_data.stan"
   #include "_tumor_observed_covar_transformed_data.stan"
   #include "_lfo_transformed_data.stan"
+  #include "modules/laplace_surrogate/transformed_data.stan"
 }
 
 parameters {
@@ -107,6 +111,8 @@ model {
         log_cond_surv_01[cutoff_observed_patients]
       ));
     }
+
+    #include "modules/laplace_surrogate/likelihood.stan"
   }
 }
 

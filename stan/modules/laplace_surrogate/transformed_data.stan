@@ -40,3 +40,37 @@ if (enable_background_surrogate == 1 && surrogate_anchor_times[1] != 0.0)
 vector[enable_background_surrogate == 1 ? n_background_patients * 2 : 0]
   surrogate_theta_0 = rep_vector(0.0,
     enable_background_surrogate == 1 ? n_background_patients * 2 : 0);
+
+// Background-only compact views, assembled from transformed data only (so they
+// satisfy the data-only argument qualifiers of surrogate_ll). Per-patient LOD
+// offset (burden normalized to each patient's baseline => LOD shifts by
+// log_baseline_sld[p]).
+array[enable_background_surrogate == 1 ? n_background_patients + 1 : 0] int surrogate_bg_pos;
+int surrogate_n_bg_visits = 0;
+if (enable_background_surrogate == 1 && n_background_patients > 0) {
+  surrogate_bg_pos[1] = 1;
+  for (j in 1:n_background_patients) {
+    int p = background_patient_idx[j];
+    int vs, ve;
+    (vs, ve) = get_pos(patient_visit_pos, p);
+    surrogate_bg_pos[j + 1] = surrogate_bg_pos[j] + (ve - vs + 1);
+  }
+  surrogate_n_bg_visits = surrogate_bg_pos[n_background_patients + 1] - 1;
+}
+vector[surrogate_n_bg_visits] surrogate_bg_obs;
+array[surrogate_n_bg_visits] int surrogate_bg_time;
+vector[surrogate_n_bg_visits] surrogate_bg_log_lod;
+if (enable_background_surrogate == 1 && n_background_patients > 0) {
+  int w = 1;
+  for (j in 1:n_background_patients) {
+    int p = background_patient_idx[j];
+    int vs, ve;
+    (vs, ve) = get_pos(patient_visit_pos, p);
+    for (v in vs:ve) {
+      surrogate_bg_obs[w]     = normalized_sld[v];
+      surrogate_bg_time[w]    = t_patient_visit_idx[v];
+      surrogate_bg_log_lod[w] = log_lod - log_baseline_sld[p];
+      w += 1;
+    }
+  }
+}
