@@ -13,6 +13,7 @@ source(here::here("quarto", "_shared", "_setup.R"))
 source(here::here("r", "sclc", "plot_functions.R"))
 source(here::here("r", "sclc", "table_functions.R"))
 source(here::here("r", "sclc", "accuracy.R"))
+source(here::here("r", "accuracy.R"))
 
 # Define target stores (shared across website and other scripts)
 source(here::here("r", "publication", "target_stores.R"))
