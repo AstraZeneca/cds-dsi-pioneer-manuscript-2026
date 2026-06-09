@@ -17,6 +17,24 @@ obs_os_data <- targets::tar_read(km_trial_os,               store = pub_store) |
 
 ## OS Kaplan-Meier Curves {#sec-os-km}
 
+::: {.callout-note collapse="false"}
+## Two estimands: sample-based vs superpopulation
+
+As with PFS, the two tabs answer different questions and are **not** expected to
+coincide:
+
+- **Sample-based** is the posterior-predictive check — each enrolled patient
+  re-simulated *conditional on their observed survival to last follow-up*. This
+  is the curve to compare against the observed OS KM.
+
+- **Superpopulation** re-simulates the same cohort *unconditionally, from week 1*.
+  Discarding already-survived follow-up shifts the curve left of the
+  sample-based and observed curves. This is the population-forecast estimand —
+  predicted OS for the cohort before observing its survival — so its
+  displacement is the expected signature of unconditional re-simulation, not a
+  lack of fit.
+:::
+
 ::: {.panel-tabset}
 
 ### Sample-Based
@@ -41,7 +59,7 @@ os_km_data |>
 
 ```{r}
 #| label: fig-os-km-spop
-#| fig-cap: Superpopulation OS KM (posterior) by trial.
+#| fig-cap: "Superpopulation OS KM (posterior) by trial: the enrolled cohort re-simulated unconditionally from week 1 (the population-forecast estimand). It sits left of the sample-based and observed curves by design — see the note above."
 #| fig-width: 10
 #| fig-height: 5
 
