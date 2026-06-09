@@ -36,6 +36,7 @@ functions {
     return log_sum_exp(state_dec, state_gro);
   }
 
+  // Quadratic coefficients interpolating g at the anchors, for a SINGLE theta.
   vector surrogate_anchor_betas(real tr_loc_pop, real frac_logit_pop,
                                 real init_logit_pop,
                                 data matrix Vinv, data vector anchor_times) {
@@ -46,18 +47,26 @@ functions {
     return Vinv * g;
   }
 
-  // GH-3 pushforward covariance of the marginalized coefficients (beta_1, beta_2).
-  matrix surrogate_bridge_cov(real tr_loc_pop, real frac_logit_pop,
-                              real init_logit_pop,
-                              real tr_sd, real frac_sd, real init_sd,
-                              data matrix Vinv, data vector anchor_times,
-                              data vector gh_x, data vector gh_w,
-                              data real jitter) {
+  // GH-3 pushforward of beta(theta), theta ~ N(theta_pop, diag(sd^2)). Returns
+  // BOTH the population mean E[beta] AND the marginalized-coef covariance
+  // Cov[(beta_1,beta_2)] from the SAME quadrature:
+  //   - mean E[beta] (NOT g(theta_pop)): the population mean log-burden is the
+  //     average of trajectories, not the trajectory of the average patient. g is
+  //     nonlinear so these differ by a Jensen gap that biases the location params
+  //     when many backgrounded patients make them precise (the mixed-gate FAIL).
+  //   - Cov[(beta_1,beta_2)]: the random-effect spread (intercept pinned at 0).
+  // Tuple return: (mean_beta[3], cov_beta12[2,2]).
+  tuple(vector, matrix) surrogate_bridge(real tr_loc_pop, real frac_logit_pop,
+                                         real init_logit_pop,
+                                         real tr_sd, real frac_sd, real init_sd,
+                                         data matrix Vinv, data vector anchor_times,
+                                         data vector gh_x, data vector gh_w,
+                                         data real jitter) {
     int m = num_elements(gh_x);
     int nq = m * m * m;
-    array[nq] vector[2] beta_pts;
+    array[nq] vector[3] beta_pts;
     vector[nq] w;
-    vector[2] mean_b = rep_vector(0.0, 2);
+    vector[3] mean_full = rep_vector(0.0, 3);
     int q = 1;
     for (i in 1:m) {
       for (j in 1:m) {
@@ -65,19 +74,18 @@ functions {
           real th1 = tr_loc_pop     + tr_sd   * gh_x[i];
           real th2 = frac_logit_pop + frac_sd * gh_x[j];
           real th3 = init_logit_pop + init_sd * gh_x[k];
-          vector[3] beta_full =
-            surrogate_anchor_betas(th1, th2, th3, Vinv, anchor_times);
-          beta_pts[q] = beta_full[2:3];
+          beta_pts[q] = surrogate_anchor_betas(th1, th2, th3, Vinv, anchor_times);
           w[q] = gh_w[i] * gh_w[j] * gh_w[k];
-          mean_b += w[q] * beta_pts[q];
+          mean_full += w[q] * beta_pts[q];
           q += 1;
         }
       }
     }
+    vector[2] mean12 = mean_full[2:3];
     matrix[2, 2] S = rep_matrix(0.0, 2, 2);
     for (r in 1:nq)
-      S += w[r] * (beta_pts[r] - mean_b) * (beta_pts[r] - mean_b)';
-    return S + diag_matrix(rep_vector(jitter, 2));
+      S += w[r] * (beta_pts[r][2:3] - mean12) * (beta_pts[r][2:3] - mean12)';
+    return (mean_full, S + diag_matrix(rep_vector(jitter, 2)));
   }
 
   real surrogate_ll(vector theta,
@@ -214,9 +222,9 @@ model {
 
   // Backgrounded cohort via the surrogate (mode 1 only).
   if (mixed_mode == 1 && n_background > 0) {
-    vector[3] beta_pop = surrogate_anchor_betas(
-      tr_loc_pop, frac_logit_pop, init_logit_pop, Vinv, anchor_times);
-    matrix[2, 2] Sigma_beta = surrogate_bridge_cov(
+    vector[3] beta_pop;
+    matrix[2, 2] Sigma_beta;
+    (beta_pop, Sigma_beta) = surrogate_bridge(
       tr_loc_pop, frac_logit_pop, init_logit_pop,
       tr_sd, frac_sd, init_sd, Vinv, anchor_times, gh_x, gh_w, jitter);
 
