@@ -437,14 +437,21 @@ export_stan_functions <- function(stan_file, includes = NULL) {
   return(model)
 }
 
-# Compute hash of Stan model source files
-# Returns a hash string that changes when any source file content changes
+# Compute hash of Stan model source files + the CmdStan version.
+# Returns a hash string that changes when any source file content changes OR when
+# the active CmdStan version changes. Including the version is essential: a
+# compiled binary depends on the toolchain that built it, so a version switch
+# (e.g. 2.38 -> 2.39 for laplace_marginal_tol) MUST invalidate the cached exe.
+# Without this, build_model reuses a stale binary compiled against the old
+# version, and the new version's features silently fail at runtime.
 compute_stan_source_hash <- function(model_file, include_files = NULL) {
-  all_source_files <- c(model_file, include_files)
-  all_source_files |>
+  source_contents <- c(model_file, include_files) |>
     sort() |>
-    map(read_lines) |>
-    digest::digest(algo = "md5")
+    map(read_lines)
+  cmdstan_v <- tryCatch(as.character(cmdstanr::cmdstan_version()),
+                        error = function(e) "unknown")
+  digest::digest(list(sources = source_contents, cmdstan = cmdstan_v),
+                 algo = "md5")
 }
 
 build_model <- function(
