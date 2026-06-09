@@ -358,3 +358,41 @@ array[n_cutoff_observed_patients + 1] int cutoff_patient_visit_m1_pos = create_p
 // - sum_tumor_size[cutoff_state_indices]                 (visit-level!)
 // - states[cutoff_state_indices, ] to get cutoff states (ALL visits, including first)
 
+// ============================================================================
+// All-transition cutoff re-censoring (GitHub issue #92 / blocker B1)
+// ============================================================================
+// Build cutoff-censored multistate arrays for ALL enabled transitions, so the
+// LFO model block can fit the same multistate_lpmf as the full model instead
+// of the 0->1-only single-transition path. Uses the shared, tested
+// recensor_ms_at_cutoff() (stan/lfo.stanfunctions:391; tests in
+// test-stan-recensor-ms.R) — identical pattern to ms-standalone-lfo.stan.
+//
+// Death / dropout / off-trial death are registry-exact (no visit required), so
+// they censor at the per-patient calendar cutoff (lfo_cutoff_cal_week); visit-
+// gated events (progression, state-0 follow-up) censor at cutoff_last_visit_week.
+array[n_patients] int lfo_cutoff_cal_week;
+for (i in 1:n_patients) {
+  int days_since_enroll = cutoff_calendar_day[1] - calendar_day[i] + 1;
+  lfo_cutoff_cal_week[i] = days_since_enroll > 0 ? (days_since_enroll - 1) %/% 7 + 1 : 0;
+}
+
+array[n_patients] int lfo_ms_final_state;
+array[n_patients] int lfo_ms_time_01;
+array[n_patients] int lfo_ms_censored_01;
+array[n_patients] int lfo_ms_time_02;
+array[n_patients] int lfo_ms_time_12;
+array[n_patients] int lfo_ms_time_03;
+array[n_patients] int lfo_ms_time_32;
+array[n_patients] int lfo_interval_censored;
+array[n_patients] int lfo_ms_prog_deterministic;
+array[n_patients] int lfo_ms_ic_gap_01;
+
+(lfo_ms_final_state, lfo_ms_time_01, lfo_ms_censored_01,
+ lfo_ms_time_02, lfo_ms_time_12, lfo_ms_time_03, lfo_ms_time_32,
+ lfo_interval_censored, lfo_ms_prog_deterministic, lfo_ms_ic_gap_01) =
+  recensor_ms_at_cutoff(
+    ms_final_state, ms_time_01, ms_censored_01,
+    ms_time_02, ms_time_12, ms_time_03, ms_time_32,
+    ms_os_event_12, interval_censored, ms_prog_deterministic,
+    cutoff_last_visit_week, lfo_cutoff_cal_week);
+
