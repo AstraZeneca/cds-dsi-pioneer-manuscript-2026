@@ -119,12 +119,44 @@ plan's "FAIL → spline" path; the quadratic basis was never the problem**:
 `tr_sd` reaches the data only through the slope/curvature `(β_1, β_2)`, so both
 fixes target exactly the failing quantity.
 
-## 4. Integration into `sf-ssls-lfo.stan`
+## 4. Integration into `sf-ssls-lfo.stan` — COMPLETE (2026-06-09)
 
-Routing already exists: `background_patient_idx` / `n_background_patients`, and
+**Status: integrated, modular, flag-gated, compiles through CmdStanR.** Implemented
+as a self-contained module `stan/modules/laplace_surrogate/` (5 files:
+`flags.stan` = `enable_background_surrogate`; `data.stan` = `surrogate_anchor_times`;
+`surrogate.stanfunctions` = the 5 validated functions; `transformed_data.stan` =
+constants + guards + compact background-only data views; `likelihood.stan` = the
+guarded `laplace_marginal_tol` term). Footprint in `sf-ssls-lfo.stan` is 4
+`#include` lines (functions / data×2 / transformed_data / likelihood) — removing
+the module + those lines fully removes the feature.
+
+**Runtime switch:** `enable_background_surrogate` (data, default 0). When 0, all
+surrogate arrays are zero-length and the `model{}` block is a verified no-op
+(current behavior preserved, no recompile to toggle). Old hand-coded
+`stan/modules/laplace/` + `r/pioneer/prepare_laplace_data.R` removed (commit
+`ca410a03`); the tumor model never depended on them.
+
+**Production-specific details (vs the toy):**
+- Population means: `tr_loc_pop`, `frac_logit_loc_pop`, `init_logit_loc_pop`.
+- Patient-level SD per rate = `sqrt(Σ_lv *_sd_level_intercept[lv]²)` over enabled
+  levels (the hierarchy's marginal SD), fed to the GH bridge in place of the toy's
+  scalar SD.
+- Per-patient LOD offset `log_lod − log_baseline_sld[p]` (burden normalized to each
+  patient's baseline) — `surrogate_ll` takes a per-visit `log_lod_per_visit` vector.
+- The compact background data views (`surrogate_bg_{obs,time,pos,log_lod}`) are
+  built in `transformed_data.stan` (NOT `model{}`) to satisfy `laplace_marginal_tol`'s
+  data-only argument qualifiers — also runs once instead of per-leapfrog.
+- **Guards (`fatal_error` when surrogate on):** (a) active tr SD sub-hierarchy
+  (`n_subhier_active_tr_intercept > 0`) — bridge assumes a single tr patient SD;
+  (b) first anchor ≠ 0 — the pinned intercept relies on `g(0)=0`.
+
+**NOT yet done:** never *fit* on real backgrounded-trial data (synthetic PASS +
+production compile only); anchors `(0,12,28)` are a synthetic default to be tuned
+to the real trials' visit windows.
+
+Routing already existed: `background_patient_idx` / `n_background_patients`, and
 patient NCP params sized by `n_forecast_patients`, so backgrounded patients
-currently have no explicit latents and contribute nothing to the LFO likelihood.
-The surrogate slots into exactly that gap.
+contributed nothing to the LFO likelihood before — the surrogate slots into that gap.
 
 - **Forecast patients:** unchanged. Full bi-exponential `sf_log_space_obs`,
   explicit NCP latents, full trajectory — everything we report is untouched.
