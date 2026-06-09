@@ -1,0 +1,105 @@
+project:
+  type: website
+  output-dir: _site
+  execute-dir: project
+  render:
+    - "*.qmd"
+    - "**/*.qmd"
+
+website:
+  title: "PIONEER: Publication — CRC"
+  description: "Bayesian hierarchical modeling for tumor dynamics and survival — publication analysis"
+  favicon: images/pioneer-helmet.png
+  navbar:
+    background: primary
+    left:
+      - icon: house-fill
+        href: index.qmd
+        aria-label: "Home"
+      - text: Data
+        href: analysis/data-exploration.qmd
+      - text: Analysis
+        menu:
+          - text: Results
+          - text: Clinical Endpoints
+            href: analysis/clinical-endpoints.qmd
+          - text: Survival Analysis
+            href: analysis/survival-analysis.qmd
+          - text: Overall Survival
+            href: analysis/overall-survival.qmd
+          - text: "---"
+          - text: Model Details
+          - text: Parameter Inference
+            href: analysis/parameter-inference.qmd
+          - text: Patient Dynamics
+            href: analysis/patient-dynamics.qmd
+          - text: "---"
+          - text: Validation
+          - text: Diagnostics
+            href: analysis/diagnostics.qmd
+    right:
+      - icon: book
+        href: https://rstudio-connect.seml.scp.astrazeneca.net/content/084c017e-8ec4-4efd-ae02-e4a86c9dc51f/
+        aria-label: "SCLC-01 Documentation"
+      - icon: github
+        href: https://github.com/azu-oncology-rd/cds-dsi-pioneer-sclc-01-2025
+  sidebar:
+    - title: "Data"
+      style: docked
+      contents:
+        - analysis/data-exploration.qmd
+    - title: "Analysis"
+      style: docked
+      contents:
+        - section: "Results"
+          contents:
+            - analysis/clinical-endpoints.qmd
+            - analysis/survival-analysis.qmd
+            - analysis/overall-survival.qmd
+        - section: "Model Details"
+          contents:
+            - analysis/parameter-inference.qmd
+            - analysis/patient-dynamics.qmd
+        - section: "Validation"
+          contents:
+            - analysis/diagnostics.qmd
+  page-navigation: true
+  search:
+    location: navbar
+    type: overlay
+  page-footer:
+    left: "Last updated: {{< meta date-modified >}}"
+    center: "PIONEER: Publication — CRC"
+    right: "Analysis v1.0.0"
+
+metadata-files:
+  - _metadata.yml
+
+format:
+  html:
+    theme:
+      light: [cosmo, az-theme.scss]
+      dark: [darkly, az-theme.scss]
+    css: styles.css
+    toc: true
+    toc-depth: 3
+    toc-expand: 2
+    code-fold: true
+    code-tools: true
+    code-copy: true
+    lightbox: true
+    number-sections: true
+    fig-cap-location: bottom
+    fig-align: center
+    fig-responsive: true
+    fig-width: 6
+    fig-height: 4.5
+    out-width: "100%"
+    reference-location: margin
+    date-format: "MMMM D, YYYY"
+
+bibliography: ../../../bib/pioneer.bib
+
+execute:
+  freeze: auto
+  warning: false

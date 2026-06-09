@@ -1,0 +1,79 @@
+---
+title: "PIONEER: Publication"
+subtitle: "Bayesian Hierarchical Modeling for Tumor Dynamics and Survival"
+page-layout: full
+toc: false
+number-sections: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+source("_setup.R")
+```
+
+<style>
+.quarto-title-block { display: none; }
+</style>
+
+::: {.column-page}
+::: {.hero-section}
+::: {.hero-content}
+::: {.hero-text}
+# PIONEER Publication — CRC
+
+Bayesian hierarchical model for tumor dynamics and progression-free survival — CRC publication dataset.
+:::
+::: {.hero-image}
+![](images/pioneer-helmet.png)
+:::
+:::
+:::
+:::
+
+::: {.column-page}
+## Quick Navigation
+
+::: {.card-grid}
+
+::: {.feature-card}
+### [Data Exploration](analysis/data-exploration.qmd)
+Overview of the publication dataset: patient characteristics, tumor measurements, and survival follow-up.
+:::
+
+::: {.feature-card}
+### [Clinical Endpoints](analysis/clinical-endpoints.qmd)
+Overall Response Rate (ORR), Median PFS, and PFS at fixed timepoints from the publication model.
+:::
+
+::: {.feature-card}
+### [Survival Analysis](analysis/survival-analysis.qmd)
+Kaplan-Meier survival curves comparing model forecasts to observed PFS.
+:::
+
+::: {.feature-card}
+### [Overall Survival](analysis/overall-survival.qmd)
+OS model forecasts and observed Kaplan-Meier curves.
+:::
+
+::: {.feature-card}
+### [Parameter Inference](analysis/parameter-inference.qmd)
+Population-level and patient-level posterior parameter distributions.
+:::
+
+::: {.feature-card}
+### [Patient Dynamics](analysis/patient-dynamics.qmd)
+Individual patient tumor trajectories and RECIST predictions.
+:::
+
+:::
+:::
+
+::: {.column-page}
+## About This Analysis
+
+This website presents CRC results from the publication pipeline running the SF-SSM Stan model.
+
+**Authors:** Karim Naguib, Roger Berché, Antonia Bevan, Sajan Khosla, Jessica Davies, Paul Metcalfe (AstraZeneca)
+:::
