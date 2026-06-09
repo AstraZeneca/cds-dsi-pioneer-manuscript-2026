@@ -73,6 +73,16 @@ get_multistate_priors <- function(n_levels, n_time_varying_covar, n_time_invaria
     log_lambda_gp_01_pop_rho_alpha = 8.0,
     log_lambda_gp_01_pop_rho_beta = 135.0,
 
+    # 0→1 baseline log-time trend (Fix A): hierarchical prior on the centered
+    # log(t) trend that sits beside the GP in the 0->1 baseline temporal block,
+    # mirroring the baseline GP hierarchy (population slope + per-level slope
+    # deviation pooled by a per-level SD). Only consumed when
+    # enable_ms_baseline_trend_01 is on; the hyperparam fields are always
+    # present (declared in hyperparams.stan).
+    log_lambda_trend_01_pop_mean = 0,
+    log_lambda_trend_01_pop_sd = 0.5,
+    log_lambda_trend_01_level_sd_sd = rep(0.25, n_levels),
+
     # 0→2 transition
     log_lambda_gp_02_pop_intercept_mean = -4.5,
     log_lambda_gp_02_pop_intercept_sd = 1.0,

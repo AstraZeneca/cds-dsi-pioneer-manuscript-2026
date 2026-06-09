@@ -11,10 +11,10 @@ get_state_patients <- function(
 ) {
   analysis_data |>
     mutate(i = seq(n()), selected = {{ cond }}) |>
-    select(trial, i, usubjid, visit_data, selected, pfs, right_censored) |>
+    select(trial, any_of("group"), i, usubjid, visit_data, selected, pfs, right_censored) |>
     unnest(visit_data) |>
     mutate(n = seq(n())) |>
-    nest(visit_data = !c(trial, i, usubjid, selected, pfs, right_censored)) |>
+    nest(visit_data = !c(trial, any_of("group"), i, usubjid, selected, pfs, right_censored)) |>
     filter(selected) |>
     mutate(baseline_value = map_dbl(visit_data, \(v) {
       bl_idx <- max(which(v$week <= 0))

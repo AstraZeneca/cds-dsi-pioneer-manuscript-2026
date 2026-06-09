@@ -82,7 +82,9 @@ Per-project code lives in `r/<project>/`; pipelines in `targets/<project>_target
 
 ### Configuration
 - `renv.lock` - Package versions
-- `sclc_targets.sh` / `pioneer_targets.sh` - Shell scripts for launching Domino jobs
+- `sclc_targets.sh` / `pioneer_targets.sh` / `publication_targets.sh` - Shell scripts for launching Domino jobs
+
+**Always use the project-matching script**: `publication_targets.sh` for `TAR_PROJECT=publication`, `sclc_targets.sh` for sclc, `pioneer_targets.sh` for pioneer. Never use `sclc_targets.sh` for the publication pipeline.
 
 ## Analysis Results Storage
 

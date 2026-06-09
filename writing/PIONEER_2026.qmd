@@ -1,6 +1,5 @@
 ---
 title: "PIONEER: Bayesian Joint Modelling of Mechanistic Tumour Growth and Time-to-Event Endpoints for Dynamic Prediction of Ongoing Oncology Trials"
-subtitle: "Joint mechanistic-multistate Bayesian forecasting for oncology trials"
 author:
   - name: Karim Naguib
     affiliation: AstraZeneca, Oncology R&D, Data Science & AI
@@ -10,9 +9,22 @@ author:
     affiliation: AstraZeneca, Oncology R&D, Data Science & AI
   - name: Antonia Bevan
     affiliation: AstraZeneca, Oncology R&D, Data Science & AI
+  - name: Sajan Khosla
+    affiliation: AstraZeneca, Oncology R&D, Data Science & AI
+  - name: Jessica Davies
+    affiliation: AstraZeneca, Oncology R&D, Data Science & AI
   - name: Paul Metcalfe
     affiliation: AstraZeneca, Oncology R&D, Data Science & AI
 date: "2026"
+abstract: |
+  [Placeholder — write last. Target: 250 words, unstructured.]
+keywords:
+  - Bayesian joint modelling
+  - tumour dynamics
+  - multistate survival
+  - dynamic prediction
+  - oncology trials
+  - progression-free survival
 bibliography: ../bib/pioneer.bib
 number-sections: true
 format:
@@ -21,96 +33,51 @@ format:
     documentclass: article
 ---
 
-## Status {.unnumbered}
+## Introduction {#sec-introduction}
 
-**Target journals.** *Statistics in Medicine*, *Biostatistics*, *CPT: Pharmacometrics & Systems Pharmacology*, *Journal of the Royal Statistical Society Series C*. Decide after first complete draft.
+<!-- The problem: predicting survival from immature trial data -->
 
-This file is the **living outline** of the PIONEER methods paper. Each section gets fleshed out in a later commit; for now we have:
+Modern oncology trials must make high-stakes decisions -- dosage, patient cohort, and phase III go/no-go -- long before survival data matures. At a typical interim data cut-off (DCO), tumour and lab measurements are more abundant than indications about progression-free survival (PFS) and overall survival (OS) that remain heavily censored. What is needed is a model that can incorporate longitudinal measurements to forecast what the survival curves will look like at the final analysis, quantify how uncertain that forecast is, and transfer what it learns from other trials.
 
-- §1 (Introduction + Literature Review) — first draft below.
-- §§2–7 — subsection bullets, anchor points and figures-to-include only.
-- §8 (To-Dos) — open questions and missing material.
+<!-- Related work -->
 
-## Introduction
+A substantial body of work has addressed this problem from different angles. The starting point for any longitudinal-tumour-to-survival framework is the empirical observation that tumour size kinetics correlate strongly with patient survival, and that this correlation is captured well by a two-exponential "decrease + growth" decomposition. Stein and colleagues introduced the formulation in advanced prostate cancer [@stein2008; @stein2011], showing that the growth-rate constant in particular is a strong correlate of OS. @wang2009 extended the framework to non-small-cell lung cancer (NSCLC). Claret and co-authors [@claret2009; @claret2012] turned the framework into a forecasting tool, demonstrating that Phase II tumour dynamics can be combined with a parametric OS submodel to predict Phase III OS, with calibration successes in colorectal and NSCLC contexts. @bruno2014 consolidated this body of work into a methodological review, and @bruno2020 argued explicitly for tumour-dynamic modelling as the standard supporting tool for go/no-go and dose-decision use-cases. Tumour-growth-inhibition (TGI) modelling — typically the decrease/growth two-exponential framework above, fitted to Phase II SLD data and used to predict Phase III OS — is now the dominant longitudinal-tumour-to-survival paradigm in pharmacometrics. These early implementations follow a two-stage workflow: fit dynamics first, then use derived summary statistics (e.g. growth rate, time to nadir, week-8 SLD) as covariates in a downstream survival model.
 
-### Why we wrote this paper
+<!-- Joint methodology: latent variable + endogeneity -->
 
-Modern oncology trials, particularly those evaluating immuno-oncology and targeted agents, are run under intense pressure to deliver early, defensible read-outs. Sponsors must commit to dose, schedule, expansion cohorts and indication choices on the basis of immature data — typically a Phase II or interim Phase III data cut-off (DCO) where the longitudinal tumour size record is rich but progression-free survival (PFS) and overall survival (OS) are heavily right-censored. Three needs follow from this state of affairs.
+The natural starting point for survival analysis is the Cox proportional-hazards model, fitted with treatment arm and baseline covariates. Extending it to incorporate a longitudinal biomarker like SLD requires the time-varying-covariate form. Doing so correctly is, however, non-trivial for two reasons. First, the observed SLD is a noisy measurement of the patient's true tumour trajectory; plugging in the observed values as a covariate attenuates the estimated SLD–hazard association in proportion to the measurement noise — a direct errors-in-variables problem. Second, a patient's unmeasured characteristics — intrinsic disease aggressiveness, treatment sensitivity, immune competence — jointly determine both their tumour dynamics and their risk of progression and death. Any model that omits this shared latent structure is misspecified: the SLD covariate absorbs variation that rightly belongs to the unmeasured individual, and the resulting coefficient is inconsistent. The two-stage TGI workflow compounds both problems — summary statistics derived from a first-stage kinetic fit are treated as fixed inputs in the survival stage, inheriting the measurement noise of the SLD data and discarding uncertainty about the kinetic parameters themselves. The principled fix is a *joint longitudinal-survival* model: introduce the biomarker's underlying latent trajectory as a shared patient-level latent variable, and let both the longitudinal observations and the survival hazard depend on it simultaneously. The hazard then conditions on the smooth, noise-free latent state; the shared patient parameters are informed by both the SLD record and the event history at once; and the misspecification from omitting unmeasured individual heterogeneity is eliminated by construction. The textbook treatment is @rizopoulos2012, with @hickey2016 reviewing extensions to multiple longitudinal outcomes and competing risks.
 
-**(i) Forecasting from immature follow-up.** Decision makers want a credible projection of what PFS and OS curves will look like at the protocol-specified mature DCO, not just an estimate of the current Kaplan–Meier (KM) curve.
+<!-- TGI papers that adopt the joint-model architecture -->
 
-**(ii) Coherent uncertainty.** A point estimate of "median PFS at month 24" without a calibrated prediction interval is of no use for go/no-go logic; what is needed is a posterior predictive distribution over the full survival curve, jointly with all other endpoints.
+A handful of TGI papers have adopted this joint-model architecture explicitly. These models retain the hierarchical (mixed-effects) tumour submodel — each patient has their own kinetic parameters drawn from a population distribution — but couple it to the survival submodel through the shared latent trajectory rather than through plug-in summaries. @ribba2014 reviews the underlying mixed-effects methodology across the Simeoni [@simeoni2004], Claret [@claret2009], Stein [@stein2008] and Wang [@wang2009] families. @tardivon2019 fit a population NLME tumour-size model jointly with an OS submodel in atezolizumab-treated urothelial carcinoma. @desmee2017 introduce Hamiltonian Monte Carlo Bayesian inference for the same joint structure in metastatic prostate cancer. In the immuno-oncology setting specifically, @kerioui2020 develop a Bayesian HMC joint model with a tumour-size submodel feeding an OS hazard; @kerioui2022 provides a non-technical introduction.
 
-**(iii) Mechanistic transportability.** Patient-level dynamics observed in one trial, indication or treatment line should be re-usable as priors or hierarchical components in another. Hazards-only models tied to baseline covariates do not deliver this — biological parameters do.
+<!-- Multistate survival models in oncology -->
 
-PIONEER is the framework AstraZeneca has built to satisfy these three needs simultaneously. The model couples a *mechanistic* two-compartment state-space submodel of longitudinal tumour size (sum of longest diameters, SLD) to a *multistate proportional-hazard* submodel for the clinical events of interest (progression, death without progression, post-progression death, dropout, off-trial death) inside a single Bayesian hierarchical framework. All five clinical endpoints — target lesion progression, multistate PFS, OS, objective response rate, and off-treatment-time (OTT)-style summaries — are derived in the same generated-quantities pass from the joint posterior, so every reported quantity automatically inherits the model's full uncertainty. The mechanistic submodel feeds the multistate submodel as a set of *time-varying covariates* (standardised log SLD, decrease and growth rates, optionally SLD velocity); the multistate submodel feeds back through the joint likelihood, so neither half is fitted in isolation.
+Multistate (progression-death) extensions of competing-risks survival have been used extensively in chronic-disease epidemiology and, increasingly, in oncology, where post-progression survival is itself of clinical interest [@putter2007; @meiramachado2009]. The framework is sometimes called *illness-death* in biostatistics, although in oncology trials all patients are already ill at enrolment and the relevant transition is from controlled to progressive disease. Modelling progression and death as separate transitions has two practical advantages over a single OS hazard: it lets the data speak to clinically distinct mechanisms — early progression, direct death without prior progression, and post-progression death have different time-courses and different covariate dependencies — and it enables forecasting the full PFS–OS joint distribution rather than each endpoint in isolation.
 
-### What is novel about the approach
+<!-- Gaps in the existing literature -->
 
-The literature on PFS/OS prediction from tumour kinetics is by now substantial (see @sec-lit-review), and it is therefore worth being precise about what is and is not new in PIONEER. The novelty has four facets, in decreasing order of how distinctive each one is.
+Despite the maturity of each strand above, several gaps remain. First, existing tumour-dynamics-to-survival frameworks feed the dynamics into a *single* hazard (typically OS); they cannot express that tumour features affect progression, death without progression, and post-progression death differently — yet these are clinically distinct mechanisms. Second, most published work fits the tumour model first, then plugs the fitted trajectories into a survival model; this two-stage approach ignores the feedback from event data to the dynamics and underestimates uncertainty. Third, trial-level pooling — sharing information across historical and ongoing trials rather than handling each independently via ad-hoc meta-analysis — is rarely built into the framework as a first-class component. Fourth, endpoints (PFS, OS, ORR) are typically computed from point estimates of upstream parameters rather than propagated through the full posterior.
 
-**(N1) Mechanistic dynamics as structured time-varying covariates of a *multistate* hazard.** Existing tumour-dynamics-to-OS frameworks (Stein–Bruno–Claret lineage; Tardivon 2019; Chan 2021; Kerioui 2020) almost universally feed a one-dimensional tumour metric — typically the model-predicted SLD or a tumour growth rate constant — into a *single* survival hazard, usually a Cox or parametric proportional-hazards model for OS. PIONEER replaces that single hazard with the full illness-death (and dropout) multistate, and *each* transition is allowed its own time-varying tumour-derived covariate vector with transition-specific coefficients. This means the model can express, for example, that growth rate predicts progression hazard but only modestly affects post-progression death hazard, which depends instead on the patient's tumour state at progression. Standard joint models cannot make that distinction because they have only one event channel.
+<!-- Our contribution: PIONEER -->
 
-**(N2) Two-compartment decrease/growth dynamics inside the joint model.** The decrease/growth (D+G) decomposition that descends from Stein 2008 / Claret 2009 is well-known as a *summary* model fit to SLD trajectories, and joint papers usually link a fitted D+G to survival in a *two-stage* fashion (estimate dynamics first, plug into survival second). In PIONEER the two-compartment decomposition is the *latent state* of a state-space model that is fitted *jointly* with the multistate, in log-baseline-normalised space, with a Gaussian observation likelihood (i.e. log-normal on the SLD scale), optional AR(1) process noise at population and patient level, and explicit handling of left-censoring at the SLD limit of detection. We are not aware of a published joint-model implementation that combines the two-compartment latent-state structure, multistate survival, hierarchical borrowing across trials, and full Bayesian inference in one self-contained framework.
+We present PIONEER^[Predictive Intelligence for ONcology Early Evaluation and Response.], a framework built to close these gaps. The model couples a *mechanistic* two-component state-space submodel of longitudinal tumour size (sum of longest diameters, SLD) to a *multistate proportional-hazard* submodel for the clinical events of interest inside a single Bayesian hierarchical framework. All clinical endpoints — target lesion progression, multistate PFS, OS, objective response rate — are derived in the same posterior-predictive pass from the joint posterior, so every reported quantity automatically inherits the model's full uncertainty. The mechanistic submodel feeds the multistate submodel through a shared *latent* trajectory: the latent SLD, decrease rate and growth rate enter the multistate hazards as time-varying covariates, and because both submodels depend on the same patient-level latent parameters, the event data refines the inferred trajectory at the same time as the SLD data does. There is no two-stage plug-in.
 
-**(N3) Generic multi-level hierarchy with QR-rotated covariate machinery.** The hierarchy is *level-agnostic*: the same code accommodates "population → trial → patient", "population → trial → arm → patient", or "population → indication → trial → patient", with each module — tumour regression rate (`tr`), growth fraction (`frac`), initial state (`init`) and each multistate transition — independently choosing whether random intercepts and random slopes are active at each level. Borrowing across trials (e.g. learning growth-rate priors from HISTORICAL and applying them to SCLC-01) drops out of this design without needing a separate meta-analytic step. Population covariate effects are entered via QR-decomposed design matrices, and elicited priors are mapped through the QR rotation, which preserves interpretability while avoiding the ill-conditioning that bites when 20+ correlated baseline covariates enter the same linear predictor.
+The novelty has five facets:
 
-**(N4) End-to-end uncertainty propagation from priors to clinical readouts.** Because all endpoints are derived in `generated quantities` from the joint posterior, the posterior predictive distribution of *any* clinical summary — median PFS, twelve-month OS rate, objective response rate, hazard ratio between two arms at a fixed DCO — is obtained by reading off the corresponding draws and summarising. There are no point estimates "fixed in" and no separate post-hoc sensitivity analyses for upstream uncertainty. The model also produces unconditional ("super-population", `spop_*`) and observed-data-conditioned (`sample_*`) predictive distributions side-by-side, which lets us answer *both* "what would happen to a future patient like ours?" and "what will happen to *these* patients past the data cut-off?" within the same fit.
+- **Transition-specific tumour covariates.** Each transition in the illness-death model has its own tumour-derived covariate vector with transition-specific coefficients, allowing the model to express that growth rate strongly predicts progression hazard but only weakly affects post-progression mortality — a distinction single-hazard joint models cannot make.
+- **Joint latent state.** The decrease/growth decomposition is the latent state of a state-space model fitted jointly with the multistate submodel — not a two-stage plug-in — avoiding both the attenuation and the omitted-frailty misspecification of plug-in approaches and correctly propagating kinetic uncertainty into every downstream endpoint.
+- **Correlated per-transition frailty.** Each transition carries its own patient-level frailty, and the frailty terms are modelled jointly as a multivariate normal with an estimated correlation structure, capturing residual individual heterogeneity unexplained by the tumour bridge and revealing cross-transition dependence in unmeasured patient characteristics.
+- **Multi-trial hierarchy.** Patients are nested within arms within trials in a single hierarchical model; population-level parameters are shared across trials by construction, so fitting on multiple trials simultaneously yields cross-trial borrowing without a separate meta-analytic step. Covariate effects are entered via QR-decomposed design matrices with elicited priors mapped through the rotation.
+- **Full-posterior endpoint propagation.** All endpoints are read off the joint posterior, producing both unconditional ("super-population") and observed-data-conditioned predictive distributions without re-fitting.
 
-We argue (§5–§6) that these four ingredients together change the *use case* the model can serve: instead of a one-shot OS extrapolation at end of Phase II, PIONEER is fit repeatedly over the life of a trial, providing dynamically updated forecasts of mature PFS/OS as more data accrues and as the model is borrowed across trials in the same indication.
+<!-- Inference + forward simulation pipeline -->
 
-### Literature review {#sec-lit-review}
-
-We organise the prior literature into six arcs, each of which feeds either the methods (§3, §4) or the discussion (§7).
-
-#### Tumour growth-inhibition (TGI) and the decrease/growth decomposition {.unnumbered}
-
-The starting point for any longitudinal-tumour-to-survival framework is the empirical observation that tumour size kinetics correlate strongly with patient survival, and that this correlation is captured well by a two-exponential "decrease + growth" decomposition. Stein and colleagues introduced the formulation in advanced prostate cancer [@stein2008; Stein 2011], showing that the growth-rate constant in particular is a strong correlate of OS. Wang 2009 extended the framework to non-small-cell lung cancer (NSCLC). Claret and co-authors [Claret 2009; Claret 2012] turned the framework into a forecasting tool, demonstrating that Phase II tumour dynamics can be combined with a parametric OS submodel to predict Phase III OS, with calibration successes in colorectal and NSCLC contexts. Bruno 2014 consolidated this body of work into a methodological review, and Bruno 2020 argued explicitly for tumour-dynamic modelling as the standard supporting tool for go/no-go and dose-decision use-cases. The framework is by now the dominant TGI/OS paradigm in pharmacometrics. PIONEER's `tr` (total rate) and `frac` (decrease/growth allocation) modules implement the same biological idea, but as the *latent state* of a state-space model fitted jointly with multistate survival rather than as a deterministic regression target.
-
-#### Population mixed-effects modelling of tumour size {.unnumbered}
-
-Mixed-effects (population-PK/PD-style) modelling of tumour size — typically NONMEM-style nonlinear mixed-effects models — is the methodological foundation that the TGI literature rests on. The canonical methodological review is Ribba 2014 (CPT:PSP), which catalogues the family of models (Simeoni, Claret, Stein, Wang) and the population-level inference machinery. Holford 2013 and the broader pop-PK lineage justify the multi-level structure used in §3. More recent contributions include Tardivon 2019, who applied a population NLME tumour-size model jointly with an OS model in atezolizumab-treated urothelial carcinoma; and Desmée 2017, who introduced HMC-based Bayesian inference for nonlinear joint models of tumour kinetics and survival in metastatic prostate cancer. PIONEER's multi-level hierarchy generalises the trial-and-patient split of these works to an arbitrary number of levels with module-specific enable flags.
-
-#### Joint longitudinal-survival modelling {.unnumbered}
-
-Since the PFS/OS endpoints depend on a longitudinal biomarker that is itself patient-specific and noisily observed, naïve insertion of the biomarker as a time-varying covariate in a Cox model is biased: the biomarker is endogenous because it shares patient-level frailty with the survival outcome. The textbook treatment is Rizopoulos 2012, with Hickey 2016 reviewing more recent extensions to multiple longitudinal outcomes and competing risks. Kerioui 2020 is the closest published methodological cousin to PIONEER: a Bayesian HMC joint model in an immuno-oncology setting, with a tumour-size submodel feeding an OS hazard. Kerioui 2022 gives a non-technical introduction to the family. PIONEER differs from these in three ways: (a) it uses a *multistate* hazard rather than a single OS hazard; (b) the longitudinal submodel is *two-compartment state-space* rather than nonlinear regression; (c) the longitudinal-to-hazard linkage uses *multiple* time-varying tumour features (log SLD, log decrease rate, log growth rate, optional velocity) with transition-specific coefficients.
-
-#### Immuno-oncology-specific tumour kinetics {.unnumbered}
-
-Immuno-oncology (IO) regimens exhibit dynamics — delayed responses, pseudo-progression, slow regrowth after a deep response — that monomerically-summarised (single-time-point or single-rate-constant) models can fail to capture. Mistry 2019 examined resistance kinetics in NSCLC under EGFR inhibition. Yin 2019 fitted population PK and tumour growth dynamics for pembrolizumab. Chan 2021 developed a TGI-to-OS framework specifically for atezolizumab across solid tumours, which is the closest published analogue to the use case PIONEER serves for durvalumab (SCLC-01) and other AstraZeneca IO assets. Bruno 2023 used the framework explicitly for decision support on a Phase Ib/II combination, with retrospective re-sampling of IMpower150 to validate. PIONEER inherits this lineage; the novelty over Chan 2021 is the multistate decomposition of OS into competing pathways, which we argue is more clinically faithful for IO trials in which a non-trivial fraction of OS events occur without prior PD.
-
-#### State-space / mechanistic modelling rationale {.unnumbered}
-
-Phenomenological state-space models of tumour size have a smaller but consistent literature in oncology pharmacometrics, and Bayesian state-space approaches are relatively recent. Dean 2010 made the original clinical-decision case for tumour growth rate as a routine summary statistic. The case for *state-space* (as opposed to nonlinear regression) is that the latent state can absorb measurement noise and limit-of-detection censoring coherently; PIONEER's log-normal observation density, log-baseline normalisation, and AR(1) process-noise option (§3) sit in this tradition.
-
-#### Multistate survival models in oncology {.unnumbered}
-
-Multistate (illness-death) extensions of competing-risks survival have been used extensively in chronic-disease epidemiology and increasingly in oncology — particularly when post-progression survival is itself of interest, when dropout is informative, or when *PFS-as-surrogate-for-OS* arguments must be examined explicitly (Prentice 1989; Buyse et al. 2000; recent overviews in Hougaard 1999). Our model implements an illness-death structure with five transitions ($0\to1$ progression, $0\to2$ direct death, $1\to2$ post-progression death, $0\to3$ dropout, $3\to2$ off-trial death), each with its own Gaussian-process baseline hazard. Allowing arm or treatment effects on the post-progression hazards $1\to2$ and direct-death hazard $0\to2$ — versus pooling them, which structurally enforces PFS surrogacy — is a configurable model choice, and we will use it in §6 to discuss surrogacy explicitly. Compared with prior IO joint models (which collapse OS to a single hazard), this formulation is what permits us to *test* surrogacy as a model-fit comparison rather than assume it.
-
-#### RECIST and the regulatory anchor {.unnumbered}
-
-Since SLD and RECIST PD are the regulatory observables, no longitudinal-tumour modelling paper can avoid Eisenhauer 2009 (RECIST 1.1). PIONEER computes RECIST classifications inside the Stan generated-quantities block from the latent state trajectory, which means PFS-by-RECIST is itself a posterior quantity. The FDA's MIDD (model-informed drug development) program documents [FDA MIDD references — TBD] explicitly endorses tumour-dynamic modelling as supporting evidence for end-of-Phase-II decisions, which is the primary use case PIONEER targets.
-
-### How novel is PIONEER, candidly?
-
-There is no single ingredient in PIONEER that has not appeared somewhere in the literature: two-compartment dynamics (Stein/Claret/Bruno), Bayesian HMC joint modelling (Desmée/Kerioui), multistate models in oncology (Hougaard; multistate-survival textbooks), GP baseline hazards (Riihimäki & Vehtari and the general GP-survival literature), QR-rotated regression in Stan (Stan User's Guide), TGI→OS in IO (Chan; Bruno 2023). What is novel is the combination — and specifically, three combinatorial claims that we will defend in §5:
-
-1. The two-compartment latent state and the multistate hazard are fitted *jointly*, not in stages, so endogeneity bias is correctly handled.
-2. Each multistate transition has its own time-varying-covariate coefficients on the tumour-derived features, so the model can express clinically distinct mechanisms — e.g. that growth rate matters for $0\to1$ but not for $1\to2$.
-3. All endpoints (PFS, OS, ORR, OTT, hazard ratios at any DCO) are read off the joint posterior, with two predictive flavours (super-population and observed-conditioned) available without re-fitting.
-
-We will avoid two claims that would be unsafe under reviewer scrutiny:
-
-- We will *not* claim the two-compartment decomposition recovers two real clonal populations from SLD data. It does not. The argument for the decomposition is forecasting performance, parameter transportability, and clinical interpretability — not biological mechanism.
-- We will *not* claim the model improves *in-sample* fit relative to a flexible empirical (spline / GAM) baseline. It almost certainly does not. The argument is *out-of-sample forecasting and parameter transport*, which we evidence with leave-future-out cross-validation (LFO; §6) and across-trial transfer (§6).
-
-### Roadmap
-
-@sec-model gives the full model specification: notation (@sec-notation), the mechanistic state-space submodel (@sec-mechanistic), the multistate hazard submodel and the tumour-derived covariate bridge (@sec-multistate), and the prior structure (@sec-priors). @sec-applications reports applications to SCLC-01 (durvalumab combination, NSCLC), with secondary illustrations from LUNG and Pioneer, including leave-future-out cross-validation and cross-trial borrowing. @sec-discussion discusses limitations, the surrogacy question, and outlook for routine deployment.
+PIONEER is built around a *backward inference, forward simulation* pipeline. The backward step performs joint Bayesian inference over the entire trial — latent tumour trajectories, multistate hazards and the population hierarchy, all in a single posterior — using every patient's observed SLD record and event history through the data cut-off. The forward step then propagates each posterior draw past the cut-off, extending the latent trajectory, accumulating the multistate hazards, and producing posterior predictive distributions for mature-DCO Kaplan–Meier curves, response rates, and any other endpoint of interest. Inference and forecasting share the same parameter uncertainty by construction; there is no re-fitting and no plug-in step between them. The credibility of the forward simulation rests on two pillars: the mechanistic parametric structure of the tumour submodel, whose decrease/growth decomposition constrains the shape of the extrapolated trajectory; and the population hierarchy, which — when historical trials are included — encodes what kinetic profiles and hazard trajectories tend to look like at maturities the target trial has not yet reached.
 
 ## Model {#sec-model}
 
-This section specifies the joint model in full. We organise the description around the data flow shown in @fig-model-overview: patient-level inputs (longitudinal SLD, baseline covariates, event histories) are routed through two coupled submodels — a mechanistic state-space submodel for the SLD trajectory (@sec-mechanistic) and a multistate hazard submodel for the clinical events (@sec-multistate) — linked by a small set of time-varying tumour-derived covariates (the *bridge*). All clinical endpoints are read off the joint posterior in a single generated-quantities pass, with no two-stage plug-in.
+This section specifies the joint model in full. We organise the description around the data flow shown in @fig-model-overview: patient-level inputs (longitudinal SLD, baseline covariates, event histories) are routed through two coupled submodels — a mechanistic state-space submodel for the SLD trajectory (@sec-mechanistic) and a multistate hazard submodel for the clinical events (@sec-multistate) — linked by a small set of time-varying tumour-derived covariates (the *bridge*). All clinical endpoints are read off the joint posterior in a single posterior-predictive pass, with no two-stage plug-in.
 
 ::: {#fig-model-overview}
 ![](figures/model-overview.svg){width=100%}
@@ -118,23 +85,19 @@ This section specifies the joint model in full. We organise the description arou
 Joint model overview. Patient-level inputs (left) feed two coupled submodels (centre): the mechanistic state-space submodel of SLD dynamics, and the multistate illness-death-with-dropout hazard submodel. The tumour-derived time-varying covariate vector $\mathbf{W}_i(t)$ is the explicit *bridge* through which the mechanistic submodel feeds the hazards; the dashed arrow indicates the joint likelihood, which lets the event data refine the latent state's posterior. Endpoints (right) are deterministic functions of the joint posterior.
 :::
 
-For concreteness and to keep the exposition focused, we describe the model in the configuration used for the primary case study in @sec-applications (the SCLC-01 ctDNA-stratified analysis): a population $\to$ patient hierarchy on the mechanistic parameters, baseline covariates entering the dynamics through the decrease-vs-growth balance and the initial state, no within-patient process noise on the rates, and a five-transition multistate (progression, two death pathways, dropout, off-trial death) with a trial-level Gaussian-process baseline hazard. Variants supported by the framework — additional levels in the hierarchy, AR(1) process noise on the rates, alternative covariate routings, alternative time-scales for post-progression death — are noted briefly where they fit; we do not pursue them in the primary analysis.
-
 ### Notation and setup {#sec-notation}
 
 We index patients by $i = 1, \dots, N$. The time clock is the patient's *study week*, an integer-valued grid in which week $1$ denotes the first week on treatment; non-positive weeks ($t \le 0$) correspond to the pre-treatment screening window. Each patient $i$ contributes a vector of baseline covariates $\mathbf{x}_i \in \mathbb{R}^p$, a set of SLD assessments at visit weeks $\{t_{i,j}\}_{j \in \mathcal{V}_i}$ (ragged across patients, with $\mathcal{V}_i$ the visit index set), and an event history. We will write $y_i(t_{i,j})$ for the SLD measurement at visit $j$ — a single scalar per visit — so that $y_i(\cdot)$ is a function defined only on the patient's visit times. The event history takes one of four mutually exclusive terminal states by the data cut-off: alive and progression-free (state $0$), progressed (state $1$), dead (state $2$), or off-trial without death (state $3$). Transitions between these states are written $j \to k$; the five admissible transitions are $0 \to 1$, $0 \to 2$, $1 \to 2$, $0 \to 3$ and $3 \to 2$.
 
-For each patient we identify a single *baseline visit*, defined as the last SLD assessment in the pre-treatment screening window. We write $t_i^{\mathrm{bl}} \le 0$ for the week of patient $i$'s baseline visit, and $y_i^{\mathrm{bl}} \equiv y_i(t_i^{\mathrm{bl}})$ for the SLD measurement at that visit. The protocol-mandated screening window means $t_i^{\mathrm{bl}}$ is typically within a few weeks of treatment start but is patient-specific; treating $y_i^{\mathrm{bl}}$ as if it were measured exactly at the start of treatment would propagate a small but systematic timing error into the dynamics, particularly for patients with screening visits scheduled some weeks before treatment.
-
-We will write $\mathrm{SLD}_i(t)$ for the (unobserved, smooth) tumour size for patient $i$ at week $t$, and define the *normalised burden*
+For each patient we identify a single *baseline visit*, defined as the last SLD assessment in the pre-treatment screening window. We write $t_i^{\mathrm{bl}} \le 0$ for the week of patient $i$'s baseline visit, and $y_i^{\mathrm{bl}} \equiv y_i(t_i^{\mathrm{bl}})$ for the SLD measurement at that visit. We define the *normalised burden*
 $$
 B_i(t) \;=\; \frac{\mathrm{SLD}_i(t)}{y_i^{\mathrm{bl}}},
 $$ {#eq-sld-normalised}
 so that the latent burden at the baseline visit, $B_i(t_i^{\mathrm{bl}})$, is the ratio of the latent SLD to the observed baseline SLD at that visit; up to baseline measurement noise, $B_i(t_i^{\mathrm{bl}}) \approx 1$. The symbol $B$ is a mnemonic for *burden*; values of $B_i(t)$ above $1$ correspond to a tumour size larger than baseline, values below $1$ to a tumour size smaller than baseline. The observed baseline $y_i^{\mathrm{bl}}$ enters only as a known offset on the normaliser — we *condition* on it as the patient's reference scale rather than modelling it as a noisy outcome of the dynamics — so the model is invariant to overall tumour-size scale and the dynamics are not confounded with cohort-level differences in initial disease burden. The same definition generalises naturally to settings where SLD is replaced by another biomarker (e.g., PSA in prostate cancer; @sec-applications).
 
-Trial membership is denoted $s[i] \in \{1, \dots, S\}$ when relevant, where $S$ is the number of trials in the analysis. Trial-level pooling enters @sec-multistate (through the multistate baseline hazard) and is discussed as a configuration option for the mechanistic submodel; in the ctDNA configuration of the case study, the mechanistic submodel uses only a population-to-patient hierarchy.
+Trial membership is denoted $s[i] \in \{1, \dots, S\}$ when relevant, where $S$ is the number of trials in the analysis.
 
-### Mechanistic submodel: two-compartment state-space SLD {#sec-mechanistic}
+### Mechanistic tumour-dynamics submodel {#sec-mechanistic}
 
 #### Latent two-component representation {#sec-mech-states}
 
@@ -142,13 +105,13 @@ We model the normalised burden $B_i(t)$ as the sum of two latent components — 
 $$
 B_i(t) \;=\; D_i(t) \;+\; G_i(t).
 $$ {#eq-sld-decomp}
+We emphasise that this is a *phenomenological* decomposition: $D_i$ and $G_i$ are not claimed to recover real clonal subpopulations. The interpretation is operational — $D_i$ tracks the part of the burden that contracts under therapy and $G_i$ the part that expands. The case for the decomposition is forecasting performance and parameter transportability, not a mechanistic biological claim.
+
 Like $B_i(t)$ itself, $D_i(t)$ and $G_i(t)$ are dimensionless contributions to the normalised burden, and at baseline they sum to one. The dynamics of $D_i$ and $G_i$ — exponential decay and exponential growth, respectively — are most naturally written on the log scale, and inference is performed in terms of $\log D_i$ and $\log G_i$ (next subsection); we keep the *names* $D_i, G_i$ on the linear scale to match $B_i$ and write logs explicitly where they apply.
 
-We emphasise that this is a *phenomenological* decomposition: $D_i$ and $G_i$ are not claimed to recover real clonal subpopulations, and they are identifiable only because the two components evolve in monotonically opposite directions. The interpretation we adopt for them is operational — $D_i$ tracks the part of the burden that contracts under therapy and $G_i$ the part that expands. The case for the decomposition is forecasting performance and the parameter transportability discussed in @sec-applications, not a mechanistic biological claim.
+#### Dynamics {#sec-mech-dynamics}
 
-#### Dynamics in continuous time {#sec-mech-dynamics}
-
-The two components evolve via patient-specific *change rates*: a positive rate of contraction $r^{\mathrm{dec}}_i$ for the decreasing component and a positive rate of expansion $r^{\mathrm{gro}}_i$ for the growing component. In its simplest form the dynamics are exponential, written here in log-derivative form,
+The two components evolve via patient-specific *change rates*: a positive rate of contraction $r^{\mathrm{dec}}_i$ for the decreasing component and a positive rate of expansion $r^{\mathrm{gro}}_i$ for the growing component:
 $$
 \begin{aligned}
 \frac{\mathrm{d}\log D_i(t)}{\mathrm{d} t} &\;=\; -\, r^{\mathrm{dec}}_i, \\
@@ -163,9 +126,13 @@ B_i(t)
 \;+\;
 (1 - \pi_i)\,\mathrm{e}^{+r^{\mathrm{gro}}_i\,(t - t_i^{\mathrm{bl}})},
 $$ {#eq-sld-twoexp}
-where $\pi_i$ is the patient's initial decreasing fraction (introduced in @sec-mech-initial). This is the familiar two-exponential SLD trajectory of the Stein/Claret/Bruno tradition (@stein2008; Claret 2009; Bruno 2014); we recover it as a deterministic consequence of the latent-component formulation, but inference is performed on $\log D_i, \log G_i$ rather than on (@eq-sld-twoexp) as a regression target.
+where $\pi_i$ is the patient's initial decreasing fraction. This is the familiar two-exponential SLD trajectory of the Stein/Claret/Bruno tradition [@stein2008]; inference is performed on $\log D_i, \log G_i$ rather than on (@eq-sld-twoexp) as a regression target.
 
-In the ctDNA configuration of the case study, the change rates are *constant in time* and patient-specific; both rates depend on baseline covariates through their decomposition into a magnitude (a total log-rate) and a balance (the relative weight of decrease vs growth), as described in @sec-mech-rates.[^ar1-note]
+<!-- TODO(Lu/Karim): Karim's version below — discuss "deterministic consequence" phrasing (with AR(1) process noise it's stochastic, not deterministic):
+where $\pi_i$ is the patient's initial decreasing fraction (introduced in @sec-mech-initial). This is the familiar two-exponential SLD trajectory of the Stein/Claret/Bruno tradition (@stein2008; Claret 2009; Bruno 2014); we recover it as a deterministic consequence of the latent-component formulation, but inference is performed on $\log D_i, \log G_i$ rather than on (@eq-sld-twoexp) as a regression target.
+-->
+
+In the primary configuration, the change rates are *constant in time* and patient-specific; both rates depend on baseline covariates through their decomposition into a magnitude and a balance, described next.[^ar1-note]
 
 [^ar1-note]: The framework supports a natural extension in which the constant rates of (@eq-mech-discrete) are replaced with smoothly time-varying versions, generated by adding a stationary AR(1) process to each log-rate at the population (or, optionally, patient) level. The AR(1) mean is the patient's $\log r^{\mathrm{dec}}_i$ or $\log r^{\mathrm{gro}}_i$ from (@eq-rate-pair); the AR(1) innovations capture smooth deviations of the realised rate from its time-averaged value over the course of follow-up. We do not exercise this option in the primary analysis because (i) the observation density already accommodates measurement error and (ii) the smoothed posterior trajectories from the constant-rate model are visibly close to the observed SLD curves in the case study.
 
@@ -176,16 +143,14 @@ $$
 \log G_i(t) &\;=\; \log G_i(t_i^{\mathrm{bl}}) + r^{\mathrm{gro}}_i \cdot (t - t_i^{\mathrm{bl}}),
 \end{aligned}
 $$ {#eq-mech-discrete}
+
 i.e. the log-components are linear in elapsed time since baseline when the rates are constant; equivalently, $D_i$ and $G_i$ themselves are exponential in $t - t_i^{\mathrm{bl}}$. The full latent trajectory $\{(D_i(t), G_i(t))\}_{t \ge t_i^{\mathrm{bl}}}$ is therefore determined by three patient-level quantities — the initial split between the two components at the baseline visit and the two change rates — plus the observed baseline measurement $y_i^{\mathrm{bl}}$.
 
 #### Initial state {#sec-mech-initial}
 
-By construction (@eq-sld-normalised), $B_i(t_i^{\mathrm{bl}}) = 1$. The initial allocation between the two components is parameterised by a single patient-level quantity, the *initial decreasing fraction* $\pi_i \in (0, 1)$, defined by
+By construction, $B_i(t_i^{\mathrm{bl}}) = 1$. The initial allocation between the two components is parameterised by the *initial decreasing fraction* $\pi_i \in (0, 1)$:
 $$
-\begin{aligned}
-D_i(t_i^{\mathrm{bl}}) &\;=\; \pi_i, \\
-G_i(t_i^{\mathrm{bl}}) &\;=\; 1 - \pi_i,
-\end{aligned}
+D_i(t_i^{\mathrm{bl}}) = \pi_i, \qquad G_i(t_i^{\mathrm{bl}}) = 1 - \pi_i.
 $$ {#eq-mech-initial-split}
 which satisfies $D_i(t_i^{\mathrm{bl}}) + G_i(t_i^{\mathrm{bl}}) = 1$ as required by (@eq-sld-decomp). On the log scale used for inference, this reads $\log D_i(t_i^{\mathrm{bl}}) = \log \pi_i$ and $\log G_i(t_i^{\mathrm{bl}}) = \log(1-\pi_i)$.
 
@@ -198,7 +163,7 @@ where $\alpha^{\mathrm{init}}_{\mathrm{pop}}$ is a population-level intercept, $
 
 #### Patient-level change rates {#sec-mech-rates}
 
-Rather than parameterise $r^{\mathrm{dec}}_i$ and $r^{\mathrm{gro}}_i$ directly, we decompose each patient's rate pair into a *magnitude* and a *balance*. The magnitude is the total log-rate $\rho_i$ — a single scale that controls how fast the dynamics move overall — and the balance $\eta^{\mathrm{bal}}_i$ is a logit-scale quantity that allocates the magnitude between the decreasing and growing components. The two rates are then
+Rather than parameterise $r^{\mathrm{dec}}_i$ and $r^{\mathrm{gro}}_i$ directly, we decompose each patient's rate pair into a *magnitude* (total log-rate $\rho_i$) and a *balance* ($\eta^{\mathrm{bal}}_i$, logit-scale allocation between decrease and growth):
 $$
 \begin{aligned}
 \log r^{\mathrm{dec}}_i &\;=\; \rho_i \;+\; \log \sigma(\eta^{\mathrm{bal}}_i), \\
@@ -222,7 +187,7 @@ The covariate vector $\mathbf{x}_i$ in (@eq-init-linpred) and (@eq-rate-linpred)
 
 #### Observation model {#sec-mech-observation}
 
-Post-baseline SLDs are noisy realisations of the latent burden trajectory. At each post-baseline visit $j \in \mathcal{V}_i$ with $t_{i,j} > t_i^{\mathrm{bl}}$, we use a Gaussian observation density on the log scale (i.e. log-normal on the linear SLD scale), conditionally independent across visits given the latent state:
+At each post-baseline visit $j \in \mathcal{V}_i$ with $t_{i,j} > t_i^{\mathrm{bl}}$, we use a Gaussian observation density on the log scale:
 $$
 \log\!\frac{y_i(t_{i,j})}{y_i^{\mathrm{bl}}} \;\sim\; \mathtt{Normal}\!\big(\log B_i(t_{i,j}), \; \sigma_y^2\big),
 $$ {#eq-obs-density}
@@ -232,107 +197,198 @@ When SLD falls below the assay limit of detection (in practice, when all target 
 
 #### Outputs that flow to the multistate {#sec-mech-outputs}
 
-For each posterior draw, the mechanistic submodel delivers, for every patient $i$ and every week $t$ in the analysis window $[t_i^{\mathrm{bl}}, T_i]$, the latent components $D_i(t), G_i(t)$, the reconstructed burden $B_i(t) = D_i(t) + G_i(t)$ from (@eq-sld-decomp), and the change rates $r^{\mathrm{dec}}_i, r^{\mathrm{gro}}_i$ from (@eq-rate-pair). These four quantities are precisely the inputs to the time-varying covariate bridge $\mathbf{W}_i(t)$ in @sec-multistate; we therefore defer the explicit construction of $\mathbf{W}_i(t)$ to the next subsection.
+For each posterior draw, the mechanistic submodel delivers for every patient and every week: the latent burden $B_i(t)$, and the change rates $r^{\mathrm{dec}}_i, r^{\mathrm{gro}}_i$. These are the inputs to the time-varying covariate bridge $\mathbf{W}_i(t)$ defined in @sec-multistate.
 
-**Figures.**
+### Multistate proportional-hazard submodel {#sec-multistate}
 
-- Fig. 3.1 — example posterior trajectories of $D_i(t)$ and $G_i(t)$ with observed SLDs overlaid: one IO patient with delayed response, one fast progressor, one durable responder.
-- Fig. 3.2 — patient-level posterior densities of $r^{\mathrm{dec}}_i$ and $r^{\mathrm{gro}}_i$ stratified by treatment arm.
+*[To be drafted. Outline:]*
 
 ### Multistate submodel and the tumour→hazard bridge {#sec-multistate}
 
-*Outline.*
+#### State graph and time scales {#sec-ms-states}
 
-- Illness-death + dropout state diagram (existing in `quarto/_shared/images/multistate-diagram.svg`).
-- Five transitions $0\to1, 0\to2, 1\to2, 0\to3, 3\to2$; in the case study, all five are active.
-- Per-transition hazard:
-  $$\log\lambda_{jk,i}(t) = \log\lambda^\text{pop}_{jk}(t) + \log\lambda^{\text{trial}}_{jk,s[i]}(t) + \boldsymbol{\beta}^{\mathrm{tv}}_{jk}{}^{\top} \mathbf{W}_i(t) + (Q\boldsymbol{\beta}^{\mathrm{ti}(\mathrm{QR})}_{jk})_i.$$
-- Trial-level Gaussian-process baseline hazard on a coarse knot grid, pushed to weekly resolution.
-- Time-scale for $1\to2$: semi-Markov on sojourn time (case study).
-- The bridge $\mathbf{W}_i(t)$: standardised log-burden $\log B_i(t)$, log decrease rate $\log r^{\mathrm{dec}}_i$, log growth rate $\log r^{\mathrm{gro}}_i$ (three time-varying features). The bridge feeds transitions $0\to1$, $1\to2$, $0\to3$, $3\to2$; the direct-death transition $0\to2$ uses only baseline covariates by design.
-- Likelihood with interval censoring on $0\to1$ between scheduled visits.
+The multistate submodel governs the stochastic clinical events. Each patient occupies one of four states at every week $t$: alive and progression-free (state $0$), progressed and alive (state $1$), dead (state $2$, absorbing), or off-trial without observed death (state $3$). The five admissible transitions and their hazards are shown in @fig-multistate-diagram. Each transition has its own intensity, with its own time scale and its own dependence on covariates and on the latent burden trajectory.
+
+::: {#fig-multistate-diagram}
+![](figures/multistate-diagram.svg){width=85%}
+
+Multistate state graph with the five transition intensities used in the case study. Three transitions out of state $0$ ($0\to 1$ progression, $0\to 2$ direct death, $0\to 3$ dropout) use clock-forward time $t$. The two transitions into state $2$ from non-zero source states ($1\to 2$ post-progression death, $3\to 2$ off-trial death) use sojourn time $u_1 = t - T_{01}$ and $u_3 = t - T_{03}$ respectively (semi-Markov; the clock resets on entry into the source state). State $3$ is dashed to mark its off-trial status; state $2$ is filled to mark it as the absorbing terminal state.
+:::
+
+The case-study configuration has all five transitions active. The two sojourn-clock transitions ($1\to 2$ and $3\to 2$) use semi-Markov time scales: the post-progression death hazard depends on time since progression, not on calendar time; the off-trial death hazard depends on time since dropout. Markov and additive-extended alternatives are supported by the framework; we comment on the trade-offs at the end of this subsection.
+
+#### Per-transition hazard {#sec-ms-hazard}
+
+Write $\lambda_{jk, i}(t)$ for patient $i$'s instantaneous transition rate from state $j$ to state $k$ at *clock time* $t$ (for clock-forward transitions) or at *sojourn time* $t - T_{j,i}$ (for semi-Markov transitions, where $T_{j,i}$ is the entry time into state $j$). All five hazards share the same proportional-hazards skeleton:
+$$
+\log \lambda_{jk, i}(t)
+\;=\;
+\underbrace{\log \lambda^{\mathrm{pop}}_{jk}(t)}_{\text{population baseline}}
+\;+\;
+\underbrace{\log \lambda^{\mathrm{trial}}_{jk, s[i]}(t)}_{\text{trial-level deviation}}
+\;+\;
+\underbrace{\boldsymbol{\beta}^{\mathrm{tv}}_{jk}{}^{\!\top} \mathbf{W}_i(t)}_{\text{time-varying tumour bridge}}
+\;+\;
+\underbrace{\boldsymbol{\beta}^{\mathrm{ti}}_{jk}{}^{\!\top} \mathbf{x}_i}_{\text{baseline covariates}},
+$$ {#eq-ms-hazard}
+in which only the first two terms are functions of time. The population and trial-level baselines are Gaussian processes (@sec-ms-gp); the tumour bridge $\mathbf{W}_i(t)$ is the explicit coupling to the mechanistic submodel (@sec-ms-bridge); and the baseline covariates $\mathbf{x}_i$ are the same patient-level covariate vector used in the mechanistic submodel (@sec-mechanistic), with priors elicited on the original-scale coefficients but rotated through the QR decomposition of the design matrix for inference, as discussed in @sec-priors.
+
+Each of the four additive components is *transition-specific*: there is no constraint that, say, the coefficient on log-burden in the $0\to 1$ hazard equals the corresponding coefficient in the $1\to 2$ hazard. This is the structural point that distinguishes our framework from a single-hazard joint model: the tumour-derived covariates are allowed (under the priors) to act differently on progression hazard than on post-progression death hazard, and the data decide which transitions they actually inform.
+
+In the case-study configuration, two simplifications are applied to (@eq-ms-hazard):
+
+- **Direct death has no tumour bridge**, so $\boldsymbol{\beta}^{\mathrm{tv}}_{02} = \mathbf{0}$ a priori. The 0→2 hazard depends only on its GP baseline and on baseline covariates. The reasoning is identification: in IO trials with low pre-progression mortality, the few direct-death events provide only enough information to estimate a baseline trajectory, and conflating this with tumour dynamics confuses the SLD-driven progression hazard with comorbidity-driven mortality.
+- **Off-trial transitions have no covariate effects**, so $\boldsymbol{\beta}^{\mathrm{tv}}_{03} = \boldsymbol{\beta}^{\mathrm{ti}}_{03} = \mathbf{0}$ and similarly for $3\to 2$. The dropout hazard and post-dropout death hazard are estimated from baseline GPs alone. This is again an identification choice: dropout reasons are heterogeneous, off-trial follow-up is sparse, and we cannot reliably estimate covariate effects with the available data. The dropout submodel exists in order to *route* off-trial patients out of the at-risk set for OS, not to model their dropout mechanism in detail.
+
+#### Tumour-to-hazard bridge {#sec-ms-bridge}
+
+The bridge $\mathbf{W}_i(t)$ is the time-varying covariate vector through which the mechanistic submodel feeds the multistate. In the case-study configuration it has three components, all derived deterministically from the mechanistic submodel's outputs:
+$$
+\mathbf{W}_i(t)
+\;=\;
+\bigg(
+\underbrace{\tilde{B}_i(t)}_{\text{standardised log-burden}},\;
+\underbrace{\log r^{\mathrm{dec}}_i}_{\text{log decrease rate}},\;
+\underbrace{\log r^{\mathrm{gro}}_i}_{\text{log growth rate}}
+\bigg)^{\!\top},
+$$ {#eq-ms-bridge}
+where the standardised log-burden is
+$$
+\tilde{B}_i(t) \;=\; \frac{\log B_i(t) + \log y_i^{\mathrm{bl}} - m^{\mathrm{sld}}}{q^{\mathrm{sld}}},
+$$ {#eq-ms-bridge-sld}
+with $m^{\mathrm{sld}}$ and $q^{\mathrm{sld}}$ the median and inter-quartile range of $\log y_i(t_{i,j})$ across all observed post-baseline visits, computed once on the data and held fixed during inference. The $\log y_i^{\mathrm{bl}}$ term in (@eq-ms-bridge-sld) re-attaches the patient's baseline scale, so $\tilde{B}_i(t)$ is informative about the *absolute* tumour size at week $t$ rather than only its fold-change relative to baseline.
+
+Two design choices in (@eq-ms-bridge) are worth flagging.
+
+First, the bridge uses the *latent* burden $B_i(t)$ from (@eq-sld-decomp), not the observed SLD trajectory. The latent burden is smooth, defined at every week, and free of measurement noise; the observed trajectory is noisy and defined only at scheduled visits. Using the latent quantity as the time-varying covariate is what makes the joint model *joint*: the multistate likelihood at week $t$ depends on the posterior over $B_i(t)$, so progression times and death times inform the latent state's posterior, and vice-versa.
+
+Second, the rates $\log r^{\mathrm{dec}}_i$ and $\log r^{\mathrm{gro}}_i$ are *time-invariant* in the case-study configuration (they vary only across patients). They appear in $\mathbf{W}_i(t)$ rather than in $\mathbf{x}_i$ because the framework also supports the AR(1) variant in which they become time-varying (cf. the footnote in @sec-mech-dynamics); the bridge is structured to accommodate that extension without changing the multistate submodel's interface.
+
+In the case-study configuration, the bridge feeds the $0\to 1$ progression hazard only. The framework supports feeding the bridge into other clock-forward transitions ($0\to 2$, $0\to 3$) and into the post-progression death hazard ($1\to 2$); we do not exercise these in the case study for the identification reasons given in @sec-ms-hazard.
+
+#### Gaussian-process baselines {#sec-ms-gp}
+
+The two time-dependent log-baselines in (@eq-ms-hazard) are modelled as Gaussian processes. For each transition $jk$ the *population baseline* is
+$$
+\log \lambda^{\mathrm{pop}}_{jk}(\cdot) \;\sim\; \mathsf{GP}\!\big(\mu^{\mathrm{pop}}_{jk}, \;k_{jk}(\cdot, \cdot;\, \alpha^{\mathrm{pop}}_{jk},\, \rho^{\mathrm{pop}}_{jk})\big),
+$$
+with squared-exponential covariance kernel
+$$
+k_{jk}(t, t';\, \alpha, \rho) \;=\; \alpha^2 \exp\!\bigg(\!-\frac{(t - t')^2}{2 \rho^2}\bigg),
+$$
+intercept $\mu^{\mathrm{pop}}_{jk}$ (population log-baseline-hazard level), marginal SD $\alpha^{\mathrm{pop}}_{jk}$, and length scale $\rho^{\mathrm{pop}}_{jk}$. The trial-level baseline $\log \lambda^{\mathrm{trial}}_{jk, s[i]}(\cdot)$ is an analogous GP with its own marginal SD and length scale, mean zero, and one independent realisation per trial. Patient-level GP residuals are not used in the case study (see @sec-priors).
+
+For the three clock-forward transitions ($0\to 1$, $0\to 2$, $0\to 3$), the GP is defined on calendar time $t \in \{1, 2, \dots, T\}$ with $T$ the maximum study week across all patients. For the two sojourn-clock transitions ($1\to 2$, $3\to 2$), the GP is defined on sojourn time $u \in \{1, 2, \dots, U_{jk}\}$ with $U_{jk}$ the maximum sojourn time observed (or required for forecasting). The two clocks have separate GPs with independent hyperparameters; the GP defined on $t$ is shared across patients (same calendar time means the same baseline-hazard value), and the GP defined on $u$ is shared across patients in the same source state (a patient who has been in state $1$ for $u$ weeks has the same post-progression death baseline hazard as any other such patient, regardless of when their progression occurred).
+
+For computational efficiency the GPs are evaluated on a coarse knot grid of step size $\Delta_{\mathrm{GP}}$ weeks (eight in the case study) and pushed to weekly resolution by piecewise-constant assignment. The GP draws are mean-centred so that the intercept $\mu^{\mathrm{pop}}_{jk}$ alone controls the level; without this centring, the intercept and the GP's overall offset are not separately identifiable.
+
+#### Likelihood {#sec-ms-likelihood}
+
+For each patient $i$, the multistate submodel contributes a likelihood term that is a product of survival probabilities and instantaneous hazards along the patient's observed trajectory through the state graph. Writing $S_{jk, i}(a, b) = \exp\!\big(\!-\sum_{u = a}^{b} \lambda_{jk, i}(u)\big)$ for patient $i$'s discrete-time conditional survival across the interval $[a, b]$, the contribution depends on the patient's *terminal pattern* observed by the data cut-off:
+
+- *Censored in state $0$:* $S_{01,i} S_{02,i} S_{03,i}$ over the patient's full at-risk window in state $0$.
+- *Progressed, alive at cut-off (state $1$):* survival in state $0$ until detection of progression, instantaneous hazard $\lambda_{01,i}$ at the progression week, then survival under $\lambda_{12,i}$ over the observed sojourn in state $1$.
+- *Died after progression (state $2$ via $1$):* as above, plus $\lambda_{12,i}$ at the death week.
+- *Died without progression (state $2$ via $0\to 2$):* survival in state $0$ until death, with $\lambda_{02,i}$ at the death week.
+- *Off-trial without death (state $3$):* survival in state $0$ until dropout, $\lambda_{03,i}$ at the dropout week, then survival under $\lambda_{32,i}$ over the observed sojourn in state $3$.
+- *Died off-trial (state $2$ via $3$):* as above, plus $\lambda_{32,i}$ at the death week.
+
+The classification of each patient into one of these terminal patterns is performed deterministically from the trial data and does not involve any model parameters; the patterns are stored alongside the transition times in the data passed to Stan. Within a pattern, the only model-dependent quantities are the conditional survivals and the hazards at observed event times, which are computed directly from the per-transition log-hazards (@eq-ms-hazard).
+
+Two features of the case-study likelihood deserve a brief note.
+
+*Interval censoring of progression.* RECIST progression is detected at scheduled assessment visits, not continuously, so the *true* progression time is not observed even when progression is detected: it lies somewhere between the patient's last clean assessment and the assessment at which progression was confirmed. We treat the $0\to 1$ event as interval-censored over this gap by integrating the $\lambda_{01,i}$ density over the interval, rather than evaluating it at a point. The likelihood term for a patient who progresses at scheduled visit $v$ with previous clean visit at $v-1$ replaces $\lambda_{01,i}(t_{i,v}) S_{01,i}(1, t_{i,v} - 1)$ with $\big[S_{01,i}(1, t_{i,v-1}) - S_{01,i}(1, t_{i,v})\big]$.
+
+*RECIST progression handled deterministically.* RECIST 1.1 mandates a $\geq 20\%$ increase from nadir as a progression criterion, which we can compute deterministically from the latent burden trajectory $B_i(t)$ at each posterior draw (@sec-mechanistic). Patients whose RECIST trajectory crosses this threshold within their observed follow-up window have their $0\to 1$ transition handled by the mechanistic side, not by $\lambda_{01,i}$; they contribute survival in state $0$ to $\lambda_{01,i}$ up to the RECIST progression week and then transition to state $1$ deterministically. The $\lambda_{01,i}$ hazard therefore captures the *non-RECIST* progression channels — new-lesion progression, clinical deterioration, target-lesion changes that do not meet the $20\%$ rule — and avoids double-counting patients whose progression is already explained by the mechanistic side.
 
 **Figures.**
 
-- Fig. 4.1 — multistate state diagram (existing).
+- Fig. 4.1 — multistate state diagram (this section, @fig-multistate-diagram).
 - Fig. 4.2 — illustrative posterior baseline hazards $\lambda_{01}, \lambda_{02}, \lambda_{12}$ from SCLC-01.
-- Fig. 4.3 — coefficient forest plot for time-varying tumour features by transition.
+- Fig. 4.3 — coefficient forest plot for time-varying tumour features (the bridge $\mathbf{W}_i(t)$) by transition.
 
 ### Priors and the multi-level hierarchy {#sec-priors}
 
-*Outline.*
+*[To be drafted. Outline:]*
 
-- Hierarchy as level-agnostic; case-study uses population $\to$ patient on the mechanistic submodel and population $\to$ trial $\to$ patient on the multistate baseline hazard.
-- Non-centred parameterisation everywhere; standardised raw effects $\sim \mathtt{Normal}(0,1)$.
+- Hierarchy as level-agnostic: population → (intermediate levels) → patient. Each module independently enables random intercepts/slopes at each level.
+- Non-centred parameterisation (NCP) as default; centred (CP) as opt-in for narrow-SD levels.
 - QR-rotated covariates: elicited priors $(\boldsymbol{\mu}, \boldsymbol{\Sigma})$ on the original-scale coefficients are rotated through $R$ for the parameter declaration.
-- Prior choices on $\rho_{\mathrm{pop}}, \alpha^{\mathrm{bal}}_{\mathrm{pop}}, \alpha^{\mathrm{init}}_{\mathrm{pop}}$ (with explanation of the tightening that followed an early under-identified fit).
-- GP hyper-priors on the multistate baseline hazard: inverse-gamma on length-scale, half-normal on marginal SD.
-- AR(1) process-noise priors when the option is active.
-- Cross-trial borrowing example: HISTORICAL-derived priors transferred to SCLC-01.
+- Prior choices on $\rho_{\mathrm{pop}}, \alpha^{\mathrm{bal}}_{\mathrm{pop}}, \alpha^{\mathrm{init}}_{\mathrm{pop}}$ (with explanation of the tightening that followed prior–posterior conflict).
+- GP hyper-priors on the multistate baseline hazard: inverse-gamma on length-scale and marginal SD.
+- Cross-trial borrowing: HISTORICAL-derived priors transferred to SCLC-01 via the trial-level hierarchy.
 
 **Figures.**
 
-- Fig. 5.1 — prior vs posterior for $\rho_{\mathrm{pop}}, \alpha^{\mathrm{bal}}_{\mathrm{pop}}, \alpha^{\mathrm{init}}_{\mathrm{pop}}$.
-- Fig. 5.2 — schematic of the multi-level hierarchy with module enable matrix.
+- Fig. 3.6 — prior vs posterior for key population intercepts.
+- Fig. 3.7 — schematic of the multi-level hierarchy with module enable matrix.
 
-## Applications {#sec-applications}
+## Inference and implementation {#sec-inference}
 
-*Outline.*
+*[To be drafted. Outline:]*
 
-### SCLC-01 (primary case study)
+- Full Bayesian inference via Hamiltonian Monte Carlo (HMC) using the No-U-Turn Sampler (NUTS) as implemented in Stan / CmdStanR.
+- Multiple chains (typically 4); convergence diagnostics: $\hat{R}$, effective sample size (ESS), divergent transitions.
+- Computational cost: model size (number of parameters), wall-clock time per chain, total sampling cost.
+- Strategies for scalability: coarse GP knot grid (4-week resolution), conditional parameter sizing (zero-length arrays for disabled transitions), profiling.
+- Warm-starting from previously adapted mass matrices; fixed-point initialisers for reproducibility.
+- Posterior storage: parquet draws format; targets pipeline for reproducibility.
+- Software: Stan 2.38, CmdStanR, R targets pipeline.
 
-- Trial description; immature DCO at the time of the prediction.
-- Mature DCO comparison (held-out): predicted vs observed PFS and OS KM.
-- Predicted ORR, durable response, twelve-month OS rate.
+## Simulation study {#sec-simulation}
 
-### Borrowing across trials (HISTORICAL → SCLC-01)
+*[To be drafted. Outline:]*
 
-- Hierarchical pooling at the trial level.
-- Quantitative impact on posterior tightness vs no-borrow alternative.
+- **Objective.** Assess operating characteristics of the joint model under controlled conditions: bias, coverage of posterior intervals, predictive calibration of PFS/OS KM forecasts.
+- **Design.** Generate synthetic trial data from the model with known parameters (data-generating process matches the model specification). Vary: sample size, follow-up maturity, magnitude of between-trial heterogeneity, presence/absence of multistate events.
+- **Metrics.**
+  - Parameter recovery: bias and RMSE of posterior medians for $\rho_{\mathrm{pop}}, \alpha^{\mathrm{bal}}_{\mathrm{pop}}, \alpha^{\mathrm{init}}_{\mathrm{pop}}$, GP baseline intercepts.
+  - Interval coverage: 80% and 95% posterior credible interval coverage across replications.
+  - Predictive calibration: calibration of the forecast PFS/OS KM at a held-out future DCO (CRPS, coverage of KM prediction bands).
+  - Comparison: joint model vs two-stage (fit dynamics, plug into survival) vs baseline-covariate-only hazard model.
+
+**Figures.**
+
+- Fig. 5.1 — parameter recovery (posterior median vs truth) across simulation replications.
+- Fig. 5.2 — coverage plot (nominal vs empirical) for key parameters.
+- Fig. 5.3 — predictive calibration: forecast KM vs true KM, three model variants.
+
+## Application to SCLC-01 {#sec-application}
+
+*[To be drafted. Outline:]*
+
+### Forecast at the immature DCO
+
+- Model fitted to data available at the immature DCO (data cut-off 3, January 2026).
+- Posterior predictive PFS and OS KM curves, with 80%/95% prediction bands.
+- Comparison with the observed KM at the mature DCO (held-out validation target).
+- ORR, twelve-month OS rate, median PFS/OS — posterior distributions.
 
 ### Leave-future-out cross-validation
 
-- Definition (existing `quarto/.../leave-future-out-cross-validation.qmd`).
-- ELPD comparison vs pure baseline-covariate hazard model and vs single-hazard joint model.
-- Argument: out-of-sample is where the mechanistic + multistate combination earns its keep.
+- Temporal cross-validation: train on data up to time $t$, predict forward, evaluate ELPD.
+- Comparison: joint mechanistic + multistate model vs baseline-covariate hazard model vs single-hazard joint model.
+- Demonstrates that out-of-sample forecasting is where the mechanistic + multistate combination earns its keep.
 
-### Surrogacy and treatment-effect decomposition (illustrative, not regulatory)
+### Cross-trial borrowing (HISTORICAL → SCLC-01)
 
-- Configuration with arm-level random effects on $1\to2$ and $0\to2$.
-- Posterior decomposition of $\Delta\text{OS}$ into mediated-via-PFS vs direct components.
-- Compare with Prentice-style criteria.
-
-### Pioneer (PSA + OS, brief)
-
-- Same machinery applied to prostate cancer with PSA replacing SLD.
-- One- or two-page demonstration that the framework generalises.
+- Hierarchical pooling at the trial level: HISTORICAL patients inform the shared population parameters.
+- Quantitative impact on posterior tightness vs a no-borrow alternative.
+- Posterior on key parameters (growth rate, GP baseline hazard) with and without HISTORICAL.
 
 **Figures.**
 
-- Fig. 6.1 — predicted-vs-observed PFS / OS KM at mature DCO (SCLC-01).
+- Fig. 6.1 — predicted-vs-observed PFS / OS KM at mature DCO.
 - Fig. 6.2 — borrowing impact (posterior on $\rho_{\mathrm{pop}}, \alpha^{\mathrm{bal}}_{\mathrm{pop}}$ with vs without HISTORICAL).
 - Fig. 6.3 — ELPD-LFO bar chart, three model variants.
-- Fig. 6.4 — surrogacy decomposition.
 
 ## Discussion {#sec-discussion}
 
-*Outline (bullets).*
+*[To be drafted. Outline:]*
 
-- What PIONEER buys you and what it does not.
-- Limitations: phenomenological D+G; multistate identifiability under sparse trial-level data; computational cost.
-- When to prefer a single-hazard joint model (small trial, target endpoint = OS only, no dropout signal).
-- Future work: PSA / circulating-tumour-DNA dynamics; multi-biomarker latent states; integration with model-based meta-analysis.
-- Regulatory positioning vs FDA MIDD.
-
-## Open To-Dos for the Manuscript {#sec-open-todos .unnumbered}
-
-- [ ] Pull exact abstracts/quotes from Kerioui 2020 and Bruno 2020.
-- [ ] Add Hougaard / multistate-survival textbook reference; check Buyse 2000 for surrogacy.
-- [ ] Fill in the FDA MIDD reference placeholder (currently `[FDA MIDD references — TBD]`).
-- [ ] Decide citation style (Vancouver vs APA) and convert references in `bib/pioneer.bib`.
-- [ ] Add a model-comparison subsection (§6.3) showing mechanistic out-forecasts a baseline-covariate hazard model — already partially evidenced in `quarto/website/analysis/model-validation.qmd`.
-- [ ] Confirm author affiliations (single-affiliation footnote vs multiple).
-- [ ] Decide whether Pioneer (PSA / OS) gets its own §6.5 or moves to a separate paper.
-- [ ] Write a short pre-registration paragraph for the SCLC-01 forecast: which DCO is the held-out target, what is the locked model spec.
-- [ ] Add reproducibility statement: GitHub orgs (`azu-oncology-rd`), Stan model files, frozen renv.lock.
-- [ ] Decide on inclusion of a sensitivity analysis to the AR(1) process-noise toggle.
+- **What PIONEER buys you.** Forecasting with structural shape constraints from immature data; coherent uncertainty propagation; transportability of biological parameters across trials.
+- **Limitations.** Phenomenological D+G decomposition (not real clones); multistate identifiability under sparse trial-level data; computational cost (~hours per fit); does not improve *in-sample* fit vs flexible empirical models.
+- **When to prefer a simpler model.** Small trial; target endpoint = OS only; no dropout signal; adequate follow-up for standard parametric extrapolation.
+- **Surrogacy.** The multistate framework permits testing PFS-as-surrogate-for-OS by allowing arm effects on post-progression hazards; we discuss this as future work rather than a primary result of this paper.
+- **Generalisability.** The framework has been applied to PSA dynamics in prostate cancer (Pioneer project), demonstrating that the architecture generalises beyond SLD/RECIST to other biomarkers with decrease + growth dynamics.
+- **Future directions.** Multi-biomarker latent states (e.g. SLD + ctDNA jointly); integration with model-based meta-analysis; real-time deployment for adaptive trial monitoring; regulatory positioning within the FDA MIDD framework.

@@ -19,6 +19,19 @@ if (enable_ms_01) {
   );
   to_vector(log_lambda_gp_01_pop_eta) ~ std_normal();
 
+  // 0->1 baseline log-time trend (hierarchical, mirrors the baseline GP).
+  // Guarded so the parameters are absent (size 0) and the density unchanged when
+  // the flag is off — bit-identical to existing fits.
+  if (enable_ms_baseline_trend_01) {
+    log_lambda_trend_01_pop_slope[1] ~ normal(log_lambda_trend_01_pop_mean, log_lambda_trend_01_pop_sd);
+    raw_log_lambda_trend_01_level ~ std_normal();  // NCP per-group deviation
+    if (any_re_level_slot[MS_SLOT_01]) {
+      for (lv in 1:n_levels) {
+        log_lambda_trend_01_level_sd[lv] ~ normal(0, log_lambda_trend_01_level_sd_sd[lv]);  // half-normal (lower=0)
+      }
+    }
+  }
+
   // Level-level baseline hazard GP
   // Always set priors for all levels (even disabled ones) to avoid improper posteriors
   for (lv in 1:n_levels) {
