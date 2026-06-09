@@ -1,26 +1,64 @@
 # Laplace Surrogate — Consolidated Findings & Blockers (2026-06-09)
 
-Status snapshot of the `karim/laplace` work. The tumor surrogate is **done and
-validated**; enabling it end-to-end on real data surfaced **two pre-existing
-model defects** that are larger than the surrogate and must be sequenced first.
+Status snapshot of the `karim/laplace` work. The tumor (SLD-only) surrogate is
+validated; the **JOINT SLD+multistate surrogate is now also validated** (the
+chosen design); enabling either on real data requires correctly implementing the
+forecast/background split, which surfaced pre-existing model defects.
 
-## TL;DR dependency chain
+## DESIGN DECISION (2026-06-09): JOINT SLD+MS surrogate, not SLD-only
+
+The publication model uses the **full model** `stan/tumor/sf-ssm-log-space.stan`
+(NOT the LFO model). Its MS hazards for 0→1 (progression, visit-gated) and 0→3
+(dropout) are DRIVEN by each patient's tumor trajectory (a time-varying
+covariate). Marginalizing background patients' tumor latents from the SLD term
+ALONE (the original surrogate) would sever that burden→hazard coupling for
+background patients — and `coef_01` (the coupling coefficient) is the model's
+headline scientific quantity, with ~67% of patients in the background trial.
+
+**Resolution (validated):** marginalize background patients' (b1,b2) from the
+JOINT likelihood — SLD + the burden-coupled 0→1/0→3 piecewise-exponential hazard
+— feeding the SURROGATE QUADRATIC burden (linear in (b1,b2)) into the hazard.
+This keeps the survival term log-concave (event term linear; −∫exp(linear)
+concave), so Laplace stays valid, AND preserves the coupling inside the
+marginalization (no info loss, no imputation).
+
+Validation evidence:
+- **R log-concavity check**: joint log-density max Hessian eig = −6188 (concave
+  everywhere); bi-exponential control = +188 (the original NO-GO, reproduced).
+- **Option-A loss quantified**: dropping the coupling term for background
+  discards ~67% of the patients informing `coef_01`.
+- **Standalone joint gate (`laplace_joint_test.stan` + `test_laplace_joint.R`),
+  workflow `wf_10cb1329`: PASS.** Joint-Laplace vs full HMC, 30 synthetic
+  patients: max diff/MCSE 1.76 (<5), min SD ratio 0.98, all clean (0 div, R-hat
+  1.00). `coef_01`: HMC 1.221 vs joint-Laplace 1.212 (diff/MCSE 1.53) — coupling
+  recovered identically. (Both differ from true 0.8 by a shared small-data/8-event
+  artifact, NOT a Laplace error — the gate compares Laplace-vs-HMC, not vs truth.)
+  Caveat: solver 1 fell back to solver 2 (numerical conditioning of the (t,t²)
+  basis, not loss of concavity); harmless, fit matched HMC. A centered/scaled time
+  basis would likely let solver 1 hold.
+
+## TL;DR dependency chain (revised)
 
 ```
-[DONE] Tumor surrogate (Phase 1 validated, Phase 2 integrated, flag-gated)
+[DONE] SLD-only surrogate (validated PFS gate; integrated into LFO, flag-gated)
+[DONE] JOINT SLD+MS surrogate design (validated standalone gate — the CHOSEN design)
+[DONE] cmdstan 2.39 toolchain management (env + pin + hash + guard)
    │
-   ├─ needs ─> forecast/background split to run end-to-end in sf-ssls-lfo
-   │             │
-   │             └─ BLOCKED BY (B2) MS index-space restructure (forecast vs full)
-   │                   │
-   │                   └─ ENTANGLED WITH (B1) LFO MS likelihood is 0->1-only (BUG)
-   │
-   └─ [DONE] cmdstan 2.39 toolchain management (env + pin + hash + guard)
+   └─ to run on publication (FULL model sf-ssm-log-space.stan) needs:
+        (P) implement forecast/background split correctly in the FULL model
+            - tumor likelihood: forecast patients via states; background via
+              JOINT surrogate (SLD+MS), no states rows
+            - MS: full-model-LOCAL likelihood (do NOT widen shared matrices —
+              breaks pioneer); background patients learn hazards via the
+              joint-marginalized z
+            - index contract from wf_fca8a194 (Option-A-scoped) must be REVISED
+              for the joint design before implementation
+        (B1, issue #92) LFO model MS likelihood is 0→1-only [separate bug; the
+            full model is unaffected — it uses multistate_lpmf over all transitions]
 ```
 
-The surrogate itself works. What's blocked is **running it on the publication
-data**, because that requires the forecast/background split, which exposes two
-defects in code the surrogate doesn't own.
+The surrogate math (both SLD-only and joint) works. What remains is implementing
+the forecast/background split in the full model around the joint surrogate.
 
 ---
 
