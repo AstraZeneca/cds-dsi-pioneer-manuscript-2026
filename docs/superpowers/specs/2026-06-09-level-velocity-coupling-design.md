@@ -169,14 +169,24 @@ quadratic surrogate's analytic derivative** $b_1 + 2b_2 w$ (the linear
 interpolation of a parabola's secants recovers the tangent at the midpoint).
 Forecast and surrogate velocities are therefore consistent **in form** — the
 property the joint-surrogate gate requires. They are not bit-identical: the
-forecast velocity differences a capped, bi-exponential, possibly noisy trajectory;
+forecast velocity differences a bi-exponential, possibly noisy trajectory;
 the surrogate velocity is the uncapped analytic polynomial derivative. `tv_coef`
 is shared model-wide and the contract's §6 O1 / §9 step 2 feature-SCALE check
 covers this.
 
-The level cap ($\min(g,\, 10.0)$, applied in the existing builders to bound the
-log-hazard during warmup) is applied to $g$ **before** differencing, so a capped
-excursion cannot produce a spurious velocity spike.
+**No additional cap on velocity.** The existing level cap
+($\min(g_\text{norm},\, 10.0)$ in `standardize_log_burden`) bounds the ratio
+trajectory and is retained as-is for the level feature. Velocity inherits the
+capped $g$ values as inputs to the central difference, but **no further cap is
+applied to $v(w)$ itself**. An extreme velocity during HMC warmup is a
+finite gradient signal — Stan will either adapt through it or produce a divergent
+transition, both of which are the normal HMC mechanism for bad geometry. Capping
+$v$ would instead silently force it to zero at the ceiling (since consecutive
+capped $g$ values are equal), which is a misleading artifact: it suppresses the
+gradient information HMC needs to adapt away from those regions rather than
+letting the sampler reject them naturally. Velocity is bounded indirectly by the
+rate at which the capped trajectory can change, which in the no-noise publication
+setting is $O(\text{rate\_g})$ — already constrained by the SLD likelihood.
 
 `log_sum_exp` is retained on the forecast path. This is deliberate and does **not**
 affect marginalization: forecast-trial tumour latents are **sampled by HMC**, not
@@ -341,8 +351,8 @@ a doc task.
 4. Alias the velocity constants in
    `stan/tumor/_tumor_observed_covar_transformed_data.stan`.
 5. Branch `stan/_ms_burden_tv_covar.stan` (dense path) on the flag: velocity $v(w)$
-   via central difference of `states_full_grid` (cap-before-difference) when on;
-   legacy rates when off.
+   via central difference of `states_full_grid` (differencing the already-capped
+   level values; no additional cap on $v$ itself) when on; legacy rates when off.
 6. Mirror the branch in `stan/_ms_burden_inline_tv_covar.stan` (all three inline
    blocks): velocity via 3-point analytic `log_sum_exp` central difference when on.
 7. Add the config-error check enforcing
