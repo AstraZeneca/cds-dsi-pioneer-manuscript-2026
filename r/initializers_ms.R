@@ -105,14 +105,8 @@ ms_init_values <- function(env) {
     n_ms_gp_sojourn_32_knots <- ceiling(ms_max_sojourn_t_32 / ms_gp_grid_step)
 
     # --- Correlated intercept block inits (Phase 2) ---
-    # Patient (last) level uses the forecast-patient count, mirroring Stan's
-    # n_forecast_groups_per_level. Empty when no block is configured.
-    n_forecast_groups_per_level <- n_groups_per_level
-    if (exists("n_forecast_patients", inherits = FALSE)) {
-      n_forecast_groups_per_level[n_levels] <- n_forecast_patients
-    }
     .ms_corr <- ms_corr_blocks(
-      ms_level_intercept_corr_group, ms_slot_active, n_forecast_groups_per_level
+      ms_level_intercept_corr_group, ms_slot_active, n_fgpl
     )
     .ms_corr_inits <- ms_corr_block_inits(.ms_corr, z_sd = 0.3)
 
