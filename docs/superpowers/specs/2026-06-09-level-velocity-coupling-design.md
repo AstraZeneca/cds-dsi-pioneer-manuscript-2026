@@ -9,7 +9,7 @@ The multistate (MS) hazard couples burden-driven transitions (0→1 progression,
 **time-varying covariate features**. The publication model currently uses
 **three** features (`n_time_varying_covar = 3`):
 
-1. **level** — standardized log-burden `g(w)`
+1. **level** — standardized log-burden $g(w)$
 2. **log-decrease-rate** — `patient_log_decrease_rate`, a bi-exponential SSM
    *component parameter*
 3. **log-growth-rate** — `patient_log_growth_rate`, the other component parameter
@@ -17,9 +17,9 @@ The multistate (MS) hazard couples burden-driven transitions (0→1 progression,
 Features 2–3 are problematic:
 
 - **No surrogate analog.** The Laplace surrogate that marginalizes background-trial
-  tumour latents represents burden as a quadratic `g(w) = b₀ + b₁w + b₂w²`. That
-  representation has no `decrease_rate`/`growth_rate` to read off — the rates are
-  internals of the *bi-exponential* state, not of the *output trajectory*. This
+  tumour latents represents burden as a quadratic $g(w) = b_0 + b_1 w + b_2 w^2$.
+  That representation has no `decrease_rate`/`growth_rate` to read off — the rates
+  are internals of the *bi-exponential* state, not of the *output trajectory*. This
   makes the forecast/background featurization fundamentally asymmetric and blocks
   a shared `tv_coef` across forecast and borrowed patients.
 - **Static in costume.** With `enable_patient_process_noise_tr = FALSE` (the
@@ -31,25 +31,25 @@ of the log-burden trajectory:
 
 | Feature | Meaning | Forecast path | Surrogate (background) path |
 |---|---|---|---|
-| level | `g(w)` log-burden | `log_sum_exp(state_d, state_g)` (existing) | quadratic `b₀+b₁w+b₂w²` |
-| velocity | `g'(w)` rate of change | central difference of latent trajectory | analytic `b₁+2b₂w` |
+| level | $g(w)$ log-burden | `log_sum_exp(state_d, state_g)` (existing) | quadratic $b_0 + b_1 w + b_2 w^2$ |
+| velocity | $g'(w)$ rate of change | central difference of latent trajectory | analytic $b_1 + 2 b_2 w$ |
 
 **Why velocity is the right second feature:**
 
 - It is a derivative of the *output* trajectory, so it **exists in both
   representations** (bi-exponential forecast and quadratic surrogate) and is
-  **identical in form** — "d/dw of the log-burden path." The same `tv_coef` is
-  therefore meaningful across forecast and background patients.
-- It is **linear in the marginalized latents `(b₁, b₂)`** on the surrogate path
-  (`b₁ + 2b₂w`), so feeding it into the log-hazard keeps the survival term
-  log-concave — the property the joint-surrogate gate validated. The
-  bi-exponential rates do not have this property under the surrogate.
+  **identical in form** — $\frac{d}{dw}$ of the log-burden path. The same `tv_coef`
+  is therefore meaningful across forecast and background patients.
+- It is **linear in the marginalized latents $(b_1, b_2)$** on the surrogate path
+  ($b_1 + 2b_2 w$), so feeding it into the log-hazard keeps the survival term
+  log-concave — the property the joint-surrogate gate validated. The bi-exponential
+  rates do not have this property under the surrogate.
 - Clean clinical reading: "where burden is (level) + which way it is moving
   (velocity)" — tumour kinetics, akin to growth-rate constants in the oncology
   literature.
 
 **Avoid** features nonlinear in the latents (time-to-nadir, nadir depth, relative
-velocity `g'/g`, doubling time) — they break the surrogate's log-concavity.
+velocity $g'/g$, doubling time) — they break the surrogate's log-concavity.
 
 This change is **§9 step 0** of the joint-surrogate dependency chain
 (`docs/superpowers/specs/2026-06-09-joint-surrogate-index-contract.md`) — the
@@ -63,43 +63,49 @@ This is the load-bearing reason the basis was chosen, verified against the
 current functor (`stan/modules/laplace_surrogate/surrogate.stanfunctions`,
 `likelihood.stan`) and the index contract (§1, §4, §6 O1).
 
-The surrogate marginalizes, per background patient, `theta = [b₁, b₂]` (the
-quadratic burden's slope/curvature; intercept `b₀` is pinned —
+The surrogate marginalizes, per background patient, $\theta = [b_1, b_2]$ (the
+quadratic burden's slope/curvature; intercept $b_0$ is pinned —
 `surrogate_ll` uses `b0 = beta_pop[1]`, `hessian_block_size = 2`). Stan's
 `laplace_marginal_tol` runs an inner Newton solve that requires the functor's
-log-density to be **log-concave in `theta`**.
+log-density to be **log-concave in $\theta$**.
 
-When the contract adds the MS hazard term to the functor it reads, at week `w`:
+When the contract adds the MS hazard term to the functor it reads, at week $w$:
 
-```
-loghaz_T(w) = base_static_T[i,w] + u_T              ← θ-independent + frailty
-            + tv_coef_T[1]·std_level(g(w))          ← level coupling
-            + tv_coef_T[2]·std_vel(g'(w))           ← velocity coupling
-```
-with `g(w) = b₀ + b₁·w + b₂·w²` and `g'(w) = b₁ + 2·b₂·w`.
+$$\log h_T(w) = \underbrace{\text{base\_static}_T[i,w] + u_T}_{\theta\text{-independent + frailty}}
+  + \underbrace{\beta_T^{(1)} \cdot \tilde{g}(w) + \beta_T^{(2)} \cdot \tilde{g}'(w)}_{\text{burden coupling}}$$
 
-Both `std_level(g(w))` and `std_vel(g'(w))` are **affine in `(b₁, b₂)`**
-(constants `b₀`, week `w`, and the standardization scalars are all fixed within
-the solve). Therefore `loghaz_T(w)` is affine in `theta`, the survival
-accumulation `−exp(loghaz)` is concave (Hessian `−exp(·)·aaᵀ ⪯ 0`), the
-event-week `+loghaz` is linear, and the prior `−½θᵀK⁻¹θ` is strictly concave —
-so the functor stays log-concave and the Newton solve has a unique mode. **This
-is exactly the property the bi-exponential rate features could not provide:**
-`rate_d`/`rate_g` are `exp(·)` functions of the bridge's *input* parameters
-`(tr_loc, frac_logit)`, which have no expression in the marginalized output
-coordinates `(b₁, b₂)` — the term cannot even be written inside the functor,
-let alone kept concave. Velocity, as `d/dw` of the *output* trajectory, lives
-natively in `(b₁, b₂)`.
+where $T \in \{0{\to}1,\, 0{\to}3\}$,
+
+$$\tilde{g}(w) = \frac{g(w) - \text{median\_lb}}{\text{iqr\_lb}}, \qquad
+  \tilde{g}'(w) = \frac{g'(w) - \text{median\_vel}}{\text{iqr\_vel}}$$
+
+and $g(w) = b_0 + b_1 w + b_2 w^2$, $\;g'(w) = b_1 + 2 b_2 w$.
+
+Both $\tilde{g}(w)$ and $\tilde{g}'(w)$ are **affine in $(b_1, b_2)$** —
+constants $b_0$, week $w$, and the standardization scalars are all fixed within
+the Newton solve. Therefore $\log h_T(w)$ is affine in $\theta$, the survival
+accumulation $-\exp(\log h_T(w))$ is concave (its Hessian w.r.t. $\theta$ is
+$-\exp(\log h) \cdot \mathbf{a}\mathbf{a}^\top \preceq 0$ where $\mathbf{a} =
+\nabla_\theta \log h$), the event-week $+\log h$ term is linear, and the prior
+$-\frac{1}{2}\theta^\top K^{-1}\theta$ is strictly concave — so the functor stays
+log-concave and the Newton solve has a unique mode. **This is exactly the property
+the bi-exponential rate features could not provide:** `rate_d`/`rate_g` are
+$\exp(\cdot)$ functions of the bridge's *input* parameters `(tr_loc, frac_logit)`,
+which have no expression in the marginalized output coordinates $(b_1, b_2)$ — the
+term cannot even be written inside the functor, let alone kept concave. Velocity,
+as $\frac{d}{dw}$ of the *output* trajectory, lives natively in $(b_1, b_2)$.
 
 **Data vs latent split (important, mirrors the level feature):** the velocity
-*value* `g'(w) = b₁ + 2·b₂·w` is **latent** — computed from `theta` inside the
+*value* $g'(w) = b_1 + 2 b_2 w$ is **latent** — computed from $\theta$ inside the
 functor body, per Newton step; it is never data. Only the **standardization
 constants** `median_velocity_obs` / `iqr_velocity_obs` are `data` (parameter-free
 observed-data summaries, §3.3), passed positionally as the functor's data-only
 arguments, exactly as `median_log_burden_obs`/`iqr_log_burden_obs` already are
 for the level feature. The standardized feature is
-`(g'(w) − median_velocity_obs) / iqr_velocity_obs`: latent numerator, data
-denominator.
+
+$$\tilde{g}'(w) = \frac{g'(w) - \text{median\_velocity\_obs}}{\text{iqr\_velocity\_obs}}$$
+
+— latent numerator, data denominator.
 
 **Division of labour with the contract.** This spec delivers (a) the forecast-path
 velocity feature and (b) the `median_velocity_obs`/`iqr_velocity_obs` constants —
@@ -149,24 +155,27 @@ builder emits a different number of features.
 
 ### 3.1 Velocity = central difference of the latent log-burden trajectory
 
-The log-burden trajectory `g(w) = log_sum_exp(state_d, state_g)` lives on a weekly
-integer grid. Velocity is its central difference:
+The log-burden trajectory $g(w) = \log\!\operatorname{sum\_exp}(\text{state\_d},\, \text{state\_g})$
+lives on a weekly integer grid. Velocity is its central difference:
 
-- Interior: `v(w) = (g(w+1) − g(w−1)) / 2`
-- First column: forward difference `v = g(w+1) − g(w)`
-- Last column: backward difference `v = g(w) − g(w−1)`
+$$v(w) = \begin{cases}
+  g(w+1) - g(w) & w = 1 \text{ (forward)} \\[4pt]
+  \dfrac{g(w+1) - g(w-1)}{2} & 1 < w < w_{\max} \text{ (central)} \\[8pt]
+  g(w) - g(w-1) & w = w_{\max} \text{ (backward)}
+\end{cases}$$
 
 Central difference is chosen because it is **algebraically identical to the
-quadratic surrogate's analytic derivative** `b₁ + 2b₂w` (the linear interpolation
-of a parabola's secants recovers the tangent at the midpoint). Forecast and
-surrogate velocities are therefore consistent **in form** — the property the
-joint-surrogate gate requires. They are not bit-identical: the forecast velocity
-differences a capped, bi-exponential, possibly noisy trajectory; the surrogate
-velocity is the uncapped analytic polynomial derivative. `tv_coef` is shared
-model-wide and the contract's §6 O1 / §9 step 2 feature-SCALE check covers this.
+quadratic surrogate's analytic derivative** $b_1 + 2b_2 w$ (the linear
+interpolation of a parabola's secants recovers the tangent at the midpoint).
+Forecast and surrogate velocities are therefore consistent **in form** — the
+property the joint-surrogate gate requires. They are not bit-identical: the
+forecast velocity differences a capped, bi-exponential, possibly noisy trajectory;
+the surrogate velocity is the uncapped analytic polynomial derivative. `tv_coef`
+is shared model-wide and the contract's §6 O1 / §9 step 2 feature-SCALE check
+covers this.
 
-The level cap (`fmin(g, 10.0)`, applied in the existing builders to bound the
-log-hazard during warmup) is applied to `g` **before** differencing, so a capped
+The level cap ($\min(g,\, 10.0)$, applied in the existing builders to bound the
+log-hazard during warmup) is applied to $g$ **before** differencing, so a capped
 excursion cannot produce a spurious velocity spike.
 
 `log_sum_exp` is retained on the forecast path. This is deliberate and does **not**
@@ -183,7 +192,7 @@ path), not to these sampled-latent builders.
 
 2. **Inline path** (`stan/_ms_burden_inline_tv_covar.stan`, process-noise OFF —
    the publication setting): no `states_full_grid` exists. Evaluate the analytic
-   burden at three points `g(t−1), g(t), g(t+1)` via three `log_sum_exp` calls per
+   burden at three points $g(t-1), g(t), g(t+1)$ via three `log_sum_exp` calls per
    step, then central difference. Cheap (3 evaluations/step). Applies to all three
    inline blocks (0→2 dense, 0→3 dense, 0→1 sparse visit-gated).
 
@@ -205,22 +214,25 @@ deltas:
 
 - For each patient, walk consecutive **measured** visits (mask `sum_tumor_size >
   0`, reusing `patient_visit_pos` + `t_patient_visits`).
-- Per adjacent measured pair, compute a **per-week** velocity
-  `(log_sld[v+1] − log_sld[v]) / (week[v+1] − week[v])`. Per-week normalization is
-  essential: observed visits are irregularly spaced (weeks apart) while the latent
-  grid is weekly, so dividing by the week gap puts the observed scale in the same
-  units as the latent weekly-grid central difference.
-- Collect all per-week deltas across patients; take `median` and `IQR` via the
-  existing `quantile(..., {0.25, 0.5, 0.75})` idiom.
+- Per adjacent measured pair $(v, v+1)$, compute a **per-week** velocity
+
+$$\delta_v = \frac{\log\text{sld}[v+1] - \log\text{sld}[v]}{\text{week}[v+1] - \text{week}[v]}$$
+
+  Per-week normalization is essential: observed visits are irregularly spaced
+  while the latent grid is weekly, so dividing by the week gap puts the observed
+  scale in the same units as the latent weekly-grid central difference.
+- Collect all $\delta_v$ across patients; take median and IQR via the existing
+  `quantile(..., {0.25, 0.5, 0.75})` idiom.
 
 These are computed unconditionally in tumour transformed data (like the level
 constants) so they are available whenever the tumour model includes the builder,
 regardless of which basis is active.
 
 **Aliasing.** `stan/tumor/_tumor_observed_covar_transformed_data.stan` aliases the
-burden-agnostic names `median_velocity_obs` / `iqr_velocity_obs` to the tumour-side
-values, parallel to the existing `median_log_burden_obs = median_log_sld_obs`
-aliasing. (The PSA adapter does not, since PSA stays on the legacy basis.)
+burden-agnostic names `median_velocity_obs` / `iqr_velocity_obs` to the
+tumour-side values, parallel to the existing
+`median_log_burden_obs = median_log_sld_obs` aliasing. (The PSA adapter does not,
+since PSA stays on the legacy basis.)
 
 **New helper** in `stan/_burden.stanfunctions`:
 
@@ -233,8 +245,8 @@ real standardize_velocity(real velocity_raw, real median_velocity_obs, real iqr_
 No cap — velocity is not subject to the burden-magnitude blowup; the level cap
 upstream already bounds the trajectory the velocity is differenced from.
 
-The standardized velocity covariate at week `w` is
-`standardize_velocity(v(w), median_velocity_obs, iqr_velocity_obs)`.
+The standardized velocity covariate at week $w$ is
+$\tilde{v}(w) = \bigl(v(w) - \text{median\_velocity\_obs}\bigr) \,/\, \text{iqr\_velocity\_obs}$.
 
 ## 4. Coefficient parameters and hazard application
 
@@ -248,8 +260,8 @@ with `n_time_varying_covar`.** The coefficient arrays are already count-driven:
   (`stan/modules/multistate/priors.stan:95`) loop over / size by
   `n_time_varying_covar` — they adapt with no edit.
 - Hazard application (`stan/modules/multistate/transformed_parameters.stan:175,
-  201, 366, 779`) is `log_cond_surv += Σ_k coef[k]·covar[k]` over `k in
-  1:n_time_varying_covar` — index-agnostic, works for 2 features unchanged.
+  201, 366, 779`) is $\log h \mathrel{+}= \sum_{k=1}^{K} \beta^{(k)} \cdot x^{(k)}$
+  over `k in 1:n_time_varying_covar` — index-agnostic, works for $K=2$ unchanged.
 - R initializers (`r/initializers_ms.R:247-267`) and prior builders
   (`r/priors.R:43-56`) size off `n_time_varying_covar` — adapt automatically once
   `n_tv_covar = 2L` is set.
@@ -285,10 +297,10 @@ a doc task.
   matched pair; the config-error check (§2) enforces it.
 - **Surrogate / warm-start interaction.** The publication tribble carries
   warm-start metric files dimensioned to the parameter space. Switching
-  `n_tv_covar` 3→2 drops one `time_varying_coef` element **per enabled
-  transition**, changing the sampled-parameter dimension and invalidating any saved
-  inv-metric. The velocity-mode run must `warmstart = FALSE` (cold start) for its
-  first fit, exactly as the surrogate cold-start note at
+  $n_\text{tv\_covar}: 3 \to 2$ drops one `time_varying_coef` element **per
+  enabled transition**, changing the sampled-parameter dimension and invalidating
+  any saved inv-metric. The velocity-mode run must `warmstart = FALSE` (cold start)
+  for its first fit, exactly as the surrogate cold-start note at
   `publication_targets.R:234-242` already establishes for a dimension change.
 - Pioneer tribble: set `enable_ms_velocity_basis = FALSE` for all rows (or rely
   on a `FALSE` default in the flag-assembly helper) — no behavioural change to PSA.
@@ -302,13 +314,13 @@ a doc task.
    and 1. (Also syntax-check `sf-ssls-lfo.stan` / `-endpoints.stan` since they
    include the builders.)
 2. **Converges + identifies (velocity mode).** A short publication MCMC run in
-   velocity mode: Rhat < 1.01, adequate ESS, zero divergences, and
+   velocity mode: $\hat{R} < 1.01$, adequate ESS, zero divergences, and
    `time_varying_coef_01` (and `_03` if enabled) is **identified** — posterior
    shifted off the prior, not stuck at the hyperprior mean.
-3. **Scale sanity.** The standardized velocity feature is roughly unit-IQR across
-   patients and time (confirms `median_velocity_obs` / `iqr_velocity_obs` anchor
-   the right scale; a feature with IQR ≫ 1 or ≪ 1 signals a units bug, e.g. a
-   missing per-week normalization).
+3. **Scale sanity.** The standardized velocity feature $\tilde{v}(w)$ is roughly
+   unit-IQR across patients and time (confirms `median_velocity_obs` /
+   `iqr_velocity_obs` anchor the right scale; a feature with $\text{IQR} \gg 1$ or
+   $\text{IQR} \ll 1$ signals a units bug, e.g. a missing per-week normalization).
 
 **Documented follow-up — does NOT block landing, has its own acceptance criteria:**
 
@@ -325,38 +337,40 @@ a doc task.
 1. Declare `enable_ms_velocity_basis` in `stan/modules/multistate/flags.stan`.
 2. Add `standardize_velocity` to `stan/_burden.stanfunctions`.
 3. Compute `median_velocity_obs` / `iqr_velocity_obs` (observed per-week log-SLD
-   deltas) in `stan/modules/tumor/transformed_data.stan`.
+   deltas $\delta_v$) in `stan/modules/tumor/transformed_data.stan`.
 4. Alias the velocity constants in
    `stan/tumor/_tumor_observed_covar_transformed_data.stan`.
-5. Branch `stan/_ms_burden_tv_covar.stan` (dense path) on the flag: velocity via
-   central difference of `states_full_grid` (cap-before-difference) when on; legacy
-   rates when off.
+5. Branch `stan/_ms_burden_tv_covar.stan` (dense path) on the flag: velocity $v(w)$
+   via central difference of `states_full_grid` (cap-before-difference) when on;
+   legacy rates when off.
 6. Mirror the branch in `stan/_ms_burden_inline_tv_covar.stan` (all three inline
    blocks): velocity via 3-point analytic `log_sum_exp` central difference when on.
-7. Add the config-error check enforcing `(enable_ms_velocity_basis, n_tv_covar)` ∈
-   {(1,2), (0,3)} (Stan reject and/or R-side stop).
+7. Add the config-error check enforcing
+   $(\text{enable\_ms\_velocity\_basis},\; n_\text{tv\_covar}) \in \{(1,2),\,(0,3)\}$
+   (Stan reject and/or R-side stop).
 8. Wire `enable_ms_velocity_basis` into the tumour flag assembly
    (`sclc_targets.R`, `publication_targets.R`) and set the matched
    `(flag, n_tv_covar, warmstart=FALSE)` in the publication tribble; default
    `FALSE` for pioneer.
 9. Validation gate: compile both modes; short velocity-mode MCMC for
    convergence/identification/scale (§6 items 1–3).
-10. Doc update: one paragraph in the MS model-spec qmd re-justifying `coef` as a
-    kinetics (level + velocity) coupling.
+10. Doc update: one paragraph in the MS model-spec qmd re-justifying $\beta^{(k)}$
+    as a kinetics (level + velocity) coupling.
 11. (Follow-up, non-blocking) comparative refit §6 item 4.
 
 ## 8. Open risks
 
 - **Boundary velocity at first/last column.** Forward/backward difference at the
   grid edges is a half-step estimate; if the 0→1 event mass concentrates at week 1
-  the first-column velocity is a forward difference, slightly inconsistent with the
-  interior central difference. Acceptable (the surrogate's `b₁+2b₂w` is exact at
-  every point including the edge, but the forecast path's edge approximation only
-  affects the first week). Note it; do not over-engineer.
+  the first-column velocity $v(1) = g(2) - g(1)$ is a forward difference, slightly
+  inconsistent with the interior central difference. Acceptable (the surrogate's
+  $b_1 + 2b_2 w$ is exact at every point including the edge, but the forecast
+  path's edge approximation only affects the first week). Note it; do not
+  over-engineer.
 - **Observed-velocity sample size.** Patients with a single measured visit
-  contribute no delta; the `median/iqr` pool is over inter-visit pairs, not
+  contribute no $\delta_v$; the median/IQR pool is over inter-visit pairs, not
   patients. Should be ample in the publication cohort but worth a guard against an
   empty pool (fall back / reject with a clear message).
-- **`coef` sign/scale comparability across modes** is intentionally NOT claimed —
-  the bases differ, so legacy and velocity coefficients are not directly
+- **$\beta^{(k)}$ sign/scale comparability across modes** is intentionally NOT
+  claimed — the bases differ, so legacy and velocity coefficients are not directly
   comparable. The comparative refit (§6.4) compares *fit quality*, not coefficients.
