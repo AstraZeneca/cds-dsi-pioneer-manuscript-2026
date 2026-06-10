@@ -85,8 +85,8 @@ int<lower=0, upper=1> enable_ms_velocity_basis;
 
 This flag is now a required data variable. We will NOT compile a full model yet (R must supply the flag first, Task 6+). Instead, verify the file still parses as a fragment by checking it has no syntax typo:
 
-Run: `grep -c "enable_ms_velocity_basis" stan/modules/multistate/flags.stan`
-Expected: `1`
+Run: `grep -cE "int<lower=0, upper=1> enable_ms_velocity_basis;" stan/modules/multistate/flags.stan`
+Expected: `1` (match the declaration syntax, not the bare identifier — the doc-comment also mentions the name, so a plain `grep -c "enable_ms_velocity_basis"` would count 2).
 
 - [ ] **Step 3: Commit**
 
