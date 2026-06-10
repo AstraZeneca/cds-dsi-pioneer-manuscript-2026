@@ -47,5 +47,11 @@ for (v in 1:sum(n_patient_visits)) {
 }
 real median_log_burden_obs = median_log_sld_obs;
 real iqr_log_burden_obs = iqr_log_sld_obs;
+// Velocity standardization aliases for the (level, velocity) coupling basis.
+// The burden-agnostic names are read by _ms_burden_tv_covar.stan /
+// _ms_burden_inline_tv_covar.stan when enable_ms_velocity_basis = 1. PSA does
+// not alias these (it stays on the legacy 3-feature basis).
+real median_velocity_burden_obs = median_velocity_obs;
+real iqr_velocity_burden_obs = iqr_velocity_obs;
 
 #include "../_observed_covar_transformed_data.stan"
