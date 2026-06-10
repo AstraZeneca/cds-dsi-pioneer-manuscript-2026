@@ -38,17 +38,24 @@ ms_init_values <- function(env) {
     }
     ms_legacy_mode <- lapply(seq_len(6L), reconstruct_legacy_mode)
 
+    # Mirrors Stan's n_forecast_groups_per_level: patient level uses forecast
+    # count, not the full patient count (background patients have no parameters).
+    n_fgpl <- n_groups_per_level
+    if (exists("n_forecast_patients", inherits = FALSE)) {
+      n_fgpl[n_levels] <- n_forecast_patients
+    }
+
     n_enabled_slot <- vapply(ms_legacy_mode,
-      function(m) sum(n_groups_per_level[m > 0L]), integer(1))
+      function(m) sum(n_fgpl[m > 0L]), integer(1))
     n_gp_slot <- vapply(ms_legacy_mode,
-      function(m) sum(n_groups_per_level[m == 3L]), integer(1))
+      function(m) sum(n_fgpl[m == 3L]), integer(1))
     # raw/cp split mirrors Stan's split_cp_ncp_pos (hierarchy.stanfunctions):
     # raw bucket = modes {FE=1, RE=2, RE_GP=3}; cp bucket = mode {RE_CP=4}.
     # The raw_*_level_intercept vectors are sized by n_raw, the cp_* by n_cp.
     n_raw_slot <- vapply(ms_legacy_mode,
-      function(m) sum(n_groups_per_level[m == 1L | m == 2L | m == 3L]), integer(1))
+      function(m) sum(n_fgpl[m == 1L | m == 2L | m == 3L]), integer(1))
     n_cp_slot <- vapply(ms_legacy_mode,
-      function(m) sum(n_groups_per_level[m == 4L]), integer(1))
+      function(m) sum(n_fgpl[m == 4L]), integer(1))
     any_re_slot <- vapply(ms_legacy_mode,
       function(m) any(m == 2L | m == 3L | m == 4L), logical(1))
 
@@ -59,7 +66,7 @@ ms_init_values <- function(env) {
     n_enabled_groups_ms_baseline_12_s <- n_enabled_slot[4]
     n_enabled_groups_ms_baseline_12_t <- n_enabled_slot[5]
     n_enabled_groups_ms_baseline_32 <- n_enabled_slot[6]
-    n_enabled_groups_ms_slope <- sum(n_groups_per_level[enable_ms_level_cov == 1])
+    n_enabled_groups_ms_slope <- sum(n_fgpl[enable_ms_level_cov == 1])
     # any_re per slot (used to gate the per-slot intercept-SD inits)
     any_re_level_01   <- any_re_slot[1]
     any_re_level_02   <- any_re_slot[2]
