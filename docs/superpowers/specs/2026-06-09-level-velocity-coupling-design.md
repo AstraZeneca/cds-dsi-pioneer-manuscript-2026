@@ -57,6 +57,58 @@ gated prerequisite for the surrogate functor — **but it is also independently
 useful to the publication model** regardless of the surrogate, and is specced for
 the model's own sake.
 
+### 1.1 Why velocity is admissible inside the Laplace surrogate functor
+
+This is the load-bearing reason the basis was chosen, verified against the
+current functor (`stan/modules/laplace_surrogate/surrogate.stanfunctions`,
+`likelihood.stan`) and the index contract (§1, §4, §6 O1).
+
+The surrogate marginalizes, per background patient, `theta = [b₁, b₂]` (the
+quadratic burden's slope/curvature; intercept `b₀` is pinned —
+`surrogate_ll` uses `b0 = beta_pop[1]`, `hessian_block_size = 2`). Stan's
+`laplace_marginal_tol` runs an inner Newton solve that requires the functor's
+log-density to be **log-concave in `theta`**.
+
+When the contract adds the MS hazard term to the functor it reads, at week `w`:
+
+```
+loghaz_T(w) = base_static_T[i,w] + u_T              ← θ-independent + frailty
+            + tv_coef_T[1]·std_level(g(w))          ← level coupling
+            + tv_coef_T[2]·std_vel(g'(w))           ← velocity coupling
+```
+with `g(w) = b₀ + b₁·w + b₂·w²` and `g'(w) = b₁ + 2·b₂·w`.
+
+Both `std_level(g(w))` and `std_vel(g'(w))` are **affine in `(b₁, b₂)`**
+(constants `b₀`, week `w`, and the standardization scalars are all fixed within
+the solve). Therefore `loghaz_T(w)` is affine in `theta`, the survival
+accumulation `−exp(loghaz)` is concave (Hessian `−exp(·)·aaᵀ ⪯ 0`), the
+event-week `+loghaz` is linear, and the prior `−½θᵀK⁻¹θ` is strictly concave —
+so the functor stays log-concave and the Newton solve has a unique mode. **This
+is exactly the property the bi-exponential rate features could not provide:**
+`rate_d`/`rate_g` are `exp(·)` functions of the bridge's *input* parameters
+`(tr_loc, frac_logit)`, which have no expression in the marginalized output
+coordinates `(b₁, b₂)` — the term cannot even be written inside the functor,
+let alone kept concave. Velocity, as `d/dw` of the *output* trajectory, lives
+natively in `(b₁, b₂)`.
+
+**Data vs latent split (important, mirrors the level feature):** the velocity
+*value* `g'(w) = b₁ + 2·b₂·w` is **latent** — computed from `theta` inside the
+functor body, per Newton step; it is never data. Only the **standardization
+constants** `median_velocity_obs` / `iqr_velocity_obs` are `data` (parameter-free
+observed-data summaries, §3.3), passed positionally as the functor's data-only
+arguments, exactly as `median_log_burden_obs`/`iqr_log_burden_obs` already are
+for the level feature. The standardized feature is
+`(g'(w) − median_velocity_obs) / iqr_velocity_obs`: latent numerator, data
+denominator.
+
+**Division of labour with the contract.** This spec delivers (a) the forecast-path
+velocity feature and (b) the `median_velocity_obs`/`iqr_velocity_obs` constants —
+which the functor consumes as data. The functor edit that *reads* these
+(extending `surrogate_ll` with the hazard term) belongs to the joint-surrogate
+contract's implementation, not this spec. The contract's §4 functor signature and
+§6 O1 already assume this basis as input; the compatibility above confirms the two
+specs agree.
+
 ## 2. Scope and the mode flag
 
 **Scope: tumour (publication) model only.** PSA / Pioneer is untouched and
