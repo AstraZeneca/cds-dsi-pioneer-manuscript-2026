@@ -5,8 +5,12 @@ test_that("spop dropout PFS-from-OS invariants hold", {
                      Sys.getenv("DOMINO_STARTING_USERNAME"),
                      "publication/main/_targets")
   skip_if_not(dir.exists(store), "publication store not present")
+  skip_if_not(
+    file.exists(file.path(store, "objects", "tumor_ssls_res_posterior_sclc")),
+    "tumor_ssls_res_posterior_sclc not in store (store may be pre-disease-split)"
+  )
 
-  fit <- targets::tar_read(tumor_ssls_res_posterior, store = store)
+  fit <- targets::tar_read(tumor_ssls_res_posterior_sclc, store = store)
 
   # Endpoint GQ arrays are length n_forecast_patients, which is < n_patients
   # whenever forecast_split_level > 0 (RWD/borrowing models forecast only the
@@ -42,8 +46,12 @@ test_that("spop CIF_03 (dropout) is a valid, populated cumulative incidence", {
                      Sys.getenv("DOMINO_STARTING_USERNAME"),
                      "publication/main/_targets")
   skip_if_not(dir.exists(store), "publication store not present")
+  skip_if_not(
+    file.exists(file.path(store, "objects", "all_tumor_ssls_km_rvar_sclc")),
+    "all_tumor_ssls_km_rvar_sclc not in store (store may be pre-disease-split)"
+  )
 
-  km <- targets::tar_read(all_tumor_ssls_km_rvar, store = store)
+  km <- targets::tar_read(all_tumor_ssls_km_rvar_sclc, store = store)
   skip_if_not("spop_cif_03" %in% names(km) ||
               any(grepl("cif_03", names(km))), "spop_cif_03 not in km rvars")
 
@@ -65,8 +73,12 @@ test_that("sample dropout PFS-from-OS invariants hold", {
                      Sys.getenv("DOMINO_STARTING_USERNAME"),
                      "publication/main/_targets")
   skip_if_not(dir.exists(store), "publication store not present")
+  skip_if_not(
+    file.exists(file.path(store, "objects", "tumor_ssls_res_posterior_sclc")),
+    "tumor_ssls_res_posterior_sclc not in store (store may be pre-disease-split)"
+  )
 
-  fit <- targets::tar_read(tumor_ssls_res_posterior, store = store)
+  fit <- targets::tar_read(tumor_ssls_res_posterior_sclc, store = store)
 
   # Endpoint GQ arrays are length n_forecast_patients (< n_patients when
   # forecast_split_level > 0). Pull ALL columns of each variable in index order;

@@ -118,6 +118,7 @@ test_that("ms_init_values_fixed sizes the 0->1 RE intercept per-slot (trial RE)"
     enable_ms_02_time_varying_cov = 0L, enable_ms_03_time_invariant_cov = 0L,
     enable_ms_03_time_varying_cov = 0L, enable_ms_32_time_invariant_cov = 0L,
     enable_ms_12_entry_covar = 0L, enable_ms_32_entry_covar = 0L,
+    enable_ms_baseline_trend_01 = 0L,
     share_dead_gp_shape = 0L,
     max_all_t = 50L, ms_max_sojourn_t = 50L, ms_max_sojourn_t_32 = 50L,
     ms_gp_grid_step = 4L, enable_states_full_grid = 0L
@@ -205,6 +206,7 @@ test_that("ms_init_values_fixed: corr_group stays absent (no Phase-2 params yet)
     enable_ms_02_time_varying_cov = 0L, enable_ms_03_time_invariant_cov = 0L,
     enable_ms_03_time_varying_cov = 0L, enable_ms_32_time_invariant_cov = 0L,
     enable_ms_12_entry_covar = 0L, enable_ms_32_entry_covar = 0L,
+    enable_ms_baseline_trend_01 = 0L,
     share_dead_gp_shape = 0L,
     max_all_t = 50L, ms_max_sojourn_t = 50L, ms_max_sojourn_t_32 = 50L,
     ms_gp_grid_step = 4L, enable_states_full_grid = 0L
