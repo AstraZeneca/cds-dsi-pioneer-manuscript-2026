@@ -80,7 +80,7 @@ PIONEER is built around a *backward inference, forward simulation* pipeline. The
 This section specifies the joint model in full. We organise the description around the data flow shown in @fig-model-overview: patient-level inputs (longitudinal SLD, baseline covariates, event histories) are routed through two coupled submodels — a mechanistic state-space submodel for the SLD trajectory (@sec-mechanistic) and a multistate hazard submodel for the clinical events (@sec-multistate) — linked by a small set of time-varying tumour-derived covariates (the *bridge*). All clinical endpoints are read off the joint posterior in a single posterior-predictive pass, with no two-stage plug-in.
 
 ::: {#fig-model-overview}
-![](figures/model-overview.svg){width=100%}
+![](figures/model-overview){width=100%}
 
 Joint model overview. Patient-level inputs (left) feed two coupled submodels (centre): the mechanistic state-space submodel of SLD dynamics, and the multistate illness-death-with-dropout hazard submodel. The tumour-derived time-varying covariate vector $\mathbf{W}_i(t)$ is the explicit *bridge* through which the mechanistic submodel feeds the hazards; the dashed arrow indicates the joint likelihood, which lets the event data refine the latent state's posterior. Endpoints (right) are deterministic functions of the joint posterior.
 :::
@@ -212,7 +212,7 @@ For each posterior draw, the mechanistic submodel delivers for every patient and
 The multistate submodel governs the stochastic clinical events. Each patient occupies one of four states at every week $t$: alive and progression-free (state $0$), progressed and alive (state $1$), dead (state $2$, absorbing), or off-trial without observed death (state $3$); the five admissible transitions between these states, together with their time-scale conventions, are shown in @fig-multistate-diagram below. Each transition has its own intensity, with its own time scale and its own dependence on covariates and on the latent burden trajectory.
 
 ::: {#fig-multistate-diagram}
-![](figures/multistate-diagram.svg){width=85%}
+![](figures/multistate-diagram){width=85%}
 
 Multistate state graph with the five transition intensities used in the case study. Three transitions out of state $0$ ($0\to 1$ progression, $0\to 2$ direct death, $0\to 3$ dropout) use clock-forward time $t$. The two transitions into state $2$ from non-zero source states ($1\to 2$ post-progression death, $3\to 2$ off-trial death) use sojourn time $u_1 = t - T_{01}$ and $u_3 = t - T_{03}$ respectively (semi-Markov; the clock resets on entry into the source state). State $3$ is dashed to mark its off-trial status; state $2$ is filled to mark it as the absorbing terminal state.
 :::
