@@ -210,9 +210,10 @@ publication_targets <- list(
   # n_time_varying_covar to size the time_varying_coef_* arrays, so the dimension
   # MUST be fixed upstream of tumor_priors).
   #
-  #   - "full"        : n_time_varying_covar = 3 (standardised burden + log
-  #                     decrease rate + log growth rate) PLUS the hierarchical
-  #                     0->1 baseline log-time trend (Fix A, 2026-06-05).
+  #   - "full"        : n_time_varying_covar = 2 (standardised burden LEVEL +
+  #                     VELOCITY = central-difference of log-burden) under the
+  #                     (level, velocity) basis (enable_ms_velocity_basis = 1L),
+  #                     PLUS the hierarchical 0->1 baseline log-time trend.
   #                     enable_trend = 1L sets enable_ms_baseline_trend_01; a
   #                     monotone log(t) slope is added as a sibling to the
   #                     population 0->1 baseline temporal block (intercept +
@@ -230,7 +231,7 @@ publication_targets <- list(
   tar_map(
     tibble(
       bridge_variant = "full",
-      n_tv_covar     = 3L,
+      n_tv_covar     = 2L,   # (level, velocity) basis — see enable_ms_velocity_basis
       enable_trend   = 1L,
       # COLD START for the surrogate run: enabling enable_background_surrogate
       # marginalizes the 419 backgrounded patients' NCP latents, SHRINKING the
@@ -298,6 +299,12 @@ publication_targets <- list(
         # level (mirrors the baseline GP). pioneer/sclc set this to 0L at
         # their own stan-data assembly sites.
         enable_ms_baseline_trend_01 = enable_trend,
+        # (level, velocity) coupling basis ON for the publication model. Matches
+        # n_tv_covar = 2L in the tribble. Required for the Laplace surrogate: the
+        # bi-exponential rates have no analog under the quadratic surrogate, but
+        # velocity = d/dw of log-burden = b1 + 2*b2*w is linear in the
+        # marginalized latents (keeps the survival term log-concave).
+        enable_ms_velocity_basis = 1L,
 
         enable_ms_pop_time_varying_cov = TRUE,
         enable_ms_pop_time_invariant_cov = TRUE,
