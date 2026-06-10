@@ -2,7 +2,7 @@
 #
 # Exercises all four pure functions in pfs.stanfunctions:
 #   - classify_spop_exit()    (9 scenarios)
-#   - derive_spop_pfs()       (7 scenarios)
+#   - derive_spop_pfs()       (5 scenarios; D3/D4 removed — unreachable input)
 #   - classify_sample_exit()  (7 scenarios)
 #   - derive_sample_pfs()     (7 scenarios)
 #
@@ -19,7 +19,7 @@ library(testthat)
 library(cmdstanr)
 library(here)
 
-test_that("classify_first_exit: all 40 scenarios produce expected outputs (n_failures == 0)", {
+test_that("classify_first_exit: all 38 scenarios produce expected outputs (n_failures == 0)", {
   stan_file <- here(
     "tests", "testthat", "stan",
     "test_classify_first_exit_all.stan"
@@ -39,7 +39,7 @@ test_that("classify_first_exit: all 40 scenarios produce expected outputs (n_fai
     0L,
     label = "n_failures",
     info  = str_c(
-      "One or more classify-first scenarios produced unexpected outputs. ",
+      "One or more classify-first scenarios (38 total) produced unexpected outputs. ",
       "See Stan print() messages above for which scenarios failed."
     )
   )
