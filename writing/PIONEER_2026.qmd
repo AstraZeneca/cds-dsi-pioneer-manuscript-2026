@@ -80,16 +80,16 @@ PIONEER is built around a *backward inference, forward simulation* pipeline. The
 This section specifies the joint model in full. We organise the description around the data flow shown in @fig-model-overview: patient-level inputs (longitudinal SLD, baseline covariates, event histories) are routed through two coupled submodels — a mechanistic state-space submodel for the SLD trajectory (@sec-mechanistic) and a multistate hazard submodel for the clinical events (@sec-multistate) — linked by a small set of time-varying tumour-derived covariates (the *bridge*). All clinical endpoints are read off the joint posterior in a single posterior-predictive pass, with no two-stage plug-in.
 
 ::: {#fig-model-overview}
-![](figures/model-overview){width=100%}
+![](figures/model-overview.svg){width=100%}
 
 Joint model overview. Patient-level inputs (left) feed two coupled submodels (centre): the mechanistic state-space submodel of SLD dynamics, and the multistate illness-death-with-dropout hazard submodel. The tumour-derived time-varying covariate vector $\mathbf{W}_i(t)$ is the explicit *bridge* through which the mechanistic submodel feeds the hazards; the dashed arrow indicates the joint likelihood, which lets the event data refine the latent state's posterior. Endpoints (right) are deterministic functions of the joint posterior.
 :::
 
 ### Notation and setup {#sec-notation}
 
-We index patients by $i = 1, \dots, N$. The time clock is the patient's *study week*, an integer-valued grid in which week $1$ denotes the first week on treatment; non-positive weeks ($t \le 0$) correspond to the pre-treatment screening window. Each patient $i$ contributes a vector of baseline covariates $\mathbf{x}_i \in \mathbb{R}^p$, a set of SLD assessments at visit weeks $\{t_{i,j}\}_{j \in \mathcal{V}_i}$ (ragged across patients, with $\mathcal{V}_i$ the visit index set), and an event history. We will write $y_i(t_{i,j})$ for the SLD measurement at visit $j$ — a single scalar per visit — so that $y_i(\cdot)$ is a function defined only on the patient's visit times. The event history takes one of four mutually exclusive terminal states by the data cut-off: alive and progression-free (state $0$), progressed (state $1$), dead (state $2$), or off-trial without death (state $3$). Transitions between these states are written $j \to k$; the five admissible transitions are $0 \to 1$, $0 \to 2$, $1 \to 2$, $0 \to 3$ and $3 \to 2$ (see @fig-multistate-diagram).
+We index patients by $i = 1, \dots, N$. The time clock is the patient's *study week*, an integer-valued grid in which week $1$ denotes the first week on treatment; non-positive weeks ($t \le 0$) correspond to the pre-treatment screening window. Each patient $i$ contributes a vector of baseline covariates $\mathbf{x}_i \in \mathbb{R}^p$, a set of SLD assessments at visit weeks $\mathcal{V}_i \subset \mathbb{Z}_{>0}$ (ragged across patients), and an event history. We will write $y_i(t)$ for the SLD measurement at visit week $t \in \mathcal{V}_i$ — a single scalar per visit — so that $y_i(\cdot)$ is a function defined only on the patient's visit weeks. The event history takes one of four mutually exclusive terminal states by the data cut-off: alive and progression-free (state $0$), progressed (state $1$), dead (state $2$), or off-trial without death (state $3$). Transitions between these states are written $j \to k$; the five admissible transitions are $0 \to 1$, $0 \to 2$, $1 \to 2$, $0 \to 3$ and $3 \to 2$ (see @fig-multistate-diagram).
 
-For each patient we identify a single *baseline visit*, defined as the last SLD assessment in the pre-treatment screening window. We write $t_i^{\mathrm{bl}} \le 0$ for the week of patient $i$'s baseline visit, and $y_i^{\mathrm{bl}} \equiv y_i(t_i^{\mathrm{bl}})$ for the SLD measurement at that visit. We define the *normalised burden* using the patient's *latent* SLD trajectory $\mathrm{SLD}_i(t)$ — the true, unobserved tumour size at week $t$ that underlies the noisy visit measurements $y_i(t_{i,j})$ and is modelled explicitly in @sec-mechanistic:
+For each patient we identify a single *baseline visit*, defined as the last SLD assessment in the pre-treatment screening window. We write $t_i^{\mathrm{bl}} \le 0$ for the week of patient $i$'s baseline visit, and $y_i^{\mathrm{bl}} \equiv y_i(t_i^{\mathrm{bl}})$ for the SLD measurement at that visit. We define the *normalised burden* using the patient's *latent* SLD trajectory $\mathrm{SLD}_i(t)$ — the true, unobserved tumour size at week $t$ that underlies the noisy visit measurements $y_i(t)$, $t \in \mathcal{V}_i$, and is modelled explicitly in @sec-mechanistic:
 $$
 B_i(t) \;=\; \frac{\mathrm{SLD}_i(t)}{y_i^{\mathrm{bl}}},
 $$ {#eq-sld-normalised}
@@ -193,13 +193,13 @@ The covariate vector $\mathbf{x}_i$ in (@eq-init-linpred) and (@eq-rate-linpred)
 
 #### Observation model {#sec-mech-observation}
 
-At each post-baseline visit $j \in \mathcal{V}_i$ with $t_{i,j} > t_i^{\mathrm{bl}}$, we use a Gaussian observation density on the log scale:
+At each post-baseline visit week $t \in \mathcal{V}_i$ with $t > t_i^{\mathrm{bl}}$, we use a Gaussian observation density on the log scale:
 $$
-\log\!\frac{y_i(t_{i,j})}{y_i^{\mathrm{bl}}} \;\sim\; \mathtt{Normal}\!\big(\log B_i(t_{i,j}), \; \sigma_y^2\big),
+\log\!\frac{y_i(t)}{y_i^{\mathrm{bl}}} \;\sim\; \mathtt{Normal}\!\big(\log B_i(t), \; \sigma_y^2\big),
 $$ {#eq-obs-density}
 with observation scale $\sigma_y$ shared across patients and visits. The baseline visit itself is excluded from the likelihood: because we condition on $y_i^{\mathrm{bl}}$ as the normaliser in (@eq-sld-normalised), the baseline observation defines the patient's reference scale and is not modelled as a noisy outcome of the dynamics. The log-scale Gaussian assumption is consistent with the multiplicative measurement-error structure of RECIST 1.1 — multiple target lesions, inter-reader variability, and discreteness of the sum-of-diameters all contribute proportionally to the size of the lesions being measured — and yields tractable left-censoring under the limit of detection (below). A heavier-tailed alternative (Student-$t$) would be a natural robustness extension; we discuss this briefly in @sec-discussion.
 
-When SLD falls below the assay limit of detection (in practice, when all target lesions disappear so that $y_i(t_{i,j}) = 0$ would be reported), the observation is treated as left-censored at the limit-of-detection value $y^{\mathrm{LoD}}$, with the corresponding contribution to the likelihood being the Gaussian CDF at $\log(y^{\mathrm{LoD}} / y_i^{\mathrm{bl}})$ rather than the density. This handling of LoD is essential in IO trials where deep responses are common; treating the absence as a measurement of zero or omitting the visit both introduce bias.
+When SLD falls below the assay limit of detection (in practice, when all target lesions disappear so that $y_i(t) = 0$ would be reported), the observation is treated as left-censored at the limit-of-detection value $y^{\mathrm{LoD}}$, with the corresponding contribution to the likelihood being the Gaussian CDF at $\log(y^{\mathrm{LoD}} / y_i^{\mathrm{bl}})$ rather than the density. This handling of LoD is essential in IO trials where deep responses are common; treating the absence as a measurement of zero or omitting the visit week both introduce bias.
 
 #### Outputs that flow to the multistate {#sec-mech-outputs}
 
@@ -212,7 +212,7 @@ For each posterior draw, the mechanistic submodel delivers for every patient and
 The multistate submodel governs the stochastic clinical events. Each patient occupies one of four states at every week $t$: alive and progression-free (state $0$), progressed and alive (state $1$), dead (state $2$, absorbing), or off-trial without observed death (state $3$); the five admissible transitions between these states, together with their time-scale conventions, are shown in @fig-multistate-diagram below. Each transition has its own intensity, with its own time scale and its own dependence on covariates and on the latent burden trajectory.
 
 ::: {#fig-multistate-diagram}
-![](figures/multistate-diagram){width=85%}
+![](figures/multistate-diagram.svg){width=85%}
 
 Multistate state graph with the five transition intensities used in the case study. Three transitions out of state $0$ ($0\to 1$ progression, $0\to 2$ direct death, $0\to 3$ dropout) use clock-forward time $t$. The two transitions into state $2$ from non-zero source states ($1\to 2$ post-progression death, $3\to 2$ off-trial death) use sojourn time $u_1 = t - T_{01}$ and $u_3 = t - T_{03}$ respectively (semi-Markov; the clock resets on entry into the source state). State $3$ is dashed to mark its off-trial status; state $2$ is filled to mark it as the absorbing terminal state.
 :::
@@ -237,7 +237,21 @@ $$
 $$ {#eq-ms-hazard}
 in which only the first three terms are functions of time. The population and trial-level baselines are Gaussian processes (@sec-ms-gp); the tumour bridge $\mathbf{W}_i(t)$ is the explicit coupling to the mechanistic submodel (@sec-ms-bridge); the baseline covariates $\mathbf{x}_i$ are the same patient-level covariate vector used in the mechanistic submodel (@sec-mechanistic), with priors elicited on the original-scale coefficients but rotated through the QR decomposition of the design matrix for inference, as discussed in @sec-priors; and $\gamma_{jk,i}$ is a patient-level frailty term, described below.
 
-Each of the four additive components is *transition-specific*: there is no constraint that, say, the coefficient on log-burden in the $0\to 1$ hazard equals the corresponding coefficient in the $1\to 2$ hazard. This is the structural point that distinguishes our framework from a single-hazard joint model: the tumour-derived covariates are allowed (under the priors) to act differently on progression hazard than on post-progression death hazard, and the data decide which transitions they actually inform.
+Each of the five additive components is *transition-specific*: there is no constraint that, say, the coefficient on log-burden in the $0\to 1$ hazard equals the corresponding coefficient in the $1\to 2$ hazard. This is the structural point that distinguishes our framework from a single-hazard joint model: the tumour-derived covariates are allowed (under the priors) to act differently on progression hazard than on post-progression death hazard, and the data decide which transitions they actually inform.
+
+It helps to fix the discrete-time reading of (@eq-ms-hazard) before turning to a subtlety specific to the tumour application. Because events are recorded on a weekly grid rather than continuously, the natural object is the discrete-time (grouped-duration) hazard familiar from econometric duration analysis [@Wooldridge2010, ch. 22]. Writing $J_i(t) \in \{0, 1, 2, 3\}$ for the state patient $i$ occupies at week $t$, the single-week conditional survival is $\exp(-\lambda_{jk,i}(t))$ (the $b=a=t$ case of $S_{jk,i}$ in @sec-ms-likelihood), so $\lambda_{jk,i}(t)$ is the *cause-specific* rate of the $j\to k$ transition for a patient in source state $j$, and the per-week transition probability is its complement:
+$$
+\Pr\!\big[\, J_i(t) = k \;\big|\; J_i(t-1) = j,\; \mathbf{x}_i,\; \mathbf{W}_i(t) \big]
+\;=\; 1 - \exp\!\big(-\lambda_{jk, i}(t)\big).
+$$ {#eq-ms-discrete}
+
+The subtlety is what the $0\to 1$ hazard represents. RECIST 1.1 defines progression of *target* lesions as a $\geq 20\%$ increase in SLD from nadir — a criterion that is a deterministic function of the latent burden trajectory $B_i(t)$ and so requires no stochastic hazard: at each posterior draw we know exactly when, if ever, the modelled trajectory crosses the threshold. The mechanistic submodel resolves this *target-lesion* progression channel directly. What is left for $\lambda_{01,i}$ to model is the complementary *non-target* channel — unequivocal progression of non-target disease, the appearance of new lesions, and clinical deterioration — none of which is a function of the SLD trajectory. Let $T^{\mathrm{tgt}}_i = \min\{t : B_i(t) \ge 1.2\,\min_{u<t} B_i(u)\}$ be the (per-draw, deterministic) week at which the latent trajectory first meets the RECIST target-progression criterion. Non-target progression is detected only at scheduled assessments, so the stochastic channel is also visit-gated. These two constraints together extend (@eq-ms-discrete):
+$$
+\Pr\!\big[\, J_i(t) = 1 \;\big|\; J_i(t-1) = 0,\; T^{\mathrm{tgt}}_i > t,\; t \in \mathcal{V}_i,\; \mathbf{x}_i,\; \mathbf{W}_i(t) \big]
+\;=\; 1 - \exp\!\big(-\lambda_{01, i}(t)\big).
+$$ {#eq-ms-01-cond}
+
+So $\lambda_{01,i}(t)$ is properly read as the rate of *non-target* progression among patients who have not already progressed on target lesions, not as an undifferentiated progression hazard. The two channels partition the routes to progression rather than competing to explain the same event; the likelihood mechanics that enforce this are given in @sec-ms-likelihood. Note also the $t \in \mathcal{V}_i$ condition: unlike death and dropout, which can occur on any week, non-target progression can only be *detected* at a scheduled assessment, so $\lambda_{01,i}(t)$ accrues only at visit weeks.
 
 In the case-study configuration, two noteworthy choices are made regarding (@eq-ms-hazard):
 
@@ -268,7 +282,7 @@ where the standardised log-burden is
 $$
 \tilde{B}_i(t) \;=\; \frac{\log B_i(t) + \log y_i^{\mathrm{bl}} - m^{\mathrm{sld}}}{q^{\mathrm{sld}}},
 $$ {#eq-ms-bridge-sld}
-with $m^{\mathrm{sld}}$ and $q^{\mathrm{sld}}$ the median and inter-quartile range of $\log y_i(t_{i,j})$ across all observed post-baseline visits, computed once on the data and held fixed during inference. The $\log y_i^{\mathrm{bl}}$ term in (@eq-ms-bridge-sld) re-attaches the patient's baseline scale, so $\tilde{B}_i(t)$ is informative about the *absolute* tumour size at week $t$ rather than only its fold-change relative to baseline.
+with $m^{\mathrm{sld}}$ and $q^{\mathrm{sld}}$ the median and inter-quartile range of $\log y_i(t)$ across all observed post-baseline visit weeks $t \in \mathcal{V}_i$, computed once on the data and held fixed during inference. The $\log y_i^{\mathrm{bl}}$ term in (@eq-ms-bridge-sld) re-attaches the patient's baseline scale, so $\tilde{B}_i(t)$ is informative about the *absolute* tumour size at week $t$ rather than only its fold-change relative to baseline.
 
 Two design choices in (@eq-ms-bridge) are worth flagging.
 
@@ -309,9 +323,49 @@ The classification of each patient into one of these terminal patterns is perfor
 
 Two features of the case-study likelihood deserve a brief note.
 
-*Interval censoring of progression.* RECIST progression is detected at scheduled assessment visits, not continuously, so the *true* progression time is not observed even when progression is detected: it lies somewhere between the patient's last clean assessment and the assessment at which progression was confirmed. We treat the $0\to 1$ event as interval-censored over this gap by integrating the $\lambda_{01,i}$ density over the interval, rather than evaluating it at a point. The likelihood term for a patient who progresses at scheduled visit $v$ with previous clean visit at $v-1$ replaces $\lambda_{01,i}(t_{i,v}) S_{01,i}(1, t_{i,v} - 1)$ with $\big[S_{01,i}(1, t_{i,v-1}) - S_{01,i}(1, t_{i,v})\big]$.
+*Interval censoring of non-target progression.* Non-target progression — the channel carried by $\lambda_{01,i}$ — is detected at scheduled assessment visits, not continuously, so the *true* transition time is not observed even when the event is recorded: it lies somewhere between the patient's last clean assessment and the assessment at which progression was confirmed. We treat the $0\to 1$ event as interval-censored over this gap by integrating the $\lambda_{01,i}$ density over the interval, rather than evaluating it at a point. The likelihood term for a patient who progresses at scheduled visit $v$ with previous clean visit at $v-1$ replaces $\lambda_{01,i}(t_{i,v}) S_{01,i}(1, t_{i,v} - 1)$ with $\big[S_{01,i}(1, t_{i,v-1}) - S_{01,i}(1, t_{i,v})\big]$. Target-lesion progression, by contrast, is read off the latent trajectory and carries no interval-censoring term.
 
-*RECIST progression handled deterministically.* RECIST 1.1 mandates a $\geq 20\%$ increase from nadir as a progression criterion, which we can compute deterministically from the latent burden trajectory $B_i(t)$ at each posterior draw (@sec-mechanistic). Patients whose RECIST trajectory crosses this threshold within their observed follow-up window have their $0\to 1$ transition handled by the mechanistic side, not by $\lambda_{01,i}$; they contribute survival in state $0$ to $\lambda_{01,i}$ up to the RECIST progression week and then transition to state $1$ deterministically. The $\lambda_{01,i}$ hazard therefore captures the *non-RECIST* progression channels — new-lesion progression, clinical deterioration, target-lesion changes that do not meet the $20\%$ rule — and avoids double-counting patients whose progression is already explained by the mechanistic side.
+*Target-lesion progression handled deterministically.* As noted in @sec-ms-hazard, the RECIST $\geq 20\%$-from-nadir criterion for target lesions is a deterministic function of the latent burden trajectory $B_i(t)$ at each posterior draw (@sec-mechanistic). Patients whose trajectory crosses this threshold within their observed follow-up window have their $0\to 1$ transition resolved on the mechanistic side, not by $\lambda_{01,i}$; the data flag the week and the likelihood applies *no* $\lambda_{01,i}$ hazard factor at it (these patients still contribute survival under $\lambda_{01,i}$ up to that week, since they remained at risk of non-target progression until then). This is what makes $\lambda_{01,i}$ the *non-target*, target-progression-free hazard of @sec-ms-hazard rather than an all-cause progression hazard, and it avoids double-counting patients whose progression the mechanistic side already explains.
+
+#### Posterior-predictive endpoint derivation {#sec-ms-forecast}
+
+Given a single posterior draw of all model parameters, clinical endpoints for patient $i$ are obtained by forward-simulating the joint model. The latent burden trajectory $B_i(t)$ is extended using the mechanistic state-space equations (@sec-mechanistic), and the per-transition hazards $\lambda_{jk,i}(t)$ are computed from (@eq-ms-hazard) using the extended bridge $\mathbf{W}_i(t)$. The simulation runs in one of two modes, which share the *same* event-routing logic (@fig-gq-routing) and differ only in where the routing starts:
+
+- *Unconditional* (denoted $\mathrm{spop}$): every candidate event time is sampled fresh from treatment start, ignoring the patient's observed event history. This yields the model's marginal posterior-predictive endpoint distribution — the right object for forecasting what a mature-DCO Kaplan–Meier curve will look like.
+- *Conditional* (denoted $\mathrm{sample}$): the patient's observed trajectory through the data cut-off is held fixed, and only the still-unresolved future is simulated. Patients who already had an event contribute it directly; only those censored-in-state-$0$ at the cut-off enter the routing tree, from the cut-off forward.
+
+The routing below is written for the unconditional pass; the conditional pass applies the identical logic to the post-cut-off remainder.
+
+**Competing exits from state 0.** Progression, direct death, and dropout are *competing risks*: they share one risk set, and the earliest sampled event determines how the patient leaves state $0$. We sample a candidate time for each:
+
+- **Progression ($0\to 1$)** at $T^{01}_i = \min(T^{\mathrm{tgt}}_i,\, T^{\mathrm{ms}}_i)$, itself the earlier of two sub-channels: the deterministic target-lesion time $T^{\mathrm{tgt}}_i$ (@sec-ms-hazard, the first week the extended latent trajectory meets the RECIST threshold) and the stochastic non-target time $T^{\mathrm{ms}}_i$ (sampled by accumulating $\lambda_{01,i}$ at visit weeks $t \in \mathcal{V}_i$, per @eq-ms-01-cond).
+- **Direct death ($0\to 2$)** at $T^{02}_i$, sampled from $\lambda_{02,i}$.
+- **Dropout ($0\to 3$)** at $T^{03}_i$, sampled from $\lambda_{03,i}$.
+
+The realised exit is the transition with the smallest candidate time (ties broken $0\to 1 \succ 0\to 2 \succ 0\to 3$). Crucially, a patient may never progress: if the direct-death or dropout candidate is earliest, the patient leaves state $0$ without ever entering state $1$.
+
+**Reading off PFS.** PFS is a progression-*or*-death endpoint, so it is determined by the exit route, not computed separately:
+$$
+T^{\mathrm{pfs}}_i \;=\;
+\begin{cases}
+T^{01}_i & \text{progression wins } (0\to 1),\\
+T^{02}_i & \text{direct death wins } (0\to 2),\\
+\text{censored at } T^{03}_i & \text{dropout wins } (0\to 3).
+\end{cases}
+$$ {#eq-pfs-route}
+Direct death without progression *is* a PFS event (PFS fails at the death time); dropout right-censors PFS at the off-trial week.
+
+**Reading off OS.** OS continues past the state-$0$ exit along the surviving path:
+
+- *Progression ($0\to 1$):* the patient enters state $1$ at $T^{01}_i$; OS is then a further draw from $\lambda_{12,i}$, on the sojourn clock $u_1 = t - T^{01}_i$ (semi-Markov) or calendar time $t$ (Markov), depending on the configuration.
+- *Direct death ($0\to 2$):* OS equals $T^{02}_i$ — the same event terminates both PFS and OS.
+- *Dropout ($0\to 3$):* the patient enters state $3$ at $T^{03}_i$; off-trial death is a draw from $\lambda_{32,i}$ on the sojourn clock $u_3 = t - T^{03}_i$, otherwise OS is censored.
+
+**Reading off response (ORR).** Objective response is not a time-to-event read off the routing above; it is a best-response *classification* derived from the *shape* of the latent burden trajectory, and so comes entirely from the mechanistic submodel rather than the multistate hazards. For each draw we evaluate the extended trajectory $B_i(t)$ over the patient's on-trial window and apply the RECIST 1.1 response rules to the fold-change from baseline, $B_i(t)$ (recall $B_i$ is normalised so $B_i(t_i^{\mathrm{bl}}) = 1$): a complete response (CR) when the trajectory reaches the limit-of-detection floor, a partial response (PR) when it falls at least $30\%$ below baseline, progressive disease (PD) at the target-lesion threshold $T^{\mathrm{tgt}}_i$ already defined above, and stable disease (SD) otherwise. The objective response indicator is $\mathbf{1}[\text{best response} \in \{\mathrm{CR}, \mathrm{PR}\}]$, optionally subject to a confirmation rule (a qualifying response sustained to the next scheduled assessment), and ORR is the cohort average. The same latent $B_i(t)$ thus produces both the progression *timing* that feeds the competing-risks routing and the response *depth* that feeds ORR — they are two readings of one trajectory.
+
+**Endpoints as posterior functionals.** Kaplan–Meier curves for PFS and OS are computed from the $\{T^{\mathrm{pfs}}_i, T^{\mathrm{os}}_i\}$ sample paths, ORR from the per-patient response classification, and any other endpoint analogously — each averaged across posterior draws. Because every quantity flows from the same joint posterior, each reported endpoint inherits the model's full parameter uncertainty; no re-fitting or plug-in step is involved.
+
+![Posterior-predictive endpoint routing for a single posterior draw. The unconditional ($\mathrm{spop}$) and conditional ($\mathrm{sample}$) passes feed the *same* routing tree and differ only in where they enter it — from treatment start, or from the observed state at the data cut-off. The three competing exits from state 0 are resolved first; the earliest candidate time wins. Progression's own candidate time is the minimum of the deterministic target-lesion time $T^{\mathrm{tgt}}_i$ and the stochastic non-target time $T^{\mathrm{ms}}_i$. PFS and OS are then read off the realised route: direct death is itself a PFS event, dropout right-censors PFS, and only the progression route incurs a post-progression sojourn before death.](figures/gq-routing.svg){#fig-gq-routing width=100%}
 
 **Figures.**
 
