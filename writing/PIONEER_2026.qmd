@@ -87,9 +87,9 @@ Joint model overview. Patient-level inputs (left) feed two coupled submodels (ce
 
 ### Notation and setup {#sec-notation}
 
-We index patients by $i = 1, \dots, N$. The time clock is the patient's *study week*, an integer-valued grid in which week $1$ denotes the first week on treatment; non-positive weeks ($t \le 0$) correspond to the pre-treatment screening window. Each patient $i$ contributes a vector of baseline covariates $\mathbf{x}_i \in \mathbb{R}^p$, a set of SLD assessments at visit weeks $\{t_{i,j}\}_{j \in \mathcal{V}_i}$ (ragged across patients, with $\mathcal{V}_i$ the visit index set), and an event history. We will write $y_i(t_{i,j})$ for the SLD measurement at visit $j$ — a single scalar per visit — so that $y_i(\cdot)$ is a function defined only on the patient's visit times. The event history takes one of four mutually exclusive terminal states by the data cut-off: alive and progression-free (state $0$), progressed (state $1$), dead (state $2$), or off-trial without death (state $3$). Transitions between these states are written $j \to k$; the five admissible transitions are $0 \to 1$, $0 \to 2$, $1 \to 2$, $0 \to 3$ and $3 \to 2$.
+We index patients by $i = 1, \dots, N$. The time clock is the patient's *study week*, an integer-valued grid in which week $1$ denotes the first week on treatment; non-positive weeks ($t \le 0$) correspond to the pre-treatment screening window. Each patient $i$ contributes a vector of baseline covariates $\mathbf{x}_i \in \mathbb{R}^p$, a set of SLD assessments at visit weeks $\{t_{i,j}\}_{j \in \mathcal{V}_i}$ (ragged across patients, with $\mathcal{V}_i$ the visit index set), and an event history. We will write $y_i(t_{i,j})$ for the SLD measurement at visit $j$ — a single scalar per visit — so that $y_i(\cdot)$ is a function defined only on the patient's visit times. The event history takes one of four mutually exclusive terminal states by the data cut-off: alive and progression-free (state $0$), progressed (state $1$), dead (state $2$), or off-trial without death (state $3$). Transitions between these states are written $j \to k$; the five admissible transitions are $0 \to 1$, $0 \to 2$, $1 \to 2$, $0 \to 3$ and $3 \to 2$ (see @fig-multistate-diagram).
 
-For each patient we identify a single *baseline visit*, defined as the last SLD assessment in the pre-treatment screening window. We write $t_i^{\mathrm{bl}} \le 0$ for the week of patient $i$'s baseline visit, and $y_i^{\mathrm{bl}} \equiv y_i(t_i^{\mathrm{bl}})$ for the SLD measurement at that visit. We define the *normalised burden*
+For each patient we identify a single *baseline visit*, defined as the last SLD assessment in the pre-treatment screening window. We write $t_i^{\mathrm{bl}} \le 0$ for the week of patient $i$'s baseline visit, and $y_i^{\mathrm{bl}} \equiv y_i(t_i^{\mathrm{bl}})$ for the SLD measurement at that visit. We define the *normalised burden* using the patient's *latent* SLD trajectory $\mathrm{SLD}_i(t)$ — the true, unobserved tumour size at week $t$ that underlies the noisy visit measurements $y_i(t_{i,j})$ and is modelled explicitly in @sec-mechanistic:
 $$
 B_i(t) \;=\; \frac{\mathrm{SLD}_i(t)}{y_i^{\mathrm{bl}}},
 $$ {#eq-sld-normalised}
@@ -157,31 +157,37 @@ which satisfies $D_i(t_i^{\mathrm{bl}}) + G_i(t_i^{\mathrm{bl}}) = 1$ as require
 We work with $\pi_i$ on the logit scale,
 $$
 \eta^{\mathrm{init}}_i \;=\; \mathrm{logit}(\pi_i)
-\;=\; \alpha^{\mathrm{init}}_{\mathrm{pop}} + \mathbf{x}_i^{\top} \boldsymbol{\beta}^{\mathrm{init}} + u^{\mathrm{init}}_i,
+\;=\; \alpha^{\mathrm{init}} + \alpha^{\mathrm{init}}_{s[i]} + \alpha^{\mathrm{init}}_i + \mathbf{x}_i \cdot \boldsymbol{\beta}^{\mathrm{init}},
 $$ {#eq-init-linpred}
-where $\alpha^{\mathrm{init}}_{\mathrm{pop}}$ is a population-level intercept, $\boldsymbol{\beta}^{\mathrm{init}}$ a vector of population-level covariate effects on the initial split, and $u^{\mathrm{init}}_i \sim \mathtt{Normal}(0, \tau^{\mathrm{init}}_{\mathrm{patient}}{}^2)$ a patient-level random effect. Large positive $\eta^{\mathrm{init}}_i$ corresponds to a patient who starts almost entirely in the responsive compartment (and therefore exhibits a large early decrease before any growing-component contribution becomes visible); large negative $\eta^{\mathrm{init}}_i$ corresponds to a patient whose SLD trajectory is dominated by growth from week $1$.
+where $\alpha^{\mathrm{init}}$ is a population-level intercept, $\alpha^{\mathrm{init}}_{s[i]} \sim \mathtt{Normal}(0, \tau^{\mathrm{init}}_{\mathrm{arm}}{}^2)$ a trial-arm deviation, $\alpha^{\mathrm{init}}_i \sim \mathtt{Normal}(0, \tau^{\mathrm{init}}_{\mathrm{patient}}{}^2)$ a patient-level deviation, and $\boldsymbol{\beta}^{\mathrm{init}}$ a vector of population-level covariate coefficients. Large positive $\eta^{\mathrm{init}}_i$ corresponds to a patient who starts almost entirely in the responsive compartment (and therefore exhibits a large early decrease before any growing-component contribution becomes visible); large negative $\eta^{\mathrm{init}}_i$ corresponds to a patient whose SLD trajectory is dominated by growth from week $1$.
 
 #### Patient-level change rates {#sec-mech-rates}
 
-Rather than parameterise $r^{\mathrm{dec}}_i$ and $r^{\mathrm{gro}}_i$ directly, we decompose each patient's rate pair into a *magnitude* (total log-rate $\rho_i$) and a *balance* ($\eta^{\mathrm{bal}}_i$, logit-scale allocation between decrease and growth):
+Rather than parameterise $r^{\mathrm{dec}}_i$ and $r^{\mathrm{gro}}_i$ directly, we decompose each patient's rate pair into a *magnitude* (total log-rate $\eta^{\mathrm{tot}}_i$) and a *balance* ($\eta^{\mathrm{bal}}_i$, logit-scale allocation between decrease and growth):
 $$
 \begin{aligned}
-\log r^{\mathrm{dec}}_i &\;=\; \rho_i \;+\; \log \sigma(\eta^{\mathrm{bal}}_i), \\
-\log r^{\mathrm{gro}}_i &\;=\; \rho_i \;+\; \log\!\big(1 - \sigma(\eta^{\mathrm{bal}}_i)\big),
+\log r^{\mathrm{dec}}_i &\;=\; \eta^{\mathrm{tot}}_i \;+\; \log \sigma(\eta^{\mathrm{bal}}_i), \\
+\log r^{\mathrm{gro}}_i &\;=\; \eta^{\mathrm{tot}}_i \;+\; \log\!\big(1 - \sigma(\eta^{\mathrm{bal}}_i)\big),
 \end{aligned}
 $$ {#eq-rate-pair}
-where $\sigma(\cdot)$ is the standard logistic function. Equivalently, the *decreasing fraction of the rate magnitude* is $\sigma(\eta^{\mathrm{bal}}_i) \in (0,1)$, and $1 - \sigma(\eta^{\mathrm{bal}}_i)$ is the growing fraction; large positive $\eta^{\mathrm{bal}}_i$ describes a patient whose dynamics are dominated by contraction, large negative $\eta^{\mathrm{bal}}_i$ a patient whose dynamics are dominated by expansion. The decomposition is bijective: given $r^{\mathrm{dec}}_i, r^{\mathrm{gro}}_i$ we recover $\rho_i = \log(r^{\mathrm{dec}}_i + r^{\mathrm{gro}}_i)$ and $\eta^{\mathrm{bal}}_i = \log(r^{\mathrm{dec}}_i / r^{\mathrm{gro}}_i)$.
+where $\sigma(\cdot)$ is the standard logistic function. Equivalently, the *decreasing fraction of the rate magnitude* is $\sigma(\eta^{\mathrm{bal}}_i) \in (0,1)$, and $1 - \sigma(\eta^{\mathrm{bal}}_i)$ is the growing fraction; large positive $\eta^{\mathrm{bal}}_i$ describes a patient whose dynamics are dominated by contraction, large negative $\eta^{\mathrm{bal}}_i$ a patient whose dynamics are dominated by expansion. The decomposition is bijective: given $r^{\mathrm{dec}}_i, r^{\mathrm{gro}}_i$ we recover
+$$
+\begin{aligned}
+\eta^{\mathrm{tot}}_i &\;=\; \log(r^{\mathrm{dec}}_i + r^{\mathrm{gro}}_i), \\
+\eta^{\mathrm{bal}}_i &\;=\; \log(r^{\mathrm{dec}}_i / r^{\mathrm{gro}}_i).
+\end{aligned}
+$$
 
 The magnitude and balance parameters carry the population-, covariate-, and patient-level structure. We let
 $$
 \begin{aligned}
-\rho_i &\;=\; \rho_{\mathrm{pop}} \;+\; v^{\rho}_i, \\
-\eta^{\mathrm{bal}}_i &\;=\; \alpha^{\mathrm{bal}}_{\mathrm{pop}} \;+\; \mathbf{x}_i^{\top} \boldsymbol{\beta}^{\mathrm{bal}} \;+\; v^{\mathrm{bal}}_i,
+\eta^{\mathrm{tot}}_i &\;=\; \alpha^{\mathrm{tot}} \;+\; \alpha^{\mathrm{tot}}_{s[i]} \;+\; \alpha^{\mathrm{tot}}_i, \\
+\eta^{\mathrm{bal}}_i &\;=\; \alpha^{\mathrm{bal}} \;+\; \alpha^{\mathrm{bal}}_{s[i]} \;+\; \alpha^{\mathrm{bal}}_i \;+\; \mathbf{x}_i \cdot \boldsymbol{\beta}^{\mathrm{bal}},
 \end{aligned}
 $$ {#eq-rate-linpred}
-with population intercepts $\rho_{\mathrm{pop}}, \alpha^{\mathrm{bal}}_{\mathrm{pop}}$, a covariate coefficient vector $\boldsymbol{\beta}^{\mathrm{bal}}$ on the balance only, and patient-level random effects $v^{\rho}_i, v^{\mathrm{bal}}_i$ marginally Gaussian with module-specific scales (priors discussed in @sec-priors). Notice that baseline covariates do **not** enter the magnitude $\rho_i$: they affect the *balance* between contraction and growth but not the overall speed of the dynamics.
+with population-level intercepts $\alpha^{\mathrm{tot}}, \alpha^{\mathrm{bal}}$, trial-arm deviations $\alpha^{\mathrm{tot}}_{s[i]} \sim \mathtt{Normal}(0, \tau^{\mathrm{tot}}_{\mathrm{arm}}{}^2)$ and $\alpha^{\mathrm{bal}}_{s[i]} \sim \mathtt{Normal}(0, \tau^{\mathrm{bal}}_{\mathrm{arm}}{}^2)$, patient-level deviations $\alpha^{\mathrm{tot}}_i \sim \mathtt{Normal}(0, \tau^{\mathrm{tot}}_{\mathrm{patient}}{}^2)$ and $\alpha^{\mathrm{bal}}_i \sim \mathtt{Normal}(0, \tau^{\mathrm{bal}}_{\mathrm{patient}}{}^2)$, and a covariate coefficient vector $\boldsymbol{\beta}^{\mathrm{bal}}$ on the balance only (priors discussed in @sec-priors). Notice that baseline covariates do **not** enter the magnitude: they affect the *balance* between contraction and growth but not the overall speed of the dynamics.
 
-This restricted covariate structure — covariates on the balance and on the initial split, not on the magnitude — is a deliberate identification choice for the case study. With covariates entering all three of $\rho_i, \eta^{\mathrm{bal}}_i, \eta^{\mathrm{init}}_i$ unrestricted, the resulting three coefficient vectors are poorly separated when SLD trajectories are short or noisy: a patient who shrinks quickly looks the same as a patient with a fast magnitude and a balance pushed entirely toward decrease. Routing covariates through balance and initial split, while leaving magnitude to a population intercept plus a patient random effect, has empirically been the most identifiable parameterisation across the trials we have fitted; we expand on this in @sec-priors.
+This restricted covariate structure — covariates on the balance and on the initial split, not on the magnitude — is a deliberate identification choice for the case study. With covariates entering all three of $\eta^{\mathrm{tot}}_i, \eta^{\mathrm{bal}}_i, \eta^{\mathrm{init}}_i$ unrestricted, the resulting three coefficient vectors are poorly separated when SLD trajectories are short or noisy: a patient who shrinks quickly looks the same as a patient with a fast magnitude and a balance pushed entirely toward decrease. Routing covariates through balance and initial split, while leaving magnitude to a population mean plus arm and patient deviations, has empirically been the most identifiable parameterisation across the trials we have fitted; we expand on this in @sec-priors.
 
 The covariate vector $\mathbf{x}_i$ in (@eq-init-linpred) and (@eq-rate-linpred) is the same throughout. In the ctDNA configuration of the case study, $\mathbf{x}_i$ comprises clinical baseline covariates (number of prior lines of therapy, PD-L1 high/low, histology, age, sex, ECOG, smoking status, race, sites of metastasis, tumour stage), routine laboratory baselines (LDH, albumin, neutrophils, monocytes, haematocrit, neutrophil-to-lymphocyte ratio, AST, GGT, ALP, chloride), and a baseline ctDNA score. To deal with the high dimensionality and correlation among these covariates we enter them through QR-rotated design matrices, with elicited priors mapped through the QR rotation; this is discussed in detail in @sec-priors.
 
@@ -201,13 +207,9 @@ For each posterior draw, the mechanistic submodel delivers for every patient and
 
 ### Multistate proportional-hazard submodel {#sec-multistate}
 
-*[To be drafted. Outline:]*
-
-### Multistate submodel and the tumour→hazard bridge {#sec-multistate}
-
 #### State graph and time scales {#sec-ms-states}
 
-The multistate submodel governs the stochastic clinical events. Each patient occupies one of four states at every week $t$: alive and progression-free (state $0$), progressed and alive (state $1$), dead (state $2$, absorbing), or off-trial without observed death (state $3$). The five admissible transitions and their hazards are shown in @fig-multistate-diagram. Each transition has its own intensity, with its own time scale and its own dependence on covariates and on the latent burden trajectory.
+The multistate submodel governs the stochastic clinical events. Each patient occupies one of four states at every week $t$: alive and progression-free (state $0$), progressed and alive (state $1$), dead (state $2$, absorbing), or off-trial without observed death (state $3$); the five admissible transitions between these states, together with their time-scale conventions, are shown in @fig-multistate-diagram below. Each transition has its own intensity, with its own time scale and its own dependence on covariates and on the latent burden trajectory.
 
 ::: {#fig-multistate-diagram}
 ![](figures/multistate-diagram.svg){width=85%}
@@ -227,18 +229,28 @@ $$
 \;+\;
 \underbrace{\log \lambda^{\mathrm{trial}}_{jk, s[i]}(t)}_{\text{trial-level deviation}}
 \;+\;
-\underbrace{\boldsymbol{\beta}^{\mathrm{tv}}_{jk}{}^{\!\top} \mathbf{W}_i(t)}_{\text{time-varying tumour bridge}}
+\underbrace{\boldsymbol{\beta}^{\mathrm{tv}}_{jk} \cdot \mathbf{W}_i(t)}_{\text{time-varying tumour bridge}}
 \;+\;
-\underbrace{\boldsymbol{\beta}^{\mathrm{ti}}_{jk}{}^{\!\top} \mathbf{x}_i}_{\text{baseline covariates}},
+\underbrace{\boldsymbol{\beta}^{\mathrm{ti}}_{jk} \cdot \mathbf{x}_i}_{\text{baseline covariates}}
+\;+\;
+\underbrace{\gamma_{jk,i}}_{\text{frailty}},
 $$ {#eq-ms-hazard}
-in which only the first two terms are functions of time. The population and trial-level baselines are Gaussian processes (@sec-ms-gp); the tumour bridge $\mathbf{W}_i(t)$ is the explicit coupling to the mechanistic submodel (@sec-ms-bridge); and the baseline covariates $\mathbf{x}_i$ are the same patient-level covariate vector used in the mechanistic submodel (@sec-mechanistic), with priors elicited on the original-scale coefficients but rotated through the QR decomposition of the design matrix for inference, as discussed in @sec-priors.
+in which only the first three terms are functions of time. The population and trial-level baselines are Gaussian processes (@sec-ms-gp); the tumour bridge $\mathbf{W}_i(t)$ is the explicit coupling to the mechanistic submodel (@sec-ms-bridge); the baseline covariates $\mathbf{x}_i$ are the same patient-level covariate vector used in the mechanistic submodel (@sec-mechanistic), with priors elicited on the original-scale coefficients but rotated through the QR decomposition of the design matrix for inference, as discussed in @sec-priors; and $\gamma_{jk,i}$ is a patient-level frailty term, described below.
 
 Each of the four additive components is *transition-specific*: there is no constraint that, say, the coefficient on log-burden in the $0\to 1$ hazard equals the corresponding coefficient in the $1\to 2$ hazard. This is the structural point that distinguishes our framework from a single-hazard joint model: the tumour-derived covariates are allowed (under the priors) to act differently on progression hazard than on post-progression death hazard, and the data decide which transitions they actually inform.
 
-In the case-study configuration, two simplifications are applied to (@eq-ms-hazard):
+In the case-study configuration, two noteworthy choices are made regarding (@eq-ms-hazard):
 
-- **Direct death has no tumour bridge**, so $\boldsymbol{\beta}^{\mathrm{tv}}_{02} = \mathbf{0}$ a priori. The 0→2 hazard depends only on its GP baseline and on baseline covariates. The reasoning is identification: in IO trials with low pre-progression mortality, the few direct-death events provide only enough information to estimate a baseline trajectory, and conflating this with tumour dynamics confuses the SLD-driven progression hazard with comorbidity-driven mortality.
-- **Off-trial transitions have no covariate effects**, so $\boldsymbol{\beta}^{\mathrm{tv}}_{03} = \boldsymbol{\beta}^{\mathrm{ti}}_{03} = \mathbf{0}$ and similarly for $3\to 2$. The dropout hazard and post-dropout death hazard are estimated from baseline GPs alone. This is again an identification choice: dropout reasons are heterogeneous, off-trial follow-up is sparse, and we cannot reliably estimate covariate effects with the available data. The dropout submodel exists in order to *route* off-trial patients out of the at-risk set for OS, not to model their dropout mechanism in detail.
+- **Dropout ($0\to 3$) carries both bridge and baseline covariates**, so both $\boldsymbol{\beta}^{\mathrm{tv}}_{03}$ and $\boldsymbol{\beta}^{\mathrm{ti}}_{03}$ are estimated. The TV component lets dropout risk track the latent tumour trajectory (patients on a deteriorating trajectory may withdraw faster); the TI component captures static baseline risk factors. Priors on $\boldsymbol{\beta}^{\mathrm{tv}}_{03}$ are kept tight given the modest number of dropout events.
+- **Post-dropout death ($3\to 2$) has no covariate effects**, so $\boldsymbol{\beta}^{\mathrm{tv}}_{32} = \boldsymbol{\beta}^{\mathrm{ti}}_{32} = \mathbf{0}$. Off-trial follow-up is sparse and the competing hazard structure is already modelled via the sojourn-clock GP; adding covariate effects would not be identifiable.
+
+The frailty terms $\gamma_{jk,i}$ capture residual patient-level heterogeneity in transition risk that is not explained by the tumour bridge or the observed baseline covariates. In the case-study configuration, frailty terms are enabled for the $0\to 1$ and $0\to 3$ transitions at the patient level; the terms for the remaining transitions are fixed at zero. Crucially, the two active frailty terms are modelled *jointly*: letting $\boldsymbol{\gamma}_i = (\gamma_{01,i},\, \gamma_{03,i})^\top$, we place
+$$
+\boldsymbol{\gamma}_i \;\sim\; \mathtt{Normal}\!\big(\mathbf{0},\; \boldsymbol{\Sigma}_\gamma\big),
+\qquad
+\boldsymbol{\Sigma}_\gamma = \mathrm{diag}(\boldsymbol{\sigma}_\gamma)\, \mathbf{R}_\gamma\, \mathrm{diag}(\boldsymbol{\sigma}_\gamma),
+$$ {#eq-ms-frailty}
+where $\boldsymbol{\sigma}_\gamma = (\sigma_{01}, \sigma_{03})^\top$ are per-transition marginal standard deviations and $\mathbf{R}_\gamma$ is a $2\times 2$ correlation matrix with an LKJ prior (discussed in @sec-priors). The off-diagonal element of $\mathbf{R}_\gamma$ captures whether patients who are intrinsically high-risk for progression tend also to be high-risk for dropout — a cross-transition dependence that neither the tumour bridge nor the observed covariates can absorb. Sampling is performed via the NCP Cholesky parameterisation of $\boldsymbol{\Sigma}_\gamma$.
 
 #### Tumour-to-hazard bridge {#sec-ms-bridge}
 
@@ -270,7 +282,7 @@ In the case-study configuration, the bridge feeds the $0\to 1$ progression hazar
 
 The two time-dependent log-baselines in (@eq-ms-hazard) are modelled as Gaussian processes. For each transition $jk$ the *population baseline* is
 $$
-\log \lambda^{\mathrm{pop}}_{jk}(\cdot) \;\sim\; \mathsf{GP}\!\big(\mu^{\mathrm{pop}}_{jk}, \;k_{jk}(\cdot, \cdot;\, \alpha^{\mathrm{pop}}_{jk},\, \rho^{\mathrm{pop}}_{jk})\big),
+\log \lambda^{\mathrm{pop}}_{jk}(\cdot) \;\sim\; \mathtt{GP}\!\big(\mu^{\mathrm{pop}}_{jk}, \;k_{jk}(\cdot, \cdot;\, \alpha^{\mathrm{pop}}_{jk},\, \rho^{\mathrm{pop}}_{jk})\big),
 $$
 with squared-exponential covariance kernel
 $$
@@ -314,7 +326,7 @@ Two features of the case-study likelihood deserve a brief note.
 - Hierarchy as level-agnostic: population → (intermediate levels) → patient. Each module independently enables random intercepts/slopes at each level.
 - Non-centred parameterisation (NCP) as default; centred (CP) as opt-in for narrow-SD levels.
 - QR-rotated covariates: elicited priors $(\boldsymbol{\mu}, \boldsymbol{\Sigma})$ on the original-scale coefficients are rotated through $R$ for the parameter declaration.
-- Prior choices on $\rho_{\mathrm{pop}}, \alpha^{\mathrm{bal}}_{\mathrm{pop}}, \alpha^{\mathrm{init}}_{\mathrm{pop}}$ (with explanation of the tightening that followed prior–posterior conflict).
+- Prior choices on $\alpha^{\mathrm{tot}}, \alpha^{\mathrm{bal}}, \alpha^{\mathrm{init}}$ (with explanation of the tightening that followed prior–posterior conflict).
 - GP hyper-priors on the multistate baseline hazard: inverse-gamma on length-scale and marginal SD.
 - Cross-trial borrowing: HISTORICAL-derived priors transferred to SCLC-01 via the trial-level hierarchy.
 
@@ -342,7 +354,7 @@ Two features of the case-study likelihood deserve a brief note.
 - **Objective.** Assess operating characteristics of the joint model under controlled conditions: bias, coverage of posterior intervals, predictive calibration of PFS/OS KM forecasts.
 - **Design.** Generate synthetic trial data from the model with known parameters (data-generating process matches the model specification). Vary: sample size, follow-up maturity, magnitude of between-trial heterogeneity, presence/absence of multistate events.
 - **Metrics.**
-  - Parameter recovery: bias and RMSE of posterior medians for $\rho_{\mathrm{pop}}, \alpha^{\mathrm{bal}}_{\mathrm{pop}}, \alpha^{\mathrm{init}}_{\mathrm{pop}}$, GP baseline intercepts.
+  - Parameter recovery: bias and RMSE of posterior medians for $\alpha^{\mathrm{tot}}, \alpha^{\mathrm{bal}}, \alpha^{\mathrm{init}}$, GP baseline intercepts.
   - Interval coverage: 80% and 95% posterior credible interval coverage across replications.
   - Predictive calibration: calibration of the forecast PFS/OS KM at a held-out future DCO (CRPS, coverage of KM prediction bands).
   - Comparison: joint model vs two-stage (fit dynamics, plug into survival) vs baseline-covariate-only hazard model.
@@ -379,7 +391,7 @@ Two features of the case-study likelihood deserve a brief note.
 **Figures.**
 
 - Fig. 6.1 — predicted-vs-observed PFS / OS KM at mature DCO.
-- Fig. 6.2 — borrowing impact (posterior on $\rho_{\mathrm{pop}}, \alpha^{\mathrm{bal}}_{\mathrm{pop}}$ with vs without HISTORICAL).
+- Fig. 6.2 — borrowing impact (posterior on $\alpha^{\mathrm{tot}}, \alpha^{\mathrm{bal}}$ with vs without HISTORICAL).
 - Fig. 6.3 — ELPD-LFO bar chart, three model variants.
 
 ## Discussion {#sec-discussion}
