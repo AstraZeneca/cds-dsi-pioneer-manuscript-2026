@@ -88,25 +88,31 @@ model {
   profile("loglik") {
     if (fit_tumor_data) {
       profile("tumor loglik") {
-        for (i in 1:n_patients) {
-          int visit_start, visit_end;
-          (visit_start, visit_end) = get_pos(patient_visit_pos, i);
-          normalized_sld[visit_start:visit_end] ~ sf_log_space_obs(states[visit_start:visit_end], measure_sd_sld, log_lod - log_baseline_sld[i]);
+        for (j in 1:n_forecast_patients) {
+          int p = forecast_patient_idx[j];
+          int data_start, data_end;
+          (data_start, data_end) = get_pos(patient_visit_pos, p);
+          int state_start, state_end;
+          (state_start, state_end) = get_pos(forecast_visit_pos, j);
+          normalized_sld[data_start:data_end] ~ sf_log_space_obs(states[state_start:state_end], measure_sd_sld, log_lod - log_baseline_sld[p]);
         }
       }
     }
 
     if (fit_multistate_data) {
       profile("multistate loglik") {
-        ms_final_state ~ multistate(
-          ones_vector(n_patients),   // no propensity weighting in tumor model
+        // Slice all per-patient arrays to forecast patients only:
+        // log_cond_surv_* are already [n_forecast_patients, max_t];
+        // ms_time_*, ms_censored_*, ms_final_state, etc. are [n_patients] and must be sliced.
+        ms_final_state[forecast_patient_idx] ~ multistate(
+          ones_vector(n_forecast_patients),
           enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
           enable_ms_03, enable_ms_32,
-          ms_time_01, ms_time_02, ms_time_12,
-          ms_time_03, ms_time_32,
-          ms_censored_01,
-          ms_prog_deterministic,
-          ms_ic_gap_01,
+          ms_time_01[forecast_patient_idx], ms_time_02[forecast_patient_idx], ms_time_12[forecast_patient_idx],
+          ms_time_03[forecast_patient_idx], ms_time_32[forecast_patient_idx],
+          ms_censored_01[forecast_patient_idx],
+          ms_prog_deterministic[forecast_patient_idx],
+          ms_ic_gap_01[forecast_patient_idx],
           t_patient_visits,
           patient_visit_pos,
           log_cond_surv_01,
@@ -157,14 +163,14 @@ generated quantities {
   vector[n_forecast_total_groups] level_log_growth_rate_residual = level_log_growth_rate - pop_log_growth_rate;
   vector[n_forecast_total_groups] level_log_decrease_rate_residual = level_log_decrease_rate - pop_log_decrease_rate;
 
-  // Patient-level residuals: compare to parent level (level n_levels - 1, or population if n_levels == 1)
-  matrix[n_patients, max_t_width] patient_log_growth_rate_residual;
-  matrix[n_patients, max_t_width] patient_log_decrease_rate_residual;
+  // Patient-level residuals: forecast patients only (background patients have no explicit states)
+  matrix[n_forecast_patients, max_t_width] patient_log_growth_rate_residual;
+  matrix[n_forecast_patients, max_t_width] patient_log_decrease_rate_residual;
 
   {
-    // Get parent level rates for each patient
-    vector[n_patients] parent_log_growth_rate;
-    vector[n_patients] parent_log_decrease_rate;
+    // Get parent level rates for each forecast patient
+    vector[n_forecast_patients] parent_log_growth_rate;
+    vector[n_forecast_patients] parent_log_decrease_rate;
 
     if (n_levels > 1) {
       // Parent is level n_levels - 1
@@ -172,15 +178,15 @@ generated quantities {
       int parent_lv_start, parent_lv_end;
       (parent_lv_start, parent_lv_end) = get_pos(n_forecast_level_pos, parent_lv);
 
-      // Extract parent level rates, then index by patient's group membership
+      // Extract parent level rates, then index by forecast patient's group membership
       vector[n_forecast_groups_per_level[parent_lv]] parent_level_growth = level_log_growth_rate[parent_lv_start:parent_lv_end];
       vector[n_forecast_groups_per_level[parent_lv]] parent_level_decrease = level_log_decrease_rate[parent_lv_start:parent_lv_end];
-      parent_log_growth_rate = parent_level_growth[patient_level_groups[, parent_lv]];
-      parent_log_decrease_rate = parent_level_decrease[patient_level_groups[, parent_lv]];
+      parent_log_growth_rate = parent_level_growth[patient_level_groups[forecast_patient_idx, parent_lv]];
+      parent_log_decrease_rate = parent_level_decrease[patient_level_groups[forecast_patient_idx, parent_lv]];
     } else {
       // No intermediate levels, compare to population
-      parent_log_growth_rate = rep_vector(pop_log_growth_rate, n_patients);
-      parent_log_decrease_rate = rep_vector(pop_log_decrease_rate, n_patients);
+      parent_log_growth_rate = rep_vector(pop_log_growth_rate, n_forecast_patients);
+      parent_log_decrease_rate = rep_vector(pop_log_decrease_rate, n_forecast_patients);
     }
 
     if (enable_patient_process_noise_tr) {
@@ -212,10 +218,10 @@ generated quantities {
     sample_right_censored, spop_right_censored;
   array[n_forecast_patients] int<lower = 0> sample_os, spop_os;
   array[n_forecast_patients] int<lower = 0, upper = 1> sample_os_censored, spop_os_censored;
-  array[n_patients] int<lower = 0, upper = 1> spop_is_dropout, sample_is_dropout;
+  array[n_forecast_patients] int<lower = 0, upper = 1> spop_is_dropout, sample_is_dropout;
   array[n_forecast_patients] int<lower = 0> spop_dropout_week;
-  array[sum(target_right_censored)] int<lower = 0> forecast_target_pfs;
-  array[sum(target_right_censored)] int<lower = 0, upper = 1> forecast_target_right_censored;
+  array[sum(target_right_censored[forecast_patient_idx])] int<lower = 0> forecast_target_pfs;
+  array[sum(target_right_censored[forecast_patient_idx])] int<lower = 0, upper = 1> forecast_target_right_censored;
   array[n_forecast_patients] int<lower = 0, upper = 1> sample_target_confirmed_response, spop_target_confirmed_response;
   array[n_forecast_patients] int<lower = 0, upper = 1> sample_target_unconfirmed_response, spop_target_unconfirmed_response;
   vector<lower = 0, upper = 1>[n_trials] sample_target_orr, spop_target_orr;

@@ -92,14 +92,19 @@ model {
 
   if (fit_tumor_data) {
     // --- LFO CV specific ---
-    for (i in 1:n_patients) {
-      if (cutoff_last_visit_idx[i] > 0) {
-        int visit_start, visit_end;
-        (visit_start, visit_end) = get_pos(patient_visit_pos, i);
+    for (j in 1:n_forecast_patients) {
+      int p = forecast_patient_idx[j];
+      if (cutoff_last_visit_idx[p] > 0) {
+        int data_start, data_end;
+        (data_start, data_end) = get_pos(patient_visit_pos, p);
+        int state_start, state_end;
+        (state_start, state_end) = get_pos(forecast_visit_pos, j);
 
-        int cutoff_idx = cutoff_last_visit_idx[i];
+        int cutoff_data_idx = cutoff_last_visit_idx[p];
+        // cutoff_data_idx is a unified visit index; translate to forecast-local:
+        int cutoff_state_idx = state_start + (cutoff_data_idx - data_start);
 
-        normalized_sld[visit_start:cutoff_idx] ~ sf_log_space_obs(states[visit_start:cutoff_idx], measure_sd_sld, log_lod - log_baseline_sld[i]);
+        normalized_sld[data_start:cutoff_data_idx] ~ sf_log_space_obs(states[state_start:cutoff_state_idx], measure_sd_sld, log_lod - log_baseline_sld[p]);
       }
     }
 
