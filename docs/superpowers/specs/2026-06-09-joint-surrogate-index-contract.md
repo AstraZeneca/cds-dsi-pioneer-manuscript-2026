@@ -310,9 +310,18 @@ These are NOT index issues; they are modeling choices the contract surfaces:
   LKJ+Gaussian block with no cross-covariance term. So the block-diagonal `K`
   introduces **zero prior approximation error**. The gate check is confirmation,
   not validation of an assumption.
-- **(O3) 0→3 continuous vs visit-gated.** Confirmed continuous in publication
-  (`enable_ms_03_time_varying_cov = TRUE`, not visit-gated). Contract assumes
-  continuous; assert if a future config visit-gates 0→3.
+- **(O3) 0→3 continuous vs visit-gated. CORRECTED 2026-06-11 (impl review
+  `wf_e88e7d91`): production integrates 0→3 VISIT-GATED, not continuous.** The
+  earlier "confirmed continuous" reading was WRONG — every `log_cond_surv_03`
+  integration site in `multistate.stanfunctions` (state-0 censored :458, state-1
+  :488, state-2 :659/:684, ...) uses `sum_at_visits_below`, i.e. assessment-visit
+  weeks only, for ALL patient patterns regardless of `enable_ms_visit_gated_01`.
+  `enable_ms_03_time_varying_cov = TRUE` controls whether the burden COVARIATE is
+  read, NOT the integration grid. The production surrogate functor was corrected to
+  visit-gate 0→3 (commit on branch karim/laplace). **CONSEQUENCE: the d=4 gate
+  (§9 step 2) is now STALE** — it validated a continuous-0→3 surrogate against a
+  continuous-0→3 synthetic DGP, so it must be RE-RUN with a visit-gated-0→3 DGP
+  before the marginalization can claim validation for production.
 
 ---
 
