@@ -1,6 +1,8 @@
 ---
 title: "Overall Survival"
 subtitle: "OS Kaplan-Meier forecasts and observed data"
+execute:
+  freeze: true
 ---
 
 ```{r}
