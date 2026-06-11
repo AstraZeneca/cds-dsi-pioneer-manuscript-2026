@@ -419,6 +419,18 @@ Direct death without progression *is* a PFS event (PFS fails at the death time);
 - Fig. 5.2 — coverage plot (nominal vs empirical) for key parameters.
 - Fig. 5.3 — predictive calibration: forecast KM vs true KM, three model variants.
 
+## Trial data {#sec-data}
+
+*[Lu — to be drafted. Outline:]*
+
+- Description of the clinical trial(s) used in the case study
+- Patient population, eligibility criteria, treatment arms
+- SLD assessment schedule and RECIST 1.1 measurement protocol
+- Data cut-off dates and maturity at each DCO
+- Summary statistics: N patients, median follow-up, censoring proportion, number of events per transition
+- Baseline covariate distributions (table)
+- Observed Kaplan–Meier curves for PFS and OS at the analysis DCO
+
 ## Application to SCLC-01 {#sec-application}
 
 *[To be drafted. Outline:]*
@@ -447,6 +459,94 @@ Direct death without progression *is* a PFS event (PFS fails at the death time);
 - Fig. 6.1 — predicted-vs-observed PFS / OS KM at mature DCO.
 - Fig. 6.2 — borrowing impact (posterior on $\alpha^{\mathrm{tot}}, \alpha^{\mathrm{bal}}$ with vs without HISTORICAL).
 - Fig. 6.3 — ELPD-LFO bar chart, three model variants.
+
+## Results {#sec-results}
+
+We present results from the joint model fitted to the publication dataset (target trial: Lilly CXCR4, $N = 78$; historical trial: Amgen Darbe, $N = 419$). Results are organised around the claims in @sec-introduction: model fit to the longitudinal data, survival forecasting, covariate effects across transitions, and clinical endpoint summaries.
+
+### Model fit to longitudinal tumour data {#sec-results-fit}
+
+@fig-sld-ppc shows posterior predictive SLD trajectories for a random subsample of patients with observed progression events. For each patient, the posterior median trajectory (solid line) tracks the observed SLD measurements (dots), with 50% and 80% credible ribbons capturing the measurement uncertainty. The two-component decomposition correctly recovers the characteristic shapes: initial response (driven by the decreasing component $D_i$) followed by eventual regrowth (driven by the growing component $G_i$). Patients with deep responses show narrow credible intervals during the shrinkage phase that widen only as regrowth begins — reflecting the structural constraint that $D_i$ can only decrease and $G_i$ can only increase.
+
+@fig-sld-censored shows the same posterior predictive check for censored patients (those still progression-free at the data cut-off). Here the model must *forecast* beyond the last observation. The forecast ribbons (pink) fan out naturally from the observed phase (dark), reflecting increasing uncertainty further from the data while maintaining the structural D+G shape. This is the extrapolation that makes mechanistic modelling valuable: the model predicts *what will happen* based on the inferred rates, not just *what has happened*.
+
+@fig-recist-censored shows the posterior predictive RECIST classification over time for the same censored patients. Each stacked bar represents the posterior probability of each RECIST category (CR, PR, SD, PD) at each time point. The observed RECIST classifications (coloured dots) are consistent with the high-probability regions, and the gradual shift from PR/SD toward PD in the forecast window reflects the growing component's eventual dominance.
+
+::: {#fig-sld-ppc}
+![](../quarto/publication/sclc/_freeze/analysis/patient-dynamics/figure-html/fig-sld-ppc-1.png){width=100%}
+
+Posterior predictive SLD trajectories for a subsample of patients with observed progression. Ribbons represent 50% and 80% credible intervals; lines show posterior median tumour dynamics. Blue dots are observed SLD measurements.
+:::
+
+::: {#fig-sld-censored}
+![](../quarto/publication/sclc/_freeze/analysis/patient-dynamics/figure-html/fig-sld-censored-1.png){width=100%}
+
+Posterior predictive SLD trajectories for censored patients (progression-free at data cut-off). Dark ribbons show the observed phase; pink ribbons show forecasted tumour dynamics beyond the last observation. The model extrapolates using the inferred D+G rates.
+:::
+
+::: {#fig-recist-censored}
+![](../quarto/publication/sclc/_freeze/analysis/patient-dynamics/figure-html/fig-recist-censored-1.png){width=100%}
+
+Posterior predictive RECIST classification over time for censored patients. Stacked bars show the posterior probability of each RECIST category at each time point. Coloured dots represent observed classifications; dashed lines mark the transition from observed to forecast phase.
+:::
+
+### Progression-free survival {#sec-results-pfs}
+
+@fig-pfs-km-spop shows the model's unconditional (super-population) PFS Kaplan–Meier prediction for both trials. The posterior median PFS curve (solid line) closely tracks the observed KM (step function with crosses), and the 80% credible ribbon covers the observed KM throughout follow-up. This demonstrates that the joint model — using only longitudinal SLD data and baseline covariates — can recover the observed PFS without directly modelling it as a parametric survival distribution.
+
+The prior-vs-posterior comparison (@fig-pfs-km-prior-post) confirms that the data is informative: the prior predictive PFS (gold) is substantially wider and shifted relative to the posterior (plum), particularly for the target trial (Lilly CXCR4) where the prior — informed by the historical trial's population parameters — is updated by the target trial's own SLD and event data.
+
+::: {#fig-pfs-km-spop}
+![](../quarto/publication/sclc/_freeze/analysis/survival-analysis/figure-html/fig-pfs-km-spop-1.png){width=100%}
+
+Unconditional (super-population) PFS Kaplan–Meier predictions. Ribbons represent 80% credible intervals; crosses show the observed KM. Left: target trial (Lilly CXCR4, $N=78$). Right: historical trial (Amgen Darbe, $N=419$).
+:::
+
+::: {#fig-pfs-km-prior-post}
+![](../quarto/publication/sclc/_freeze/analysis/survival-analysis/figure-html/fig-pfs-km-prior-post-1.png){width=100%}
+
+Prior (gold) vs posterior (plum) PFS Kaplan–Meier predictions, demonstrating that the data substantively updates the prior predictive distribution.
+:::
+
+### Overall survival {#sec-results-os}
+
+@fig-os-km-spop shows the unconditional OS predictions. Unlike PFS, OS requires the full multistate model — a patient's OS time depends on which route they take through the state graph (direct death, post-progression death, or off-trial death). The model's OS prediction matches the observed KM well for both trials, with the 80% credible band covering the observed step function. The wider credible intervals relative to PFS reflect the additional uncertainty from the post-progression sojourn and the competing transitions.
+
+::: {#fig-os-km-spop}
+![](../quarto/publication/sclc/_freeze/analysis/overall-survival/figure-html/fig-os-km-spop-1.png){width=100%}
+
+Unconditional (super-population) OS Kaplan–Meier predictions. The OS forecast emerges from the full multistate routing: patients who progress incur a further sojourn in state 1 before death; patients who die directly contribute their $0\to 2$ time. Crosses: observed KM.
+:::
+
+### Transition-specific covariate effects {#sec-results-covariates}
+
+@fig-covariate-effects shows the posterior distribution of covariate coefficients across four model components: the fraction module (`frac_coef_qr_pop`, governing the balance between decrease and growth rates), the initial-state module (`init_coef_qr_pop`), the time-invariant hazard covariates for the $0\to 1$ transition (`time_invariant_coef_qr_01`), and the time-varying tumour bridge coefficients (`time_varying_coef_01`). All coefficients are shown in QR space.
+
+The key structural observation is that the same covariates (indexed 1–6: age, male, ECOG, haemoglobin, log-LDH, albumin) have *different* effects on different model components. For example, covariate 4 (haemoglobin) shows a negative effect on the $0\to 1$ hazard (higher Hgb → lower progression risk) but a near-zero effect on the fraction balance — consistent with the biological interpretation that haemoglobin is prognostic for survival outcomes but not directly informative about tumour response kinetics.
+
+The time-varying bridge coefficients (cyan) are notably wider than the other coefficient families, reflecting both the smaller effective sample size for time-varying effects and the fact that only the standardised log-burden (the first component of $\mathbf{W}_i(t)$) varies with time in the primary configuration.
+
+::: {#fig-covariate-effects}
+![](../quarto/publication/sclc/_freeze/analysis/parameter-inference/figure-html/fig-covariate-effects-1.png){width=100%}
+
+Posterior covariate effects (QR space) across four model components. Each row is a covariate (1–6: age, male, ECOG, haemoglobin, log-LDH, albumin). Intervals show 50% and 95% credible intervals. The same covariates act differently on tumour kinetics (frac, init) vs survival hazard (time-invariant, time-varying) — this is the transition-specific structure that a single-hazard model cannot express.
+:::
+
+### Clinical endpoint summaries {#sec-results-endpoints}
+
+The full-posterior propagation delivers clinical quantities as distributions, not point estimates. @fig-median-pfs shows the posterior distribution of median PFS for the target trial: the prior (gold) spans a wide range reflecting pre-data uncertainty, while the posterior (plum) concentrates around approximately 5–7 months with substantially reduced uncertainty. @fig-orr shows the corresponding ORR posterior: the model estimates an overall response rate of approximately 70–80% for the target trial, with tight credible intervals reflecting the direct link between the latent burden trajectory and RECIST classification.
+
+::: {#fig-median-pfs}
+![](../quarto/publication/sclc/_freeze/analysis/clinical-endpoints/figure-html/fig-median-pfs-prior-post-1.png){width=100%}
+
+Posterior distribution of median PFS (months) for the target trial. Prior (gold) vs posterior (plum). Vertical line at 6 months for reference. The data dramatically tightens the estimate.
+:::
+
+::: {#fig-orr}
+![](../quarto/publication/sclc/_freeze/analysis/clinical-endpoints/figure-html/fig-orr-prior-post-1.png){width=100%}
+
+Posterior distribution of ORR (objective response rate) for the target trial. Prior (gold) vs posterior (plum). The tight posterior reflects the direct deterministic link between the latent SLD trajectory and RECIST classification — response depth is well-identified from even a few SLD observations per patient.
+:::
 
 ## Discussion {#sec-discussion}
 
