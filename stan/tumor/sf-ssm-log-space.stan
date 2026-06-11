@@ -11,6 +11,7 @@ functions {
   #include "_burden.stanfunctions"
   #include "modules/state_space/sf.stanfunctions"
   #include "modules/tumor/tumor.stanfunctions"
+  #include "modules/laplace_surrogate/surrogate.stanfunctions"
 }
 
 data {
@@ -30,6 +31,8 @@ data {
   #include "modules/tr/flags.stan"
   #include "modules/frac/flags.stan"
   #include "modules/init/flags.stan"
+  #include "modules/laplace_surrogate/flags.stan"
+  #include "modules/laplace_surrogate/data.stan"
 
   int<lower = 0, upper = 1> fit_multistate_data;
 }
@@ -51,6 +54,7 @@ transformed data {
   #include "modules/init/transformed_data.stan"
   #include "modules/state_space/transformed_data.stan"
   #include "modules/multistate/transformed_data.stan"
+  #include "modules/laplace_surrogate/transformed_data.stan"
   #include "_tumor_observed_covar_transformed_data.stan"
   #include "modules/state_space/checks.stan"
 }
@@ -121,10 +125,12 @@ model {
           log_cond_surv_12_t,
           log_cond_surv_03,
           log_cond_surv_32,
-          0
+          enable_ms_visit_gated_01
         );
       }
     }
+
+    #include "modules/laplace_surrogate/likelihood.stan"
   }
 }
 
