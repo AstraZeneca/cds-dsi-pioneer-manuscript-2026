@@ -318,10 +318,13 @@ These are NOT index issues; they are modeling choices the contract surfaces:
   weeks only, for ALL patient patterns regardless of `enable_ms_visit_gated_01`.
   `enable_ms_03_time_varying_cov = TRUE` controls whether the burden COVARIATE is
   read, NOT the integration grid. The production surrogate functor was corrected to
-  visit-gate 0→3 (commit on branch karim/laplace). **CONSEQUENCE: the d=4 gate
-  (§9 step 2) is now STALE** — it validated a continuous-0→3 surrogate against a
-  continuous-0→3 synthetic DGP, so it must be RE-RUN with a visit-gated-0→3 DGP
-  before the marginalization can claim validation for production.
+  visit-gate 0→3 (commit `53139a75` on branch karim/laplace). **RESOLVED 2026-06-11:
+  the d=4 gate was RE-RUN with a visit-gated-0→3 DGP (sparse 12/36-week visit grid,
+  67%/64% event rates) and PASSED** — HMC-vs-Laplace max |diff| = 0.10 (frailty SDs,
+  a shared identifiability limit), all coupling/baseline diffs ≤ 0.04, sd_ratio
+  0.96–1.09 (Laplace NOT overconfident — the key correctness signal), HMC ref Rhat
+  ≤ 1.03. Materially cleaner than the original continuous-0→3 gate's borderline 5.59
+  diff/MCSE. The visit-gated marginalization is validated for production.
 
 ---
 
