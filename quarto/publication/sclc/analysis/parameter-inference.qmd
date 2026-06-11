@@ -1,6 +1,8 @@
 ---
 title: "Parameter Inference"
 subtitle: "Population and patient-level posterior distributions"
+execute:
+  freeze: true
 ---
 
 ```{r}

@@ -8,6 +8,7 @@ subtitle: "Leave-future-out cross-validation and OOS accuracy assessment"
 #| include: false
 
 source("_setup.R")
+lfo_store <- file.path(output_path, "publication", "lfo", "_targets")
 ```
 
 This page presents out-of-sample predictive accuracy evaluated via leave-future-out (LFO)
@@ -113,3 +114,74 @@ as more data accumulates.
 lfo_tar_read("full_oos_confusion_matrix") |>
   plot_recist_sensitivity_over_time()
 ```
+
+## KM Forecast Evolution {#sec-km-evolution}
+
+PFS Kaplan-Meier forecasts at three evenly-distributed LFO cutoffs, showing how the model's
+survival prediction develops as more patient data accumulates over the trial.
+
+::: {.callout-note}
+## Cutoff selection
+Three cutoffs are drawn at roughly the 25th, 50th, and 75th percentile of the LFO run,
+spanning early, mid, and late enrollment. Each panel shows the posterior predictive KM at
+that information cutoff — earlier panels use fewer patients and carry wider uncertainty.
+:::
+
+::: {.panel-tabset}
+
+### Sample-Based PFS
+
+```{r}
+#| label: fig-km-evolution-sample
+#| fig-cap: "Sample-based PFS KM forecast at three LFO cutoffs. Each panel re-simulates enrolled patients forward conditional on their last observed visit; shaded band is 95% credible interval."
+#| fig-width: 12
+#| fig-height: 5
+
+lfo_cutoff_km <- lfo_tar_read_pattern("lfo_cutoff_km_est") |>
+  tidybayes::point_interval(
+    sample_pfs_km_est,
+    .width = 0.95, .point = median, .interval = qi
+  ) |>
+  rename(km_median = sample_pfs_km_est, km_lower = .lower, km_upper = .upper) |>
+  select(-c(.width, .point, .interval))
+
+plot_km_evolution(lfo_cutoff_km)
+```
+
+### Multistate PFS
+
+```{r}
+#| label: fig-km-evolution-ms
+#| fig-cap: "Multistate-hazard PFS KM forecast at three LFO cutoffs. Uses the illness-death model's 0→1 (progression detection) endpoint."
+#| fig-width: 12
+#| fig-height: 5
+
+lfo_tar_read_pattern("lfo_cutoff_km_est") |>
+  tidybayes::point_interval(
+    sample_ms_pfs_km_est,
+    .width = 0.95, .point = median, .interval = qi
+  ) |>
+  rename(km_median = sample_ms_pfs_km_est, km_lower = .lower, km_upper = .upper) |>
+  select(-c(.width, .point, .interval)) |>
+  plot_km_evolution()
+```
+
+### Superpopulation PFS
+
+```{r}
+#| label: fig-km-evolution-spop
+#| fig-cap: "Superpopulation PFS KM forecast at three LFO cutoffs. Patients re-simulated unconditionally from week 1 (population-forecast estimand); systematically left of sample-based by design."
+#| fig-width: 12
+#| fig-height: 5
+
+lfo_tar_read_pattern("lfo_cutoff_km_est") |>
+  tidybayes::point_interval(
+    spop_pfs_km_est,
+    .width = 0.95, .point = median, .interval = qi
+  ) |>
+  rename(km_median = spop_pfs_km_est, km_lower = .lower, km_upper = .upper) |>
+  select(-c(.width, .point, .interval)) |>
+  plot_km_evolution()
+```
+
+:::
