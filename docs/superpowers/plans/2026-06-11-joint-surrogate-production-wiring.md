@@ -116,6 +116,20 @@ if (enable_background_surrogate == 1) {
     fatal_error("enable_background_surrogate=1 is incompatible with OBSERVED ",
                 "visit-gated 0->1 (enable_ms_visit_gated_latent_01=0), which sizes ",
                 "time_varying_coef_01 to 1; the surrogate needs the latent 2-feature basis.");
+  // Guard 7b: the functor unconditionally reads tv_coef_01[1..2] / tv_coef_03[1..2]
+  // whenever a slot is a frailty slot. time_varying_coef_01 is size 0 unless
+  // enable_ms_pop_time_varying_cov (parameters.stan:43); time_varying_coef_03 size 0
+  // unless enable_ms_pop_time_varying_cov && enable_ms_03_time_varying_cov
+  // (parameters.stan:149). Require coupling ON for every detected frailty slot
+  // (frailty_slots subset of coupled-TV slots, per spec §2).
+  if (surrogate_n_frailty_slots > 0 && !enable_ms_pop_time_varying_cov)
+    fatal_error("enable_background_surrogate=1 with frailty slots requires ",
+                "enable_ms_pop_time_varying_cov=1 (else time_varying_coef_01 is size 0 ",
+                "and the functor reads tv_coef_01[2] out of bounds).");
+  for (m in 1:surrogate_n_frailty_slots)
+    if (surrogate_frailty_slot[m] == MS_SLOT_03 && !enable_ms_03_time_varying_cov)
+      fatal_error("enable_background_surrogate=1 with 0->3 frailty requires ",
+                  "enable_ms_03_time_varying_cov=1 (else time_varying_coef_03 is size 0).");
 
   // Guard 4: the patient-level correlation block's member slots must equal the
   // detected frailty_slots in the same (ascending) order, so Sigma_u rows align
@@ -190,10 +204,16 @@ if (surrogate_ms_active) {
     // otherwise censored at ms_time_03 (= patient_max_t).
     surrogate_bg_censored_03[j] = (ms_final_state[p] == 3) ? 0 : 1;
     surrogate_bg_event_wk_03[j] = ms_time_03[p];
-    // Baseline week = calendar week of the patient's first (baseline) visit.
+    // Baseline week = calendar week of the patient's BASELINE visit = the LAST
+    // screening visit, NOT the first visit. Matches _full_model_transformed_data.stan:20-21
+    // (baseline_visit_idx = curr_patient_visit_pos + n_patient_screening_visits[i] - 1),
+    // which is the anchor t_patient_visit_idx uses for the SLD term. Using the first
+    // visit here would mis-anchor g(tau) by n_screening-1 weeks and break the
+    // shared-frame identity between the SLD and hazard terms. n_patient_screening_visits
+    // is in scope from _visit_transformed_data.stan:16 (included before this module).
     int vs, ve;
     (vs, ve) = get_pos(patient_visit_pos, p);
-    surrogate_bg_baseline_week[j] = t_patient_visits[vs];
+    surrogate_bg_baseline_week[j] = t_patient_visits[vs + n_patient_screening_visits[p] - 1];
     // Visit-gating mask: mark each observed visit's calendar week.
     for (v in vs:ve) {
       int wk = t_patient_visits[v];
@@ -396,12 +416,17 @@ In `stan/modules/laplace_surrogate/likelihood.stan`, after the `surrogate_bridge
     vector[n_background_patients * surrogate_n_wk] base03_static_flat;
     vector[n_background_patients] log_baseline_burden_bg;
     // TI-cov linear predictors in QR space on the BACKGROUND rows (mirror
-    // transformed_parameters.stan:218,375). Publication: pop-level term only
-    // (enable_ms_level_cov both FALSE), so no level-slope path.
-    vector[n_background_patients] linpred_bg_01 =
-      Q_covar_design_matrix[background_patient_idx, ] * time_invariant_coef_qr_01;
-    vector[n_background_patients] linpred_bg_03 =
-      Q_covar_design_matrix[background_patient_idx, ] * time_invariant_coef_qr_03;
+    // transformed_parameters.stan:216,787). Publication: pop-level term only
+    // (enable_ms_level_cov both FALSE), so no level-slope path. GUARD with the
+    // SAME conditions the forecast path uses — time_invariant_coef_qr_01/03 are
+    // vector[0] when their flags are off (parameters.stan:47,154), so an
+    // unconditional multiply would be a (n_bg × n_covar)·vector[0] mismatch.
+    vector[n_background_patients] linpred_bg_01 = zeros_vector(n_background_patients);
+    vector[n_background_patients] linpred_bg_03 = zeros_vector(n_background_patients);
+    if (enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0)
+      linpred_bg_01 = Q_covar_design_matrix[background_patient_idx, ] * time_invariant_coef_qr_01;
+    if (enable_ms_pop_time_invariant_cov && enable_ms_03_time_invariant_cov && n_time_invariant_covar > 0)
+      linpred_bg_03 = Q_covar_design_matrix[background_patient_idx, ] * time_invariant_coef_qr_03;
     for (j in 1:n_background_patients) {
       int p = background_patient_idx[j];
       log_baseline_burden_bg[j] = log_baseline_burden[p];
@@ -582,7 +607,7 @@ git commit -m "feat(laplace): wire joint surrogate into sf-ssm-log-space + fix e
 
 Run:
 ```bash
-~/.cmdstan/cmdstan-2.38.0/bin/stanc --include-paths=stan --include-paths=stan/tumor stan/tumor/sf-ssm-log-space.stan
+~/.cmdstan/cmdstan-2.39.0/bin/stanc --include-paths=stan --include-paths=stan/tumor stan/tumor/sf-ssm-log-space.stan
 ```
 
 Expected: exits 0, no output (clean parse). This validates Tasks 1–4 as a unit.
@@ -610,7 +635,7 @@ git commit -m "fix(laplace): resolve sf-ssm joint surrogate compile errors"
 
 Run:
 ```bash
-~/.cmdstan/cmdstan-2.38.0/bin/stanc --include-paths=stan --include-paths=stan/tumor stan/tumor/sf-ssls-lfo.stan
+~/.cmdstan/cmdstan-2.39.0/bin/stanc --include-paths=stan --include-paths=stan/tumor stan/tumor/sf-ssls-lfo.stan
 ```
 
 Expected: exits 0. This confirms the d=2 overloads resolve at the LFO call site (which passes the 8-arg `surrogate_ll` and 2-arg `surrogate_K_fn`).
