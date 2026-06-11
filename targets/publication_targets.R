@@ -458,7 +458,9 @@ publication_targets <- list(
           # #1805). Prior fits always cold-start.
           iter_warmup = if (warmstart) iter_warmup else max(iter_warmup, 300L),
           iter_sampling = iter_sampling,
-          save_warmup = FALSE,
+          # save_warmup intentionally NOT passed here — sample_and_save() reads
+          # PUB_SAVE_WARMUP inside its body (default FALSE) so toggling warmup
+          # output never enters this target's hash / never forces a re-fit.
           parallel_chains = chains,
           chains = chains,
           threads_per_chain = tumor_ssls_stan_data$n_shards,
