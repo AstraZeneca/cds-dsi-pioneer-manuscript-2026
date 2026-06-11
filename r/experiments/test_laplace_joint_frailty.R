@@ -20,9 +20,12 @@ set.seed(11)
 # Fix: raise the baseline hazards so most patients have events on BOTH
 # transitions (well-identified frailty), and keep n_patients modest + visits
 # weekly so runtime stays reasonable (the d=4 HMC reference is the cost driver).
-n_patients <- 45                   # well-identified (82%/64% event rates) yet ~2.4h not 4.3h
-visit_t <- 0:28                    # WEEKLY 0->1 gating visits (was every 4w) -> more 0->1 info
-n_wk <- 28
+n_patients <- 45                   # well-identified yet ~2-3h not 4.3h
+# SPARSE visit grid (every 3 weeks) so visit-gating GENUINELY drops weeks from the
+# hazard sum — with weekly visits the gate is a no-op and would not exercise the
+# visit-gated-0->3 path this re-validation exists to test. Baseline at week 0.
+visit_t <- seq(0, 36, by = 3)      # weeks 0,3,6,...,36 (13 assessment visits)
+n_wk <- 36
 true <- list(
   b1_pop = -0.04, b2_pop = 0.001, b1_sd = 0.03, b2_sd = 0.0015,
   base_01 = -2.6, cf_lvl_01 = 0.8, cf_vel_01 = 0.5,   # raised base -> ~70% event rate
@@ -64,7 +67,9 @@ median_vel <- median(vel_all); iqr_vel <- IQR(vel_all); if (iqr_vel == 0) iqr_ve
 std_lvl <- function(x) (x - median_lvl) / iqr_lvl
 std_vel <- function(x) (x - median_vel) / iqr_vel
 
-# Events (0->1 visit-gated, 0->3 continuous) using the SAME standardization.
+# Events (0->1 AND 0->3 BOTH visit-gated) using the SAME standardization.
+# Both transitions fire only at assessment visit weeks, matching production
+# (sum_at_visits_below) and the corrected surrogate functor.
 ms_event_wk_01 <- integer(n_patients); ms_censored_01 <- integer(n_patients)
 ms_event_wk_03 <- integer(n_patients); ms_censored_03 <- integer(n_patients)
 for (i in seq_len(n_patients)) {
@@ -83,12 +88,14 @@ for (i in seq_len(n_patients)) {
   if (ev1 == 0L) { ms_event_wk_01[i] <- n_wk; ms_censored_01[i] <- 1L }
   else { ms_event_wk_01[i] <- ev1; ms_censored_01[i] <- 0L }
 
-  # 0->3 continuous event
+  # 0->3 visit-gated event (fires only at assessment visit weeks)
   ev3 <- 0L
   for (w in 1:n_wk) {
-    lvl <- b1 * w + b2 * w^2; vel <- b1 + 2 * b2 * w
-    haz <- exp(true$base_03 + u03 + true$cf_lvl_03 * std_lvl(lvl) + true$cf_vel_03 * std_vel(vel))
-    if (runif(1) < 1 - exp(-haz)) { ev3 <- w; break }
+    if (visit_wk[i, w] == 1L) {
+      lvl <- b1 * w + b2 * w^2; vel <- b1 + 2 * b2 * w
+      haz <- exp(true$base_03 + u03 + true$cf_lvl_03 * std_lvl(lvl) + true$cf_vel_03 * std_vel(vel))
+      if (runif(1) < 1 - exp(-haz)) { ev3 <- w; break }
+    }
   }
   if (ev3 == 0L) { ms_event_wk_03[i] <- n_wk; ms_censored_03[i] <- 1L }
   else { ms_event_wk_03[i] <- ev3; ms_censored_03[i] <- 0L }

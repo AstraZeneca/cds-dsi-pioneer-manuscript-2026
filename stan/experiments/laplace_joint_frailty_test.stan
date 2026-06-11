@@ -15,10 +15,10 @@
 //   velocity g'(w) = b1 + 2*b2*w          (linear in (b1,b2))
 //   loghaz_T(w) = base_T + u_T
 //               + cf_lvl_T * std_lvl(g(w)) + cf_vel_T * std_vel(g'(w))
-// 0->1 is visit-gated (hazard only at observed visit weeks); 0->3 is continuous
-// (every week). Frailty enters as a pure ADDITIVE intercept shift -> the survival
-// term stays -sum exp(linear) => log-concave in all 4 latents (the property this
-// gate verifies numerically before production).
+// Both 0->1 and 0->3 are visit-gated (hazard only at observed visit weeks),
+// matching production (sum_at_visits_below). Frailty enters as a pure ADDITIVE
+// intercept shift -> the survival term stays -sum exp(linear) => log-concave in
+// all 4 latents (the property this gate verifies numerically before production).
 //
 // Prior covariance per patient: K_i = blockdiag(Sigma_beta[2x2], Sigma_u[2x2]),
 //   Sigma_u = diag(s01,s03) * (L L') * diag(s01,s03)   (matches production
@@ -103,17 +103,19 @@ functions {
       }
       lp += -cum_haz_01;
 
-      // --- 0->3 continuous hazard (every week) ---
+      // --- 0->3 VISIT-GATED hazard (matches production: sum_at_visits_below) ---
       int te3 = ms_censored_03[i] ? n_wk : ms_event_wk_03[i];
       real cum_haz_03 = 0;
       for (w in 1:te3) {
-        real lvl = b1 * w + b2 * w * w;
-        real vel = b1 + 2 * b2 * w;
-        real loghaz = base_03 + u03
-                    + cf_lvl_03 * std_lvl(lvl, median_lvl, iqr_lvl)
-                    + cf_vel_03 * std_vel(vel, median_vel, iqr_vel);
-        cum_haz_03 += exp(loghaz);
-        if (!ms_censored_03[i] && w == te3) lp += loghaz;
+        if (visit_wk[i, w] == 1) {
+          real lvl = b1 * w + b2 * w * w;
+          real vel = b1 + 2 * b2 * w;
+          real loghaz = base_03 + u03
+                      + cf_lvl_03 * std_lvl(lvl, median_lvl, iqr_lvl)
+                      + cf_vel_03 * std_vel(vel, median_vel, iqr_vel);
+          cum_haz_03 += exp(loghaz);
+          if (!ms_censored_03[i] && w == te3) lp += loghaz;
+        }
       }
       lp += -cum_haz_03;
     }
@@ -240,13 +242,15 @@ model {
       int te3 = ms_censored_03[i] ? n_wk : ms_event_wk_03[i];
       real cum_haz_03 = 0;
       for (w in 1:te3) {
-        real lvl = b1 * w + b2 * w * w;
-        real vel = b1 + 2 * b2 * w;
-        real loghaz = base_03 + u03
-                    + cf_lvl_03 * std_lvl(lvl, median_lvl, iqr_lvl)
-                    + cf_vel_03 * std_vel(vel, median_vel, iqr_vel);
-        cum_haz_03 += exp(loghaz);
-        if (ms_censored_03[i] == 0 && w == te3) target += loghaz;
+        if (visit_wk[i, w] == 1) {
+          real lvl = b1 * w + b2 * w * w;
+          real vel = b1 + 2 * b2 * w;
+          real loghaz = base_03 + u03
+                      + cf_lvl_03 * std_lvl(lvl, median_lvl, iqr_lvl)
+                      + cf_vel_03 * std_vel(vel, median_vel, iqr_vel);
+          cum_haz_03 += exp(loghaz);
+          if (ms_censored_03[i] == 0 && w == te3) target += loghaz;
+        }
       }
       target += -cum_haz_03;
     }
