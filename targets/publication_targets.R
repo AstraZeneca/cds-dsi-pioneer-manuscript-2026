@@ -1012,7 +1012,41 @@ publication_targets <- list(
           .groups   = "drop"
         ) |>
         mutate(se = sd(mean_pred) / sqrt(cell_size))
+    ),
+
+    # LFO KM evolution at three evenly-distributed cutoffs ----------------------
+
+    tar_target(
+      lfo_km_cutoffs,
+      lfo_cutoffs |>
+        slice(
+          round(n() * 1 / 4),
+          round(n() * 2 / 4),
+          round(n() * 3 / 4)
+        )
+    ),
+
+    tar_target(
+      lfo_cutoff_km_est,
+      tumor_ssls_lfo_clean |>
+        filter(n == lfo_km_cutoffs$n) |>
+        reframe(
+          refit_n,
+          n,
+          cutoff_date,
+          cutoff_calendar_day,
+          select_draws(fit[[1]], matches("^(sample|spop)_(ms_)?pfs_km_est$")) |>
+            recover_types(select(all_analysis_data, trial = group)) |>
+            spread_rvars(
+              sample_pfs_km_est[trial, t],
+              spop_pfs_km_est[trial, t],
+              sample_ms_pfs_km_est[trial, t],
+              spop_ms_pfs_km_est[trial, t]
+            )
+        ),
+      pattern = map(lfo_km_cutoffs)
     )
+
   )
 )
 
