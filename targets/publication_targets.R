@@ -1035,6 +1035,7 @@ publication_targets <- list(
           n,
           cutoff_date,
           cutoff_calendar_day,
+          n_target_observed,
           select_draws(fit[[1]], matches("^(sample|spop)_(ms_)?pfs_km_est$")) |>
             recover_types(select(all_analysis_data, trial = group)) |>
             spread_rvars(
