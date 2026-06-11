@@ -48,14 +48,32 @@ sample_and_save <- function(
 ) {
   sampler_fun <- arg_match(sampler_fun)
 
-  # save_warmup default via env var, resolved HERE (function body) — never in a
-  # tar_target command — so toggling it does NOT enter any target's hash and
+  # --- Observability knobs, all resolved HERE (function body), never in a
+  # tar_target command -> toggling them does NOT enter any target's hash and
   # cannot force a re-fit (targets hashes a function by its source, not by env
-  # state at call time). An explicit save_warmup= from the caller always wins.
-  # Only applies to the "sample" sampler (pathfinder/variational have no warmup).
+  # state at call time). An explicit value from the caller always wins. These
+  # only apply to the "sample" sampler. Env vars (all default to current behavior):
+  #   PUB_SAVE_WARMUP=true   -> keep warmup draws (CSV fills from iter 1 = live
+  #                             progress + salvageable if interrupted). Default FALSE.
+  #   PUB_REFRESH=<int>      -> iteration-print cadence. Lower = more frequent
+  #                             heartbeat in the logs. Default 50 (cmdstan's is 100);
+  #                             cheap (one tiny line) and the main "how far along" signal.
+  #   PUB_SHOW_EXCEPTIONS=false -> suppress per-iteration informational exceptions
+  #                             (inf-Cholesky, "max iterations exceeded", etc.).
+  #                             Default TRUE: surface pathology signatures. Set false
+  #                             only if a known-benign warning is flooding the logs.
   dots <- list(...)
-  if (identical(sampler_fun, "sample") && is.null(dots[["save_warmup"]])) {
-    dots[["save_warmup"]] <- Sys.getenv("PUB_SAVE_WARMUP", "false") == "true"
+  if (identical(sampler_fun, "sample")) {
+    if (is.null(dots[["save_warmup"]])) {
+      dots[["save_warmup"]] <- Sys.getenv("PUB_SAVE_WARMUP", "false") == "true"
+    }
+    if (is.null(dots[["refresh"]])) {
+      refresh_env <- Sys.getenv("PUB_REFRESH", "")
+      dots[["refresh"]] <- if (nzchar(refresh_env)) as.integer(refresh_env) else 50L
+    }
+    if (is.null(dots[["show_exceptions"]])) {
+      dots[["show_exceptions"]] <- Sys.getenv("PUB_SHOW_EXCEPTIONS", "true") != "false"
+    }
   }
 
   fs::dir_create(output_dir, recurse = TRUE)
