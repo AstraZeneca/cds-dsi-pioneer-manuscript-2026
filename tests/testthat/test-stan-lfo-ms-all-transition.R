@@ -86,3 +86,26 @@ test_that("production config (visit-gated 0->1 + 0->3 + 3->2): LFO == full at la
   expect_true(is.finite(full))
   expect_equal(lfo, full, tolerance = 1e-6)
 })
+
+test_that("progression-only PFS censors death but operational PFS counts it", {
+  # Guards the LFO OOS RECIST stamp against regressing to operational PFS.
+  # Scenario: 2-patient RNG-free call to calculate_all_patients_endpoints_rng.
+  #   - Patient 1: Direct death (0->2) at week 10 without progression.
+  #     * Operational PFS: death IS a PFS event -> sample_right_censored[1] == 0
+  #     * Progression-only PFS: no 0->1 event -> sample_prog_right_censored[1] == 1
+  #       (the OOS RECIST stamp cannot write PD because progression is censored)
+  #   - Patient 2: Observed 0->1 progression at week 12.
+  #     * Both operational and progression-only PFS report an event (both censored==0).
+  #
+  # This asymmetry is the whole point of the fix: operational PFS includes death,
+  # but the OOS stamp must NOT mark PD for a patient who died without progression.
+
+  fit <- test_stan_function(
+    here("tests/testthat/stan/test_oos_prog_only_all.stan"),
+    list(dummy = 0L)
+  )
+  draws <- posterior::as_draws_df(fit$draws())
+
+  # All assertions are inside the Stan harness; n_failures==0 means all passed
+  expect_equal(get_stan_val(draws, "n_failures"), 0)
+})
