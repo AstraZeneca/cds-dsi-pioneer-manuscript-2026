@@ -1018,12 +1018,13 @@ publication_targets <- list(
 
     tar_target(
       lfo_km_cutoffs,
-      lfo_cutoffs |>
-        slice(
-          round(n() * 1 / 4),
-          round(n() * 2 / 4),
-          round(n() * 3 / 4)
-        )
+      {
+        max_n <- max(lfo_cutoffs$n_target_observed)
+        targets <- max_n * c(0.10, 0.50, 0.90)
+        map_int(targets, \(tgt) which.min(abs(lfo_cutoffs$n_target_observed - tgt))) |>
+          unique() |>
+          (\(idx) lfo_cutoffs[idx, ])()
+      }
     ),
 
     tar_target(
