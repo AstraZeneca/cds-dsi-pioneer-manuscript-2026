@@ -107,6 +107,11 @@ disease_map <- tibble::tribble(
 #       the first successful CRC posterior run with enable_ms_baseline_trend_01=1.
 #
 # Set to NULL → cold start (iter_warmup guard uses max(iter_warmup, 300L)).
+#
+# LFO metric files (separate from posterior): one inv_metric per group × chain.
+# SCLC: data/inv_metric_lfo_sclc_group{N}_chain{C}.json (job #1894, 5242 params,
+#        28 groups × 4 chains = 112 files, all from run 202606091946).
+# CRC:  no files yet — lfo() passes metric_file = NULL for crc → cold start.
 publication_metric_files <- NULL
 
 publication_targets <- list(
@@ -966,7 +971,11 @@ publication_targets <- list(
           create_tumor_ssls_initializer_fixed(stan_data, save_dir, run_id)
         },
         gq_only = lfo_gq_only,
-        gq_source_path = lfo_gq_source_path
+        gq_source_path = lfo_gq_source_path,
+        metric_file = if (disease == "sclc") {
+          n <- min(grouped_lfo_cutoffs$n)
+          sprintf("data/inv_metric_lfo_sclc_group%d_chain%d.json", n, 1:4)
+        } else NULL
       ),
       resources = tar_resources(crew = tar_resources_crew(controller = "lfo")),
       pattern = map(grouped_lfo_cutoffs)
