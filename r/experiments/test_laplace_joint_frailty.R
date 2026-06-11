@@ -143,7 +143,7 @@ for (mode in 0:1) {
   fits[[name]] <- model$sample(
     data = c(stan_data, list(laplace_mode = mode)), init = init_mode,
     seed = 123, chains = 4, parallel_chains = 4,
-    iter_warmup = 1000, iter_sampling = 1000, refresh = 500,
+    iter_warmup = 1000, iter_sampling = 1000, refresh = 100, save_warmup = TRUE,
     adapt_delta = if (mode == 1) 0.95 else 0.9)
 }
 
