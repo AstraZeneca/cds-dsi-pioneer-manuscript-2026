@@ -1,0 +1,165 @@
+% Compile: pdflatex -output-directory=writing/figures writing/figures/gq-routing.tex
+% Convert : pdf2svg writing/figures/gq-routing.pdf writing/figures/gq-routing.svg  (requires: sudo apt-get install pdf2svg)
+\documentclass[tikz,border=12pt]{standalone}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows.meta,positioning,calc}
+\usepackage{amsmath,amssymb}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{sfmath}
+
+\begin{document}
+
+% AstraZeneca palette
+\definecolor{azNavy}{HTML}{003865}
+\definecolor{azGold}{HTML}{F0AB00}
+\definecolor{azPlum}{HTML}{830051}
+\definecolor{azPlat}{HTML}{9DB0AC}
+\definecolor{azTurq}{HTML}{68D2DF}
+
+\begin{tikzpicture}[
+  % --- node styles ---
+  start/.style={
+    rectangle, rounded corners=4pt,
+    minimum width=4.2cm, minimum height=1cm,
+    draw=azNavy, fill=azNavy, text=white,
+    font=\small\bfseries, align=center, inner sep=6pt
+  },
+  decision/.style={
+    diamond, aspect=2.4,
+    minimum width=4.8cm, minimum height=1.1cm,
+    draw=azNavy, fill=azNavy!8, line width=0.9pt,
+    font=\small, align=center, inner sep=4pt
+  },
+  % all rectangular leaves share minimum height=1.5cm so single- and
+  % two-line boxes render at the same height (the floor exceeds 2-line content)
+  outcome/.style={
+    rectangle, rounded corners=3pt,
+    minimum width=3.8cm, minimum height=1.5cm,
+    draw=azNavy!60, fill=azNavy!6, line width=0.7pt,
+    font=\small, align=center, inner sep=5pt
+  },
+  censor/.style={
+    rectangle, rounded corners=3pt,
+    minimum width=3.8cm, minimum height=1.5cm,
+    draw=azPlat, fill=azPlat!10, line width=0.7pt,
+    font=\small, align=center, inner sep=5pt
+  },
+  event/.style={
+    rectangle, rounded corners=3pt,
+    minimum width=3.8cm, minimum height=1.5cm,
+    draw=azPlum, fill=azPlum!7, line width=0.8pt,
+    font=\small, align=center, inner sep=5pt
+  },
+  % --- arrow styles ---
+  arr/.style={-{Stealth[length=2.5mm]}, line width=0.75pt, draw=azNavy!80},
+  lbl/.style={font=\footnotesize, fill=white, inner sep=1.5pt},
+  graylbl/.style={font=\scriptsize\itshape, text=azPlat, fill=white, inner sep=1pt}
+]
+
+% =====================================================================
+%  COLUMN ANCHORS  (x-coords)
+%    left leaf   : -6.5
+%    centre      :  0
+%    right leaf  : +6.5
+% =====================================================================
+
+% ----------------------------------------------------------------
+%  BLOCK 1 : Sample candidate times for the three competing exits
+% ----------------------------------------------------------------
+\node[outcome]   (cand)    at (0, -1.6)
+    {Candidate exit times from state 0:\\[1pt]
+     $T^{01}_i = \min(T^{\mathrm{tgt}}_i,\, T^{\mathrm{ms}}_i)$\quad
+     $T^{02}_i \sim \lambda_{02}$\quad
+     $T^{03}_i \sim \lambda_{03}$\\[1pt]
+     \textit{\scriptsize $T^{\mathrm{tgt}}_i$: target-lesion PD (deterministic)\, $\cdot$\,
+     $T^{\mathrm{ms}}_i$: non-target PD (visit-gated $\lambda_{01}$)}};
+
+% --- Entry: two start points feeding one shared routing tree (enter from the sides) ---
+\node[start]     (spop)   at (-7.8, -1.6)   {\textbf{spop}\\[-1pt]
+    \textit{\scriptsize unconditional:}\\[-2pt]
+    \textit{\scriptsize from treatment start}};
+\node[start]     (samp)   at ( 7.8, -1.6)   {\textbf{sample}\\[-1pt]
+    \textit{\scriptsize conditional:}\\[-2pt]
+    \textit{\scriptsize from observed state}\\[-2pt]
+    \textit{\scriptsize at the cut-off}};
+
+\draw[arr] (spop.east) -- (cand.west);
+\draw[arr] (samp.west) -- (cand.east);
+
+% ----------------------------------------------------------------
+%  BLOCK 2 : Competing risks — earliest candidate wins
+% ----------------------------------------------------------------
+\node[decision]  (crQ)    at (0, -4.6)
+    {Earliest exit from\\state 0?};
+
+\draw[arr] (cand) -- (crQ);
+
+% --- route: 0→1 progression ---
+\node[event]     (prog)   at (-7.2, -7.1)
+    {\textbf{$0\to 1$ progression}\\[1pt]
+     $T^{\mathrm{pfs}}_i = T^{01}_i$ \textit{\scriptsize (PFS event)}};
+
+% --- route: 0→2 direct death (no sojourn; box sits at the OS-death row) ---
+\node[event]     (dd)     at (0, -12.3)
+    {\textbf{$0\to 2$ direct death}\\[-1pt]
+     $T^{\mathrm{pfs}}_i = T^{\mathrm{os}}_i = T^{02}_i$};
+
+% --- route: 0→3 dropout ---
+\node[outcome]   (drop)   at (7.2, -7.1)
+    {\textbf{$0\to 3$ dropout}\\[1pt]
+     \textit{\scriptsize off-trial at $T^{03}_i$}};
+
+% PFS read-off for dropout: a separate censor leaf, placed between the
+% dropout box and the 3->2 decision (PFS diverges from OS here)
+\node[censor]    (dropPfsCens) at (11.8, -8.5)
+    {$T^{\mathrm{pfs}}_i$ censored\\at $T^{03}_i$};
+
+\draw[arr] (crQ.west)  -| node[lbl, pos=0.25, above] {$0\!\to\!1$} (prog.north);
+\draw[arr] (crQ.south) -- node[lbl, right=2pt]        {$0\!\to\!2$} (dd.north);
+\draw[arr] (crQ.east)  -| node[lbl, pos=0.25, above]  {$0\!\to\!3$} (drop.north);
+
+% direct-death route has no sojourn step: PFS and OS resolve at the same week
+\node[graylbl] at (1.9, -9.9) {no sojourn};
+
+% ----------------------------------------------------------------
+%  BLOCK 3 : Post-event sojourn (OS continues on surviving path)
+% ----------------------------------------------------------------
+
+% Post-progression: 1→2
+\node[decision]  (ppQ)    at (-7.2, -9.9)
+    {$1\!\to\!2$ event?};
+\node[event]     (ppDeath) at (-9.6, -12.3)
+    {$T^{\mathrm{os}}_i$ from $\lambda_{12}(u_1)$\\[-1pt]
+     \textit{\scriptsize sojourn $u_1 = t - T^{01}_i$}};
+\node[censor]    (ppCens)  at (-4.8, -12.3)
+    {OS censored};
+
+\draw[arr] (prog.south) -- (ppQ.north);
+\draw[arr] (ppQ.west)  -| node[lbl, pos=0.3, above] {yes} (ppDeath.north);
+\draw[arr] (ppQ.east)  -| node[lbl, pos=0.3, above] {no}  (ppCens.north);
+
+% Post-dropout: 3→2
+\node[decision]  (dpQ)    at (7.2, -9.9)
+    {$3\!\to\!2$ event?};
+\node[event]     (dpDeath) at (4.8, -12.3)
+    {$T^{\mathrm{os}}_i$ from $\lambda_{32}(u_3)$\\[-1pt]
+     \textit{\scriptsize sojourn $u_3 = t - T^{03}_i$}};
+\node[censor]    (dpCens)  at (9.6, -12.3)
+    {OS censored};
+
+% OS continues straight down to the 3->2 decision; PFS taps off to the right
+\draw[arr] (drop.south) -- node[lbl, right=2pt, pos=0.8] {OS} (dpQ.north);
+\draw[arr] ($(drop.south)!0.5!(dpQ.north)$) -- node[lbl, above] {PFS} (dropPfsCens.west);
+\draw[arr] (dpQ.west)  -| node[lbl, pos=0.3, above] {yes} (dpDeath.north);
+\draw[arr] (dpQ.east)  -| node[lbl, pos=0.3, above] {no}  (dpCens.north);
+
+% ----------------------------------------------------------------
+%  Section labels (margin annotations)
+% ----------------------------------------------------------------
+\node[graylbl, anchor=east] at (-12.0, -4.6)  {\textbf{Competing risks}};
+\node[graylbl, anchor=east] at (-12.0, -7.1)  {\textbf{PFS read-off}};
+\node[graylbl, anchor=east] at (-12.0, -11.1) {\textbf{OS sojourn}};
+
+\end{tikzpicture}
+\end{document}

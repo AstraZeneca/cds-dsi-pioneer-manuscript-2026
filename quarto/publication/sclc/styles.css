@@ -1,0 +1,294 @@
+/* Custom styles for SCLC-01 Analysis Website */
+
+/* Import modern sans-serif font for title */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@600&display=swap');
+
+/* Modern, clean navbar title */
+.navbar-title,
+.navbar .navbar-brand {
+  font-family: 'IBM Plex Sans', -apple-system, system-ui, sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 1.05rem !important;
+  letter-spacing: -0.01em !important;
+  color: white !important;
+  transition: color 0.2s ease !important;
+}
+
+.navbar-title:hover,
+.navbar .navbar-brand:hover {
+  color: var(--az-gold) !important;
+}
+
+/* Ensure home icon has NO text - hide any text nodes */
+.navbar .navbar-nav .nav-item:has(.bi-house-fill) .nav-link {
+  font-size: 0 !important;
+  padding-left: 0.5rem !important;
+  padding-right: 0.5rem !important;
+}
+
+.navbar .navbar-nav .nav-item:has(.bi-house-fill) .bi {
+  font-size: 1.2rem !important;
+}
+
+/* Card styling for landing page */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin: 2rem 0;
+}
+
+.feature-card {
+  padding: 1.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--bs-border-color);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.feature-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.feature-card h3 {
+  margin-top: 0;
+  color: var(--bs-primary);
+}
+
+/* Related pages section */
+.related-pages {
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--bs-border-color);
+}
+
+.related-pages h2 {
+  font-size: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.related-pages ul {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.related-pages li {
+  margin: 0;
+}
+
+.related-pages a {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  background: var(--bs-light);
+  border-radius: 4px;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.related-pages a:hover {
+  background: var(--bs-primary);
+  color: white;
+}
+
+/* Callout customizations - colors defined in az-theme.scss */
+
+/* Math equations spacing */
+.math-block {
+  margin: 1.5rem 0;
+  overflow-x: auto;
+}
+
+/* Table styling */
+.gt_table {
+  width: 100%;
+}
+
+/* Figure captions - constrain to content area */
+.figure-caption,
+figcaption {
+  font-style: italic;
+  color: var(--bs-secondary);
+  max-width: 100%;
+  width: 100%;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0 auto;
+}
+
+/* Fix plot overflow - constrain to content column */
+.quarto-figure,
+figure,
+.cell-output-display {
+  max-width: 100%;
+  overflow: hidden;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.quarto-figure img,
+figure img,
+.cell-output-display img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Critical: prevent figures in column-body from exceeding bounds */
+.column-body .quarto-figure,
+.column-body figure,
+.column-body .cell-output-display {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.column-body img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Additional caption constraints */
+.column-body figcaption,
+.column-body .figure-caption {
+  max-width: 100%;
+  width: 100%;
+  text-align: center;
+}
+
+/* Constrain plotly and other interactive plots */
+.plotly,
+.html-widget {
+  max-width: 100%;
+  width: 100%;
+  overflow-x: auto;
+}
+
+/* Prevent content from overflowing into sidebars */
+.column-body,
+.column-page {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Critical: ensure plots cannot escape their containers */
+.quarto-figure,
+.cell-output-display,
+figure {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+}
+
+/* Force ALL images to scale down within content area */
+img {
+  max-width: 100% !important;
+  height: auto !important;
+}
+
+/* Override any inline width styles from R plots */
+.quarto-figure img[style*="width"],
+figure img[style*="width"],
+.cell-output-display img[style*="width"] {
+  width: auto !important;
+  max-width: 100% !important;
+}
+
+/* Code block improvements */
+.sourceCode {
+  border-radius: 6px;
+}
+
+/* Landing page hero */
+.hero-section {
+  padding: 3rem 2rem;
+  margin-bottom: 2rem;
+  background: transparent;
+}
+
+.hero-content {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.hero-text {
+  flex: 2;
+  text-align: left;
+}
+
+.hero-text h1 {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+  margin-top: 0;
+}
+
+.hero-text p {
+  font-size: 1.15rem;
+  color: var(--bs-secondary);
+  line-height: 1.6;
+}
+
+.hero-image {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hero-image img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+}
+
+/* Responsive: stack on mobile */
+@media (max-width: 768px) {
+  .hero-content {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .hero-text {
+    text-align: center;
+  }
+
+  .hero-image {
+    order: -1;
+    max-width: 200px;
+  }
+}
+
+/* Quick stats grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+  margin: 2rem 0;
+}
+
+.stat-item {
+  text-align: center;
+  padding: 1rem;
+  background: var(--bs-light);
+  border-radius: 8px;
+}
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: bold;
+  color: var(--bs-primary);
+}
+
+.stat-label {
+  font-size: 0.875rem;
+  color: var(--bs-secondary);
+}
