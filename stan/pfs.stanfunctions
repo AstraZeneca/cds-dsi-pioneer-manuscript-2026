@@ -1642,7 +1642,9 @@ tuple(
   array[] int,  // spop_os_censored
   array[] int,  // spop_is_dropout
   array[] int,  // sample_is_dropout
-  array[] int   // spop_dropout_week (pre-graft cause-3 exit week; 0 otherwise)
+  array[] int,  // spop_dropout_week (pre-graft cause-3 exit week; 0 otherwise)
+  array[] int,  // sample_prog_pfs (0→1 progression-only PFS; excludes 0→2 death, 0→3 dropout)
+  array[] int   // sample_prog_right_censored (censored unless a 0→1 progression occurred)
 ) calculate_all_patients_endpoints_rng(
   array[] int patient_idx,         // maps loop index j -> unified patient index p
   array[] int biomarker_category,
@@ -1749,6 +1751,8 @@ tuple(
   array[n_patients] int spop_is_dropout;
   array[n_patients] int sample_is_dropout;
   array[n_patients] int spop_dropout_week = zeros_int_array(n_patients);
+  array[n_patients] int sample_prog_pfs = zeros_int_array(n_patients);
+  array[n_patients] int sample_prog_right_censored = rep_array(1, n_patients);
 
   int right_censored_idx = 1;
 
@@ -2059,6 +2063,13 @@ tuple(
 
     sample_is_dropout[j] = (sample_cause == 3);
 
+    // Progression-only PFS for the OOS RECIST confusion matrix: the 0→1 event
+    // (target-lesion PD OR MS 0→1 hazard), excluding 0→2 death and 0→3 dropout.
+    // Captured here, before the death/dropout PFS-from-OS graft below, so it
+    // reflects radiographic progression only. PFS/OS endpoints are unaffected.
+    sample_prog_pfs[j]            = sample_t01;
+    sample_prog_right_censored[j] = sample_c01;
+
     // --- RNG Step 7: sample OS (drawn BEFORE the PFS derivation so a 0->3
     //     dropout's PFS can reuse the OS outcome — see graft below) ---
     // derive_sample_os_rng depends only on sample_cause, sample_exit, the
@@ -2121,7 +2132,9 @@ tuple(
     spop_os_censored,
     spop_is_dropout,
     sample_is_dropout,
-    spop_dropout_week
+    spop_dropout_week,
+    sample_prog_pfs,
+    sample_prog_right_censored
   );
 }
 
