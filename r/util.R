@@ -74,6 +74,16 @@ sample_and_save <- function(
     if (is.null(dots[["show_exceptions"]])) {
       dots[["show_exceptions"]] <- Sys.getenv("PUB_SHOW_EXCEPTIONS", "true") != "false"
     }
+    #   PUB_ADAPT_DELTA=<num> -> NUTS target acceptance prob. Default 0.95 (was a
+    #     hardcoded 0.8). Higher = smaller leapfrog steps = the surrogate's Laplace
+    #     inner solver gets sane (beta_pop, Sigma) inputs instead of wild early-warmup
+    #     excursions that blow its 100-iter cap (the #1918 thrash). Safe for non-
+    #     surrogate runs too (fewer divergences, slightly slower warmup). The gate
+    #     validated the d=4 marginalization at 0.95.
+    if (is.null(dots[["adapt_delta"]])) {
+      ad_env <- Sys.getenv("PUB_ADAPT_DELTA", "")
+      dots[["adapt_delta"]] <- if (nzchar(ad_env)) as.numeric(ad_env) else 0.95
+    }
   }
 
   fs::dir_create(output_dir, recurse = TRUE)

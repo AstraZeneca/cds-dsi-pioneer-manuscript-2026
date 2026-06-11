@@ -465,7 +465,11 @@ publication_targets <- list(
           chains = chains,
           threads_per_chain = tumor_ssls_stan_data$n_shards,
           init = tumor_ssls_initializer,
-          adapt_delta = 0.8,
+          # adapt_delta NOT passed here — sample_and_save() reads PUB_ADAPT_DELTA
+          # inside its body (default 0.95, was a hardcoded 0.8). 0.95 is the value
+          # the d=4 surrogate gate validated at and tames the Laplace inner-solver
+          # non-convergence that stalled job #1918. Env-driven => tunable across
+          # relaunches without re-invalidating the fit target.
           save_metric = TRUE,
           # Warm-start from job #1868's adapted trend inv-metrics (data/
           # inv_metric_publication_tumor_ssls_chain*.json). The metric dimension
