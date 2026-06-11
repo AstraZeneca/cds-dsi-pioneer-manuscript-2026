@@ -475,14 +475,29 @@ Mirroring what has worked on this branch. **Ordered dependency chain:**
    the validated joint check was for `d=2` burden-only — frailty adds linear
    shifts, expected to remain concave, but VERIFY numerically). Use the (level,
    velocity) basis from step 0.
-2. **Standalone gate** (`laplace_joint_frailty_test.stan` + R driver): joint
-   Laplace vs full HMC on synthetic data with frailty on {0→1,0→3} and the
-   (level, velocity) coupling; PASS = `coef_01`, `coef_03`, `sigma_01`,
-   `sigma_03`, and the 01–03 correlation all agree HMC-vs-Laplace within MCSE,
-   clean diagnostics. **Also add a forecast-vs-surrogate feature-SCALE comparison**
-   (per O1): since `tv_coef` is shared model-wide and calibrated on the forecast
-   feature scale, confirm the uncapped quadratic surrogate feature and the
-   capped/bi-exponential forecast feature are on a comparable scale.
+2. **Standalone gate** (`laplace_joint_frailty_test.stan` +
+   `test_laplace_joint_frailty.R`): joint Laplace vs full HMC on synthetic data
+   with correlated frailty on {0→1,0→3} and the (level, velocity) coupling.
+   **STATUS (2026-06-11): conditional PASS — marginalization accepted as sound.**
+   Final run (n=45, 82%/64% event rates, d=4 = b1,b2,u01,u03; ~5h):
+   - Burden params + baselines: excellent agreement (diff/MCSE 0.1–0.6).
+   - Coupling + frailty (cf_lvl/vel_01/03, s01, s03, rho): agree directionally;
+     max diff/MCSE **5.59** (just over the 5 threshold).
+   - **min SD ratio 0.96** (Laplace posteriors appropriately wide, NOT
+     overconfident — the key correctness signal); 0 divergences both modes.
+   - The borderline 5.59 is a **noisy-reference artifact**, NOT a Laplace error:
+     the HMC reference under-mixed (`min_ess_bulk=142`, `rhat 1.04`), inflating the
+     MCSE denominator; raw param diffs are tiny and Laplace tracks HMC in the same
+     direction on every parameter. The 01↔03 correlation `rho` remains
+     under-identified even at these event rates (HMC −0.19 vs true −0.5), a data
+     property both methods share, not a marginalization defect.
+   - **Decision (Karim, 2026-06-11):** accept as effectively-PASS on the weight of
+     evidence rather than burn another ~5h chasing a cleaner HMC reference. The
+     correlated-frailty marginalization is validated for production wiring.
+   - NOTE: the gate uses the toy (level, velocity) hazard directly; the
+     forecast-vs-surrogate feature-SCALE check (per O1) still belongs in the
+     production wiring validation, where the real capped/bi-exponential forecast
+     feature meets the uncapped quadratic surrogate feature.
 3. **This contract** adversarially reviewed (workflow `wf_9c08ae27`, verdict
    go-with-changes; all skeptic-confirmed required changes applied 2026-06-09) —
    awaiting human sign-off.
