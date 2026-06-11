@@ -78,19 +78,42 @@ tuple(vector, matrix) surrogate_bridge(real tr_loc_pop, real frac_logit_pop,
   return (mean_full, S + diag_matrix(rep_vector(jitter, 2)));
 }
 
+// JOINT SLD + multistate(0->1 visit-gated, 0->3 continuous) functor with
+// correlated patient-level frailty. Ported from the validated gate
+// (laplace_joint_frailty_test.stan:51-121). Latents enter RAW; scale lives in K.
+// Burden feature is built via standardize_log_burden() — the SAME helper the
+// forecast path uses (_ms_burden_tv_covar.stan:64-65) — so the shared tv_coef
+// applies an identical-frame coupling to background and forecast patients.
+// theta block per patient (length d): [b1, b2, (u01), (u03)] (frailty optional).
 real surrogate_ll(vector theta,
-                  vector beta_pop,
+                  vector beta_pop,                     // [b0, b1, b2] (b0 pinned)
                   real measure_sd, data vector log_lod_per_visit,
                   data int n_bg,
                   data vector bg_obs,
                   data array[] int bg_pos,
-                  data array[] int bg_time) {
-  int d = 2;
+                  data array[] int bg_time,
+                  // --- joint MS extension (degenerate/empty for the d=2 path) ---
+                  data int d,
+                  data int n_frailty_slots,
+                  data int n_wk,
+                  vector base01_static_flat,           // [n_bg * n_wk], row-major per bg patient
+                  vector base03_static_flat,
+                  vector log_baseline_burden_bg,       // [n_bg]
+                  vector tv_coef_01,                   // [2] (level, velocity); empty if 0->1 not coupled
+                  vector tv_coef_03,                   // [2]; empty if 0->3 not coupled
+                  data real median_log_burden_obs, data real iqr_log_burden_obs,
+                  data real median_velocity_obs, data real iqr_velocity_obs,
+                  data array[] int bg_event_wk_01, data array[] int bg_censored_01,
+                  data array[] int bg_event_wk_03, data array[] int bg_censored_03,
+                  data array[] int bg_baseline_week,
+                  data array[,] int bg_visit_wk_01) {
+  real b0 = beta_pop[1];
   real lp = 0;
   for (i in 1:n_bg) {
-    real b0 = beta_pop[1];
     real b1 = beta_pop[2] + theta[(i - 1) * d + 1];
     real b2 = beta_pop[3] + theta[(i - 1) * d + 2];
+
+    // --- SLD term (anchored time t = bg_time[v] - 1; baseline -> t=0 -> g(0)=b0) ---
     int v_start = bg_pos[i];
     int v_end   = bg_pos[i + 1] - 1;
     for (v in v_start:v_end) {
@@ -101,16 +124,90 @@ real surrogate_ll(vector theta,
       else
         lp += normal_lcdf(log_lod_per_visit[v] | mu, measure_sd);
     }
+
+    if (n_frailty_slots > 0) {
+      // Frailty latents follow the 2 burden latents, ascending slot order [u01,u03].
+      real u01 = theta[(i - 1) * d + 3];
+      real u03 = (n_frailty_slots >= 2) ? theta[(i - 1) * d + 4] : 0.0;
+      int bw = bg_baseline_week[i];
+
+      // --- 0->1 visit-gated hazard ---
+      int te1 = bg_censored_01[i] ? n_wk : bg_event_wk_01[i];
+      real cum_haz_01 = 0;
+      for (w in 1:te1) {
+        if (bg_visit_wk_01[i, w] == 1) {
+          real tau = w - bw;                            // anchored time (same frame as g fit)
+          real g_norm = b0 + b1 * tau + b2 * tau * tau; // NORMALIZED log-burden
+          real lvl_feat = standardize_log_burden(g_norm, log_baseline_burden_bg[i],
+                                                  median_log_burden_obs, iqr_log_burden_obs);
+          real vel_feat = standardize_velocity(b1 + 2 * b2 * tau,
+                                                median_velocity_obs, iqr_velocity_obs);
+          real loghaz = base01_static_flat[(i - 1) * n_wk + w] + u01
+                      + tv_coef_01[1] * lvl_feat + tv_coef_01[2] * vel_feat;
+          cum_haz_01 += exp(loghaz);
+          if (!bg_censored_01[i] && w == te1) lp += loghaz;
+        }
+      }
+      lp += -cum_haz_01;
+
+      // --- 0->3 continuous hazard (every week) ---
+      int te3 = bg_censored_03[i] ? n_wk : bg_event_wk_03[i];
+      real cum_haz_03 = 0;
+      for (w in 1:te3) {
+        real tau = w - bw;
+        real g_norm = b0 + b1 * tau + b2 * tau * tau;
+        real lvl_feat = standardize_log_burden(g_norm, log_baseline_burden_bg[i],
+                                                median_log_burden_obs, iqr_log_burden_obs);
+        real vel_feat = standardize_velocity(b1 + 2 * b2 * tau,
+                                              median_velocity_obs, iqr_velocity_obs);
+        real loghaz = base03_static_flat[(i - 1) * n_wk + w] + u03
+                    + tv_coef_03[1] * lvl_feat + tv_coef_03[2] * vel_feat;
+        cum_haz_03 += exp(loghaz);
+        if (!bg_censored_03[i] && w == te3) lp += loghaz;
+      }
+      lp += -cum_haz_03;
+    }
   }
   return lp;
 }
 
-matrix surrogate_K_fn(matrix Sigma_beta, int n_bg) {
-  int d = 2;
+// d=2 SLD-only OVERLOAD: the original signature LFO #includes. Forwards to the
+// parametric body with degenerate (empty/zero) MS inputs => numerically the
+// original quadratic-surrogate SLD likelihood. n_frailty_slots=0 => hazard terms
+// are skipped entirely.
+real surrogate_ll(vector theta,
+                  vector beta_pop,
+                  real measure_sd, data vector log_lod_per_visit,
+                  data int n_bg,
+                  data vector bg_obs,
+                  data array[] int bg_pos,
+                  data array[] int bg_time) {
+  array[0] int empty_i;
+  array[0, 0] int empty_mask;
+  return surrogate_ll(theta, beta_pop, measure_sd, log_lod_per_visit, n_bg,
+                      bg_obs, bg_pos, bg_time,
+                      2, 0, 0,
+                      rep_vector(0.0, 0), rep_vector(0.0, 0), rep_vector(0.0, 0),
+                      rep_vector(0.0, 0), rep_vector(0.0, 0),
+                      1.0, 1.0, 0.0, 1.0,
+                      empty_i, empty_i, empty_i, empty_i, empty_i, empty_mask);
+}
+
+// Parametric K tiler: per-patient block = blockdiag(Sigma_beta[2x2], Sigma_u).
+// Sigma_u is (d-2)x(d-2); for d=2 it is empty and K is the pure burden tiling.
+matrix surrogate_K_fn(matrix Sigma_beta, matrix Sigma_u, int n_bg, data int d) {
   matrix[n_bg * d, n_bg * d] K = rep_matrix(0, n_bg * d, n_bg * d);
+  int nf = d - 2;
   for (i in 1:n_bg) {
     int s = (i - 1) * d + 1;
-    K[s:(s + d - 1), s:(s + d - 1)] = Sigma_beta;
+    K[s:(s + 1), s:(s + 1)] = Sigma_beta;                       // burden block
+    if (nf > 0)
+      K[(s + 2):(s + d - 1), (s + 2):(s + d - 1)] = Sigma_u;    // frailty block
   }
   return K;
+}
+
+// d=2 OVERLOAD (LFO call site): no frailty block.
+matrix surrogate_K_fn(matrix Sigma_beta, int n_bg) {
+  return surrogate_K_fn(Sigma_beta, rep_matrix(0.0, 0, 0), n_bg, 2);
 }
