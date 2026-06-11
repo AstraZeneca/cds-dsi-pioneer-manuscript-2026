@@ -34,6 +34,9 @@ usage() {
     echo "  -l: Enable Laplace marginalization (sets ENABLE_LAPLACE=TRUE)"
     echo "  -k: Skip renv::restore()"
     echo "  -t: Subsample to N patients for testing (sets TEST_PATIENTS env var)"
+    echo "  -E: Set arbitrary env var(s) via Sys.setenv (comma-separated KEY=VALUE pairs,"
+    echo "      e.g. -E 'PUB_SAVE_WARMUP=true,PUB_REFRESH=25'). Reliable on Domino, whose"
+    echo "      launcher mangles shell-prefix env vars."
     echo ""
     echo "Arguments:"
     echo "  PROJECT_NAME: Name of targets project (e.g., sclc, pioneer)"
@@ -55,9 +58,10 @@ skip_restore="FALSE"
 custom_username=""
 enable_laplace="FALSE"
 test_patients=""
+extra_env=""
 
 # Parse command-line options
-while getopts "i:m:r:b:p:u:h:t:sncdvklD" flag; do
+while getopts "i:m:r:b:p:u:h:t:E:sncdvklD" flag; do
     case "${flag}" in
         i) targets=${OPTARG};;
         m) make_targets=${OPTARG};;
@@ -74,6 +78,7 @@ while getopts "i:m:r:b:p:u:h:t:sncdvklD" flag; do
         l) enable_laplace="TRUE";;
         k) skip_restore="TRUE";;
         t) test_patients=${OPTARG};;
+        E) extra_env=${OPTARG};;
         h) usage;;
         *) usage;;
     esac
@@ -176,6 +181,18 @@ fi
 # Set TEST_PATIENTS if provided (subsamples to N patients for fast testing)
 if [ -n "$test_patients" ]; then
     rscript_cmd+=" -e \"Sys.setenv(TEST_PATIENTS = '$test_patients')\""
+fi
+
+# Set arbitrary env vars from -E (comma-separated KEY=VALUE pairs). Injected via
+# Sys.setenv inside the Rscript chain because Domino's launcher mangles shell-prefix
+# env vars (KEY=value cmd) by quoting the assignment token -> "command not found".
+if [ -n "$extra_env" ]; then
+    IFS=',' read -ra ENV_ARRAY <<< "$extra_env"
+    for kv in "${ENV_ARRAY[@]}"; do
+        env_key="${kv%%=*}"
+        env_val="${kv#*=}"
+        rscript_cmd+=" -e \"Sys.setenv($env_key = '$env_val')\""
+    done
 fi
 
 # Add project name if provided
