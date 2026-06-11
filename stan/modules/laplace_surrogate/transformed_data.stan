@@ -134,6 +134,42 @@ if (enable_background_surrogate == 1) {
                   "correlation block for ", surrogate_n_frailty_slots,
                   " frailty slots, found none.");
   }
+
+  // Guard 8: the joint surrogate is currently implemented and validated ONLY for
+  // the d=4 case frailty_slots == {01, 03} (the publication config). The d=3
+  // single-frailty path would index L_ms_intercept_corr[surrogate_frailty_block]
+  // with surrogate_frailty_block==0 (no corr block forms for a single member,
+  // r/multistate.R:556), and an 01-only config would leave 0->3 functor inputs
+  // (log_pop_lambda_03, tv_coef_03) degenerate while the 0->3 loop still runs.
+  // Reject anything but {01,03} rather than silently mis-index/leak; revisit
+  // deliberately when a new config needs it.
+  if (surrogate_n_frailty_slots > 0
+      && !(surrogate_n_frailty_slots == 2
+           && surrogate_frailty_slot[1] == MS_SLOT_01
+           && surrogate_frailty_slot[2] == MS_SLOT_03))
+    fatal_error("enable_background_surrogate=1: the joint surrogate currently ",
+                "supports only frailty_slots == {0->1, 0->3} (d=4). Detected ",
+                surrogate_n_frailty_slots, " frailty slot(s) [",
+                surrogate_frailty_slot[1], ", ", surrogate_frailty_slot[2],
+                "]. Extend + re-validate the functor before enabling other sets.");
+
+  // Guard 9 (review wf_e88e7d91 uncertain item -> hard guard): the surrogate
+  // hazard anchors burden at the BASELINE (last-screening) week, while the forecast
+  // covariate frame anchors at the FIRST visit (states_start_col = 2 - first_visit,
+  // _ms_burden_tv_covar.stan:49). These coincide only when each background patient
+  // has exactly ONE screening visit. The general visit guard only enforces >= 1
+  // (_visit_transformed_data.stan:23), so assert == 1 for background patients to
+  // keep the shared tv_coef applied at matched trajectory points.
+  if (n_background_patients > 0) {
+    for (j in 1:n_background_patients) {
+      int p = background_patient_idx[j];
+      if (n_patient_screening_visits[p] != 1)
+        fatal_error("enable_background_surrogate=1: background patient ", p,
+                    " has ", n_patient_screening_visits[p], " screening visits; ",
+                    "the surrogate requires exactly 1 so its baseline-anchored ",
+                    "burden frame matches the forecast first-visit frame.");
+    }
+  }
 }
 
 vector[enable_background_surrogate == 1 ? n_background_patients * surrogate_d : 0]

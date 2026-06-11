@@ -78,7 +78,7 @@ tuple(vector, matrix) surrogate_bridge(real tr_loc_pop, real frac_logit_pop,
   return (mean_full, S + diag_matrix(rep_vector(jitter, 2)));
 }
 
-// JOINT SLD + multistate(0->1 visit-gated, 0->3 continuous) functor with
+// JOINT SLD + multistate(0->1 visit-gated, 0->3 visit-gated) functor with
 // correlated patient-level frailty. Ported from the validated gate
 // (laplace_joint_frailty_test.stan:51-121). Latents enter RAW; scale lives in K.
 // Burden feature is built via standardize_log_burden() — the SAME helper the
@@ -150,20 +150,29 @@ real surrogate_ll(vector theta,
       }
       lp += -cum_haz_01;
 
-      // --- 0->3 continuous hazard (every week) ---
+      // --- 0->3 VISIT-GATED hazard ---
+      // Production integrates 0->3 only at assessment visit weeks via
+      // sum_at_visits_below (multistate.stanfunctions:458,488,...), NOT continuously
+      // every week — for EVERY patient pattern, regardless of enable_ms_visit_gated_01.
+      // The surrogate must match that frame: gate on the SAME assessment grid as 0->1
+      // (sum_at_visits_below docstring: "Both fire at the same assessment visit
+      // schedule"). cum_haz_03 here = -sum_visits log_cond_surv_03 (per-week log-surv
+      // = -exp(loghaz)), reproducing sum_at_visits_below exactly.
       int te3 = bg_censored_03[i] ? n_wk : bg_event_wk_03[i];
       real cum_haz_03 = 0;
       for (w in 1:te3) {
-        real tau = w - bw;
-        real g_norm = b0 + b1 * tau + b2 * tau * tau;
-        real lvl_feat = standardize_log_burden(g_norm, log_baseline_burden_bg[i],
-                                                median_log_burden_obs, iqr_log_burden_obs);
-        real vel_feat = standardize_velocity(b1 + 2 * b2 * tau,
-                                              median_velocity_obs, iqr_velocity_obs);
-        real loghaz = base03_static_flat[(i - 1) * n_wk + w] + u03
-                    + tv_coef_03[1] * lvl_feat + tv_coef_03[2] * vel_feat;
-        cum_haz_03 += exp(loghaz);
-        if (!bg_censored_03[i] && w == te3) lp += loghaz;
+        if (bg_visit_wk_01[i, w] == 1) {
+          real tau = w - bw;
+          real g_norm = b0 + b1 * tau + b2 * tau * tau;
+          real lvl_feat = standardize_log_burden(g_norm, log_baseline_burden_bg[i],
+                                                  median_log_burden_obs, iqr_log_burden_obs);
+          real vel_feat = standardize_velocity(b1 + 2 * b2 * tau,
+                                                median_velocity_obs, iqr_velocity_obs);
+          real loghaz = base03_static_flat[(i - 1) * n_wk + w] + u03
+                      + tv_coef_03[1] * lvl_feat + tv_coef_03[2] * vel_feat;
+          cum_haz_03 += exp(loghaz);
+          if (!bg_censored_03[i] && w == te3) lp += loghaz;
+        }
       }
       lp += -cum_haz_03;
     }

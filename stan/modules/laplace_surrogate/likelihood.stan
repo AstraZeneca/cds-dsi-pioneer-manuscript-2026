@@ -53,9 +53,13 @@ if (enable_background_surrogate == 1 && n_background_patients > 0) {
       row_vector[surrogate_n_wk] b03 = log_pop_lambda_03;
       for (lv in 1:n_levels) {
         if (lv < n_levels) {  // trial-level baseline residual (patient level is frailty, in theta)
-          if (enable_ms_01)
+          // Gate on ms_legacy_mode like the forecast path (transformed_parameters.stan:90,164):
+          // a level with mode 0 has no residual row and patient_ms_baseline_flat_idx_slot
+          // falls back to 1 (transformed_data.stan:405-406), which would spuriously add
+          // residual[1]. enable_ms_0X alone is insufficient.
+          if (enable_ms_01 && ms_legacy_mode[MS_SLOT_01, lv])
             b01 += log_level_lambda_01_residual[patient_ms_baseline_flat_idx_slot[MS_SLOT_01, p, lv]];
-          if (enable_ms_03)
+          if (enable_ms_03 && ms_legacy_mode[MS_SLOT_03, lv])
             b03 += log_level_lambda_03_residual[patient_ms_baseline_flat_idx_slot[MS_SLOT_03, p, lv]];
         }
       }
