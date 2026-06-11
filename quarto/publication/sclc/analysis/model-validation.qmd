@@ -138,7 +138,8 @@ that information cutoff — earlier panels use fewer patients and carry wider un
 #| fig-height: 5
 
 lfo_cutoff_km <- lfo_tar_read_pattern("lfo_cutoff_km_est")
-plot_km_evolution(lfo_cutoff_km, km_est_var = sample_pfs_km_est)
+target_arms <- grep("lilly_cxcr4", levels(lfo_cutoff_km$trial), value = TRUE)
+plot_km_evolution(lfo_cutoff_km, km_est_var = sample_pfs_km_est, trials = target_arms)
 ```
 
 ### Multistate PFS
@@ -150,7 +151,7 @@ plot_km_evolution(lfo_cutoff_km, km_est_var = sample_pfs_km_est)
 #| fig-height: 5
 
 lfo_tar_read_pattern("lfo_cutoff_km_est") |>
-  plot_km_evolution(km_est_var = sample_ms_pfs_km_est)
+  plot_km_evolution(km_est_var = sample_ms_pfs_km_est, trials = target_arms)
 ```
 
 ### Superpopulation PFS
@@ -162,7 +163,7 @@ lfo_tar_read_pattern("lfo_cutoff_km_est") |>
 #| fig-height: 5
 
 lfo_tar_read_pattern("lfo_cutoff_km_est") |>
-  plot_km_evolution(km_est_var = spop_pfs_km_est)
+  plot_km_evolution(km_est_var = spop_pfs_km_est, trials = target_arms)
 ```
 
 :::
