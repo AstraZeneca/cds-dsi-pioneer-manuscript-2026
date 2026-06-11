@@ -48,6 +48,16 @@ sample_and_save <- function(
 ) {
   sampler_fun <- arg_match(sampler_fun)
 
+  # save_warmup default via env var, resolved HERE (function body) — never in a
+  # tar_target command — so toggling it does NOT enter any target's hash and
+  # cannot force a re-fit (targets hashes a function by its source, not by env
+  # state at call time). An explicit save_warmup= from the caller always wins.
+  # Only applies to the "sample" sampler (pathfinder/variational have no warmup).
+  dots <- list(...)
+  if (identical(sampler_fun, "sample") && is.null(dots[["save_warmup"]])) {
+    dots[["save_warmup"]] <- Sys.getenv("PUB_SAVE_WARMUP", "false") == "true"
+  }
+
   fs::dir_create(output_dir, recurse = TRUE)
 
   # Ensure execute permissions before loading the model. If the binary lacks
@@ -74,11 +84,11 @@ sample_and_save <- function(
       model[[sampler_fun]],
       output_dir = output_dir,
       output_basename = output_basename,
-      ...
+      !!!dots
     )
   } else {
     # fit <- model$sample(...)
-    fit <- exec(model[[sampler_fun]], !!!list(...))
+    fit <- exec(model[[sampler_fun]], !!!dots)
 
     if (!no_save) {
       fit$save_output_files(
