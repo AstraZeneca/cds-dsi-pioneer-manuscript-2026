@@ -253,8 +253,12 @@ generated quantities {
         // Since we only process cutoff-observed patients (cutoff_observed_mask[i] == 1),
         // we can always use the already-calculated sample_ms_pfs from _lfo_endpoints_generated_quantities.stan
         int cutoff_patient_idx = patient_to_cutoff_idx[i];
-        int forecast_ms_pfs = sample_ms_pfs[cutoff_patient_idx];
-        int forecast_ms_censored = sample_ms_right_censored[cutoff_patient_idx];
+        // Confusion-matrix prediction uses PROGRESSION-ONLY PFS (0→1: target-lesion
+        // PD or MS 0→1 hazard). Death (0→2) and dropout (0→3) must NOT stamp PD here
+        // because the observed RECIST axis is scan-only and never records death as PD.
+        // PFS/OS endpoints continue to treat death as an event (unchanged).
+        int forecast_ms_pfs = sample_prog_pfs[cutoff_patient_idx];
+        int forecast_ms_censored = sample_prog_right_censored[cutoff_patient_idx];
 
         if (!forecast_ms_censored) {
           // Multistate PD occurs at week forecast_ms_pfs
