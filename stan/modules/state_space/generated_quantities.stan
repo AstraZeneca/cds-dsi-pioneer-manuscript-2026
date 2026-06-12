@@ -11,6 +11,17 @@ matrix[n_total_forecast_visits, 2] forecast_patient_states;
 vector[n_total_visits] rep_patient_log_obs, rep_mean_patient_log_obs;
 vector[n_total_forecast_visits] forecast_patient_log_obs, forecast_mean_patient_log_obs;
 
+// Per-patient static log-level for the combine function.
+// Flag off OR no static patients -> -inf (static compartment absent).
+// init_log_static_patient is indexed forecast-locally (size n_forecast_patients);
+// map to the unified patient index p via forecast_patient_idx, matching states_full_grid.
+vector[n_patients] static_log_level_per_patient = rep_vector(negative_infinity(), n_patients);
+if (enable_static_init) {
+  for (j in 1:n_forecast_patients) {
+    static_log_level_per_patient[forecast_patient_idx[j]] = init_log_static_patient[j];
+  }
+}
+
 profile("gen_quant_trajectories") {
   if (enable_patient_process_noise_tr) {
     // Process noise ON: Use states_full_grid (dense grid computed in transformed_parameters)
@@ -27,6 +38,7 @@ profile("gen_quant_trajectories") {
         t_patient_visits,
         t_patient_visit_idx,
         baseline_obs_per_patient,
+        static_log_level_per_patient,
         measure_sd_obs,
         n_patient_screening_visits
       );
@@ -72,6 +84,7 @@ profile("gen_quant_trajectories") {
           patient_log_decrease_rate[j, 1],  // forecast-local j
           patient_log_growth_rate[j, 1],    // forecast-local j
           baseline_obs_per_patient[p],      // unified
+          static_log_level_per_patient[p],  // unified static log-level
           negative_infinity(),  // growth lag (disabled)
           1.0,                  // growth transition
           rep_matrix(0.0, forecast_size, 2),  // No forecast process noise

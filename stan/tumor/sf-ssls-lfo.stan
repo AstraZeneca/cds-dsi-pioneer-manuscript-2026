@@ -143,7 +143,18 @@ generated quantities {
   #include "_lfo_endpoints_generated_quantities.stan"
   
   // Sentinel PD+1 not allowed by bound; assert below ensures no leakage
-  array[sum(n_patient_testing_visits)] int<lower = CR, upper = PD> oos_recist = rep_array(PD + 1, sum(n_patient_testing_visits));   
+  array[sum(n_patient_testing_visits)] int<lower = CR, upper = PD> oos_recist = rep_array(PD + 1, sum(n_patient_testing_visits));
+
+  // Per-patient static log-level for the combine function (mirrors the full
+  // model's generated_quantities.stan). Flag off OR no static patients -> -inf.
+  // init_log_static_patient is forecast-local (size n_forecast_patients); map to
+  // the unified patient index via forecast_patient_idx.
+  vector[n_patients] static_log_level_per_patient = rep_vector(negative_infinity(), n_patients);
+  if (enable_static_init) {
+    for (j in 1:n_forecast_patients) {
+      static_log_level_per_patient[forecast_patient_idx[j]] = init_log_static_patient[j];
+    }
+  }
 
   for (i in last_visit_calendar_day_sort_idx[testing_patient_idx[1]:]) {
     int visit_start, visit_screening_end, visit_treat_pos, visit_end;
@@ -210,21 +221,21 @@ generated quantities {
       rep_patient_log_sld[1] = log(sum_tumor_size[visit_start]);
       if (visit_size > 1) {
         rep_patient_log_sld[2:] = to_vector(normal_rng(
-          calc_log_burden_mean(patient_states[2:], sum_tumor_size[visit_start]),
+          calc_log_burden_mean(patient_states[2:], sum_tumor_size[visit_start], static_log_level_per_patient[i]),
           rep_vector(measure_sd_sld, visit_size - 1)
         ));
       }
       
       // Calculate mean log SLD (deterministic, no measurement noise)
       vector[visit_size] rep_mean_patient_log_sld = 
-        calc_log_burden_mean(patient_states, sum_tumor_size[visit_start]);
+        calc_log_burden_mean(patient_states, sum_tumor_size[visit_start], static_log_level_per_patient[i]);
       
       // Calculate forecast SLD with measurement noise
       vector[n_oos_visits] forecast_patient_log_sld = zeros_vector(n_oos_visits);
       vector[n_oos_visits] forecast_mean_patient_log_sld = zeros_vector(n_oos_visits);
       if (n_oos_visits > 0) {
         forecast_mean_patient_log_sld = 
-          calc_log_burden_mean(forecast_patient_states, sum_tumor_size[visit_start]);
+          calc_log_burden_mean(forecast_patient_states, sum_tumor_size[visit_start], static_log_level_per_patient[i]);
         forecast_patient_log_sld = to_vector(normal_rng(
           forecast_mean_patient_log_sld,
           rep_vector(measure_sd_sld, n_oos_visits)
