@@ -233,6 +233,17 @@ publication_targets <- list(
       bridge_variant = "full",
       n_tv_covar     = 2L,   # (level, velocity) basis — see enable_ms_velocity_basis
       enable_trend   = 1L,
+      # MASTER TOGGLE: Laplace background-surrogate marginalization on/off.
+      #   TRUE  → forecast/background split (78 forecast + 419 marginalized via the
+      #           surrogate); forecast_split_level = 1L. The publication production fit.
+      #   FALSE → NO split (forecast_split_level = 0L): all 497 patients fit explicitly
+      #           by the normal hierarchy, exactly the pre-Laplace behavior. GQ/KM remain
+      #           per-trial (aggregate_trial_metrics keys on forecast_trial_patient_pos),
+      #           so each trial still gets its own KM — select trials downstream in R.
+      # This single column drives BOTH enable_background_surrogate (in
+      # default_stan_data_settings) AND forecast_split_level (in all_stan_data), keeping
+      # the two coupled: marginalization off ⟺ no split ⟺ fit everyone.
+      enable_surrogate = TRUE,
       # COLD START for the surrogate run: enabling enable_background_surrogate
       # marginalizes the 419 backgrounded patients' NCP latents, SHRINKING the
       # sampled parameter space. The saved inv-metric (data/inv_metric_publication
@@ -252,11 +263,15 @@ publication_targets <- list(
         km_quant,
         extend_max_all_t = 200L,
         forecast_observation_interval = 6L,
-        # Forecast/background split: target trial lilly_cxcr4 (factor level 1) is
-        # forecast (full bi-exponential); historical amgen_darbe (level 2) is
-        # backgrounded and marginalized via the Laplace surrogate. forecast_group
-        # is the integer factor level of the forecast (target) trial.
-        forecast_split_level = 1L,
+        # Forecast/background split, driven by the enable_surrogate master toggle:
+        #   surrogate ON  → forecast_split_level = 1L: target trial lilly_cxcr4
+        #     (factor level 1) is forecast (full bi-exponential); historical
+        #     amgen_darbe (level 2) is backgrounded and marginalized via the Laplace
+        #     surrogate. forecast_group is the integer factor level of the target trial.
+        #   surrogate OFF → forecast_split_level = 0L: no split, all 497 patients are
+        #     forecast and fit explicitly (pre-Laplace behavior). forecast_group is
+        #     inert when the split level is 0 but kept valid.
+        forecast_split_level = if (enable_surrogate) 1L else 0L,
         forecast_group = 1L
       ) |>
         list_assign(n_time_varying_covar = n_tv_covar),
@@ -278,9 +293,13 @@ publication_targets <- list(
         ms_time_scale_12 = 1L,
 
         # Marginalize the backgrounded historical trial (amgen_darbe) via the
-        # log-concave quadratic Laplace surrogate. Anchors (weeks) span the
-        # historical visit window (0-36, median 12); first anchor MUST be 0.
-        enable_background_surrogate = 1L,
+        # log-concave quadratic Laplace surrogate, driven by the enable_surrogate
+        # master toggle (coupled with forecast_split_level in all_stan_data). When
+        # OFF, the 419 are fit explicitly instead of marginalized. Anchors (weeks)
+        # span the historical visit window (0-36, median 12); first anchor MUST be 0.
+        # The anchors are inert when enable_background_surrogate = 0 (the surrogate
+        # transformed_data block is gated on the flag).
+        enable_background_surrogate = if (enable_surrogate) 1L else 0L,
         surrogate_anchor_times = c(0, 12, 28),
 
         # Legacy baseline-hazard mode (per level, 0-4). Kept here as the
