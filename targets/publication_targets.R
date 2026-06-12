@@ -29,6 +29,31 @@ controller_default <- crew_controller_local(name = "default", workers = 4)
 controller_fit <- crew_controller_local(name = "fit", workers = 4)
 controller_many_samples <- crew_controller_local(name = "many samples", workers = 32)
 
+lfo_workers <- as.integer(Sys.getenv("LFO_WORKERS", 24))
+controller_lfo <- crew_controller_local(name = "lfo", workers = lfo_workers,
+  seconds_launch = 120)
+
+lfo_groups <- Sys.getenv("LFO_GROUPS", 24)
+lfo_save_warmup <- Sys.getenv("LFO_SAVE_WARMUP", "false") == "true"
+
+# Cold start: when LFO_COLD_START=true, the SCLC LFO target ignores the saved
+# warm-start inv_metric files and lets each chain adapt its own mass matrix from
+# scratch. Required after any change to the tumor-model parameter space (e.g. the
+# always-on arm-level RE), which makes the old metric files dimension-mismatched.
+lfo_cold_start <- Sys.getenv("LFO_COLD_START", "false") == "true"
+
+# GQ-only rerun: when LFO_GQ_ONLY=true, the LFO target re-executes only the
+# generated-quantities block against the prior run's sample draws (no warmup /
+# sampling). Source draws are read from LFO_GQ_SOURCE_PATH (defaults to the
+# current store's output path). Used to cheaply refresh GQ output after a
+# GQ-block code change (e.g. the target-trial OOS filter).
+lfo_gq_only <- Sys.getenv("LFO_GQ_ONLY", "false") == "true"
+lfo_gq_source_path <- {
+  p <- Sys.getenv("LFO_GQ_SOURCE_PATH", "")
+  if (nzchar(p)) p else NULL
+}
+
+
 tar_option_set(
   packages = c(
     "magrittr",
@@ -46,7 +71,8 @@ tar_option_set(
   controller = crew_controller_group(
     controller_default,
     controller_fit,
-    controller_many_samples
+    controller_many_samples,
+    controller_lfo
   ),
   resources = tar_resources(crew = tar_resources_crew(controller = "default")),
   memory = "transient",
@@ -72,9 +98,9 @@ covar_formula_sclc <- ~ age + male + ecog + hgb + ldh_log + albumin
 covar_formula_crc <- ~ age + male + hgb + ldh_log + albumin
 
 disease_map <- tibble::tribble(
-  ~disease, ~disease_data_path,                    ~covar_formula,     ~trial_re,
-  "sclc",   publication_data_path,                  covar_formula_sclc, FALSE,
-  "crc",    file.path(publication_data_path, "crc"), covar_formula_crc,  FALSE
+  ~disease, ~disease_data_path,                    ~covar_formula,
+  "sclc",   publication_data_path,                  covar_formula_sclc,
+  "crc",    file.path(publication_data_path, "crc"), covar_formula_crc
 )
 
 # Warm-start metric files for the posterior fit. Each disease needs its own
@@ -87,10 +113,16 @@ disease_map <- tibble::tribble(
 #       the first successful CRC posterior run with enable_ms_baseline_trend_01=1.
 #
 # Set to NULL → cold start (iter_warmup guard uses max(iter_warmup, 300L)).
+#
+# LFO metric files (separate from posterior): one inv_metric per group × chain.
+# SCLC: data/inv_metric_lfo_sclc_group{N}_chain{C}.json (job #1894, 5242 params,
+#        28 groups × 4 chains = 112 files, all from run 202606091946). STALE after
+#        the always-on arm-level RE change (4692c282) grew the parameter space —
+#        set LFO_COLD_START=true to skip them and regenerate via save_metric=TRUE.
+# CRC:  no files yet — lfo() passes metric_file = NULL for crc → cold start.
 publication_metric_files <- NULL
 
 publication_targets <- list(
-
   # Track initializer file so changes invalidate the initializer targets
   tar_target(
     initializers_fixed_file,
@@ -115,6 +147,31 @@ publication_targets <- list(
     build_model_exe_hash(
       tumor_ssls_model_file,
       tumor_ssls_include_files,
+      publication_artifacts_path,
+      include_paths = c(here("stan"), here("stan", "tumor"))
+    ),
+    error = "stop",
+    cue = tar_cue("always")
+  ),
+
+  # LFO model (shared across diseases) — same Stan source for sclc and crc.
+  tar_target(lfo_step, 30L),
+
+  tar_target(
+    lfo_tumor_ssls_model_file,
+    here("stan", "tumor", "sf-ssls-lfo.stan"),
+    format = "file"
+  ),
+  tar_target(
+    lfo_tumor_ssls_include_files,
+    find_stan_includes(lfo_tumor_ssls_model_file),
+    format = "file"
+  ),
+  tar_target(
+    lfo_tumor_ssls_exe_hash,
+    build_model_exe_hash(
+      lfo_tumor_ssls_model_file,
+      lfo_tumor_ssls_include_files,
       publication_artifacts_path,
       include_paths = c(here("stan"), here("stan", "tumor"))
     ),
@@ -263,7 +320,7 @@ publication_targets <- list(
         # point via decompose_ms_level_baseline_hazard(). corr_group stays all-zero
         # in Phase 1, so the decomposed config reproduces this legacy flag
         # bit-identically.
-        enable_ms_level_baseline_hazard = c(trial = 3L, patient = 0L),
+        enable_ms_level_baseline_hazard = c(trial_arm = 3L, patient = 0L),
 
         # 0->1 baseline log-time trend (Fix A, 2026-06-05). A monotone log(t)
         # slope is added as a sibling term to the population 0->1 baseline
@@ -273,7 +330,7 @@ publication_targets <- list(
 
         enable_ms_pop_time_varying_cov = TRUE,
         enable_ms_pop_time_invariant_cov = TRUE,
-        enable_ms_level_cov = c(trial = FALSE, patient = FALSE),
+        enable_ms_level_cov = c(trial_arm = FALSE, patient = FALSE),
         # Latent visit-gated 0->1: hazard contributions only at observed visit
         # weeks, but the time-varying covariates (log SLD, log decrease rate,
         # log growth rate) come from the modeled state-space trajectory rather
@@ -306,10 +363,10 @@ publication_targets <- list(
         entry_covar_32 = numeric(0),
 
         enable_level_intercept_tr = c(
-          trial   = level_intercept_mode[if (trial_re) "re" else "none"],
-          patient = level_intercept_mode["re"]
+          trial_arm = level_intercept_mode["re"],
+          patient   = level_intercept_mode["re"]
         ),
-        enable_level_cov_tr = c(trial = FALSE, patient = FALSE),
+        enable_level_cov_tr = c(trial_arm = FALSE, patient = FALSE),
         enable_pop_cov_tr = FALSE,
         enable_pop_process_noise_tr = FALSE,
         enable_patient_process_noise_tr = FALSE,
@@ -317,17 +374,17 @@ publication_targets <- list(
         enable_patient_process_noise_phi_tr = FALSE,
 
         enable_level_intercept_frac = c(
-          trial   = level_intercept_mode[if (trial_re) "re" else "none"],
-          patient = level_intercept_mode["re"]
+          trial_arm = level_intercept_mode["re"],
+          patient   = level_intercept_mode["re"]
         ),
-        enable_level_cov_frac = c(trial = FALSE, patient = FALSE),
+        enable_level_cov_frac = c(trial_arm = FALSE, patient = FALSE),
         enable_pop_cov_frac = TRUE,
 
         enable_level_intercept_init = c(
-          trial   = level_intercept_mode[if (trial_re) "re" else "none"],
-          patient = level_intercept_mode["re"]
+          trial_arm = level_intercept_mode["re"],
+          patient   = level_intercept_mode["re"]
         ),
-        enable_level_cov_init = c(trial = FALSE, patient = FALSE),
+        enable_level_cov_init = c(trial_arm = FALSE, patient = FALSE),
         enable_pop_cov_init = TRUE,
 
         pfs_timepoints = pfs_timepoints_pub$timepoint,
@@ -382,7 +439,11 @@ publication_targets <- list(
         decomposed$ms_level_intercept_corr_group[MS_SLOT_01, patient_lv] <- 1L
         decomposed$ms_level_intercept_corr_group[MS_SLOT_03, patient_lv] <- 1L
 
-        c(assembled, decomposed)
+        # lfo_eval_trial: index of the held-out evaluation (target) trial within
+        # this disease's own patient set. Trial 1 is the target trial in both
+        # diseases. Consumed only by sf-ssls-lfo.stan's _lfo_transformed_data.stan;
+        # the regular sf-ssm-log-space.stan fit ignores it.
+        c(assembled, decomposed, list(lfo_eval_trial = 1L))
       }
     ),
 
@@ -580,7 +641,7 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_km_rvar,
         tumor_ssls_draws_endpoints |>
-          posterior::subset_draws(variable = "^(sample|spop).*_km_est") |>
+          posterior::subset_draws(variable = "^(sample|spop).*_km_est", regex = TRUE) |>
           recover_types(select(all_analysis_data, trial = group)) |>
           spread_rvars(
             sample_target_km_est[trial, t],
@@ -596,7 +657,7 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_km_os_rvar,
         tumor_ssls_draws_endpoints |>
-          posterior::subset_draws(variable = "^(sample|spop)_os_km_est") |>
+          posterior::subset_draws(variable = "^(sample|spop)_os_km_est", regex = TRUE) |>
           recover_types(select(all_analysis_data, trial = group)) |>
           spread_rvars(
             sample_os_km_est[trial, t],
@@ -608,7 +669,7 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_trial_pfs_quant,
         tumor_ssls_draws_endpoints |>
-          posterior::subset_draws(variable = "^(sample|spop).*_pfs_quant\\[") |>
+          posterior::subset_draws(variable = "^(sample|spop).*_pfs_quant\\[", regex = TRUE) |>
           recover_types(select(all_analysis_data, trial = group)) |>
           spread_rvars(
             sample_target_pfs_quant[trial, q],
@@ -628,7 +689,7 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_orr_rvar,
         tumor_ssls_draws_endpoints |>
-          posterior::subset_draws(variable = "^(sample|spop)_target_orr") |>
+          posterior::subset_draws(variable = "^(sample|spop)_target_orr", regex = TRUE) |>
           recover_types(select(all_analysis_data, trial = group)) |>
           spread_rvars(
             sample_target_orr[trial],
@@ -640,7 +701,7 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_forecast_target_pfs_n_rvar,
         tumor_ssls_draws_endpoints |>
-          posterior::subset_draws(variable = "^(sample|spop).*_(pfs|os)_n\\[") |>
+          posterior::subset_draws(variable = "^(sample|spop).*_(pfs|os)_n\\[", regex = TRUE) |>
           recover_types(select(all_analysis_data, trial = group)) |>
           spread_rvars(
             sample_target_pfs_n[trial, n],
@@ -860,7 +921,151 @@ publication_targets <- list(
         tumor_ssls_decrease_prop_bpi_patient_prior,
         tumor_ssls_decrease_prop_bpi_patient_posterior
       )
+    ),
+
+    # LFO cross-validation -------------------------------------------------------
+    # Per-disease: each disease holds out its own target trial (trial index 1)
+    # and forecasts future visits. base_tumor_ssls_stan_data carries the
+    # disease-specific lfo_eval_trial = 1L. Fit output lands in the disease's
+    # own LFO store (lfo / lfo_crc), wired via the _disease suffix below.
+
+    tar_target(
+      lfo_cutoffs,
+      get_lfo_cutoffs(
+        all_analysis_data,
+        lfo_step,
+        target_trial = levels(all_analysis_data$trial)[1]
+      )
+    ),
+
+    tar_target(
+      cutoff_all_analysis_data,
+      apply_calendar_cutoff(
+        all_analysis_data,
+        lfo_cutoffs$cutoff_calendar_day,
+        require_post_baseline = TRUE
+      ) |>
+        mutate(cutoff_calendar_day = lfo_cutoffs$cutoff_calendar_day),
+      pattern = map(lfo_cutoffs),
+      iteration = "list"
+    ),
+
+    tar_group_count(grouped_lfo_cutoffs, lfo_cutoffs, lfo_groups),
+
+    tar_target(
+      tumor_ssls_lfo,
+      lfo(
+        base_tumor_ssls_stan_data,
+        lfo_tumor_ssls_exe_hash$exe_file,
+        grouped_lfo_cutoffs,
+        lfo_cutoffs,
+        publication_output_path,
+        str_c("lfo_tumor_ssls_", disease),
+        NULL,
+        fit_output_timestamp,
+        verbose = TRUE,
+        fit_only = FALSE,
+        exact = TRUE,
+        iter_warmup = 500,
+        iter_sampling = 500,
+        save_warmup = lfo_save_warmup,
+        save_metric = TRUE,
+        parallel_chains = 4,
+        adapt_delta = 0.8,
+        threads_per_chain = base_tumor_ssls_stan_data$n_shards,
+        future_window = 2,
+        initializer_factory = function(stan_data, save_dir, run_id) {
+          source(initializers_fixed_file)
+          create_tumor_ssls_initializer_fixed(stan_data, save_dir, run_id)
+        },
+        gq_only = lfo_gq_only,
+        gq_source_path = lfo_gq_source_path,
+        metric_file = if (disease == "sclc" && !lfo_cold_start) {
+          n <- min(grouped_lfo_cutoffs$n)
+          sprintf("data/inv_metric_lfo_sclc_group%d_chain%d.json", n, 1:4)
+        } else NULL
+      ),
+      resources = tar_resources(crew = tar_resources_crew(controller = "lfo")),
+      pattern = map(grouped_lfo_cutoffs)
+    ),
+
+    tar_target(
+      tumor_ssls_lfo_clean,
+      clean_lfo_results(tumor_ssls_lfo) |>
+        select(refit_n, n, m, starts_with("E_"), fit) |>
+        left_join(lfo_cutoffs, by = "n")
+    ),
+
+    tar_target(
+      tumor_ssls_lfo_clean_lite,
+      select(tumor_ssls_lfo_clean, !fit)
+    ),
+
+    tar_target(
+      full_oos_confusion_matrix,
+      get_oos_confusion_marix(
+        tumor_ssls_lfo_clean,
+        recover_data = all_analysis_data |>
+          select(trial, visit_data) |>
+          unnest(visit_data) |>
+          transmute(trial, response, pred_response = response)
+      ),
+      pattern = map(tumor_ssls_lfo_clean)
+    ),
+
+    tar_target(
+      oos_confusion_matrix,
+      full_oos_confusion_matrix |>
+        group_by(n, m, response) |>
+        mutate(
+          total = rvar_sum(oos_recist_confusion_matrix),
+          prop  = oos_recist_confusion_matrix / total
+        ) |>
+        group_by(response, pred_response) |>
+        summarize(
+          count     = rvar_sum(oos_recist_confusion_matrix),
+          mean_pred = rvar_weighted_mean(prop, w),
+          cell_size = n(),
+          .groups   = "drop"
+        ) |>
+        mutate(se = sd(mean_pred) / sqrt(cell_size))
+    ),
+
+    # LFO KM evolution at three evenly-distributed cutoffs ----------------------
+
+    tar_target(
+      lfo_km_cutoffs,
+      {
+        max_n <- max(lfo_cutoffs$n_target_observed)
+        targets <- max_n * c(0.10, 0.50, 0.90)
+        map_int(targets, \(tgt) which.min(abs(lfo_cutoffs$n_target_observed - tgt))) |>
+          unique() |>
+          (\(idx) lfo_cutoffs[idx, ])()
+      }
+    ),
+
+    tar_target(
+      lfo_cutoff_km_est,
+      tumor_ssls_lfo_clean |>
+        filter(n == lfo_km_cutoffs$n) |>
+        reframe(
+          refit_n,
+          n,
+          cutoff_date,
+          cutoff_calendar_day,
+          n_target_observed,
+          select_draws(fit[[1]], matches("^(sample|spop)_(ms_)?pfs_km_est$")) |>
+            recover_types(select(all_analysis_data, trial = group)) |>
+            spread_rvars(
+              sample_pfs_km_est[trial, t],
+              spop_pfs_km_est[trial, t],
+              sample_ms_pfs_km_est[trial, t],
+              spop_ms_pfs_km_est[trial, t]
+            )
+        ),
+      pattern = map(lfo_km_cutoffs)
     )
+
   )
 )
 

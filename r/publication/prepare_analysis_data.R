@@ -89,6 +89,11 @@ prepare_publication_analysis_data <- function(
       )),
       # Adjust pfs upward by interval_censored for event patients (match sclc logic)
       pfs = if_else(!right_censored, pfs + interval_censored + 1L, pfs),
+      # Lift per-patient ady onto the shared absolute calendar-day scale,
+      # needed by apply_calendar_cutoff / get_lfo_cutoffs
+      visit_data = map2(visit_data, calendar_day, \(d, trt_cal_day) {
+        mutate(d, visit_calendar_day = trt_cal_day + ady - 1L)
+      }),
     ) |>
     (\(d) {
       d$ms_pattern <- classify_ms_patients(d)

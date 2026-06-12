@@ -1,6 +1,8 @@
 ---
 title: "Sampling Diagnostics"
 subtitle: "MCMC convergence and sampling quality assessment"
+execute:
+  freeze: true
 ---
 
 ```{r}
