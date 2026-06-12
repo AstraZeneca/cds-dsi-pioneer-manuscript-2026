@@ -10,7 +10,7 @@
 # Three layers must agree on the length: the Stan parameter declaration in
 # stan/modules/multistate/parameters.stan, the prior generator in
 # r/priors.R::get_multistate_priors, and the initializer in
-# r/sclc/initializers_fixed.R / r/initializers_ms.R. Any mismatch
+# r/initializers_fixed.R / r/initializers_ms.R. Any mismatch
 # triggers a "dims declared=(N); dims found=(M)" error from Stan at sample
 # time. These tests pin the R-side contracts so that the cheap failure
 # happens here rather than after a recompile + sample.
@@ -113,7 +113,7 @@ minimal_ms_stan_data <- function(visit_gated_01, visit_gated_latent_01,
 }
 
 test_that("ms_init_values_fixed: continuous mode init has length n_time_varying_covar", {
-  source(here::here("r", "sclc", "initializers_fixed.R"))
+  source(here::here("r", "initializers_fixed.R"))
   env <- minimal_ms_stan_data(visit_gated_01 = 0L, visit_gated_latent_01 = 0L,
                               n_time_varying_covar = 3L)
   init <- ms_init_values_fixed(env)
@@ -121,7 +121,7 @@ test_that("ms_init_values_fixed: continuous mode init has length n_time_varying_
 })
 
 test_that("ms_init_values_fixed: latent visit-gated init has length n_time_varying_covar", {
-  source(here::here("r", "sclc", "initializers_fixed.R"))
+  source(here::here("r", "initializers_fixed.R"))
   env <- minimal_ms_stan_data(visit_gated_01 = 1L, visit_gated_latent_01 = 1L,
                               n_time_varying_covar = 3L)
   init <- ms_init_values_fixed(env)
@@ -129,7 +129,7 @@ test_that("ms_init_values_fixed: latent visit-gated init has length n_time_varyi
 })
 
 test_that("ms_init_values_fixed: observed visit-gated init has length 1", {
-  source(here::here("r", "sclc", "initializers_fixed.R"))
+  source(here::here("r", "initializers_fixed.R"))
   env <- minimal_ms_stan_data(visit_gated_01 = 1L, visit_gated_latent_01 = 0L,
                               n_time_varying_covar = 3L)
   init <- ms_init_values_fixed(env)
