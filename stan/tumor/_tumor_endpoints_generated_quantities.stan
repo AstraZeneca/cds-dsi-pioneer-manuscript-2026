@@ -22,6 +22,9 @@ array[n_forecast_patients] int<lower = 0, upper = 1> sample_os_censored, spop_os
 // Dropout flags — 1 if patient exited via cause 3 in this draw (for CIF computation)
 array[n_patients] int<lower = 0, upper = 1> spop_is_dropout, sample_is_dropout;
 
+// Throwaway variables for progression-only PFS (not used in full tumor model)
+array[n_forecast_patients] int ignore_sample_prog_pfs, ignore_sample_prog_right_censored;
+
 // Forecasting for right censored patients 
 array[sum(target_right_censored)] int<lower = 0> forecast_target_pfs;
 array[sum(target_right_censored)] int<lower = 0, upper = 1> forecast_target_right_censored; 
@@ -231,7 +234,8 @@ profile("gen_quant") {
    forecast_target_pfs, forecast_target_right_censored,
    sample_os, sample_os_censored,
    spop_os, spop_os_censored,
-   spop_is_dropout, sample_is_dropout
+   spop_is_dropout, sample_is_dropout,
+   ignore_sample_prog_pfs, ignore_sample_prog_right_censored
   ) = calculate_all_patients_endpoints_rng(
     forecast_patient_idx,
     recist,

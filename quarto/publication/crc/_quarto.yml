@@ -35,6 +35,8 @@ website:
             href: analysis/patient-dynamics.qmd
           - text: "---"
           - text: Validation
+          - text: Model Validation
+            href: analysis/model-validation.qmd
           - text: Diagnostics
             href: analysis/diagnostics.qmd
     right:
@@ -62,6 +64,7 @@ website:
             - analysis/patient-dynamics.qmd
         - section: "Validation"
           contents:
+            - analysis/model-validation.qmd
             - analysis/diagnostics.qmd
   page-navigation: true
   search:

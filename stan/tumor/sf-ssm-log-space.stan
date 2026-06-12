@@ -214,6 +214,7 @@ generated quantities {
   array[n_forecast_patients] int<lower = 0, upper = 1> sample_os_censored, spop_os_censored;
   array[n_patients] int<lower = 0, upper = 1> spop_is_dropout, sample_is_dropout;
   array[n_forecast_patients] int<lower = 0> spop_dropout_week;
+  array[n_forecast_patients] int ignore_sample_prog_pfs, ignore_sample_prog_right_censored;
   array[sum(target_right_censored)] int<lower = 0> forecast_target_pfs;
   array[sum(target_right_censored)] int<lower = 0, upper = 1> forecast_target_right_censored;
   array[n_forecast_patients] int<lower = 0, upper = 1> sample_target_confirmed_response, spop_target_confirmed_response;

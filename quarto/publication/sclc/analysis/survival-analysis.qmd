@@ -1,6 +1,8 @@
 ---
 title: "Survival Analysis"
 subtitle: "Kaplan-Meier forecasts and observed PFS"
+execute:
+  freeze: true
 ---
 
 ```{r}
