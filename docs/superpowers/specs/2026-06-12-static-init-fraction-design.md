@@ -85,32 +85,50 @@ The model has a **single combine funnel**: every observation, replication, and f
 SLD through `calc_log_burden_mean` (`stan/modules/state_space/sf.stanfunctions:187`). The two
 components are never combined anywhere else. This makes the change isolated and flag-gated.
 
-### A. Combine function — `calc_log_burden_mean` (arity-polymorphic)
+### A. Combine function — `calc_log_burden_mean` (extra scalar argument)
 
-`stan/modules/state_space/sf.stanfunctions:187`. Today asserts `cols == 2` and does a 2-arg
-`log_sum_exp`. Make it handle 2 OR 3 columns, discriminating on column count:
+`stan/modules/state_space/sf.stanfunctions:187`. The static compartment is **constant in
+log-space** (rate ≡ 0), so it never needs to be a propagating state column — it is just one
+extra constant term inside the existing `log_sum_exp`. Add an optional per-patient scalar
+`static_log_level` (= `log(π_static)`, in the same log-proportion units as the state columns,
+before `log(baseline)` is added), defaulting to `negative_infinity()`:
 
 ```stan
-// 2 cols → decrease/growth (static absent); 3 cols → decrease/static/growth.
-// Stan's log_sum_exp accepts a row_vector, so the 3-way case reduces each row:
-//   for (v in 1:rows(patient_states)) out[v] = log_sum_exp(patient_states[v]);
-// The 2-way path keeps the existing vectorized 2-arg form for performance.
+// Old (preserved exactly via overload with static_log_level = negative_infinity()):
+//   log_sum_exp(state[,1], state[,2]) + log(baseline)
+// New (3-way): add the constant static level elementwise inside the log_sum_exp.
+vector calc_log_burden_mean(matrix patient_states, real baseline, real static_log_level) {
+  assert_equal(cols(patient_states), 2);
+  vector[rows(patient_states)] lse2 =
+    to_vector(log_sum_exp(patient_states[, 1], patient_states[, 2]));
+  return log_sum_exp(lse2, rep_vector(static_log_level, rows(patient_states))) + log(baseline);
+}
+// Backward-compat overload — byte-for-byte the current behavior:
+vector calc_log_burden_mean(matrix patient_states, real baseline) {
+  return calc_log_burden_mean(patient_states, baseline, negative_infinity());
+}
 ```
 
-The exact reduction (per-row loop vs. a vectorized helper) is an implementation detail for the
-plan; what the spec fixes is that the function discriminates on `cols(patient_states)` and the
-2-column branch is byte-for-byte the current code. This is not a backward-compat alias — it is
-one function genuinely handling both shapes. PSA / pioneer and any model with the static
-compartment disabled keep passing a 2-column matrix and hit the identical old path.
+Because `exp(-∞) = 0`, `log_sum_exp(lse2, -∞) = lse2` identically — so the 2-component model is
+recovered **exactly** when `static_log_level = negative_infinity()`. The state array stays
+`array[2]` everywhere; propagation, Kalman, and forecast helpers are untouched. PSA / pioneer
+and any model with the static compartment disabled call the 2-arg overload and are unaffected.
 
-### B. State array — `states_full_grid` (2 → 3 slices)
+### B. Threading the static scalar to the call sites
 
-`stan/modules/state_space/transformed_parameters.stan:59`. Change
-`array[2] matrix[...]` to `array[enable_static_init ? 3 : 2] matrix[...]`. The static slice
-(index 3) is filled with `init_log_static_patient` broadcast across all time columns — constant,
-no rate, no cumsum. The four existing process-noise branches are **untouched** for components 1
-and 2; the constant third slice is appended once, outside the branching. The per-patient
-`states` matrix used by the observation model gains a third column when the flag is on.
+The per-patient static log-level `init_log_static_patient[p]` (= `log(π_static)`) is passed to
+`calc_log_burden_mean` at each call site, traveling the same path as the already-in-scope
+`baseline_obs_value` / `baseline_obs_per_patient[p]`. Call sites (all in
+`stan/modules/state_space/sf.stanfunctions` unless noted):
+
+- `:870`, `:889` — replication / forecast RNG (uses `baseline_obs_value`)
+- `:1009`, `:1013` — mean log obs (uses `baseline_obs_value`)
+- `:1128`, `:1135`, `:1142` — per-patient replication / forecast (uses `baseline_obs_per_patient[p]`)
+- `stan/tumor/sf-ssls-lfo.stan:213,220,227` — LFO model call sites
+
+When `enable_static_init = 0`, `init_log_static_patient` has size 0 and call sites pass
+`negative_infinity()` (or call the 2-arg overload) — exact 2-way recovery. The
+`states_full_grid` array and per-patient `patient_states` matrices stay 2-column throughout.
 
 ### C. `init` module (8-step "Adding Module Parameters" checklist)
 
