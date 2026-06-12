@@ -1,4 +1,4 @@
-pub_disease_suffix <- ""      # blank: SCLC store predates tar_map disease suffix
+pub_disease_suffix <- "sclc"
 lfo_disease_suffix <- "sclc"  # LFO targets live inside the disease map → always suffixed
 
 here::i_am("quarto/publication/sclc/_setup.R")
