@@ -242,6 +242,10 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
   # Initial proportion logit
   init_logit_loc_pop_mean <- 0.0 # formerly pop_decrease_prop_logis_mean
   init_logit_loc_pop_sd <- 0.8 # tightened from 1.5 (was extremely wide!)
+  # Static-vs-growth split prior. Centered so static is a modest minority of the
+  # non-decreasing fraction at baseline; weakly informative.
+  init_logit_static_loc_pop_mean <- -0.85  # inv_logit(-0.85) ~ 0.30 of the "rest"
+  init_logit_static_loc_pop_sd <- 0.8
 
   # Get n_levels from stan_data (default 2 for backward compat)
   n_levels <- stan_data$n_levels %||% 2L
@@ -346,6 +350,8 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     # Initial state proportion module hyperparams (multi-level): c(trial, patient)
     init_logit_loc_pop_mean = init_logit_loc_pop_mean,
     init_logit_loc_pop_sd = init_logit_loc_pop_sd,
+    init_logit_static_loc_pop_mean = init_logit_static_loc_pop_mean,
+    init_logit_static_loc_pop_sd = init_logit_static_loc_pop_sd,
     init_sd_level_intercept_sd = c(0.6, 0.5),
     init_fe_sd_level_intercept = rep(0, n_levels),
     init_nu_level_prior_alpha = rep(2, n_levels),

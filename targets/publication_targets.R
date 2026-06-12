@@ -386,6 +386,7 @@ publication_targets <- list(
         ),
         enable_level_cov_init = c(trial_arm = FALSE, patient = FALSE),
         enable_pop_cov_init = TRUE,
+        enable_static_init = 0L,  # static compartment OFF by default; flip to 1L per variant
 
         pfs_timepoints = pfs_timepoints_pub$timepoint,
         n_pfs_timepoints = nrow(pfs_timepoints_pub),
