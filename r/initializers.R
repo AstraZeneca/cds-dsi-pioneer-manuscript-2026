@@ -222,6 +222,14 @@ create_tumor_ss_initializer <- function(stan_data) {
     init_vals$tr_sd_patient_intercept <- tr_sd_patient_intercept
     init_vals$frac_sd_patient_intercept <- frac_sd_patient_intercept
 
+    if (isTRUE(stan_data$enable_static_init == 1L)) {
+      init_vals$init_logit_static_loc_pop <- as.array(rnorm(
+        1,
+        stan_data$init_logit_static_loc_pop_mean,
+        stan_data$init_logit_static_loc_pop_sd
+      ))
+    }
+
   if (!stan_data$enable_pop_cov_tr) {
       init_vals$tr_raw_patient_intercept <- rep(0, n_patients)
       init_vals$frac_raw_patient_intercept <- rep(0, n_patients)
