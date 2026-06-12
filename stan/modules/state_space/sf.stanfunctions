@@ -292,6 +292,31 @@ tuple(matrix, matrix) sf_log_space_trajectory_ncp(
 }
 
 /**
+ * Trajectory NCP variant taking a precomputed per-visit time_varying_factor (Gompertz
+ * decay weight on the GROWTH rate only). decrease_rate is unscaled. With factor==1 this
+ * is identical to the disabled-lag path; with factor = exact phi-difference/dt the growth
+ * increments telescope to growth_rate*(phi(t)-phi(t')).
+ */
+tuple(matrix, matrix) sf_log_space_trajectory_ncp_decay(
+  row_vector x0, array[] real times,
+  real decrease_rate, real growth_rate,
+  vector time_varying_factor,
+  matrix process_noise, int debug
+) {
+  int T = size(times);
+  matrix[T, 2] x;
+  matrix[T, 2] expected_x;
+  x[1] = x0;
+  expected_x[1] = x0;
+  for (t in 2:T) {
+    (expected_x[t], x[t]) = sf_log_space_transition_ncp(
+      x[t - 1], times[t], times[t - 1],
+      decrease_rate, time_varying_factor[t] * growth_rate, process_noise[t - 1]);
+  }
+  return (expected_x, x);
+}
+
+/**
  * Vectorized version using cumulative sum instead of sequential loop
  * Should be mathematically equivalent but faster due to vectorization
  */
@@ -928,6 +953,63 @@ tuple(
   return (forecast_states[2:], rep_log_obs, forecast_log_obs);
 }
 
+/**
+ * Decay variant of generate_patient_states_rng: replaces (forecast_growth_lag,
+ * forecast_growth_transition) with a precomputed forecast_tv_factor (Gompertz decay
+ * weight on the GROWTH rate only) and calls sf_log_space_trajectory_ncp_decay.
+ * decrease arm is untouched. Returned tuple type unchanged.
+ */
+tuple(
+  matrix,  // forecast_patient_states for this patient
+  vector,  // rep_patient_log_obs for this patient
+  vector   // forecast_patient_log_obs for this patient
+) generate_patient_states_decay_rng(
+  matrix patient_states,              // states for this patient's visits
+  array[] real forecast_time,         // forecast time points (should be real, not int)
+  real patient_log_decrease_rate,     // patient_log_decrease_rate (TIME-INVARIANT)
+  real patient_log_growth_rate,       // patient_log_growth_rate (TIME-INVARIANT)
+  real baseline_obs_value,            // baseline observation value
+  real static_log_level,              // log(pi_static); negative_infinity() disables
+  // Forecast configuration parameters
+  vector forecast_tv_factor,          // Gompertz decay weight on growth rate (per visit)
+  matrix forecast_process_noise,      // process noise for forecast (was generated internally)
+  // Global parameters
+  real measure_sd
+) {
+  int n_patient_visits = rows(patient_states);
+  // Calculate replicated observations for observed visits
+  vector[n_patient_visits] rep_log_obs = zeros_vector(n_patient_visits);
+
+  // First visit uses baseline measurement
+  rep_log_obs[1] = log(baseline_obs_value);
+
+  // Subsequent visits are generated from states with measurement noise
+  if (n_patient_visits > 1) {
+    rep_log_obs[2:] = to_vector(normal_rng(calc_log_burden_mean(patient_states[2:], baseline_obs_value, static_log_level), measure_sd));
+  }
+
+  int forecast_size = size(forecast_time) - 1;
+
+  // Calculate forecast states using provided parameters
+  matrix[forecast_size + 1, 2] forecast_expected_states, forecast_states;
+  (forecast_expected_states, forecast_states) = sf_log_space_trajectory_ncp_decay(
+    patient_states[n_patient_visits],
+    forecast_time,
+    exp(patient_log_decrease_rate), exp(patient_log_growth_rate),
+    forecast_tv_factor, // Gompertz decay weight on growth rate only
+    forecast_process_noise, // Use provided process noise
+    0 // No debug
+  );
+
+  // Calculate forecast observations with measurement noise
+  vector[forecast_size] forecast_log_obs = zeros_vector(forecast_size);
+  if (forecast_size > 0) {
+    forecast_log_obs = to_vector(normal_rng(calc_log_burden_mean(forecast_states[2:], baseline_obs_value, static_log_level), measure_sd));
+  }
+
+  return (forecast_states[2:], rep_log_obs, forecast_log_obs);
+}
+
 matrix multi_normal_rng(
   matrix y_obs,                 // Observed values [n_obs, 2]
   array[] int time_obs,        // Observed time points
@@ -1038,6 +1120,74 @@ tuple(
       static_log_level,
       forecast_growth_lag,
       forecast_growth_transition,
+      forecast_process_noise,
+      measure_sd
+    );
+
+  // Calculate mean log observations (deterministic, no measurement noise)
+  vector[n_patient_visits] rep_mean_patient_log_obs =
+    calc_log_burden_mean(patient_states, baseline_obs_value, static_log_level);
+
+  vector[forecast_size] forecast_mean_patient_log_obs =
+    forecast_size > 0
+      ? calc_log_burden_mean(forecast_patient_states, baseline_obs_value, static_log_level)
+      : zeros_vector(0);
+
+  // Generate process noise outputs
+  matrix[n_patient_visits - 1, 2] obs_patient_process_noise =
+    rep_matrix(0.0, n_patient_visits - 1, 2);
+
+  return (
+    forecast_patient_states,
+    rep_patient_log_obs,
+    rep_mean_patient_log_obs,
+    forecast_patient_log_obs,
+    forecast_mean_patient_log_obs,
+    obs_patient_process_noise
+  );
+}
+
+/**
+ * Decay variant of generate_patient_states_with_means_rng: replaces (forecast_growth_lag,
+ * forecast_growth_transition) with a precomputed forecast_tv_factor (Gompertz decay weight
+ * on the GROWTH rate only) and calls generate_patient_states_decay_rng. decrease arm is
+ * untouched. Returned tuple type unchanged.
+ */
+tuple(
+  matrix,  // forecast_patient_states
+  vector,  // rep_patient_log_obs
+  vector,  // rep_mean_patient_log_obs
+  vector,  // forecast_patient_log_obs
+  vector,  // forecast_mean_patient_log_obs
+  matrix   // obs_patient_process_noise
+) generate_patient_states_with_means_decay_rng(
+  matrix patient_states,
+  array[] real forecast_time,
+  real patient_log_decrease_rate,
+  real patient_log_growth_rate,
+  real baseline_obs_value,
+  real static_log_level,              // log(pi_static); negative_infinity() disables
+  vector forecast_tv_factor,
+  matrix forecast_process_noise,
+  real measure_sd
+) {
+  int n_patient_visits = rows(patient_states);
+  int forecast_size = size(forecast_time) - 1;
+
+  // Generate states and observations using existing function
+  matrix[forecast_size, 2] forecast_patient_states;
+  vector[n_patient_visits] rep_patient_log_obs;
+  vector[forecast_size] forecast_patient_log_obs;
+
+  (forecast_patient_states, rep_patient_log_obs, forecast_patient_log_obs) =
+    generate_patient_states_decay_rng(
+      patient_states,
+      forecast_time,
+      patient_log_decrease_rate,
+      patient_log_growth_rate,
+      baseline_obs_value,
+      static_log_level,
+      forecast_tv_factor,
       forecast_process_noise,
       measure_sd
     );

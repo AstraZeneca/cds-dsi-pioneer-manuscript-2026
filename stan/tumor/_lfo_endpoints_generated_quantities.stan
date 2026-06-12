@@ -142,6 +142,23 @@ profile("gen_quant") {
     cutoff_static_log_level_per_patient[i] = static_log_level_per_patient[cutoff_observed_patients[i]];
   }
 
+  // Per-patient kappa for this (second) forecast path. gr_decay_kappa_per_patient
+  // (declared later in sf-ssls-lfo.stan's GQ) is NOT yet in scope here, so rebuild
+  // the unified-patient kappa locally from the forecast-local gr_decay_kappa, then
+  // map to the cutoff-compact index. 0.0 sentinel => growth_warp(t,0)=t when off.
+  vector[n_patients] lfo_gr_decay_kappa_per_patient = zeros_vector(n_patients);
+  if (enable_gr_decay) {
+    for (j in 1:n_forecast_patients) {
+      lfo_gr_decay_kappa_per_patient[forecast_patient_idx[j]] = gr_decay_kappa[j];
+    }
+  }
+  vector[n_cutoff_observed_patients] cutoff_gr_decay_kappa_per_patient = zeros_vector(n_cutoff_observed_patients);
+  if (enable_gr_decay) {
+    for (i in 1:n_cutoff_observed_patients) {
+      cutoff_gr_decay_kappa_per_patient[i] = lfo_gr_decay_kappa_per_patient[cutoff_observed_patients[i]];
+    }
+  }
+
   // Generate states for cutoff-observed patients (including forecasts for censored patients)
   if (enable_patient_process_noise_tr) {
     // Process noise ON: Use states_full_grid (dense grid computed in transformed_parameters)
@@ -182,6 +199,22 @@ profile("gen_quant") {
         cutoff_patient_last_obs_visit[i],
         max_all_t);
 
+      // Per-step Gompertz factor on the GROWTH rate only = exact phi-difference / dt,
+      // so the forecast telescopes to growth_rate*phi(t) and matches the in-sample branches.
+      real kappa_i = cutoff_gr_decay_kappa_per_patient[i];
+      vector[forecast_size + 1] forecast_tv_factor;
+      for (t in 1:(forecast_size + 1)) {
+        if (t == 1 || !enable_gr_decay) {
+          forecast_tv_factor[t] = 1.0;
+        } else {
+          real e_hi = forecast_time[t] - forecast_time[1];
+          real e_lo = forecast_time[t - 1] - forecast_time[1];
+          real dphi = growth_warp(e_hi, kappa_i) - growth_warp(e_lo, kappa_i);
+          real dt   = forecast_time[t] - forecast_time[t - 1];
+          forecast_tv_factor[t] = dt > 0 ? dphi / dt : 1.0;
+        }
+      }
+
       // Extract this patient's states from the global states matrix
       // Get original visit positions to index into states
       int orig_visit_start, orig_visit_end;
@@ -200,15 +233,14 @@ profile("gen_quant") {
 
       (temp_forecast_patient_states, temp_rep_patient_log_sld, temp_rep_mean_patient_log_sld,
        temp_forecast_patient_log_sld, temp_forecast_mean_patient_log_sld, temp_obs_process_noise) =
-        generate_patient_states_with_means_rng(
+        generate_patient_states_with_means_decay_rng(
           cutoff_patient_states,
           forecast_time,
           patient_log_decrease_rate[orig_patient_idx, 1],
           patient_log_growth_rate[orig_patient_idx, 1],
           cutoff_sum_tumor_size[visit_start],
           cutoff_static_log_level_per_patient[i],
-          negative_infinity(),
-          1.0,
+          forecast_tv_factor,
           rep_matrix(0.0, forecast_size, 2),
           measure_sd_sld
         );
