@@ -440,11 +440,35 @@ publication_targets <- list(
             forecast = TRUE
           )
       ),
+      # Pathfinder pre-solve (posterior only): a ~12s data-only variational pass
+      # that locates the typical set. Its draws seed the sampling init's
+      # population scalars, eliminating the cold-start inner-Laplace thrash that
+      # made an unseeded surrogate fit intractable (~80 min/warmup-iter in #1929
+      # -> ~5 s/iter seeded). NULL for the prior fit (no data to pre-solve).
+      tar_target(
+        tumor_ssls_pathfinder,
+        {
+          source(initializers_fixed_file)
+          if (fit_data) {
+            run_tumor_ssls_pathfinder(tumor_ssls_exe_hash$exe_file, tumor_ssls_stan_data)
+          } else {
+            NULL
+          }
+        }
+      ),
       tar_target(
         tumor_ssls_initializer,
         {
           source(initializers_fixed_file)
-          create_tumor_ssls_initializer_fixed(tumor_ssls_stan_data)
+          # Posterior: seed population scalars from the Pathfinder pre-solve.
+          # Prior: plain fixed initializer (Pathfinder is NULL, nothing to seed).
+          if (!is.null(tumor_ssls_pathfinder)) {
+            create_tumor_ssls_pathfinder_initializer_fixed(
+              tumor_ssls_pathfinder, tumor_ssls_stan_data
+            )
+          } else {
+            create_tumor_ssls_initializer_fixed(tumor_ssls_stan_data)
+          }
         }
       ),
       tar_target(
