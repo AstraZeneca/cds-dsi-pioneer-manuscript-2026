@@ -247,6 +247,13 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
   init_logit_static_loc_pop_mean <- -0.85  # inv_logit(-0.85) ~ 0.30 of the "rest"
   init_logit_static_loc_pop_sd <- 0.8
 
+  # Gompertz growth-rate decay: weakly-informative prior on log(kappa).
+  # Centered at log(0.02) /week (growth-rate half-life ~35 wk; plateau over a
+  # multi-year horizon). sd=0.75 => 95% prior kappa in ~[0.0045, 0.087], wide
+  # enough that data can contract toward 0 (linear arms) or strong decay.
+  gr_decay_log_loc_pop_mean <- log(0.02)
+  gr_decay_log_loc_pop_sd <- 0.75
+
   # Get n_levels from stan_data (default 2 for backward compat)
   n_levels <- stan_data$n_levels %||% 2L
   n_covar <- stan_data$n_covar
@@ -362,6 +369,12 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
       trial = rep(0.10, n_covar),
       patient = rep(0.08, n_covar)
     ),
+
+    # Gompertz decay module hyperparams (lean pop-level)
+    gr_decay_log_loc_pop_mean = gr_decay_log_loc_pop_mean,
+    gr_decay_log_loc_pop_sd = gr_decay_log_loc_pop_sd,
+    gr_decay_coef_qr_pop_mean = as.array(rep(0, n_covar)),
+    gr_decay_coef_qr_pop_sd = as.array(rep(1, n_covar)),
 
     # Growth lag
     growth_lag_mean = 2.7,
