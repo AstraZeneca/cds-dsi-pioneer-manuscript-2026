@@ -26,6 +26,22 @@ lfo_tar_read <- function(name, store = lfo_store) {
   .repair_rvar_dims(obj)
 }
 
+# lfo_tar_read_pattern() reads all branches of an LFO pattern target and binds
+# them with bind_rows(). tar_read_raw() on the parent name calls targets'
+# tar_vec_c() which uses vctrs::vec_c() — this fails on rvar columns when branch
+# dimensions differ. Reading branches individually and binding avoids the issue.
+lfo_tar_read_pattern <- function(name, store = lfo_store) {
+  full_name <- paste0(name, "_", lfo_disease_suffix)
+  branches <- targets::tar_meta(store = store, fields = c("name", "parent")) |>
+    dplyr::filter(parent == full_name) |>
+    dplyr::pull(name)
+  purrr::map(branches, \(b) {
+    obj <- targets::tar_read_raw(b, store = store)
+    .repair_rvar_dims(obj)
+  }) |>
+    dplyr::bind_rows()
+}
+
 # qs2 drops the dim attribute on rvar wrappers during deserialisation (length=0).
 # Repair by reconstructing from the draws matrix, which is always correct.
 .repair_rvar_dims <- function(obj) {
