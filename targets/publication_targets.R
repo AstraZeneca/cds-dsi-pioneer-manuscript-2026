@@ -92,9 +92,9 @@ covar_formula_sclc <- ~ age + male + ecog + hgb + ldh_log + albumin
 covar_formula_crc <- ~ age + male + hgb + ldh_log + albumin
 
 disease_map <- tibble::tribble(
-  ~disease, ~disease_data_path,                    ~covar_formula,     ~trial_re,
-  "sclc",   publication_data_path,                  covar_formula_sclc, FALSE,
-  "crc",    file.path(publication_data_path, "crc"), covar_formula_crc,  FALSE
+  ~disease, ~disease_data_path,                    ~covar_formula,
+  "sclc",   publication_data_path,                  covar_formula_sclc,
+  "crc",    file.path(publication_data_path, "crc"), covar_formula_crc
 )
 
 # Warm-start metric files for the posterior fit. Each disease needs its own
@@ -312,7 +312,7 @@ publication_targets <- list(
         # point via decompose_ms_level_baseline_hazard(). corr_group stays all-zero
         # in Phase 1, so the decomposed config reproduces this legacy flag
         # bit-identically.
-        enable_ms_level_baseline_hazard = c(trial = 3L, patient = 0L),
+        enable_ms_level_baseline_hazard = c(trial_arm = 3L, patient = 0L),
 
         # 0->1 baseline log-time trend (Fix A, 2026-06-05). A monotone log(t)
         # slope is added as a sibling term to the population 0->1 baseline
@@ -322,7 +322,7 @@ publication_targets <- list(
 
         enable_ms_pop_time_varying_cov = TRUE,
         enable_ms_pop_time_invariant_cov = TRUE,
-        enable_ms_level_cov = c(trial = FALSE, patient = FALSE),
+        enable_ms_level_cov = c(trial_arm = FALSE, patient = FALSE),
         # Latent visit-gated 0->1: hazard contributions only at observed visit
         # weeks, but the time-varying covariates (log SLD, log decrease rate,
         # log growth rate) come from the modeled state-space trajectory rather
@@ -355,10 +355,10 @@ publication_targets <- list(
         entry_covar_32 = numeric(0),
 
         enable_level_intercept_tr = c(
-          trial   = level_intercept_mode[if (trial_re) "re" else "none"],
-          patient = level_intercept_mode["re"]
+          trial_arm = level_intercept_mode["re"],
+          patient   = level_intercept_mode["re"]
         ),
-        enable_level_cov_tr = c(trial = FALSE, patient = FALSE),
+        enable_level_cov_tr = c(trial_arm = FALSE, patient = FALSE),
         enable_pop_cov_tr = FALSE,
         enable_pop_process_noise_tr = FALSE,
         enable_patient_process_noise_tr = FALSE,
@@ -366,17 +366,17 @@ publication_targets <- list(
         enable_patient_process_noise_phi_tr = FALSE,
 
         enable_level_intercept_frac = c(
-          trial   = level_intercept_mode[if (trial_re) "re" else "none"],
-          patient = level_intercept_mode["re"]
+          trial_arm = level_intercept_mode["re"],
+          patient   = level_intercept_mode["re"]
         ),
-        enable_level_cov_frac = c(trial = FALSE, patient = FALSE),
+        enable_level_cov_frac = c(trial_arm = FALSE, patient = FALSE),
         enable_pop_cov_frac = TRUE,
 
         enable_level_intercept_init = c(
-          trial   = level_intercept_mode[if (trial_re) "re" else "none"],
-          patient = level_intercept_mode["re"]
+          trial_arm = level_intercept_mode["re"],
+          patient   = level_intercept_mode["re"]
         ),
-        enable_level_cov_init = c(trial = FALSE, patient = FALSE),
+        enable_level_cov_init = c(trial_arm = FALSE, patient = FALSE),
         enable_pop_cov_init = TRUE,
 
         pfs_timepoints = pfs_timepoints_pub$timepoint,
@@ -1021,7 +1021,43 @@ publication_targets <- list(
           .groups   = "drop"
         ) |>
         mutate(se = sd(mean_pred) / sqrt(cell_size))
+    ),
+
+    # LFO KM evolution at three evenly-distributed cutoffs ----------------------
+
+    tar_target(
+      lfo_km_cutoffs,
+      {
+        max_n <- max(lfo_cutoffs$n_target_observed)
+        targets <- max_n * c(0.10, 0.50, 0.90)
+        map_int(targets, \(tgt) which.min(abs(lfo_cutoffs$n_target_observed - tgt))) |>
+          unique() |>
+          (\(idx) lfo_cutoffs[idx, ])()
+      }
+    ),
+
+    tar_target(
+      lfo_cutoff_km_est,
+      tumor_ssls_lfo_clean |>
+        filter(n == lfo_km_cutoffs$n) |>
+        reframe(
+          refit_n,
+          n,
+          cutoff_date,
+          cutoff_calendar_day,
+          n_target_observed,
+          select_draws(fit[[1]], matches("^(sample|spop)_(ms_)?pfs_km_est$")) |>
+            recover_types(select(all_analysis_data, trial = group)) |>
+            spread_rvars(
+              sample_pfs_km_est[trial, t],
+              spop_pfs_km_est[trial, t],
+              sample_ms_pfs_km_est[trial, t],
+              spop_ms_pfs_km_est[trial, t]
+            )
+        ),
+      pattern = map(lfo_km_cutoffs)
     )
+
   )
 )
 
