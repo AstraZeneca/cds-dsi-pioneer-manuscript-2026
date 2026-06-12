@@ -96,54 +96,57 @@ existing testthat suite staying green with `enable_gr_decay = 0` defaulted.
 
 ### New module: `stan/modules/gr_decay/`
 
-κ borrows the **N-level linear-model plumbing** from `frac` (the closest analog — both shape
-the growth process: NCP/CP level modes, QR-space coefficients, flat-index gather), but uses
-`tr`'s **log link** (`exp`, not `inv_logit`) and — critically — a **propensity-style
-master-flag gating discipline**, not the always-on core pattern of `tr`/`frac`.
+**Scope decision (amended 2026-06-12): a LEAN pop-level module.** κ uses `tr`'s **log link**
+(`exp`, not `inv_logit`) and a **propensity-style master-flag gating discipline**. It implements
+**only the population-level linear predictor** — intercept + QR-space pop covariate slopes — and
+deliberately does **not** carry frac's N-level RE machinery (per-level intercept/slope SDs,
+raw/cp draws, `compute_level_module_flags` / `split_cp_ncp_pos` flat-index gather). The RE levels
+are out-of-scope for this branch (see "Out of scope"), so the inert machinery would be ~5–7×
+untested Stan code; adding RE levels later is a separate, well-scoped task that re-introduces the
+frac plumbing then. This satisfies the stated requirement (intercept now; baseline-covariate
+response via a flag flip) with the minimum surface area.
 
-**Two distinct module patterns exist in this codebase; gr_decay follows the optional one.**
-`tr`/`frac`/`init` are *core* modules — always present, every parameter unconditionally
-declared. `propensity`/`multistate` are *optional* modules — a master flag
-(`enable_propensity_weighting`, `enable_ms_*`) gates **every** parameter, transform, and prior
-so an off model samples and stores nothing. Because Gompertz decay is opt-in, `gr_decay` is an
-**optional** module: `enable_gr_decay` is the master gate on *all* of its parameters. The
-hierarchy *shape* is copied from `frac`; the *gating* is copied from `propensity`.
+**Module pattern.** `tr`/`frac`/`init` are *core* modules — always present, every parameter
+unconditionally declared. `propensity`/`multistate` are *optional* modules — a master flag gates
+**every** parameter, transform, and prior so an off model samples and stores nothing. `gr_decay`
+is an **optional** module: `enable_gr_decay` is the master gate on all of its parameters, exactly
+like `propensity`.
 
 Per the 8-step "Adding Module Parameters" checklist in `.claude/rules/stan-guidelines.md`,
 the module contains:
 
-| File | Contents (frac-shaped plumbing, tr log-link, propensity-style gating) |
+| File | Contents (lean pop-level: tr log-link, propensity-style gating) |
 |---|---|
-| `flags.stan` | `enable_gr_decay` (master); `enable_pop_cov_gr_decay`; `enable_level_intercept_gr_decay[n_levels]`; `enable_level_cov_gr_decay[n_levels]` |
-| `hyperparams.stan` | `gr_decay_log_loc_pop_mean`/`_sd`; per-level intercept/slope SD hyperpriors; QR-coef hyperparams. These are **data**, so per existing-module convention (cf. `init/hyperparams.stan`) they are **always declared with flag-independent shape, unused when off** — no sampling cost, no guard. |
-| `parameters.stan` | `gr_decay_log_loc_pop`; QR-space `gr_decay_coef_qr_pop`; unified level intercept/slope SD + raw/cp draws — **every declaration sized `enable_gr_decay ? … : 0`** (outer gate), with `enable_pop_cov_gr_decay ? n_covar : 0` etc. as the inner gates, exactly as `propensity` gates on its master flag |
-| `transformed_parameters.stan` | assembles `gr_decay_log_loc_patient` (pop intercept + QR pop covariate effects + level intercepts + level slopes), then `gr_decay_patient = exp(gr_decay_log_loc_patient)`. **Sizing decision (chosen): always `vector[n_forecast_patients]`**, computed inside `if (enable_gr_decay)` and **defaulting to `zeros_vector` when off** — so κ_i = exp(0) = 1 is *never* used (the branch guard picks `t` not the warp when off); the zeros default just keeps the vector well-shaped for the warp sites without a separate conditional-size at every downstream use. This is the propensity pattern (always-shaped, value-inert) and is simpler than multistate's size-0 + guard-every-use. |
-| `priors.stan` | population-intercept prior + (guarded) covariate/level priors, identical loop structure to `frac/priors.stan`, all wrapped in `if (enable_gr_decay)` |
-| `transformed_data.stan` | flat-index precomputation parallel to `frac` (`n_enabled_groups_*`, `*_flat_idx`, cp/ncp split counts). **Full build-out** (not a stub): the pop-only config makes most counts 0, but the machinery is compiled so enabling levels later is a flag flip. Wrapped so it is inert when `enable_gr_decay = 0`. |
-| `generated_quantities.stan` | expose `gr_decay_kappa_pop = exp(gr_decay_log_loc_pop)` and the implied plateau offset `exp(tr_loc_pop + frac_log_growth_pop) / kappa_pop` for interpretability |
+| `flags.stan` | `enable_gr_decay` (master); `enable_pop_cov_gr_decay` (pop covariate slopes). **No per-level flag arrays.** |
+| `hyperparams.stan` | `gr_decay_log_loc_pop_mean`/`_sd`; QR-coef hyperparams `gr_decay_coef_qr_pop_mean`/`_sd` (length `n_covar`). These are **data**, so per existing-module convention (cf. `init/hyperparams.stan`) they are **always declared with flag-independent shape, unused when off** — no sampling cost, no guard. |
+| `parameters.stan` | `gr_decay_log_loc_pop` sized `enable_gr_decay ? 1 : 0` (array, mirroring `init_logit_static_loc_pop`); QR-space `gr_decay_coef_qr_pop` sized `(enable_gr_decay && enable_pop_cov_gr_decay) ? n_covar : 0` (inner gate). **No level SD / raw / cp parameters.** |
+| `transformed_parameters.stan` | assembles `gr_decay_log_loc_patient = gr_decay_log_loc_pop[1] + (enable_pop_cov_gr_decay ? Q·coef : 0)`, then `gr_decay_kappa = exp(gr_decay_log_loc_patient)`. **Sizing decision (chosen): always `vector[n_forecast_patients]`**, computed inside `if (enable_gr_decay)` and **defaulting to `zeros_vector` when off** — so the κ value is never used when off (the branch guard picks `t` not the warp); the zeros default keeps the vector well-shaped at the warp sites without a conditional-size at every downstream use. |
+| `priors.stan` | `if (enable_gr_decay)` { population-intercept `normal(mean, sd)` + (guarded) `gr_decay_coef_qr_pop ~ normal(...)` }. No per-level loop. |
+| `generated_quantities.stan` | expose `gr_decay_kappa_pop = exp(gr_decay_log_loc_pop[1])` and the implied plateau offset `exp(tr_loc_pop + pop_log_growth_frac) / gr_decay_kappa_pop` for interpretability; guarded `if (enable_gr_decay)`. |
 
-**Link function:** κ is modeled on the **log scale** (`gr_decay_log_loc_*`) so κ_i = exp(linpred) > 0 is guaranteed for every patient. The NCP/CP/QR/flat-index plumbing is identical across `tr`/`frac`/`init`/`gr_decay` — **only the inverse link differs** (`exp` for `gr_decay`/`tr`, `inv_logit` for `frac`).
+There is **no `transformed_data.stan`** for this module — the lean pop-level predictor needs no
+flat-index precomputation. (The 7-file mirror in the original draft is dropped with the RE
+machinery.)
 
-**Initial hierarchy configuration (this branch):** intercept-only, population level only.
-`enable_gr_decay = 1` to activate the mechanism, but `enable_pop_cov_gr_decay = 0`,
-`enable_level_intercept_gr_decay = rep(LEVEL_MODE_NONE, n_levels)`,
-`enable_level_cov_gr_decay = rep(0, n_levels)`. So the linear-predictor assembly reduces to a
-scalar broadcast:
+**Link function:** κ is modeled on the **log scale** (`gr_decay_log_loc_*`) so κ_i = exp(linpred) > 0
+is guaranteed for every patient — the only inverse-link difference from `frac` is `exp` vs
+`inv_logit`.
+
+**Initial configuration (this branch):** `enable_gr_decay = 1` to activate the mechanism, but
+`enable_pop_cov_gr_decay = 0`. So the linear-predictor reduces to a scalar broadcast:
 
 ```stan
-// pop-only reduction (all level/cov terms are zero-length / zeros):
+// pop-only reduction (covariate term is zeros when enable_pop_cov_gr_decay = 0):
 vector[n_forecast_patients] gr_decay_linpred_pop =
   enable_pop_cov_gr_decay ? (Q_covar_design_matrix[forecast_patient_idx, :] * gr_decay_coef_qr_pop)
                           : zeros_vector(n_forecast_patients);
-vector[n_forecast_patients] gr_decay_log_loc_patient = gr_decay_log_loc_pop   // scalar broadcast
-  + gr_decay_linpred_pop                // zeros here
-  + gr_decay_linpred_level_intercepts   // zeros here
-  + gr_decay_linpred_level_slopes;      // zeros here
+vector[n_forecast_patients] gr_decay_log_loc_patient = gr_decay_log_loc_pop[1]  // scalar broadcast
+  + gr_decay_linpred_pop;              // zeros here
 ```
 
-i.e. `gr_decay_log_loc_patient == gr_decay_log_loc_pop` for all patients. The covariate/level
-machinery is **compiled-but-inert** (not commented out) — turning on baseline-covariate
-response later is a flag flip plus a prior, no structural change (exactly how `tr`/`frac` work).
+i.e. `gr_decay_log_loc_patient == gr_decay_log_loc_pop[1]` for all patients. The covariate
+machinery is **compiled-but-inert** (not commented out) — turning on baseline-covariate response
+later is a flag flip plus a prior, no structural change (exactly how `tr`/`frac` pop covariates work).
 
 **Two-level gating, explicitly:**
 - `enable_gr_decay = 0` (outer gate) → all `gr_decay_*` parameters sized 0, warp sites take the
@@ -387,8 +390,10 @@ shipping a weakly-identified parameter.
 
 ## Out of scope (this branch)
 
-- Baseline-covariate response on κ (machinery built, flag OFF).
-- Higher hierarchy levels on κ (trial/arm/patient REs — machinery built, modes NONE).
+- Baseline-covariate response on κ (machinery built — `gr_decay_coef_qr_pop` — but flag OFF).
+- Higher hierarchy levels on κ (trial/arm/patient REs). **Not built this branch** (lean
+  pop-level module — see "New module"); adding them is a separate task that re-introduces frac's
+  N-level plumbing into `gr_decay` at that time.
 - Reviving the legacy `growth_lag` start-delay.
 - Stochastic (AR1/OU) time-varying κ. Gompertz is deterministic decay; a stochastic κ is a
   possible later step but is explicitly deferred.
@@ -401,7 +406,8 @@ shipping a weakly-identified parameter.
 
 ## Files touched (summary)
 
-**New:** `stan/modules/gr_decay/{flags,hyperparams,parameters,priors,transformed_data,transformed_parameters,generated_quantities}.stan`
+**New (lean pop-level — 6 files, no `transformed_data.stan`):**
+`stan/modules/gr_decay/{flags,hyperparams,parameters,priors,transformed_parameters,generated_quantities}.stan`
 
 **New:** `growth_warp()` (+ φ-difference helper) in `stan/modules/state_space/sf.stanfunctions`.
 
