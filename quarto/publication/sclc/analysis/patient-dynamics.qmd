@@ -1,6 +1,8 @@
 ---
 title: "Patient Dynamics"
 subtitle: "Individual tumor trajectories and RECIST predictions"
+execute:
+  freeze: true
 ---
 
 ```{r}

@@ -34,6 +34,9 @@ usage() {
     echo "  -l: Enable Laplace marginalization (sets ENABLE_LAPLACE=TRUE)"
     echo "  -k: Skip renv::restore()"
     echo "  -t: Subsample to N patients for testing (sets TEST_PATIENTS env var)"
+    echo "  -G: Set LFO group count (sets LFO_GROUPS env var; default: 24)"
+    echo "  -W: Set LFO worker count (sets LFO_WORKERS env var; default: 24)"
+    echo "  -C: Cold-start LFO (sets LFO_COLD_START=true; skip warm-start metric files)"
     echo ""
     echo "Arguments:"
     echo "  PROJECT_NAME: Name of targets project (e.g., sclc, pioneer)"
@@ -55,9 +58,12 @@ skip_restore="FALSE"
 custom_username=""
 enable_laplace="FALSE"
 test_patients=""
+lfo_groups=""
+lfo_workers=""
+lfo_cold_start="FALSE"
 
 # Parse command-line options
-while getopts "i:m:r:b:p:u:h:t:sncdvklD" flag; do
+while getopts "i:m:r:b:p:u:h:t:G:W:sncdvklDC" flag; do
     case "${flag}" in
         i) targets=${OPTARG};;
         m) make_targets=${OPTARG};;
@@ -74,6 +80,9 @@ while getopts "i:m:r:b:p:u:h:t:sncdvklD" flag; do
         l) enable_laplace="TRUE";;
         k) skip_restore="TRUE";;
         t) test_patients=${OPTARG};;
+        G) lfo_groups=${OPTARG};;
+        W) lfo_workers=${OPTARG};;
+        C) lfo_cold_start="TRUE";;
         h) usage;;
         *) usage;;
     esac
@@ -176,6 +185,21 @@ fi
 # Set TEST_PATIENTS if provided (subsamples to N patients for fast testing)
 if [ -n "$test_patients" ]; then
     rscript_cmd+=" -e \"Sys.setenv(TEST_PATIENTS = '$test_patients')\""
+fi
+
+# Set LFO_GROUPS if provided (number of parallel LFO cutoff groups)
+if [ -n "$lfo_groups" ]; then
+    rscript_cmd+=" -e \"Sys.setenv(LFO_GROUPS = '$lfo_groups')\""
+fi
+
+# Set LFO_WORKERS if provided (crew worker count for LFO controller)
+if [ -n "$lfo_workers" ]; then
+    rscript_cmd+=" -e \"Sys.setenv(LFO_WORKERS = '$lfo_workers')\""
+fi
+
+# Set LFO_COLD_START if -C provided (skip warm-start metric files)
+if [ "$lfo_cold_start" = "TRUE" ]; then
+    rscript_cmd+=" -e \"Sys.setenv(LFO_COLD_START = 'true')\""
 fi
 
 # Add project name if provided
