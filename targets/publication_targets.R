@@ -641,7 +641,7 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_km_rvar,
         tumor_ssls_draws_endpoints |>
-          posterior::subset_draws(variable = "^(sample|spop).*_km_est") |>
+          posterior::subset_draws(variable = "^(sample|spop).*_km_est", regex = TRUE) |>
           recover_types(select(all_analysis_data, trial = group)) |>
           spread_rvars(
             sample_target_km_est[trial, t],
@@ -657,7 +657,7 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_km_os_rvar,
         tumor_ssls_draws_endpoints |>
-          posterior::subset_draws(variable = "^(sample|spop)_os_km_est") |>
+          posterior::subset_draws(variable = "^(sample|spop)_os_km_est", regex = TRUE) |>
           recover_types(select(all_analysis_data, trial = group)) |>
           spread_rvars(
             sample_os_km_est[trial, t],
@@ -669,7 +669,7 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_trial_pfs_quant,
         tumor_ssls_draws_endpoints |>
-          posterior::subset_draws(variable = "^(sample|spop).*_pfs_quant\\[") |>
+          posterior::subset_draws(variable = "^(sample|spop).*_pfs_quant\\[", regex = TRUE) |>
           recover_types(select(all_analysis_data, trial = group)) |>
           spread_rvars(
             sample_target_pfs_quant[trial, q],
@@ -689,7 +689,7 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_orr_rvar,
         tumor_ssls_draws_endpoints |>
-          posterior::subset_draws(variable = "^(sample|spop)_target_orr") |>
+          posterior::subset_draws(variable = "^(sample|spop)_target_orr", regex = TRUE) |>
           recover_types(select(all_analysis_data, trial = group)) |>
           spread_rvars(
             sample_target_orr[trial],
@@ -701,7 +701,7 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_forecast_target_pfs_n_rvar,
         tumor_ssls_draws_endpoints |>
-          posterior::subset_draws(variable = "^(sample|spop).*_(pfs|os)_n\\[") |>
+          posterior::subset_draws(variable = "^(sample|spop).*_(pfs|os)_n\\[", regex = TRUE) |>
           recover_types(select(all_analysis_data, trial = group)) |>
           spread_rvars(
             sample_target_pfs_n[trial, n],
