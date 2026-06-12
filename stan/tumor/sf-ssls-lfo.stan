@@ -29,6 +29,8 @@ data {
   #include "modules/tr/flags.stan"
   #include "modules/frac/flags.stan"
   #include "modules/init/flags.stan"
+  #include "modules/gr_decay/flags.stan"
+  #include "modules/gr_decay/hyperparams.stan"
 
   int<lower = 0, upper = 1> fit_multistate_data;
 
@@ -63,12 +65,14 @@ parameters {
   #include "modules/tr/parameters.stan"
   #include "modules/frac/parameters.stan"
   #include "modules/init/parameters.stan"
+  #include "modules/gr_decay/parameters.stan"
 }
 
 transformed parameters {
   #include "modules/tr/transformed_parameters.stan"
   #include "modules/frac/transformed_parameters.stan"
   #include "modules/init/transformed_parameters.stan"
+  #include "modules/gr_decay/transformed_parameters.stan"
   #include "modules/state_space/transformed_parameters.stan"
   // (median_log_burden_obs / iqr_log_burden_obs are declared in transformed
   // data via _tumor_observed_covar_transformed_data.stan — already in scope.)
@@ -85,6 +89,7 @@ model {
   #include "modules/tr/priors.stan"
   #include "modules/frac/priors.stan"
   #include "modules/init/priors.stan"
+  #include "modules/gr_decay/priors.stan"
 
   if (fit_tumor_data) {
     // --- LFO CV specific ---
@@ -156,6 +161,15 @@ generated quantities {
     }
   }
 
+  // Per-patient kappa for the forecast path (mirror of static_log_level_per_patient).
+  // 0.0 sentinel => growth_warp(t,0)=t (no attenuation) when gr_decay is off.
+  vector[n_patients] gr_decay_kappa_per_patient = zeros_vector(n_patients);
+  if (enable_gr_decay) {
+    for (j in 1:n_forecast_patients) {
+      gr_decay_kappa_per_patient[forecast_patient_idx[j]] = gr_decay_kappa[j];
+    }
+  }
+
   for (i in last_visit_calendar_day_sort_idx[testing_patient_idx[1]:]) {
     int visit_start, visit_screening_end, visit_treat_pos, visit_end;
     (visit_start, visit_screening_end, visit_treat_pos, visit_end) = get_visit_pos(patient_visit_pos, i, n_patient_screening_visits[i]);
@@ -202,15 +216,29 @@ generated quantities {
           // Compute forecast states using constant rates
           matrix[n_oos_visits + 1, 2] full_forecast_expected;  // Unused but required by tuple return
           matrix[n_oos_visits + 1, 2] full_forecast;
-          (full_forecast_expected, full_forecast) = sf_log_space_trajectory_ncp(
-            patient_states[visit_size],  // Last observed state as initial
+          real kappa_i = gr_decay_kappa_per_patient[i];
+          // Per-step Gompertz factor on the GROWTH rate only = exact phi-difference / dt,
+          // so the forecast telescopes to growth_rate*phi(t) and matches the in-sample branches.
+          vector[size(forecast_time)] tv_factor;
+          for (t in 1:size(forecast_time)) {
+            if (t == 1 || !enable_gr_decay) {
+              tv_factor[t] = 1.0;
+            } else {
+              real e_hi = forecast_time[t] - forecast_time[1];
+              real e_lo = forecast_time[t - 1] - forecast_time[1];
+              real dphi = growth_warp(e_hi, kappa_i) - growth_warp(e_lo, kappa_i);
+              real dt   = forecast_time[t] - forecast_time[t - 1];
+              tv_factor[t] = dt > 0 ? dphi / dt : 1.0;
+            }
+          }
+          (full_forecast_expected, full_forecast) = sf_log_space_trajectory_ncp_decay(
+            patient_states[visit_size],
             forecast_time,
             exp(patient_log_decrease_rate[i, 1]),
             exp(patient_log_growth_rate[i, 1]),
-            negative_infinity(),  // growth lag disabled
-            1.0,  // growth transition
-            rep_matrix(0.0, n_oos_visits, 2),  // No process noise
-            0  // No debug
+            tv_factor,
+            rep_matrix(0.0, n_oos_visits, 2),
+            0
           );
           forecast_patient_states = full_forecast[2:];  // Skip anchor
         }

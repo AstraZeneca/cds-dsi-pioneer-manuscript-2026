@@ -30,6 +30,8 @@ data {
   #include "modules/tr/flags.stan"
   #include "modules/frac/flags.stan"
   #include "modules/init/flags.stan"
+  #include "modules/gr_decay/flags.stan"
+  #include "modules/gr_decay/hyperparams.stan"
 
   int<lower = 0, upper = 1> fit_multistate_data;
 }
@@ -61,12 +63,14 @@ parameters {
   #include "modules/tr/parameters.stan"
   #include "modules/frac/parameters.stan"
   #include "modules/init/parameters.stan"
+  #include "modules/gr_decay/parameters.stan"
 }
 
 transformed parameters {
   #include "modules/tr/transformed_parameters.stan"
   #include "modules/frac/transformed_parameters.stan"
   #include "modules/init/transformed_parameters.stan"
+  #include "modules/gr_decay/transformed_parameters.stan"
   #include "modules/state_space/transformed_parameters.stan"
   // Burden interface: tumor SLD as the generic burden marker.
   // (median_log_burden_obs / iqr_log_burden_obs are declared in transformed
@@ -84,6 +88,7 @@ model {
   #include "modules/tr/priors.stan"
   #include "modules/frac/priors.stan"
   #include "modules/init/priors.stan"
+  #include "modules/gr_decay/priors.stan"
 
   profile("loglik") {
     if (fit_tumor_data) {
@@ -127,6 +132,7 @@ generated quantities {
   real pop_log_growth_frac   = log1m_inv_logit(frac_logit_loc_pop);
   real pop_log_decrease_rate = tr_loc_pop + pop_log_decrease_frac;
   real pop_log_growth_rate   = tr_loc_pop + pop_log_growth_frac;
+  #include "modules/gr_decay/generated_quantities.stan"
 
   // Compute scaled intercept effects for all levels (flattened structure)
   // Note: tr_raw_level_intercept is sized by enabled groups only, so we use
