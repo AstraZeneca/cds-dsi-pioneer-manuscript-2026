@@ -99,5 +99,21 @@ vector[n_forecast_patients] init_logit_loc_patient = init_logit_loc_pop
   + init_linpred_level_intercepts
   + init_linpred_level_slopes;
 
+// Decrease keeps its exact meaning: log(pi_decrease) = log_inv_logit(loc).
 vector[n_forecast_patients] init_log_decrease_patient = log_inv_logit(init_logit_loc_patient);
-vector[n_forecast_patients] init_log_growth_patient   = log1m_inv_logit(init_logit_loc_patient);
+
+// "rest" = 1 - pi_decrease, in log space: log1m_inv_logit(loc).
+// 2-way (flag off): all of "rest" is growth; static is absent (size 0).
+// 3-way (flag on):  rest splits static/growth via init_logit_static_loc_pop.
+//   log(pi_growth) = log(rest) + log1m_inv_logit(static)
+//   log(pi_static) = log(rest) + log_inv_logit(static)
+vector[n_forecast_patients] init_log_rest_patient = log1m_inv_logit(init_logit_loc_patient);
+vector[enable_static_init ? n_forecast_patients : 0] init_log_static_patient;
+vector[n_forecast_patients] init_log_growth_patient;
+if (enable_static_init) {
+  real ls = init_logit_static_loc_pop[1];
+  init_log_static_patient = init_log_rest_patient + log_inv_logit(ls);
+  init_log_growth_patient = init_log_rest_patient + log1m_inv_logit(ls);
+} else {
+  init_log_growth_patient = init_log_rest_patient;
+}
