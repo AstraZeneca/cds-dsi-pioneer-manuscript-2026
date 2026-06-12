@@ -71,7 +71,15 @@ profile("states") {
 
         if (max_t_width > 1) {
           states_full_grid[1][j, 2:] = to_row_vector(init_log_decrease_patient[j] + cumulative_sum(-patient_decrease_rate[j, :(max_t_width-1)]));
-          states_full_grid[2][j, 2:] = to_row_vector(init_log_growth_patient[j] + cumulative_sum(patient_growth_rate[j, :(max_t_width-1)]));
+          if (enable_gr_decay) {
+            // phi-differences over elapsed time so cumsum telescopes to growth_rate*phi(t).
+            row_vector[max_t_width] warp = growth_warp(time_since_first_visit - 1, gr_decay_kappa[j]);
+            row_vector[max_t_width-1] warp_diff = warp[2:] - warp[:(max_t_width-1)];
+            states_full_grid[2][j, 2:] = to_row_vector(init_log_growth_patient[j]
+              + cumulative_sum(patient_growth_rate[j, :(max_t_width-1)] .* warp_diff));
+          } else {
+            states_full_grid[2][j, 2:] = to_row_vector(init_log_growth_patient[j] + cumulative_sum(patient_growth_rate[j, :(max_t_width-1)]));
+          }
         }
       }
     }
@@ -116,8 +124,19 @@ profile("states") {
         // For growth: state increases, so add
         states_full_grid[1][, 2:] = rep_matrix(init_log_decrease_patient, max_t_width - 1)
           - baseline_decrease_rate * pop_cumsum_exp[:(max_t_width - 1)];
-        states_full_grid[2][, 2:] = rep_matrix(init_log_growth_patient, max_t_width - 1)
-          + baseline_growth_rate * pop_cumsum_exp[:(max_t_width - 1)];
+        if (enable_gr_decay) {
+          // Outer-product factorization breaks: the decay weight depends on BOTH patient
+          // (via kappa_i) and time. Per-patient phi-difference cumsum (mirrors B1).
+          for (i in 1:n_forecast_patients) {
+            row_vector[max_t_width] warp = growth_warp(time_since_first_visit - 1, gr_decay_kappa[i]);
+            row_vector[max_t_width-1] warp_diff = warp[2:] - warp[:(max_t_width-1)];
+            states_full_grid[2][i, 2:] = init_log_growth_patient[i]
+              + cumulative_sum(baseline_growth_rate[i] * (pop_exp[:(max_t_width-1)] .* warp_diff));
+          }
+        } else {
+          states_full_grid[2][, 2:] = rep_matrix(init_log_growth_patient, max_t_width - 1)
+            + baseline_growth_rate * pop_cumsum_exp[:(max_t_width - 1)];
+        }
       }
     }
 
@@ -142,7 +161,15 @@ profile("states") {
     profile("compute full states") {
       // Vectorized outer product: states = init + rate * time
       states_full_grid[1] = init_log_decrease_patient * ones_row_vector(max_t_width) + (-patient_decrease_rate[, 1]) * (time_since_first_visit - 1);
-      states_full_grid[2] = init_log_growth_patient * ones_row_vector(max_t_width) + patient_growth_rate[, 1] * (time_since_first_visit - 1);
+      if (enable_gr_decay) {
+        // Per-patient warp of elapsed time (time_since_first_visit - 1), since kappa_i differs.
+        for (i in 1:n_forecast_patients) {
+          states_full_grid[2][i] = init_log_growth_patient[i]
+            + patient_growth_rate[i, 1] * growth_warp(time_since_first_visit - 1, gr_decay_kappa[i]);
+        }
+      } else {
+        states_full_grid[2] = init_log_growth_patient * ones_row_vector(max_t_width) + patient_growth_rate[, 1] * (time_since_first_visit - 1);
+      }
     }
 
     profile("extract states") {
@@ -181,7 +208,13 @@ profile("states") {
           to_vector(t_patient_visits[data_start:data_end]) - patient_baseline_week;
 
         states[state_start:state_end, 1] = init_log_decrease_patient[j] - patient_decrease_rate[j, 1] * dt;
-        states[state_start:state_end, 2] = init_log_growth_patient[j] + patient_growth_rate[j, 1] * dt;
+        if (enable_gr_decay) {
+          vector[data_end - data_start + 1] dt_warp;
+          for (v in 1:rows(dt)) dt_warp[v] = growth_warp(dt[v], gr_decay_kappa[j]);
+          states[state_start:state_end, 2] = init_log_growth_patient[j] + patient_growth_rate[j, 1] * dt_warp;
+        } else {
+          states[state_start:state_end, 2] = init_log_growth_patient[j] + patient_growth_rate[j, 1] * dt;
+        }
       }
     }
   }
