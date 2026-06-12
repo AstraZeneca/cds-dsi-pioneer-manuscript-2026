@@ -184,9 +184,22 @@ vector get_growth_lag_factor(array[] real time_points, real growth_lag, real tra
  * @param baseline Baseline biomarker measurement
  * @return Vector of log(biomarker) means at each visit
  */
-vector calc_log_burden_mean(matrix patient_states, real baseline) {
+/**
+ * Three-component combine: decrease + growth (state columns) + static (scalar).
+ * static_log_level = log(pi_static) in the same log-proportion units as the
+ * state columns (before log(baseline) is added). Pass negative_infinity() to
+ * disable the static compartment; exp(-inf)=0 recovers the 2-component model.
+ */
+vector calc_log_burden_mean(matrix patient_states, real baseline, real static_log_level) {
   assert_equal(cols(patient_states), 2);
-  return to_vector(log_sum_exp(patient_states[, 1], patient_states[, 2])) + log(baseline);
+  vector[rows(patient_states)] lse2 =
+    to_vector(log_sum_exp(patient_states[, 1], patient_states[, 2]));
+  return log_sum_exp(lse2, rep_vector(static_log_level, rows(patient_states))) + log(baseline);
+}
+
+// Backward-compatible 2-arg form: no static compartment.
+vector calc_log_burden_mean(matrix patient_states, real baseline) {
+  return calc_log_burden_mean(patient_states, baseline, negative_infinity());
 }
 
 tuple(matrix, matrix) sf_log_space_trajectory_ncp(matrix raw_x, row_vector x0, array[] real times, real decrease_rate, real growth_rate, vector process_sd, matrix L_process_corr) {
