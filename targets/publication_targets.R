@@ -36,6 +36,12 @@ controller_lfo <- crew_controller_local(name = "lfo", workers = lfo_workers,
 lfo_groups <- Sys.getenv("LFO_GROUPS", 24)
 lfo_save_warmup <- Sys.getenv("LFO_SAVE_WARMUP", "false") == "true"
 
+# Cold start: when LFO_COLD_START=true, the SCLC LFO target ignores the saved
+# warm-start inv_metric files and lets each chain adapt its own mass matrix from
+# scratch. Required after any change to the tumor-model parameter space (e.g. the
+# always-on arm-level RE), which makes the old metric files dimension-mismatched.
+lfo_cold_start <- Sys.getenv("LFO_COLD_START", "false") == "true"
+
 # GQ-only rerun: when LFO_GQ_ONLY=true, the LFO target re-executes only the
 # generated-quantities block against the prior run's sample draws (no warmup /
 # sampling). Source draws are read from LFO_GQ_SOURCE_PATH (defaults to the
@@ -110,7 +116,9 @@ disease_map <- tibble::tribble(
 #
 # LFO metric files (separate from posterior): one inv_metric per group × chain.
 # SCLC: data/inv_metric_lfo_sclc_group{N}_chain{C}.json (job #1894, 5242 params,
-#        28 groups × 4 chains = 112 files, all from run 202606091946).
+#        28 groups × 4 chains = 112 files, all from run 202606091946). STALE after
+#        the always-on arm-level RE change (4692c282) grew the parameter space —
+#        set LFO_COLD_START=true to skip them and regenerate via save_metric=TRUE.
 # CRC:  no files yet — lfo() passes metric_file = NULL for crc → cold start.
 publication_metric_files <- NULL
 
@@ -972,7 +980,7 @@ publication_targets <- list(
         },
         gq_only = lfo_gq_only,
         gq_source_path = lfo_gq_source_path,
-        metric_file = if (disease == "sclc") {
+        metric_file = if (disease == "sclc" && !lfo_cold_start) {
           n <- min(grouped_lfo_cutoffs$n)
           sprintf("data/inv_metric_lfo_sclc_group%d_chain%d.json", n, 1:4)
         } else NULL
