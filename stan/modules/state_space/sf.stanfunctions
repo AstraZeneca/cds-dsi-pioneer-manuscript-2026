@@ -170,6 +170,28 @@ vector get_growth_lag_factor(array[] real time_points, real growth_lag, real tra
 }
 
 /**
+ * Gompertz growth-time warp: phi(t) = integral_0^t exp(-kappa*s) ds = (1 - exp(-kappa*t)) / kappa.
+ * Limits: kappa->0 => phi(t)->t (recovers linear growth exactly);
+ *         t->inf   => phi(t)->1/kappa (growth arm plateaus).
+ * The small-|kappa*t| branch (2-term Taylor) guards the 0/0 division AND keeps
+ * d phi / d kappa finite for autodiff. expm1 fixes numerator precision only.
+ */
+real growth_warp(real t, real kappa) {
+  if (abs(kappa * t) < 1e-8) {
+    return t * (1 - 0.5 * kappa * t);   // phi ~= t - kappa*t^2/2
+  }
+  return -expm1(-kappa * t) / kappa;
+}
+
+// Elementwise row_vector overload (constant kappa) for the grid/cumsum branches.
+row_vector growth_warp(row_vector t, real kappa) {
+  int n = num_elements(t);
+  row_vector[n] out;
+  for (k in 1:n) out[k] = growth_warp(t[k], kappa);
+  return out;
+}
+
+/**
  * Calculate mean log(biomarker) from two-component log-space states
  * GENERIC function for any biomarker (SLD, PSA, etc.)
  *
