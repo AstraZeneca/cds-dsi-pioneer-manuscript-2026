@@ -126,6 +126,22 @@ profile("gen_quant") {
     cutoff_baseline_obs_per_patient[i] = cutoff_sum_tumor_size[visit_start];
   }
 
+  // Per-patient static log-level for the combine function.
+  // Flag off OR no static patients -> -inf (static compartment absent).
+  // init_log_static_patient is forecast-local (size n_forecast_patients); map to
+  // the unified patient index via forecast_patient_idx, then to the cutoff-compact
+  // index via cutoff_observed_patients (which holds the unified patient index).
+  vector[n_patients] static_log_level_per_patient = rep_vector(negative_infinity(), n_patients);
+  if (enable_static_init) {
+    for (j in 1:n_forecast_patients) {
+      static_log_level_per_patient[forecast_patient_idx[j]] = init_log_static_patient[j];
+    }
+  }
+  vector[n_cutoff_observed_patients] cutoff_static_log_level_per_patient;
+  for (i in 1:n_cutoff_observed_patients) {
+    cutoff_static_log_level_per_patient[i] = static_log_level_per_patient[cutoff_observed_patients[i]];
+  }
+
   // Generate states for cutoff-observed patients (including forecasts for censored patients)
   if (enable_patient_process_noise_tr) {
     // Process noise ON: Use states_full_grid (dense grid computed in transformed_parameters)
@@ -142,6 +158,7 @@ profile("gen_quant") {
         cutoff_t_patient_visits,
         cutoff_t_patient_visit_idx,
         cutoff_baseline_obs_per_patient,
+        cutoff_static_log_level_per_patient,
         measure_sd_sld,
         cutoff_n_patient_screening_visits
       );
@@ -189,6 +206,7 @@ profile("gen_quant") {
           patient_log_decrease_rate[orig_patient_idx, 1],
           patient_log_growth_rate[orig_patient_idx, 1],
           cutoff_sum_tumor_size[visit_start],
+          cutoff_static_log_level_per_patient[i],
           negative_infinity(),
           1.0,
           rep_matrix(0.0, forecast_size, 2),
