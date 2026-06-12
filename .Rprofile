@@ -104,12 +104,12 @@ init_project <- function(output_path = output_path, artifacts_path = artifacts_p
   source(here("r", "plot_functions.R"))
   source(here("r", "parquet_draws.R"))
   source(here("r", "diagnostics.R"))
+  source(here("r", "multistate.R"))
 
   tar_project <- Sys.getenv("TAR_PROJECT", "sclc")
 
   if (tar_project == "sclc") {
     source(here("r", "sclc", "priors.R"))
-    source(here("r", "multistate.R"))
     source(here("r", "sclc", "prepare_analysis_data.R"))
     source(here("r", "sclc", "accuracy.R"))
     source(here("r", "sclc", "initializers.R"))

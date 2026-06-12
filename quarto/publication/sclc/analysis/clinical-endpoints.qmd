@@ -1,6 +1,8 @@
 ---
 title: "Clinical Endpoints"
 subtitle: "Overall Response Rate and Progression-Free Survival results"
+execute:
+  freeze: true
 ---
 
 ```{r}

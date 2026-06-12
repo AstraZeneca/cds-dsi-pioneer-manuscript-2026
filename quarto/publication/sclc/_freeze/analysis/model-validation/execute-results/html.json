@@ -1,0 +1,15 @@
+{
+  "hash": "2ab5066f7a0e484c8ced84da9568d9fd",
+  "result": {
+    "engine": "knitr",
+    "markdown": "---\ntitle: \"Model Validation\"\nsubtitle: \"Leave-future-out cross-validation and OOS accuracy assessment\"\nexecute:\n  eval: false\n  echo: false\n---\n\n\n\nThis page presents out-of-sample predictive accuracy evaluated via leave-future-out (LFO)\ncross-validation. LFO respects the temporal structure of the data: at each cutoff, all future\nobservations are held out and predicted using only data up to that point.\n\n::: {.callout-note}\n## Methodology\nAt each LFO fold the model is refit on data up to a cutoff date, then RECIST responses are\npredicted for all patients with future visits. Pareto-smoothed importance sampling (PSIS) is\nused to approximate refits where the LOO approximation is adequate, with exact MCMC refits\nfor high-influence observations.\n:::\n\n## Accuracy Assessment {#sec-accuracy}\n\n### RECIST Prediction Accuracy\n\nOut-of-sample confusion matrix showing model sensitivity (recall) for each RECIST category,\naggregated across all LFO folds.\n\n::: {layout-ncol=2}\n\n\n::: {.cell}\n\n:::\n\n\n\n::: {.cell}\n\n:::\n\n\n:::\n\n### RECIST Specificity Analysis\n\nFor each category X, the specificity matrix shows the distribution of predictions when the\ntrue response is **NOT** X.\n\n\n::: {.cell}\n\n:::\n\n\n::: {.callout-note}\n## Understanding Sensitivity vs Specificity\n- **Confusion matrix**: column-wise proportions — P(Predicted X | Observed X), i.e., sensitivity/recall\n- **Specificity matrix**: P(Predicted not X | Observed not X) for each category X\n- Higher off-diagonal values in the specificity matrix indicate correct rejection of false positives\n:::\n\n### Summary Metrics\n\n\n::: {#tbl-accuracy-metrics .cell tbl-cap='Out-of-sample accuracy, sensitivity, and specificity with 90% credible intervals.'}\n\n:::\n\n\n### RECIST Prediction Over Time\n\nTracking per-category sensitivity across LFO folds, showing how prediction accuracy evolves\nas more data accumulates.\n\n\n::: {.cell}\n\n:::\n\n\n## KM Forecast Evolution {#sec-km-evolution}\n\nPFS Kaplan-Meier forecasts at three evenly-distributed LFO cutoffs, showing how the model's\nsurvival prediction develops as more patient data accumulates over the trial.\n\n::: {.callout-note}\n## Cutoff selection\nThree cutoffs are drawn at roughly the 25th, 50th, and 75th percentile of the LFO run,\nspanning early, mid, and late enrollment. Each panel shows the posterior predictive KM at\nthat information cutoff — earlier panels use fewer patients and carry wider uncertainty.\n:::\n\n::: {.panel-tabset}\n\n### Sample-Based PFS\n\n\n::: {.cell}\n\n:::\n\n\n### Multistate PFS\n\n\n::: {.cell}\n\n:::\n\n\n### Superpopulation PFS\n\n\n::: {.cell}\n\n:::\n\n\n:::\n",
+    "supporting": [],
+    "filters": [
+      "rmarkdown/pagebreak.lua"
+    ],
+    "includes": {},
+    "engineDependencies": {},
+    "preserve": {},
+    "postProcess": true
+  }
+}

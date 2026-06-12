@@ -12,6 +12,19 @@ array[n_patients] int cutoff_last_visit_idx;
 cutoff_calendar_day[1], calendar_day, t_patient_visits, t_patient_visits_day, patient_visit_pos
 );
 
+// C-EXT: Historical (non-eval-trial) patients are prior knowledge and must train
+// on their FULL uncensored visit history. cutoff_visits() applied the global calendar
+// cutoff to them (all have calendar_day==1 → study-day==cutoff), wrongly truncating them.
+// Override the two censoring fields so downstream compact arrays treat them as fully observed.
+for (i in 1:n_patients) {
+  if (patient_trial[i] != lfo_eval_trial) {
+    int visit_start, visit_end;
+    (visit_start, visit_end) = get_pos(patient_visit_pos, i);
+    cutoff_last_visit_idx[i]  = visit_end;                 // last visit index (full history)
+    cutoff_last_visit_week[i] = t_patient_visits[visit_end]; // last visit week (full history)
+  }
+}
+
 // This is an array of patient IDs (sorted by last visit calendar day)
 array[n_patients] int<lower = 1, upper = n_patients> last_visit_calendar_day_sort_idx = sort_indices_asc(last_visit_calendar_day);
 
@@ -23,12 +36,40 @@ print("testing_patient_idx = ", testing_patient_idx);
 
 assert_ascending(testing_patient_idx);
 
-int<lower = 0, upper = n_patients> n_all_testing_patients = n_patients - testing_patient_idx[1] + 1;
+int<lower = 0, upper = n_patients> n_all_testing_patients_unfiltered = n_patients - testing_patient_idx[1] + 1;
+
+// Filter OOS testing patients to the eval trial only (training uses all trials)
+int n_all_testing_patients = 0;
+{
+  array[n_all_testing_patients_unfiltered] int unfiltered =
+    last_visit_calendar_day_sort_idx[testing_patient_idx[1]:];
+  for (j in 1:n_all_testing_patients_unfiltered) {
+    if (patient_trial[unfiltered[j]] == lfo_eval_trial) n_all_testing_patients += 1;
+  }
+}
 
 // These are the patient IDs of all patients that are included in the out-of-sample testing set, sorted by last visit calendar day
-array[n_all_testing_patients] int<lower = 1, upper = n_patients> all_testing_patients = last_visit_calendar_day_sort_idx[testing_patient_idx[1]:];
+array[n_all_testing_patients] int<lower = 1, upper = n_patients> all_testing_patients;
+{
+  array[n_all_testing_patients_unfiltered] int unfiltered =
+    last_visit_calendar_day_sort_idx[testing_patient_idx[1]:];
+  int idx = 1;
+  for (j in 1:n_all_testing_patients_unfiltered) {
+    if (patient_trial[unfiltered[j]] == lfo_eval_trial) {
+      all_testing_patients[idx] = unfiltered[j];
+      idx += 1;
+    }
+  }
+}
 
-print("n_all_testing_patients = ", n_all_testing_patients);
+// Reverse lookup: patient i → position in all_testing_patients (0 = not in eval trial)
+array[n_patients] int<lower = 0, upper = n_all_testing_patients> lfo_testing_patient_idx =
+  zeros_int_array(n_patients);
+for (j in 1:n_all_testing_patients) {
+  lfo_testing_patient_idx[all_testing_patients[j]] = j;
+}
+
+print("n_all_testing_patients (trial ", lfo_eval_trial, ") = ", n_all_testing_patients);
 
 // Training patients are those observed before the first cutoff
 int<lower = 0, upper = n_patients> n_training_patients = testing_patient_idx[1] - 1;
@@ -109,9 +150,12 @@ for (i in 1:n_patients) {
   
   // Only allocate OOS visits for patients who:
   // 1) Have post-cutoff visits (start_idx > 0), AND
-  // 2) Were observed before/at the cutoff (cutoff_observed_mask[i] == 1)
-  // This matches the condition in sf-ssls-lfo.stan where predictions are generated
-  n_patient_testing_visits[i] = (start_idx > 0 && cutoff_observed_mask[i]) ? (visit_end - start_idx + 1) : 0;
+  // 2) Were observed before/at the cutoff (cutoff_observed_mask[i] == 1), AND
+  // 3) Belong to the eval trial (patient_trial[i] == lfo_eval_trial)
+  // Historical patients may have start_idx > 0 after C-EXT sets their full training window,
+  // but must NOT get a slot — the fill loop in sf-ssls-lfo.stan skips them, leaving
+  // slots uninitialized (sentinel PD+1 leaks into the output).
+  n_patient_testing_visits[i] = (start_idx > 0 && cutoff_observed_mask[i] && patient_trial[i] == lfo_eval_trial) ? (visit_end - start_idx + 1) : 0;
 }
 
 print("n_cutoff_observed_patients = ", n_cutoff_observed_patients);
@@ -313,4 +357,42 @@ array[n_cutoff_observed_patients + 1] int cutoff_patient_visit_m1_pos = create_p
 // - patient_log_growth_rate[cutoff_observed_patients]    (patient-level)
 // - sum_tumor_size[cutoff_state_indices]                 (visit-level!)
 // - states[cutoff_state_indices, ] to get cutoff states (ALL visits, including first)
+
+// ============================================================================
+// All-transition cutoff re-censoring (GitHub issue #92 / blocker B1)
+// ============================================================================
+// Build cutoff-censored multistate arrays for ALL enabled transitions, so the
+// LFO model block can fit the same multistate_lpmf as the full model instead
+// of the 0->1-only single-transition path. Uses the shared, tested
+// recensor_ms_at_cutoff() (stan/lfo.stanfunctions:391; tests in
+// test-stan-recensor-ms.R) — identical pattern to ms-standalone-lfo.stan.
+//
+// Death / dropout / off-trial death are registry-exact (no visit required), so
+// they censor at the per-patient calendar cutoff (lfo_cutoff_cal_week); visit-
+// gated events (progression, state-0 follow-up) censor at cutoff_last_visit_week.
+array[n_patients] int lfo_cutoff_cal_week;
+for (i in 1:n_patients) {
+  int days_since_enroll = cutoff_calendar_day[1] - calendar_day[i] + 1;
+  lfo_cutoff_cal_week[i] = days_since_enroll > 0 ? (days_since_enroll - 1) %/% 7 + 1 : 0;
+}
+
+array[n_patients] int lfo_ms_final_state;
+array[n_patients] int lfo_ms_time_01;
+array[n_patients] int lfo_ms_censored_01;
+array[n_patients] int lfo_ms_time_02;
+array[n_patients] int lfo_ms_time_12;
+array[n_patients] int lfo_ms_time_03;
+array[n_patients] int lfo_ms_time_32;
+array[n_patients] int lfo_interval_censored;
+array[n_patients] int lfo_ms_prog_deterministic;
+array[n_patients] int lfo_ms_ic_gap_01;
+
+(lfo_ms_final_state, lfo_ms_time_01, lfo_ms_censored_01,
+ lfo_ms_time_02, lfo_ms_time_12, lfo_ms_time_03, lfo_ms_time_32,
+ lfo_interval_censored, lfo_ms_prog_deterministic, lfo_ms_ic_gap_01) =
+  recensor_ms_at_cutoff(
+    ms_final_state, ms_time_01, ms_censored_01,
+    ms_time_02, ms_time_12, ms_time_03, ms_time_32,
+    ms_os_event_12, interval_censored, ms_prog_deterministic,
+    cutoff_last_visit_week, lfo_cutoff_cal_week);
 
