@@ -1,6 +1,9 @@
 ---
 title: "Model Validation"
 subtitle: "Leave-future-out cross-validation and OOS accuracy assessment"
+execute:
+  eval: false
+  echo: false
 ---
 
 ```{r}
