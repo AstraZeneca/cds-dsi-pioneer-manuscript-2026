@@ -103,7 +103,7 @@ test_that("decompose rejects out-of-range legacy modes", {
 # ---------------------------------------------------------------------------
 
 test_that("ms_init_values_fixed sizes the 0->1 RE intercept per-slot (trial RE)", {
-  source(here::here("r", "sclc", "initializers_fixed.R"))
+  source(here::here("r", "initializers_fixed.R"))
   # trial-level RE (mode 2), patient none; 2 levels with 3 trials, 10 patients.
   d <- decompose_ms_level_baseline_hazard(c(trial = 2L, patient = 0L))
   env <- c(list(
@@ -191,7 +191,7 @@ test_that("ms_corr_blocks: mismatched dimensions across blocks errors", {
 })
 
 test_that("ms_init_values_fixed: corr_group stays absent (no Phase-2 params yet)", {
-  source(here::here("r", "sclc", "initializers_fixed.R"))
+  source(here::here("r", "initializers_fixed.R"))
   d <- decompose_ms_level_baseline_hazard(c(trial = 3L, patient = 0L))
   env <- c(list(
     n_time_varying_covar = 0L, n_time_invariant_covar = 0L,

@@ -126,7 +126,7 @@ publication_targets <- list(
   # Track initializer file so changes invalidate the initializer targets
   tar_target(
     initializers_fixed_file,
-    "r/sclc/initializers_fixed.R",
+    "r/initializers_fixed.R",
     format = "file"
   ),
 
