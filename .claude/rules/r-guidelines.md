@@ -66,7 +66,7 @@ Rscript -e 'rsconnect::deploySite(siteDir = "quarto/publication/crc",  server = 
 
 **Published URLs:**
 - Pioneer: https://rstudio-connect.seml.scp.astrazeneca.net/content/4ec50122-5d33-43fa-831c-3df0243084f7/
-- Publication (SCLC): https://rstudio-connect.seml.scp.astrazeneca.net/content/fdee3ad4-616a-42b4-b258-47dfb14ba50f/
+- Publication (SCLC): https://rstudio-connect.seml.scp.astrazeneca.net/content/f14694b1-bfe3-4025-b037-f7338c6ea744/
 - Publication (CRC): https://rstudio-connect.seml.scp.astrazeneca.net/content/924fa554-f3ee-4199-b119-74243e38f0f6/
 
 ### Key Configuration Files
