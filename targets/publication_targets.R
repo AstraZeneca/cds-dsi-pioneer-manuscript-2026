@@ -243,7 +243,7 @@ publication_targets <- list(
       # This single column drives BOTH enable_background_surrogate (in
       # default_stan_data_settings) AND forecast_split_level (in all_stan_data), keeping
       # the two coupled: marginalization off ⟺ no split ⟺ fit everyone.
-      enable_surrogate = TRUE,
+      enable_surrogate = FALSE,
       # COLD START for the surrogate run: enabling enable_background_surrogate
       # marginalizes the 419 backgrounded patients' NCP latents, SHRINKING the
       # sampled parameter space. The saved inv-metric (data/inv_metric_publication
