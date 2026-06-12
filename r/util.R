@@ -229,18 +229,48 @@ generate_quantities_from_fit <- function(
   do.call(model$generate_quantities, gq_args)
 }
 
+#' Which read_cmdstan_csv field holds the draws, by fit type
+#'
+#' \code{read_cmdstan_csv} returns draws under different list elements depending
+#' on the inference method: MCMC (\code{sample}) splits warmup/sampling and puts
+#' the kept draws in \code{post_warmup_draws}, whereas Pathfinder, variational,
+#' and Laplace fits have no warmup phase and return their draws in \code{draws}.
+#' This S3 generic lets \code{\link{select_draws}} stay method-agnostic: it
+#' dispatches on the fit object's class (CmdStanMCMC / CmdStanPathfinder / …,
+#' all R6 objects whose class vector S3 can match) to pick the right field.
+#'
+#' @param fit A CmdStanR fit object.
+#' @return Character scalar: the \code{read_cmdstan_csv} list element name.
+#' @export
+cmdstan_draws_field <- function(fit) {
+  UseMethod("cmdstan_draws_field")
+}
+
+#' @export
+cmdstan_draws_field.CmdStanMCMC <- function(fit) "post_warmup_draws"
+
+#' @export
+cmdstan_draws_field.default <- function(fit) "draws"
+
 #' Select draws from CmdStanR fit using tidyselect patterns
 #'
 #' Uses cmdstanr::read_cmdstan_csv with variable selection to read only the
 #' needed variables directly from CSV files. This bypasses any caching in
 #' the fit object and ensures minimal memory usage.
 #'
-#' @param fit A CmdStanMCMC fit object
+#' Works for any CmdStanR fit type. The single method-specific detail — which
+#' \code{read_cmdstan_csv} field holds the draws — is resolved by the
+#' \code{\link{cmdstan_draws_field}} S3 generic (MCMC → \code{post_warmup_draws};
+#' Pathfinder/variational/Laplace → \code{draws}), so the same call works on a
+#' \code{CmdStanMCMC} or a \code{CmdStanPathfinder} fit unchanged.
+#'
+#' @param fit A CmdStanR fit object (CmdStanMCMC, CmdStanPathfinder, …)
 #' @param ... Tidyselect expressions to filter variables (e.g., ends_with("_pop"))
 #' @return A draws_array object with selected variables
 #' @export
 select_draws <- function(fit, ...) {
   csv_files <- fit$output_files()
+  draws_field <- cmdstan_draws_field(fit)
 
   # Get all variable names from the CSV header (avoids fit$metadata() which
   # also relies on live process state)
@@ -271,11 +301,12 @@ select_draws <- function(fit, ...) {
   # The combined model writes ~49 GB per chain; reading all 4 chains at once
   # (196 GB) causes read_cmdstan_csv to fail mid-parse and return NA draws.
   # Sequential per-chain reads keep peak memory to one chain's selected columns.
+  # (Pathfinder/VB/Laplace write a single CSV, so this is just one iteration.)
   chain_draws <- lapply(csv_files, function(csv) {
     cmdstanr::read_cmdstan_csv(
       files = csv,
       variables = selected_vars
-    )$post_warmup_draws
+    )[[draws_field]]
   })
   posterior::bind_draws(chain_draws, along = "chain")
 }
