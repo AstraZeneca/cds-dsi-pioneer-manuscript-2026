@@ -248,6 +248,13 @@ stan_settings <- list(
   enable_pop_cov_init = FALSE,
   enable_static_init = 1L,
 
+  # Gompertz growth-rate decay OFF for this sim, but the master gate and the two
+  # per-level flag arrays are now unconditionally required in the Stan data block.
+  enable_gr_decay = 0L,
+  enable_pop_cov_gr_decay = 0L,
+  enable_level_intercept_gr_decay = c(trial = none_mode, patient = none_mode),
+  enable_level_cov_gr_decay = c(trial = FALSE, patient = FALSE),
+
   pfs_timepoints = c(24L, 48L),
   n_pfs_timepoints = 2L,
 
