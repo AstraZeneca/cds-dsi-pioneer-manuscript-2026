@@ -375,6 +375,12 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     gr_decay_log_loc_pop_sd = gr_decay_log_loc_pop_sd,
     gr_decay_coef_qr_pop_mean = as.array(rep(0, n_covar)),
     gr_decay_coef_qr_pop_sd = as.array(rep(1, n_covar)),
+    gr_decay_sd_level_intercept_sd = rep(0.25, n_levels),
+    gr_decay_fe_sd_level_intercept = rep(0, n_levels),
+    gr_decay_sd_level_slope_sd = list(
+      trial = rep(0.05, n_covar),
+      patient = rep(0.03, n_covar)
+    ),
 
     # Growth lag
     growth_lag_mean = 2.7,
