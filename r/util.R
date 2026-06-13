@@ -709,12 +709,15 @@ get_km_res <- function(
   pfs_var,
   censored_var,
   ...,
+  by = trial,
   probs = c(0.5, 0.8)
 ) {
   pfs_sym <- rlang::ensym(pfs_var)
   censored_sym <- rlang::ensym(censored_var)
 
   analysis_data |>
+    select(!any_of("trial")) |>
+    rename(trial = {{ by }}) |>
     group_by(trial, ...) |>
     group_map(
       \(trt_data, key) {

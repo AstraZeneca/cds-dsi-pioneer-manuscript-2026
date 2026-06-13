@@ -46,7 +46,8 @@ profile("burden_endpoints") {
    sample_os, sample_os_censored,
    spop_os, spop_os_censored,
    spop_is_dropout, sample_is_dropout,
-   spop_dropout_week
+   spop_dropout_week,
+   ignore_sample_prog_pfs, ignore_sample_prog_right_censored
   ) = calculate_all_patients_endpoints_rng(
     forecast_patient_idx,
     obs_biomarker_cat,

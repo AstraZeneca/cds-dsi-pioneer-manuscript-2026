@@ -85,6 +85,16 @@ CLAUDE.local.md
 
 quarto/**/*.rmarkdown
 
+# Writing folder — PDF and LaTeX build artifacts
+writing/**/*.pdf
+writing/**/*.aux
+writing/**/*.log
+writing/**/*.out
+writing/**/*.toc
+writing/**/*.fls
+writing/**/*.fdb_latexmk
+writing/**/*.synctex.gz
+
 **/*.quarto_ipynb
 quarto/.posit/
 quarto/**/site_libs/

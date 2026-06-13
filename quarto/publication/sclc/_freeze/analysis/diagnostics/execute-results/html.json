@@ -1,0 +1,15 @@
+{
+  "hash": "670bbdcd0a71d559e3d8a46473be2d00",
+  "result": {
+    "engine": "knitr",
+    "markdown": "---\ntitle: \"Sampling Diagnostics\"\nsubtitle: \"MCMC convergence and sampling quality assessment\"\nexecute:\n  freeze: true\n---\n\n\n\nThis page presents MCMC sampling diagnostics for the publication model fit.\n\n::: {.callout-note}\n## Interpretation\n- **Divergences**: Should be 0 or very low\n- **E-BFMI**: Should be > 0.3\n- **R-hat**: Should be < 1.01 for all parameters\n- **ESS**: Effective sample size — should be sufficiently large\n:::\n\n## Diagnostics Summary {#sec-summary}\n\n\n::: {.cell}\n\n```{.r .cell-code}\npub_tar_read(\"tumor_ssls_nuts_summary_posterior\")\n```\n\n::: {.cell-output .cell-output-stdout}\n\n```\n# A tibble: 4 × 8\n  Chain n_iter n_divergent n_max_treedepth mean_accept median_stepsize\n  <int>  <int>       <int>           <int>       <dbl>           <dbl>\n1     1    500           0               0       0.937          0.0171\n2     2    500           3               0       0.920          0.0205\n3     3    500           3               0       0.878          0.0220\n4     4    500           0               0       0.928          0.0183\n# ℹ 2 more variables: total_leapfrog <dbl>, ebfmi <dbl>\n```\n\n\n:::\n:::\n\n\n## Convergence Check {#sec-convergence}\n\n\n::: {.cell}\n\n```{.r .cell-code}\npub_tar_read(\"tumor_ssls_convergence_posterior\")\n```\n\n::: {.cell-output .cell-output-stdout}\n\n```\n$pop\n# A tibble: 1,619 × 4\n   variable                        rhat ess_bulk ess_tail\n   <chr>                          <dbl>    <dbl>    <dbl>\n 1 pop_log_decrease_rate           1.05     97.8     488.\n 2 tr_loc_pop                      1.05     93.8     537.\n 3 init_logit_loc_pop              1.03    333.      515.\n 4 tr_sd_level_intercept_raw[2]    1.02    231.      726.\n 5 tr_sd_level_intercept[2]        1.02    231.      726.\n 6 time_invariant_coef_qr_03[2]    1.02   1458.      780.\n 7 time_varying_coef_03[3]         1.02    352.      813.\n 8 time_invariant_coef_qr_03[1]    1.01    843.      999.\n 9 time_invariant_coef_qr_03[5]    1.01    948.      833.\n10 init_sd_level_intercept_raw[1]  1.01    352.      758.\n# ℹ 1,609 more rows\n\n$patient\n# A tibble: 1 × 6\n  group           n_params max_rhat n_rhat_bad min_ess_bulk min_ess_tail\n  <chr>              <int>    <dbl>      <int>        <dbl>        <dbl>\n1 patient_effects   208816     1.05      12020         83.4         75.6\n```\n\n\n:::\n:::\n\n\n## Detailed Inspection {#sec-detailed}\n\nFor detailed parameter-level diagnostics, trace plots, and pair plots, load the fit object:\n\n```r\nfit <- pub_tar_read(\"tumor_ssls_res_posterior\")\nfit$summary()\nfit$diagnostic_summary()\n```\n",
+    "supporting": [],
+    "filters": [
+      "rmarkdown/pagebreak.lua"
+    ],
+    "includes": {},
+    "engineDependencies": {},
+    "preserve": {},
+    "postProcess": true
+  }
+}
