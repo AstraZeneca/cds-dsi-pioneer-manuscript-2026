@@ -10,6 +10,7 @@ functions {
   #include "multistate.stanfunctions"
   #include "_burden.stanfunctions"
   #include "modules/state_space/sf.stanfunctions"
+  #include "modules/gr_decay/gr_decay.stanfunctions"
   #include "modules/tumor/tumor.stanfunctions"
 }
 
