@@ -51,6 +51,7 @@ transformed data {
   #include "modules/tumor/transformed_data.stan"
   #include "modules/tr/transformed_data.stan"
   #include "modules/frac/transformed_data.stan"
+  #include "modules/gr_decay/transformed_data.stan"
   #include "modules/init/transformed_data.stan"
   #include "modules/state_space/transformed_data.stan"
   #include "modules/multistate/transformed_data.stan"
