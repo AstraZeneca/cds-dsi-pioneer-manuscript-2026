@@ -243,7 +243,16 @@ publication_targets <- list(
       # This single column drives BOTH enable_background_surrogate (in
       # default_stan_data_settings) AND forecast_split_level (in all_stan_data), keeping
       # the two coupled: marginalization off ⟺ no split ⟺ fit everyone.
-      enable_surrogate = TRUE,
+      #
+      # DISCONNECTED 2026-06-13 (enable_surrogate=FALSE). The measured investigation
+      # (docs/laplace-surrogate-performance.md) showed the marginalized fit is SLOWER
+      # than the explicit all-497 fit (~17h vs 9.4h/chain) and only matches-at-best even
+      # with reduce_sum parallelism — Laplace is mismatched to n_bg≈419 × 2 well-identified
+      # latents. The surrogate machinery (Stan modules, bridge, knobs, profiling block,
+      # initializers) all REMAINS in the tree, fully revivable: flip this back to TRUE to
+      # reconnect. The publication ships the explicit fit. See docs for the d=4 dead-end
+      # analysis and the ESS/sec gate that gates ever reconnecting.
+      enable_surrogate = FALSE,
       # Patient-level correlated RE frailty on 0->1 and 0->3 (Phase 2). When FALSE,
       # the patient level carries NO random intercept on these slots, so the Laplace
       # surrogate drops to d=2 (burden only) and Sigma_u never enters the inner
