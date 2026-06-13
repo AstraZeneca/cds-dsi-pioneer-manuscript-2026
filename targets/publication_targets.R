@@ -396,6 +396,11 @@ publication_targets <- list(
         enable_static_init = 0L,  # static compartment OFF by default; flip to 1L per variant
         enable_gr_decay = 1L,           # activate Gompertz growth-rate decay on this branch
         enable_pop_cov_gr_decay = 0L,   # pop-intercept only (no baseline-covariate slopes yet)
+        enable_level_intercept_gr_decay = c(
+          trial_arm = level_intercept_mode["re"],
+          patient   = level_intercept_mode["re"]
+        ),
+        enable_level_cov_gr_decay = c(trial_arm = FALSE, patient = FALSE),
 
         pfs_timepoints = pfs_timepoints_pub$timepoint,
         n_pfs_timepoints = nrow(pfs_timepoints_pub),

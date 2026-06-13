@@ -200,8 +200,12 @@ fit_one_kappa <- function(kappa_true, mod) {
     enable_static_init = 0L,
 
     # The feature under test: Gompertz growth-rate decay, pop-intercept only.
+    # Level-hierarchy on log(kappa) OFF (pop-intercept only) — but the two flag
+    # arrays are now unconditionally required in the Stan data block.
     enable_gr_decay = 1L,
     enable_pop_cov_gr_decay = 0L,
+    enable_level_intercept_gr_decay = c(trial = none_mode, patient = none_mode),
+    enable_level_cov_gr_decay = c(trial = FALSE, patient = FALSE),
 
     pfs_timepoints = c(24L, 48L), n_pfs_timepoints = 2L, n_shards = 1L
   )
