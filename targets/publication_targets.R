@@ -243,7 +243,14 @@ publication_targets <- list(
       # This single column drives BOTH enable_background_surrogate (in
       # default_stan_data_settings) AND forecast_split_level (in all_stan_data), keeping
       # the two coupled: marginalization off ⟺ no split ⟺ fit everyone.
-      enable_surrogate = FALSE,
+      enable_surrogate = TRUE,
+      # Patient-level correlated RE frailty on 0->1 and 0->3 (Phase 2). When FALSE,
+      # the patient level carries NO random intercept on these slots, so the Laplace
+      # surrogate drops to d=2 (burden only) and Sigma_u never enters the inner
+      # solve — isolating whether the frailty's near-degenerate Sigma_u is what
+      # stalls the marginalized fit (block_matrix_sqrt Schur failure). The trial-
+      # level GP baseline is unaffected (it's a static offset, not in theta).
+      enable_frailty = TRUE,
       # COLD START for the surrogate run: enabling enable_background_surrogate
       # marginalizes the 419 backgrounded patients' NCP latents, SHRINKING the
       # sampled parameter space. The saved inv-metric (data/inv_metric_publication
@@ -420,16 +427,20 @@ publication_targets <- list(
         # 0->3 dropout hazard (57 events), so died_off_trial patients route to
         # dropout (long PFS) instead of a fast 0->1 progression. Slot order:
         # 1=01, 2=02, 3=03, 4=12_s, 5=12_t, 6=32; patient level = last column.
-        n_levels_ms <- ncol(decomposed$ms_level_intercept_mode)
-        patient_lv <- n_levels_ms
-        MS_SLOT_01 <- 1L
-        MS_SLOT_03 <- 3L
-        decomposed$ms_level_intercept_mode[MS_SLOT_01, patient_lv] <- 2L # RE-NCP
-        decomposed$ms_level_intercept_mode[MS_SLOT_03, patient_lv] <- 2L # RE-NCP
-        decomposed$enable_ms_level_gp[MS_SLOT_01, patient_lv] <- 0L
-        decomposed$enable_ms_level_gp[MS_SLOT_03, patient_lv] <- 0L
-        decomposed$ms_level_intercept_corr_group[MS_SLOT_01, patient_lv] <- 1L
-        decomposed$ms_level_intercept_corr_group[MS_SLOT_03, patient_lv] <- 1L
+        # Gated on enable_frailty: when FALSE the patient level keeps its decomposed
+        # default (no RE intercept on these slots), so the surrogate stays d=2.
+        if (enable_frailty) {
+          n_levels_ms <- ncol(decomposed$ms_level_intercept_mode)
+          patient_lv <- n_levels_ms
+          MS_SLOT_01 <- 1L
+          MS_SLOT_03 <- 3L
+          decomposed$ms_level_intercept_mode[MS_SLOT_01, patient_lv] <- 2L # RE-NCP
+          decomposed$ms_level_intercept_mode[MS_SLOT_03, patient_lv] <- 2L # RE-NCP
+          decomposed$enable_ms_level_gp[MS_SLOT_01, patient_lv] <- 0L
+          decomposed$enable_ms_level_gp[MS_SLOT_03, patient_lv] <- 0L
+          decomposed$ms_level_intercept_corr_group[MS_SLOT_01, patient_lv] <- 1L
+          decomposed$ms_level_intercept_corr_group[MS_SLOT_03, patient_lv] <- 1L
+        }
 
         c(assembled, decomposed)
       }

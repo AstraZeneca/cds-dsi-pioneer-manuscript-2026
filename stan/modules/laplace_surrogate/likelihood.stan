@@ -83,6 +83,7 @@ if (enable_background_surrogate == 1 && n_background_patients > 0) {
     matrix[surrogate_n_frailty_slots, surrogate_n_frailty_slots] Sigma_u =
       Lu * Lu' + diag_matrix(rep_vector(surrogate_jitter, surrogate_n_frailty_slots));
 
+    profile("surrogate_laplace") {  // TEMP profiling: isolate inner-solve cost
     target += laplace_marginal_tol(
       surrogate_ll,
       (bg_beta_pop, measure_sd_sld, surrogate_bg_log_lod, n_background_patients,
@@ -100,7 +101,9 @@ if (enable_background_surrogate == 1 && n_background_patients > 0) {
       (surrogate_theta_0, surrogate_tolerance, surrogate_max_num_steps,
        surrogate_solver, surrogate_max_steps_line_search, surrogate_allow_fallback)
     );
+    }
   } else {
+    profile("surrogate_laplace") {  // TEMP profiling: isolate inner-solve cost
     target += laplace_marginal_tol(
       surrogate_ll,
       (bg_beta_pop, measure_sd_sld, surrogate_bg_log_lod, n_background_patients,
@@ -111,5 +114,6 @@ if (enable_background_surrogate == 1 && n_background_patients > 0) {
       (surrogate_theta_0, surrogate_tolerance, surrogate_max_num_steps,
        surrogate_solver, surrogate_max_steps_line_search, surrogate_allow_fallback)
     );
+    }
   }
 }

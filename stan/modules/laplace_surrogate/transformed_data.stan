@@ -14,8 +14,8 @@ vector[3] surrogate_gh_w = [1.0 / 6.0, 2.0 / 3.0, 1.0 / 6.0]';
 
 // Laplace inner-solver knobs (linear-Gaussian surrogate => solver 1; may fall
 // back to solver 2 on the collinear (t,t^2) basis — harmless, validated).
-real surrogate_tolerance = 1e-8;
-int surrogate_max_num_steps = 100;
+real surrogate_tolerance = surrogate_tolerance_in > 0 ? surrogate_tolerance_in : 1e-8;
+int surrogate_max_num_steps = surrogate_max_num_steps_in > 0 ? surrogate_max_num_steps_in : 100;
 // d-parametric latent dim: 2 burden REs + one frailty latent per frailty slot.
 // Detected from the MS intercept-mode config (patient level = last hierarchy col).
 int surrogate_patient_lv = n_levels;
@@ -37,7 +37,7 @@ if (enable_background_surrogate == 1) {
 }
 int surrogate_d = 2 + surrogate_n_frailty_slots;
 int surrogate_hessian_block_size = surrogate_d;
-int surrogate_solver = 1;
+int surrogate_solver = surrogate_solver_in > 0 ? surrogate_solver_in : 1;
 int surrogate_max_steps_line_search = 0;
 int surrogate_allow_fallback = 1;
 real surrogate_jitter = 1e-10;
