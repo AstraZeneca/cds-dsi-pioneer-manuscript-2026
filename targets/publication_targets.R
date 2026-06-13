@@ -107,7 +107,11 @@ disease_map <- tibble::tribble(
 # per-chain inv_metric files because the mass matrix dimension equals the
 # total unconstrained parameter count, which scales with n_patients.
 #
-# SCLC: data/inv_metric_publication_tumor_ssls_chain*.json (job #1868, 4812 params)
+# SCLC: data/inv_metric_publication_tumor_ssls_gr_decay_sclc_chain*.json
+#       (job #1952, 5258 params — enable_gr_decay=1L on this branch; the #1868
+#       metric is stale here, wrong dimension since gr_decay grows the param space).
+#       Consumed only when disease == "sclc"; CRC falls back to NULL (cold start)
+#       because these SCLC metrics have the wrong mass-matrix dimension for CRC.
 # CRC:  TODO — no valid files yet. The pre-trend CRC metrics (job ~202605312138)
 #       have wrong dimension (16433 params, pre-trend model). Save new ones after
 #       the first successful CRC posterior run with enable_ms_baseline_trend_01=1.
@@ -120,7 +124,10 @@ disease_map <- tibble::tribble(
 #        the always-on arm-level RE change (4692c282) grew the parameter space —
 #        set LFO_COLD_START=true to skip them and regenerate via save_metric=TRUE.
 # CRC:  no files yet — lfo() passes metric_file = NULL for crc → cold start.
-publication_metric_files <- NULL
+# Per-chain SCLC posterior warm-start metrics (gr_decay-ON, 5258 params).
+publication_metric_files_sclc <- sprintf(
+  "data/inv_metric_publication_tumor_ssls_gr_decay_sclc_chain%d.json", 1:4
+)
 
 publication_targets <- list(
   # Track initializer file so changes invalidate the initializer targets
@@ -461,8 +468,10 @@ publication_targets <- list(
         # Posterior warm-starts from #1868's adapted trend metric so needs far
         # less warmup; prior cold-starts (no valid posterior metric for it).
         iter_warmup = c(300L, 150L),
-        # List-column: prior = no warm-start; posterior = per-chain inv-metric files.
-        metric_files = list(NULL, publication_metric_files),
+        # Posterior warm-starts from saved metrics; prior always cold-starts.
+        # Actual file selection is disease-conditional at the metric_file arg
+        # (SCLC has gr_decay metrics; CRC has none → cold start).
+        warm_start = c(FALSE, TRUE),
         chains = 4L
       ),
       names = "type",
@@ -487,24 +496,33 @@ publication_targets <- list(
 
       tar_target(
         tumor_ssls_res,
-        sample_and_save(
-          tumor_ssls_exe_hash$exe_file,
-          tumor_ssls_stan_data,
-          # Posterior warm-starts from job #1868's adapted trend metric, so the
-          # 150-iter warmup (from the type tribble) suffices. Prior always cold-starts.
-          iter_warmup = if (!is.null(metric_files)) iter_warmup else max(iter_warmup, 300L),
-          iter_sampling = iter_sampling,
-          save_warmup = FALSE,
-          parallel_chains = chains,
-          chains = chains,
-          threads_per_chain = tumor_ssls_stan_data$n_shards,
-          init = tumor_ssls_initializer,
-          adapt_delta = 0.8,
-          save_metric = TRUE,
-          metric_file = metric_files,
-          output_dir = file.path(publication_output_path, "fit", str_c(base_name, "_", disease)),
-          timestamp = fit_output_timestamp
-        ),
+        {
+          # Resolve warm-start metrics: posterior + SCLC → saved gr_decay metrics
+          # (5258 params, job #1952); prior or CRC → NULL (cold start). The
+          # SCLC metrics have the wrong dimension for CRC, so they must not leak.
+          posterior_metric_files <- if (warm_start && disease == "sclc") {
+            publication_metric_files_sclc
+          } else {
+            NULL
+          }
+          sample_and_save(
+            tumor_ssls_exe_hash$exe_file,
+            tumor_ssls_stan_data,
+            # Warm-started fits need less warmup; cold starts get the 300-iter floor.
+            iter_warmup = if (!is.null(posterior_metric_files)) iter_warmup else max(iter_warmup, 300L),
+            iter_sampling = iter_sampling,
+            save_warmup = FALSE,
+            parallel_chains = chains,
+            chains = chains,
+            threads_per_chain = tumor_ssls_stan_data$n_shards,
+            init = tumor_ssls_initializer,
+            adapt_delta = 0.8,
+            save_metric = TRUE,
+            metric_file = posterior_metric_files,
+            output_dir = file.path(publication_output_path, "fit", str_c(base_name, "_", disease)),
+            timestamp = fit_output_timestamp
+          )
+        },
         storage = "main",
         resources = tar_resources(
           crew = tar_resources_crew(controller = "fit")
