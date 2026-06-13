@@ -108,13 +108,41 @@ model {
       }
     }
 
-    // Multistate likelihood contribution (cutoff-aware)
-    if (enable_ms_01) {
-      target += sum(calc_ms_single_transition_loglik(
-        cutoff_ms_time_01,
-        cutoff_ms_censored_01,
-        log_cond_surv_01[cutoff_observed_patients]
-      ));
+    // Multistate likelihood contribution (cutoff-aware, ALL enabled transitions).
+    // Mirrors the full model (sf-ssm-log-space.stan:101) via multistate_lpmf,
+    // fed cutoff-censored lfo_ms_* arrays from recensor_ms_at_cutoff (issue #92).
+    // No propensity module here, so weights are all 1.0 (like the full tumor model).
+    //
+    // B2 GUARD: log_cond_surv_* are forecast-row-sized and indexed forecast-local.
+    // The publication LFO runs forecast_split_level == 0 (identity row map), so
+    // indexing by full patient IDs is correct. Background/forecast split (B2) must
+    // reconcile the row space before lifting this guard.
+    if (fit_multistate_data) {
+      if (forecast_split_level != 0)
+        fatal_error("sf-ssls-lfo all-transition MS likelihood requires ",
+                    "forecast_split_level == 0 (got ", forecast_split_level,
+                    "); background/forecast split (B2) not yet implemented.");
+
+      lfo_ms_final_state[forecast_patient_idx] ~ multistate(
+        ones_vector(n_forecast_patients),
+        enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
+        enable_ms_03, enable_ms_32,
+        lfo_ms_time_01[forecast_patient_idx], lfo_ms_time_02[forecast_patient_idx],
+        lfo_ms_time_12[forecast_patient_idx],
+        lfo_ms_time_03[forecast_patient_idx], lfo_ms_time_32[forecast_patient_idx],
+        lfo_ms_censored_01[forecast_patient_idx],
+        lfo_ms_prog_deterministic[forecast_patient_idx],
+        lfo_ms_ic_gap_01[forecast_patient_idx],
+        t_patient_visits,
+        patient_visit_pos,
+        log_cond_surv_01,
+        log_cond_surv_02,
+        log_cond_surv_12_s,
+        log_cond_surv_12_t,
+        log_cond_surv_03,
+        log_cond_surv_32,
+        enable_ms_visit_gated_01
+      );
     }
 
     #include "modules/laplace_surrogate/likelihood.stan"
@@ -140,9 +168,12 @@ generated quantities {
     int start_idx = testing_start_idx[1, i];
     // Only generate OOS predictions for patients who:
     // 1) Have post-cutoff visits at the first cutoff (start_idx > 0), AND
-    // 2) Were observed before/at the cutoff (cutoff_observed_mask[i] == 1)
-    // This excludes newly enrolled patients who entered the study after the cutoff.
-    if (start_idx > 0 && cutoff_observed_mask[i]) {
+    // 2) Were observed before/at the cutoff (cutoff_observed_mask[i] == 1), AND
+    // 3) Belong to the eval trial (lfo_testing_patient_idx[i] > 0)
+    // Historical (non-eval-trial) patients are given full training history by C-EXT
+    // but must NOT fill oos_recist — n_patient_testing_visits[i]==0 for them, so
+    // testing_visit_pos has no slot allocated and get_pos() returns a degenerate range.
+    if (start_idx > 0 && cutoff_observed_mask[i] && lfo_testing_patient_idx[i] > 0) {
       int n_oos_visits = visit_end - start_idx + 1; 
     
       array[n_oos_visits + 1] int forecast_time = get_int_sub_array(t_patient_visits, patient_visit_pos, i)[visit_size:];      
@@ -233,8 +264,12 @@ generated quantities {
         // Since we only process cutoff-observed patients (cutoff_observed_mask[i] == 1),
         // we can always use the already-calculated sample_ms_pfs from _lfo_endpoints_generated_quantities.stan
         int cutoff_patient_idx = patient_to_cutoff_idx[i];
-        int forecast_ms_pfs = sample_ms_pfs[cutoff_patient_idx];
-        int forecast_ms_censored = sample_ms_right_censored[cutoff_patient_idx];
+        // Confusion-matrix prediction uses PROGRESSION-ONLY PFS (0→1: target-lesion
+        // PD or MS 0→1 hazard). Death (0→2) and dropout (0→3) must NOT stamp PD here
+        // because the observed RECIST axis is scan-only and never records death as PD.
+        // PFS/OS endpoints continue to treat death as an event (unchanged).
+        int forecast_ms_pfs = sample_prog_pfs[cutoff_patient_idx];
+        int forecast_ms_censored = sample_prog_right_censored[cutoff_patient_idx];
 
         if (!forecast_ms_censored) {
           // Multistate PD occurs at week forecast_ms_pfs
@@ -285,9 +320,22 @@ generated quantities {
   //   - max_forecast_horizon controls the forecast window size (2 for exact LFO, n_cutoffs for PSIS)
   //   - m_rel is the relative column index for array storage (1, 2, ...)
   //   - m_abs is the absolute cutoff index for data access (n, n+1, ...)
+  // H3: Zero-initialize ALL array cells over the full [max_n_rows, max_forecast_horizon]
+  // range BEFORE the conditional fill. The fill loop below only writes cells with
+  // m_abs in [n, min(n + max_forecast_horizon - 1, n_cutoffs)]; at the global last
+  // cutoff (n_cutoffs == 1) only [.,1] is reached, leaving [.,2] uninitialized (NaN).
+  // Pre-zeroing every cell guarantees unreached cells are zeros, not NaN.
+  for (n in 1:max_n_rows) {
+    for (m_rel in 1:max_forecast_horizon) {
+      patient_log_lik_tumor[n, m_rel] = zeros_vector(n_all_testing_patients);
+      patient_log_lik_oe[n, m_rel] = zeros_vector(n_all_testing_patients);
+      patient_log_lik[n, m_rel] = zeros_vector(n_all_testing_patients);
+      oos_recist_confusion_matrix[n, m_rel] = rep_matrix(0, PD, PD);
+    }
+  }
+
   for (n in 1:max_n_rows) {
     int n_curr_patients = n_patients - testing_patient_idx[n] + 1; // How many patients after the current patient index
-    int curr_first_testing_patient_idx = n_all_testing_patients - n_curr_patients + 1;
     array[n_curr_patients] int curr_patients = last_visit_calendar_day_sort_idx[testing_patient_idx[n]:]; // Who are these patients
 
     // Only compute for forecast window: m_abs in [n, min(n + max_forecast_horizon - 1, n_cutoffs)]
@@ -295,11 +343,6 @@ generated quantities {
     for (m_abs in n:m_end) {
       // m_rel is the relative column index for array storage (1-based: 1, 2, ...)
       int m_rel = m_abs - n + 1;
-
-      patient_log_lik_tumor[n, m_rel] = zeros_vector(n_all_testing_patients);
-      patient_log_lik_oe[n, m_rel] = zeros_vector(n_all_testing_patients);
-      patient_log_lik[n, m_rel] = zeros_vector(n_all_testing_patients);
-      oos_recist_confusion_matrix[n, m_rel] = rep_matrix(0, PD, PD);
 
       for (i_idx in 1:n_curr_patients) {
         // Note: i is the original patient ID (1-based index from input data), not a sort position.
@@ -312,9 +355,16 @@ generated quantities {
         int start_idx = testing_start_idx[n, i];
         int end_idx = m_abs < n_cutoffs ? testing_end_idx[n, m_abs + 1, i] : visit_end;
 
-        // Only evaluate patients enrolled at this cutoff (not just cutoff 1)
-        if (start_idx > 0 && end_idx >= start_idx && calendar_day[i] <= cutoff_calendar_day[n]) {
-          int patient_idx = curr_first_testing_patient_idx + i_idx - 1;
+        // Only evaluate patients who:
+        // 1) Have post-cutoff visits (start_idx > 0 && end_idx >= start_idx)
+        // 2) Were observed before/at the cutoff (cutoff_observed_mask[i])
+        // 3) Have allocated OOS testing visits (n_patient_testing_visits[i] > 0)
+        // 4) Belong to the eval trial (lfo_testing_patient_idx[i] > 0)
+        // Non-eval-trial patients are excluded from the log-lik output vectors.
+        if (start_idx > 0 && end_idx >= start_idx && calendar_day[i] <= cutoff_calendar_day[n]
+            && cutoff_observed_mask[i] && n_patient_testing_visits[i] > 0
+            && lfo_testing_patient_idx[i] > 0) {
+          int patient_idx = lfo_testing_patient_idx[i];
 
           // Component 1: Tumor model log-likelihood using observed SLD
           real tumor_ll = sf_log_space_obs_lpdf(
@@ -333,8 +383,13 @@ generated quantities {
             int test_end_week = t_patient_visits[end_idx];
 
             // Use ACTUAL observed multistate PFS (not cutoff-censored)
-            // This ensures proper OOS evaluation against real outcomes
-            array[1] int obs_ms_time = {ms_time_01[i]};
+            // This ensures proper OOS evaluation against real outcomes.
+            // calc_pch_loglik expects last-surviving-week; mirror the fit-time
+            // convention (calc_ms_single_transition_loglik): for an observed
+            // 0→1 event, last_surv_week = detection_week - 1 (survived up to the
+            // week before detection); for a censored patient, last_surv_week =
+            // detection_week. Passing ms_time_01[i] directly was an off-by-one.
+            array[1] int obs_ms_time = {ms_censored_01[i] ? ms_time_01[i] : ms_time_01[i] - 1};
             array[1] int obs_ms_censored = {ms_censored_01[i]};
             array[1] int test_start = {test_start_week};
             array[1] int test_end = {test_end_week};

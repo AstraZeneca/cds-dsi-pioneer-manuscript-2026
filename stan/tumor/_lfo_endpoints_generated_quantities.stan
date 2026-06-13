@@ -19,6 +19,10 @@ array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_ms_right_cens
 array[n_cutoff_observed_patients] int<lower = 0> sample_pfs, spop_pfs;
 array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_right_censored, spop_right_censored;
 
+// Progression-only PFS (0→1 only; excludes death/dropout) for OOS RECIST confusion matrix
+array[n_cutoff_observed_patients] int<lower = 0> sample_prog_pfs;
+array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_prog_right_censored;
+
 // OS endpoints (LFO model: always censored since multistate 0→2/1→2 not modeled)
 array[n_cutoff_observed_patients] int<lower = 0> sample_os, spop_os;
 array[n_cutoff_observed_patients] int<lower = 0, upper = 1> sample_os_censored, spop_os_censored;
@@ -226,7 +230,8 @@ profile("gen_quant") {
    sample_os, sample_os_censored,
    spop_os, spop_os_censored,
    spop_is_dropout, sample_is_dropout,
-   spop_dropout_week) =
+   spop_dropout_week,
+   sample_prog_pfs, sample_prog_right_censored) =
     calculate_all_patients_endpoints_rng(
       linspaced_int_array(n_cutoff_observed_patients, 1, n_cutoff_observed_patients),
       cutoff_recist,

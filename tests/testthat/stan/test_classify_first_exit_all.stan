@@ -140,25 +140,10 @@ generated quantities {
     }
   }
 
-  // D3: cause=3, SLD progression before dropout (t_target=25 < t_03=30)
-  //     — PFS event at t_target; ms_pfs censored at t_03
-  {
-    tuple(int, int, int, int) r = derive_spop_pfs(3, 30, 25, 0, 40, 1, 30, 1, 1);
-    if (r.1 != 25 || r.2 != 0 || r.3 != 30 || r.4 != 1) {
-      print("FAIL D3 derive_spop_pfs cause=3 SLD before dropout: got (", r.1, ",", r.2, ",", r.3, ",", r.4, ") expected (25,0,30,1)");
-      n_failures += 1;
-    }
-  }
-
-  // D4: cause=3, SLD progression AT dropout boundary (t_target=30 == t_03=30)
-  //     — still counts as a PFS event (<=, not <)
-  {
-    tuple(int, int, int, int) r = derive_spop_pfs(3, 30, 30, 0, 40, 1, 30, 1, 1);
-    if (r.1 != 30 || r.2 != 0 || r.3 != 30 || r.4 != 1) {
-      print("FAIL D4 derive_spop_pfs cause=3 SLD at boundary: got (", r.1, ",", r.2, ",", r.3, ",", r.4, ") expected (30,0,30,1)");
-      n_failures += 1;
-    }
-  }
+  // D3/D4 removed: cause=3 with c_target=0 is unreachable — classify_spop_exit
+  // only returns cause=3 when no uncensored PD precedes t_03, so t_target < t_03
+  // with c_target=0 cannot occur. The return value for cause=3 is also
+  // unconditionally overwritten by the PFS-from-OS graft at the call site.
 
   // D5: cause=3, SLD progression AFTER dropout (t_target=40 > t_03=30)
   //     — censored at t_03
