@@ -502,14 +502,18 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_res,
         {
-          # Resolve warm-start metrics: posterior + SCLC → saved gr_decay metrics
-          # (5258 params, job #1952); prior or CRC → NULL (cold start). The
-          # SCLC metrics have the wrong dimension for CRC, so they must not leak.
-          posterior_metric_files <- if (warm_start && disease == "sclc") {
-            publication_metric_files_sclc
-          } else {
-            NULL
-          }
+          # COLD START: the saved SCLC metrics (publication_metric_files_sclc,
+          # 5258 params, job #1952) are dimension-stale after the gr_decay RE
+          # hierarchy grew the parameter space (trial-arm + patient kappa raw
+          # effects + SDs). Feeding them would hard-fail at load, so every chain
+          # adapts its own mass matrix. Re-enable warm-start (the commented branch)
+          # once new hierarchy-dimension metrics are saved from a clean fit.
+          posterior_metric_files <- NULL
+          # posterior_metric_files <- if (warm_start && disease == "sclc") {
+          #   publication_metric_files_sclc
+          # } else {
+          #   NULL
+          # }
           sample_and_save(
             tumor_ssls_exe_hash$exe_file,
             tumor_ssls_stan_data,
@@ -521,7 +525,10 @@ publication_targets <- list(
             chains = chains,
             threads_per_chain = tumor_ssls_stan_data$n_shards,
             init = tumor_ssls_initializer,
-            adapt_delta = 0.8,
+            # 0.9 (raised from 0.8): the gr_decay patient-level kappa RE is weakly
+            # identified; smaller steps guard against funnel divergences if the
+            # patient kappa-SD collapses toward 0.
+            adapt_delta = 0.9,
             save_metric = TRUE,
             metric_file = posterior_metric_files,
             output_dir = file.path(publication_output_path, "fit", str_c(base_name, "_", disease)),
