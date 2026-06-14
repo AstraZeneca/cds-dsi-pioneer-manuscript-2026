@@ -1064,6 +1064,26 @@ publication_targets <- list(
             )
         ),
       pattern = map(lfo_km_cutoffs)
+    ),
+
+    tar_target(
+      lfo_cutoff_os_km_est,
+      tumor_ssls_lfo_clean |>
+        filter(n == lfo_km_cutoffs$n) |>
+        reframe(
+          refit_n,
+          n,
+          cutoff_date,
+          cutoff_calendar_day,
+          n_target_observed,
+          select_draws(fit[[1]], matches("^(sample|spop)_os_km_est$")) |>
+            recover_types(select(all_analysis_data, trial = group)) |>
+            spread_rvars(
+              sample_os_km_est[trial, t],
+              spop_os_km_est[trial, t]
+            )
+        ),
+      pattern = map(lfo_km_cutoffs)
     )
 
   )
