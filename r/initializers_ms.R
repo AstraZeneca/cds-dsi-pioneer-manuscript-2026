@@ -38,10 +38,24 @@ ms_init_values <- function(env) {
     }
     ms_legacy_mode <- lapply(seq_len(6L), reconstruct_legacy_mode)
 
+    # Mirrors Stan's n_forecast_groups_per_level: patient level uses forecast
+    # count, not the full patient count (background patients have no parameters).
+    n_fgpl <- n_groups_per_level
+    if (exists("n_forecast_patients", inherits = FALSE)) {
+      n_fgpl[n_levels] <- n_forecast_patients
+    }
+
     n_enabled_slot <- vapply(ms_legacy_mode,
-      function(m) sum(n_groups_per_level[m > 0L]), integer(1))
+      function(m) sum(n_fgpl[m > 0L]), integer(1))
     n_gp_slot <- vapply(ms_legacy_mode,
-      function(m) sum(n_groups_per_level[m == 3L]), integer(1))
+      function(m) sum(n_fgpl[m == 3L]), integer(1))
+    # raw/cp split mirrors Stan's split_cp_ncp_pos (hierarchy.stanfunctions):
+    # raw bucket = modes {FE=1, RE=2, RE_GP=3}; cp bucket = mode {RE_CP=4}.
+    # The raw_*_level_intercept vectors are sized by n_raw, the cp_* by n_cp.
+    n_raw_slot <- vapply(ms_legacy_mode,
+      function(m) sum(n_fgpl[m == 1L | m == 2L | m == 3L]), integer(1))
+    n_cp_slot <- vapply(ms_legacy_mode,
+      function(m) sum(n_fgpl[m == 4L]), integer(1))
     any_re_slot <- vapply(ms_legacy_mode,
       function(m) any(m == 2L | m == 3L | m == 4L), logical(1))
 
@@ -52,7 +66,7 @@ ms_init_values <- function(env) {
     n_enabled_groups_ms_baseline_12_s <- n_enabled_slot[4]
     n_enabled_groups_ms_baseline_12_t <- n_enabled_slot[5]
     n_enabled_groups_ms_baseline_32 <- n_enabled_slot[6]
-    n_enabled_groups_ms_slope <- sum(n_groups_per_level[enable_ms_level_cov == 1])
+    n_enabled_groups_ms_slope <- sum(n_fgpl[enable_ms_level_cov == 1])
     # any_re per slot (used to gate the per-slot intercept-SD inits)
     any_re_level_01   <- any_re_slot[1]
     any_re_level_02   <- any_re_slot[2]
@@ -69,20 +83,30 @@ ms_init_values <- function(env) {
     n_gp_groups_ms_baseline_12_t <- n_gp_slot[5]
     n_gp_groups_ms_baseline_32 <- n_gp_slot[6]
 
+    # raw/cp group counts: size the raw_*_level_intercept (NCP) and
+    # cp_*_level_intercept (centered) vectors respectively. Mirror the per-slot
+    # scalar aliases in stan/modules/multistate/transformed_data.stan.
+    n_raw_groups_ms_baseline_01 <- n_raw_slot[1]
+    n_raw_groups_ms_baseline_02 <- n_raw_slot[2]
+    n_raw_groups_ms_baseline_03 <- n_raw_slot[3]
+    n_raw_groups_ms_baseline_12_s <- n_raw_slot[4]
+    n_raw_groups_ms_baseline_12_t <- n_raw_slot[5]
+    n_raw_groups_ms_baseline_32 <- n_raw_slot[6]
+    n_cp_groups_ms_baseline_01 <- n_cp_slot[1]
+    n_cp_groups_ms_baseline_02 <- n_cp_slot[2]
+    n_cp_groups_ms_baseline_03 <- n_cp_slot[3]
+    n_cp_groups_ms_baseline_12_s <- n_cp_slot[4]
+    n_cp_groups_ms_baseline_12_t <- n_cp_slot[5]
+    n_cp_groups_ms_baseline_32 <- n_cp_slot[6]
+
     # GP knot counts (coarse grid, matches Stan transformed_data ceiling division)
     n_ms_gp_cal_knots        <- ceiling(max_all_t / ms_gp_grid_step)
     n_ms_gp_sojourn_knots    <- ceiling(ms_max_sojourn_t / ms_gp_grid_step)
     n_ms_gp_sojourn_32_knots <- ceiling(ms_max_sojourn_t_32 / ms_gp_grid_step)
 
     # --- Correlated intercept block inits (Phase 2) ---
-    # Patient (last) level uses the forecast-patient count, mirroring Stan's
-    # n_forecast_groups_per_level. Empty when no block is configured.
-    n_forecast_groups_per_level <- n_groups_per_level
-    if (exists("n_forecast_patients", inherits = FALSE)) {
-      n_forecast_groups_per_level[n_levels] <- n_forecast_patients
-    }
     .ms_corr <- ms_corr_blocks(
-      ms_level_intercept_corr_group, ms_slot_active, n_forecast_groups_per_level
+      ms_level_intercept_corr_group, ms_slot_active, n_fgpl
     )
     .ms_corr_inits <- ms_corr_block_inits(.ms_corr, z_sd = 0.3)
 
@@ -104,8 +128,8 @@ ms_init_values <- function(env) {
       log_lambda_trend_01_pop_slope =
         if (isTRUE(enable_ms_baseline_trend_01 == 1L)) array(0.1, dim = 1) else numeric(0),
       raw_log_lambda_trend_01_level =
-        if (isTRUE(enable_ms_baseline_trend_01 == 1L) && n_enabled_groups_ms_baseline_01 > 0) {
-          as.array(rep(0, n_enabled_groups_ms_baseline_01))
+        if (isTRUE(enable_ms_baseline_trend_01 == 1L) && n_raw_groups_ms_baseline_01 > 0) {
+          as.array(rep(0, n_raw_groups_ms_baseline_01))
         } else {
           numeric(0)
         },
@@ -121,8 +145,13 @@ ms_init_values <- function(env) {
       log_lambda_gp_01_level_eta = if (enable_ms_01 && n_gp_groups_ms_baseline_01 > 0) {
         matrix(rnorm(n_gp_groups_ms_baseline_01 * n_ms_gp_cal_knots), nrow = n_gp_groups_ms_baseline_01, ncol = n_ms_gp_cal_knots)
       },
-      raw_log_lambda_gp_01_level_intercept = if (n_enabled_groups_ms_baseline_01 > 0) {
-        as.array(rnorm(n_enabled_groups_ms_baseline_01))
+      raw_log_lambda_gp_01_level_intercept = if (n_raw_groups_ms_baseline_01 > 0) {
+        as.array(rnorm(n_raw_groups_ms_baseline_01))
+      },
+      # cp path (RE_CP, mode 4) samples at natural scale ~ normal(0, sd[lv]);
+      # init small so the centered draw starts near the population intercept.
+      cp_log_lambda_gp_01_level_intercept = if (n_cp_groups_ms_baseline_01 > 0) {
+        as.array(rnorm(n_cp_groups_ms_baseline_01, 0, 0.1))
       },
 
       # --- 0→2 Transition (Death without progression) ---
@@ -148,8 +177,11 @@ ms_init_values <- function(env) {
       log_lambda_gp_02_level_eta = if (enable_ms_02 && n_gp_groups_ms_baseline_02 > 0) {
         matrix(rnorm(n_gp_groups_ms_baseline_02 * n_ms_gp_cal_knots), nrow = n_gp_groups_ms_baseline_02, ncol = n_ms_gp_cal_knots)
       },
-      raw_log_lambda_gp_02_level_intercept = if (n_enabled_groups_ms_baseline_02 > 0) {
-        as.array(rnorm(n_enabled_groups_ms_baseline_02))
+      raw_log_lambda_gp_02_level_intercept = if (n_raw_groups_ms_baseline_02 > 0) {
+        as.array(rnorm(n_raw_groups_ms_baseline_02))
+      },
+      cp_log_lambda_gp_02_level_intercept = if (n_cp_groups_ms_baseline_02 > 0) {
+        as.array(rnorm(n_cp_groups_ms_baseline_02, 0, 0.1))
       },
 
       # --- 1→2 Transition: Sojourn Time GP ---
@@ -167,8 +199,11 @@ ms_init_values <- function(env) {
       log_lambda_gp_12_s_level_eta = if (need_12_s_gp && n_gp_groups_ms_baseline_12_s > 0) {
         matrix(rnorm(n_gp_groups_ms_baseline_12_s * n_ms_gp_sojourn_knots), nrow = n_gp_groups_ms_baseline_12_s, ncol = n_ms_gp_sojourn_knots)
       },
-      raw_log_lambda_gp_12_s_level_intercept = if (n_enabled_groups_ms_baseline_12_s > 0) {
-        as.array(rnorm(n_enabled_groups_ms_baseline_12_s))
+      raw_log_lambda_gp_12_s_level_intercept = if (n_raw_groups_ms_baseline_12_s > 0) {
+        as.array(rnorm(n_raw_groups_ms_baseline_12_s))
+      },
+      cp_log_lambda_gp_12_s_level_intercept = if (n_cp_groups_ms_baseline_12_s > 0) {
+        as.array(rnorm(n_cp_groups_ms_baseline_12_s, 0, 0.1))
       },
 
       # --- 1→2 Transition: Clock-forward Time GP ---
@@ -186,8 +221,11 @@ ms_init_values <- function(env) {
       log_lambda_gp_12_t_level_eta = if (need_12_t_gp && n_gp_groups_ms_baseline_12_t > 0) {
         matrix(rnorm(n_gp_groups_ms_baseline_12_t * n_ms_gp_cal_knots), nrow = n_gp_groups_ms_baseline_12_t, ncol = n_ms_gp_cal_knots)
       },
-      raw_log_lambda_gp_12_t_level_intercept = if (n_enabled_groups_ms_baseline_12_t > 0) {
-        as.array(rnorm(n_enabled_groups_ms_baseline_12_t))
+      raw_log_lambda_gp_12_t_level_intercept = if (n_raw_groups_ms_baseline_12_t > 0) {
+        as.array(rnorm(n_raw_groups_ms_baseline_12_t))
+      },
+      cp_log_lambda_gp_12_t_level_intercept = if (n_cp_groups_ms_baseline_12_t > 0) {
+        as.array(rnorm(n_cp_groups_ms_baseline_12_t, 0, 0.1))
       },
 
       # --- 0→3 Transition (Dropout: GP baseline hazard with N-level hierarchy) ---
@@ -210,8 +248,11 @@ ms_init_values <- function(env) {
         matrix(rnorm(n_gp_groups_ms_baseline_03 * n_ms_gp_cal_knots),
                nrow = n_gp_groups_ms_baseline_03, ncol = n_ms_gp_cal_knots)
       },
-      raw_log_lambda_gp_03_level_intercept = if (n_enabled_groups_ms_baseline_03 > 0) {
-        as.array(rnorm(n_enabled_groups_ms_baseline_03))
+      raw_log_lambda_gp_03_level_intercept = if (n_raw_groups_ms_baseline_03 > 0) {
+        as.array(rnorm(n_raw_groups_ms_baseline_03))
+      },
+      cp_log_lambda_gp_03_level_intercept = if (n_cp_groups_ms_baseline_03 > 0) {
+        as.array(rnorm(n_cp_groups_ms_baseline_03, 0, 0.1))
       },
 
       # --- 3→2 Transition (Off-trial death: sojourn time GP, semi-Markov) ---
@@ -234,8 +275,11 @@ ms_init_values <- function(env) {
         matrix(rnorm(n_gp_groups_ms_baseline_32 * n_ms_gp_sojourn_32_knots),
                nrow = n_gp_groups_ms_baseline_32, ncol = n_ms_gp_sojourn_32_knots)
       },
-      raw_log_lambda_gp_32_s_level_intercept = if (n_enabled_groups_ms_baseline_32 > 0) {
-        as.array(rnorm(n_enabled_groups_ms_baseline_32))
+      raw_log_lambda_gp_32_s_level_intercept = if (n_raw_groups_ms_baseline_32 > 0) {
+        as.array(rnorm(n_raw_groups_ms_baseline_32))
+      },
+      cp_log_lambda_gp_32_s_level_intercept = if (n_cp_groups_ms_baseline_32 > 0) {
+        as.array(rnorm(n_cp_groups_ms_baseline_32, 0, 0.1))
       },
 
       # --- Time-varying Covariate Coefficients ---

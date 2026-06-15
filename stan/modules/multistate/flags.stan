@@ -77,6 +77,21 @@ int<lower=0, upper=1> enable_ms_03_time_invariant_cov;
 int<lower=0, upper=1> enable_ms_32_time_invariant_cov;
 int<lower=0, upper=1> enable_ms_03_time_varying_cov;
 
+// --- Time-Varying Covariate Basis Selector ---
+// Selects the burden-coupling feature set for the time-varying covariates.
+//   0 (default): legacy 3-feature basis [level, log_decrease_rate, log_growth_rate]
+//                (n_time_varying_covar = 3). Features 2-3 are bi-exponential SSM
+//                component parameters.
+//   1          : (level, velocity) 2-feature basis [level, velocity]
+//                (n_time_varying_covar = 2). Feature 2 = central-difference of the
+//                latent log-burden trajectory. Required for the Laplace surrogate
+//                (the bi-exponential rates have no analog under the quadratic
+//                surrogate; velocity = d/dw of log-burden does). See
+//                docs/superpowers/specs/2026-06-09-level-velocity-coupling-design.md
+// The R config MUST set this together with a matching n_time_varying_covar:
+//   (enable_ms_velocity_basis, n_time_varying_covar) in {(1,2), (0,3)}.
+int<lower=0, upper=1> enable_ms_velocity_basis;
+
 // --- 0->1 Baseline Log-Time Trend ---
 // When enabled, the 0->1 population baseline log-hazard gets an additive
 // monotone log-time trend term, a sibling to the GP residual in the baseline

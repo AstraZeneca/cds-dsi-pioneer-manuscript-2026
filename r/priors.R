@@ -521,7 +521,18 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
       rep(0.15, n_time_invariant_covar)
     }),
 
-    log_lod_sd = 0.2
+    log_lod_sd = 0.2,
+
+    # Backgrounded-trial Laplace surrogate (OFF by default). First anchor must be
+    # 0 (baseline); tune the other two to the historical trials' visit window.
+    enable_background_surrogate = 0L,
+    surrogate_anchor_times = c(0, 12, 28),
+    # Inner Laplace-solver knobs (0 / <=0 => Stan built-in default:
+    # max_num_steps=100, tolerance=1e-8, solver=1). Data-driven so they are tunable
+    # for perf work without a recompile; harmless when the surrogate is off.
+    surrogate_max_num_steps_in = 0L,
+    surrogate_tolerance_in = 0,
+    surrogate_solver_in = 0L
   ) |>
     list_assign(!!!get_multistate_priors(n_levels, n_time_varying_covar, n_time_invariant_covar,
                                         enable_ms_visit_gated_01        = stan_data$enable_ms_visit_gated_01 %||% 0L,

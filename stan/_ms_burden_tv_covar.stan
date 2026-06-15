@@ -63,21 +63,33 @@ if (!ms_needs_inline_burden && enable_ms_pop_time_varying_cov && n_time_varying_
       row_vector[max_all_t] log_burden_absolute = log_baseline_burden[p] + log_burden_normalized;
       ms_time_varying_covar_01[1][j] = (log_burden_absolute - median_log_burden_obs) / iqr_log_burden_obs;
 
-      // Feature 2: log(decrease rate)
-      if (n_time_varying_covar >= 2) {
-        if (enable_any_process_noise_tr) {
-          ms_time_varying_covar_01[2][j] = patient_log_decrease_rate[j, states_start_col:states_end_col];
-        } else {
-          ms_time_varying_covar_01[2][j] = rep_row_vector(patient_log_decrease_rate[j, 1], max_all_t);
+      if (enable_ms_velocity_basis) {
+        // Feature 2 (velocity mode): central-difference velocity of the
+        // standardized log-burden trajectory. We difference the SAME capped
+        // level values used in feature 1 (log_burden_normalized is already
+        // fmin(·,10)-capped), then standardize with the velocity constants.
+        // No additional cap on velocity (spec §3.1).
+        row_vector[max_all_t] vel_raw = central_difference_row(log_burden_normalized);
+        row_vector[max_all_t] vel_std;
+        for (w in 1:max_all_t)
+          vel_std[w] = standardize_velocity(vel_raw[w], median_velocity_burden_obs, iqr_velocity_burden_obs);
+        ms_time_varying_covar_01[2][j] = vel_std;
+      } else {
+        // Feature 2 (legacy): log(decrease rate)
+        if (n_time_varying_covar >= 2) {
+          if (enable_any_process_noise_tr) {
+            ms_time_varying_covar_01[2][j] = patient_log_decrease_rate[j, states_start_col:states_end_col];
+          } else {
+            ms_time_varying_covar_01[2][j] = rep_row_vector(patient_log_decrease_rate[j, 1], max_all_t);
+          }
         }
-      }
-
-      // Feature 3: log(growth rate)
-      if (n_time_varying_covar >= 3) {
-        if (enable_any_process_noise_tr) {
-          ms_time_varying_covar_01[3][j] = patient_log_growth_rate[j, states_start_col:states_end_col];
-        } else {
-          ms_time_varying_covar_01[3][j] = rep_row_vector(patient_log_growth_rate[j, 1], max_all_t);
+        // Feature 3 (legacy): log(growth rate)
+        if (n_time_varying_covar >= 3) {
+          if (enable_any_process_noise_tr) {
+            ms_time_varying_covar_01[3][j] = patient_log_growth_rate[j, states_start_col:states_end_col];
+          } else {
+            ms_time_varying_covar_01[3][j] = rep_row_vector(patient_log_growth_rate[j, 1], max_all_t);
+          }
         }
       }
     }
