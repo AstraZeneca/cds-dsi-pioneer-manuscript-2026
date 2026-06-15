@@ -40,7 +40,8 @@ Replicated vs observed SLD for patients who had a PFS event. Only the observed w
 
 sld_unc |>
   filter(stage == "obs") |>
-  plot_sld_forecast_censored()
+  plot_sld_forecast_censored() +
+  scale_x_continuous("Months", breaks = months_to_weeks(seq(0, 48, 3)), labels = label_weeks_to_months)
 ```
 
 ## RECIST Predictions — Right-Censored Patients {#sec-recist-censored}
