@@ -395,7 +395,7 @@ publication_targets <- list(
         enable_pop_cov_init = TRUE,
         enable_static_init = 0L,  # static compartment OFF by default; flip to 1L per variant
         enable_gr_decay = 1L,           # activate Gompertz growth-rate decay on this branch
-        enable_pop_cov_gr_decay = 0L,   # pop-intercept only (no baseline-covariate slopes yet)
+        enable_pop_cov_gr_decay = 1L,   # population-level covariate slopes on kappa
         enable_level_intercept_gr_decay = c(
           trial_arm = level_intercept_mode["re"],
           patient   = level_intercept_mode["re"]
