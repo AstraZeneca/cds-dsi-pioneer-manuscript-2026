@@ -518,6 +518,42 @@ Prior (gold) vs posterior (plum) PFS Kaplan–Meier predictions, demonstrating t
 Unconditional (super-population) OS Kaplan–Meier predictions. The OS forecast emerges from the full multistate routing: patients who progress incur a further sojourn in state 1 before death; patients who die directly contribute their $0\to 2$ time. Crosses: observed KM.
 :::
 
+### Leave-future-out cross-validation {#sec-results-lfo}
+
+The central claim of PIONEER is that it can forecast survival endpoints from immature data. We evaluate this claim using leave-future-out (LFO) cross-validation: the model is re-fitted at a sequence of progressively later data cut-offs (month 4, 11, and 19 of enrolment), and at each cut-off the predicted PFS and OS Kaplan–Meier curves are compared against the observed mature-DCO KM that was *not* available at training time.
+
+@fig-lfo-pfs-evolution shows the PFS forecast evolution for both arms of the target trial. At the earliest cut-off (month 4, $n=9$), the model has seen only a handful of patients and produces wide credible intervals — but the median prediction already captures the rapid early decline characteristic of this population. As more patients and longer follow-up become available (month 11, $n=39$; month 19, $n=71$), the credible intervals narrow and the predicted KM converges toward the observed step function. Crucially, the observed KM falls within the 80% credible ribbon at every cut-off, demonstrating well-calibrated predictive uncertainty even when forecasting substantially beyond the training window.
+
+@fig-lfo-os-evolution shows the corresponding OS forecast evolution. OS prediction is inherently harder — it requires the full multistate routing through progression, dropout, and post-progression death — yet the model's predictions remain calibrated across cut-offs. The wider ribbons relative to PFS reflect the additional structural uncertainty from the competing transitions, not miscalibration.
+
+::: {#fig-lfo-pfs-evolution}
+![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-km-evolution-spop-1.png){width=100%}
+
+Leave-future-out PFS forecast evolution. Each column is a data cut-off (month 4, 11, 19); rows are treatment arms. Blue ribbons: 80% credible interval of the posterior predictive PFS KM. Gold step function: observed mature-DCO KM (upper bound). The model's forecast narrows and converges as data accumulates, with the observed KM covered at all cut-offs.
+:::
+
+::: {#fig-lfo-os-evolution}
+![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-os-km-evolution-spop-1.png){width=100%}
+
+Leave-future-out OS forecast evolution. Same structure as @fig-lfo-pfs-evolution but for overall survival. Wider credible intervals reflect the added uncertainty from the multistate routing (progression → post-progression death vs direct death vs off-trial death).
+:::
+
+@fig-oos-confusion shows the out-of-sample RECIST classification performance. For each LFO fold, the model predicts the RECIST category at the *next* assessment visit for patients whose data was withheld — a genuine out-of-sample prediction of tumour response. The confusion matrix reports sensitivity (recall) per category: PD is correctly identified 70% of the time, while PR and SD are harder to distinguish from each other — consistent with the clinical reality that the boundary between PR and SD (the 30% threshold) is where measurement noise dominates.
+
+@fig-recist-sensitivity shows how classification sensitivity evolves over successive LFO cut-offs. PD sensitivity stabilises around 70–80% once sufficient progression events are available (after ~6 months of enrolment), while PR sensitivity remains lower (~25–35%) and SD is the hardest to predict (~15%). This pattern is expected: PD is structurally identifiable from the mechanistic model (growth rate dominates → RECIST threshold crossed), whereas distinguishing PR from SD requires precise estimation of the depth of the initial response — a quantity that depends sensitively on the balance parameter and measurement noise.
+
+::: {#fig-oos-confusion}
+![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-oos-confusion-matrix-1.png){width=80%}
+
+Out-of-sample RECIST confusion matrix (pooled across LFO folds). Cell values are sensitivity (recall) for each observed RECIST category. Diagonal: correct prediction rate. The model identifies PD well (0.70) but struggles to separate PR from SD — consistent with the 30% boundary being within measurement noise.
+:::
+
+::: {#fig-recist-sensitivity}
+![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-recist-sensitivity-over-time-1.png){width=100%}
+
+RECIST classification sensitivity by category over successive LFO cut-off dates. PD sensitivity (plum) stabilises around 70–80% after ~6 months of enrolment. PR (cyan) and SD (gold) remain harder to distinguish, with sensitivity around 25–35% and 15% respectively. Ribbons show standard error across posterior draws.
+:::
+
 ### Transition-specific covariate effects {#sec-results-covariates}
 
 @fig-covariate-effects shows the posterior distribution of covariate coefficients across four model components: the fraction module (`frac_coef_qr_pop`, governing the balance between decrease and growth rates), the initial-state module (`init_coef_qr_pop`), the time-invariant hazard covariates for the $0\to 1$ transition (`time_invariant_coef_qr_01`), and the time-varying tumour bridge coefficients (`time_varying_coef_01`). All coefficients are shown in QR space.
