@@ -501,24 +501,24 @@ Posterior predictive SLD trajectories for censored patients (progression-free at
 Posterior predictive RECIST classification over time for censored patients. Stacked bars show the posterior probability of each RECIST category at each time point. Coloured dots represent observed classifications; dashed lines mark the transition from observed to forecast phase.
 :::
 
-### Progression-free survival {#sec-results-pfs}
+### Survival predictions: PFS and OS {#sec-results-survival}
 
-@fig-pfs-km-spop shows the model's unconditional (super-population) PFS predictions by trial and arm. In this mode, every patient's PFS is re-simulated from week 1 — observed event histories are discarded entirely, and the model predicts the full KM purely from inferred population parameters, patient-level covariates, and latent tumour trajectories. This is the estimand relevant to forecasting: "if we enrolled a new cohort from this population, what would their PFS curve look like?" The sample-based prediction (conditioning on observed events and simulating only censored patients' futures) reproduces the observed KM by construction; the super-population prediction is the harder test because no observed events are used. That the 80% credible ribbon still covers the observed KM demonstrates that the model has learned the correct generative mechanism linking tumour dynamics to progression risk, not merely memorised the training outcomes — the posterior over the latent parameters encodes enough structure to generate realistic survival curves *de novo*.
+Classically, joint longitudinal-survival models are assessed via *sample-based* posterior predictive checks: patients who have already experienced an event contribute their observed event time, and only right-censored patients have their future simulated from the model. This is a necessary consistency check — the model should not contradict known outcomes — but it is a weak test, because the majority of the Kaplan–Meier curve is constructed from observed data rather than model predictions.
+
+A more demanding evaluation is the *super-population* prediction, in which every patient's event time is re-simulated unconditionally from week 1. Observed event histories are discarded entirely; the model must generate the full KM purely from inferred population parameters, patient-level covariates, and the latent tumour trajectories obtained through the joint posterior. If this unconditional prediction recovers the observed KM, it demonstrates that the model has learned the correct generative mechanism — linking tumour dynamics to event risk — rather than merely memorising training outcomes. This is the estimand relevant to clinical forecasting: "if we enrolled a new cohort from this population, what would their survival curves look like?"
+
+@fig-pfs-km-spop shows the super-population PFS prediction by trial and arm. The posterior median PFS curve tracks the observed KM closely, and the 80% credible ribbon covers the observed step function across all four trial-arm combinations. @fig-os-km-spop shows the corresponding OS prediction. Unlike PFS, OS requires the full multistate routing — a patient's OS depends on which path they take through the state graph (direct death via $0\to 2$, post-progression death via $1\to 2$, or off-trial death via $3\to 2$). The model's OS prediction matches the observed KM well, with wider credible intervals reflecting the additional uncertainty from the competing transitions and post-progression sojourn.
 
 ::: {#fig-pfs-km-spop}
 ![](../quarto/publication/sclc/_freeze/analysis/survival-analysis/figure-html/fig-pfs-km-spop-1.png){width=100%}
 
-Super-population PFS Kaplan–Meier predictions by trial and arm. Every patient is re-simulated unconditionally from week 1 — no observed events are used. That the model recovers the observed KM (crosses) from inferred latent parameters alone demonstrates genuine predictive ability. Ribbons: 80% credible intervals. Top row: target trial (Lilly CXCR4, Arm A and B). Bottom row: historical trial (Amgen Darbe, Placebo and NESP).
+Super-population PFS Kaplan–Meier predictions by trial and arm. Every patient is re-simulated unconditionally from week 1 — no observed events are used. Ribbons: 80% credible intervals; crosses: observed KM. Top row: target trial (Lilly CXCR4, Arm A and B). Bottom row: historical trial (Amgen Darbe, Placebo and NESP).
 :::
-
-### Overall survival {#sec-results-os}
-
-@fig-os-km-spop shows the unconditional OS predictions. Unlike PFS, OS requires the full multistate model — a patient's OS time depends on which route they take through the state graph (direct death, post-progression death, or off-trial death). The model's OS prediction matches the observed KM well for both trials, with the 80% credible band covering the observed step function. The wider credible intervals relative to PFS reflect the additional uncertainty from the post-progression sojourn and the competing transitions.
 
 ::: {#fig-os-km-spop}
 ![](../quarto/publication/sclc/_freeze/analysis/overall-survival/figure-html/fig-os-km-spop-1.png){width=100%}
 
-Unconditional (super-population) OS Kaplan–Meier predictions. The OS forecast emerges from the full multistate routing: patients who progress incur a further sojourn in state 1 before death; patients who die directly contribute their $0\to 2$ time. Crosses: observed KM.
+Super-population OS Kaplan–Meier predictions by trial and arm. The OS forecast emerges from the full multistate routing: patients who progress incur a sojourn in state 1 before death; patients who die directly contribute their $0\to 2$ time; off-trial patients contribute via $3\to 2$. Crosses: observed KM.
 :::
 
 ### Leave-future-out cross-validation {#sec-results-lfo}
