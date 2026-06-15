@@ -28,6 +28,18 @@ array[n_patients] int ms_censored_32;
   ms_final_state, ms_time_01, ms_time_32
 );
 
+// Guard: the (level, velocity) basis is a pure 2-vs-3 feature mode switch.
+// enable_ms_velocity_basis must be paired with the matching feature count, or
+// the coefficient arrays mis-size relative to what the builders emit.
+if (enable_ms_pop_time_varying_cov) {
+  if (enable_ms_velocity_basis && n_time_varying_covar != 2)
+    fatal_error("enable_ms_velocity_basis=1 requires n_time_varying_covar=2 (level, velocity); got ",
+                n_time_varying_covar);
+  if (!enable_ms_velocity_basis && n_time_varying_covar == 2)
+    fatal_error("n_time_varying_covar=2 with enable_ms_velocity_basis=0 is ambiguous; ",
+                "set enable_ms_velocity_basis=1 for the (level, velocity) basis or use the 3-feature legacy basis.");
+}
+
 // --- Derived Flags for Time Scale (B1) ---
 // Which GPs are needed for the 1→2 transition
 // strict=1: fatal_error on invalid input; is_valid sentinel discarded
