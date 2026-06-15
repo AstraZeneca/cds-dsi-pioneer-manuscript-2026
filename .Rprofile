@@ -86,7 +86,11 @@ init_project <- function(output_path = output_path, artifacts_path = artifacts_p
   library(autometric)
   library(here)
   library(cmdstanr)
-  set_cmdstan_path("~/.cmdstan/cmdstan-2.38.0")
+  # Project-pinned CmdStan version (the closest thing we have to an renv lock for
+  # the Stan toolchain). 2.39 is required by the laplace_surrogate module
+  # (laplace_marginal_tol exists only in stanc >= 2.39) and is backward-compatible
+  # with every existing 2.38 model. Override via PIONEER_CMDSTAN_PATH if needed.
+  set_cmdstan_path(Sys.getenv("PIONEER_CMDSTAN_PATH", "~/.cmdstan/cmdstan-2.39.0"))
   library(posterior)
   library(tidybayes)
   library(qs2)

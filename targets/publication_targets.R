@@ -136,6 +136,16 @@ publication_targets <- list(
     "r/initializers_fixed.R",
     format = "file"
   ),
+  # Track multistate.R too: create_tumor_ssls_initializer_fixed() ->
+  # ms_init_values_fixed() calls ms_corr_blocks() (defined in r/multistate.R).
+  # The init/pathfinder targets run in crew workers that do NOT inherit the
+  # top-level source() at line 9, so they must source multistate.R themselves
+  # before initializers_fixed.R or ms_corr_blocks is "could not find function".
+  tar_target(
+    multistate_file,
+    "r/multistate.R",
+    format = "file"
+  ),
 
   # Model (shared across diseases) -----------------------------------------------
 
@@ -338,6 +348,15 @@ publication_targets <- list(
         enable_ms_pop_time_varying_cov = TRUE,
         enable_ms_pop_time_invariant_cov = TRUE,
         enable_ms_level_cov = c(trial_arm = FALSE, patient = FALSE),
+        # Legacy 3-feature time-varying covar basis (n_time_varying_covar = 3),
+        # matching the publication data prep and main's successful SCLC fit. The
+        # merged multistate model (from the laplace branch) requires this flag as
+        # input data and pairs it with n_time_varying_covar via a fatal_error
+        # guard: =1 needs n_tv_covar=2 (level, velocity); =0 keeps the legacy
+        # 3-feature basis. pioneer-pub's data prep never set it, so the merged
+        # model errored "Missing input data: enable_ms_velocity_basis" — set it
+        # explicitly to 0L to restore the pre-merge legacy-basis behavior.
+        enable_ms_velocity_basis = 0L,
         # Latent visit-gated 0->1: hazard contributions only at observed visit
         # weeks, but the time-varying covariates (log SLD, log decrease rate,
         # log growth rate) come from the modeled state-space trajectory rather
@@ -491,11 +510,41 @@ publication_targets <- list(
           )
       ),
 
+      # Pathfinder pre-solve (posterior only): a ~12s data-only variational pass
+      # that locates the typical set. Its draws seed the sampling init's
+      # population scalars so the sampler starts in the typical set instead of
+      # cold. NULL for the prior fit (no data to pre-solve). Additive: helps a
+      # cold start and is inert once a dimension-matching warm-start metric
+      # applies. The fns live in r/initializers_fixed.R (carried over the
+      # pioneer-pub rename); the background-surrogate machinery they were first
+      # built for stays unwired in stan/modules/laplace_surrogate/.
+      tar_target(
+        tumor_ssls_pathfinder,
+        {
+          source(multistate_file)        # ms_corr_blocks() for the fixed init
+          source(initializers_fixed_file)
+          if (fit_data) {
+            run_tumor_ssls_pathfinder(tumor_ssls_exe_hash$exe_file, tumor_ssls_stan_data)
+          } else {
+            NULL
+          }
+        }
+      ),
+
       tar_target(
         tumor_ssls_initializer,
         {
+          source(multistate_file)        # ms_corr_blocks() for the fixed init
           source(initializers_fixed_file)
-          create_tumor_ssls_initializer_fixed(tumor_ssls_stan_data)
+          # Posterior: seed population scalars from the Pathfinder pre-solve.
+          # Prior: plain fixed initializer (Pathfinder is NULL, nothing to seed).
+          if (!is.null(tumor_ssls_pathfinder)) {
+            create_tumor_ssls_pathfinder_initializer_fixed(
+              tumor_ssls_pathfinder, tumor_ssls_stan_data
+            )
+          } else {
+            create_tumor_ssls_initializer_fixed(tumor_ssls_stan_data)
+          }
         }
       ),
 
