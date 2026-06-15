@@ -31,6 +31,9 @@ format:
   html: default
   pdf:
     documentclass: article
+    include-in-header:
+      text: |
+        \usepackage{pdflscape}
 ---
 
 ## Introduction {#sec-introduction}
@@ -365,7 +368,15 @@ Direct death without progression *is* a PFS event (PFS fails at the death time);
 
 **Endpoints as posterior functionals.** Kaplan–Meier curves for PFS and OS are computed from the $\{T^{\mathrm{pfs}}_i, T^{\mathrm{os}}_i\}$ sample paths, ORR from the per-patient response classification, and any other endpoint analogously — each averaged across posterior draws. Because every quantity flows from the same joint posterior, each reported endpoint inherits the model's full parameter uncertainty; no re-fitting or plug-in step is involved.
 
+```{=latex}
+\begin{landscape}
+```
+
 ![Posterior-predictive endpoint routing for a single posterior draw. The unconditional ($\mathrm{spop}$) and conditional ($\mathrm{sample}$) passes feed the *same* routing tree and differ only in where they enter it — from treatment start, or from the observed state at the data cut-off. The three competing exits from state 0 are resolved first; the earliest candidate time wins. Progression's own candidate time is the minimum of the deterministic target-lesion time $T^{\mathrm{tgt}}_i$ and the stochastic non-target time $T^{\mathrm{ms}}_i$. PFS and OS are then read off the realised route: direct death is itself a PFS event, dropout right-censors PFS, and only the progression route incurs a post-progression sojourn before death.](figures/gq-routing.svg){#fig-gq-routing width=100%}
+
+```{=latex}
+\end{landscape}
+```
 
 **Figures.**
 
