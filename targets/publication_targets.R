@@ -333,7 +333,7 @@ publication_targets <- list(
         # slope is added as a sibling term to the population 0->1 baseline
         # temporal block, HIERARCHICAL over the trial level (mirrors the GP).
         # pioneer/sclc set this to 0L at their own stan-data assembly sites.
-        enable_ms_baseline_trend_01 = 1L,
+        enable_ms_baseline_trend_01 = TRUE,
 
         enable_ms_pop_time_varying_cov = TRUE,
         enable_ms_pop_time_invariant_cov = TRUE,
@@ -345,10 +345,10 @@ publication_targets <- list(
         # mode hits at complete-response visits and aligns the survival
         # likelihood with the actual measurement schedule (lilly_cxcr4 ~6w vs
         # amgen_darbe weekly).
-        enable_ms_visit_gated_01 = 1L,
-        enable_ms_visit_gated_latent_01 = 1L,
+        enable_ms_visit_gated_01 = TRUE,
+        enable_ms_visit_gated_latent_01 = TRUE,
         share_dead_gp_shape = 0L,
-        enable_ms_02_time_varying_cov = 0L,
+        enable_ms_02_time_varying_cov = FALSE,
         # 0->3 dropout hazard with patient-level discrimination (added 2026-05-28).
         # The previous fit had no per-patient discrimination on the 0->3 path
         # (only the trial-level GP), so died_off_trial patients were routed
@@ -361,11 +361,11 @@ publication_targets <- list(
         # With only 57 dropout events the TV path is identification-limited;
         # priors are kept tight (Normal(0, 0.5)) to avoid overfit. 3->2 TI
         # left off — only 57 events with another competing hazard to model.
-        enable_ms_03_time_invariant_cov = 1L,
-        enable_ms_03_time_varying_cov = 1L,
-        enable_ms_32_time_invariant_cov = 0L,
-        enable_ms_12_entry_covar = 0L,
-        enable_ms_32_entry_covar = 0L,
+        enable_ms_03_time_invariant_cov = TRUE,
+        enable_ms_03_time_varying_cov = TRUE,
+        enable_ms_32_time_invariant_cov = FALSE,
+        enable_ms_12_entry_covar = FALSE,
+        enable_ms_32_entry_covar = FALSE,
         entry_covar_12 = numeric(0),
         entry_covar_32 = numeric(0),
 
@@ -393,8 +393,8 @@ publication_targets <- list(
         ),
         enable_level_cov_init = c(trial_arm = FALSE, patient = FALSE),
         enable_pop_cov_init = TRUE,
-        enable_static_init = 0L,  # static compartment OFF by default; flip to 1L per variant
-        enable_gr_decay = 1L,           # activate Gompertz growth-rate decay on this branch
+        enable_static_init = FALSE,
+        enable_gr_decay = TRUE,
         enable_pop_cov_gr_decay = TRUE,
         enable_level_intercept_gr_decay = c(
           trial_arm = level_intercept_mode["re"],
