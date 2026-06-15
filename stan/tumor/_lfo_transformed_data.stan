@@ -254,7 +254,8 @@ array[n_cutoff_visits] int cutoff_recist;
 // Create compact arrays for all visit-level and patient-level data needed for state generation
 // These will be used to call generate_all_patients_states_with_means_rng with only cutoff-observed data
 array[n_cutoff_observed_patients] int cutoff_n_patient_screening_visits;
-array[n_cutoff_observed_patients] int cutoff_patient_last_obs_visit;
+array[n_cutoff_observed_patients] int cutoff_patient_last_obs_visit;   // VISIT COUNT up to cutoff (used only as a has-visits predicate)
+array[n_cutoff_observed_patients] int cutoff_patient_last_obs_week;    // ABSOLUTE WEEK of the last observed visit — what the state/endpoint RNGs require
 array[n_cutoff_visits] int cutoff_t_patient_visits;
 
 {
@@ -305,9 +306,11 @@ int n_cutoff_right_censored_patients = 0;
 
 for (obs_idx in 1:n_cutoff_observed_patients) {
   int i = cutoff_observed_patients[obs_idx];
-  // cutoff_patient_last_obs_visit is already computed above in terms of visit count
-  // Now compute the actual time of the last observation
+  // cutoff_patient_last_obs_visit is a visit COUNT (used here only as a has-visits predicate).
+  // Compute the actual WEEK of the last observation and store it for the forecast/endpoint RNGs,
+  // which require absolute weeks (matching the full model's patient_last_obs_visit = week).
   int last_obs_time = cutoff_patient_last_obs_visit[obs_idx] > 0 ? cutoff_t_patient_visits[cutoff_patient_visit_pos[obs_idx + 1] - 1] : 0;
+  cutoff_patient_last_obs_week[obs_idx] = last_obs_time;
   cutoff_n_patient_forecast_visits[obs_idx] = max_all_t - last_obs_time;
   
   // Count right-censored patients (either truly censored or their event/next visit is after cutoff)

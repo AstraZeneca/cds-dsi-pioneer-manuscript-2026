@@ -221,13 +221,18 @@ generated quantities {
           real kappa_i = gr_decay_kappa_per_patient[i];
           // Per-step Gompertz factor on the GROWTH rate only = exact phi-difference / dt,
           // so the forecast telescopes to growth_rate*phi(t) and matches the in-sample branches.
+          // The warp clock is anchored at the patient's BASELINE week — the SAME origin the
+          // in-sample states use — so the forecast continues the decay reached at the cutoff.
+          // Anchoring at forecast_time[1] (the cutoff) instead would reset the clock and let
+          // the growth rate re-accelerate to near-full strength at forecast start.
+          real baseline_week = t_patient_visits[visit_start + n_patient_screening_visits[i] - 1];
           vector[size(forecast_time)] tv_factor;
           for (t in 1:size(forecast_time)) {
             if (t == 1 || !enable_gr_decay) {
               tv_factor[t] = 1.0;
             } else {
-              real e_hi = forecast_time[t] - forecast_time[1];
-              real e_lo = forecast_time[t - 1] - forecast_time[1];
+              real e_hi = forecast_time[t]     - baseline_week;
+              real e_lo = forecast_time[t - 1] - baseline_week;
               real dphi = growth_warp(e_hi, kappa_i) - growth_warp(e_lo, kappa_i);
               real dt   = forecast_time[t] - forecast_time[t - 1];
               tv_factor[t] = dt > 0 ? dphi / dt : 1.0;
