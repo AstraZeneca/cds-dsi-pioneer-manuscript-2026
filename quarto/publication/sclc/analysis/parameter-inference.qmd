@@ -24,6 +24,12 @@ coef_data     <- pub_tar_read("all_tumor_ssls_coef")
 #| fig-cap: Population-level log growth and regression rates — prior vs posterior.
 
 rates_rvar |>
+  # tr_sd_level_intercept is vector-valued (one SD per hierarchy level); fold the
+  # level index into the facet label so each level gets its own panel. Scalar
+  # params carry level = NA and keep their bare name.
+  mutate(.variable = if_else(
+    is.na(level), .variable, paste0(.variable, " [", level, "]")
+  )) |>
   plot_prior_post_dens(.value, normalize = "groups") +
   labs(x = "") +
   facet_wrap(vars(.variable), scales = "free",

@@ -727,7 +727,7 @@ publication_targets <- list(
           gather_rvars(
             tr_loc_pop,
             frac_logit_loc_pop,
-            tr_sd_level_intercept,
+            tr_sd_level_intercept[level],
             pop_log_decrease_rate,
             pop_log_growth_rate
           ) |>
