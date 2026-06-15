@@ -170,7 +170,7 @@ profile("gen_quant") {
         cutoff_patient_visit_pos,
         cutoff_patient_visit_m1_pos,
         cutoff_forecast_visits_pos,
-        cutoff_patient_last_obs_visit,
+        cutoff_patient_last_obs_week,  // absolute WEEK (not visit count) — RNG forecasts from here
         max_all_t,  // Forecast up to max time
         cutoff_t_patient_visits,
         cutoff_t_patient_visit_idx,
@@ -193,22 +193,30 @@ profile("gen_quant") {
       (forecast_visit_start, forecast_visit_end) = get_pos(cutoff_forecast_visits_pos, i);
       int forecast_size = get_pos_size(cutoff_forecast_visits_pos, i);
 
-      // Build forecast time WITH anchor
+      // Build forecast time WITH anchor. Anchor at the absolute WEEK of the last observed
+      // visit (not the visit count) so the grid is in true weeks — required by the baseline-
+      // anchored Gompertz tv_factor below and for seam-continuity with the in-sample arm.
       array[forecast_size + 1] real forecast_time = linspaced_array(
         forecast_size + 1,
-        cutoff_patient_last_obs_visit[i],
+        cutoff_patient_last_obs_week[i],
         max_all_t);
 
       // Per-step Gompertz factor on the GROWTH rate only = exact phi-difference / dt,
       // so the forecast telescopes to growth_rate*phi(t) and matches the in-sample branches.
+      // The warp clock is anchored at the patient's BASELINE week — the SAME origin the
+      // in-sample states use — so the forecast continues the decay reached at the cutoff
+      // instead of re-accelerating the growth rate to near-full strength at forecast start.
       real kappa_i = cutoff_gr_decay_kappa_per_patient[i];
+      int bl_visit_start, bl_visit_end;
+      (bl_visit_start, bl_visit_end) = get_pos(patient_visit_pos, orig_patient_idx);
+      real baseline_week = t_patient_visits[bl_visit_start + n_patient_screening_visits[orig_patient_idx] - 1];
       vector[forecast_size + 1] forecast_tv_factor;
       for (t in 1:(forecast_size + 1)) {
         if (t == 1 || !enable_gr_decay) {
           forecast_tv_factor[t] = 1.0;
         } else {
-          real e_hi = forecast_time[t] - forecast_time[1];
-          real e_lo = forecast_time[t - 1] - forecast_time[1];
+          real e_hi = forecast_time[t]     - baseline_week;
+          real e_lo = forecast_time[t - 1] - baseline_week;
           real dphi = growth_warp(e_hi, kappa_i) - growth_warp(e_lo, kappa_i);
           real dt   = forecast_time[t] - forecast_time[t - 1];
           forecast_tv_factor[t] = dt > 0 ? dphi / dt : 1.0;
@@ -316,7 +324,7 @@ profile("gen_quant") {
       ms_censored_32[cutoff_observed_patients],
       cutoff_patient_visit_pos,
       cutoff_forecast_visits_pos,
-      cutoff_patient_last_obs_visit,
+      cutoff_patient_last_obs_week,  // absolute WEEK (not visit count) — anchors forecast endpoint schedule
       max_all_t,
       cutoff_t_patient_visits,
       max_all_t,

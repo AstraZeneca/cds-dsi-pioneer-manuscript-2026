@@ -68,7 +68,31 @@ profile("gen_quant_trajectories") {
         patient_last_obs_visit[p],
         last_predict_visit);
 
-      // Generate states using constant rates (computed on-the-fly, not from grid)
+      // Per-step Gompertz decay factor on the GROWTH rate only. The warp clock is
+      // anchored at the patient's BASELINE week — the same origin the in-sample
+      // states use in transformed_parameters — so the forecast CONTINUES the decay
+      // the trajectory had already reached at the cutoff instead of re-accelerating.
+      // kappa==0 (gr_decay off) => growth_warp(t,0)=t => factor==1 => identical to
+      // the un-attenuated path, so the decay variant degrades gracefully.
+      int baseline_visit_idx = data_start + n_patient_screening_visits[p] - 1;
+      real baseline_week = t_patient_visits[baseline_visit_idx];
+      real kappa_j = gr_decay_kappa[j];  // forecast-local index matches j
+      vector[forecast_size + 1] forecast_tv_factor;
+      for (t in 1:(forecast_size + 1)) {
+        if (t == 1) {
+          forecast_tv_factor[t] = 1.0;
+        } else {
+          real e_hi = forecast_time[t]     - baseline_week;
+          real e_lo = forecast_time[t - 1] - baseline_week;
+          real dphi = growth_warp(e_hi, kappa_j) - growth_warp(e_lo, kappa_j);
+          real dt   = forecast_time[t] - forecast_time[t - 1];
+          forecast_tv_factor[t] = dt > 0 ? dphi / dt : 1.0;
+        }
+      }
+
+      // Generate states on-the-fly (not from grid). Uses the _decay RNG so the
+      // Gompertz attenuation reaches the forecast — the non-decay variant grew the
+      // growth arm at the FULL rate forever, producing implausibly high SLD.
       matrix[forecast_size, 2] temp_forecast_patient_states;
       vector[visit_size] temp_rep_patient_log_obs;
       vector[visit_size] temp_rep_mean_patient_log_obs;
@@ -78,15 +102,14 @@ profile("gen_quant_trajectories") {
 
       (temp_forecast_patient_states, temp_rep_patient_log_obs, temp_rep_mean_patient_log_obs,
        temp_forecast_patient_log_obs, temp_forecast_mean_patient_log_obs, temp_obs_process_noise) =
-        generate_patient_states_with_means_rng(
+        generate_patient_states_with_means_decay_rng(
           states[state_start:state_end],    // forecast-local positions
           forecast_time,
           patient_log_decrease_rate[j, 1],  // forecast-local j
           patient_log_growth_rate[j, 1],    // forecast-local j
           baseline_obs_per_patient[p],      // unified
           static_log_level_per_patient[p],  // unified static log-level
-          negative_infinity(),  // growth lag (disabled)
-          1.0,                  // growth transition
+          forecast_tv_factor,               // Gompertz decay weight on growth rate
           rep_matrix(0.0, forecast_size, 2),  // No forecast process noise
           measure_sd_obs
         );

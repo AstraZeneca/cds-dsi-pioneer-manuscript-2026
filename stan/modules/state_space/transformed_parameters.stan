@@ -53,8 +53,12 @@ patient_decrease_rate = exp(patient_log_decrease_rate);
 patient_growth_rate = exp(patient_log_growth_rate);
 
 // Full grid: [n_patients × max_t_width]
-// Position 1 = each patient's first visit (different absolute weeks)
-// Position t = t weeks after first visit for that patient
+// Position 1 = each patient's BASELINE week (last screening visit; t_patient_visit_idx anchors
+//   week==baseline_week to column 1). Position t = (t-1) weeks after baseline; pre-baseline
+//   screening visits clamp to column 1. (NB: the variable time_since_first_visit is a misnomer —
+//   the value fed to growth_warp is elapsed weeks since BASELINE, matching the on-the-fly branch
+//   and the forecast clock. Do NOT re-anchor the warp at the first visit — that reintroduces the
+//   forecast re-acceleration bug.)
 // Needed when: process noise is ON, explicit flag is set, or MS time-varying covariates are active
 array[2] matrix[n_forecast_patients, need_states_full_grid ? max_t_width : 0] states_full_grid;
 

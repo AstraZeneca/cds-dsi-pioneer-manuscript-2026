@@ -1,8 +1,14 @@
-// Plateau check for the LFO forecast path: the growth arm warped by the exact
-// phi-difference tv_factor must approach init_g + growth_rate/kappa as the horizon
-// grows, and NEVER exceed it. Exercises sf_log_space_trajectory_ncp_decay — the
-// SAME helper the LFO forecast call uses (sf-ssls-lfo.stan), with tv_factor built
-// identically (exact phi-difference per step).
+// Plateau check: the growth arm warped by the exact phi-difference tv_factor must
+// approach init_g + growth_rate/kappa as the horizon grows, and NEVER exceed it.
+// Exercises sf_log_space_trajectory_ncp_decay (the helper the forecast uses).
+//
+// SCOPE LIMITATION: this harness builds tv_factor with e = times[t] - times[1], i.e.
+// it anchors the warp clock at the FORECAST ORIGIN (times[1]), and the harness sets
+// times[1]=0 so here cutoff == baseline == 0. It therefore does NOT distinguish a
+// baseline-anchored forecast from a cutoff-anchored one, and would stay green even
+// with the re-acceleration bug present. The production code anchors at baseline_week
+// (NOT times[1]). Do NOT treat this test as a continuity guard: continuity at a
+// cutoff != baseline needs a separate test that sets baseline_week < times[1].
 functions {
   #include "util.stanfunctions"
   #include "pos.stanfunctions"
