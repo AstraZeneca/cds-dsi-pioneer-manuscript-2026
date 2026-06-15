@@ -505,18 +505,10 @@ Posterior predictive RECIST classification over time for censored patients. Stac
 
 @fig-pfs-km-spop shows the model's unconditional (super-population) PFS predictions by trial and arm. In this mode, every patient's PFS is re-simulated from week 1 — observed event histories are discarded entirely, and the model predicts the full KM purely from inferred population parameters, patient-level covariates, and latent tumour trajectories. This is the estimand relevant to forecasting: "if we enrolled a new cohort from this population, what would their PFS curve look like?" The sample-based prediction (conditioning on observed events and simulating only censored patients' futures) reproduces the observed KM by construction; the super-population prediction is the harder test because no observed events are used. That the 80% credible ribbon still covers the observed KM demonstrates that the model has learned the correct generative mechanism linking tumour dynamics to progression risk, not merely memorised the training outcomes — the posterior over the latent parameters encodes enough structure to generate realistic survival curves *de novo*.
 
-The prior-vs-posterior comparison (@fig-pfs-km-prior-post) confirms that the data is informative: the prior predictive PFS (gold) spans a substantially wider range than the posterior (plum), particularly for the target trial where the prior — informed only by the historical trial's population parameters — is updated by the target trial's own SLD and event data.
-
 ::: {#fig-pfs-km-spop}
 ![](../quarto/publication/sclc/_freeze/analysis/survival-analysis/figure-html/fig-pfs-km-spop-1.png){width=100%}
 
 Super-population PFS Kaplan–Meier predictions by trial and arm. Every patient is re-simulated unconditionally from week 1 — no observed events are used. That the model recovers the observed KM (crosses) from inferred latent parameters alone demonstrates genuine predictive ability. Ribbons: 80% credible intervals. Top row: target trial (Lilly CXCR4, Arm A and B). Bottom row: historical trial (Amgen Darbe, Placebo and NESP).
-:::
-
-::: {#fig-pfs-km-prior-post}
-![](../quarto/publication/sclc/_freeze/analysis/survival-analysis/figure-html/fig-pfs-km-prior-post-1.png){width=100%}
-
-Prior (gold) vs posterior (plum) PFS Kaplan–Meier predictions, demonstrating that the data substantively updates the prior predictive distribution.
 :::
 
 ### Overall survival {#sec-results-os}
