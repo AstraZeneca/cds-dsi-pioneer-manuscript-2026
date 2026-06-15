@@ -33,7 +33,7 @@ rates_rvar |>
   plot_prior_post_dens(.value, normalize = "groups") +
   labs(x = "") +
   facet_wrap(vars(.variable), scales = "free",
-             labeller = labeller(.variable = \(l) str_remove(l, "log_"))) +
+             labeller = labeller(.variable = \(l) str_wrap(str_remove(l, "log_"), 16))) +
   NULL
 ```
 
