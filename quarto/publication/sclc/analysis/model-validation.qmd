@@ -115,7 +115,7 @@ as more data accumulates.
 #| fig-height: 6
 
 lfo_tar_read("full_oos_confusion_matrix") |>
-  plot_recist_sensitivity_over_time()
+  plot_recist_sensitivity_over_time(dco_dates = c())
 ```
 
 ## KM Forecast Evolution {#sec-km-evolution}
