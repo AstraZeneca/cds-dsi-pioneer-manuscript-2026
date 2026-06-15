@@ -2,7 +2,7 @@
 title: "Model Validation"
 subtitle: "Leave-future-out cross-validation and OOS accuracy assessment"
 execute:
-  eval: false
+  eval: true
   echo: false
 ---
 
@@ -115,7 +115,7 @@ as more data accumulates.
 #| fig-height: 6
 
 lfo_tar_read("full_oos_confusion_matrix") |>
-  plot_recist_sensitivity_over_time()
+  plot_recist_sensitivity_over_time(dco_dates = c())
 ```
 
 ## KM Forecast Evolution {#sec-km-evolution}
@@ -205,6 +205,78 @@ plot_km_evolution(lfo_cutoff_km, km_est_var = sample_ms_pfs_km_est, trials = tar
 #| fig-height: 5
 
 plot_km_evolution(lfo_cutoff_km, km_est_var = spop_pfs_km_est, trials = target_arms, obs_km_data = obs_km_cutoffs)
+```
+
+:::
+
+## OS Forecast Evolution {#sec-os-km-evolution}
+
+Overall survival Kaplan-Meier forecasts at the same three LFO cutoffs, showing how the model's
+OS prediction develops as trial data accumulates.
+
+::: {.callout-note}
+## Interpretation
+Earlier cutoffs have wider uncertainty and fewer observed deaths. Convergence toward the final
+observed OS KM as the cutoff advances confirms that the multistate hazard model is calibrated
+for OS, not just PFS.
+:::
+
+::: {.panel-tabset}
+
+### Sample-Based OS
+
+```{r}
+#| label: fig-os-km-evolution-sample
+#| fig-cap: "Sample-based OS KM forecast at three LFO cutoffs. Each panel re-simulates enrolled patients forward; shaded band is 80% credible interval. Dashed black line shows observed OS KM censored at each cutoff."
+#| fig-width: 12
+#| fig-height: 5
+
+lfo_cutoff_os_km <- lfo_tar_read_pattern("lfo_cutoff_os_km_est")
+
+obs_os_km_cutoffs <- purrr::map(seq_len(nrow(cutoff_meta)), \(i) {
+  cd  <- cutoff_meta$cutoff_calendar_day[[i]]
+  n_t <- cutoff_meta$n_target_observed[[i]]
+  all_analysis_data |>
+    filter(forcats::fct_match(trial, "lilly_cxcr4")) |>
+    mutate(
+      group   = forcats::fct_drop(interaction(trial, arm, sep = "_")),
+      os_time = if_else(death, death_week, patient_max_t),
+      os_cens = !death
+    ) |>
+    censor_at_cutoff(cd) |>
+    mutate(
+      os_cut      = pmin(os_time, followup_weeks),
+      os_cens_cut = os_cens | (os_time > followup_weeks)
+    ) |>
+    get_km_res(os_cut, os_cens_cut, by = group) |>
+    tidyr::unnest(km_data) |>
+    transmute(
+      trial,
+      btype,
+      cutoff_calendar_day = cd,
+      n_target_observed   = n_t,
+      t, s, c
+    )
+}) |>
+  dplyr::bind_rows()
+
+plot_km_evolution(
+  lfo_cutoff_os_km,
+  km_est_var  = sample_os_km_est,
+  trials      = target_arms,
+  obs_km_data = obs_os_km_cutoffs
+)
+```
+
+### Superpopulation OS
+
+```{r}
+#| label: fig-os-km-evolution-spop
+#| fig-cap: "Superpopulation OS KM forecast at three LFO cutoffs. Patients re-simulated unconditionally from week 1 (population-forecast estimand). Dashed black line shows observed OS KM censored at each cutoff."
+#| fig-width: 12
+#| fig-height: 5
+
+plot_km_evolution(lfo_cutoff_os_km, km_est_var = spop_os_km_est, trials = target_arms, obs_km_data = obs_os_km_cutoffs)
 ```
 
 :::

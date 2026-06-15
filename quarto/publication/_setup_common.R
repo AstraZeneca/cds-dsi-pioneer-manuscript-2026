@@ -32,9 +32,10 @@ lfo_tar_read <- function(name, store = lfo_store) {
 # dimensions differ. Reading branches individually and binding avoids the issue.
 lfo_tar_read_pattern <- function(name, store = lfo_store) {
   full_name <- paste0(name, "_", lfo_disease_suffix)
-  branches <- targets::tar_meta(store = store, fields = c("name", "parent")) |>
-    dplyr::filter(parent == full_name) |>
-    dplyr::pull(name)
+  branches <- targets::tar_meta(store = store, fields = c("name", "children")) |>
+    dplyr::filter(name == full_name) |>
+    dplyr::pull(children) |>
+    unlist()
   purrr::map(branches, \(b) {
     obj <- targets::tar_read_raw(b, store = store)
     .repair_rvar_dims(obj)
