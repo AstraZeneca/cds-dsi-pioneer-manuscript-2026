@@ -48,6 +48,44 @@ sample_and_save <- function(
 ) {
   sampler_fun <- arg_match(sampler_fun)
 
+  # --- Observability knobs, all resolved HERE (function body), never in a
+  # tar_target command -> toggling them does NOT enter any target's hash and
+  # cannot force a re-fit (targets hashes a function by its source, not by env
+  # state at call time). An explicit value from the caller always wins. These
+  # only apply to the "sample" sampler. Env vars (all default to current behavior):
+  #   PUB_SAVE_WARMUP=true   -> keep warmup draws (CSV fills from iter 1 = live
+  #                             progress + salvageable if interrupted). Default FALSE.
+  #   PUB_REFRESH=<int>      -> iteration-print cadence. Lower = more frequent
+  #                             heartbeat in the logs. Default 50 (cmdstan's is 100);
+  #                             cheap (one tiny line) and the main "how far along" signal.
+  #   PUB_SHOW_EXCEPTIONS=false -> suppress per-iteration informational exceptions
+  #                             (inf-Cholesky, "max iterations exceeded", etc.).
+  #                             Default TRUE: surface pathology signatures. Set false
+  #                             only if a known-benign warning is flooding the logs.
+  dots <- list(...)
+  if (identical(sampler_fun, "sample")) {
+    if (is.null(dots[["save_warmup"]])) {
+      dots[["save_warmup"]] <- Sys.getenv("PUB_SAVE_WARMUP", "false") == "true"
+    }
+    if (is.null(dots[["refresh"]])) {
+      refresh_env <- Sys.getenv("PUB_REFRESH", "")
+      dots[["refresh"]] <- if (nzchar(refresh_env)) as.integer(refresh_env) else 50L
+    }
+    if (is.null(dots[["show_exceptions"]])) {
+      dots[["show_exceptions"]] <- Sys.getenv("PUB_SHOW_EXCEPTIONS", "true") != "false"
+    }
+    #   PUB_ADAPT_DELTA=<num> -> NUTS target acceptance prob. Default 0.95 (was a
+    #     hardcoded 0.8). Higher = smaller leapfrog steps = the surrogate's Laplace
+    #     inner solver gets sane (beta_pop, Sigma) inputs instead of wild early-warmup
+    #     excursions that blow its 100-iter cap (the #1918 thrash). Safe for non-
+    #     surrogate runs too (fewer divergences, slightly slower warmup). The gate
+    #     validated the d=4 marginalization at 0.95.
+    if (is.null(dots[["adapt_delta"]])) {
+      ad_env <- Sys.getenv("PUB_ADAPT_DELTA", "")
+      dots[["adapt_delta"]] <- if (nzchar(ad_env)) as.numeric(ad_env) else 0.95
+    }
+  }
+
   fs::dir_create(output_dir, recurse = TRUE)
 
   # Ensure execute permissions before loading the model. If the binary lacks
@@ -74,11 +112,11 @@ sample_and_save <- function(
       model[[sampler_fun]],
       output_dir = output_dir,
       output_basename = output_basename,
-      ...
+      !!!dots
     )
   } else {
     # fit <- model$sample(...)
-    fit <- exec(model[[sampler_fun]], !!!list(...))
+    fit <- exec(model[[sampler_fun]], !!!dots)
 
     if (!no_save) {
       fit$save_output_files(
@@ -191,18 +229,48 @@ generate_quantities_from_fit <- function(
   do.call(model$generate_quantities, gq_args)
 }
 
+#' Which read_cmdstan_csv field holds the draws, by fit type
+#'
+#' \code{read_cmdstan_csv} returns draws under different list elements depending
+#' on the inference method: MCMC (\code{sample}) splits warmup/sampling and puts
+#' the kept draws in \code{post_warmup_draws}, whereas Pathfinder, variational,
+#' and Laplace fits have no warmup phase and return their draws in \code{draws}.
+#' This S3 generic lets \code{\link{select_draws}} stay method-agnostic: it
+#' dispatches on the fit object's class (CmdStanMCMC / CmdStanPathfinder / …,
+#' all R6 objects whose class vector S3 can match) to pick the right field.
+#'
+#' @param fit A CmdStanR fit object.
+#' @return Character scalar: the \code{read_cmdstan_csv} list element name.
+#' @export
+cmdstan_draws_field <- function(fit) {
+  UseMethod("cmdstan_draws_field")
+}
+
+#' @export
+cmdstan_draws_field.CmdStanMCMC <- function(fit) "post_warmup_draws"
+
+#' @export
+cmdstan_draws_field.default <- function(fit) "draws"
+
 #' Select draws from CmdStanR fit using tidyselect patterns
 #'
 #' Uses cmdstanr::read_cmdstan_csv with variable selection to read only the
 #' needed variables directly from CSV files. This bypasses any caching in
 #' the fit object and ensures minimal memory usage.
 #'
-#' @param fit A CmdStanMCMC fit object
+#' Works for any CmdStanR fit type. The single method-specific detail — which
+#' \code{read_cmdstan_csv} field holds the draws — is resolved by the
+#' \code{\link{cmdstan_draws_field}} S3 generic (MCMC → \code{post_warmup_draws};
+#' Pathfinder/variational/Laplace → \code{draws}), so the same call works on a
+#' \code{CmdStanMCMC} or a \code{CmdStanPathfinder} fit unchanged.
+#'
+#' @param fit A CmdStanR fit object (CmdStanMCMC, CmdStanPathfinder, …)
 #' @param ... Tidyselect expressions to filter variables (e.g., ends_with("_pop"))
 #' @return A draws_array object with selected variables
 #' @export
 select_draws <- function(fit, ...) {
   csv_files <- fit$output_files()
+  draws_field <- cmdstan_draws_field(fit)
 
   # Get all variable names from the CSV header (avoids fit$metadata() which
   # also relies on live process state)
@@ -233,11 +301,12 @@ select_draws <- function(fit, ...) {
   # The combined model writes ~49 GB per chain; reading all 4 chains at once
   # (196 GB) causes read_cmdstan_csv to fail mid-parse and return NA draws.
   # Sequential per-chain reads keep peak memory to one chain's selected columns.
+  # (Pathfinder/VB/Laplace write a single CSV, so this is just one iteration.)
   chain_draws <- lapply(csv_files, function(csv) {
     cmdstanr::read_cmdstan_csv(
       files = csv,
       variables = selected_vars
-    )$post_warmup_draws
+    )[[draws_field]]
   })
   posterior::bind_draws(chain_draws, along = "chain")
 }
@@ -437,14 +506,21 @@ export_stan_functions <- function(stan_file, includes = NULL) {
   return(model)
 }
 
-# Compute hash of Stan model source files
-# Returns a hash string that changes when any source file content changes
+# Compute hash of Stan model source files + the CmdStan version.
+# Returns a hash string that changes when any source file content changes OR when
+# the active CmdStan version changes. Including the version is essential: a
+# compiled binary depends on the toolchain that built it, so a version switch
+# (e.g. 2.38 -> 2.39 for laplace_marginal_tol) MUST invalidate the cached exe.
+# Without this, build_model reuses a stale binary compiled against the old
+# version, and the new version's features silently fail at runtime.
 compute_stan_source_hash <- function(model_file, include_files = NULL) {
-  all_source_files <- c(model_file, include_files)
-  all_source_files |>
+  source_contents <- c(model_file, include_files) |>
     sort() |>
-    map(read_lines) |>
-    digest::digest(algo = "md5")
+    map(read_lines)
+  cmdstan_v <- tryCatch(as.character(cmdstanr::cmdstan_version()),
+                        error = function(e) "unknown")
+  digest::digest(list(sources = source_contents, cmdstan = cmdstan_v),
+                 algo = "md5")
 }
 
 build_model <- function(
@@ -456,6 +532,30 @@ build_model <- function(
 ) {
   # Compute hash of all source file contents to detect changes
   source_hash <- compute_stan_source_hash(model_file, include_files)
+
+  # Guard: the embedded Laplace functions (laplace_marginal_tol / laplace_marginal)
+  # only exist in stanc >= 2.39. Compiling a model that uses them under an older
+  # CmdStan silently produces a binary whose chains crash at init with swallowed
+  # stderr ("No chains finished successfully") — hours to diagnose. Fail loudly at
+  # compile time instead, but ONLY when the source actually uses the feature (so
+  # non-surrogate models still build on 2.38).
+  uses_laplace <- c(model_file, include_files) |>
+    map(read_lines) |>
+    unlist() |>
+    str_detect("laplace_marginal") |>
+    any()
+  if (uses_laplace) {
+    cmdstan_v <- cmdstanr::cmdstan_version()
+    if (cmdstan_v < "2.39.0") {
+      stop(
+        "Model '", model_file, "' uses laplace_marginal_tol, which requires ",
+        "CmdStan >= 2.39.0, but the active CmdStan is ", cmdstan_v, " (path: ",
+        cmdstanr::cmdstan_path(), "). Point cmdstanr at a >= 2.39 install ",
+        "(e.g. set_cmdstan_path('~/.cmdstan/cmdstan-2.39.0') or the CMDSTAN env ",
+        "var) before building the surrogate model."
+      )
+    }
+  }
 
   # Determine expected executable path
   model_name <- tools::file_path_sans_ext(fs::path_file(model_file))

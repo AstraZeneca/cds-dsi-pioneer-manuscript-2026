@@ -68,6 +68,14 @@ Naming convention:
 
 ## Coding Style
 
+- **Never use `!!!` (rlang splice) inside a `tar_target()` command.** It forces
+  evaluation at manifest/parse time — *before* targets resolves dependencies — so
+  any other target referenced inside the splice fails with `object '<name>' not
+  found` during job setup (before `tar_make` runs). Use a function that takes the
+  list as a plain argument instead, so the dependency stays a normal unquoted
+  target reference: e.g. `x |> modifyList(other_target)` to override-merge, NOT
+  `x |> list_modify(!!!other_target)`. (`c(x, other_target)` also works but
+  *appends* — duplicate keys, not overrides.)
 - **Always use tidyverse** — `dplyr`, `purrr`, `tidyr`, `ggplot2`, `stringr`, etc.
 - **Use `|>` (native pipe)**, never `%>%`
 - **Use MCP targets tools** (`mcp__plugin_targets-toolkit_targets__*`) for all targets operations — never `Rscript -e 'targets::...'` via Bash
