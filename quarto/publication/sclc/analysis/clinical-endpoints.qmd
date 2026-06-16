@@ -44,14 +44,21 @@ orr_data |>
 #| label: fig-orr-prior-post
 #| fig-cap: Prior vs posterior ORR comparison.
 
+obs_orr <- tibble(
+  trial = c("lilly_cxcr4_Arm B", "lilly_cxcr4_Arm A"),
+  obs_orr = c(0.946, 0.85)
+)
+
 orr_data |>
   filter(grepl("lilly_cxcr4", trial)) |>
   ggplot() +
+  geom_point(data = obs_orr, aes(x = obs_orr, y = trial),
+             shape = 4, size = 4, stroke = 1.5, color = "grey30") +
   stat_pointinterval(aes(xdist = sample_target_orr, y = trial, color = fit_type),
                      .width = c(0.5, 0.9), position = position_dodge(width = 0.5)) +
   scale_color_discrete("", type = AZ_palette, label = str_to_title) +
   scale_x_continuous("Overall Response Rate (ORR)", limits = c(0, 1)) +
-  labs(y = "") +
+  labs(y = "", caption = "× = observed ORR (target-lesion RECIST best response)") +
   NULL
 ```
 
