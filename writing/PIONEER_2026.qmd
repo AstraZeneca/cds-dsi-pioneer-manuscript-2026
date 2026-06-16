@@ -541,6 +541,19 @@ Leave-future-out PFS forecast evolution (sample-based). Each column is a data cu
 Leave-future-out OS forecast evolution (sample-based). Same structure as @fig-lfo-pfs-evolution but for overall survival. The model conditions on observed deaths and censoring up to each cut-off and forecasts OS for patients still alive. Wider credible intervals reflect the additional uncertainty from the multistate routing.
 :::
 
+The LFO framework also evaluates the mechanistic component in isolation: at each fold, the model predicts the RECIST category at the next withheld assessment visit using only the latent SLD trajectory. @fig-oos-sankey shows the result (pooled across folds). The mechanistic side achieves 70% sensitivity for progressive disease — these are the target-lesion–driven PD events where the D+G model correctly predicts that regrowth will cross the RECIST threshold. However, it misclassifies ~30% of observed PD events as PR or SD — these are patients who progressed from non-target lesions or new lesion appearance, channels invisible to the SLD model. @fig-recist-sensitivity shows this pattern stabilises after ~6 months of enrolment: PD sensitivity plateaus around 70–80%, while finer distinctions (PR vs SD) remain at 15–35%. This ceiling is why the multistate hazard $\lambda_{01}$ is essential: the mechanistic component alone captures target-lesion progression reliably, but the joint model is needed to cover the full PFS estimand.
+
+::: {#fig-oos-sankey}
+![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-oos-confusion-sankey-1.png){width=80%}
+
+Out-of-sample RECIST classification (mechanistic component only, pooled across LFO folds). Left: recorded clinical response. Right: model-predicted response from target-lesion SLD trajectory. The 70% PD sensitivity represents target-lesion–driven progression; flows from CR/PR/SD → PD are non-target events that only the multistate hazard can capture.
+:::
+
+::: {#fig-recist-sensitivity}
+![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-recist-sensitivity-over-time-1.png){width=100%}
+
+RECIST classification sensitivity over successive LFO cut-off dates. PD sensitivity (plum) stabilises around 70–80%; PR (cyan) and SD (gold) remain harder to distinguish. The ~30% PD ceiling motivates the multistate component for non-target progression.
+:::
 
 ### Transition-specific covariate effects {#sec-results-covariates}
 
@@ -579,20 +592,7 @@ Posterior distribution of ORR by arm for the target trial. Prior (gold) vs poste
 *[To be drafted. Outline:]*
 
 - **What PIONEER buys you.** Forecasting with structural shape constraints from immature data; coherent uncertainty propagation; transportability of biological parameters across trials.
-- **What the mechanistic component captures — and why the joint model is needed.** The out-of-sample RECIST classification from the LFO analysis (@fig-oos-sankey) reveals the mechanistic component's scope: when the model predicts RECIST category at withheld future visits using *only* the latent SLD trajectory, it achieves 70% sensitivity for progressive disease — the cases where target-lesion growth crosses the RECIST threshold. However, it cannot predict the remaining ~30% of PD events that arise from non-target lesion progression or new lesion appearance, since these channels are invisible to the tumour-size model. Similarly, @fig-recist-sensitivity shows that PD sensitivity stabilises around 70–80% with sufficient data, while finer distinctions (PR vs SD) remain at 15–35% — the 30% RECIST boundary sits within measurement noise. This decomposition motivates the joint architecture: the mechanistic side captures the *target-lesion* progression channel with structural constraints (the D+G model knows when regrowth will cross the threshold), while the multistate hazard $\lambda_{01}$ captures *everything else* — non-target progression, new lesions, clinical deterioration — as a stochastic event informed by the tumour bridge. Neither component alone is sufficient; together they cover the full PFS estimand.
-
-::: {#fig-oos-sankey}
-![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-oos-confusion-sankey-1.png){width=80%}
-
-Out-of-sample RECIST classification (mechanistic component only, pooled across LFO folds). Left: recorded clinical response. Right: model-predicted response from target-lesion SLD trajectory. The mechanistic model captures 70% of PD events (target-lesion driven); the remaining flows from CR/PR/SD → PD represent non-target progression channels that only the multistate hazard can capture.
-:::
-
-::: {#fig-recist-sensitivity}
-![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-recist-sensitivity-over-time-1.png){width=100%}
-
-RECIST classification sensitivity by category over successive LFO cut-off dates. PD sensitivity (plum) stabilises around 70–80%; PR (cyan) and SD (gold) remain harder to distinguish. This ceiling motivates the multistate component for capturing non-target progression.
-:::
-
+- **What the mechanistic component captures — and why the joint model is needed.** The LFO RECIST classification results (@fig-oos-sankey, @fig-recist-sensitivity in @sec-results-lfo) quantify the mechanistic component's ceiling: 70% PD sensitivity from target-lesion dynamics, with the remaining ~30% requiring the multistate hazard. Neither component alone covers the full PFS estimand — this empirically validates the joint architecture.
 - **Growth-rate identifiability and overconfident PFS pessimism.** The leave-future-out analysis reveals a structural weakness of the mechanistic component: the growth rate $r^{\mathrm{gro}}_i$ is the least identifiable patient-level parameter, because the growing compartment contributes negligibly to the observed SLD until regrowth is underway. For patients whose follow-up ends before visible regrowth (the majority in this case study), the patient-level growth-rate posterior remains wide (SD $\approx 1.2$) and is dominated by the population estimate (SD $\approx 0.4$). If a subset of well-identified fast-growers sets the population rate, the hierarchical shrinkage pulls all uncertain patients toward this pessimistic estimate — and because the population rate is tightly estimated, the model is *confident* in predictions that are systematically too pessimistic. This manifests as a narrow predictive interval that sits below the observed PFS KM in the LFO validation for Arm A. The multistate-only PFS (which triggers progression from the stochastic hazard rather than from target-lesion RECIST threshold crossing) does not suffer from this bias, because it does not depend on per-patient growth rates. The implication is that for arms or subgroups where most patients have short, monotonically-declining SLD trajectories, the mechanistic contribution to PFS may be overconfident in the wrong direction — and the hazard-only channel provides better-calibrated predictions. A natural mitigation would be to down-weight the mechanistic PFS channel when the patient-level growth rate is poorly identified, though we do not implement this in the current framework.
 - **Limitations.** Phenomenological D+G decomposition (not real clones); multistate identifiability under sparse trial-level data; computational cost (~hours per fit); does not improve *in-sample* fit vs flexible empirical models.
 - **When to prefer a simpler model.** Small trial; target endpoint = OS only; no dropout signal; adequate follow-up for standard parametric extrapolation.
