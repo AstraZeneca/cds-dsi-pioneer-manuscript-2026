@@ -530,15 +530,15 @@ The central claim of PIONEER is that it can forecast survival endpoints from imm
 @fig-lfo-os-evolution shows the corresponding OS forecast evolution. OS prediction is inherently harder — it requires the full multistate routing through progression, dropout, and post-progression death — yet the model's predictions remain calibrated across cut-offs. The wider ribbons relative to PFS reflect the additional structural uncertainty from the competing transitions, not miscalibration.
 
 ::: {#fig-lfo-pfs-evolution}
-![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-km-evolution-spop-1.png){width=100%}
+![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-km-evolution-sample-1.png){width=100%}
 
-Leave-future-out PFS forecast evolution. Each column is a data cut-off (month 4, 11, 19); rows are treatment arms. Blue ribbons: 80% credible interval of the posterior predictive PFS KM. Gold step function: observed mature-DCO KM (upper bound). The model's forecast narrows and converges as data accumulates, with the observed KM covered at all cut-offs.
+Leave-future-out PFS forecast evolution (sample-based). Each column is a data cut-off (month 4, 11, 19); rows are treatment arms. The model conditions on observed events up to each cut-off and forecasts the remainder. Blue ribbons: 80% credible interval. Gold step function: observed mature-DCO KM. The forecast narrows and converges as data accumulates.
 :::
 
 ::: {#fig-lfo-os-evolution}
-![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-os-km-evolution-spop-1.png){width=100%}
+![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-os-km-evolution-sample-1.png){width=100%}
 
-Leave-future-out OS forecast evolution. Same structure as @fig-lfo-pfs-evolution but for overall survival. Wider credible intervals reflect the added uncertainty from the multistate routing (progression → post-progression death vs direct death vs off-trial death).
+Leave-future-out OS forecast evolution (sample-based). Same structure as @fig-lfo-pfs-evolution but for overall survival. The model conditions on observed deaths and censoring up to each cut-off and forecasts OS for patients still alive. Wider credible intervals reflect the additional uncertainty from the multistate routing.
 :::
 
 @fig-oos-confusion shows the out-of-sample RECIST classification performance. For each LFO fold, the model predicts the RECIST category at the *next* assessment visit for patients whose data was withheld — a genuine out-of-sample prediction of tumour response. The confusion matrix reports sensitivity (recall) per category: PD is correctly identified 70% of the time, while PR and SD are harder to distinguish from each other — consistent with the clinical reality that the boundary between PR and SD (the 30% threshold) is where measurement noise dominates.
