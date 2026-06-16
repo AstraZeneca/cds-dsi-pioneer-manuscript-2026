@@ -10,9 +10,10 @@ execute:
 #| include: false
 
 source("_setup.R")
-sld_rc    <- pub_tar_read("tumor_ssls_staged_sld_rvar_right_censored_posterior")
-sld_unc   <- pub_tar_read("tumor_ssls_staged_sld_rvar_uncensored_posterior")
-recist_rc <- pub_tar_read("tumor_ssls_staged_recist_rvar_right_censored_posterior")
+sld_rc       <- pub_tar_read("tumor_ssls_staged_sld_rvar_right_censored_posterior")
+sld_unc      <- pub_tar_read("tumor_ssls_staged_sld_rvar_uncensored_posterior")
+recist_rc    <- pub_tar_read("tumor_ssls_staged_recist_rvar_right_censored_posterior")
+analysis_data <- pub_tar_read("all_analysis_data")
 ```
 
 ## SLD Forecasts — Right-Censored Patients {#sec-sld-censored}
@@ -25,7 +26,7 @@ Individual SLD trajectories for patients who are right-censored (progression-fre
 #| fig-width: 10
 #| fig-height: 12
 
-sld_rc |> plot_sld_forecast_censored()
+sld_rc |> plot_sld_forecast_censored(analysis_data)
 ```
 
 ## SLD Posterior Predictive Check — Uncensored Patients {#sec-sld-ppc}
@@ -34,13 +35,13 @@ Replicated vs observed SLD for patients who had a PFS event. Only the observed w
 
 ```{r}
 #| label: fig-sld-ppc
-#| fig-cap: Observed vs posterior-predicted SLD for uncensored patients (observation window only).
+#| fig-cap: Observed vs posterior-predicted SLD for uncensored patients (observation window only). Dashed vertical lines mark each patient's PFS event; progression and on-trial death are placed at the event week, dropouts at the last observed visit. See legend for event type (target PD, non-target PD, death on trial, dropout).
 #| fig-width: 10
 #| fig-height: 12
 
 sld_unc |>
   filter(stage == "obs") |>
-  plot_sld_forecast_censored() +
+  plot_sld_forecast_censored(analysis_data) +
   scale_x_continuous("Months", breaks = months_to_weeks(seq(0, 48, 3)), labels = label_weeks_to_months)
 ```
 
