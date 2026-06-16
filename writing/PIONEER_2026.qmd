@@ -556,18 +556,20 @@ Posterior covariate effects (QR space) across six model components. Rows: covari
 
 ### Clinical endpoint summaries {#sec-results-endpoints}
 
-The full-posterior propagation delivers clinical quantities as distributions, not point estimates. @fig-median-pfs shows the posterior distribution of median PFS for the target trial: the prior (gold) spans a wide range reflecting pre-data uncertainty, while the posterior (plum) concentrates around approximately 5–7 months with substantially reduced uncertainty. @fig-orr shows the corresponding ORR posterior: the model estimates an overall response rate of approximately 70–80% for the target trial, with tight credible intervals reflecting the direct link between the latent burden trajectory and RECIST classification.
+The full-posterior propagation delivers clinical quantities as distributions, not point estimates. @fig-median-pfs shows the posterior distribution of median PFS for each arm of the target trial: the prior (gold) spans a wide range reflecting pre-data uncertainty, while the posterior (plum) concentrates with substantially reduced uncertainty. The dashed line marks the observed median PFS (~6.2 months, identical for both arms). Median PFS is a joint-model endpoint — it combines both the mechanistic target-lesion progression and the stochastic multistate progression channels.
+
+@fig-orr shows the ORR posterior by arm. Unlike median PFS, ORR is derived **entirely from the mechanistic submodel** — it is a deterministic function of the latent SLD trajectory (whether $B_i(t)$ ever falls below $0.7$, i.e. a $\geq 30\%$ decrease from baseline). No multistate hazard is involved: a patient's response classification depends only on their inferred tumour dynamics. This is why the ORR posterior is remarkably tight — response depth is well-identified from even a few SLD observations per patient, and the structural D+G model constrains the trajectory shape. A hazard-only survival model without the mechanistic component would be unable to produce ORR predictions at all.
 
 ::: {#fig-median-pfs}
 ![](../quarto/publication/sclc/_freeze/analysis/clinical-endpoints/figure-html/fig-median-pfs-prior-post-1.png){width=100%}
 
-Posterior distribution of median PFS (months) for the target trial. Prior (gold) vs posterior (plum). Vertical line at 6 months for reference. The data dramatically tightens the estimate.
+Posterior distribution of median PFS (months) for each arm of the target trial (Lilly CXCR4). Prior (gold) vs posterior (plum). Dashed line: observed median PFS (both arms ≈ 6.2 months).
 :::
 
 ::: {#fig-orr}
 ![](../quarto/publication/sclc/_freeze/analysis/clinical-endpoints/figure-html/fig-orr-prior-post-1.png){width=100%}
 
-Posterior distribution of ORR (objective response rate) for the target trial. Prior (gold) vs posterior (plum). The tight posterior reflects the direct deterministic link between the latent SLD trajectory and RECIST classification — response depth is well-identified from even a few SLD observations per patient.
+Posterior distribution of ORR by arm for the target trial. Prior (gold) vs posterior (plum). ORR is computed entirely from the mechanistic submodel — it is a deterministic function of the latent SLD trajectory and requires no multistate hazard. The tight posterior reflects that response depth is well-identified from longitudinal tumour measurements.
 :::
 
 ## Discussion {#sec-discussion}
