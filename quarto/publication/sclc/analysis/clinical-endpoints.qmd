@@ -88,7 +88,9 @@ pfs_quant |>
 pfs_quant |>
   filter(quantile == 0.5, grepl("lilly_cxcr4", trial)) |>
   ggplot() +
-  geom_vline(xintercept = 27, linetype = "dashed", color = "grey40", linewidth = 0.5) +
+  geom_vline(aes(xintercept = 27, linetype = "Observed median PFS\n(both arms ≈ 6.2 months)"),
+             color = "grey40", linewidth = 0.5) +
+  scale_linetype_manual("", values = "dashed") +
   stat_pointinterval(aes(xdist = sample_pfs_quant, y = trial, color = fit_type),
                      .width = c(0.5, 0.9), position = position_dodge(width = 0.5)) +
   scale_x_continuous("Median PFS [Months]",
