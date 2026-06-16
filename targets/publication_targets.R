@@ -108,10 +108,12 @@ disease_map <- tibble::tribble(
 # total unconstrained parameter count, which scales with n_patients.
 #
 # SCLC: data/inv_metric_publication_tumor_ssls_gr_decay_sclc_chain*.json
-#       (job #1952, 5258 params — enable_gr_decay=1L on this branch; the #1868
-#       metric is stale here, wrong dimension since gr_decay grows the param space).
-#       Consumed only when disease == "sclc"; CRC falls back to NULL (cold start)
-#       because these SCLC metrics have the wrong mass-matrix dimension for CRC.
+#       (job #1977, 5778 params — the clean gr_decay posterior with the full RE
+#       hierarchy: trial-arm + patient kappa raw effects + SDs. R-hat <= 1.006 on
+#       all endpoints. stepsize/metric_type stripped to {"inv_metric":[...]} per
+#       the CmdStan input-format requirement). Consumed only when disease ==
+#       "sclc"; CRC falls back to NULL (cold start) because these SCLC metrics
+#       have the wrong mass-matrix dimension for CRC.
 # CRC:  TODO — no valid files yet. The pre-trend CRC metrics (job ~202605312138)
 #       have wrong dimension (16433 params, pre-trend model). Save new ones after
 #       the first successful CRC posterior run with enable_ms_baseline_trend_01=1.
@@ -124,7 +126,7 @@ disease_map <- tibble::tribble(
 #        the always-on arm-level RE change (4692c282) grew the parameter space —
 #        set LFO_COLD_START=true to skip them and regenerate via save_metric=TRUE.
 # CRC:  no files yet — lfo() passes metric_file = NULL for crc → cold start.
-# Per-chain SCLC posterior warm-start metrics (gr_decay-ON, 5258 params).
+# Per-chain SCLC posterior warm-start metrics (gr_decay-ON, 5778 params, job #1977).
 publication_metric_files_sclc <- sprintf(
   "data/inv_metric_publication_tumor_ssls_gr_decay_sclc_chain%d.json", 1:4
 )
@@ -551,18 +553,16 @@ publication_targets <- list(
       tar_target(
         tumor_ssls_res,
         {
-          # COLD START: the saved SCLC metrics (publication_metric_files_sclc,
-          # 5258 params, job #1952) are dimension-stale after the gr_decay RE
-          # hierarchy grew the parameter space (trial-arm + patient kappa raw
-          # effects + SDs). Feeding them would hard-fail at load, so every chain
-          # adapts its own mass matrix. Re-enable warm-start (the commented branch)
-          # once new hierarchy-dimension metrics are saved from a clean fit.
-          posterior_metric_files <- NULL
-          # posterior_metric_files <- if (warm_start && disease == "sclc") {
-          #   publication_metric_files_sclc
-          # } else {
-          #   NULL
-          # }
+          # WARM START: publication_metric_files_sclc are the per-chain adapted
+          # mass matrices from the clean gr_decay posterior (job #1977, 5778
+          # params, R-hat <= 1.006 on all endpoints), dimension-matched to the
+          # current gr_decay RE hierarchy. SCLC warm-starts; CRC has no saved
+          # metrics, so it cold-starts (NULL).
+          posterior_metric_files <- if (warm_start && disease == "sclc") {
+            publication_metric_files_sclc
+          } else {
+            NULL
+          }
           sample_and_save(
             tumor_ssls_exe_hash$exe_file,
             tumor_ssls_stan_data,
@@ -1048,7 +1048,7 @@ publication_targets <- list(
         verbose = TRUE,
         fit_only = FALSE,
         exact = TRUE,
-        iter_warmup = 500,
+        iter_warmup = 300,
         iter_sampling = 500,
         save_warmup = lfo_save_warmup,
         save_metric = TRUE,
