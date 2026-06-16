@@ -511,6 +511,10 @@ A more demanding evaluation is the *super-population* prediction, in which every
 
 @fig-pfs-km-spop shows the super-population PFS prediction by trial and arm. The posterior median PFS curve tracks the observed KM closely, and the 80% credible ribbon covers the observed step function across all four trial-arm combinations. @fig-os-km-spop shows the corresponding OS prediction. Unlike PFS, OS requires the full multistate routing — a patient's OS depends on which path they take through the state graph (direct death via $0\to 2$, post-progression death via $1\to 2$, or off-trial death via $3\to 2$). The model's OS prediction matches the observed KM well, with wider credible intervals reflecting the additional uncertainty from the competing transitions and post-progression sojourn.
 
+```{=latex}
+\begin{landscape}
+```
+
 ::: {#fig-pfs-km-spop}
 ![](../quarto/publication/sclc/_freeze/analysis/survival-analysis/figure-html/fig-pfs-km-spop-1.png){width=100%}
 
@@ -523,6 +527,10 @@ Super-population PFS Kaplan–Meier predictions by trial and arm. Every patient 
 Super-population OS Kaplan–Meier predictions by trial and arm. The OS forecast emerges from the full multistate routing: patients who progress incur a sojourn in state 1 before death; patients who die directly contribute their $0\to 2$ time; off-trial patients contribute via $3\to 2$. Crosses: observed KM.
 :::
 
+```{=latex}
+\end{landscape}
+```
+
 ### Leave-future-out cross-validation {#sec-results-lfo}
 
 The central claim of PIONEER is that it can forecast survival endpoints from immature data. We evaluate this claim using leave-future-out (LFO) cross-validation: the model is re-fitted at a sequence of progressively later data cut-offs (month 4, 11, and 19 of enrolment), and at each cut-off the predicted PFS and OS Kaplan–Meier curves are compared against the observed mature-DCO KM that was *not* available at training time.
@@ -530,6 +538,10 @@ The central claim of PIONEER is that it can forecast survival endpoints from imm
 @fig-lfo-pfs-evolution shows the PFS forecast evolution for both arms of the target trial. At the earliest cut-off (month 4, $n=9$), the model has seen only a handful of patients and produces wide credible intervals — but the median prediction already captures the rapid early decline characteristic of this population. As more patients and longer follow-up become available (month 11, $n=39$; month 19, $n=71$), the credible intervals narrow and the predicted KM converges toward the observed mature-DCO curve. For Arm B, the forecast is well-calibrated at all cut-offs. For Arm A, however, the posterior predictive median remains systematically pessimistic — it tracks closer to the mature "Overall" KM than to the "At cutoff" observed data on which the model was trained. The model predicts earlier progression than the cutoff-censored KM suggests, even though the prediction interval is narrow. This overconfident pessimism reflects the growth-rate identifiability issue discussed in @sec-discussion: the mechanistic component predicts target-lesion RECIST progression based on a population growth rate that is biased by a subset of fast-progressing patients, and patients with insufficient follow-up to identify their own growth rate are shrunk toward this pessimistic estimate. Despite this, the forecasts remain informative — the predicted median PFS is close to the final mature value, suggesting that the model correctly anticipates the *eventual* outcome even when it is overconfident about *timing* at early cut-offs.
 
 @fig-lfo-os-evolution shows the corresponding OS forecast evolution. OS prediction is inherently harder — it requires the full multistate routing through progression, dropout, and post-progression death — yet the model's predictions remain calibrated across cut-offs. The wider ribbons relative to PFS reflect the additional structural uncertainty from the competing transitions, not miscalibration.
+
+```{=latex}
+\begin{landscape}
+```
 
 ::: {#fig-lfo-pfs-evolution}
 ![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-km-evolution-sample-1.png){width=100%}
@@ -542,6 +554,10 @@ Leave-future-out PFS forecast evolution (sample-based). Each column is a data cu
 
 Leave-future-out OS forecast evolution (sample-based). Same structure as @fig-lfo-pfs-evolution but for overall survival. The model conditions on observed deaths and censoring up to each cut-off and forecasts OS for patients still alive. Wider credible intervals reflect the additional uncertainty from the multistate routing.
 :::
+
+```{=latex}
+\end{landscape}
+```
 
 The LFO framework also evaluates the mechanistic component in isolation: at each fold, the model predicts the RECIST category at the next withheld assessment visit using only the latent SLD trajectory. @fig-oos-sankey shows the result (pooled across folds). The mechanistic side achieves 70% sensitivity for progressive disease — these are the target-lesion–driven PD events where the D+G model correctly predicts that regrowth will cross the RECIST threshold. However, it misclassifies ~30% of observed PD events as PR or SD — these are patients who progressed from non-target lesions or new lesion appearance, channels invisible to the SLD model. @fig-recist-sensitivity shows this pattern stabilises after ~6 months of enrolment: PD sensitivity plateaus around 70–80%, while finer distinctions (PR vs SD) remain at 15–35%. This ceiling is why the multistate hazard $\lambda_{01}$ is essential: the mechanistic component alone captures target-lesion progression reliably, but the joint model is needed to cover the full PFS estimand.
 
