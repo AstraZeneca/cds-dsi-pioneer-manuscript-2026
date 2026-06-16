@@ -560,6 +560,8 @@ The full-posterior propagation delivers clinical quantities as distributions, no
 
 @fig-orr shows the ORR posterior by arm. Unlike median PFS, ORR is derived **entirely from the mechanistic submodel** — it is a deterministic function of the latent SLD trajectory (whether $B_i(t)$ ever falls below $0.7$, i.e. a $\geq 30\%$ decrease from baseline). No multistate hazard is involved: a patient's response classification depends only on their inferred tumour dynamics. This is why the ORR posterior is remarkably tight — response depth is well-identified from even a few SLD observations per patient, and the structural D+G model constrains the trajectory shape. A hazard-only survival model without the mechanistic component would be unable to produce ORR predictions at all.
 
+The model's ORR posterior (approximately 73–75%) underestimates the observed ORR (Arm A: 85%, Arm B: 95%) by 15–20 percentage points. This conservatism reflects hierarchical shrinkage on the latent trajectory: patients with borderline responses (observed SLD dropping just past the 30% threshold) have their inferred latent response depth attenuated toward the population mean, pushing them back below the PR classification boundary. Additionally, measurement noise can cause the observed SLD to cross the 30% threshold transiently, yielding an observed PR that the smooth latent trajectory — which averages over noise — does not reproduce. The model reports its posterior belief about *true* response depth, not the noisy observed best-response classification; the gap is the price of denoising.
+
 ::: {#fig-median-pfs}
 ![](../quarto/publication/sclc/_freeze/analysis/clinical-endpoints/figure-html/fig-median-pfs-prior-post-1.png){width=100%}
 
