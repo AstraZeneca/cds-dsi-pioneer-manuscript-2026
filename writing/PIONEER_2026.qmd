@@ -31,9 +31,11 @@ format:
   html: default
   pdf:
     documentclass: article
+    fig-pos: "H"
     include-in-header:
       text: |
         \usepackage{pdflscape}
+        \usepackage{float}
 ---
 
 ## Introduction {#sec-introduction}
