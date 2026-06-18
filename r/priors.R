@@ -371,10 +371,16 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     ),
 
     # Gompertz decay module hyperparams (lean pop-level)
+    # kappa = exp(log_loc_pop + covar + level effects), so EVERY log-scale term is
+    # exponentiated. A unit-SD covariate prior is far too diffuse here: at early LFO
+    # cutoffs (~3 wk data) kappa is unidentified and the covariate term ran to ±5 in
+    # QR space, blowing kappa up to ~1e6 and producing a flat exp(-kappa*t) ridge that
+    # caused 132 divergences at n=3. Tighten to 0.25 so a 2-sigma covariate swing
+    # multiplies kappa by ~exp(0.5)=1.6x (was exp(2)=7.4x, compounding across covars).
     gr_decay_log_loc_pop_mean = gr_decay_log_loc_pop_mean,
     gr_decay_log_loc_pop_sd = gr_decay_log_loc_pop_sd,
     gr_decay_coef_qr_pop_mean = as.array(rep(0, n_covar)),
-    gr_decay_coef_qr_pop_sd = as.array(rep(1, n_covar)),
+    gr_decay_coef_qr_pop_sd = as.array(rep(0.25, n_covar)),
     gr_decay_sd_level_intercept_sd = rep(0.25, n_levels),
     gr_decay_fe_sd_level_intercept = rep(0, n_levels),
     gr_decay_sd_level_slope_sd = list(
