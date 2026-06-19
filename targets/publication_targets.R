@@ -1210,7 +1210,7 @@ publication_targets <- list(
               spop_pfs_quant[trial, q]
             ) |>
             left_join(
-              enframe(tumor_ssls_stan_data$pfs_quantiles, name = "q", value = "quantile"),
+              enframe(base_tumor_ssls_stan_data$pfs_quantiles, name = "q", value = "quantile"),
               by = "q"
             )
         ),
@@ -1234,7 +1234,7 @@ publication_targets <- list(
               spop_os_quant[trial, q]
             ) |>
             left_join(
-              enframe(tumor_ssls_stan_data$pfs_quantiles, name = "q", value = "quantile"),
+              enframe(base_tumor_ssls_stan_data$pfs_quantiles, name = "q", value = "quantile"),
               by = "q"
             )
         ),
