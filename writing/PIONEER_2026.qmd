@@ -27,11 +27,18 @@ keywords:
   - progression-free survival
 bibliography: ../bib/pioneer.bib
 number-sections: true
+execute:
+  echo: false
+  freeze: auto
+  warning: false
+  message: false
+  cache: true
 format:
   html: default
   pdf:
     documentclass: article
     fig-pos: "H"
+    geometry: margin=2cm
     include-in-header:
       text: |
         \usepackage{pdflscape}
@@ -41,27 +48,49 @@ format:
 ```{r}
 #| label: setup-data
 #| include: false
-library(targets)
-library(dplyr)
-library(tidyr)
+#| cache: false
 library(gt)
 library(gtsummary)
+library(patchwork)
 
 tar_run <- if (nzchar(Sys.getenv("TAR_RUN"))) Sys.getenv("TAR_RUN") else "gompertz"
 
+init_project()
 source(here::here("r", "util.R"))
-tar_store <- file.path(
+source(here::here("r", "plot_functions.R"))
+
+ggplot2::theme_set(
+  theme_minimal(base_family = "") +
+    ggplot2::theme(
+      plot.margin = ggplot2::margin(5, 10, 20, 20, "pt"),
+      plot.caption = ggplot2::element_text(hjust = 0, margin = ggplot2::margin(15, 0, 0, 0, "pt"))
+    )
+)
+
+pub_store <- file.path(
   "/mnt/data/analysis-results",
-  Sys.getenv("DOMINO_STARTING_USERNAME"),
+  #Sys.getenv("DOMINO_STARTING_USERNAME"),
+  "karim_naguib",
   "publication",
   tar_run,
   "_targets"
 )
 
-target_patient_data <- tar_read(target_patient_data_sclc, store = tar_store)
-historical_patient_data <- tar_read(historical_patient_data_sclc, store = tar_store)
-target_visit_data <- tar_read(target_visit_data_sclc, store = tar_store)
-historical_visit_data <- tar_read(historical_visit_data_sclc, store = tar_store)
+pub_disease_suffix <- "sclc"
+lfo_disease_suffix <- "sclc"
+lfo_store <- file.path(
+  "/mnt/data/analysis-results",
+  "karim_naguib",
+  "publication",
+  Sys.getenv("LFO_TAR_RUN", paste0(tar_run, "-lfo")),
+  "_targets"
+)
+source(here::here("quarto", "publication", "_setup_common.R"))
+
+target_patient_data <- tar_read(target_patient_data_sclc, store = pub_store)
+historical_patient_data <- tar_read(historical_patient_data_sclc, store = pub_store)
+target_visit_data <- tar_read(target_visit_data_sclc, store = pub_store)
+historical_visit_data <- tar_read(historical_visit_data_sclc, store = pub_store)
 
 TRIAL_LABELS <- c(lilly_cxcr4 = "Lilly CXCR4", amgen_darbe = "Amgen 20010145")
 
@@ -458,7 +487,7 @@ Direct death without progression *is* a PFS event (PFS fails at the death time);
 **Endpoints as posterior functionals.** Kaplan–Meier curves for PFS and OS are computed from the $\{T^{\mathrm{pfs}}_i, T^{\mathrm{os}}_i\}$ sample paths, ORR from the per-patient response classification, and any other endpoint analogously — each averaged across posterior draws. Because every quantity flows from the same joint posterior, each reported endpoint inherits the model's full parameter uncertainty; no re-fitting or plug-in step is involved.
 
 ```{=latex}
-\begin{landscape}
+\clearpage\begin{landscape}
 ```
 
 ![Posterior-predictive endpoint routing for a single posterior draw. The unconditional ($\mathrm{spop}$) and conditional ($\mathrm{sample}$) passes feed the *same* routing tree and differ only in where they enter it — from treatment start, or from the observed state at the data cut-off. The three competing exits from state 0 are resolved first; the earliest candidate time wins. Progression's own candidate time is the minimum of the deterministic target-lesion time $T^{\mathrm{tgt}}_i$ and the stochastic non-target time $T^{\mathrm{ms}}_i$. PFS and OS are then read off the realised route: direct death is itself a PFS event, dropout right-censors PFS, and only the progression route incurs a post-progression sojourn before death.](figures/gq-routing.svg){#fig-gq-routing width=100%}
@@ -514,7 +543,7 @@ Both trials share the same disease (ES-SCLC), the same standard-of-care backbone
 
 ### Data source
 
-Individual patient-level data were obtained through Project Data Sphere (http://www.projectdatasphere.org), a not-for-profit initiative providing access to de-identified patient-level data from oncology clinical trials.
+Individual patient-level data were obtained through [Project Data Sphere](http://www.projectdatasphere.org), a not-for-profit initiative providing access to de-identified patient-level data from oncology clinical trials.
 
 ### Data processing
 
@@ -530,6 +559,15 @@ Missing baseline covariates were imputed at the population median prior to model
 ```{r}
 #| label: tbl-trial-summary
 #| tbl-cap: "Patient disposition and endpoints by trial and arm."
+METRIC_LABELS <- c(
+  N = "N",
+  median_fu_mo = "Median follow-up (mo)",
+  median_pfs_mo = "Median PFS (mo)",
+  pct_censored = "PFS censored (%)",
+  deaths = "Deaths",
+  visits_per_pt = "Visits per patient"
+)
+
 disposition <- all_patient |>
   group_by(trial_label, treatment_label) |>
   summarise(
@@ -540,22 +578,58 @@ disposition <- all_patient |>
     deaths = sum(death == 1, na.rm = TRUE),
     visits_per_pt = mean(n_visits, na.rm = TRUE),
     .groups = "drop"
-  )
-
-disposition |>
-  gt(groupname_col = "trial_label") |>
-  cols_label(
-    treatment_label = "Arm",
-    N = "N",
-    median_fu_mo = "Median follow-up (mo)",
-    median_pfs_mo = "Median PFS (mo)",
-    pct_censored = "% Censored",
-    deaths = "Deaths",
-    visits_per_pt = "Visits/patient"
   ) |>
-  fmt_number(columns = c(median_fu_mo, median_pfs_mo, visits_per_pt), decimals = 1) |>
-  fmt_percent(columns = pct_censored, decimals = 0) |>
-  tab_options(table.font.size = "small")
+  mutate(arm_col = paste0(trial_label, "__", treatment_label))
+
+disp_wide <- disposition |>
+  select(-trial_label, -treatment_label) |>
+  pivot_longer(-arm_col, names_to = "metric", values_to = "value") |>
+  pivot_wider(names_from = arm_col, values_from = value) |>
+  mutate(metric = factor(metric, levels = names(METRIC_LABELS))) |>
+  arrange(metric) |>
+  mutate(metric = METRIC_LABELS[as.character(metric)])
+
+arm_cols <- setdiff(names(disp_wide), "metric")
+arm_labels <- sub(".*__", "", arm_cols)
+spanners <- sub("__.*", "", arm_cols)
+
+disp_wide |>
+  gt(rowname_col = "metric") |>
+  cols_label(.list = setNames(as.list(arm_labels), arm_cols)) |>
+  fmt_number(
+    rows = metric %in% c("Median follow-up (mo)", "Median PFS (mo)", "Visits per patient"),
+    columns = everything(),
+    decimals = 1
+  ) |>
+  fmt_percent(
+    rows = metric == "PFS censored (%)",
+    columns = everything(),
+    decimals = 0
+  ) |>
+  fmt_integer(
+    rows = metric %in% c("N", "Deaths"),
+    columns = everything()
+  ) |>
+  tab_spanner(label = "Lilly CXCR4", columns = arm_cols[spanners == "Lilly CXCR4"]) |>
+  tab_spanner(label = "Amgen 20010145", columns = arm_cols[spanners == "Amgen 20010145"]) |>
+  opt_table_lines("none") |>
+  tab_style(
+    style = cell_borders(sides = "bottom", color = "black", weight = px(2)),
+    locations = cells_column_labels()
+  ) |>
+  tab_style(
+    style = cell_borders(sides = "top", color = "black", weight = px(2)),
+    locations = cells_column_labels()
+  ) |>
+  tab_style(
+    style = cell_borders(sides = "bottom", color = "black", weight = px(2)),
+    locations = cells_body(rows = nrow(disp_wide))
+  ) |>
+  tab_style(
+    style = cell_text(align = "center"),
+    locations = list(cells_body(), cells_column_labels())
+  ) |>
+  tab_options(table.font.size = "small", table.width = pct(100))
 ```
 
 ```{r}
@@ -580,7 +654,12 @@ all_patient |>
     value = list(male ~ 1L, ecog_ge1 ~ 1L),
     digits = list(all_continuous() ~ 1)
   ) |>
-  as_gt()
+  as_gt() |>
+  tab_options(
+    table.font.size = "small",
+    column_labels.border.lr.style = "hidden",
+    stub.border.style = "hidden"
+  )
 ```
 
 ## Results {#sec-results}
@@ -589,29 +668,52 @@ We present results from the joint model fitted to the publication dataset (targe
 
 ### Model fit to longitudinal tumour data {#sec-results-fit}
 
-@fig-sld-ppc shows posterior predictive SLD trajectories for a random subsample of patients with observed progression events. For each patient, the posterior median trajectory (solid line) tracks the observed SLD measurements (dots), with 50% and 80% credible ribbons capturing the measurement uncertainty. The two-component decomposition correctly recovers the characteristic shapes: initial response (driven by the decreasing component $D_i$) followed by eventual regrowth (driven by the growing component $G_i$). The width of credible intervals varies across patients even when observation counts are similar, reflecting three sources of patient-level uncertainty: the number and temporal span of observations available to identify the per-patient kinetic parameters; the geometric identifiability of the trajectory shape (a clear nadir constrains parameters better than a monotone decline); and the degree of agreement between a patient's kinetics and the population distribution — patients whose trajectories are close to the hierarchical mean receive stronger regularisation from the prior and exhibit tighter posteriors, while patients with atypical kinetics show wider intervals as the model negotiates between their sparse data and the population. Overall, the posterior median trajectories track the observed measurements closely across all patients, confirming that the two-component model provides an adequate fit to the longitudinal tumour data.
+@fig-sld-ppc shows posterior predictive SLD trajectories for a random subsample of patients with observed progression events. For each patient, the posterior median trajectory (solid line) tracks the observed SLD measurements (dots), with 50% and 80% credible ribbons capturing the measurement uncertainty; vertical dashed lines mark the PFS event week. The two-component decomposition correctly recovers the characteristic shapes: initial response (driven by the decreasing component $D_i$) followed by eventual regrowth (driven by the growing component $G_i$). The width of credible intervals varies across patients even when observation counts are similar, reflecting three sources of patient-level uncertainty: the number and temporal span of observations available to identify the per-patient kinetic parameters; the geometric identifiability of the trajectory shape (a clear nadir constrains parameters better than a monotone decline); and the degree of agreement between a patient's kinetics and the population distribution — patients whose trajectories are close to the hierarchical mean receive stronger regularisation from the prior and exhibit tighter posteriors, while patients with atypical kinetics show wider intervals as the model negotiates between their sparse data and the population. Overall, the posterior median trajectories track the observed measurements closely across all patients, confirming that the two-component model provides an adequate fit to the longitudinal tumour data.
 
-@fig-sld-censored shows the same posterior predictive check for censored patients (those still progression-free at the data cut-off). Here the model must *forecast* beyond the last observation. The forecast ribbons (pink) fan out naturally from the observed phase (dark), reflecting increasing uncertainty further from the data while maintaining the structural D+G shape. This is the extrapolation that makes mechanistic modelling valuable: the model predicts *what will happen* based on the inferred rates, not just *what has happened*.
+@fig-sld-censored shows the same posterior predictive check for censored patients (those still progression-free at the data cut-off). Here the model must *forecast* beyond the last observation. The forecast ribbons (pink) fan out naturally from the observed phase (dark), reflecting increasing uncertainty further from the data while maintaining the structural decrease-plus-growth shape. This is the extrapolation that makes mechanistic modelling valuable: the model predicts *what will happen* based on the inferred rates, not just *what has happened*.
 
 @fig-recist-censored shows the posterior predictive RECIST classification over time for the same censored patients. Each stacked bar represents the posterior probability of each RECIST category (CR, PR, SD, PD) at each time point. The observed RECIST classifications (coloured dots) are consistent with the high-probability regions, and the gradual shift from PR/SD toward PD in the forecast window reflects the growing component's eventual dominance.
 
-::: {#fig-sld-ppc}
-![](../quarto/publication/sclc/_freeze/analysis/patient-dynamics/figure-html/fig-sld-ppc-1.png){width=100%}
+```{r}
+#| label: fig-sld-ppc
+#| fig-cap: Posterior predictive SLD trajectories for a subsample of patients with observed progression from the Lilly CXCR4 trial. Ribbons represent 50% and 80% credible intervals; lines show posterior median tumour dynamics. Dots are observed SLD measurements. Vertical dashed lines indicate the week of the PFS event.
+#| fig-width: 10
+#| fig-height: 12
+#| cache: false
+sld_unc <- pub_tar_read("tumor_ssls_staged_sld_rvar_uncensored_posterior")
+analysis_data <- pub_tar_read("all_analysis_data")
 
-Posterior predictive SLD trajectories for a subsample of patients with observed progression. Ribbons represent 50% and 80% credible intervals; lines show posterior median tumour dynamics. Blue dots are observed SLD measurements.
-:::
+sld_unc |>
+  filter(stage == "obs") |>
+  plot_sld_forecast_censored(analysis_data) +
+  scale_x_continuous("Months", breaks = months_to_weeks(seq(0, 48, 3)), labels = label_weeks_to_months) +
+  labs(caption = NULL)
+```
 
-::: {#fig-sld-censored}
-![](../quarto/publication/sclc/_freeze/analysis/patient-dynamics/figure-html/fig-sld-censored-1.png){width=100%}
+```{r}
+#| label: fig-sld-censored
+#| fig-cap: Posterior predictive SLD trajectories for censored patients (progression-free at data cut-off) from the Lilly CXCR4 trial. Dark ribbons show the observed phase; pink ribbons show the forecast beyond the last observation. The model extrapolates using the inferred decrease-plus-growth rates.
+#| fig-width: 10
+#| fig-height: 12
+sld_rc <- pub_tar_read("tumor_ssls_staged_sld_rvar_right_censored_posterior")
 
-Posterior predictive SLD trajectories for censored patients (progression-free at data cut-off). Dark ribbons show the observed phase; pink ribbons show forecasted tumour dynamics beyond the last observation. The model extrapolates using the inferred D+G rates.
-:::
+sld_rc |>
+  mutate(keep = stage == "obs" | week %% 6 == 0) |>
+  filter(keep) |>
+  select(-keep) |>
+  plot_sld_forecast_censored(analysis_data) +
+  labs(caption = NULL)
+```
 
-::: {#fig-recist-censored}
-![](../quarto/publication/sclc/_freeze/analysis/patient-dynamics/figure-html/fig-recist-censored-1.png){width=100%}
+```{r}
+#| label: fig-recist-censored
+#| fig-cap: Posterior predictive RECIST classification over time for censored patients from the Lilly CXCR4 trial. Stacked bars show the posterior probability of each RECIST category at each time point. Coloured dots represent observed classifications; dashed lines mark the transition from observed to forecast phase.
+#| fig-width: 10
+#| fig-height: 12
+recist_rc <- pub_tar_read("tumor_ssls_staged_recist_rvar_right_censored_posterior")
 
-Posterior predictive RECIST classification over time for censored patients. Stacked bars show the posterior probability of each RECIST category at each time point. Coloured dots represent observed classifications; dashed lines mark the transition from observed to forecast phase.
-:::
+recist_rc |> plot_recist_censored() + labs(caption = NULL)
+```
 
 ### Survival predictions: PFS and OS {#sec-results-survival}
 
@@ -619,57 +721,200 @@ Classically, joint longitudinal-survival models are assessed via *sample-based* 
 
 A more demanding evaluation is the *super-population* prediction, in which every patient's event time is re-simulated unconditionally from week 1. Observed event histories are discarded entirely; the model must generate the full KM purely from inferred population parameters, patient-level covariates, and the latent tumour trajectories obtained through the joint posterior. If this unconditional prediction recovers the observed KM, it demonstrates that the model has learned the correct generative mechanism — linking tumour dynamics to event risk — rather than merely memorising training outcomes. This is the estimand relevant to clinical forecasting: "if we enrolled a new cohort from this population, what would their survival curves look like?"
 
-@fig-pfs-km-spop shows the super-population PFS prediction by trial and arm. The posterior median PFS curve tracks the observed KM closely, and the 80% credible ribbon covers the observed step function across all four trial-arm combinations. @fig-os-km-spop shows the corresponding OS prediction. Unlike PFS, OS requires the full multistate routing — a patient's OS depends on which path they take through the state graph (direct death via $0\to 2$, post-progression death via $1\to 2$, or off-trial death via $3\to 2$). The model's OS prediction matches the observed KM well, with wider credible intervals reflecting the additional uncertainty from the competing transitions and post-progression sojourn.
+@fig-km-spop shows the super-population PFS (top) and OS (bottom) predictions by trial and arm. The posterior median PFS curve tracks the observed KM closely, and the 80% credible ribbon covers the observed step function across all four trial-arm combinations. The OS prediction requires the full multistate routing — a patient's OS depends on which path they take through the state graph (direct death via $0\to 2$, post-progression death via $1\to 2$, or off-trial death via $3\to 2$). The model's OS prediction matches the observed KM well, with wider credible intervals reflecting the additional uncertainty from the competing transitions and post-progression sojourn.
 
-```{=latex}
-\begin{landscape}
-```
+```{r}
+#| label: fig-km-spop
+#| fig-cap: Super-population Kaplan–Meier predictions. Every patient is re-simulated unconditionally from week 1 — no observed events are used. Ribbons show 80% credible intervals; crosses show the observed KM. **Top row:** PFS by trial and arm. **Bottom row:** OS by trial and arm. The OS forecast emerges from the full multistate routing — progression, direct death, and dropout compete, with post-progression death on a sojourn clock.
+#| fig-width: 10
+#| fig-height: 10
+#| cache: false
+ARM_LABELS <- c(
+  "Lilly CXCR4 -- Arm A (CXCR4 + chemo)" = "lilly_cxcr4_Arm A",
+  "Lilly CXCR4 -- Arm B (chemo alone)" = "lilly_cxcr4_Arm B",
+  "Amgen 20010145 -- NESP + chemo" = "amgen_darbe_NESP",
+  "Amgen 20010145 -- Placebo + chemo" = "amgen_darbe_PLACEBO"
+)
 
-::: {#fig-pfs-km-spop}
-![](../quarto/publication/sclc/_freeze/analysis/survival-analysis/figure-html/fig-pfs-km-spop-1.png){width=100%}
+km_data <- pub_tar_read("all_tumor_ssls_km_rvar")
+obs_km_data <- pub_tar_read("km_trial_pfs") |>
+  filter(fct_match(btype, "ub")) |>
+  select(!quantiles) |>
+  unnest(km_data)
+os_km_data <- pub_tar_read("all_tumor_ssls_km_os_rvar")
+obs_os_data <- pub_tar_read("km_trial_os") |>
+  filter(fct_match(btype, "ub")) |>
+  mutate(interval_censored = 0L) |>
+  select(!quantiles) |>
+  unnest(km_data)
 
-Super-population PFS Kaplan–Meier predictions by trial and arm. Every patient is re-simulated unconditionally from week 1 — no observed events are used. Ribbons: 80% credible intervals; crosses: observed KM. Top row: target trial (Lilly CXCR4, Arm A and B). Bottom row: historical trial (Amgen Darbe, Placebo and NESP).
-:::
+relabel_trial <- function(df) {
+  df |> mutate(trial = fct_recode(trial, !!!ARM_LABELS))
+}
 
-::: {#fig-os-km-spop}
-![](../quarto/publication/sclc/_freeze/analysis/overall-survival/figure-html/fig-os-km-spop-1.png){width=100%}
+p_pfs <- km_data |>
+  filter(fit_type == "posterior") |>
+  relabel_trial() |>
+  plot_km(
+    km_est_var = spop_pfs_km_est,
+    facet_col = trial,
+    obs_km_data = relabel_trial(obs_km_data)
+  ) +
+  scale_y_continuous("Progression-Free Survival Probability", breaks = seq(0, 1, 0.2)) +
+  labs(caption = NULL)
 
-Super-population OS Kaplan–Meier predictions by trial and arm. The OS forecast emerges from the full multistate routing: patients who progress incur a sojourn in state 1 before death; patients who die directly contribute their $0\to 2$ time; off-trial patients contribute via $3\to 2$. Crosses: observed KM.
-:::
+p_os <- os_km_data |>
+  filter(fit_type == "posterior") |>
+  relabel_trial() |>
+  plot_km(
+    km_est_var = spop_os_km_est,
+    facet_col = trial,
+    obs_km_data = relabel_trial(obs_os_data),
+    endpoint = "os"
+  ) +
+  scale_y_continuous("Overall Survival Probability", breaks = seq(0, 1, 0.2)) +
+  labs(caption = NULL)
 
-```{=latex}
-\end{landscape}
+p_pfs / p_os
 ```
 
 ### Leave-future-out cross-validation {#sec-results-lfo}
 
 The central claim of PIONEER is that it can forecast survival endpoints from immature data. We evaluate this claim using leave-future-out (LFO) cross-validation: the model is re-fitted at a sequence of progressively later data cut-offs (month 4, 11, and 19 of enrolment), and at each cut-off the predicted PFS and OS Kaplan–Meier curves are compared against the observed mature-DCO KM that was *not* available at training time.
 
-@fig-lfo-pfs-evolution shows the PFS forecast evolution for both arms of the target trial. At the earliest cut-off (month 4, $n=9$), the model has seen only a handful of patients and produces wide credible intervals — but the median prediction already captures the rapid early decline characteristic of this population. As more patients and longer follow-up become available (month 11, $n=39$; month 19, $n=71$), the credible intervals narrow and the predicted KM converges toward the observed mature-DCO curve. For Arm B, the forecast is well-calibrated at all cut-offs. For Arm A, however, the posterior predictive median remains systematically pessimistic — it tracks closer to the mature "Overall" KM than to the "At cutoff" observed data on which the model was trained. The model predicts earlier progression than the cutoff-censored KM suggests, even though the prediction interval is narrow. This overconfident pessimism reflects the growth-rate identifiability issue discussed in @sec-discussion: the mechanistic component predicts target-lesion RECIST progression based on a population growth rate that is biased by a subset of fast-progressing patients, and patients with insufficient follow-up to identify their own growth rate are shrunk toward this pessimistic estimate. Despite this, the forecasts remain informative — the predicted median PFS is close to the final mature value, suggesting that the model correctly anticipates the *eventual* outcome even when it is overconfident about *timing* at early cut-offs.
+@fig-lfo-pfs-evolution shows the PFS forecast evolution for the two arms of the Lilly CXCR4 trial. At the earliest cut-off (month 4, $n=9$), the model has seen only a handful of patients and produces wide credible intervals — but the median prediction already captures the rapid early decline characteristic of this population. As more patients and longer follow-up become available (month 11, $n=39$; month 19, $n=71$), the credible intervals narrow and the predicted KM converges toward the observed mature-DCO curve. For Arm B, the forecast is well-calibrated at all cut-offs. For Arm A, however, the posterior predictive median remains systematically pessimistic — it tracks closer to the mature "Overall" KM than to the "At cutoff" observed data on which the model was trained. The model predicts earlier progression than the cutoff-censored KM suggests, even though the prediction interval is narrow. This overconfident pessimism reflects the growth-rate identifiability issue discussed in @sec-discussion: the mechanistic component predicts target-lesion RECIST progression based on a population growth rate that is biased by a subset of fast-progressing patients, and patients with insufficient follow-up to identify their own growth rate are shrunk toward this pessimistic estimate. Despite this, the forecasts remain informative — the predicted median PFS is close to the final mature value, suggesting that the model correctly anticipates the *eventual* outcome even when it is overconfident about *timing* at early cut-offs.
 
 @fig-lfo-os-evolution shows the corresponding OS forecast evolution. OS prediction is inherently harder — it requires the full multistate routing through progression, dropout, and post-progression death — yet the model's predictions remain calibrated across cut-offs. The wider ribbons relative to PFS reflect the additional structural uncertainty from the competing transitions, not miscalibration.
 
 ```{=latex}
+\clearpage\begin{landscape}
+```
+
+```{r}
+#| label: fig-lfo-pfs-evolution
+#| fig-cap: "Leave-future-out PFS forecast evolution for the Lilly CXCR4 trial (sample-based). Each column is a data cut-off; rows are treatment arms. Navy ribbons show 80% posterior credible intervals for the conditional forecast; navy line shows the posterior median. The solid step line shows the observed PFS KM censored at the cut-off date; the dashed line shows the final mature observed PFS KM as a reference (identical across columns). The forecast narrows and converges toward the mature curve as data accumulates."
+#| fig-width: 14
+#| fig-height: 7
+#| cache: false
+LFO_ARM_LABELS <- c(
+  "Arm A (CXCR4 + chemo)" = "lilly_cxcr4_Arm A",
+  "Arm B (chemo alone)" = "lilly_cxcr4_Arm B"
+)
+
+lfo_cutoff_km <- lfo_tar_read_pattern("lfo_cutoff_km_est")
+all_analysis_data <- pub_tar_read("all_analysis_data")
+target_arms <- grep("lilly_cxcr4", levels(lfo_cutoff_km$trial), value = TRUE)
+
+cutoff_meta <- lfo_cutoff_km |> distinct(cutoff_calendar_day, n_target_observed)
+
+censor_at_cutoff <- function(data, cutoff_day) {
+  data |>
+    filter(calendar_day <= cutoff_day) |>
+    mutate(
+      followup_weeks = (cutoff_day - calendar_day) / 7,
+      pfs_cut = pmin(pfs, followup_weeks),
+      censored_cut = right_censored | (pfs > followup_weeks)
+    )
+}
+
+obs_km_cutoffs <- purrr::map(seq_len(nrow(cutoff_meta)), \(i) {
+  cd <- cutoff_meta$cutoff_calendar_day[[i]]
+  n_t <- cutoff_meta$n_target_observed[[i]]
+  all_analysis_data |>
+    filter(fct_match(trial, "lilly_cxcr4")) |>
+    mutate(group = fct_drop(interaction(trial, arm, sep = "_"))) |>
+    censor_at_cutoff(cd) |>
+    get_km_res(pfs_cut, censored_cut, by = group) |>
+    tidyr::unnest(km_data) |>
+    transmute(trial, btype, cutoff_calendar_day = cd, n_target_observed = n_t, t, s, c)
+}) |>
+  dplyr::bind_rows()
+
+final_pfs_km <- all_analysis_data |>
+  filter(fct_match(trial, "lilly_cxcr4")) |>
+  mutate(group = fct_drop(interaction(trial, arm, sep = "_"))) |>
+  get_km_res(pfs, right_censored, by = group) |>
+  tidyr::unnest(km_data) |>
+  filter(btype == "ub") |>
+  transmute(trial, t, s, c)
+
+relabel_lfo <- function(df) df |> mutate(trial = fct_recode(trial, !!!LFO_ARM_LABELS))
+
+plot_km_evolution(
+  relabel_lfo(lfo_cutoff_km),
+  km_est_var = sample_pfs_km_est,
+  trials = names(LFO_ARM_LABELS),
+  obs_km_data = relabel_lfo(obs_km_cutoffs),
+  final_km_data = relabel_lfo(final_pfs_km),
+  overall_color = AZ_plum
+) +
+  scale_y_continuous("Progression-Free Survival Probability", labels = scales::percent, limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+  labs(caption = NULL)
+```
+
+```{=latex}
+\end{landscape}
 \begin{landscape}
 ```
 
-::: {#fig-lfo-pfs-evolution}
-![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-km-evolution-sample-1.png){width=100%}
+```{r}
+#| label: fig-lfo-os-evolution
+#| fig-cap: "Leave-future-out OS forecast evolution for the Lilly CXCR4 trial (sample-based). Same structure as @fig-lfo-pfs-evolution but for overall survival. The model conditions on observed deaths and censoring up to each cut-off and forecasts OS for patients still alive. Wider credible intervals reflect the additional uncertainty from the full multistate routing through progression, direct death, and dropout."
+#| fig-width: 14
+#| fig-height: 7
+#| cache: false
+lfo_cutoff_os_km <- lfo_tar_read_pattern("lfo_cutoff_os_km_est")
 
-Leave-future-out PFS forecast evolution (sample-based). Each column is a data cut-off (month 4, 11, 19); rows are treatment arms. The model conditions on observed events up to each cut-off and forecasts the remainder. Blue ribbons: 80% credible interval. Gold step function: observed mature-DCO KM. The forecast narrows and converges as data accumulates.
-:::
+obs_os_km_cutoffs <- purrr::map(seq_len(nrow(cutoff_meta)), \(i) {
+  cd <- cutoff_meta$cutoff_calendar_day[[i]]
+  n_t <- cutoff_meta$n_target_observed[[i]]
+  all_analysis_data |>
+    filter(fct_match(trial, "lilly_cxcr4")) |>
+    mutate(
+      group = fct_drop(interaction(trial, arm, sep = "_")),
+      os_time = if_else(death, death_week, patient_max_t),
+      os_cens = !death
+    ) |>
+    censor_at_cutoff(cd) |>
+    mutate(
+      os_cut = pmin(os_time, followup_weeks),
+      os_cens_cut = os_cens | (os_time > followup_weeks)
+    ) |>
+    get_km_res(os_cut, os_cens_cut, by = group) |>
+    tidyr::unnest(km_data) |>
+    transmute(trial, btype, cutoff_calendar_day = cd, n_target_observed = n_t, t, s, c)
+}) |>
+  dplyr::bind_rows()
 
-::: {#fig-lfo-os-evolution}
-![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-os-km-evolution-sample-1.png){width=100%}
+final_os_km <- all_analysis_data |>
+  filter(fct_match(trial, "lilly_cxcr4")) |>
+  mutate(
+    group = fct_drop(interaction(trial, arm, sep = "_")),
+    os_time = if_else(death, death_week, patient_max_t),
+    os_cens = !death
+  ) |>
+  get_km_res(os_time, os_cens, by = group) |>
+  tidyr::unnest(km_data) |>
+  filter(btype == "ub") |>
+  transmute(trial, t, s, c)
 
-Leave-future-out OS forecast evolution (sample-based). Same structure as @fig-lfo-pfs-evolution but for overall survival. The model conditions on observed deaths and censoring up to each cut-off and forecasts OS for patients still alive. Wider credible intervals reflect the additional uncertainty from the multistate routing.
-:::
+plot_km_evolution(
+  relabel_lfo(lfo_cutoff_os_km),
+  km_est_var = sample_os_km_est,
+  trials = names(LFO_ARM_LABELS),
+  obs_km_data = relabel_lfo(obs_os_km_cutoffs),
+  final_km_data = relabel_lfo(final_os_km),
+  overall_color = AZ_plum
+) +
+  scale_y_continuous("Overall Survival Probability", labels = scales::percent, limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+  labs(caption = NULL)
+```
 
 ```{=latex}
 \end{landscape}
 ```
-
-The LFO framework also evaluates the mechanistic component in isolation: at each fold, the model predicts the RECIST category at the next withheld assessment visit using only the latent SLD trajectory. @fig-oos-sankey shows the result (pooled across folds). The mechanistic side achieves 70% sensitivity for progressive disease — these are the target-lesion–driven PD events where the D+G model correctly predicts that regrowth will cross the RECIST threshold. However, it misclassifies ~30% of observed PD events as PR or SD — these are patients who progressed from non-target lesions or new lesion appearance, channels invisible to the SLD model. @fig-recist-sensitivity shows this pattern stabilises after ~6 months of enrolment: PD sensitivity plateaus around 70–80%, while finer distinctions (PR vs SD) remain at 15–35%. This ceiling is why the multistate hazard $\lambda_{01}$ is essential: the mechanistic component alone captures target-lesion progression reliably, but the joint model is needed to cover the full PFS estimand.
+<!-- 
+The LFO framework also evaluates the mechanistic component in isolation: at each fold, the model predicts the RECIST category at the next withheld assessment visit using only the latent SLD trajectory. @fig-oos-sankey shows the result (pooled across folds). The mechanistic side achieves 70% sensitivity for progressive disease — these are the target-lesion–driven PD events where the decrease-plus-growth model correctly predicts that regrowth will cross the RECIST threshold. However, it misclassifies ~30% of observed PD events as PR or SD — these are patients who progressed from non-target lesions or new lesion appearance, channels invisible to the SLD model. @fig-recist-sensitivity shows this pattern stabilises after ~6 months of enrolment: PD sensitivity plateaus around 70–80%, while finer distinctions (PR vs SD) remain at 15–35%. This ceiling is why the multistate hazard $\lambda_{01}$ is essential: the mechanistic component alone captures target-lesion progression reliably, but the joint model is needed to cover the full PFS estimand.
 
 ::: {#fig-oos-sankey}
 ![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-oos-confusion-sankey-1.png){width=80%}
@@ -681,25 +926,79 @@ Out-of-sample RECIST classification (mechanistic component only, pooled across L
 ![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-recist-sensitivity-over-time-1.png){width=100%}
 
 RECIST classification sensitivity over successive LFO cut-off dates. PD sensitivity (plum) stabilises around 70–80%; PR (cyan) and SD (gold) remain harder to distinguish. The ~30% PD ceiling motivates the multistate component for non-target progression.
-:::
+::: -->
 
 ### Transition-specific covariate effects {#sec-results-covariates}
 
-@fig-covariate-effects shows the posterior distribution of covariate coefficients across the model's six covariate-bearing components: the tumour-dynamics modules (fraction balance `frac` and initial state `init`) and the four multistate transition hazards ($0\to 1$ progression, $0\to 2$ direct death, $0\to 3$ dropout, $1\to 2$ post-progression death). All coefficients are shown in QR-rotated space; because the QR rotation matrix is nearly diagonal for this dataset (diagonal dominance 68–100%), the indices correspond approximately to the original covariates: (1) age, (2) male, (3) ECOG, (4) haemoglobin, (5) log-LDH, (6) albumin.
+@fig-covariate-effects shows the posterior distribution of covariate coefficients in standardised covariate space (back-transformed from the QR reparameterisation used during sampling; each coefficient represents a one-standard-deviation effect) across five model components: the tumour-dynamics modules (growth-rate balance and initial decreasing fraction) and three multistate transition hazards ($0\to 1$ progression, $0\to 2$ direct death, $1\to 2$ post-progression death).
 
-The key observation is that the same covariate can act in opposite directions on different transitions. For example, covariate 4 (haemoglobin) shows a clear negative coefficient on the $0\to 1$ progression hazard (higher Hgb → lower progression risk) but a positive coefficient on $1\to 2$ post-progression death — consistent with the clinical interpretation that anaemia is prognostic for both progression and post-progression mortality, but through different mechanisms. The $0\to 2$ direct-death coefficients (light cyan) have the widest credible intervals, reflecting the small number of direct-death events available to identify these effects. This is the structural advantage of the multistate formulation: a single-hazard model would average these opposing effects into one coefficient, losing the transition-specific clinical signal.
+The key observation is that the same covariate can act in opposite directions on different transitions. For example, haemoglobin shows a clear negative coefficient on the $0\to 1$ progression hazard (higher Hgb → lower progression risk) but a positive coefficient on $1\to 2$ post-progression death — consistent with the clinical interpretation that anaemia is prognostic for both progression and post-progression mortality, but through different mechanisms. The $0\to 2$ direct-death coefficients have the widest credible intervals, reflecting the small number of direct-death events available to identify these effects. This is the structural advantage of the multistate formulation: a single-hazard model would average these opposing effects into one coefficient, losing the transition-specific clinical signal.
 
-::: {#fig-covariate-effects}
-![](../quarto/publication/sclc/_freeze/analysis/parameter-inference/figure-html/fig-covariate-effects-1.png){width=100%}
+```{r}
+#| label: fig-covariate-effects
+#| fig-cap: "Posterior covariate effects (standardised covariate space) across seven model components: growth-rate balance, initial decreasing fraction, and Gompertz growth-rate decay $\\kappa$ (tumour dynamics submodel); and the four multistate transition hazards — progression $0\\to 1$, direct death $0\\to 2$, dropout $0\\to 3$, and post-progression death $1\\to 2$. Coefficients are back-transformed from the QR reparameterisation used during sampling and represent log-hazard or logit-scale changes per one standard deviation of each covariate. Intervals show 50% and 90% credible intervals."
+#| fig-height: 7
+#| fig-width: 10
+#| cache: false
+covar_names <- colnames(pub_tar_read("covar_design_matrix"))
+rv <- posterior::as_draws_rvars(pub_tar_read("tumor_ssls_draws_pop_posterior"))
 
-Posterior covariate effects (QR space) across six model components. Rows: covariates (1 = age, 2 = male, 3 = ECOG, 4 = haemoglobin, 5 = log-LDH, 6 = albumin). Colours distinguish tumour-dynamics modules (frac, init) from multistate transition hazards (01, 02, 03, 12). Intervals show 50% and 95% credible intervals. The same covariate acts differently on different transitions — this transition-specific structure is the key advantage over single-hazard joint models.
-:::
+gr_decay_var <- if ("gr_decay_coef_pop" %in% names(rv)) "gr_decay_coef_pop" else "gr_decay_coef_qr_pop"
+
+COEF_LABELS <- c(
+  frac_coef_pop = "Growth-rate balance (tumour)",
+  init_coef_pop = "Initial decreasing fraction (tumour)",
+  time_invariant_coef_01 = "Progression hazard (0→1)",
+  time_invariant_coef_02 = "Direct death hazard (0→2)",
+  time_invariant_coef_03 = "Dropout hazard (0→3)",
+  time_invariant_coef_12 = "Post-progression death (1→2)"
+)
+COEF_LABELS <- c(
+  COEF_LABELS[1:2],
+  setNames("Growth-rate decay κ (tumour)", gr_decay_var),
+  COEF_LABELS[3:6]
+)
+
+COVAR_LABELS <- c(
+  age = "Age (years)",
+  male = "Male (%)",
+  ecog = "ECOG >= 1 (%)",
+  hgb = "Haemoglobin (g/dL)",
+  ldh_log = "log-LDH",
+  albumin = "Albumin (g/L)"
+)
+
+purrr::imap_dfr(COEF_LABELS, \(label, var_name) {
+  v <- rv[[var_name]]
+  tibble::tibble(
+    component = label,
+    n = seq_along(v),
+    .value = v
+  )
+}) |>
+  mutate(
+    covar = factor(COVAR_LABELS[covar_names[n]], levels = unname(COVAR_LABELS)),
+    component = factor(component, levels = unname(COEF_LABELS))
+  ) |>
+  ggplot() +
+  stat_pointinterval(
+    aes(xdist = .value, y = covar, color = component),
+    .width = c(0.5, 0.9),
+    point_size = 1.5,
+    position = position_dodge(width = 0.6)
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed", alpha = 0.5) +
+  scale_color_discrete("Model component", type = AZ_palette) +
+  labs(x = "Coefficient (original covariate space)", y = NULL) +
+  theme(legend.position = "bottom") +
+  guides(color = guide_legend(ncol = 2))
+```
 
 ### Clinical endpoint summaries {#sec-results-endpoints}
 
 The full-posterior propagation delivers clinical quantities as distributions, not point estimates. @fig-median-pfs shows the posterior distribution of median PFS for each arm of the target trial: the prior (gold) spans a wide range reflecting pre-data uncertainty, while the posterior (plum) concentrates with substantially reduced uncertainty. The dashed line marks the observed median PFS (~6.2 months, identical for both arms). Median PFS is a joint-model endpoint — it combines both the mechanistic target-lesion progression and the stochastic multistate progression channels.
 
-@fig-orr shows the ORR posterior by arm. Unlike median PFS, ORR is derived **entirely from the mechanistic submodel** — it is a deterministic function of the latent SLD trajectory (whether $B_i(t)$ ever falls below $0.7$, i.e. a $\geq 30\%$ decrease from baseline). No multistate hazard is involved: a patient's response classification depends only on their inferred tumour dynamics. This is why the ORR posterior is remarkably tight — response depth is well-identified from even a few SLD observations per patient, and the structural D+G model constrains the trajectory shape. A hazard-only survival model without the mechanistic component would be unable to produce ORR predictions at all.
+@fig-orr shows the ORR posterior by arm. Unlike median PFS, ORR is derived **entirely from the mechanistic submodel** — it is a deterministic function of the latent SLD trajectory (whether $B_i(t)$ ever falls below $0.7$, i.e. a $\geq 30\%$ decrease from baseline). No multistate hazard is involved: a patient's response classification depends only on their inferred tumour dynamics. This is why the ORR posterior is remarkably tight — response depth is well-identified from even a few SLD observations per patient, and the structural decrease-plus-growth model constrains the trajectory shape. A hazard-only survival model without the mechanistic component would be unable to produce ORR predictions at all.
 
 The model's ORR posterior (approximately 73–75%) underestimates the observed ORR (Arm A: 85%, Arm B: 95%) by 15–20 percentage points. This conservatism reflects hierarchical shrinkage on the latent trajectory: patients with borderline responses (observed SLD dropping just past the 30% threshold) have their inferred latent response depth attenuated toward the population mean, pushing them back below the PR classification boundary. Additionally, measurement noise can cause the observed SLD to cross the 30% threshold transiently, yielding an observed PR that the smooth latent trajectory — which averages over noise — does not reproduce. The model reports its posterior belief about *true* response depth, not the noisy observed best-response classification; the gap is the price of denoising.
 
@@ -722,7 +1021,7 @@ Posterior distribution of ORR by arm for the target trial. Prior (gold) vs poste
 - **What PIONEER buys you.** Forecasting with structural shape constraints from immature data; coherent uncertainty propagation; transportability of biological parameters across trials.
 - **What the mechanistic component captures — and why the joint model is needed.** The LFO RECIST classification results (@fig-oos-sankey, @fig-recist-sensitivity in @sec-results-lfo) quantify the mechanistic component's ceiling: 70% PD sensitivity from target-lesion dynamics, with the remaining ~30% requiring the multistate hazard. Neither component alone covers the full PFS estimand — this empirically validates the joint architecture.
 - **Growth-rate identifiability and overconfident PFS pessimism.** The leave-future-out analysis reveals a structural weakness of the mechanistic component: the growth rate $r^{\mathrm{gro}}_i$ is the least identifiable patient-level parameter, because the growing compartment contributes negligibly to the observed SLD until regrowth is underway. For patients whose follow-up ends before visible regrowth (the majority in this case study), the patient-level growth-rate posterior remains wide (SD $\approx 1.2$) and is dominated by the population estimate (SD $\approx 0.4$). If a subset of well-identified fast-growers sets the population rate, the hierarchical shrinkage pulls all uncertain patients toward this pessimistic estimate — and because the population rate is tightly estimated, the model is *confident* in predictions that are systematically too pessimistic. This manifests as a narrow predictive interval that sits below the observed PFS KM in the LFO validation for Arm A. The multistate-only PFS (which triggers progression from the stochastic hazard rather than from target-lesion RECIST threshold crossing) does not suffer from this bias, because it does not depend on per-patient growth rates. The implication is that for arms or subgroups where most patients have short, monotonically-declining SLD trajectories, the mechanistic contribution to PFS may be overconfident in the wrong direction — and the hazard-only channel provides better-calibrated predictions. A natural mitigation would be to down-weight the mechanistic PFS channel when the patient-level growth rate is poorly identified, though we do not implement this in the current framework.
-- **Limitations.** Phenomenological D+G decomposition (not real clones); multistate identifiability under sparse trial-level data; computational cost (~hours per fit); does not improve *in-sample* fit vs flexible empirical models.
+- **Limitations.** Phenomenological decrease-plus-growth decomposition (not real clones); multistate identifiability under sparse trial-level data; computational cost (~hours per fit); does not improve *in-sample* fit vs flexible empirical models.
 - **When to prefer a simpler model.** Small trial; target endpoint = OS only; no dropout signal; adequate follow-up for standard parametric extrapolation.
 - **Surrogacy.** The multistate framework permits testing PFS-as-surrogate-for-OS by allowing arm effects on post-progression hazards; we discuss this as future work rather than a primary result of this paper.
 - **Generalisability.** The framework has been applied to PSA dynamics in prostate cancer (Pioneer project), demonstrating that the architecture generalises beyond SLD/RECIST to other biomarkers with decrease + growth dynamics.
