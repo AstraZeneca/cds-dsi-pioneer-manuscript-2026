@@ -1179,7 +1179,7 @@ publication_targets <- list(
           cutoff_date,
           cutoff_calendar_day,
           n_target_observed,
-          select_draws(fit[[1]], matches(r"(^(sample|spop).*_pfs_quant\[)")) |>
+          select_draws(fit[[1]], matches("^(sample|spop).*_pfs_quant")) |>
             recover_types(select(all_analysis_data, trial = group)) |>
             spread_rvars(
               sample_target_pfs_quant[trial, q],
