@@ -47,9 +47,9 @@ library(tidyr)
 library(gt)
 library(gtsummary)
 
-source(here::here("r", "util.R"))
-
 tar_run <- if (nzchar(Sys.getenv("TAR_RUN"))) Sys.getenv("TAR_RUN") else "gompertz"
+
+source(here::here("r", "util.R"))
 tar_store <- file.path(
   "/mnt/data/analysis-results",
   Sys.getenv("DOMINO_STARTING_USERNAME"),
