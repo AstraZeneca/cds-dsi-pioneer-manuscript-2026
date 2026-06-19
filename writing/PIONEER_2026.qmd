@@ -47,7 +47,7 @@ library(tidyr)
 library(gt)
 library(gtsummary)
 
-source(here::here("r", "util.R")) # provides weeks_to_months()
+weeks_to_months <- function(weeks) weeks * 7 * 12 / 365.25
 
 tar_run <- if (nzchar(Sys.getenv("TAR_RUN"))) Sys.getenv("TAR_RUN") else "gompertz"
 tar_store <- file.path(
