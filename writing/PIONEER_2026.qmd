@@ -434,15 +434,24 @@ Direct death without progression *is* a PFS event (PFS fails at the death time);
 
 ## Trial data {#sec-data}
 
-*[Lu — to be drafted. Outline:]*
+### Data source
 
-- Description of the clinical trial(s) used in the case study
-- Patient population, eligibility criteria, treatment arms
-- SLD assessment schedule and RECIST 1.1 measurement protocol
-- Data cut-off dates and maturity at each DCO
-- Summary statistics: N patients, median follow-up, censoring proportion, number of events per transition
-- Baseline covariate distributions (table)
-- Observed Kaplan–Meier curves for PFS and OS at the analysis DCO
+Individual patient-level data from clinical trials conducted in the target indication were obtained through Project Data Sphere (http://www.projectdatasphere.org), a not-for-profit initiative providing access to de-identified patient-level data from oncology clinical trials. Raw datasets were provided in SAS transport format (.sas7bdat) or comma-separated values, depending on the contributing sponsor.
+
+### Data processing
+
+A standardized data processing pipeline was developed to harmonize heterogeneous trial data into a unified analytical schema. The pipeline operates in two stages: trial-specific wrangling and cross-trial harmonization.
+
+In the first stage, a dedicated extraction module was written for each trial to accommodate sponsor-specific data structures. These modules extracted patient-level summaries (demographics, treatment arm, survival endpoints) from the clinical domains (DM, VS, RS) and longitudinal tumor measurements from the tumor response domains (TR, or equivalent lesion-level datasets). Sum of longest diameters (SLD) was extracted at each scheduled assessment visit. For trials providing SDTM-format data, SLD was obtained directly from the SUMLDIAM test code in the TR domain; for trials providing analysis-ready datasets, the composite tumor index was used.
+
+In the second stage, the extracted data were mapped to a common schema consisting of two datasets per trial:
+
+1. **Patient-level data**: one row per patient containing baseline covariates (age, sex, ECOG performance status, hemoglobin, lactate dehydrogenase [log-transformed], albumin), treatment assignment, and survival outcomes. Progression-free survival (PFS) and overall survival (OS) times were converted to weeks from treatment start. Event indicators were harmonized across trials to a common coding (1 = event, 0 = censored).
+2. **Visit-level data**: one row per tumor assessment containing the study day, week from treatment start, SLD in millimeters, and the investigator-assessed RECIST response (CR, PR, SD, PD, or NE). Assessment timing was expressed relative to the date of first treatment administration. Where multiple measurements existed at the same study week, only the first was retained.
+
+Missing baseline covariates were imputed using median values computed across the combined (multi-trial) analysis population prior to model fitting. Covariate values were centered and scaled using a standard recipe to produce the design matrix supplied to the Bayesian model.
+
+Patients were required to have at least one post-baseline tumor assessment to be included in the analysis. Patients randomized but never treated, screen failures, and those assigned to dose-escalation or non-relevant treatment arms were excluded as specified in each trial's protocol.
 
 ## Application to SCLC-01 {#sec-application}
 
