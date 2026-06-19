@@ -1167,6 +1167,54 @@ publication_targets <- list(
             )
         ),
       pattern = map(lfo_km_cutoffs)
+    ),
+
+    tar_target(
+      lfo_cutoff_trial_pfs_quant,
+      tumor_ssls_lfo_clean |>
+        filter(n == lfo_km_cutoffs$n) |>
+        reframe(
+          refit_n,
+          n,
+          cutoff_date,
+          cutoff_calendar_day,
+          n_target_observed,
+          select_draws(fit[[1]], matches(r"(^(sample|spop).*_pfs_quant\[)")) |>
+            recover_types(select(all_analysis_data, trial = group)) |>
+            spread_rvars(
+              sample_target_pfs_quant[trial, q],
+              spop_target_pfs_quant[trial, q],
+              sample_ms_pfs_quant[trial, q],
+              spop_ms_pfs_quant[trial, q],
+              sample_pfs_quant[trial, q],
+              spop_pfs_quant[trial, q]
+            ) |>
+            left_join(
+              enframe(tumor_ssls_stan_data$pfs_quantiles, name = "q", value = "quantile"),
+              by = "q"
+            )
+        ),
+      pattern = map(lfo_km_cutoffs)
+    ),
+
+    tar_target(
+      lfo_cutoff_orr_rvar,
+      tumor_ssls_lfo_clean |>
+        filter(n == lfo_km_cutoffs$n) |>
+        reframe(
+          refit_n,
+          n,
+          cutoff_date,
+          cutoff_calendar_day,
+          n_target_observed,
+          select_draws(fit[[1]], matches("^(sample|spop)_target_orr")) |>
+            recover_types(select(all_analysis_data, trial = group)) |>
+            spread_rvars(
+              sample_target_orr[trial],
+              spop_target_orr[trial]
+            )
+        ),
+      pattern = map(lfo_km_cutoffs)
     )
 
   )
