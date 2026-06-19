@@ -414,73 +414,51 @@ Direct death without progression *is* a PFS event (PFS fails at the death time);
 - Posterior storage: parquet draws format; targets pipeline for reproducibility.
 - Software: Stan 2.38, CmdStanR, R targets pipeline.
 
-## Simulation study {#sec-simulation}
+## Case study: data {#sec-data}
 
-*[To be drafted. Outline:]*
+### Trials and disease context
 
-- **Objective.** Assess operating characteristics of the joint model under controlled conditions: bias, coverage of posterior intervals, predictive calibration of PFS/OS KM forecasts.
-- **Design.** Generate synthetic trial data from the model with known parameters (data-generating process matches the model specification). Vary: sample size, follow-up maturity, magnitude of between-trial heterogeneity, presence/absence of multistate events.
-- **Metrics.**
-  - Parameter recovery: bias and RMSE of posterior medians for $\alpha^{\mathrm{tot}}, \alpha^{\mathrm{bal}}, \alpha^{\mathrm{init}}$, GP baseline intercepts.
-  - Interval coverage: 80% and 95% posterior credible interval coverage across replications.
-  - Predictive calibration: calibration of the forecast PFS/OS KM at a held-out future DCO (CRPS, coverage of KM prediction bands).
-  - Comparison: joint model vs two-stage (fit dynamics, plug into survival) vs baseline-covariate-only hazard model.
+We apply PIONEER to two completed Phase II/III trials in first-line extensive-stage small-cell lung cancer (ES-SCLC), both employing platinum-etoposide backbone chemotherapy:
 
-**Figures.**
+- **Lilly CXCR4** (Study I2V-MC-CXAC): a randomised Phase II trial of the CXCR4 inhibitor LY2510924 plus carboplatin/etoposide (Arm A, $N=40$) versus carboplatin/etoposide alone (Arm B, $N=37$). This serves as the *target trial* whose endpoints we aim to forecast.
+- **Amgen 20010145**: a randomised Phase III trial of darbepoetin alfa (NESP, $N=214$) versus placebo ($N=205$), both in combination with platinum/etoposide. Darbepoetin is an erythropoiesis-stimulating agent (for chemotherapy-induced anaemia) with no anticipated anti-tumour effect. This serves as the *historical trial* from which the population-level tumour dynamics are borrowed.
 
-- Fig. 5.1 — parameter recovery (posterior median vs truth) across simulation replications.
-- Fig. 5.2 — coverage plot (nominal vs empirical) for key parameters.
-- Fig. 5.3 — predictive calibration: forecast KM vs true KM, three model variants.
-
-## Trial data {#sec-data}
+Both trials share the same disease (ES-SCLC), the same standard-of-care backbone (platinum/etoposide), and the same clinical trajectory (high initial response rate followed by rapid relapse). This commonality justifies the hierarchical pooling assumption: population-level tumour growth kinetics are expected to be comparable across the two trials, with trial-level random effects absorbing any residual heterogeneity.
 
 ### Data source
 
-Individual patient-level data from clinical trials conducted in the target indication were obtained through Project Data Sphere (http://www.projectdatasphere.org), a not-for-profit initiative providing access to de-identified patient-level data from oncology clinical trials. Raw datasets were provided in SAS transport format (.sas7bdat) or comma-separated values, depending on the contributing sponsor.
+Individual patient-level data were obtained through Project Data Sphere (http://www.projectdatasphere.org), a not-for-profit initiative providing access to de-identified patient-level data from oncology clinical trials.
 
 ### Data processing
 
-A standardized data processing pipeline was developed to harmonize heterogeneous trial data into a unified analytical schema. The pipeline operates in two stages: trial-specific wrangling and cross-trial harmonization.
+A standardized pipeline harmonized the two trials into a common analytical schema. For each trial, a dedicated extraction module accommodated the sponsor-specific data format: SLD was extracted from tumour assessment records at each scheduled visit, and patient-level summaries (demographics, treatment arm, survival endpoints) were derived from the clinical domains. The extracted data were mapped to two datasets per trial:
 
-In the first stage, a dedicated extraction module was written for each trial to accommodate sponsor-specific data structures. These modules extracted patient-level summaries (demographics, treatment arm, survival endpoints) from the clinical domains (DM, VS, RS) and longitudinal tumor measurements from the tumor response domains (TR, or equivalent lesion-level datasets). Sum of longest diameters (SLD) was extracted at each scheduled assessment visit. For trials providing SDTM-format data, SLD was obtained directly from the SUMLDIAM test code in the TR domain; for trials providing analysis-ready datasets, the composite tumor index was used.
+1. **Patient-level data**: one row per patient containing baseline covariates (age, sex, ECOG performance status, haemoglobin, log-LDH, albumin), treatment assignment, and survival outcomes (PFS and OS in weeks from treatment start; event indicators coded 1 = event, 0 = censored).
+2. **Visit-level data**: one row per tumour assessment containing week from treatment start, SLD in millimetres, and the investigator-assessed RECIST 1.1 response (CR, PR, SD, PD, or NE).
 
-In the second stage, the extracted data were mapped to a common schema consisting of two datasets per trial:
+Missing baseline covariates were imputed at the population median prior to model fitting. Patients were required to have at least one post-baseline tumour assessment; those randomized but never treated or lacking tumour measurements were excluded.
 
-1. **Patient-level data**: one row per patient containing baseline covariates (age, sex, ECOG performance status, hemoglobin, lactate dehydrogenase [log-transformed], albumin), treatment assignment, and survival outcomes. Progression-free survival (PFS) and overall survival (OS) times were converted to weeks from treatment start. Event indicators were harmonized across trials to a common coding (1 = event, 0 = censored).
-2. **Visit-level data**: one row per tumor assessment containing the study day, week from treatment start, SLD in millimeters, and the investigator-assessed RECIST response (CR, PR, SD, PD, or NE). Assessment timing was expressed relative to the date of first treatment administration. Where multiple measurements existed at the same study week, only the first was retained.
+### Summary statistics
 
-Missing baseline covariates were imputed using median values computed across the combined (multi-trial) analysis population prior to model fitting. Covariate values were centered and scaled using a standard recipe to produce the design matrix supplied to the Bayesian model.
+| Trial | Arm | $N$ | Median follow-up (mo) | Median PFS (mo) | % Censored | Deaths | Visits/patient |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Lilly CXCR4 | Arm A (CXCR4 + chemo) | 40 | 5.4 | 5.1 | 30% | 29 | 4.5 |
+| Lilly CXCR4 | Arm B (chemo alone) | 37 | 5.1 | 5.7 | 19% | 24 | 4.6 |
+| Amgen 20010145 | NESP + chemo | 214 | 5.5 | 6.0 | 8% | 170 | 4.1 |
+| Amgen 20010145 | Placebo + chemo | 205 | 5.7 | 6.0 | 7% | 174 | 4.2 |
 
-Patients were required to have at least one post-baseline tumor assessment to be included in the analysis. Patients randomized but never treated, screen failures, and those assigned to dose-escalation or non-relevant treatment arms were excluded as specified in each trial's protocol.
+: Patient disposition and endpoints by trial and arm. {#tbl-trial-summary}
 
-## Application to SCLC-01 {#sec-application}
+| Covariate | Lilly CXCR4 ($N=77$) | Amgen 20010145 ($N=419$) |
+|---|---|---|
+| Mean age (years) | 65.2 | 60.6 |
+| Male (%) | 45 | 66 |
+| ECOG $\geq 2$ (%) | 5 | 19 |
+| Mean haemoglobin (g/dL) | 13.2 | 11.9 |
+| Mean log-LDH | 5.81 | 6.15 |
+| Mean albumin (g/L) | 35.1 | 37.6 |
 
-*[To be drafted. Outline:]*
-
-### Forecast at the immature DCO
-
-- Model fitted to data available at the immature DCO (data cut-off 3, January 2026).
-- Posterior predictive PFS and OS KM curves, with 80%/95% prediction bands.
-- Comparison with the observed KM at the mature DCO (held-out validation target).
-- ORR, twelve-month OS rate, median PFS/OS — posterior distributions.
-
-### Leave-future-out cross-validation
-
-- Temporal cross-validation: train on data up to time $t$, predict forward, evaluate ELPD.
-- Comparison: joint mechanistic + multistate model vs baseline-covariate hazard model vs single-hazard joint model.
-- Demonstrates that out-of-sample forecasting is where the mechanistic + multistate combination earns its keep.
-
-### Cross-trial borrowing (HISTORICAL → SCLC-01)
-
-- Hierarchical pooling at the trial level: HISTORICAL patients inform the shared population parameters.
-- Quantitative impact on posterior tightness vs a no-borrow alternative.
-- Posterior on key parameters (growth rate, GP baseline hazard) with and without HISTORICAL.
-
-**Figures.**
-
-- Fig. 6.1 — predicted-vs-observed PFS / OS KM at mature DCO.
-- Fig. 6.2 — borrowing impact (posterior on $\alpha^{\mathrm{tot}}, \alpha^{\mathrm{bal}}$ with vs without HISTORICAL).
-- Fig. 6.3 — ELPD-LFO bar chart, three model variants.
+: Baseline covariate distributions by trial. {#tbl-covariate-summary}
 
 ## Results {#sec-results}
 
