@@ -1002,17 +1002,70 @@ The full-posterior propagation delivers clinical quantities as distributions, no
 
 The model's ORR posterior (approximately 73–75%) underestimates the observed ORR (Arm A: 85%, Arm B: 95%) by 15–20 percentage points. This conservatism reflects hierarchical shrinkage on the latent trajectory: patients with borderline responses (observed SLD dropping just past the 30% threshold) have their inferred latent response depth attenuated toward the population mean, pushing them back below the PR classification boundary. Additionally, measurement noise can cause the observed SLD to cross the 30% threshold transiently, yielding an observed PR that the smooth latent trajectory — which averages over noise — does not reproduce. The model reports its posterior belief about *true* response depth, not the noisy observed best-response classification; the gap is the price of denoising.
 
-::: {#fig-median-pfs}
-![](../quarto/publication/sclc/_freeze/analysis/clinical-endpoints/figure-html/fig-median-pfs-prior-post-1.png){width=100%}
+```{r}
+#| label: fig-median-pfs
+#| fig-cap: "Posterior distribution of median PFS (months) for each arm of the target trial (Lilly CXCR4). Prior (gold) vs posterior (plum). Dashed line: observed median PFS (both arms \\approx 6.2 months)."
+#| fig-width: 7
+#| fig-height: 3
+pfs_quant <- pub_tar_read("all_tumor_ssls_trial_pfs_quant")
+obs_km_pfs_raw <- pub_tar_read("km_trial_pfs")
 
-Posterior distribution of median PFS (months) for each arm of the target trial (Lilly CXCR4). Prior (gold) vs posterior (plum). Dashed line: observed median PFS (both arms ≈ 6.2 months).
-:::
+TARGET_ARM_LABELS <- c(
+  "Arm A (CXCR4 + chemo)" = "lilly_cxcr4_Arm A",
+  "Arm B (chemo alone)" = "lilly_cxcr4_Arm B"
+)
 
-::: {#fig-orr}
-![](../quarto/publication/sclc/_freeze/analysis/clinical-endpoints/figure-html/fig-orr-prior-post-1.png){width=100%}
+# Observed median PFS from KM quantiles (btype == "ub", quantile == 0.5), in weeks
+obs_median_pfs_weeks <- obs_km_pfs_raw |>
+  filter(btype == "ub", grepl("lilly_cxcr4", trial)) |>
+  mutate(med = map_dbl(quantiles, \(q) q$pfs[q$quantile == 0.5])) |>
+  pull(med) |>
+  mean()
 
-Posterior distribution of ORR by arm for the target trial. Prior (gold) vs posterior (plum). ORR is computed entirely from the mechanistic submodel — it is a deterministic function of the latent SLD trajectory and requires no multistate hazard. The tight posterior reflects that response depth is well-identified from longitudinal tumour measurements.
-:::
+pfs_quant |>
+  filter(quantile == 0.5, grepl("lilly_cxcr4", trial)) |>
+  mutate(trial = fct_recode(trial, !!!TARGET_ARM_LABELS)) |>
+  ggplot() +
+  geom_vline(aes(xintercept = obs_median_pfs_weeks, linetype = "Observed median PFS (both arms)"), color = "grey40", linewidth = 0.5) +
+  scale_linetype_manual("", values = "dashed") +
+  stat_pointinterval(
+    aes(xdist = sample_pfs_quant, y = trial, color = fit_type),
+    .width = c(0.5, 0.9),
+    position = position_dodge(width = 0.5)
+  ) +
+  scale_x_continuous("Median PFS (months)", breaks = months_to_weeks(seq(0, 30, 1)), labels = label_weeks_to_months) +
+  scale_color_discrete("", type = AZ_palette, labels = str_to_title) +
+  labs(y = NULL) +
+  theme(legend.position = "bottom", legend.box = "vertical")
+```
+
+```{r}
+#| label: fig-orr
+#| fig-cap: "Posterior distribution of ORR by arm for the target trial (Lilly CXCR4). Prior (gold) vs posterior (plum). ORR is computed entirely from the mechanistic submodel -- it is a deterministic function of the latent SLD trajectory and requires no multistate hazard. The tight posterior reflects that response depth is well-identified from longitudinal tumour measurements."
+#| fig-width: 7
+#| fig-height: 3
+orr_data <- pub_tar_read("all_tumor_ssls_orr_rvar")
+
+obs_orr <- tibble(
+  trial = c("Arm A (CXCR4 + chemo)", "Arm B (chemo alone)"),
+  obs_orr = c(0.85, 0.946)
+)
+
+orr_data |>
+  filter(grepl("lilly_cxcr4", trial)) |>
+  mutate(trial = fct_recode(trial, !!!TARGET_ARM_LABELS)) |>
+  ggplot() +
+  geom_point(data = obs_orr, aes(x = obs_orr, y = trial), shape = 4, size = 4, stroke = 1.5, color = "grey30") +
+  stat_pointinterval(
+    aes(xdist = sample_target_orr, y = trial, color = fit_type),
+    .width = c(0.5, 0.9),
+    position = position_dodge(width = 0.5)
+  ) +
+  scale_color_discrete("", type = AZ_palette, labels = str_to_title) +
+  scale_x_continuous("Overall Response Rate (ORR)", limits = c(0, 1), labels = scales::label_percent()) +
+  labs(y = NULL, caption = "x = observed ORR (target-lesion RECIST best response)") +
+  theme(legend.position = "bottom")
+```
 
 ## Discussion {#sec-discussion}
 
