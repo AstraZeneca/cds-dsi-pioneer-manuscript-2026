@@ -154,29 +154,28 @@ The pharmacometric literature addresses this through **Gompertz growth-rate deca
 $$
 g_i(t) \;=\; r^{\mathrm{gro}}_i \cdot \mathrm{e}^{-\kappa_i\,(t - t_i^{\mathrm{bl}})},
 $$ {#eq-gompertz-rate}
-where $\kappa_i > 0$ is a patient-level Gompertz decay parameter. The decrease compartment is unaffected — it already contracts to zero and does not contribute to long-horizon explosion. Integrating (@eq-gompertz-rate) from baseline gives the *warped growth time*
+where $\kappa_i > 0$ is a patient-level Gompertz decay parameter. The decrease compartment is unaffected — it already contracts to zero and does not contribute to long-horizon explosion. Integrating (@eq-gompertz-rate) from baseline gives the *warped growth time* as a function of elapsed time $\Delta t = t - t_i^{\mathrm{bl}}$:
 $$
-\varphi_i(t) \;=\; \int_{t_i^{\mathrm{bl}}}^{t} g_i(s)\,\frac{\mathrm{d}s}{r^{\mathrm{gro}}_i}
-\;=\; \int_0^{t - t_i^{\mathrm{bl}}} \mathrm{e}^{-\kappa_i\,u}\,\mathrm{d}u
-\;=\; \frac{1 - \mathrm{e}^{-\kappa_i\,(t - t_i^{\mathrm{bl}})}}{\kappa_i}.
+\varphi_i(\Delta t) \;=\; \int_0^{\Delta t} \mathrm{e}^{-\kappa_i\,u}\,\mathrm{d}u
+\;=\; \frac{1 - \mathrm{e}^{-\kappa_i\,\Delta t}}{\kappa_i}.
 $$ {#eq-gompertz-warp}
-The warped time $\varphi_i(t)$ replaces the elapsed time $t - t_i^{\mathrm{bl}}$ in the growth arm of (@eq-mech-discrete):
+Note that in the base model (@eq-mech-discrete), $\varphi_i(\Delta t) = \Delta t$ — Gompertz simply replaces linear elapsed time with this saturating warp, and the base case is recovered exactly as $\kappa_i \to 0$. The warped time $\varphi_i(t - t_i^{\mathrm{bl}})$ replaces the elapsed time $t - t_i^{\mathrm{bl}}$ in the growth arm of (@eq-mech-discrete):
 $$
-\log G_i(t) \;=\; \log G_i(t_i^{\mathrm{bl}}) \;+\; r^{\mathrm{gro}}_i \cdot \varphi_i(t).
+\log G_i(t) \;=\; \log G_i(t_i^{\mathrm{bl}}) \;+\; r^{\mathrm{gro}}_i \cdot \varphi_i(t - t_i^{\mathrm{bl}}).
 $$ {#eq-gompertz-discrete}
 
 The substitution has two important limiting properties:
 $$
-\lim_{\kappa_i \to 0} \varphi_i(t) \;=\; t - t_i^{\mathrm{bl}}, \qquad
-\lim_{t \to \infty} \varphi_i(t) \;=\; \frac{1}{\kappa_i},
+\lim_{\kappa_i \to 0} \varphi_i(\Delta t) \;=\; \Delta t, \qquad
+\lim_{\Delta t \to \infty} \varphi_i(\Delta t) \;=\; \frac{1}{\kappa_i},
 $$
-so that $\kappa_i \to 0$ recovers the constant-rate model (@eq-mech-discrete) exactly (the Gompertz formulation is a strict generalisation), while finite $\kappa_i > 0$ causes the log-growth arm to plateau at $\log G_i(t_i^{\mathrm{bl}}) + r^{\mathrm{gro}}_i / \kappa_i$ as the horizon grows — a finite carrying capacity. The closed-form trajectory (@eq-sld-twoexp) becomes
+so that $\kappa_i \to 0$ recovers the constant-rate model (@eq-mech-discrete) exactly, while finite $\kappa_i > 0$ causes the log-growth arm to plateau at $\log G_i(t_i^{\mathrm{bl}}) + r^{\mathrm{gro}}_i / \kappa_i$ as the horizon grows — a finite carrying capacity. The closed-form trajectory (@eq-sld-twoexp) becomes
 $$
 B_i(t)
 \;=\;
 \pi_i\,\mathrm{e}^{-r^{\mathrm{dec}}_i\,(t - t_i^{\mathrm{bl}})}
 \;+\;
-(1 - \pi_i)\,\mathrm{e}^{+r^{\mathrm{gro}}_i\,\varphi_i(t)}.
+(1 - \pi_i)\,\mathrm{e}^{+r^{\mathrm{gro}}_i\,\varphi_i(t - t_i^{\mathrm{bl}})}.
 $$ {#eq-sld-gompertz}
 
 The decay parameter is modelled on the log scale with a population-level intercept:
