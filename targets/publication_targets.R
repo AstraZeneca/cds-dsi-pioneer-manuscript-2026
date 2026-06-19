@@ -491,14 +491,14 @@ publication_targets <- list(
         fit_data = c(FALSE, TRUE),
         base_name = c("prior_tumor_ssls", "tumor_ssls"),
         iter_sampling = 500,
-        # Posterior warm-starts from #1868's adapted trend metric so needs far
-        # less warmup; prior cold-starts (no valid posterior metric for it).
+        # Posterior warm-starts from the saved adapted metric so needs far less
+        # warmup; prior cold-starts (no valid posterior metric for it).
         iter_warmup = c(300L, 150L),
-        # Both fit types cold-start: the saved SCLC metric is from a pre-forecast-fix
-        # fit (#1977) and we want this run free of its geometry after the kappa-prior
-        # change. With warm_start FALSE the metric_file is NULL, so the cold-start
-        # floor at the fit target promotes posterior warmup 150 -> 300 automatically.
-        warm_start = c(FALSE, FALSE),
+        # Posterior warm-starts from the saved SCLC metric (publication_metric_files_sclc,
+        # now the adapted mass matrices from the canonical cold-start fit #2025: forecast
+        # fix + decay covar + tightened kappa prior), so 150 warmup is sufficient. Prior
+        # cold-starts (no posterior metric applies) and gets the 300-iter floor.
+        warm_start = c(FALSE, TRUE),
         chains = 4L
       ),
       names = "type",
