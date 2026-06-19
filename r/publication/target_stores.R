@@ -6,10 +6,15 @@ if (!exists("pub_store")) {
   pub_store <- pub_store_sclc
 }
 
-# LFO cross-validation store. Resolved per run from TAR_RUN, mirroring how the
-# pipeline store itself is selected — the dual-disease LFO targets are built into
-# whichever store the run targets (publication/lfo for SCLC, a crc-suffixed run
-# for CRC), and read back by name with the disease suffix (pub_disease_suffix).
+# LFO cross-validation store. The LFO targets often live in a SEPARATE run from
+# the main posterior results (e.g. main results in `gompertz`, LFO in
+# `gompertz-lfo`), because LFO is fit as its own pipeline. So it gets its own env
+# var: LFO_TAR_RUN takes precedence, then TAR_RUN, then the literal "lfo". This
+# lets a single render point pub_store at one run and lfo_store at another:
+#   TAR_RUN=gompertz LFO_TAR_RUN=gompertz-lfo quarto render ...
+# The dual-disease LFO targets are read back by name with the disease suffix
+# (pub_disease_suffix).
 if (!exists("lfo_store")) {
-  lfo_store <- file.path(output_path, "publication", Sys.getenv("TAR_RUN", "lfo"), "_targets")
+  lfo_run <- Sys.getenv("LFO_TAR_RUN", Sys.getenv("TAR_RUN", "lfo"))
+  lfo_store <- file.path(output_path, "publication", lfo_run, "_targets")
 }
