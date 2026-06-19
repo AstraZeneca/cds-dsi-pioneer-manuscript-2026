@@ -42,6 +42,14 @@ if (enable_ms_12 && enable_ms_pop_time_invariant_cov && n_time_invariant_covar >
   ))';
 }
 
+vector[enable_ms_03 && enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0
+         ? n_time_invariant_covar : 0] time_invariant_coef_03;
+if (enable_ms_03 && enable_ms_pop_time_invariant_cov && n_time_invariant_covar > 0) {
+  time_invariant_coef_03 = (mdivide_right_tri_low(
+    time_invariant_coef_qr_03', R_covar_design_matrix'
+  ))';
+}
+
 // ── Arm-level (level-2) random slopes ────────────────────────────────────────
 // Only active when enable_ms_level_cov[2] == 1. Level 2 = arm level in the
 // three-level hierarchy (population → arm → patient).

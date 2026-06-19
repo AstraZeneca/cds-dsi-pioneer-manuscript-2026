@@ -47,7 +47,7 @@ source(here::here("r", "targets_tidyselect.R"))
 
 # Set default ggplot theme with proper margins to prevent caption cutoff
 ggplot2::theme_set(
-  theme_minimal(base_family = "Arial") +
+  theme_minimal(base_family = "") +
   ggplot2::theme(
     plot.margin = ggplot2::margin(5, 10, 20, 20, "pt"),
     plot.caption = ggplot2::element_text(hjust = 0, margin = ggplot2::margin(15, 0, 0, 0, "pt"))
