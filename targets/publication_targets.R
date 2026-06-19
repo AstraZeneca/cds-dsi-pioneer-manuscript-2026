@@ -770,6 +770,22 @@ publication_targets <- list(
       ),
 
       tar_target(
+        tumor_ssls_trial_os_quant,
+        tumor_ssls_draws_endpoints |>
+          posterior::subset_draws(variable = "^(sample|spop).*_os_quant\\[", regex = TRUE) |>
+          recover_types(select(all_analysis_data, trial = group)) |>
+          spread_rvars(
+            sample_os_quant[trial, q],
+            spop_os_quant[trial, q]
+          ) |>
+          left_join(
+            enframe(tumor_ssls_stan_data$pfs_quantiles, name = "q", value = "quantile"),
+            by = "q"
+          ) |>
+          mutate(fit_type = type)
+      ),
+
+      tar_target(
         tumor_ssls_orr_rvar,
         tumor_ssls_draws_endpoints |>
           posterior::subset_draws(variable = "^(sample|spop)_target_orr", regex = TRUE) |>
@@ -967,6 +983,10 @@ publication_targets <- list(
     tar_target(
       all_tumor_ssls_trial_pfs_quant,
       bind_rows(tumor_ssls_trial_pfs_quant_prior, tumor_ssls_trial_pfs_quant_posterior)
+    ),
+    tar_target(
+      all_tumor_ssls_trial_os_quant,
+      bind_rows(tumor_ssls_trial_os_quant_prior, tumor_ssls_trial_os_quant_posterior)
     ),
     tar_target(
       all_tumor_ssls_orr_rvar,
@@ -1188,6 +1208,30 @@ publication_targets <- list(
               spop_ms_pfs_quant[trial, q],
               sample_pfs_quant[trial, q],
               spop_pfs_quant[trial, q]
+            ) |>
+            left_join(
+              enframe(tumor_ssls_stan_data$pfs_quantiles, name = "q", value = "quantile"),
+              by = "q"
+            )
+        ),
+      pattern = map(lfo_km_cutoffs)
+    ),
+
+    tar_target(
+      lfo_cutoff_trial_os_quant,
+      tumor_ssls_lfo_clean |>
+        filter(n == lfo_km_cutoffs$n) |>
+        reframe(
+          refit_n,
+          n,
+          cutoff_date,
+          cutoff_calendar_day,
+          n_target_observed,
+          select_draws(fit[[1]], matches("^(sample|spop).*_os_quant")) |>
+            recover_types(select(all_analysis_data, trial = group)) |>
+            spread_rvars(
+              sample_os_quant[trial, q],
+              spop_os_quant[trial, q]
             ) |>
             left_join(
               enframe(tumor_ssls_stan_data$pfs_quantiles, name = "q", value = "quantile"),
