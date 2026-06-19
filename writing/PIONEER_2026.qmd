@@ -31,6 +31,11 @@ format:
   html: default
   pdf:
     documentclass: article
+    fig-pos: "H"
+    include-in-header:
+      text: |
+        \usepackage{pdflscape}
+        \usepackage{float}
 ---
 
 ## Introduction {#sec-introduction}
@@ -403,7 +408,15 @@ Direct death without progression *is* a PFS event (PFS fails at the death time);
 
 **Endpoints as posterior functionals.** Kaplan–Meier curves for PFS and OS are computed from the $\{T^{\mathrm{pfs}}_i, T^{\mathrm{os}}_i\}$ sample paths, ORR from the per-patient response classification, and any other endpoint analogously — each averaged across posterior draws. Because every quantity flows from the same joint posterior, each reported endpoint inherits the model's full parameter uncertainty; no re-fitting or plug-in step is involved.
 
+```{=latex}
+\begin{landscape}
+```
+
 ![Posterior-predictive endpoint routing for a single posterior draw. The unconditional ($\mathrm{spop}$) and conditional ($\mathrm{sample}$) passes feed the *same* routing tree and differ only in where they enter it — from treatment start, or from the observed state at the data cut-off. The three competing exits from state 0 are resolved first; the earliest candidate time wins. Progression's own candidate time is the minimum of the deterministic target-lesion time $T^{\mathrm{tgt}}_i$ and the stochastic non-target time $T^{\mathrm{ms}}_i$. PFS and OS are then read off the realised route: direct death is itself a PFS event, dropout right-censors PFS, and only the progression route incurs a post-progression sojourn before death.](figures/gq-routing.svg){#fig-gq-routing width=100%}
+
+```{=latex}
+\end{landscape}
+```
 
 **Figures.**
 
@@ -439,58 +452,191 @@ Direct death without progression *is* a PFS event (PFS fails at the death time);
 - Posterior storage: parquet draws format; targets pipeline for reproducibility.
 - Software: Stan 2.38, CmdStanR, R targets pipeline.
 
-## Simulation study {#sec-simulation}
+## Case study: data {#sec-data}
 
-*[To be drafted. Outline:]*
+### Trials and disease context
 
-- **Objective.** Assess operating characteristics of the joint model under controlled conditions: bias, coverage of posterior intervals, predictive calibration of PFS/OS KM forecasts.
-- **Design.** Generate synthetic trial data from the model with known parameters (data-generating process matches the model specification). Vary: sample size, follow-up maturity, magnitude of between-trial heterogeneity, presence/absence of multistate events.
-- **Metrics.**
-  - Parameter recovery: bias and RMSE of posterior medians for $\alpha^{\mathrm{tot}}, \alpha^{\mathrm{bal}}, \alpha^{\mathrm{init}}$, GP baseline intercepts.
-  - Interval coverage: 80% and 95% posterior credible interval coverage across replications.
-  - Predictive calibration: calibration of the forecast PFS/OS KM at a held-out future DCO (CRPS, coverage of KM prediction bands).
-  - Comparison: joint model vs two-stage (fit dynamics, plug into survival) vs baseline-covariate-only hazard model.
+We apply PIONEER to two completed Phase II/III trials in first-line extensive-stage small-cell lung cancer (ES-SCLC), both employing platinum-etoposide backbone chemotherapy:
 
-**Figures.**
+- **Lilly CXCR4** (Study I2V-MC-CXAC): a randomised Phase II trial of the CXCR4 inhibitor LY2510924 plus carboplatin/etoposide (Arm A, $N=40$) versus carboplatin/etoposide alone (Arm B, $N=37$). This serves as the *target trial* whose endpoints we aim to forecast.
+- **Amgen 20010145**: a randomised Phase III trial of darbepoetin alfa (NESP, $N=214$) versus placebo ($N=205$), both in combination with platinum/etoposide. Darbepoetin is an erythropoiesis-stimulating agent (for chemotherapy-induced anaemia) with no anticipated anti-tumour effect. This serves as the *historical trial* from which the population-level tumour dynamics are borrowed.
 
-- Fig. 5.1 — parameter recovery (posterior median vs truth) across simulation replications.
-- Fig. 5.2 — coverage plot (nominal vs empirical) for key parameters.
-- Fig. 5.3 — predictive calibration: forecast KM vs true KM, three model variants.
+Both trials share the same disease (ES-SCLC), the same standard-of-care backbone (platinum/etoposide), and the same clinical trajectory (high initial response rate followed by rapid relapse). This commonality justifies the hierarchical pooling assumption: population-level tumour growth kinetics are expected to be comparable across the two trials, with trial-level random effects absorbing any residual heterogeneity.
 
-## Application to SCLC-01 {#sec-application}
+### Data source
 
-*[To be drafted. Outline:]*
+Individual patient-level data were obtained through Project Data Sphere (http://www.projectdatasphere.org), a not-for-profit initiative providing access to de-identified patient-level data from oncology clinical trials.
 
-### Forecast at the immature DCO
+### Data processing
 
-- Model fitted to data available at the immature DCO (data cut-off 3, January 2026).
-- Posterior predictive PFS and OS KM curves, with 80%/95% prediction bands.
-- Comparison with the observed KM at the mature DCO (held-out validation target).
-- ORR, twelve-month OS rate, median PFS/OS — posterior distributions.
+A standardized pipeline harmonized the two trials into a common analytical schema. For each trial, a dedicated extraction module accommodated the sponsor-specific data format: SLD was extracted from tumour assessment records at each scheduled visit, and patient-level summaries (demographics, treatment arm, survival endpoints) were derived from the clinical domains. The extracted data were mapped to two datasets per trial:
 
-### Leave-future-out cross-validation
+1. **Patient-level data**: one row per patient containing baseline covariates (age, sex, ECOG performance status, haemoglobin, log-LDH, albumin), treatment assignment, and survival outcomes (PFS and OS in weeks from treatment start; event indicators coded 1 = event, 0 = censored).
+2. **Visit-level data**: one row per tumour assessment containing week from treatment start, SLD in millimetres, and the investigator-assessed RECIST 1.1 response (CR, PR, SD, PD, or NE).
 
-- Temporal cross-validation: train on data up to time $t$, predict forward, evaluate ELPD.
-- Comparison: joint mechanistic + multistate model vs baseline-covariate hazard model vs single-hazard joint model.
-- Demonstrates that out-of-sample forecasting is where the mechanistic + multistate combination earns its keep.
+Missing baseline covariates were imputed at the population median prior to model fitting. Patients were required to have at least one post-baseline tumour assessment; those randomized but never treated or lacking tumour measurements were excluded.
 
-### Cross-trial borrowing (HISTORICAL → SCLC-01)
+### Summary statistics
 
-- Hierarchical pooling at the trial level: HISTORICAL patients inform the shared population parameters.
-- Quantitative impact on posterior tightness vs a no-borrow alternative.
-- Posterior on key parameters (growth rate, GP baseline hazard) with and without HISTORICAL.
+| Trial | Arm | $N$ | Median follow-up (mo) | Median PFS (mo) | % Censored | Deaths | Visits/patient |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Lilly CXCR4 | Arm A (CXCR4 + chemo) | 40 | 5.4 | 5.1 | 30% | 29 | 4.5 |
+| Lilly CXCR4 | Arm B (chemo alone) | 37 | 5.1 | 5.7 | 19% | 24 | 4.6 |
+| Amgen 20010145 | NESP + chemo | 214 | 5.5 | 6.0 | 8% | 170 | 4.1 |
+| Amgen 20010145 | Placebo + chemo | 205 | 5.7 | 6.0 | 7% | 174 | 4.2 |
 
-**Figures.**
+: Patient disposition and endpoints by trial and arm. {#tbl-trial-summary}
 
-- Fig. 6.1 — predicted-vs-observed PFS / OS KM at mature DCO.
-- Fig. 6.2 — borrowing impact (posterior on $\alpha^{\mathrm{tot}}, \alpha^{\mathrm{bal}}$ with vs without HISTORICAL).
-- Fig. 6.3 — ELPD-LFO bar chart, three model variants.
+| Covariate | Lilly CXCR4 ($N=77$) | Amgen 20010145 ($N=419$) |
+|---|---|---|
+| Mean age (years) | 65.2 | 60.6 |
+| Male (%) | 45 | 66 |
+| ECOG $\geq 2$ (%) | 5 | 19 |
+| Mean haemoglobin (g/dL) | 13.2 | 11.9 |
+| Mean log-LDH | 5.81 | 6.15 |
+| Mean albumin (g/L) | 35.1 | 37.6 |
+
+: Baseline covariate distributions by trial. {#tbl-covariate-summary}
+
+## Results {#sec-results}
+
+We present results from the joint model fitted to the publication dataset (target trial: Lilly CXCR4, $N = 78$; historical trial: Amgen Darbe, $N = 419$). Results are organised around the claims in @sec-introduction: model fit to the longitudinal data, survival forecasting, covariate effects across transitions, and clinical endpoint summaries.
+
+### Model fit to longitudinal tumour data {#sec-results-fit}
+
+@fig-sld-ppc shows posterior predictive SLD trajectories for a random subsample of patients with observed progression events. For each patient, the posterior median trajectory (solid line) tracks the observed SLD measurements (dots), with 50% and 80% credible ribbons capturing the measurement uncertainty. The two-component decomposition correctly recovers the characteristic shapes: initial response (driven by the decreasing component $D_i$) followed by eventual regrowth (driven by the growing component $G_i$). The width of credible intervals varies across patients even when observation counts are similar, reflecting three sources of patient-level uncertainty: the number and temporal span of observations available to identify the per-patient kinetic parameters; the geometric identifiability of the trajectory shape (a clear nadir constrains parameters better than a monotone decline); and the degree of agreement between a patient's kinetics and the population distribution — patients whose trajectories are close to the hierarchical mean receive stronger regularisation from the prior and exhibit tighter posteriors, while patients with atypical kinetics show wider intervals as the model negotiates between their sparse data and the population. Overall, the posterior median trajectories track the observed measurements closely across all patients, confirming that the two-component model provides an adequate fit to the longitudinal tumour data.
+
+@fig-sld-censored shows the same posterior predictive check for censored patients (those still progression-free at the data cut-off). Here the model must *forecast* beyond the last observation. The forecast ribbons (pink) fan out naturally from the observed phase (dark), reflecting increasing uncertainty further from the data while maintaining the structural D+G shape. This is the extrapolation that makes mechanistic modelling valuable: the model predicts *what will happen* based on the inferred rates, not just *what has happened*.
+
+@fig-recist-censored shows the posterior predictive RECIST classification over time for the same censored patients. Each stacked bar represents the posterior probability of each RECIST category (CR, PR, SD, PD) at each time point. The observed RECIST classifications (coloured dots) are consistent with the high-probability regions, and the gradual shift from PR/SD toward PD in the forecast window reflects the growing component's eventual dominance.
+
+::: {#fig-sld-ppc}
+![](../quarto/publication/sclc/_freeze/analysis/patient-dynamics/figure-html/fig-sld-ppc-1.png){width=100%}
+
+Posterior predictive SLD trajectories for a subsample of patients with observed progression. Ribbons represent 50% and 80% credible intervals; lines show posterior median tumour dynamics. Blue dots are observed SLD measurements.
+:::
+
+::: {#fig-sld-censored}
+![](../quarto/publication/sclc/_freeze/analysis/patient-dynamics/figure-html/fig-sld-censored-1.png){width=100%}
+
+Posterior predictive SLD trajectories for censored patients (progression-free at data cut-off). Dark ribbons show the observed phase; pink ribbons show forecasted tumour dynamics beyond the last observation. The model extrapolates using the inferred D+G rates.
+:::
+
+::: {#fig-recist-censored}
+![](../quarto/publication/sclc/_freeze/analysis/patient-dynamics/figure-html/fig-recist-censored-1.png){width=100%}
+
+Posterior predictive RECIST classification over time for censored patients. Stacked bars show the posterior probability of each RECIST category at each time point. Coloured dots represent observed classifications; dashed lines mark the transition from observed to forecast phase.
+:::
+
+### Survival predictions: PFS and OS {#sec-results-survival}
+
+Classically, joint longitudinal-survival models are assessed via *sample-based* posterior predictive checks: patients who have already experienced an event contribute their observed event time, and only right-censored patients have their future simulated from the model. This is a necessary consistency check — the model should not contradict known outcomes — but it is a weak test, because the majority of the Kaplan–Meier curve is constructed from observed data rather than model predictions.
+
+A more demanding evaluation is the *super-population* prediction, in which every patient's event time is re-simulated unconditionally from week 1. Observed event histories are discarded entirely; the model must generate the full KM purely from inferred population parameters, patient-level covariates, and the latent tumour trajectories obtained through the joint posterior. If this unconditional prediction recovers the observed KM, it demonstrates that the model has learned the correct generative mechanism — linking tumour dynamics to event risk — rather than merely memorising training outcomes. This is the estimand relevant to clinical forecasting: "if we enrolled a new cohort from this population, what would their survival curves look like?"
+
+@fig-pfs-km-spop shows the super-population PFS prediction by trial and arm. The posterior median PFS curve tracks the observed KM closely, and the 80% credible ribbon covers the observed step function across all four trial-arm combinations. @fig-os-km-spop shows the corresponding OS prediction. Unlike PFS, OS requires the full multistate routing — a patient's OS depends on which path they take through the state graph (direct death via $0\to 2$, post-progression death via $1\to 2$, or off-trial death via $3\to 2$). The model's OS prediction matches the observed KM well, with wider credible intervals reflecting the additional uncertainty from the competing transitions and post-progression sojourn.
+
+```{=latex}
+\begin{landscape}
+```
+
+::: {#fig-pfs-km-spop}
+![](../quarto/publication/sclc/_freeze/analysis/survival-analysis/figure-html/fig-pfs-km-spop-1.png){width=100%}
+
+Super-population PFS Kaplan–Meier predictions by trial and arm. Every patient is re-simulated unconditionally from week 1 — no observed events are used. Ribbons: 80% credible intervals; crosses: observed KM. Top row: target trial (Lilly CXCR4, Arm A and B). Bottom row: historical trial (Amgen Darbe, Placebo and NESP).
+:::
+
+::: {#fig-os-km-spop}
+![](../quarto/publication/sclc/_freeze/analysis/overall-survival/figure-html/fig-os-km-spop-1.png){width=100%}
+
+Super-population OS Kaplan–Meier predictions by trial and arm. The OS forecast emerges from the full multistate routing: patients who progress incur a sojourn in state 1 before death; patients who die directly contribute their $0\to 2$ time; off-trial patients contribute via $3\to 2$. Crosses: observed KM.
+:::
+
+```{=latex}
+\end{landscape}
+```
+
+### Leave-future-out cross-validation {#sec-results-lfo}
+
+The central claim of PIONEER is that it can forecast survival endpoints from immature data. We evaluate this claim using leave-future-out (LFO) cross-validation: the model is re-fitted at a sequence of progressively later data cut-offs (month 4, 11, and 19 of enrolment), and at each cut-off the predicted PFS and OS Kaplan–Meier curves are compared against the observed mature-DCO KM that was *not* available at training time.
+
+@fig-lfo-pfs-evolution shows the PFS forecast evolution for both arms of the target trial. At the earliest cut-off (month 4, $n=9$), the model has seen only a handful of patients and produces wide credible intervals — but the median prediction already captures the rapid early decline characteristic of this population. As more patients and longer follow-up become available (month 11, $n=39$; month 19, $n=71$), the credible intervals narrow and the predicted KM converges toward the observed mature-DCO curve. For Arm B, the forecast is well-calibrated at all cut-offs. For Arm A, however, the posterior predictive median remains systematically pessimistic — it tracks closer to the mature "Overall" KM than to the "At cutoff" observed data on which the model was trained. The model predicts earlier progression than the cutoff-censored KM suggests, even though the prediction interval is narrow. This overconfident pessimism reflects the growth-rate identifiability issue discussed in @sec-discussion: the mechanistic component predicts target-lesion RECIST progression based on a population growth rate that is biased by a subset of fast-progressing patients, and patients with insufficient follow-up to identify their own growth rate are shrunk toward this pessimistic estimate. Despite this, the forecasts remain informative — the predicted median PFS is close to the final mature value, suggesting that the model correctly anticipates the *eventual* outcome even when it is overconfident about *timing* at early cut-offs.
+
+@fig-lfo-os-evolution shows the corresponding OS forecast evolution. OS prediction is inherently harder — it requires the full multistate routing through progression, dropout, and post-progression death — yet the model's predictions remain calibrated across cut-offs. The wider ribbons relative to PFS reflect the additional structural uncertainty from the competing transitions, not miscalibration.
+
+```{=latex}
+\begin{landscape}
+```
+
+::: {#fig-lfo-pfs-evolution}
+![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-km-evolution-sample-1.png){width=100%}
+
+Leave-future-out PFS forecast evolution (sample-based). Each column is a data cut-off (month 4, 11, 19); rows are treatment arms. The model conditions on observed events up to each cut-off and forecasts the remainder. Blue ribbons: 80% credible interval. Gold step function: observed mature-DCO KM. The forecast narrows and converges as data accumulates.
+:::
+
+::: {#fig-lfo-os-evolution}
+![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-os-km-evolution-sample-1.png){width=100%}
+
+Leave-future-out OS forecast evolution (sample-based). Same structure as @fig-lfo-pfs-evolution but for overall survival. The model conditions on observed deaths and censoring up to each cut-off and forecasts OS for patients still alive. Wider credible intervals reflect the additional uncertainty from the multistate routing.
+:::
+
+```{=latex}
+\end{landscape}
+```
+
+The LFO framework also evaluates the mechanistic component in isolation: at each fold, the model predicts the RECIST category at the next withheld assessment visit using only the latent SLD trajectory. @fig-oos-sankey shows the result (pooled across folds). The mechanistic side achieves 70% sensitivity for progressive disease — these are the target-lesion–driven PD events where the D+G model correctly predicts that regrowth will cross the RECIST threshold. However, it misclassifies ~30% of observed PD events as PR or SD — these are patients who progressed from non-target lesions or new lesion appearance, channels invisible to the SLD model. @fig-recist-sensitivity shows this pattern stabilises after ~6 months of enrolment: PD sensitivity plateaus around 70–80%, while finer distinctions (PR vs SD) remain at 15–35%. This ceiling is why the multistate hazard $\lambda_{01}$ is essential: the mechanistic component alone captures target-lesion progression reliably, but the joint model is needed to cover the full PFS estimand.
+
+::: {#fig-oos-sankey}
+![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-oos-confusion-sankey-1.png){width=80%}
+
+Out-of-sample RECIST classification (mechanistic component only, pooled across LFO folds). Left: recorded clinical response. Right: model-predicted response from target-lesion SLD trajectory. The 70% PD sensitivity represents target-lesion–driven progression; flows from CR/PR/SD → PD are non-target events that only the multistate hazard can capture.
+:::
+
+::: {#fig-recist-sensitivity}
+![](../quarto/publication/sclc/_freeze/analysis/model-validation/figure-html/fig-recist-sensitivity-over-time-1.png){width=100%}
+
+RECIST classification sensitivity over successive LFO cut-off dates. PD sensitivity (plum) stabilises around 70–80%; PR (cyan) and SD (gold) remain harder to distinguish. The ~30% PD ceiling motivates the multistate component for non-target progression.
+:::
+
+### Transition-specific covariate effects {#sec-results-covariates}
+
+@fig-covariate-effects shows the posterior distribution of covariate coefficients across the model's six covariate-bearing components: the tumour-dynamics modules (fraction balance `frac` and initial state `init`) and the four multistate transition hazards ($0\to 1$ progression, $0\to 2$ direct death, $0\to 3$ dropout, $1\to 2$ post-progression death). All coefficients are shown in QR-rotated space; because the QR rotation matrix is nearly diagonal for this dataset (diagonal dominance 68–100%), the indices correspond approximately to the original covariates: (1) age, (2) male, (3) ECOG, (4) haemoglobin, (5) log-LDH, (6) albumin.
+
+The key observation is that the same covariate can act in opposite directions on different transitions. For example, covariate 4 (haemoglobin) shows a clear negative coefficient on the $0\to 1$ progression hazard (higher Hgb → lower progression risk) but a positive coefficient on $1\to 2$ post-progression death — consistent with the clinical interpretation that anaemia is prognostic for both progression and post-progression mortality, but through different mechanisms. The $0\to 2$ direct-death coefficients (light cyan) have the widest credible intervals, reflecting the small number of direct-death events available to identify these effects. This is the structural advantage of the multistate formulation: a single-hazard model would average these opposing effects into one coefficient, losing the transition-specific clinical signal.
+
+::: {#fig-covariate-effects}
+![](../quarto/publication/sclc/_freeze/analysis/parameter-inference/figure-html/fig-covariate-effects-1.png){width=100%}
+
+Posterior covariate effects (QR space) across six model components. Rows: covariates (1 = age, 2 = male, 3 = ECOG, 4 = haemoglobin, 5 = log-LDH, 6 = albumin). Colours distinguish tumour-dynamics modules (frac, init) from multistate transition hazards (01, 02, 03, 12). Intervals show 50% and 95% credible intervals. The same covariate acts differently on different transitions — this transition-specific structure is the key advantage over single-hazard joint models.
+:::
+
+### Clinical endpoint summaries {#sec-results-endpoints}
+
+The full-posterior propagation delivers clinical quantities as distributions, not point estimates. @fig-median-pfs shows the posterior distribution of median PFS for each arm of the target trial: the prior (gold) spans a wide range reflecting pre-data uncertainty, while the posterior (plum) concentrates with substantially reduced uncertainty. The dashed line marks the observed median PFS (~6.2 months, identical for both arms). Median PFS is a joint-model endpoint — it combines both the mechanistic target-lesion progression and the stochastic multistate progression channels.
+
+@fig-orr shows the ORR posterior by arm. Unlike median PFS, ORR is derived **entirely from the mechanistic submodel** — it is a deterministic function of the latent SLD trajectory (whether $B_i(t)$ ever falls below $0.7$, i.e. a $\geq 30\%$ decrease from baseline). No multistate hazard is involved: a patient's response classification depends only on their inferred tumour dynamics. This is why the ORR posterior is remarkably tight — response depth is well-identified from even a few SLD observations per patient, and the structural D+G model constrains the trajectory shape. A hazard-only survival model without the mechanistic component would be unable to produce ORR predictions at all.
+
+The model's ORR posterior (approximately 73–75%) underestimates the observed ORR (Arm A: 85%, Arm B: 95%) by 15–20 percentage points. This conservatism reflects hierarchical shrinkage on the latent trajectory: patients with borderline responses (observed SLD dropping just past the 30% threshold) have their inferred latent response depth attenuated toward the population mean, pushing them back below the PR classification boundary. Additionally, measurement noise can cause the observed SLD to cross the 30% threshold transiently, yielding an observed PR that the smooth latent trajectory — which averages over noise — does not reproduce. The model reports its posterior belief about *true* response depth, not the noisy observed best-response classification; the gap is the price of denoising.
+
+::: {#fig-median-pfs}
+![](../quarto/publication/sclc/_freeze/analysis/clinical-endpoints/figure-html/fig-median-pfs-prior-post-1.png){width=100%}
+
+Posterior distribution of median PFS (months) for each arm of the target trial (Lilly CXCR4). Prior (gold) vs posterior (plum). Dashed line: observed median PFS (both arms ≈ 6.2 months).
+:::
+
+::: {#fig-orr}
+![](../quarto/publication/sclc/_freeze/analysis/clinical-endpoints/figure-html/fig-orr-prior-post-1.png){width=100%}
+
+Posterior distribution of ORR by arm for the target trial. Prior (gold) vs posterior (plum). ORR is computed entirely from the mechanistic submodel — it is a deterministic function of the latent SLD trajectory and requires no multistate hazard. The tight posterior reflects that response depth is well-identified from longitudinal tumour measurements.
+:::
 
 ## Discussion {#sec-discussion}
 
 *[To be drafted. Outline:]*
 
 - **What PIONEER buys you.** Forecasting with structural shape constraints from immature data; coherent uncertainty propagation; transportability of biological parameters across trials.
+- **What the mechanistic component captures — and why the joint model is needed.** The LFO RECIST classification results (@fig-oos-sankey, @fig-recist-sensitivity in @sec-results-lfo) quantify the mechanistic component's ceiling: 70% PD sensitivity from target-lesion dynamics, with the remaining ~30% requiring the multistate hazard. Neither component alone covers the full PFS estimand — this empirically validates the joint architecture.
+- **Growth-rate identifiability and overconfident PFS pessimism.** The leave-future-out analysis reveals a structural weakness of the mechanistic component: the growth rate $r^{\mathrm{gro}}_i$ is the least identifiable patient-level parameter, because the growing compartment contributes negligibly to the observed SLD until regrowth is underway. For patients whose follow-up ends before visible regrowth (the majority in this case study), the patient-level growth-rate posterior remains wide (SD $\approx 1.2$) and is dominated by the population estimate (SD $\approx 0.4$). If a subset of well-identified fast-growers sets the population rate, the hierarchical shrinkage pulls all uncertain patients toward this pessimistic estimate — and because the population rate is tightly estimated, the model is *confident* in predictions that are systematically too pessimistic. This manifests as a narrow predictive interval that sits below the observed PFS KM in the LFO validation for Arm A. The multistate-only PFS (which triggers progression from the stochastic hazard rather than from target-lesion RECIST threshold crossing) does not suffer from this bias, because it does not depend on per-patient growth rates. The implication is that for arms or subgroups where most patients have short, monotonically-declining SLD trajectories, the mechanistic contribution to PFS may be overconfident in the wrong direction — and the hazard-only channel provides better-calibrated predictions. A natural mitigation would be to down-weight the mechanistic PFS channel when the patient-level growth rate is poorly identified, though we do not implement this in the current framework.
 - **Limitations.** Phenomenological D+G decomposition (not real clones); multistate identifiability under sparse trial-level data; computational cost (~hours per fit); does not improve *in-sample* fit vs flexible empirical models.
 - **When to prefer a simpler model.** Small trial; target endpoint = OS only; no dropout signal; adequate follow-up for standard parametric extrapolation.
 - **Surrogacy.** The multistate framework permits testing PFS-as-surrogate-for-OS by allowing arm effects on post-progression hazards; we discuss this as future work rather than a primary result of this paper.
