@@ -341,6 +341,16 @@ create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_
       n_raw_groups_init_slope <- sum(n_fgpl_outer[(enable_level_intercept_init %in% c(1L, 2L, 3L)) & (enable_level_cov_init == 1L)])
       n_cp_groups_init_slope  <- sum(n_fgpl_outer[(enable_level_intercept_init == 4L) & (enable_level_cov_init == 1L)])
 
+      # gr_decay level group counts (0 when the module/levels are off). The flag
+      # arrays are only referenced inside the enable_gr_decay branch so an OFF
+      # model (or one where Task 9 wiring is absent) defaults to all-NONE => 0.
+      gr_decay_int_modes <- if (isTRUE(enable_gr_decay == 1L)) enable_level_intercept_gr_decay else rep(0L, n_levels)
+      gr_decay_cov_modes <- if (isTRUE(enable_gr_decay == 1L)) enable_level_cov_gr_decay else rep(0L, n_levels)
+      n_raw_groups_gr_decay_intercept <- sum(n_groups_per_level[gr_decay_int_modes %in% c(1L, 2L, 3L)])
+      n_cp_groups_gr_decay_intercept  <- sum(n_groups_per_level[gr_decay_int_modes == 4L])
+      n_raw_groups_gr_decay_slope <- sum(n_groups_per_level[(gr_decay_int_modes %in% c(1L, 2L, 3L)) & (gr_decay_cov_modes == 1L)])
+      n_cp_groups_gr_decay_slope  <- sum(n_groups_per_level[(gr_decay_int_modes == 4L) & (gr_decay_cov_modes == 1L)])
+
       # Level positions for indexing flattened arrays
       level_pos <- c(1L, cumsum(n_fgpl_outer) + 1L)
 
@@ -360,12 +370,50 @@ create_tumor_ssls_initializer_fixed <- function(stan_data, save_dir = NULL, run_
       frac_cp_level_intercept <- rnorm(n_cp_groups_frac_intercept, 0, frac_sd_level[enable_level_intercept_frac == 4L] * 0.2)
       init_cp_level_intercept <- rnorm(n_cp_groups_init_intercept, 0, init_sd_level[enable_level_intercept_init == 4L] * 0.2)
 
+      # gr_decay level RE/RE_CP intercept inits (mirrors frac: per-level SD init,
+      # NCP raw draws for modes 1/2/3, centred draws for mode 4 on the natural scale).
+      gr_decay_sd_level <- rep(0.30, n_levels)
+      gr_decay_raw_level <- rnorm(n_raw_groups_gr_decay_intercept, sd = 0.2)
+      gr_decay_cp_level_intercept_init <- rnorm(n_cp_groups_gr_decay_intercept, 0, gr_decay_sd_level[gr_decay_int_modes == 4L] * 0.2)
+
       # Tumor dynamics parameters
       tumor_init <- tibble::lst(
         # Population-level parameters - initialize at prior means
         tr_loc_pop = -2.0,
         frac_logit_loc_pop = 1.5,
         init_logit_loc_pop = 0.0,
+        # Gompertz decay intercept: drawn near the prior mean when enabled, length-0
+        # when off. Prior defaults mirror r/priors.R (log(0.02), sd 0.75) — priors are
+        # not in scope inside the initializer (with(stan_data) only).
+        gr_decay_log_loc_pop = if (isTRUE(enable_gr_decay == 1L)) {
+          as.array(rnorm(1, log(0.02), 0.75))
+        } else {
+          numeric(0)
+        },
+        gr_decay_coef_qr_pop = if (isTRUE(enable_gr_decay == 1L) && isTRUE(enable_pop_cov_gr_decay == 1L) && n_covar > 0) {
+          as.array(rep(0, n_covar))
+        } else {
+          numeric(0)
+        },
+
+        # gr_decay level hierarchy (mirrors frac). Gated on enable_gr_decay so an
+        # OFF model gets zero-length / zero-size values matching Stan's collapsed
+        # param sizing. sd_level_slope is ALWAYS length n_levels (Stan declares it
+        # array[n_levels] vector[n_covar]).
+        gr_decay_sd_level_intercept_raw = if (isTRUE(enable_gr_decay == 1L)) {
+          as.array(gr_decay_sd_level[gr_decay_int_modes %in% c(2L, 4L)])
+        } else {
+          numeric(0)
+        },
+        gr_decay_raw_level_intercept = if (isTRUE(enable_gr_decay == 1L)) gr_decay_raw_level else numeric(0),
+        gr_decay_cp_level_intercept = if (isTRUE(enable_gr_decay == 1L)) gr_decay_cp_level_intercept_init else numeric(0),
+        gr_decay_sd_level_slope = if (isTRUE(enable_gr_decay == 1L) && n_covar > 0) {
+          lapply(seq_len(n_levels), function(lv) rep(if (lv == n_levels) 0.03 else 0.05, n_covar))
+        } else {
+          lapply(seq_len(n_levels), function(lv) numeric(0))
+        },
+        gr_decay_raw_level_slope = if (isTRUE(enable_gr_decay == 1L) && n_covar > 0) matrix(0, n_raw_groups_gr_decay_slope, n_covar) else matrix(0, 0, max(n_covar, 0)),
+        gr_decay_cp_level_slope = if (isTRUE(enable_gr_decay == 1L) && n_covar > 0) matrix(0, n_cp_groups_gr_decay_slope, n_covar) else matrix(0, 0, max(n_covar, 0)),
 
         # Level-indexed intercept SDs (RE/RE_CP levels: modes 2 and 4), raw NCP values,
         # and centred values for RE_CP levels (mode 4).
