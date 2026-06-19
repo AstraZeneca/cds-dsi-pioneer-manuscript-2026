@@ -38,6 +38,54 @@ format:
         \usepackage{float}
 ---
 
+```{r}
+#| label: setup-data
+#| include: false
+library(targets)
+library(dplyr)
+library(tidyr)
+library(gt)
+library(gtsummary)
+
+source(here::here("r", "util.R")) # provides weeks_to_months()
+
+tar_store <- file.path(
+  "/mnt/data/analysis-results",
+  Sys.getenv("DOMINO_STARTING_USERNAME"),
+  "publication",
+  Sys.getenv("TAR_RUN", "gompertz"),
+  "_targets"
+)
+
+target_patient_data <- tar_read(target_patient_data_sclc, store = tar_store)
+historical_patient_data <- tar_read(historical_patient_data_sclc, store = tar_store)
+target_visit_data <- tar_read(target_visit_data_sclc, store = tar_store)
+historical_visit_data <- tar_read(historical_visit_data_sclc, store = tar_store)
+
+TRIAL_LABELS <- c(lilly_cxcr4 = "Lilly CXCR4", amgen_darbe = "Amgen 20010145")
+
+TREATMENT_LABELS <- c(
+  "LY2510924+Carbo/Etop" = "Arm A (CXCR4 + chemo)",
+  "Carbo/Etop" = "Arm B (chemo alone)",
+  "Darbe+Plat/Etop" = "NESP + chemo",
+  "Placebo+Plat/Etop" = "Placebo + chemo"
+)
+
+visits_per_patient <- bind_rows(target_visit_data, historical_visit_data) |>
+  filter(week > 0) |>
+  count(usubjid, name = "n_visits")
+
+all_patient <- bind_rows(target_patient_data, historical_patient_data) |>
+  mutate(
+    trial_label = TRIAL_LABELS[as.character(trial)],
+    treatment_label = TREATMENT_LABELS[as.character(treatment)],
+    male = as.integer(sex == 1),
+    ecog_ge1 = as.integer(ecog >= 1)
+  ) |>
+  left_join(visits_per_patient, by = "usubjid") |>
+  replace_na(list(n_visits = 0L))
+```
+
 ## Introduction {#sec-introduction}
 
 <!-- The problem: predicting survival from immature trial data -->
@@ -478,25 +526,61 @@ Missing baseline covariates were imputed at the population median prior to model
 
 ### Summary statistics
 
-| Trial | Arm | $N$ | Median follow-up (mo) | Median PFS (mo) | % Censored | Deaths | Visits/patient |
-|---|---|---:|---:|---:|---:|---:|---:|
-| Lilly CXCR4 | Arm A (CXCR4 + chemo) | 40 | 5.4 | 5.1 | 30% | 29 | 4.5 |
-| Lilly CXCR4 | Arm B (chemo alone) | 37 | 5.1 | 5.7 | 19% | 24 | 4.6 |
-| Amgen 20010145 | NESP + chemo | 214 | 5.5 | 6.0 | 8% | 170 | 4.1 |
-| Amgen 20010145 | Placebo + chemo | 205 | 5.7 | 6.0 | 7% | 174 | 4.2 |
+```{r}
+#| label: tbl-trial-summary
+#| tbl-cap: "Patient disposition and endpoints by trial and arm."
+disposition <- all_patient |>
+  group_by(trial_label, treatment_label) |>
+  summarise(
+    N = n(),
+    median_fu_mo = median(weeks_to_months(overall_survival_time), na.rm = TRUE),
+    median_pfs_mo = median(weeks_to_months(progression_free_survival_time), na.rm = TRUE),
+    pct_censored = mean(progression_free_survival_censor == 0),
+    deaths = sum(death == 1, na.rm = TRUE),
+    visits_per_pt = mean(n_visits, na.rm = TRUE),
+    .groups = "drop"
+  )
 
-: Patient disposition and endpoints by trial and arm. {#tbl-trial-summary}
+disposition |>
+  gt(groupname_col = "trial_label") |>
+  cols_label(
+    treatment_label = "Arm",
+    N = "N",
+    median_fu_mo = "Median follow-up (mo)",
+    median_pfs_mo = "Median PFS (mo)",
+    pct_censored = "% Censored",
+    deaths = "Deaths",
+    visits_per_pt = "Visits/patient"
+  ) |>
+  fmt_number(columns = c(median_fu_mo, median_pfs_mo, visits_per_pt), decimals = 1) |>
+  fmt_percent(columns = pct_censored, decimals = 0) |>
+  tab_options(table.font.size = "small")
+```
 
-| Covariate | Lilly CXCR4 ($N=77$) | Amgen 20010145 ($N=419$) |
-|---|---|---|
-| Mean age (years) | 65.2 | 60.6 |
-| Male (%) | 45 | 66 |
-| ECOG $\geq 2$ (%) | 5 | 19 |
-| Mean haemoglobin (g/dL) | 13.2 | 11.9 |
-| Mean log-LDH | 5.81 | 6.15 |
-| Mean albumin (g/L) | 35.1 | 37.6 |
-
-: Baseline covariate distributions by trial. {#tbl-covariate-summary}
+```{r}
+#| label: tbl-covariate-summary
+#| tbl-cap: "Baseline covariate distributions by trial."
+all_patient |>
+  select(trial_label, age, male, ecog_ge1, hgb, ldh_log, albumin) |>
+  tbl_summary(
+    by = trial_label,
+    label = list(
+      age ~ "Age (years)",
+      male ~ "Male (%)",
+      ecog_ge1 ~ "ECOG ≥ 1 (%)",
+      hgb ~ "Haemoglobin (g/dL)",
+      ldh_log ~ "log-LDH",
+      albumin ~ "Albumin (g/L)"
+    ),
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd})",
+      all_dichotomous() ~ "{n} ({p}%)"
+    ),
+    value = list(male ~ 1L, ecog_ge1 ~ 1L),
+    digits = list(all_continuous() ~ 1)
+  ) |>
+  as_gt()
+```
 
 ## Results {#sec-results}
 
