@@ -107,6 +107,11 @@ The active project is set via `TAR_PROJECT`. Store paths follow: `/mnt/data/anal
 ls /mnt/data/analysis-results/$DOMINO_STARTING_USERNAME/<project>/
 ```
 
+**Setting `TAR_RUN` for `quarto render`**: use a shell env var prefix — do NOT edit `.Renviron`:
+```bash
+TAR_RUN=gompertz quarto render quarto/publication/sclc
+```
+
 Project-specific details (TAR_RUN values, data files, endpoint definitions) are in `.claude/rules/sclc.md` and `.claude/rules/pioneer.md`.
 
 ## GitHub Project Management
