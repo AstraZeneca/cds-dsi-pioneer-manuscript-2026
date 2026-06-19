@@ -49,11 +49,12 @@ library(gtsummary)
 
 source(here::here("r", "util.R")) # provides weeks_to_months()
 
+tar_run <- if (nzchar(Sys.getenv("TAR_RUN"))) Sys.getenv("TAR_RUN") else "gompertz"
 tar_store <- file.path(
   "/mnt/data/analysis-results",
   Sys.getenv("DOMINO_STARTING_USERNAME"),
   "publication",
-  Sys.getenv("TAR_RUN", "gompertz"),
+  tar_run,
   "_targets"
 )
 
