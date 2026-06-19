@@ -13,6 +13,23 @@ source("_setup.R")
 rates_rvar <- pub_tar_read("all_tumor_ssls_rates_rvar")
 noise_sd   <- pub_tar_read("all_tumor_ssls_noise_sd_rvar")
 coef_data  <- pub_tar_read("all_tumor_ssls_coef")
+
+# Append gr_decay_coef_qr_pop (kappa covariate effects) — not included in the
+# pipeline coef target, so read directly from the pop draws for each fit type.
+kappa_coef_rows <- purrr::map_dfr(
+  list(prior = "tumor_ssls_draws_pop_prior", posterior = "tumor_ssls_draws_pop_posterior"),
+  \(name) {
+    rv <- posterior::as_draws_rvars(pub_tar_read(name))
+    v  <- rv[["gr_decay_coef_qr_pop"]]
+    tibble::tibble(.variable = "gr_decay_coef_qr_pop", n = seq_along(v), .value = v,
+                   .exp_value = exp(v))
+  },
+  .id = "fit_type"
+)
+coef_data <- dplyr::bind_rows(coef_data, kappa_coef_rows)
+
+# Covariate names from design matrix (same for all param types)
+covar_names <- colnames(pub_tar_read("covar_design_matrix"))
 ```
 
 ## Population-Level Rates {#sec-pop-rates}
@@ -55,11 +72,13 @@ noise_sd |>
 
 coef_data |>
   filter(fit_type == "posterior") |>
+  mutate(covar = factor(covar_names[n], levels = covar_names)) |>
   ggplot() +
-  stat_pointinterval(aes(xdist = .value, y = factor(n), color = .variable),
-                     .width = c(0.5, 0.9)) +
+  stat_pointinterval(aes(xdist = .value, y = covar, color = .variable),
+                     .width = c(0.5, 0.9), point_size = 1.5,
+                     position = position_dodge(width = 0.6)) +
   geom_vline(xintercept = 0, linetype = "dashed", alpha = 0.5) +
   scale_color_discrete("Parameter", type = AZ_palette) +
-  labs(x = "Coefficient (QR space)", y = "Covariate index") +
+  labs(x = "Coefficient (QR space)", y = NULL) +
   NULL
 ```

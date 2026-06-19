@@ -107,7 +107,13 @@ disease_map <- tibble::tribble(
 # per-chain inv_metric files because the mass matrix dimension equals the
 # total unconstrained parameter count, which scales with n_patients.
 #
-# SCLC: data/inv_metric_publication_tumor_ssls_chain*.json (job #1868, 4812 params)
+# SCLC: data/inv_metric_publication_tumor_ssls_gr_decay_sclc_chain*.json
+#       (job #1977, 5778 params — the clean gr_decay posterior with the full RE
+#       hierarchy: trial-arm + patient kappa raw effects + SDs. R-hat <= 1.006 on
+#       all endpoints. stepsize/metric_type stripped to {"inv_metric":[...]} per
+#       the CmdStan input-format requirement). Consumed only when disease ==
+#       "sclc"; CRC falls back to NULL (cold start) because these SCLC metrics
+#       have the wrong mass-matrix dimension for CRC.
 # CRC:  TODO — no valid files yet. The pre-trend CRC metrics (job ~202605312138)
 #       have wrong dimension (16433 params, pre-trend model). Save new ones after
 #       the first successful CRC posterior run with enable_ms_baseline_trend_01=1.
@@ -120,7 +126,10 @@ disease_map <- tibble::tribble(
 #        the always-on arm-level RE change (4692c282) grew the parameter space —
 #        set LFO_COLD_START=true to skip them and regenerate via save_metric=TRUE.
 # CRC:  no files yet — lfo() passes metric_file = NULL for crc → cold start.
-publication_metric_files <- NULL
+# Per-chain SCLC posterior warm-start metrics (gr_decay-ON, 5778 params, job #1977).
+publication_metric_files_sclc <- sprintf(
+  "data/inv_metric_publication_tumor_ssls_gr_decay_sclc_chain%d.json", 1:4
+)
 
 publication_targets <- list(
   # Track initializer file so changes invalidate the initializer targets
@@ -336,7 +345,7 @@ publication_targets <- list(
         # slope is added as a sibling term to the population 0->1 baseline
         # temporal block, HIERARCHICAL over the trial level (mirrors the GP).
         # pioneer/sclc set this to 0L at their own stan-data assembly sites.
-        enable_ms_baseline_trend_01 = 1L,
+        enable_ms_baseline_trend_01 = TRUE,
 
         enable_ms_pop_time_varying_cov = TRUE,
         enable_ms_pop_time_invariant_cov = TRUE,
@@ -357,10 +366,10 @@ publication_targets <- list(
         # mode hits at complete-response visits and aligns the survival
         # likelihood with the actual measurement schedule (lilly_cxcr4 ~6w vs
         # amgen_darbe weekly).
-        enable_ms_visit_gated_01 = 1L,
-        enable_ms_visit_gated_latent_01 = 1L,
+        enable_ms_visit_gated_01 = TRUE,
+        enable_ms_visit_gated_latent_01 = TRUE,
         share_dead_gp_shape = 0L,
-        enable_ms_02_time_varying_cov = 0L,
+        enable_ms_02_time_varying_cov = FALSE,
         # 0->3 dropout hazard with patient-level discrimination (added 2026-05-28).
         # The previous fit had no per-patient discrimination on the 0->3 path
         # (only the trial-level GP), so died_off_trial patients were routed
@@ -373,11 +382,11 @@ publication_targets <- list(
         # With only 57 dropout events the TV path is identification-limited;
         # priors are kept tight (Normal(0, 0.5)) to avoid overfit. 3->2 TI
         # left off — only 57 events with another competing hazard to model.
-        enable_ms_03_time_invariant_cov = 1L,
-        enable_ms_03_time_varying_cov = 1L,
-        enable_ms_32_time_invariant_cov = 0L,
-        enable_ms_12_entry_covar = 0L,
-        enable_ms_32_entry_covar = 0L,
+        enable_ms_03_time_invariant_cov = TRUE,
+        enable_ms_03_time_varying_cov = TRUE,
+        enable_ms_32_time_invariant_cov = FALSE,
+        enable_ms_12_entry_covar = FALSE,
+        enable_ms_32_entry_covar = FALSE,
         entry_covar_12 = numeric(0),
         entry_covar_32 = numeric(0),
 
@@ -405,6 +414,14 @@ publication_targets <- list(
         ),
         enable_level_cov_init = c(trial_arm = FALSE, patient = FALSE),
         enable_pop_cov_init = TRUE,
+        enable_static_init = FALSE,
+        enable_gr_decay = TRUE,
+        enable_pop_cov_gr_decay = TRUE,
+        enable_level_intercept_gr_decay = c(
+          trial_arm = level_intercept_mode["re"],
+          patient   = level_intercept_mode["re"]
+        ),
+        enable_level_cov_gr_decay = c(trial_arm = FALSE, patient = FALSE),
 
         pfs_timepoints = pfs_timepoints_pub$timepoint,
         n_pfs_timepoints = nrow(pfs_timepoints_pub),
@@ -474,11 +491,14 @@ publication_targets <- list(
         fit_data = c(FALSE, TRUE),
         base_name = c("prior_tumor_ssls", "tumor_ssls"),
         iter_sampling = 500,
-        # Posterior warm-starts from #1868's adapted trend metric so needs far
-        # less warmup; prior cold-starts (no valid posterior metric for it).
+        # Posterior warm-starts from the saved adapted metric so needs far less
+        # warmup; prior cold-starts (no valid posterior metric for it).
         iter_warmup = c(300L, 150L),
-        # List-column: prior = no warm-start; posterior = per-chain inv-metric files.
-        metric_files = list(NULL, publication_metric_files),
+        # Posterior warm-starts from the saved SCLC metric (publication_metric_files_sclc,
+        # now the adapted mass matrices from the canonical cold-start fit #2025: forecast
+        # fix + decay covar + tightened kappa prior), so 150 warmup is sufficient. Prior
+        # cold-starts (no posterior metric applies) and gets the 300-iter floor.
+        warm_start = c(FALSE, TRUE),
         chains = 4L
       ),
       names = "type",
@@ -533,24 +553,38 @@ publication_targets <- list(
 
       tar_target(
         tumor_ssls_res,
-        sample_and_save(
-          tumor_ssls_exe_hash$exe_file,
-          tumor_ssls_stan_data,
-          # Posterior warm-starts from job #1868's adapted trend metric, so the
-          # 150-iter warmup (from the type tribble) suffices. Prior always cold-starts.
-          iter_warmup = if (!is.null(metric_files)) iter_warmup else max(iter_warmup, 300L),
-          iter_sampling = iter_sampling,
-          save_warmup = FALSE,
-          parallel_chains = chains,
-          chains = chains,
-          threads_per_chain = tumor_ssls_stan_data$n_shards,
-          init = tumor_ssls_initializer,
-          adapt_delta = 0.8,
-          save_metric = TRUE,
-          metric_file = metric_files,
-          output_dir = file.path(publication_output_path, "fit", str_c(base_name, "_", disease)),
-          timestamp = fit_output_timestamp
-        ),
+        {
+          # WARM START: publication_metric_files_sclc are the per-chain adapted
+          # mass matrices from the clean gr_decay posterior (job #1977, 5778
+          # params, R-hat <= 1.006 on all endpoints), dimension-matched to the
+          # current gr_decay RE hierarchy. SCLC warm-starts; CRC has no saved
+          # metrics, so it cold-starts (NULL).
+          posterior_metric_files <- if (warm_start && disease == "sclc") {
+            publication_metric_files_sclc
+          } else {
+            NULL
+          }
+          sample_and_save(
+            tumor_ssls_exe_hash$exe_file,
+            tumor_ssls_stan_data,
+            # Warm-started fits need less warmup; cold starts get the 300-iter floor.
+            iter_warmup = if (!is.null(posterior_metric_files)) iter_warmup else max(iter_warmup, 300L),
+            iter_sampling = iter_sampling,
+            save_warmup = FALSE,
+            parallel_chains = chains,
+            chains = chains,
+            threads_per_chain = tumor_ssls_stan_data$n_shards,
+            init = tumor_ssls_initializer,
+            # 0.9 (raised from 0.8): the gr_decay patient-level kappa RE is weakly
+            # identified; smaller steps guard against funnel divergences if the
+            # patient kappa-SD collapses toward 0.
+            adapt_delta = 0.9,
+            save_metric = TRUE,
+            metric_file = posterior_metric_files,
+            output_dir = file.path(publication_output_path, "fit", str_c(base_name, "_", disease)),
+            timestamp = fit_output_timestamp
+          )
+        },
         storage = "main",
         resources = tar_resources(
           crew = tar_resources_crew(controller = "fit")
@@ -1015,7 +1049,7 @@ publication_targets <- list(
         verbose = TRUE,
         fit_only = FALSE,
         exact = TRUE,
-        iter_warmup = 500,
+        iter_warmup = 300,
         iter_sampling = 500,
         save_warmup = lfo_save_warmup,
         save_metric = TRUE,

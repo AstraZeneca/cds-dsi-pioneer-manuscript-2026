@@ -5,6 +5,11 @@
 real init_logit_loc_pop_mean;
 real<lower=0> init_logit_loc_pop_sd;
 
+// Static-vs-growth split prior (used only when enable_static_init = 1).
+// Always declared (cost-free real) so stan-data shape is flag-independent.
+real init_logit_static_loc_pop_mean;
+real<lower=0> init_logit_static_loc_pop_sd;
+
 // Hierarchical intercept prior scale hyperparameters - one per level
 array[n_levels] real<lower=0> init_sd_level_intercept_sd;
 

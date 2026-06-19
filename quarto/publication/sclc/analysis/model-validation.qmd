@@ -11,7 +11,9 @@ execute:
 #| include: false
 
 source("_setup.R")
-lfo_store <- file.path(output_path, "publication", "lfo", "_targets")
+# lfo_store is resolved from TAR_RUN in r/publication/target_stores.R (sourced by
+# _setup.R). Do not hardcode it here — that pins the page to the "lfo" run and
+# silently ignores TAR_RUN (e.g. gompertz-lfo).
 ```
 
 This page presents out-of-sample predictive accuracy evaluated via leave-future-out (LFO)
