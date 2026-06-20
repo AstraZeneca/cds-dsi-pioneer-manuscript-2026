@@ -1000,68 +1000,145 @@ The full-posterior propagation delivers clinical quantities as distributions, no
 
 @fig-orr shows the ORR posterior by arm. Unlike median PFS, ORR is derived **entirely from the mechanistic submodel** — it is a deterministic function of the latent SLD trajectory (whether $B_i(t)$ ever falls below $0.7$, i.e. a $\geq 30\%$ decrease from baseline). No multistate hazard is involved: a patient's response classification depends only on their inferred tumour dynamics. This is why the ORR posterior is remarkably tight — response depth is well-identified from even a few SLD observations per patient, and the structural decrease-plus-growth model constrains the trajectory shape. A hazard-only survival model without the mechanistic component would be unable to produce ORR predictions at all.
 
-The model's ORR posterior (approximately 73–75%) underestimates the observed ORR (Arm A: 85%, Arm B: 95%) by 15–20 percentage points. This conservatism reflects hierarchical shrinkage on the latent trajectory: patients with borderline responses (observed SLD dropping just past the 30% threshold) have their inferred latent response depth attenuated toward the population mean, pushing them back below the PR classification boundary. Additionally, measurement noise can cause the observed SLD to cross the 30% threshold transiently, yielding an observed PR that the smooth latent trajectory — which averages over noise — does not reproduce. The model reports its posterior belief about *true* response depth, not the noisy observed best-response classification; the gap is the price of denoising.
+<!-- The model's ORR posterior (approximately 73–75%) underestimates the observed ORR (Arm A: 85%, Arm B: 95%) by 15–20 percentage points. This conservatism reflects hierarchical shrinkage on the latent trajectory: patients with borderline responses (observed SLD dropping just past the 30% threshold) have their inferred latent response depth attenuated toward the population mean, pushing them back below the PR classification boundary. Additionally, measurement noise can cause the observed SLD to cross the 30% threshold transiently, yielding an observed PR that the smooth latent trajectory — which averages over noise — does not reproduce. The model reports its posterior belief about *true* response depth, not the noisy observed best-response classification; the gap is the price of denoising. -->
 
 ```{r}
-#| label: fig-median-pfs
-#| fig-cap: "Posterior distribution of median PFS (months) for each arm of the target trial (Lilly CXCR4). Prior (gold) vs posterior (plum). Dashed line: observed median PFS (both arms \\approx 6.2 months)."
-#| fig-width: 7
-#| fig-height: 3
-pfs_quant <- pub_tar_read("all_tumor_ssls_trial_pfs_quant")
-obs_km_pfs_raw <- pub_tar_read("km_trial_pfs")
-
+#| label: fig-endpoint-data
+#| include: false
+#| cache: false
 TARGET_ARM_LABELS <- c(
   "Arm A (CXCR4 + chemo)" = "lilly_cxcr4_Arm A",
   "Arm B (chemo alone)" = "lilly_cxcr4_Arm B"
 )
 
-# Observed median PFS from KM quantiles (btype == "ub", quantile == 0.5), in weeks
-obs_median_pfs_weeks <- obs_km_pfs_raw |>
+cutoff_levels_from <- function(df) {
+  c(unique(df$cutoff_label[order(df$n_target_observed)]), "Full data")
+}
+
+make_lfo_endpoint <- function(lfo_data, full_data, var) {
+  lfo <- lfo_data |>
+    filter(grepl("lilly_cxcr4", trial)) |>
+    mutate(trial = fct_recode(trial, !!!TARGET_ARM_LABELS), cutoff_label = paste0("n = ", n_target_observed))
+  full <- full_data |>
+    filter(grepl("lilly_cxcr4", trial), fit_type == "posterior") |>
+    mutate(trial = fct_recode(trial, !!!TARGET_ARM_LABELS), cutoff_label = "Full data")
+  bind_rows(lfo, full) |>
+    mutate(cutoff_label = factor(cutoff_label, levels = cutoff_levels_from(lfo)))
+}
+
+# PFS quant
+lfo_pfs_quant <- lfo_tar_read_pattern("lfo_cutoff_trial_pfs_quant")
+full_pfs_quant <- pub_tar_read("all_tumor_ssls_trial_pfs_quant")
+pfs_evol <- make_lfo_endpoint(lfo_pfs_quant, full_pfs_quant, sample_pfs_quant)
+
+# OS quant - LFO cutoffs only (full-data target built separately)
+lfo_os_quant <- lfo_tar_read_pattern("lfo_cutoff_trial_os_quant")
+os_evol <- lfo_os_quant |>
+  filter(grepl("lilly_cxcr4", trial)) |>
+  mutate(
+    trial = fct_recode(trial, !!!TARGET_ARM_LABELS),
+    cutoff_label = factor(paste0("n = ", n_target_observed),
+                          levels = paste0("n = ", sort(unique(n_target_observed))))
+  )
+
+# Observed medians from KM quantiles
+obs_median_pfs_weeks <- pub_tar_read("km_trial_pfs") |>
   filter(btype == "ub", grepl("lilly_cxcr4", trial)) |>
   mutate(med = map_dbl(quantiles, \(q) q$pfs[q$quantile == 0.5])) |>
   pull(med) |>
   mean()
 
-pfs_quant |>
-  filter(quantile == 0.5, grepl("lilly_cxcr4", trial)) |>
-  mutate(trial = fct_recode(trial, !!!TARGET_ARM_LABELS)) |>
+obs_median_os_weeks <- pub_tar_read("km_trial_os") |>
+  filter(btype == "ub", grepl("lilly_cxcr4", trial)) |>
+  mutate(med = map_dbl(quantiles, \(q) q$pfs[q$quantile == 0.5])) |>
+  pull(med) |>
+  mean()
+```
+
+```{r}
+#| label: fig-median-pfs
+#| fig-cap: "Posterior median PFS (months) by arm (Lilly CXCR4) at each LFO cut-off and the final full-data fit. Colours indicate progressive data cut-offs by number of target-trial patients observed. Dashed line: observed mature-DCO median PFS."
+#| fig-width: 7
+#| fig-height: 3
+#| cache: false
+pfs_evol |>
+  filter(quantile == 0.5) |>
   ggplot() +
-  geom_vline(aes(xintercept = obs_median_pfs_weeks, linetype = "Observed median PFS (both arms)"), color = "grey40", linewidth = 0.5) +
+  geom_vline(aes(xintercept = obs_median_pfs_weeks, linetype = "Observed median PFS"), color = "grey40", linewidth = 0.5) +
   scale_linetype_manual("", values = "dashed") +
   stat_pointinterval(
-    aes(xdist = sample_pfs_quant, y = trial, color = fit_type),
+    aes(xdist = sample_pfs_quant, y = trial, color = cutoff_label),
     .width = c(0.5, 0.9),
-    position = position_dodge(width = 0.5)
+    position = position_dodge(width = 0.6)
   ) +
   scale_x_continuous("Median PFS (months)", breaks = months_to_weeks(seq(0, 30, 1)), labels = label_weeks_to_months) +
-  scale_color_discrete("", type = AZ_palette, labels = str_to_title) +
+  scale_color_discrete("Data cut-off", type = AZ_palette) +
   labs(y = NULL) +
-  theme(legend.position = "bottom", legend.box = "vertical")
+  theme(legend.position = "bottom")
+```
+
+```{r}
+#| label: fig-median-os
+#| fig-cap: "Posterior median OS (months) by arm (Lilly CXCR4) at each LFO cut-off. Colours indicate progressive data cut-offs by number of target-trial patients observed. Dashed line: observed mature-DCO median OS."
+#| fig-width: 7
+#| fig-height: 3
+#| cache: false
+os_evol |>
+  filter(quantile == 0.5) |>
+  ggplot() +
+  geom_vline(aes(xintercept = obs_median_os_weeks, linetype = "Observed median OS"), color = "grey40", linewidth = 0.5) +
+  scale_linetype_manual("", values = "dashed") +
+  stat_pointinterval(
+    aes(xdist = sample_os_quant, y = trial, color = cutoff_label),
+    .width = c(0.5, 0.9),
+    position = position_dodge(width = 0.6)
+  ) +
+  scale_x_continuous("Median OS (months)", breaks = months_to_weeks(seq(0, 48, 2)), labels = label_weeks_to_months) +
+  scale_color_discrete("Data cut-off", type = AZ_palette) +
+  labs(y = NULL) +
+  theme(legend.position = "bottom")
 ```
 
 ```{r}
 #| label: fig-orr
-#| fig-cap: "Posterior distribution of ORR by arm for the target trial (Lilly CXCR4). Prior (gold) vs posterior (plum). ORR is computed entirely from the mechanistic submodel -- it is a deterministic function of the latent SLD trajectory and requires no multistate hazard. The tight posterior reflects that response depth is well-identified from longitudinal tumour measurements."
+#| fig-cap: "Posterior ORR by arm (Lilly CXCR4) at each LFO cut-off and at the final full-data fit. Each row is a treatment arm; each colour is a progressive data cut-off (number of target-trial patients observed). ORR is derived entirely from the mechanistic submodel. x marks observed ORR from the clinical study report."
 #| fig-width: 7
 #| fig-height: 3
-orr_data <- pub_tar_read("all_tumor_ssls_orr_rvar")
+#| cache: false
+lfo_orr <- lfo_tar_read_pattern("lfo_cutoff_orr_rvar") |>
+  filter(grepl("lilly_cxcr4", trial)) |>
+  mutate(
+    trial = fct_recode(trial, !!!TARGET_ARM_LABELS),
+    cutoff_label = paste0("n = ", n_target_observed)
+  )
+
+full_orr <- pub_tar_read("all_tumor_ssls_orr_rvar") |>
+  filter(grepl("lilly_cxcr4", trial), fit_type == "posterior") |>
+  mutate(
+    trial = fct_recode(trial, !!!TARGET_ARM_LABELS),
+    cutoff_label = "Full data"
+  )
+
+cutoff_levels <- c(
+  unique(lfo_orr$cutoff_label[order(lfo_orr$n_target_observed)]),
+  "Full data"
+)
 
 obs_orr <- tibble(
   trial = c("Arm A (CXCR4 + chemo)", "Arm B (chemo alone)"),
   obs_orr = c(0.85, 0.946)
 )
 
-orr_data |>
-  filter(grepl("lilly_cxcr4", trial)) |>
-  mutate(trial = fct_recode(trial, !!!TARGET_ARM_LABELS)) |>
+bind_rows(lfo_orr, full_orr) |>
+  mutate(cutoff_label = factor(cutoff_label, levels = cutoff_levels)) |>
   ggplot() +
   geom_point(data = obs_orr, aes(x = obs_orr, y = trial), shape = 4, size = 4, stroke = 1.5, color = "grey30") +
   stat_pointinterval(
-    aes(xdist = sample_target_orr, y = trial, color = fit_type),
+    aes(xdist = sample_target_orr, y = trial, color = cutoff_label),
     .width = c(0.5, 0.9),
-    position = position_dodge(width = 0.5)
+    position = position_dodge(width = 0.6)
   ) +
-  scale_color_discrete("", type = AZ_palette, labels = str_to_title) +
+  scale_color_discrete("Data cut-off", type = AZ_palette) +
   scale_x_continuous("Overall Response Rate (ORR)", limits = c(0, 1), labels = scales::label_percent()) +
   labs(y = NULL, caption = "x = observed ORR (target-lesion RECIST best response)") +
   theme(legend.position = "bottom")
