@@ -989,7 +989,7 @@ purrr::imap_dfr(COEF_LABELS, \(label, var_name) {
   ) +
   geom_vline(xintercept = 0, linetype = "dashed", alpha = 0.3) +
   scale_color_discrete("Model component", type = AZ_palette) +
-  labs(x = "Coefficient (original covariate space)", y = NULL) +
+  labs(x = "Coefficient (standardised covariate space)", y = NULL) +
   theme(legend.position = "bottom") +
   guides(color = guide_legend(ncol = 2))
 ```
