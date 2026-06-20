@@ -1037,22 +1037,25 @@ os_evol <- lfo_os_quant |>
   filter(grepl("lilly_cxcr4", trial)) |>
   mutate(
     trial = fct_recode(trial, !!!TARGET_ARM_LABELS),
-    cutoff_label = factor(paste0("n = ", n_target_observed),
-                          levels = paste0("n = ", sort(unique(n_target_observed))))
+    cutoff_label = factor(paste0("n = ", n_target_observed), levels = paste0("n = ", sort(unique(n_target_observed))))
   )
 
 # Observed medians from KM quantiles
-obs_median_pfs_weeks <- pub_tar_read("km_trial_pfs") |>
+obs_median_pfs <- pub_tar_read("km_trial_pfs") |>
   filter(btype == "ub", grepl("lilly_cxcr4", trial)) |>
-  mutate(med = map_dbl(quantiles, \(q) q$pfs[q$quantile == 0.5])) |>
-  pull(med) |>
-  mean()
+  mutate(
+    trial = fct_recode(trial, !!!TARGET_ARM_LABELS),
+    obs_median = map_dbl(quantiles, \(q) q$pfs[q$quantile == 0.5])
+  ) |>
+  select(trial, obs_median)
 
-obs_median_os_weeks <- pub_tar_read("km_trial_os") |>
+obs_median_os <- pub_tar_read("km_trial_os") |>
   filter(btype == "ub", grepl("lilly_cxcr4", trial)) |>
-  mutate(med = map_dbl(quantiles, \(q) q$pfs[q$quantile == 0.5])) |>
-  pull(med) |>
-  mean()
+  mutate(
+    trial = fct_recode(trial, !!!TARGET_ARM_LABELS),
+    obs_median = map_dbl(quantiles, \(q) q$pfs[q$quantile == 0.5])
+  ) |>
+  select(trial, obs_median)
 ```
 
 ```{r}
@@ -1064,8 +1067,14 @@ obs_median_os_weeks <- pub_tar_read("km_trial_os") |>
 pfs_evol |>
   filter(quantile == 0.5) |>
   ggplot() +
-  geom_vline(aes(xintercept = obs_median_pfs_weeks, linetype = "Observed median PFS"), color = "grey40", linewidth = 0.5) +
-  scale_linetype_manual("", values = "dashed") +
+  geom_point(
+    data = obs_median_pfs,
+    aes(x = obs_median, y = trial, shape = "Observed"),
+    size = 10,
+    linewidth = 2,
+    color = "grey30",
+    alpha = 0.5
+  ) +
   stat_pointinterval(
     aes(xdist = sample_pfs_quant, y = trial, color = cutoff_label),
     .width = c(0.5, 0.9),
@@ -1073,21 +1082,28 @@ pfs_evol |>
   ) +
   scale_x_continuous("Median PFS (months)", breaks = months_to_weeks(seq(0, 30, 1)), labels = label_weeks_to_months) +
   scale_color_discrete("Data cut-off", type = AZ_palette) +
+  scale_shape_manual("", values = c("Observed" = "|")) +
   labs(y = NULL) +
   theme(legend.position = "bottom")
 ```
 
 ```{r}
 #| label: fig-median-os
-#| fig-cap: "Posterior median OS (months) by arm (Lilly CXCR4) at each LFO cut-off. Colours indicate progressive data cut-offs by number of target-trial patients observed. Dashed line: observed mature-DCO median OS."
+#| fig-cap: "Posterior median OS (months) by arm (Lilly CXCR4) at each LFO cut-off. Colours indicate progressive data cut-offs by number of target-trial patients observed. x marks observed mature-DCO median OS per arm."
 #| fig-width: 7
 #| fig-height: 3
 #| cache: false
 os_evol |>
   filter(quantile == 0.5) |>
   ggplot() +
-  geom_vline(aes(xintercept = obs_median_os_weeks, linetype = "Observed median OS"), color = "grey40", linewidth = 0.5) +
-  scale_linetype_manual("", values = "dashed") +
+  geom_point(
+    data = obs_median_os,
+    aes(x = obs_median, y = trial, shape = "Observed"),
+    size = 10,
+    linewidth = 2,
+    color = "grey30",
+    alpha = 0.5
+  ) +
   stat_pointinterval(
     aes(xdist = sample_os_quant, y = trial, color = cutoff_label),
     .width = c(0.5, 0.9),
@@ -1095,6 +1111,7 @@ os_evol |>
   ) +
   scale_x_continuous("Median OS (months)", breaks = months_to_weeks(seq(0, 48, 2)), labels = label_weeks_to_months) +
   scale_color_discrete("Data cut-off", type = AZ_palette) +
+  scale_shape_manual("", values = c("Observed" = "|")) +
   labs(y = NULL) +
   theme(legend.position = "bottom")
 ```
@@ -1132,15 +1149,16 @@ obs_orr <- tibble(
 bind_rows(lfo_orr, full_orr) |>
   mutate(cutoff_label = factor(cutoff_label, levels = cutoff_levels)) |>
   ggplot() +
-  geom_point(data = obs_orr, aes(x = obs_orr, y = trial), shape = 4, size = 4, stroke = 1.5, color = "grey30") +
+  geom_point(data = obs_orr, aes(x = obs_orr, y = trial, shape = "Observed"), size = 10, linewidth = 2, color = "grey30", alpha = 0.5) +
   stat_pointinterval(
     aes(xdist = sample_target_orr, y = trial, color = cutoff_label),
     .width = c(0.5, 0.9),
     position = position_dodge(width = 0.6)
   ) +
   scale_color_discrete("Data cut-off", type = AZ_palette) +
+  scale_shape_manual("", values = c("Observed" = "|")) +
   scale_x_continuous("Overall Response Rate (ORR)", limits = c(0, 1), labels = scales::label_percent()) +
-  labs(y = NULL, caption = "x = observed ORR (target-lesion RECIST best response)") +
+  labs(y = NULL, caption = "Observed ORR from clinical study report (target-lesion RECIST best response)") +
   theme(legend.position = "bottom")
 ```
 
