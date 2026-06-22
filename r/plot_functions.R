@@ -1173,6 +1173,293 @@ plot_lfo_elpd_diff <- function(
   return(p)
 }
 
+# Factor levels for the PFS-event markers. Pure strings (the matching AZ_* colours
+# are applied inline in plot_sld_forecast_censored, where .Rprofile has loaded them).
+PFS_EVENT_LEVELS <- c("Target PD", "Non-target PD", "Death on trial", "Dropout")
+
+#' Classify the PFS event for each uncensored patient
+#'
+#' Every uncensored patient (`right_censored == FALSE`) exits via exactly one PFS
+#' event. Rather than infer the event from the RECIST `response` column (which
+#' misses progressions detected only by non-target / new lesions), the event type
+#' is taken straight from the analysis-data `ms_pattern` and `det_right_censored`
+#' fields.
+#'
+#' Event typing:
+#' - `progressed_*` + target-lesion PD seen (`det_right_censored == FALSE`) → Target PD
+#' - `progressed_*` + no target-lesion PD                                   → Non-target PD
+#' - `died_on_trial`                                                        → Death on trial
+#' - `died_off_trial`                                                       → Dropout
+#'
+#' Marker placement: PD and on-trial-death events land at the official `pfs`
+#' event week. `died_off_trial` patients are treated as dropouts — they left the
+#' study and died later off-trial — so their marker sits at the *last observed
+#' visit* (`max(week)` over the patient's obs rows), not the post-dropout death
+#' week, since the trial only observed them up to that visit.
+#'
+#' @param sld_data Staged SLD data (obs + forecast rows); supplies the per-patient
+#'   index `i`, `usubjid`, and observed `week`s
+#' @param analysis_data Analysis data carrying `ms_pattern`, `det_right_censored`,
+#'   and `pfs`, joined to `sld_data` by `usubjid`
+#' @return A tibble with one row per uncensored patient: `i`, `event_week`,
+#'   `event_type` (factor over `PFS_EVENT_LEVELS`)
+get_pfs_event_markers <- function(sld_data, analysis_data) {
+  last_visit <- sld_data |>
+    filter(!right_censored, stage == "obs") |>
+    group_by(i, usubjid) |>
+    summarise(last_visit_week = max(week), .groups = "drop")
+
+  last_visit |>
+    inner_join(
+      analysis_data |> select(usubjid, ms_pattern, det_right_censored, pfs),
+      by = "usubjid"
+    ) |>
+    mutate(
+      event_type = case_when(
+        ms_pattern == "died_on_trial"  ~ "Death on trial",
+        ms_pattern == "died_off_trial" ~ "Dropout",
+        ms_pattern %in% c("progressed_died", "progressed_alive") & !det_right_censored ~ "Target PD",
+        ms_pattern %in% c("progressed_died", "progressed_alive") &  det_right_censored ~ "Non-target PD",
+        TRUE ~ NA_character_
+      ),
+      event_type = factor(event_type, levels = PFS_EVENT_LEVELS),
+      # Dropouts are marked at their last on-study visit; all other events at the PFS week.
+      event_week = if_else(event_type == "Dropout", last_visit_week, pfs)
+    ) |>
+    filter(!is.na(event_type)) |>
+    transmute(i, event_week, event_type)
+}
+
+#' Plot SLD forecasts for censored patients
+#'
+#' @param sld_data Pre-filtered SLD data for the desired DCO and patient cohort
+#' @param analysis_data Analysis data with PFS-event columns; when supplied,
+#'   dashed vertical lines mark each uncensored patient's PFS event, coloured by
+#'   type (target PD / non-target PD / death on trial / dropout). PD and death
+#'   events sit at the `pfs` week; dropouts sit at the last observed visit.
+#'   Right-censored patients have no event and so no line. Pass `NULL` to omit
+#'   the markers entirely.
+#' @return A ggplot object with SLD forecasts
+plot_sld_forecast_censored <- function(sld_data, analysis_data = NULL) {
+  # Per-patient SLD cap: squish each patient's rvar draws to 2× their max observed
+  # SLD at the data level. Long-horizon Gompertz regrowth can reach billions of mm,
+  # compressing the observed window into a sliver. We cap draws directly (via
+  # draws_of/pmin) rather than using ggh4x::facetted_pos_scales, which is broken
+  # with ggplot2 >= 4.0 (data$PANEL is NULL at the ggh4x finish_data hook point).
+  caps <- sld_data |>
+    group_by(i) |>
+    summarise(cap_mm = 2 * max(mmsumdiam, na.rm = TRUE) * 10, .groups = "drop")
+
+  pobj <- sld_data |>
+    mutate(patient_sld = patient_sld * 10) |>
+    left_join(caps, by = "i") |>
+    mutate(
+      patient_sld = purrr::map2(
+        patient_sld, cap_mm,
+        \(r, cap_val) posterior::rvar(pmin(posterior::draws_of(r), cap_val))
+      ) |> do.call(what = c)
+    ) |>
+    select(-cap_mm) |>
+    plot_dynamics(patient_sld)
+
+  if (!is.null(analysis_data)) {
+    event_markers <- get_pfs_event_markers(sld_data, analysis_data)
+    pobj <- pobj +
+      geom_vline(
+        data = event_markers,
+        aes(xintercept = event_week, colour = event_type),
+        linewidth = 0.8,
+        linetype = "dashed"
+      ) +
+      scale_colour_manual(
+        "PFS event",
+        values = c(
+          "Target PD"      = AZ_navy,
+          "Non-target PD"  = AZ_turquoise,
+          "Death on trial" = AZ_pink,
+          "Dropout"        = AZ_gold
+        ),
+        drop = FALSE
+      )
+  }
+
+  pobj +
+    scale_x_continuous("Months", breaks = months_to_weeks(seq(0, 48, 12)), label = label_weeks_to_months) +
+    labs(y = "SLD [mm]") +
+    theme(legend.position = "bottom", strip.text = element_blank()) +
+    NULL
+}
+
+plot_recist_censored <- function(recist_data) {
+  recist_data |>
+    plot_recist_predictions(x_breaks = months_to_weeks(seq(0, 60, 12)))
+}
+
+plot_km_evolution <- function(
+  lfo_km_data,
+  km_est_var = sample_pfs_km_est,
+  trials = NULL,
+  obs_km_data = NULL,
+  final_km_data = NULL,
+  max_weeks = 104,
+  base_size = 12,
+  overall_color = AZ_palette[6]
+) {
+  var_quo <- enquo(km_est_var)
+
+  if (!is.null(trials)) {
+    lfo_km_data <- lfo_km_data |>
+      filter(trial %in% trials) |>
+      mutate(trial = fct_drop(trial))
+  }
+
+  label_order <- lfo_km_data |>
+    distinct(cutoff_calendar_day, n_target_observed) |>
+    arrange(cutoff_calendar_day) |>
+    mutate(cutoff_label = sprintf("Month %d (n=%d)", round(cutoff_calendar_day / 30.44), n_target_observed)) |>
+    pull(cutoff_label)
+
+  plot_data <- lfo_km_data |>
+    mutate(
+      cutoff_label = factor(
+        sprintf("Month %d (n=%d)", round(cutoff_calendar_day / 30.44), n_target_observed),
+        levels = label_order
+      ),
+      km_median = median(!!var_quo),
+      km_lower  = posterior::quantile2(!!var_quo, 0.1),
+      km_upper  = posterior::quantile2(!!var_quo, 0.9)
+    )
+
+  p <- ggplot(plot_data, aes(x = weeks_to_months(t - 1L))) +
+    geom_ribbon(aes(ymin = km_lower, ymax = km_upper), alpha = 0.2, fill = AZ_navy) +
+    geom_line(aes(y = km_median), linewidth = 0.8, color = AZ_navy) +
+    scale_y_continuous(labels = scales::percent, limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+    scale_x_continuous(
+      breaks = seq(0, weeks_to_months(max_weeks), 6),
+      limits = c(0, weeks_to_months(max_weeks))
+    ) +
+    labs(
+      x = "Months from Treatment Start",
+      y = "Progression-Free Survival",
+      caption = "Ribbons represent 80% credible intervals; lines show posterior median survival curves."
+    ) +
+    facet_grid(trial ~ cutoff_label) +
+    theme_minimal(base_size = base_size) +
+    theme(
+      plot.title = element_text(face = "bold"),
+      panel.grid.minor = element_blank(),
+      strip.text = element_text(face = "bold"),
+      plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))
+    )
+
+  if (!is.null(obs_km_data)) {
+    if ("cutoff_calendar_day" %in% names(obs_km_data)) {
+      obs_km_data <- obs_km_data |>
+        dplyr::mutate(
+          cutoff_label = factor(
+            sprintf("Month %d (n=%d)", round(cutoff_calendar_day / 30.44), n_target_observed),
+            levels = label_order
+          )
+        )
+    }
+    obs_km_data <- obs_km_data |> dplyr::filter(btype == "lb")
+    p <- p +
+      geom_step(
+        data = obs_km_data,
+        aes(x = weeks_to_months(t), y = s, color = "At cutoff", linetype = "At cutoff"),
+        linewidth = 0.75, alpha = 0.7,
+        inherit.aes = FALSE
+      ) +
+      geom_point(
+        data = obs_km_data |> dplyr::filter(c > 0),
+        aes(x = weeks_to_months(t), y = s),
+        color = AZ_palette[5], shape = 3, size = 1.5, stroke = 0.7,
+        inherit.aes = FALSE, show.legend = FALSE
+      )
+  }
+
+  if (!is.null(final_km_data)) {
+    if (!is.null(trials)) {
+      final_km_data <- final_km_data |>
+        filter(trial %in% trials) |>
+        mutate(trial = fct_drop(trial))
+    }
+    p <- p +
+      geom_step(
+        data = final_km_data,
+        aes(x = weeks_to_months(t), y = s, color = "Overall", linetype = "Overall"),
+        linewidth = 1.1, alpha = 1,
+        inherit.aes = FALSE
+      )
+  }
+
+  if (!is.null(obs_km_data) || !is.null(final_km_data)) {
+    p <- p +
+      scale_color_manual(
+        "Observed KM",
+        values = c("At cutoff" = AZ_palette[5], "Overall" = overall_color)
+      ) +
+      scale_linetype_manual(
+        "Observed KM",
+        values = c("At cutoff" = "solid", "Overall" = "dashed")
+      )
+  }
+
+  p
+}
+
+plot_km <- function(
+  res_data,
+  km_est_var = sample_target_km_est,
+  obs_km_data = NULL,
+  analysis_data = NULL,
+  facet_col = NULL,
+  group = fit_type,
+  alpha_group = NULL,
+  color_group = NULL,
+  ...
+) {
+  p <- res_data |>
+    select(
+      trial,
+      t,
+      {{ km_est_var }},
+      {{ facet_col }},
+      {{ group }},
+      {{ alpha_group }},
+      {{ color_group }}
+    ) |>
+    base_plot_km(
+      obs_km_data = obs_km_data,
+      km_est = {{ km_est_var }},
+      analysis_data = analysis_data,
+      linewidth = 0.5,
+      group = !!enquo(group),
+      alpha_group = !!enquo(alpha_group),
+      color_group = !!enquo(color_group),
+      ...
+    ) +
+    scale_x_continuous(
+      "Months",
+      breaks = months_to_weeks(seq(0, 60, 6)),
+      label = label_weeks_to_months
+    ) +
+    scale_fill_discrete("", label = str_to_title, type = AZ_palette) +
+    scale_color_discrete(
+      "Interval Censored Observed KM",
+      label = c("lb" = "Lower Bound", "ub" = "Upper Bound"),
+      type = AZ_palette[-c(1:4)]
+    ) +
+    scale_alpha_manual("", values = c(prior = 0.125, posterior = 0.25)) +
+    guides(color = "none")
+
+  if (!rlang::quo_is_null(rlang::enquo(facet_col))) {
+    p <- p + facet_wrap(vars({{ facet_col }}))
+  }
+
+  p
+}
+
 # nolint end: object_usage_linter
 
 plot_competing_risks_cif <- function(

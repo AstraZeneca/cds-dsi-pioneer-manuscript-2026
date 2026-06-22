@@ -63,6 +63,7 @@ Two §6 subsections that were demoted to brief mentions in the Discussion:
 ## Open to-dos
 
 ### Manuscript content
+- [ ] Add bib entry for CPT:PSP 2025 (doi:10.1002/psp4.70095) — primary citation for unbounded-growth defect of the biexponential family; replace the `<!-- TODO -->` comment in `@sec-mech-gompertz`.
 - [ ] Pull exact abstracts/quotes from Kerioui 2020 and Bruno 2020.
 - [ ] Add Hougaard / multistate-survival textbook reference; check Buyse 2000 for surrogacy.
 - [ ] Fill in the FDA MIDD reference placeholder (currently `[FDA MIDD references — TBD]`).

@@ -242,6 +242,17 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
   # Initial proportion logit
   init_logit_loc_pop_mean <- 0.0 # formerly pop_decrease_prop_logis_mean
   init_logit_loc_pop_sd <- 0.8 # tightened from 1.5 (was extremely wide!)
+  # Static-vs-growth split prior. Centered so static is a modest minority of the
+  # non-decreasing fraction at baseline; weakly informative.
+  init_logit_static_loc_pop_mean <- -0.85  # inv_logit(-0.85) ~ 0.30 of the "rest"
+  init_logit_static_loc_pop_sd <- 0.8
+
+  # Gompertz growth-rate decay: weakly-informative prior on log(kappa).
+  # Centered at log(0.02) /week (growth-rate half-life ~35 wk; plateau over a
+  # multi-year horizon). sd=0.75 => 95% prior kappa in ~[0.0045, 0.087], wide
+  # enough that data can contract toward 0 (linear arms) or strong decay.
+  gr_decay_log_loc_pop_mean <- log(0.02)
+  gr_decay_log_loc_pop_sd <- 0.75
 
   # Get n_levels from stan_data (default 2 for backward compat)
   n_levels <- stan_data$n_levels %||% 2L
@@ -346,6 +357,8 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     # Initial state proportion module hyperparams (multi-level): c(trial, patient)
     init_logit_loc_pop_mean = init_logit_loc_pop_mean,
     init_logit_loc_pop_sd = init_logit_loc_pop_sd,
+    init_logit_static_loc_pop_mean = init_logit_static_loc_pop_mean,
+    init_logit_static_loc_pop_sd = init_logit_static_loc_pop_sd,
     init_sd_level_intercept_sd = c(0.6, 0.5),
     init_fe_sd_level_intercept = rep(0, n_levels),
     init_nu_level_prior_alpha = rep(2, n_levels),
@@ -355,6 +368,24 @@ get_tumor_priors <- function(stan_data, coef_elicited_priors,
     init_sd_level_slope_sd = list(
       trial = rep(0.10, n_covar),
       patient = rep(0.08, n_covar)
+    ),
+
+    # Gompertz decay module hyperparams (lean pop-level)
+    # kappa = exp(log_loc_pop + covar + level effects), so EVERY log-scale term is
+    # exponentiated. A unit-SD covariate prior is far too diffuse here: at early LFO
+    # cutoffs (~3 wk data) kappa is unidentified and the covariate term ran to ±5 in
+    # QR space, blowing kappa up to ~1e6 and producing a flat exp(-kappa*t) ridge that
+    # caused 132 divergences at n=3. Tighten to 0.25 so a 2-sigma covariate swing
+    # multiplies kappa by ~exp(0.5)=1.6x (was exp(2)=7.4x, compounding across covars).
+    gr_decay_log_loc_pop_mean = gr_decay_log_loc_pop_mean,
+    gr_decay_log_loc_pop_sd = gr_decay_log_loc_pop_sd,
+    gr_decay_coef_qr_pop_mean = as.array(rep(0, n_covar)),
+    gr_decay_coef_qr_pop_sd = as.array(rep(0.25, n_covar)),
+    gr_decay_sd_level_intercept_sd = rep(0.25, n_levels),
+    gr_decay_fe_sd_level_intercept = rep(0, n_levels),
+    gr_decay_sd_level_slope_sd = list(
+      trial = rep(0.05, n_covar),
+      patient = rep(0.03, n_covar)
     ),
 
     # Growth lag
