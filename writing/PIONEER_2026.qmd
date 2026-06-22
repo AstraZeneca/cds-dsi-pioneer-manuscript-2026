@@ -416,7 +416,7 @@ First, the bridge uses the *latent* burden $B_i(t)$ from (@eq-sld-decomp), not t
 
 Second, the *baseline* rates $\log r^{\mathrm{dec}}_i$ and $\log r^{\mathrm{gro}}_i$ are patient-specific but time-invariant; the Gompertz decay mechanism in @sec-mech-gompertz makes the *effective* growth rate time-varying at the trajectory level, but the bridge receives the latent burden $B_i(t)$ directly, which already incorporates that attenuation. The rates appear in $\mathbf{W}_i(t)$ rather than in $\mathbf{x}_i$ because the framework also supports the AR(1) variant in which they become explicitly time-varying (cf. the footnote in @sec-mech-dynamics); the bridge is structured to accommodate that extension without changing the multistate submodel's interface.
 
-In the case-study configuration, the bridge feeds the $0\to 1$ progression and $0\to 3$ dropout hazards. The framework also supports feeding it into the direct-death ($0\to 2$) and post-progression death ($1\to 2$) hazards; we do not exercise these in the case study for the identification reasons given in @sec-ms-hazard. The resulting bridge coefficients are reported in @fig-bridge-effects.
+In the case-study configuration, the bridge feeds the $0\to 1$ progression and $0\to 3$ dropout hazards. The framework also supports feeding it into the direct-death ($0\to 2$) and post-progression death ($1\to 2$) hazards; we do not exercise these in the case study for the identification reasons given in @sec-ms-hazard. The resulting bridge coefficients are reported in the bottom panel of @fig-covariate-effects.
 
 #### Gaussian-process baselines {#sec-ms-gp}
 
@@ -517,7 +517,7 @@ Direct death without progression *is* a PFS event (PFS fails at the death time);
 
 - Fig. 4.1 — multistate state diagram (this section, @fig-multistate-diagram).
 - Fig. 4.2 — illustrative posterior baseline hazards $\lambda_{01}, \lambda_{02}, \lambda_{12}$ from SCLC-01.
-- The bridge $\mathbf{W}_i(t)$ coefficient forest plot is shown with the results in @fig-bridge-effects.
+- The bridge $\mathbf{W}_i(t)$ coefficient forest plot is shown with the results in the bottom panel of @fig-covariate-effects.
 
 ### Priors and the multi-level hierarchy {#sec-priors}
 
@@ -951,12 +951,12 @@ RECIST classification sensitivity over successive LFO cut-off dates. PD sensitiv
 
 The key observation is that the same covariate can act in opposite directions on different transitions. For example, haemoglobin shows a clear negative coefficient on the $0\to 1$ progression hazard (higher Hgb → lower progression risk) but a positive coefficient on $1\to 2$ post-progression death — consistent with the clinical interpretation that anaemia is prognostic for both progression and post-progression mortality, but through different mechanisms. The $0\to 2$ direct-death coefficients have the widest credible intervals, reflecting the small number of direct-death events available to identify these effects. This is the structural advantage of the multistate formulation: a single-hazard model would average these opposing effects into one coefficient, losing the transition-specific clinical signal.
 
-@fig-covariate-effects covers the *time-invariant* baseline covariates. The model's other coupling to the hazards is the time-varying tumour bridge $\mathbf{W}_i(t)$ (@sec-ms-bridge) — standardised latent log-burden and the patient-specific log decrease/growth rates — whose coefficients $\boldsymbol{\beta}^{\mathrm{tv}}_{jk}$ are shown in @fig-bridge-effects. These act on a different covariate axis (three tumour-derived features rather than the six baseline covariates) and so are plotted separately. We show only the two transitions into which the bridge actually feeds in the case-study configuration — non-target progression ($0\to 1$) and dropout ($0\to 3$); the bridge is not wired into the direct-death or post-progression-death hazards here (@sec-ms-bridge), so those coefficients are not estimable from the data. The standardised-log-burden coefficient on $0\to 1$ is positive (larger latent tumour burden → higher per-visit progression hazard), the expected sign and the mechanistic heart of the joint model: the multistate progression channel tracks the latent trajectory inferred from the SLD record. The decrease/growth-rate coefficients are more diffuse — burden *level* carries most of the per-visit signal once it is conditioned on — and the dropout bridge is identified only weakly, consistent with the modest number of dropout events.
+The top panel of @fig-covariate-effects shows the *time-invariant* baseline covariates. The bottom panel shows the model's other coupling to the hazards: the time-varying tumour bridge $\mathbf{W}_i(t)$ (@sec-ms-bridge) — standardised latent log-burden and the patient-specific log decrease/growth rates — whose coefficients $\boldsymbol{\beta}^{\mathrm{tv}}_{jk}$ act on a different covariate axis (three tumour-derived features rather than the six baseline covariates), hence the separate, narrower panel sharing the same colour scale. The bridge feeds only two transitions in the case-study configuration — non-target progression ($0\to 1$) and dropout ($0\to 3$); it is not wired into the direct-death or post-progression-death hazards here (@sec-ms-bridge), so those have no bridge coefficient to estimate. The standardised-log-burden coefficient on $0\to 1$ is positive (larger latent tumour burden → higher per-visit progression hazard), the expected sign and the mechanistic heart of the joint model: the multistate progression channel tracks the latent trajectory inferred from the SLD record. The decrease/growth-rate coefficients are more diffuse — burden *level* carries most of the per-visit signal once it is conditioned on — and the dropout bridge is identified only weakly, consistent with the modest number of dropout events.
 
 ```{r}
 #| label: fig-covariate-effects
-#| fig-cap: "Posterior covariate effects (standardised covariate space) across seven model components: growth-rate balance, initial decreasing fraction, and Gompertz growth-rate decay $\\kappa$ (tumour dynamics submodel); and the four multistate transition hazards — progression $0\\to 1$, direct death $0\\to 2$, dropout $0\\to 3$, and post-progression death $1\\to 2$. Coefficients are back-transformed from the QR reparameterisation used during sampling and represent log-hazard or logit-scale changes per one standard deviation of each covariate. Intervals show 50% and 90% credible intervals."
-#| fig-height: 7
+#| fig-cap: "Posterior covariate effects across model components, with a shared colour scale. **Top panel — time-invariant baseline covariates:** growth-rate balance, initial decreasing fraction, and Gompertz growth-rate decay $\\kappa$ (tumour dynamics submodel), and the four multistate transition hazards — progression $0\\to 1$, direct death $0\\to 2$, dropout $0\\to 3$, post-progression death $1\\to 2$ — back-transformed from the QR reparameterisation used during sampling. **Bottom panel — time-varying tumour bridge $\\mathbf{W}_i(t)$** (@sec-ms-bridge): standardised latent log-burden and the patient-specific log decrease/growth rates, for the two transitions the bridge feeds in the case-study configuration ($0\\to 1$ and $0\\to 3$); these are read directly (not QR-rotated). Both panels are on a standardised, per-one-standard-deviation scale (log-hazard or logit). Intervals show 50% and 90% credible intervals. The bottom panel is narrower because the bridge has three features against the six baseline covariates; the $1\\to 2$ and $0\\to 2$ hazards do not carry the bridge here and so have no bridge coefficients to show."
+#| fig-height: 8
 #| fig-width: 10
 #| cache: false
 covar_names <- colnames(pub_tar_read("covar_design_matrix"))
@@ -987,43 +987,10 @@ COVAR_LABELS <- c(
   albumin = "Albumin (g/L)"
 )
 
-purrr::imap_dfr(COEF_LABELS, \(label, var_name) {
-  v <- rv[[var_name]]
-  tibble::tibble(
-    component = label,
-    n = seq_along(v),
-    .value = v
-  )
-}) |>
-  mutate(
-    covar = factor(COVAR_LABELS[covar_names[n]], levels = unname(COVAR_LABELS)),
-    component = factor(component, levels = unname(COEF_LABELS))
-  ) |>
-  ggplot() +
-  stat_pointinterval(
-    aes(xdist = .value, y = covar, color = component),
-    .width = c(0.5, 0.9),
-    point_size = 1.5,
-    position = position_dodge(width = 0.6)
-  ) +
-  geom_vline(xintercept = 0, linetype = "dashed", alpha = 0.3) +
-  scale_color_discrete("Model component", type = AZ_palette) +
-  labs(x = "Coefficient (standardised covariate space)", y = NULL) +
-  theme(legend.position = "bottom") +
-  guides(color = guide_legend(ncol = 2))
-```
-
-```{r}
-#| label: fig-bridge-effects
-#| fig-cap: "Posterior coefficients of the time-varying tumour bridge $\\mathbf{W}_i(t)$ (@sec-ms-bridge) — standardised latent log-burden and the patient-specific log decrease/growth rates — for the two transitions into which the bridge feeds in the case-study configuration: non-target progression ($0\\to 1$) and dropout ($0\\to 3$). Coefficients are on the standardised bridge scale (log-hazard change per standard deviation of each feature); unlike the baseline covariates of @fig-covariate-effects they are not QR-rotated, so they are read directly. Intervals show 50% and 90% credible intervals. The $1\\to 2$ post-progression-death and $0\\to 2$ direct-death hazards do not carry the bridge in this configuration and are omitted."
-#| fig-height: 3.4
-#| fig-width: 9
-#| cache: false
-rv_bridge <- posterior::as_draws_rvars(pub_tar_read("tumor_ssls_draws_pop_posterior"))
-
-# Bridge feature order matches eq-ms-bridge: standardised log-burden, log
-# decrease rate, log growth rate. Only transitions the bridge actually feeds
-# (0->1, 0->3) are data-informed; 1->2 carries a prior-only coefficient.
+# Bridge (time-varying) feature order matches eq-ms-bridge: standardised
+# log-burden, log decrease rate, log growth rate. Only the transitions the
+# bridge actually feeds (0->1, 0->3) are data-informed; 1->2 is prior-only and
+# 0->2 has no bridge coefficient, so both are excluded.
 BRIDGE_FEATURES <- c(
   "Standardised log-burden",
   "Log decrease rate",
@@ -1034,29 +1001,53 @@ BRIDGE_COEFS <- c(
   time_varying_coef_03 = "Dropout hazard (0→3)"
 )
 
-purrr::imap_dfr(BRIDGE_COEFS, \(label, var_name) {
-  v <- rv_bridge[[var_name]]
+PANEL_LEVELS <- c(
+  "Baseline covariates (time-invariant)",
+  "Tumour bridge (time-varying)"
+)
+
+# Time-invariant panel: y = baseline covariate, colour = model component.
+ti_df <- purrr::imap_dfr(COEF_LABELS, \(label, var_name) {
+  v <- rv[[var_name]]
   tibble::tibble(
     component = label,
-    n = seq_along(v),
+    feature = unname(COVAR_LABELS[covar_names[seq_along(v)]]),
     .value = v
   )
 }) |>
+  mutate(panel = PANEL_LEVELS[1])
+
+# Time-varying panel: y = bridge feature, colour = transition (a subset of the
+# same `component` levels, so the colour scale is shared across panels).
+tv_df <- purrr::imap_dfr(BRIDGE_COEFS, \(label, var_name) {
+  v <- rv[[var_name]]
+  tibble::tibble(
+    component = label,
+    feature = BRIDGE_FEATURES[seq_along(v)],
+    .value = v
+  )
+}) |>
+  mutate(panel = PANEL_LEVELS[2])
+
+dplyr::bind_rows(ti_df, tv_df) |>
   mutate(
-    feature = factor(BRIDGE_FEATURES[n], levels = BRIDGE_FEATURES),
-    component = factor(component, levels = unname(BRIDGE_COEFS))
+    feature = factor(feature, levels = c(unname(COVAR_LABELS), BRIDGE_FEATURES)),
+    component = factor(component, levels = unname(COEF_LABELS)),
+    panel = factor(panel, levels = PANEL_LEVELS)
   ) |>
   ggplot() +
   stat_pointinterval(
     aes(xdist = .value, y = feature, color = component),
     .width = c(0.5, 0.9),
     point_size = 1.5,
-    position = position_dodge(width = 0.5)
+    position = position_dodge(width = 0.6)
   ) +
   geom_vline(xintercept = 0, linetype = "dashed", alpha = 0.3) +
-  scale_color_discrete("Transition", type = AZ_palette) +
-  labs(x = "Coefficient (standardised bridge scale)", y = NULL) +
-  theme(legend.position = "bottom")
+  facet_grid(rows = vars(panel), scales = "free_y", space = "free_y") +
+  scale_color_discrete("Model component", type = AZ_palette, drop = FALSE) +
+  labs(x = "Coefficient (standardised, per 1 SD; log-hazard or logit scale)", y = NULL) +
+  theme(legend.position = "bottom") +
+  guides(color = guide_legend(ncol = 2))
 ```
 
 ### Clinical endpoint summaries {#sec-results-endpoints}
