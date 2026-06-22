@@ -416,7 +416,7 @@ First, the bridge uses the *latent* burden $B_i(t)$ from (@eq-sld-decomp), not t
 
 Second, the *baseline* rates $\log r^{\mathrm{dec}}_i$ and $\log r^{\mathrm{gro}}_i$ are patient-specific but time-invariant; the Gompertz decay mechanism in @sec-mech-gompertz makes the *effective* growth rate time-varying at the trajectory level, but the bridge receives the latent burden $B_i(t)$ directly, which already incorporates that attenuation. The rates appear in $\mathbf{W}_i(t)$ rather than in $\mathbf{x}_i$ because the framework also supports the AR(1) variant in which they become explicitly time-varying (cf. the footnote in @sec-mech-dynamics); the bridge is structured to accommodate that extension without changing the multistate submodel's interface.
 
-In the case-study configuration, the bridge feeds the $0\to 1$ progression hazard only. The framework supports feeding the bridge into other clock-forward transitions ($0\to 2$, $0\to 3$) and into the post-progression death hazard ($1\to 2$); we do not exercise these in the case study for the identification reasons given in @sec-ms-hazard.
+In the case-study configuration, the bridge feeds the $0\to 1$ progression and $0\to 3$ dropout hazards. The framework also supports feeding it into the direct-death ($0\to 2$) and post-progression death ($1\to 2$) hazards; we do not exercise these in the case study for the identification reasons given in @sec-ms-hazard. The resulting bridge coefficients are reported in @fig-bridge-effects.
 
 #### Gaussian-process baselines {#sec-ms-gp}
 
