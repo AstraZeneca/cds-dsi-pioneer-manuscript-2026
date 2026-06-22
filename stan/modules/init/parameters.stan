@@ -6,6 +6,10 @@
 // Population intercept (always on)
 real init_logit_loc_pop;
 
+// Static-vs-growth logit among the non-decreasing fraction.
+// Length 1 when enabled, 0 when disabled (no sampling cost when off).
+array[enable_static_init ? 1 : 0] real init_logit_static_loc_pop;
+
 // Population covariate coefficients (QR space) — length 0 if disabled
 vector[enable_pop_cov_init ? n_covar : 0] init_coef_qr_pop;
 

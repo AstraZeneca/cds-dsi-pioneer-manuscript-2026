@@ -5,6 +5,11 @@
 // Population intercept
 init_logit_loc_pop ~ normal(init_logit_loc_pop_mean, init_logit_loc_pop_sd);
 
+// Static-vs-growth split prior
+if (enable_static_init) {
+  init_logit_static_loc_pop[1] ~ normal(init_logit_static_loc_pop_mean, init_logit_static_loc_pop_sd);
+}
+
 // Population covariate effects
 if (enable_pop_cov_init) {
   init_coef_qr_pop ~ normal(init_coef_qr_pop_mean, init_coef_qr_pop_sd);
