@@ -278,6 +278,16 @@ publication_targets <- list(
         get_km_res(os_time, os_censored, by = group, probs = km_quant)
     ),
 
+    # Observed ORR (confirmed objective response, before PFS), per group.
+    # Matches the model's predicted `sample_target_orr` estimand exactly
+    # (confirmed 2-consecutive PR/CR before PFS, on det_response) so the
+    # observed marker on the ORR plot is like-for-like, replacing the
+    # previously hardcoded best-response-ever values.
+    tar_target(
+      obs_orr,
+      calc_observed_orr(all_analysis_data)
+    ),
+
     # Covariates -----------------------------------------------------------------
 
     tar_target(
