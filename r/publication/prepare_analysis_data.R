@@ -101,4 +101,49 @@ prepare_publication_analysis_data <- function(
     })()
 }
 
+#' Observed ORR (confirmed objective response, before PFS) per hierarchy group.
+#'
+#' Computes the OBSERVED objective response rate to match the model's predicted
+#' `sample_target_orr` estimand exactly (Stan `burden_orr_use_confirmed_response = 1`):
+#' a patient is a responder if their SLD-derived RECIST (`det_response`) reaches a
+#' CONFIRMED response — two consecutive assessments at PR or CR — with the
+#' confirmation occurring BEFORE the progression-free-survival event time.
+#'
+#' Using `det_response` (not the investigator `response` column) keeps the observed
+#' marker on the same RECIST source the model predicts, so the comparison is
+#' like-for-like. The denominator is every patient in the group (matches the
+#' model's per-patient `sample_target_orr` denominator).
+#'
+#' Confirmation week = the first of the two consecutive PR/CR visits (the
+#' `find_consecutive` start index), the same convention as `calc_confirmed_response()`
+#' and `determine_pfs()`. Confirmation is adjacent-visit (no extra minimum-interval
+#' rule), matching the Stan `min_run_length = 2`.
+#'
+#' @param analysis_data Combined analysis data (e.g. `all_analysis_data`) with a
+#'   `group` factor (trial×arm), a numeric `pfs` (weeks), and a nested `visit_data`
+#'   list-column carrying `week` and the ordered factor `det_response`.
+#' @return A tibble with one row per `group`: `trial` (= group), `n` (patients),
+#'   `n_responders`, and `obs_orr`.
+calc_observed_orr <- function(analysis_data) {
+  analysis_data |>
+    transmute(
+      trial = group,
+      pfs,
+      confirmed_response_week = map_dbl(visit_data, \(d) {
+        on_study <- filter(d, week >= 0) |> arrange(week)
+        is_pr_cr <- on_study$det_response %in% c("CR", "PR")
+        start_idx <- find_consecutive(is_pr_cr, TRUE, n = 2)
+        if (is.na(start_idx)) NA_real_ else on_study$week[start_idx]
+      }),
+      responder = !is.na(confirmed_response_week) & confirmed_response_week < pfs
+    ) |>
+    group_by(trial) |>
+    summarise(
+      n = n(),
+      n_responders = sum(responder),
+      obs_orr = mean(responder),
+      .groups = "drop"
+    )
+}
+
 # nolint end: object_usage_linter
