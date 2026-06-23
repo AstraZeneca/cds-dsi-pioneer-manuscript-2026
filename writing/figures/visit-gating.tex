@@ -1,0 +1,102 @@
+% Compile: pdflatex -output-directory=writing/figures writing/figures/visit-gating.tex
+% Convert : pdf2svg writing/figures/visit-gating.pdf writing/figures/visit-gating.svg
+\documentclass[tikz,border=10pt]{standalone}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows.meta,positioning,calc,decorations.pathreplacing}
+\usepackage{amsmath,amssymb}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{sfmath}
+
+\begin{document}
+
+% AstraZeneca palette
+\definecolor{azNavy}{HTML}{003865}
+\definecolor{azGold}{HTML}{F0AB00}
+\definecolor{azPlum}{HTML}{830051}
+\definecolor{azPlat}{HTML}{9DB0AC}
+\definecolor{azTurq}{HTML}{68D2DF}
+
+\begin{tikzpicture}[
+  >={Stealth[length=2.2mm]},
+  axislbl/.style={font=\footnotesize, text=black},
+  wktick/.style={azPlat, line width=0.6pt},
+  visittick/.style={azNavy, line width=1.4pt},
+  hazbar/.style={azNavy, line width=2.2pt},
+  gaplbl/.style={font=\scriptsize\itshape, text=azPlat},
+  visitlbl/.style={font=\scriptsize, text=azNavy},
+  eventlbl/.style={font=\scriptsize, text=azPlum},
+  caplbl/.style={font=\small, align=left}
+]
+
+% ---- geometry --------------------------------------------------------------
+% x runs 0..13 weeks; scheduled assessments every ~3 weeks at 0,3,6,9,12.
+\def\xmax{13}
+\def\xV{9}      % detection visit V
+\def\xVprev{6}  % previous clean visit
+
+% ============================================================================
+% ROW 1: progression channel (0->1), visit-gated
+% ============================================================================
+\begin{scope}[shift={(0,0)}]
+  % baseline axis
+  \draw[->, line width=0.8pt] (-0.3,0) -- (\xmax+0.6,0);
+  \node[axislbl, anchor=west] at (\xmax+0.6,0) {week $t$};
+
+  % light weekly ticks
+  \foreach \w in {1,2,4,5,7,8,10,11} {
+    \draw[wktick] (\w,-0.10) -- (\w,0.10);
+  }
+
+  % scheduled assessment weeks (bold navy ticks)
+  \foreach \w in {0,3,6,9,12} {
+    \draw[visittick] (\w,-0.16) -- (\w,0.16);
+  }
+  \node[visitlbl, anchor=north] at (0,-0.22)  {enrol};
+  \node[visitlbl, anchor=north] at (3,-0.22)  {$t_{i,1}$};
+  \node[visitlbl, anchor=north] at (6,-0.22)  {$t_{i,V-1}$};
+  \node[visitlbl, anchor=north] at (9,-0.22)  {$t_{i,V}$};
+  \node[visitlbl, anchor=north] at (12,-0.22) {$t_{i,V+1}$};
+
+  % survival contributions: hazard "ticks" only at visit weeks before detection
+  \foreach \w in {3,6} {
+    \draw[hazbar] (\w,0) -- (\w,0.7);
+    \node[visitlbl, anchor=south] at (\w,0.72) {$e^{-\lambda_{01,i}}$};
+  }
+
+  % detection event at visit V
+  \draw[azPlum, line width=2.4pt] (\xV,0) -- (\xV,0.95);
+  \node[eventlbl, anchor=south, text width=2.6cm, align=center]
+    at (\xV,0.98) {detection\\$1-e^{-\lambda_{01,i}(t_{i,V})}$};
+
+  % brace over the unobserved gap [t_{V-1}, t_V]
+  \draw[decorate, decoration={brace, amplitude=4pt, mirror}, azPlat, line width=0.7pt]
+    (\xVprev,-0.95) -- (\xV,-0.95);
+  \node[gaplbl, anchor=north] at ({(\xVprev+\xV)/2},-1.0)
+    {progression unobservable between assessments};
+
+  % row title
+  \node[caplbl, text=azNavy, anchor=west] at (-0.3,1.85)
+    {\textbf{Non-target progression} $0\!\to\!1$ \;— hazard gated to assessment weeks $\mathcal{V}_i$};
+\end{scope}
+
+% ============================================================================
+% ROW 2: death / dropout channel, continuously observed
+% ============================================================================
+\begin{scope}[shift={(0,-3.6)}]
+  \draw[->, line width=0.8pt] (-0.3,0) -- (\xmax+0.6,0);
+  \node[axislbl, anchor=west] at (\xmax+0.6,0) {week $t$};
+
+  % every week is at risk: ticks on all weeks
+  \foreach \w in {0,1,...,12} {
+    \draw[azGold, line width=1.0pt] (\w,0) -- (\w,0.5);
+  }
+
+  \node[caplbl, text=azPlum, anchor=west] at (-0.3,1.4)
+    {\textbf{Death} $0\!\to\!2$ \textbf{and dropout} $0\!\to\!3$ \;— hazard accrues every week};
+  \node[gaplbl, text=azGold, anchor=north] at (6,-0.25)
+    {$e^{-\lambda_{02,i}(t)}$, $e^{-\lambda_{03,i}(t)}$ at every $t$};
+\end{scope}
+
+\end{tikzpicture}
+\end{document}

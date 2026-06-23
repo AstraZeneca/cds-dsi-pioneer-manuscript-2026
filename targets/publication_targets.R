@@ -945,7 +945,7 @@ publication_targets <- list(
           tumor_ssls_staged_recist_rvar,
           bind_rows(
             obs      = tumor_ssls_recist_rvar |>
-              filter(!is.na(response)) |>
+              filter(!is.na(det_response)) |>
               rename(recist = rep_recist),
             forecast = tumor_ssls_forecast_recist_rvar |>
               rename(recist = forecast_obs_recist),
