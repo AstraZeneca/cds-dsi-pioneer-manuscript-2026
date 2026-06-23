@@ -608,18 +608,18 @@ target_visit_data_crc <- tar_read(target_visit_data_crc, store = pub_store_crc)
 historical_visit_data_crc <- tar_read(historical_visit_data_crc, store = pub_store_crc)
 
 CRC_TRIAL_LABELS <- c(
-  amgen_20040249_crc = "PACCE (Amgen 20040249)",
-  az_cediranib_crc = "HORIZON III (AZ Cediranib)",
-  pfizer_sunitinib_crc = "Pfizer Sunitinib",
+  amgen_20040249_crc = "PACCE",
+  az_cediranib_crc = "HORIZON III",
+  pfizer_sunitinib_crc = "Pfizer Sun.",
   sanofi_efc5505_crc = "Sanofi EFC5505"
 )
 
 CRC_TREATMENT_LABELS <- c(
-  "panit. plus bevacizumab with chemotherapy" = "Panit. + Bev + Chemo (target)",
-  "bevacizumab with chemotherapy" = "Bev + Chemo (historical)",
-  "FOLFOX + bevacizumab 5mg/kg" = "FOLFOX + Bev (historical)",
-  "FOLFIRI+Sunitinib/Placebo" = "FOLFIRI + Sunitinib/Pbo (historical)",
-  "BSC/Placebo" = "BSC / Placebo (historical)"
+  "panit. plus bevacizumab with chemotherapy" = "Panit.+Bev+Chemo (target)",
+  "bevacizumab with chemotherapy" = "Bev+Chemo",
+  "FOLFOX + bevacizumab 5mg/kg" = "FOLFOX+Bev",
+  "FOLFIRI+Sunitinib/Placebo" = "FOLFIRI+Sun/Pbo",
+  "BSC/Placebo" = "BSC/Placebo"
 )
 
 visits_per_patient_crc <- bind_rows(target_visit_data_crc, historical_visit_data_crc) |>
@@ -742,9 +742,13 @@ all_patient |>
   )
 ```
 
+```{=latex}
+\begin{landscape}
+```
+
 ```{r}
 #| label: tbl-crc-trial-summary
-#| tbl-cap: "Patient disposition and endpoints by trial and arm — CRC."
+#| tbl-cap: "Patient disposition and endpoints by trial and arm — CRC. The PACCE panitumumab arm is the target; all other arms are historical. Column groups label the source trial."
 CRC_METRIC_LABELS <- c(
   N = "N",
   median_fu_mo = "Median follow-up (mo)",
@@ -844,12 +848,17 @@ all_patient_crc |>
     value = list(male ~ 1L),
     digits = list(all_continuous() ~ 1)
   ) |>
+  modify_header(all_stat_cols() ~ "**{level}**  \nN = {n}") |>
   as_gt() |>
   tab_options(
     table.font.size = "small",
     column_labels.border.lr.style = "hidden",
     stub.border.style = "hidden"
   )
+```
+
+```{=latex}
+\end{landscape}
 ```
 
 ## Results {#sec-results}
