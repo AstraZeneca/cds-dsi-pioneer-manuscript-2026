@@ -1516,12 +1516,27 @@ lfo_os_quant <- lfo_tar_read_pattern("lfo_cutoff_trial_os_quant")
 full_os_quant <- pub_tar_read("all_tumor_ssls_trial_os_quant")
 os_evol <- make_lfo_endpoint(lfo_os_quant, full_os_quant, sample_os_quant)
 
-# Observed medians from KM quantiles
+# Observed medians read off the observed KM CURVE by linear interpolation of the
+# S = 0.5 crossing — the SAME convention the model's km_quantiles uses for the
+# posterior median points plotted alongside. survfit's default quantile uses a
+# step rule (first week with S <= 0.5), which on a coarse KM lands ~1 week later
+# than the interpolated crossing and would otherwise be an apples-to-oranges
+# comparison against the model's interpolated median.
+km_median_interp <- function(km_curve, p = 0.5) {
+  km_curve <- dplyr::arrange(km_curve, t)
+  s <- km_curve$s
+  tt <- km_curve$t
+  i <- which(s <= p)[1]
+  if (is.na(i)) return(NA_real_)
+  if (i == 1) return(tt[1])
+  approx(c(s[i - 1], s[i]), c(tt[i - 1], tt[i]), xout = p)$y
+}
+
 obs_median_pfs <- pub_tar_read("km_trial_pfs") |>
   filter(btype == "ub", grepl("lilly_cxcr4", trial)) |>
   mutate(
     trial = fct_recode(trial, !!!TARGET_ARM_LABELS),
-    obs_median = map_dbl(quantiles, \(q) q$pfs[q$quantile == 0.5])
+    obs_median = map_dbl(km_data, km_median_interp)
   ) |>
   select(trial, obs_median)
 
@@ -1529,7 +1544,7 @@ obs_median_os <- pub_tar_read("km_trial_os") |>
   filter(btype == "ub", grepl("lilly_cxcr4", trial)) |>
   mutate(
     trial = fct_recode(trial, !!!TARGET_ARM_LABELS),
-    obs_median = map_dbl(quantiles, \(q) q$pfs[q$quantile == 0.5])
+    obs_median = map_dbl(km_data, km_median_interp)
   ) |>
   select(trial, obs_median)
 ```
@@ -1672,7 +1687,7 @@ obs_median_pfs_crc <- crc_tar_read("km_trial_pfs") |>
   (\(d) d[d$btype == "ub", ])() |>
   mutate(
     trial      = fct_recode(trial, !!!CRC_ARM_LABELS_5),
-    obs_median = map_dbl(quantiles, \(q) q$pfs[q$quantile == 0.5])
+    obs_median = map_dbl(km_data, km_median_interp)
   ) |>
   select(trial, obs_median)
 
@@ -1680,7 +1695,7 @@ obs_median_os_crc <- crc_tar_read("km_trial_os") |>
   (\(d) d[d$btype == "ub", ])() |>
   mutate(
     trial      = fct_recode(trial, !!!CRC_ARM_LABELS_5),
-    obs_median = map_dbl(quantiles, \(q) q$pfs[q$quantile == 0.5])
+    obs_median = map_dbl(km_data, km_median_interp)
   ) |>
   select(trial, obs_median)
 
