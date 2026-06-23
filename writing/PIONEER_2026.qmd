@@ -1700,22 +1700,12 @@ os_quant_crc <- os_km_rvar_crc |>
     .groups = "drop"
   )
 
-# Observed ORR from best deterministic RECIST per patient
-analysis_data_crc_ep <- crc_tar_read("all_analysis_data")
-obs_orr_crc <- purrr::map_dfr(seq_len(nrow(analysis_data_crc_ep)), \(i) {
-  v  <- analysis_data_crc_ep$visit_data[[i]]
-  v  <- v[!is.na(v$week) & v$week >= 0, ]
-  rs <- v$det_response[!is.na(v$det_response)]
-  best <- if (length(rs) == 0) NA_character_
-    else if (any(rs == "CR")) "CR"
-    else if (any(rs == "PR")) "PR"
-    else if (any(rs == "SD")) "SD"
-    else "PD"
-  tibble(group = as.character(analysis_data_crc_ep$group[i]), best = best)
-}) |>
-  group_by(group) |>
-  summarise(obs_orr = mean(best %in% c("CR", "PR"), na.rm = TRUE), .groups = "drop") |>
-  mutate(trial = fct_recode(as.factor(group), !!!CRC_ARM_LABELS_5)) |>
+# Observed ORR — confirmed objective response (PR/CR confirmed by two consecutive
+# assessments, before PFS) on SLD-derived RECIST, matching the model's predicted
+# sample_target_orr estimand (same fix as SCLC; replaces the prior unconfirmed
+# best-response-ever computation, which over-counted responders).
+obs_orr_crc <- crc_tar_read("obs_orr") |>
+  mutate(trial = fct_recode(fct_drop(trial), !!!CRC_ARM_LABELS_5)) |>
   select(trial, obs_orr)
 ```
 
