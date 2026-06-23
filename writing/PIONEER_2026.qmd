@@ -152,7 +152,7 @@ The novelty has five facets:
 - **Joint latent state.** The decrease/growth decomposition is the latent state of a state-space model fitted jointly with the multistate submodel — not a two-stage plug-in — avoiding both the attenuation and the omitted-frailty misspecification of plug-in approaches and correctly propagating kinetic uncertainty into every downstream endpoint.
 - **Correlated per-transition frailty.** Each transition carries its own patient-level frailty, and the frailty terms are modelled jointly as a multivariate normal with an estimated correlation structure, capturing residual individual heterogeneity unexplained by the tumour bridge and revealing cross-transition dependence in unmeasured patient characteristics.
 - **Multi-trial hierarchy.** Patients are nested within arms within trials in a single hierarchical model; population-level parameters are shared across trials by construction, so fitting on multiple trials simultaneously yields cross-trial borrowing without a separate meta-analytic step. Covariate effects are entered via QR-decomposed design matrices with elicited priors mapped through the rotation.
-- **Full-posterior endpoint propagation.** All endpoints are read off the joint posterior, producing both unconditional ("super-population") and observed-data-conditioned predictive distributions without re-fitting.
+- **Full-posterior endpoint propagation.** All endpoints are read off the joint posterior, producing both unconditional posterior-predictive and observed-data-conditioned predictive distributions without re-fitting.
 
 <!-- Inference + forward simulation pipeline -->
 
@@ -551,6 +551,8 @@ Direct death without progression *is* a PFS event (PFS fails at the death time);
 
 ### Trials and disease context
 
+#### Small-cell lung cancer {#sec-data-sclc}
+
 We apply PIONEER to two completed Phase II/III trials in first-line extensive-stage small-cell lung cancer (ES-SCLC), both employing platinum-etoposide backbone chemotherapy:
 
 - **Lilly CXCR4** (Study I2V-MC-CXAC): a randomised Phase II trial of the CXCR4 inhibitor LY2510924 plus carboplatin/etoposide (Arm A, $N=40$) versus carboplatin/etoposide alone (Arm B, $N=37$). This serves as the *target trial* whose endpoints we aim to forecast.
@@ -558,15 +560,30 @@ We apply PIONEER to two completed Phase II/III trials in first-line extensive-st
 
 Both trials share the same disease (ES-SCLC), the same standard-of-care backbone (platinum/etoposide), and the same clinical trajectory (high initial response rate followed by rapid relapse). This commonality justifies the hierarchical pooling assumption: population-level tumour growth kinetics are expected to be comparable across the two trials, with trial-level random effects absorbing any residual heterogeneity.
 
+#### Colorectal cancer {#sec-data-crc}
+
+We further demonstrate PIONEER in first-line metastatic colorectal cancer (mCRC), a disease characterised by a more heterogeneous tumour-dynamic profile than ES-SCLC: initial responses to chemotherapy are partial and gradual, regrowth is slower, and patient trajectories span a wider range of kinetic phenotypes. This setting therefore provides a complementary test of the model's structural assumptions.
+
+The *target trial* is the **PACCE study** (Panitumumab Advanced Colorectal Cancer Evaluation; Amgen Study 20040249), a Phase IIIB randomised open-label trial evaluating the addition of panitumumab — an anti-EGFR monoclonal antibody — to a backbone of bevacizumab (anti-VEGF) plus first-line chemotherapy (oxaliplatin-based or irinotecan-based, as per investigator choice) versus bevacizumab plus chemotherapy alone. We use the experimental arm ($N = 365$) as the forecasting target.
+
+Population-level tumour kinetics are borrowed from four *historical* arms, all first-line mCRC cohorts available through Project Data Sphere:
+
+- **PACCE control arm** (Amgen Study 20040249; $N = 375$): bevacizumab plus chemotherapy — the direct comparator within the same trial, providing within-trial biological concordance.
+- **HORIZON III control arm** (AstraZeneca Study D8480C00013; $N = 631$): FOLFOX plus bevacizumab 5 mg/kg, from a Phase III trial comparing cediranib (pan-VEGFR inhibitor) versus bevacizumab as the anti-angiogenic partner to FOLFOX.
+- **Pfizer sunitinib study** (Study A6181122; $N = 366$): FOLFIRI plus sunitinib or placebo (data provided in blinded form; treatment assignment not disclosed) from a Phase II randomised trial in first-line mCRC.
+- **Sanofi Study EFC5505** ($N = 406$): best supportive care/placebo arm from a Phase III randomised trial in mCRC; only the control arm was made available through Project Data Sphere.
+
+All four historical cohorts received cytotoxic chemotherapy and share the same broad disease context (metastatic colorectal cancer) and similar trajectory shapes (partial initial response followed by regrowth). The trial-level random effects in the hierarchical model absorb differences in bevacizumab dose, chemotherapy backbone (FOLFOX vs FOLFIRI), and patient selection across studies. The covariate set for CRC matches the SCLC set (age, sex, haemoglobin, log-LDH, albumin) except that ECOG performance status was uniformly zero across this CRC cohort and was therefore excluded; KRAS mutation status is recorded in the dataset but not included as a covariate in the current analysis.
+
 ### Data source
 
 Individual patient-level data were obtained through [Project Data Sphere](http://www.projectdatasphere.org), a not-for-profit initiative providing access to de-identified patient-level data from oncology clinical trials.
 
 ### Data processing
 
-A standardized pipeline harmonized the two trials into a common analytical schema. For each trial, a dedicated extraction module accommodated the sponsor-specific data format: SLD was extracted from tumour assessment records at each scheduled visit, and patient-level summaries (demographics, treatment arm, survival endpoints) were derived from the clinical domains. The extracted data were mapped to two datasets per trial:
+A standardized pipeline harmonized all trials into a common analytical schema. For each trial, a dedicated extraction module accommodated the sponsor-specific data format: SLD was extracted from tumour assessment records at each scheduled visit, and patient-level summaries (demographics, treatment arm, survival endpoints) were derived from the clinical domains. The extracted data were mapped to two datasets per trial:
 
-1. **Patient-level data**: one row per patient containing baseline covariates (age, sex, ECOG performance status, haemoglobin, log-LDH, albumin), treatment assignment, and survival outcomes (PFS and OS in weeks from treatment start; event indicators coded 1 = event, 0 = censored).
+1. **Patient-level data**: one row per patient containing baseline covariates (age, sex, haemoglobin, log-LDH, albumin; ECOG performance status included for SCLC, excluded for CRC where it was uniformly zero), treatment assignment, and survival outcomes (PFS and OS in weeks from treatment start; event indicators coded 1 = event, 0 = censored).
 2. **Visit-level data**: one row per tumour assessment containing week from treatment start, SLD in millimetres, and the investigator-assessed RECIST 1.1 response (CR, PR, SD, PD, or NE).
 
 Missing baseline covariates were imputed at the population median prior to model fitting. Patients were required to have at least one post-baseline tumour assessment; those randomized but never treated or lacking tumour measurements were excluded.
@@ -574,8 +591,54 @@ Missing baseline covariates were imputed at the population median prior to model
 ### Summary statistics
 
 ```{r}
+#| label: setup-data-crc
+#| include: false
+#| cache: false
+pub_store_crc <- file.path(
+  "/mnt/data/analysis-results",
+  "karim_naguib",
+  "publication",
+  "crc",
+  "_targets"
+)
+
+target_patient_data_crc <- tar_read(target_patient_data_crc, store = pub_store_crc)
+historical_patient_data_crc <- tar_read(historical_patient_data_crc, store = pub_store_crc)
+target_visit_data_crc <- tar_read(target_visit_data_crc, store = pub_store_crc)
+historical_visit_data_crc <- tar_read(historical_visit_data_crc, store = pub_store_crc)
+
+CRC_TRIAL_LABELS <- c(
+  amgen_20040249_crc = "PACCE (Amgen 20040249)",
+  az_cediranib_crc = "HORIZON III (AZ Cediranib)",
+  pfizer_sunitinib_crc = "Pfizer Sunitinib",
+  sanofi_efc5505_crc = "Sanofi EFC5505"
+)
+
+CRC_TREATMENT_LABELS <- c(
+  "panit. plus bevacizumab with chemotherapy" = "Panit. + Bev + Chemo (target)",
+  "bevacizumab with chemotherapy" = "Bev + Chemo (historical)",
+  "FOLFOX + bevacizumab 5mg/kg" = "FOLFOX + Bev (historical)",
+  "FOLFIRI+Sunitinib/Placebo" = "FOLFIRI + Sunitinib/Pbo (historical)",
+  "BSC/Placebo" = "BSC / Placebo (historical)"
+)
+
+visits_per_patient_crc <- bind_rows(target_visit_data_crc, historical_visit_data_crc) |>
+  filter(week > 0) |>
+  count(usubjid, name = "n_visits")
+
+all_patient_crc <- bind_rows(target_patient_data_crc, historical_patient_data_crc) |>
+  mutate(
+    trial_label = CRC_TRIAL_LABELS[as.character(trial)],
+    treatment_label = CRC_TREATMENT_LABELS[as.character(treatment)],
+    male = as.integer(sex == 1)
+  ) |>
+  left_join(visits_per_patient_crc, by = "usubjid") |>
+  replace_na(list(n_visits = 0L))
+```
+
+```{r}
 #| label: tbl-trial-summary
-#| tbl-cap: "Patient disposition and endpoints by trial and arm."
+#| tbl-cap: "Patient disposition and endpoints by trial and arm — SCLC."
 METRIC_LABELS <- c(
   N = "N",
   median_fu_mo = "Median follow-up (mo)",
@@ -651,7 +714,7 @@ disp_wide |>
 
 ```{r}
 #| label: tbl-covariate-summary
-#| tbl-cap: "Baseline covariate distributions by trial."
+#| tbl-cap: "Baseline covariate distributions by trial — SCLC."
 all_patient |>
   select(trial_label, age, male, ecog_ge1, hgb, ldh_log, albumin) |>
   tbl_summary(
@@ -679,11 +742,123 @@ all_patient |>
   )
 ```
 
+```{r}
+#| label: tbl-crc-trial-summary
+#| tbl-cap: "Patient disposition and endpoints by trial and arm — CRC."
+CRC_METRIC_LABELS <- c(
+  N = "N",
+  median_fu_mo = "Median follow-up (mo)",
+  median_pfs_mo = "Median PFS (mo)",
+  pct_censored = "PFS censored (%)",
+  deaths = "Deaths",
+  visits_per_pt = "Visits per patient"
+)
+
+disposition_crc <- all_patient_crc |>
+  group_by(trial_label, treatment_label) |>
+  summarise(
+    N = n(),
+    median_fu_mo = median(weeks_to_months(overall_survival_time), na.rm = TRUE),
+    median_pfs_mo = median(weeks_to_months(progression_free_survival_time), na.rm = TRUE),
+    pct_censored = mean(progression_free_survival_censor == 0),
+    deaths = sum(death == 1, na.rm = TRUE),
+    visits_per_pt = mean(n_visits, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  mutate(arm_col = paste0(trial_label, "__", treatment_label))
+
+disp_wide_crc <- disposition_crc |>
+  select(-trial_label, -treatment_label) |>
+  pivot_longer(-arm_col, names_to = "metric", values_to = "value") |>
+  pivot_wider(names_from = arm_col, values_from = value) |>
+  mutate(metric = factor(metric, levels = names(CRC_METRIC_LABELS))) |>
+  arrange(metric) |>
+  mutate(metric = CRC_METRIC_LABELS[as.character(metric)])
+
+arm_cols_crc <- setdiff(names(disp_wide_crc), "metric")
+arm_labels_crc <- sub(".*__", "", arm_cols_crc)
+spanners_crc <- sub("__.*", "", arm_cols_crc)
+
+gt_tbl <- disp_wide_crc |>
+  gt(rowname_col = "metric") |>
+  cols_label(.list = setNames(as.list(arm_labels_crc), arm_cols_crc)) |>
+  fmt_number(
+    rows = metric %in% c("Median follow-up (mo)", "Median PFS (mo)", "Visits per patient"),
+    columns = everything(),
+    decimals = 1
+  ) |>
+  fmt_percent(
+    rows = metric == "PFS censored (%)",
+    columns = everything(),
+    decimals = 0
+  ) |>
+  fmt_integer(
+    rows = metric %in% c("N", "Deaths"),
+    columns = everything()
+  ) |>
+  opt_table_lines("none") |>
+  tab_style(
+    style = cell_borders(sides = "bottom", color = "black", weight = px(2)),
+    locations = cells_column_labels()
+  ) |>
+  tab_style(
+    style = cell_borders(sides = "top", color = "black", weight = px(2)),
+    locations = cells_column_labels()
+  ) |>
+  tab_style(
+    style = cell_borders(sides = "bottom", color = "black", weight = px(2)),
+    locations = cells_body(rows = nrow(disp_wide_crc))
+  ) |>
+  tab_style(
+    style = cell_text(align = "center"),
+    locations = list(cells_body(), cells_column_labels())
+  ) |>
+  tab_options(table.font.size = "small", table.width = pct(100))
+
+for (spanner in unique(spanners_crc)) {
+  gt_tbl <- gt_tbl |>
+    tab_spanner(label = spanner, columns = arm_cols_crc[spanners_crc == spanner])
+}
+
+gt_tbl
+```
+
+```{r}
+#| label: tbl-crc-covariate-summary
+#| tbl-cap: "Baseline covariate distributions by trial — CRC. ECOG was uniformly zero across all CRC cohorts and is excluded."
+all_patient_crc |>
+  select(trial_label, age, male, hgb, ldh_log, albumin) |>
+  tbl_summary(
+    by = trial_label,
+    label = list(
+      age ~ "Age (years)",
+      male ~ "Male (%)",
+      hgb ~ "Haemoglobin (g/dL)",
+      ldh_log ~ "log-LDH",
+      albumin ~ "Albumin (g/L)"
+    ),
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd})",
+      all_dichotomous() ~ "{n} ({p}%)"
+    ),
+    value = list(male ~ 1L),
+    digits = list(all_continuous() ~ 1)
+  ) |>
+  as_gt() |>
+  tab_options(
+    table.font.size = "small",
+    column_labels.border.lr.style = "hidden",
+    stub.border.style = "hidden"
+  )
+```
+
 ## Results {#sec-results}
 
-We present results from the joint model fitted to the publication dataset (target trial: Lilly CXCR4, $N = 78$; historical trial: Amgen Darbe, $N = 419$). Results are organised around the claims in @sec-introduction: model fit to the longitudinal data, survival forecasting, covariate effects across transitions, and clinical endpoint summaries.
+We present results from two independent applications of PIONEER: a case study in ES-SCLC (target trial: Lilly CXCR4, $N = 78$; historical trial: Amgen Darbe, $N = 419$) and a second case study in mCRC (target trial: PACCE experimental arm, $N = 365$; four historical arms, $N = 1{,}778$). For each disease, results are organised around the same set of evaluations: model fit to the longitudinal tumour data (@sec-results-fit), unconditional posterior-predictive KM checks (@sec-results-survival), leave-future-out cross-validation (@sec-results-lfo), transition-specific covariate effects (@sec-results-covariates), and clinical endpoint summaries (@sec-results-endpoints).
 
 ### Model fit to longitudinal tumour data {#sec-results-fit}
+
+#### Small-cell lung cancer
 
 @fig-sld-ppc shows posterior predictive SLD trajectories for a random subsample of patients with observed progression events. For each patient, the posterior median trajectory (solid line) tracks the observed SLD measurements (dots), with 50% and 80% credible ribbons capturing the measurement uncertainty; vertical dashed lines mark the PFS event week. The two-component decomposition correctly recovers the characteristic shapes: initial response (driven by the decreasing component $D_i$) followed by eventual regrowth (driven by the growing component $G_i$). The width of credible intervals varies across patients even when observation counts are similar, reflecting three sources of patient-level uncertainty: the number and temporal span of observations available to identify the per-patient kinetic parameters; the geometric identifiability of the trajectory shape (a clear nadir constrains parameters better than a monotone decline); and the degree of agreement between a patient's kinetics and the population distribution — patients whose trajectories are close to the hierarchical mean receive stronger regularisation from the prior and exhibit tighter posteriors, while patients with atypical kinetics show wider intervals as the model negotiates between their sparse data and the population. Overall, the posterior median trajectories track the observed measurements closely across all patients, confirming that the two-component model provides an adequate fit to the longitudinal tumour data.
 
@@ -693,7 +868,7 @@ We present results from the joint model fitted to the publication dataset (targe
 
 ```{r}
 #| label: fig-sld-ppc
-#| fig-cap: Posterior predictive SLD trajectories for a subsample of patients with observed progression from the Lilly CXCR4 trial. Ribbons represent 50% and 80% credible intervals; lines show posterior median tumour dynamics. Dots are observed SLD measurements. Vertical dashed lines indicate the week of the PFS event.
+#| fig-cap: "SCLC — posterior predictive SLD trajectories for a subsample of patients with observed progression from the Lilly CXCR4 trial. Ribbons represent 50% and 80% credible intervals; lines show posterior median tumour dynamics. Dots are observed SLD measurements. Vertical dashed lines indicate the week of the PFS event."
 #| fig-width: 10
 #| fig-height: 12
 #| cache: false
@@ -709,7 +884,7 @@ sld_unc |>
 
 ```{r}
 #| label: fig-sld-censored
-#| fig-cap: Posterior predictive SLD trajectories for censored patients (progression-free at data cut-off) from the Lilly CXCR4 trial. Dark ribbons show the observed phase; pink ribbons show the forecast beyond the last observation. The model extrapolates using the inferred decrease-plus-growth rates.
+#| fig-cap: "SCLC — posterior predictive SLD trajectories for censored patients (progression-free at data cut-off) from the Lilly CXCR4 trial. Dark ribbons show the observed phase; pink ribbons show the forecast beyond the last observation."
 #| fig-width: 10
 #| fig-height: 12
 sld_rc <- pub_tar_read("tumor_ssls_staged_sld_rvar_right_censored_posterior")
@@ -724,7 +899,7 @@ sld_rc |>
 
 ```{r}
 #| label: fig-recist-censored
-#| fig-cap: Posterior predictive RECIST classification over time for censored patients from the Lilly CXCR4 trial. Stacked bars show the posterior probability of each RECIST category at each time point. Coloured dots represent observed classifications; dashed lines mark the transition from observed to forecast phase.
+#| fig-cap: "SCLC — posterior predictive RECIST classification over time for censored patients from the Lilly CXCR4 trial. Stacked bars show the posterior probability of each RECIST category at each time point. Coloured dots represent observed classifications; dashed lines mark the transition from observed to forecast phase."
 #| fig-width: 10
 #| fig-height: 12
 recist_rc <- pub_tar_read("tumor_ssls_staged_recist_rvar_right_censored_posterior")
@@ -732,17 +907,114 @@ recist_rc <- pub_tar_read("tumor_ssls_staged_recist_rvar_right_censored_posterio
 recist_rc |> plot_recist_censored() + labs(caption = NULL)
 ```
 
+#### Colorectal cancer
+
+```{r}
+#| label: setup-results-crc
+#| include: false
+#| cache: false
+pub_store_crc_results <- pub_store_crc
+pub_disease_suffix_crc <- "crc"
+
+crc_tar_read <- function(name) {
+  targets::tar_read_raw(paste0(name, "_crc"), store = pub_store_crc_results) |>
+    (\(obj) {
+      if (!is.data.frame(obj)) {
+        return(obj)
+      }
+      rvar_cols <- which(vapply(obj, inherits, logical(1), "rvar"))
+      for (j in rvar_cols) {
+        rv <- obj[[j]]
+        if (length(rv) == 0L) {
+          dm <- posterior::draws_of(rv)
+          n <- ncol(dm)
+          if (n > 0L) {
+            obj[[j]] <- posterior::rvar(
+              array(dm, dim = c(nrow(dm), n)),
+              nchains = posterior::nchains(rv)
+            )
+          }
+        }
+      }
+      obj
+    })()
+}
+
+analysis_data_crc <- crc_tar_read("all_analysis_data")
+```
+
+The mCRC case study demonstrates that PIONEER's two-component model generalises to a disease with markedly different kinetic characteristics. Colorectal cancer responds more slowly and less completely to chemotherapy than ES-SCLC: initial SLD declines are shallower, nadirs occur later, and regrowth is more gradual. The model must therefore identify a wider range of patient-level kinetic phenotypes from the same structural decomposition.
+
+@fig-sld-ppc-crc shows posterior predictive SLD trajectories for a random subsample of patients drawn across all CRC trial arms (target and historical) with observed progression. The two-component trajectories again track observed measurements closely. Compared to the SCLC fits, the initial decrease is less pronounced, the nadir arrives later (typically beyond week 8), and the growing component rises more gradually — all features that the hierarchical model captures through a CRC-specific population distribution informed jointly by the target and four historical arms.
+
+@fig-sld-censored-crc extends the check to censored patients. The forecast ribbons fan out more slowly than in the SCLC case, reflecting the lower population growth rate in mCRC. The model correctly propagates kinetic uncertainty into the forecast phase while maintaining the decrease-plus-growth shape.
+
+@fig-recist-censored-crc shows the posterior predictive RECIST classification for censored CRC patients. The slower regrowth means that the high-PD-probability region is reached at later time points than in SCLC, consistent with the longer typical PFS in mCRC; the model's stochastic transition from SD toward PD tracks this disease-specific tempo.
+
+```{r}
+#| label: fig-sld-ppc-crc
+#| fig-cap: "CRC — posterior predictive SLD trajectories for a random subsample of patients with observed progression, drawn across the PACCE target arm and historical trial arms. Ribbons represent 50% and 80% credible intervals; lines show posterior median tumour dynamics. Dots are observed SLD measurements. Vertical dashed lines indicate the week of the PFS event."
+#| fig-width: 10
+#| fig-height: 12
+#| cache: false
+sld_unc_crc <- crc_tar_read("tumor_ssls_staged_sld_rvar_uncensored_posterior")
+
+sld_unc_crc |>
+  filter(stage == "obs") |>
+  plot_sld_forecast_censored(analysis_data_crc) +
+  scale_x_continuous("Months", breaks = months_to_weeks(seq(0, 48, 3)), labels = label_weeks_to_months) +
+  labs(caption = NULL)
+```
+
+```{r}
+#| label: fig-sld-censored-crc
+#| fig-cap: "CRC — posterior predictive SLD trajectories for censored patients (progression-free at data cut-off) drawn across the PACCE target arm and historical trial arms. Dark ribbons show the observed phase; pink ribbons show the forecast beyond the last observation."
+#| fig-width: 10
+#| fig-height: 12
+#| cache: false
+sld_rc_crc <- crc_tar_read("tumor_ssls_staged_sld_rvar_right_censored_posterior")
+
+sld_rc_crc |>
+  mutate(keep = stage == "obs" | week %% 6 == 0) |>
+  filter(keep) |>
+  select(-keep) |>
+  plot_sld_forecast_censored(analysis_data_crc) +
+  labs(caption = NULL)
+```
+
+```{r}
+#| label: fig-recist-censored-crc
+#| fig-cap: "CRC — posterior predictive RECIST classification over time for censored patients drawn across the PACCE target arm and historical trial arms. Stacked bars show the posterior probability of each RECIST category at each time point. Coloured dots represent observed classifications."
+#| fig-width: 10
+#| fig-height: 12
+#| cache: false
+recist_obs_crc <- crc_tar_read("tumor_ssls_recist_rvar_right_censored_posterior") |>
+  (\(d) d[!is.na(d$det_response), ])() |>
+  rename(recist = rep_recist) |>
+  mutate(stage = "obs")
+
+recist_fc_crc <- crc_tar_read("tumor_ssls_forecast_recist_rvar_right_censored_posterior") |>
+  rename(recist = forecast_obs_recist) |>
+  mutate(stage = "forecast")
+
+recist_rc_crc <- bind_rows(recist_obs_crc, recist_fc_crc)
+
+recist_rc_crc |> plot_recist_censored() + labs(caption = NULL)
+```
+
 ### Survival predictions: PFS and OS {#sec-results-survival}
 
-Classically, joint longitudinal-survival models are assessed via *sample-based* posterior predictive checks: patients who have already experienced an event contribute their observed event time, and only right-censored patients have their future simulated from the model. This is a necessary consistency check — the model should not contradict known outcomes — but it is a weak test, because the majority of the Kaplan–Meier curve is constructed from observed data rather than model predictions.
+We assess the model's population-level calibration using an *unconditional* posterior predictive check: every patient's event time is re-simulated from week 1, discarding all observed event histories. The model must reconstruct the full Kaplan–Meier curve from the inferred population parameters, patient-level covariates, and latent tumour trajectories alone. If the unconditional prediction recovers the mature observed KM, the model has correctly learned the generative distribution rather than memorised outcomes.
 
-A more demanding evaluation is the *super-population* prediction, in which every patient's event time is re-simulated unconditionally from week 1. Observed event histories are discarded entirely; the model must generate the full KM purely from inferred population parameters, patient-level covariates, and the latent tumour trajectories obtained through the joint posterior. If this unconditional prediction recovers the observed KM, it demonstrates that the model has learned the correct generative mechanism — linking tumour dynamics to event risk — rather than merely memorising training outcomes. This is the estimand relevant to clinical forecasting: "if we enrolled a new cohort from this population, what would their survival curves look like?"
+This is a calibration check, not a forecasting evaluation. The operationally relevant forecasting question — "given the data available today, what will the final KM look like?" — conditions on observed event times and simulates only the right-censored remainder forward. That sample-based conditional forecast is evaluated in @sec-results-lfo, where the model is re-fitted at progressively earlier cut-offs and its predictions are compared against the mature KM that was not yet available at training time.
 
-@fig-km-spop shows the super-population PFS (top) and OS (bottom) predictions by trial and arm. The posterior median PFS curve tracks the observed KM closely, and the 80% credible ribbon covers the observed step function across all four trial-arm combinations. The OS prediction requires the full multistate routing — a patient's OS depends on which path they take through the state graph (direct death via $0\to 2$, post-progression death via $1\to 2$, or off-trial death via $3\to 2$). The model's OS prediction matches the observed KM well, with wider credible intervals reflecting the additional uncertainty from the competing transitions and post-progression sojourn.
+#### Small-cell lung cancer
+
+@fig-km-spop shows the unconditional posterior predictive check for PFS (top) and OS (bottom) by trial and arm. The posterior median PFS curve tracks the observed KM closely across all four arms, and the 80% credible ribbon covers the observed step function throughout. The OS check requires the full multistate routing — a patient's OS depends on which path they take through the state graph (direct death via $0\to 2$, post-progression death via $1\to 2$, or dropout via $3\to 2$) — yet the model recovers the observed OS KM well, with credible intervals that are wider than PFS, as expected from the additional uncertainty propagated through the competing transitions.
 
 ```{r}
 #| label: fig-km-spop
-#| fig-cap: Super-population Kaplan–Meier predictions. Every patient is re-simulated unconditionally from week 1 — no observed events are used. Ribbons show 80% credible intervals; crosses show the observed KM. **Top row:** PFS by trial and arm. **Bottom row:** OS by trial and arm. The OS forecast emerges from the full multistate routing — progression, direct death, and dropout compete, with post-progression death on a sojourn clock.
+#| fig-cap: "SCLC — unconditional posterior-predictive KM check. Every patient is re-simulated from week 1; no observed events are used. Ribbons show 80% credible intervals; step lines show the observed KM. **Top:** PFS by trial and arm. **Bottom:** OS by trial and arm."
 #| fig-width: 10
 #| fig-height: 10
 #| cache: false
@@ -793,6 +1065,89 @@ p_os <- os_km_data |>
   labs(caption = NULL)
 
 p_pfs / p_os
+```
+
+#### Colorectal cancer
+
+@fig-km-spop-crc shows the unconditional posterior predictive check for all five CRC trial arms. The target arm (PACCE experimental) is shown alongside the four historical arms, providing a direct view of how well the joint population distribution — informed by data from all five arms simultaneously — reconstructs each arm's observed KM.
+
+For PFS, the posterior median tracks the observed KM closely across most arms; credible intervals are wider than in SCLC, reflecting the greater kinetic heterogeneity across four source trials spanning different chemotherapy backbones and study populations. For OS, the model recovers the observed survival curves well across all arms, with appropriately wider credible intervals relative to PFS from the competing-transition uncertainty in the multistate routing.
+
+```{r}
+#| label: fig-km-spop-crc
+#| fig-cap: "CRC — unconditional posterior-predictive KM check across all five trial arms. Every patient is re-simulated from week 1; no observed events are used. Ribbons show 80% credible intervals; step lines show the observed KM. **Top:** PFS. **Bottom:** OS. The PACCE experimental arm (target) is shown alongside the four historical arms."
+#| fig-width: 14
+#| fig-height: 10
+#| cache: false
+CRC_ARM_LABELS <- c(
+  "PACCE — Panit. + Bev + Chemo (target)" = "amgen_20040249_crc_experimental",
+  "PACCE — Bev + Chemo (control)" = "amgen_20040249_crc_control",
+  "HORIZON III — FOLFOX + Bev" = "az_cediranib_crc_control",
+  "Pfizer — FOLFIRI + Sunitinib/Pbo" = "pfizer_sunitinib_crc_control",
+  "Sanofi EFC5505 — BSC/Placebo" = "sanofi_efc5505_crc_control"
+)
+
+km_data_crc <- crc_tar_read("all_tumor_ssls_km_rvar")
+obs_km_crc <- crc_tar_read("km_trial_pfs") |>
+  (\(d) d[d$btype == "ub", ])() |>
+  select(-quantiles) |>
+  unnest(km_data)
+os_km_data_crc <- crc_tar_read("all_tumor_ssls_km_os_rvar")
+obs_os_crc <- crc_tar_read("km_trial_os") |>
+  (\(d) d[d$btype == "ub", ])() |>
+  mutate(interval_censored = 0L) |>
+  select(-quantiles) |>
+  unnest(km_data)
+
+relabel_crc <- function(df) {
+  df |> mutate(trial = fct_recode(trial, !!!CRC_ARM_LABELS))
+}
+
+# repair rvar dims (qs2 deserialisation fix) and subset to posterior
+repair_rvars <- function(df) {
+  rvar_cols <- which(vapply(df, inherits, logical(1), "rvar"))
+  for (j in rvar_cols) {
+    rv <- df[[j]]
+    if (length(rv) == 0L) {
+      dm <- posterior::draws_of(rv)
+      n <- ncol(dm)
+      if (n > 0L) {
+        df[[j]] <- posterior::rvar(
+          array(dm, dim = c(nrow(dm), n)),
+          nchains = posterior::nchains(rv)
+        )
+      }
+    }
+  }
+  df
+}
+
+km_post_crc <- repair_rvars(km_data_crc)
+km_post_crc <- km_post_crc[km_post_crc$fit_type == "posterior", ]
+
+os_post_crc <- repair_rvars(os_km_data_crc)
+os_post_crc <- os_post_crc[os_post_crc$fit_type == "posterior", ]
+
+p_pfs_crc <- relabel_crc(km_post_crc) |>
+  plot_km(
+    km_est_var = spop_pfs_km_est,
+    facet_col = trial,
+    obs_km_data = relabel_crc(obs_km_crc)
+  ) +
+  scale_y_continuous("Progression-Free Survival Probability", breaks = seq(0, 1, 0.2)) +
+  labs(caption = NULL)
+
+p_os_crc <- relabel_crc(os_post_crc) |>
+  plot_km(
+    km_est_var = spop_os_km_est,
+    facet_col = trial,
+    obs_km_data = relabel_crc(obs_os_crc),
+    endpoint = "os"
+  ) +
+  scale_y_continuous("Overall Survival Probability", breaks = seq(0, 1, 0.2)) +
+  labs(caption = NULL)
+
+p_pfs_crc / p_os_crc
 ```
 
 ### Leave-future-out cross-validation {#sec-results-lfo}
@@ -945,17 +1300,19 @@ Out-of-sample RECIST classification (mechanistic component only, pooled across L
 RECIST classification sensitivity over successive LFO cut-off dates. PD sensitivity (plum) stabilises around 70–80%; PR (cyan) and SD (gold) remain harder to distinguish. The ~30% PD ceiling motivates the multistate component for non-target progression.
 ::: -->
 
-### Transition-specific covariate effects {#sec-results-covariates}
+### Covariate effects and tumour-hazard coupling {#sec-results-covariates}
 
-@fig-covariate-effects shows the posterior distribution of covariate coefficients in standardised covariate space (back-transformed from the QR reparameterisation used during sampling; each coefficient represents a one-standard-deviation effect) across five model components: the tumour-dynamics modules (growth-rate balance and initial decreasing fraction) and three multistate transition hazards ($0\to 1$ progression, $0\to 2$ direct death, $1\to 2$ post-progression death).
+#### Small-cell lung cancer
 
-The key observation is that the same covariate can act in opposite directions on different transitions. For example, haemoglobin shows a clear negative coefficient on the $0\to 1$ progression hazard (higher Hgb → lower progression risk) but a positive coefficient on $1\to 2$ post-progression death — consistent with the clinical interpretation that anaemia is prognostic for both progression and post-progression mortality, but through different mechanisms. The $0\to 2$ direct-death coefficients have the widest credible intervals, reflecting the small number of direct-death events available to identify these effects. This is the structural advantage of the multistate formulation: a single-hazard model would average these opposing effects into one coefficient, losing the transition-specific clinical signal.
+@fig-covariate-effects shows the posterior distribution of covariate coefficients across all model components: the tumour-dynamics submodel (growth-rate balance, initial decreasing fraction, Gompertz decay $\kappa$), the four multistate transition hazards ($0\to 1$ progression, $0\to 2$ direct death, $0\to 3$ dropout, $1\to 2$ post-progression death), and the time-varying tumour bridge (@sec-ms-bridge). All coefficients are on a standardised, per-one-standard-deviation scale, back-transformed from the QR reparameterisation used during sampling.
 
-The top panel of @fig-covariate-effects shows the *time-invariant* baseline covariates. The bottom panel shows the model's other coupling to the hazards: the time-varying tumour bridge $\mathbf{W}_i(t)$ (@sec-ms-bridge) — standardised latent log-burden and the patient-specific log decrease/growth rates — whose coefficients $\boldsymbol{\beta}^{\mathrm{tv}}_{jk}$ act on a different covariate axis (three tumour-derived features rather than the six baseline covariates), hence the separate, narrower panel sharing the same colour scale. The bridge feeds only two transitions in the case-study configuration — non-target progression ($0\to 1$) and dropout ($0\to 3$); it is not wired into the direct-death or post-progression-death hazards here (@sec-ms-bridge), so those have no bridge coefficient to estimate. The standardised-log-burden coefficient on $0\to 1$ is positive (larger latent tumour burden → higher per-visit progression hazard), the expected sign and the mechanistic heart of the joint model: the multistate progression channel tracks the latent trajectory inferred from the SLD record. The decrease/growth-rate coefficients are more diffuse — burden *level* carries most of the per-visit signal once it is conditioned on — and the dropout bridge is identified only weakly, consistent with the modest number of dropout events.
+The key observation is that the same covariate can act in opposite directions on different components. Haemoglobin, for example, has a clear negative coefficient on the $0\to 1$ progression hazard (higher Hgb → lower progression risk) but a positive coefficient on $1\to 2$ post-progression death — consistent with anaemia being prognostic for both events through different mechanisms. The $0\to 2$ direct-death coefficients have the widest credible intervals, reflecting the small number of direct-death events. This transition-specific resolution is a structural advantage of the multistate formulation over a single-hazard model, which would collapse these opposing effects into one coefficient.
+
+The bottom panel shows the time-varying bridge $\mathbf{W}_i(t)$ — standardised latent log-burden and the patient-specific log decrease/growth rates. The bridge feeds two transitions in the SCLC configuration ($0\to 1$ and $0\to 3$); direct death and post-progression death carry no bridge coefficient here. The positive log-burden coefficient on $0\to 1$ is the mechanistic heart of the joint model: the stochastic progression hazard rises as the latent tumour burden grows. Decrease/growth-rate coefficients are more diffuse — burden level carries most of the per-visit signal once conditioned on — and the dropout bridge is identified only weakly.
 
 ```{r}
 #| label: fig-covariate-effects
-#| fig-cap: "Posterior covariate effects across model components, with a shared colour scale. **Top panel — time-invariant baseline covariates:** growth-rate balance, initial decreasing fraction, and Gompertz growth-rate decay $\\kappa$ (tumour dynamics submodel), and the four multistate transition hazards — progression $0\\to 1$, direct death $0\\to 2$, dropout $0\\to 3$, post-progression death $1\\to 2$ — back-transformed from the QR reparameterisation used during sampling. **Bottom panel — time-varying tumour bridge $\\mathbf{W}_i(t)$** (@sec-ms-bridge): standardised latent log-burden and the patient-specific log decrease/growth rates, for the two transitions the bridge feeds in the case-study configuration ($0\\to 1$ and $0\\to 3$); these are read directly (not QR-rotated). Both panels are on a standardised, per-one-standard-deviation scale (log-hazard or logit). Intervals show 50% and 90% credible intervals. The bottom panel is narrower because the bridge has three features against the six baseline covariates; the $1\\to 2$ and $0\\to 2$ hazards do not carry the bridge here and so have no bridge coefficients to show."
+#| fig-cap: "SCLC — posterior covariate effects across model components. **Top panel — time-invariant baseline covariates** (back-transformed from QR reparameterisation): growth-rate balance, initial decreasing fraction, Gompertz decay $\\kappa$ (tumour dynamics), and four multistate transition hazards. **Bottom panel — time-varying tumour bridge** $\\mathbf{W}_i(t)$ (@sec-ms-bridge): standardised latent log-burden and log decrease/growth rates for the two bridge-wired transitions ($0\\to 1$, $0\\to 3$). Both panels are on a per-1-SD scale (log-hazard or logit). Intervals show 50% and 90% credible intervals."
 #| fig-height: 8
 #| fig-width: 10
 #| cache: false
@@ -987,10 +1344,6 @@ COVAR_LABELS <- c(
   albumin = "Albumin (g/L)"
 )
 
-# Bridge (time-varying) feature order matches eq-ms-bridge: standardised
-# log-burden, log decrease rate, log growth rate. Only the transitions the
-# bridge actually feeds (0->1, 0->3) are data-informed; 1->2 is prior-only and
-# 0->2 has no bridge coefficient, so both are excluded.
 BRIDGE_FEATURES <- c(
   "Standardised log-burden",
   "Log decrease rate",
@@ -1006,35 +1359,91 @@ PANEL_LEVELS <- c(
   "Tumour bridge (time-varying)"
 )
 
-# Time-invariant panel: y = baseline covariate, colour = model component.
-ti_df <- purrr::imap_dfr(COEF_LABELS, \(label, var_name) {
-  v <- rv[[var_name]]
-  tibble::tibble(
-    component = label,
-    feature = unname(COVAR_LABELS[covar_names[seq_along(v)]]),
-    .value = v
-  )
-}) |>
-  mutate(panel = PANEL_LEVELS[1])
+make_coef_plot_data <- function(rv, coef_labels, covar_labels, bridge_coefs, bridge_features, panel_levels) {
+  ti_df <- purrr::imap_dfr(coef_labels, \(label, var_name) {
+    v <- rv[[var_name]]
+    tibble::tibble(
+      component = label,
+      feature = unname(covar_labels[names(covar_labels)[seq_along(v)]]),
+      .value = v
+    )
+  }) |>
+    mutate(panel = panel_levels[1])
 
-# Time-varying panel: y = bridge feature, colour = transition (a subset of the
-# same `component` levels, so the colour scale is shared across panels).
-tv_df <- purrr::imap_dfr(BRIDGE_COEFS, \(label, var_name) {
-  v <- rv[[var_name]]
-  tibble::tibble(
-    component = label,
-    feature = BRIDGE_FEATURES[seq_along(v)],
-    .value = v
-  )
-}) |>
-  mutate(panel = PANEL_LEVELS[2])
+  tv_df <- purrr::imap_dfr(bridge_coefs, \(label, var_name) {
+    v <- rv[[var_name]]
+    tibble::tibble(
+      component = label,
+      feature = bridge_features[seq_along(v)],
+      .value = v
+    )
+  }) |>
+    mutate(panel = panel_levels[2])
 
-dplyr::bind_rows(ti_df, tv_df) |>
-  mutate(
-    feature = factor(feature, levels = c(unname(COVAR_LABELS), BRIDGE_FEATURES)),
-    component = factor(component, levels = unname(COEF_LABELS)),
-    panel = factor(panel, levels = PANEL_LEVELS)
-  ) |>
+  dplyr::bind_rows(ti_df, tv_df) |>
+    mutate(
+      feature = factor(feature, levels = c(unname(covar_labels), bridge_features)),
+      component = factor(component, levels = unname(coef_labels)),
+      panel = factor(panel, levels = panel_levels)
+    )
+}
+
+make_coef_plot_data(rv, COEF_LABELS, COVAR_LABELS, BRIDGE_COEFS, BRIDGE_FEATURES, PANEL_LEVELS) |>
+  ggplot() +
+  stat_pointinterval(
+    aes(xdist = .value, y = feature, color = component),
+    .width = c(0.5, 0.9),
+    point_size = 1.5,
+    position = position_dodge(width = 0.6)
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed", alpha = 0.3) +
+  facet_grid(rows = vars(panel), scales = "free_y", space = "free_y") +
+  scale_color_discrete("Model component", type = AZ_palette, drop = FALSE) +
+  labs(x = "Coefficient (standardised, per 1 SD; log-hazard or logit scale)", y = NULL) +
+  theme(legend.position = "bottom") +
+  guides(color = guide_legend(ncol = 2))
+```
+
+#### Colorectal cancer
+
+@fig-covariate-effects-crc shows the corresponding posterior covariate effects for the CRC case study. The structure is the same as @fig-covariate-effects, with two differences reflecting the CRC configuration: ECOG is excluded (uniformly zero in this cohort), leaving five baseline covariates; and the bridge-wired transitions remain $0\to 1$ and $0\to 3$.
+
+The CRC posterior shows broadly consistent directional patterns with SCLC — log-LDH and albumin are associated with hazard effects in the expected directions — but with notably wider credible intervals for the multistate coefficients. This reflects the greater heterogeneity in the CRC historical data: the four historical arms span different chemotherapy backbones and patient populations, and the trial-level random effects absorb some of the variation that would otherwise sharpen covariate estimates. The bridge log-burden coefficient on $0\to 1$ is again positive, replicating the SCLC finding that rising latent tumour burden increases the per-visit progression hazard — a consistent mechanistic signal across two independent disease settings.
+
+```{r}
+#| label: fig-covariate-effects-crc
+#| fig-cap: "CRC — posterior covariate effects across model components. Same structure as @fig-covariate-effects. ECOG is excluded (uniformly zero in this cohort), leaving five baseline covariates. The bridge feeds $0\\to 1$ and $0\\to 3$ as in the SCLC configuration. Intervals show 50% and 90% credible intervals."
+#| fig-height: 8
+#| fig-width: 10
+#| cache: false
+covar_names_crc <- colnames(crc_tar_read("covar_design_matrix"))
+rv_crc <- posterior::as_draws_rvars(crc_tar_read("tumor_ssls_draws_pop_posterior"))
+
+gr_decay_var_crc <- if ("gr_decay_coef_pop" %in% names(rv_crc)) "gr_decay_coef_pop" else "gr_decay_coef_qr_pop"
+
+COEF_LABELS_CRC <- c(
+  frac_coef_pop = "Growth-rate balance (tumour)",
+  init_coef_pop = "Initial decreasing fraction (tumour)",
+  time_invariant_coef_01 = "Progression hazard (0→1)",
+  time_invariant_coef_02 = "Direct death hazard (0→2)",
+  time_invariant_coef_03 = "Dropout hazard (0→3)",
+  time_invariant_coef_12 = "Post-progression death (1→2)"
+)
+COEF_LABELS_CRC <- c(
+  COEF_LABELS_CRC[1:2],
+  setNames("Growth-rate decay κ (tumour)", gr_decay_var_crc),
+  COEF_LABELS_CRC[3:6]
+)
+
+COVAR_LABELS_CRC <- c(
+  age = "Age (years)",
+  male = "Male (%)",
+  hgb = "Haemoglobin (g/dL)",
+  ldh_log = "log-LDH",
+  albumin = "Albumin (g/L)"
+)
+
+make_coef_plot_data(rv_crc, COEF_LABELS_CRC, COVAR_LABELS_CRC, BRIDGE_COEFS, BRIDGE_FEATURES, PANEL_LEVELS) |>
   ggplot() +
   stat_pointinterval(
     aes(xdist = .value, y = feature, color = component),
@@ -1052,9 +1461,15 @@ dplyr::bind_rows(ti_df, tv_df) |>
 
 ### Clinical endpoint summaries {#sec-results-endpoints}
 
-The full-posterior propagation delivers clinical quantities as distributions, not point estimates. @fig-median-pfs shows the posterior distribution of median PFS for each arm of the target trial: the prior (gold) spans a wide range reflecting pre-data uncertainty, while the posterior (plum) concentrates with substantially reduced uncertainty. The dashed line marks the observed median PFS (~6.2 months, identical for both arms). Median PFS is a joint-model endpoint — it combines both the mechanistic target-lesion progression and the stochastic multistate progression channels.
+The full-posterior propagation delivers clinical quantities as distributions rather than point estimates, making explicit the uncertainty that classical point estimators suppress. For each endpoint, the prior distribution spans the range of outcomes consistent with the biological constraints and the historical population before the target trial is observed; the posterior concentrates that distribution using the target-trial data.
 
-@fig-orr shows the ORR posterior by arm. Unlike median PFS, ORR is derived **entirely from the mechanistic submodel** — it is a deterministic function of the latent SLD trajectory (whether $B_i(t)$ ever falls below $0.7$, i.e. a $\geq 30\%$ decrease from baseline). No multistate hazard is involved: a patient's response classification depends only on their inferred tumour dynamics. This is why the ORR posterior is remarkably tight — response depth is well-identified from even a few SLD observations per patient, and the structural decrease-plus-growth model constrains the trajectory shape. A hazard-only survival model without the mechanistic component would be unable to produce ORR predictions at all.
+#### Small-cell lung cancer
+
+@fig-median-pfs shows the posterior distribution of median PFS evolving across LFO cut-offs for the Lilly CXCR4 trial arms. As more patients are observed, the posterior median narrows and converges toward the observed mature value (dashed line, ~6.2 months). Median PFS is a joint-model endpoint — it combines both the mechanistic target-lesion progression and the stochastic multistate progression channels.
+
+@fig-median-os shows the corresponding OS median evolution. OS convergence is slower than PFS, reflecting the additional structural uncertainty from multistate routing, but the model's predictions remain centred on the observed mature value across cut-offs.
+
+@fig-orr shows the ORR posterior by arm across LFO cut-offs. Unlike median PFS, ORR is derived **entirely from the mechanistic submodel** — it is a deterministic function of the latent SLD trajectory (whether $B_i(t)$ ever falls below 0.7, i.e. a $\geq 30\%$ decrease from baseline). No multistate hazard is involved. This is why the ORR posterior is remarkably tight even at early cut-offs — response depth is well-identified from even a few SLD observations, and the structural decrease-plus-growth model constrains the trajectory shape. A hazard-only survival model without the mechanistic component could not produce ORR predictions at all.
 
 <!-- The model's ORR posterior (approximately 73–75%) underestimates the observed ORR (Arm A: 85%, Arm B: 95%) by 15–20 percentage points. This conservatism reflects hierarchical shrinkage on the latent trajectory: patients with borderline responses (observed SLD dropping just past the 30% threshold) have their inferred latent response depth attenuated toward the population mean, pushing them back below the PR classification boundary. Additionally, measurement noise can cause the observed SLD to cross the 30% threshold transiently, yielding an observed PR that the smooth latent trajectory — which averages over noise — does not reproduce. The model reports its posterior belief about *true* response depth, not the noisy observed best-response classification; the gap is the price of denoising. -->
 
@@ -1211,6 +1626,164 @@ bind_rows(lfo_orr, full_orr) |>
   scale_shape_manual("", values = c("Observed" = "|")) +
   scale_x_continuous("Overall Response Rate (ORR)", limits = c(0, 1), labels = scales::label_percent()) +
   labs(y = NULL, caption = "Observed ORR from clinical study report (target-lesion RECIST best response)") +
+  theme(legend.position = "bottom")
+```
+
+#### Colorectal cancer
+
+LFO endpoint evolution targets for CRC are not yet available (the LFO pipeline has run but downstream endpoint aggregations have not been built); the CRC figures therefore show prior vs full-data posterior rather than cut-off evolution. This comparison still demonstrates the model's core behaviour: the prior reflects generic mCRC population knowledge before observing the PACCE trial, and the posterior quantifies how much the target-trial data sharpens the endpoint estimates.
+
+@fig-median-pfs-crc shows the full-data posterior median PFS across all five CRC arms, together with the observed mature KM median. The posterior concentrates substantially relative to the prior in all arms.
+
+@fig-median-os-crc shows the corresponding OS medians. OS posteriors are wider than PFS as expected from the multistate routing uncertainty, but still concentrate markedly from the prior. The PACCE target arm observed OS median (~20 months) sits well within the posterior credible interval.
+
+@fig-orr-crc shows the ORR posterior for all five arms with observed ORR bars (computed from best deterministic RECIST response per patient in the analysis data). As in SCLC, the ORR posterior is driven entirely by the mechanistic submodel and is tight relative to the prior. The CRC ORR estimates are lower than SCLC, consistent with shallower initial responses and more gradual decrease rates.
+
+```{r}
+#| label: fig-endpoint-data-crc
+#| include: false
+#| cache: false
+CRC_ARM_LABELS_5 <- c(
+  "PACCE — Panit. + Bev + Chemo (target)" = "amgen_20040249_crc_experimental",
+  "PACCE — Bev + Chemo (control)"          = "amgen_20040249_crc_control",
+  "HORIZON III — FOLFOX + Bev"             = "az_cediranib_crc_control",
+  "Pfizer — FOLFIRI + Sunitinib/Pbo"       = "pfizer_sunitinib_crc_control",
+  "Sanofi EFC5505 — BSC/Placebo"           = "sanofi_efc5505_crc_control"
+)
+
+pfs_quant_crc <- crc_tar_read("all_tumor_ssls_trial_pfs_quant") |>
+  mutate(trial = fct_recode(trial, !!!CRC_ARM_LABELS_5))
+
+os_km_rvar_crc <- crc_tar_read("all_tumor_ssls_km_os_rvar") |>
+  repair_rvars()
+
+orr_crc <- crc_tar_read("all_tumor_ssls_orr_rvar") |>
+  mutate(trial = fct_recode(trial, !!!CRC_ARM_LABELS_5))
+
+obs_median_pfs_crc <- crc_tar_read("km_trial_pfs") |>
+  (\(d) d[d$btype == "ub", ])() |>
+  mutate(
+    trial      = fct_recode(trial, !!!CRC_ARM_LABELS_5),
+    obs_median = map_dbl(quantiles, \(q) q$pfs[q$quantile == 0.5])
+  ) |>
+  select(trial, obs_median)
+
+obs_median_os_crc <- crc_tar_read("km_trial_os") |>
+  (\(d) d[d$btype == "ub", ])() |>
+  mutate(
+    trial      = fct_recode(trial, !!!CRC_ARM_LABELS_5),
+    obs_median = map_dbl(quantiles, \(q) q$pfs[q$quantile == 0.5])
+  ) |>
+  select(trial, obs_median)
+
+# Derive OS quant from KM rvar: posterior distribution of the week where KM
+# first drops below 0.5 (the median survival week).
+os_quant_crc <- os_km_rvar_crc |>
+  mutate(trial = fct_recode(trial, !!!CRC_ARM_LABELS_5)) |>
+  group_by(trial, fit_type) |>
+  arrange(t, .by_group = TRUE) |>
+  summarise(
+    sample_os_quant = posterior::rvar(
+      apply(posterior::draws_of(sample_os_km_est), 1, \(km) {
+        idx <- which(km < 0.5)
+        if (length(idx) == 0) max(t) else t[idx[1]]
+      })
+    ),
+    .groups = "drop"
+  )
+
+# Observed ORR from best deterministic RECIST per patient
+analysis_data_crc_ep <- crc_tar_read("all_analysis_data")
+obs_orr_crc <- purrr::map_dfr(seq_len(nrow(analysis_data_crc_ep)), \(i) {
+  v  <- analysis_data_crc_ep$visit_data[[i]]
+  v  <- v[!is.na(v$week) & v$week >= 0, ]
+  rs <- v$det_response[!is.na(v$det_response)]
+  best <- if (length(rs) == 0) NA_character_
+    else if (any(rs == "CR")) "CR"
+    else if (any(rs == "PR")) "PR"
+    else if (any(rs == "SD")) "SD"
+    else "PD"
+  tibble(group = as.character(analysis_data_crc_ep$group[i]), best = best)
+}) |>
+  group_by(group) |>
+  summarise(obs_orr = mean(best %in% c("CR", "PR"), na.rm = TRUE), .groups = "drop") |>
+  mutate(trial = fct_recode(as.factor(group), !!!CRC_ARM_LABELS_5)) |>
+  select(trial, obs_orr)
+```
+
+```{r}
+#| label: fig-median-pfs-crc
+#| fig-cap: "CRC — posterior median PFS (months) across all five trial arms, prior (gold) vs full-data posterior (plum). Vertical bar marks the observed mature KM median."
+#| fig-width: 8
+#| fig-height: 4
+#| cache: false
+pfs_quant_crc |>
+  filter(quantile == 0.5) |>
+  ggplot() +
+  geom_point(
+    data = obs_median_pfs_crc,
+    aes(x = obs_median, y = trial, shape = "Observed"),
+    size = 16, linewidth = 2, color = "grey30", alpha = 0.3
+  ) +
+  stat_pointinterval(
+    aes(xdist = sample_pfs_quant, y = trial, color = fit_type),
+    .width = c(0.5, 0.9),
+    position = position_dodge(width = 0.6)
+  ) +
+  scale_x_continuous("Median PFS (months)", breaks = months_to_weeks(seq(0, 36, 3)), labels = label_weeks_to_months) +
+  scale_color_discrete("Fit", type = c(posterior = AZ_plum, prior = AZ_gold)) +
+  scale_shape_manual("", values = c("Observed" = "|")) +
+  labs(y = NULL) +
+  theme(legend.position = "bottom")
+```
+
+```{r}
+#| label: fig-median-os-crc
+#| fig-cap: "CRC — posterior median OS (months) across all five trial arms, prior (gold) vs full-data posterior (plum). Derived as the first week where the posterior OS KM drops below 0.5. Vertical bar marks the observed KM median."
+#| fig-width: 8
+#| fig-height: 4
+#| cache: false
+os_quant_crc |>
+  ggplot() +
+  geom_point(
+    data = obs_median_os_crc,
+    aes(x = obs_median, y = trial, shape = "Observed"),
+    size = 16, linewidth = 2, color = "grey30", alpha = 0.3
+  ) +
+  stat_pointinterval(
+    aes(xdist = sample_os_quant, y = trial, color = fit_type),
+    .width = c(0.5, 0.9),
+    position = position_dodge(width = 0.6)
+  ) +
+  scale_x_continuous("Median OS (months)", breaks = months_to_weeks(seq(0, 60, 3)), labels = label_weeks_to_months) +
+  scale_color_discrete("Fit", type = c(posterior = AZ_plum, prior = AZ_gold)) +
+  scale_shape_manual("", values = c("Observed" = "|")) +
+  labs(y = NULL) +
+  theme(legend.position = "bottom")
+```
+
+```{r}
+#| label: fig-orr-crc
+#| fig-cap: "CRC — posterior ORR across all five trial arms, prior (gold) vs full-data posterior (plum). ORR is derived entirely from the mechanistic submodel. Vertical bar marks the observed ORR from best deterministic target-lesion RECIST response per patient."
+#| fig-width: 8
+#| fig-height: 4
+#| cache: false
+orr_crc |>
+  ggplot() +
+  geom_point(
+    data = obs_orr_crc,
+    aes(x = obs_orr, y = trial, shape = "Observed"),
+    size = 16, linewidth = 2, color = "grey30", alpha = 0.3
+  ) +
+  stat_pointinterval(
+    aes(xdist = sample_target_orr, y = trial, color = fit_type),
+    .width = c(0.5, 0.9),
+    position = position_dodge(width = 0.6)
+  ) +
+  scale_x_continuous("Overall Response Rate (ORR)", limits = c(0, 1), labels = scales::label_percent()) +
+  scale_color_discrete("Fit", type = c(posterior = AZ_plum, prior = AZ_gold)) +
+  scale_shape_manual("", values = c("Observed" = "|")) +
+  labs(y = NULL, caption = "Observed ORR: best deterministic target-lesion RECIST response per patient.") +
   theme(legend.position = "bottom")
 ```
 
