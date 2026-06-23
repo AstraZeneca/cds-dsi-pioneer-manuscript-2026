@@ -265,7 +265,7 @@ The decay parameter is modelled on the log scale with a population-level interce
 $$
 \log \kappa_i \;=\; \alpha^{\kappa},
 $$ {#eq-kappa-linpred}
-where $\alpha^{\kappa}$ is the population log-decay intercept, so that $\kappa_i = \mathrm{e}^{\alpha^{\kappa}} > 0$ for all patients. Baseline-covariate slopes on $\log \kappa_i$ are supported by the model but not activated in the primary analysis; the current configuration pools all patients at a single population decay rate. The prior on $\alpha^{\kappa}$ is weakly informative, centred on a decay rate whose implied growth-rate half-life is on the order of the longest forecast horizons of interest, and wide enough that the posterior can contract toward slower or faster decay wherever the observed trajectories provide curvature signal (see @sec-priors).
+where $\alpha^{\kappa}$ is the population log-decay intercept, so that $\kappa_i = \mathrm{e}^{\alpha^{\kappa}} > 0$ for all patients. Baseline-covariate slopes on $\log \kappa_i$ are supported by the model but not activated in the primary analysis; the current configuration pools all patients at a single population decay rate. The prior on $\alpha^{\kappa}$ is weakly informative, chosen so that the implied carrying capacity $r^{\mathrm{gro}}_i / \kappa_i$ is finite and reachable within the forecast window, while remaining diffuse enough that the posterior can contract toward the curvature actually present in the observed trajectories (see @sec-priors).
 
 #### Initial state {#sec-mech-initial}
 
