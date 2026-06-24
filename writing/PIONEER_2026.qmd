@@ -265,7 +265,7 @@ The decay parameter is modelled on the log scale with a population-level interce
 $$
 \log \kappa_i \;=\; \alpha^{\kappa},
 $$ {#eq-kappa-linpred}
-where $\alpha^{\kappa}$ is the population log-decay intercept, so that $\kappa_i = \mathrm{e}^{\alpha^{\kappa}} > 0$ for all patients. Baseline-covariate slopes on $\log \kappa_i$ are supported by the model but not activated in the primary analysis; the current configuration pools all patients at a single population decay rate. The prior on $\alpha^{\kappa}$ is weakly informative, centred on a decay rate whose implied growth-rate half-life is on the order of the longest forecast horizons of interest, and wide enough that the posterior can contract toward slower or faster decay wherever the observed trajectories provide curvature signal (see @sec-priors).
+where $\alpha^{\kappa}$ is the population log-decay intercept, so that $\kappa_i = \mathrm{e}^{\alpha^{\kappa}} > 0$ for all patients. Baseline-covariate slopes on $\log \kappa_i$ are supported by the model but not activated in the primary analysis; the current configuration pools all patients at a single population decay rate. The prior on $\alpha^{\kappa}$ is weakly informative, chosen so that the implied carrying capacity $r^{\mathrm{gro}}_i / \kappa_i$ is finite and reachable within the forecast window, while remaining diffuse enough that the posterior can contract toward the curvature actually present in the observed trajectories (see @sec-priors).
 
 #### Initial state {#sec-mech-initial}
 
@@ -608,18 +608,18 @@ target_visit_data_crc <- tar_read(target_visit_data_crc, store = pub_store_crc)
 historical_visit_data_crc <- tar_read(historical_visit_data_crc, store = pub_store_crc)
 
 CRC_TRIAL_LABELS <- c(
-  amgen_20040249_crc = "PACCE (Amgen 20040249)",
-  az_cediranib_crc = "HORIZON III (AZ Cediranib)",
-  pfizer_sunitinib_crc = "Pfizer Sunitinib",
+  amgen_20040249_crc = "PACCE",
+  az_cediranib_crc = "HORIZON III",
+  pfizer_sunitinib_crc = "Pfizer Sun.",
   sanofi_efc5505_crc = "Sanofi EFC5505"
 )
 
 CRC_TREATMENT_LABELS <- c(
-  "panit. plus bevacizumab with chemotherapy" = "Panit. + Bev + Chemo (target)",
-  "bevacizumab with chemotherapy" = "Bev + Chemo (historical)",
-  "FOLFOX + bevacizumab 5mg/kg" = "FOLFOX + Bev (historical)",
-  "FOLFIRI+Sunitinib/Placebo" = "FOLFIRI + Sunitinib/Pbo (historical)",
-  "BSC/Placebo" = "BSC / Placebo (historical)"
+  "panit. plus bevacizumab with chemotherapy" = "Panit.+Bev+Chemo (target)",
+  "bevacizumab with chemotherapy" = "Bev+Chemo",
+  "FOLFOX + bevacizumab 5mg/kg" = "FOLFOX+Bev",
+  "FOLFIRI+Sunitinib/Placebo" = "FOLFIRI+Sun/Pbo",
+  "BSC/Placebo" = "BSC/Placebo"
 )
 
 visits_per_patient_crc <- bind_rows(target_visit_data_crc, historical_visit_data_crc) |>
@@ -742,9 +742,13 @@ all_patient |>
   )
 ```
 
+```{=latex}
+\begin{landscape}
+```
+
 ```{r}
 #| label: tbl-crc-trial-summary
-#| tbl-cap: "Patient disposition and endpoints by trial and arm — CRC."
+#| tbl-cap: "Patient disposition and endpoints by trial and arm — CRC. The PACCE panitumumab arm is the target; all other arms are historical. Column groups label the source trial."
 CRC_METRIC_LABELS <- c(
   N = "N",
   median_fu_mo = "Median follow-up (mo)",
@@ -844,12 +848,17 @@ all_patient_crc |>
     value = list(male ~ 1L),
     digits = list(all_continuous() ~ 1)
   ) |>
+  modify_header(all_stat_cols() ~ "**{level}**  \nN = {n}") |>
   as_gt() |>
   tab_options(
     table.font.size = "small",
     column_labels.border.lr.style = "hidden",
     stub.border.style = "hidden"
   )
+```
+
+```{=latex}
+\end{landscape}
 ```
 
 ## Results {#sec-results}
@@ -1507,12 +1516,27 @@ lfo_os_quant <- lfo_tar_read_pattern("lfo_cutoff_trial_os_quant")
 full_os_quant <- pub_tar_read("all_tumor_ssls_trial_os_quant")
 os_evol <- make_lfo_endpoint(lfo_os_quant, full_os_quant, sample_os_quant)
 
-# Observed medians from KM quantiles
+# Observed medians read off the observed KM CURVE by linear interpolation of the
+# S = 0.5 crossing — the SAME convention the model's km_quantiles uses for the
+# posterior median points plotted alongside. survfit's default quantile uses a
+# step rule (first week with S <= 0.5), which on a coarse KM lands ~1 week later
+# than the interpolated crossing and would otherwise be an apples-to-oranges
+# comparison against the model's interpolated median.
+km_median_interp <- function(km_curve, p = 0.5) {
+  km_curve <- dplyr::arrange(km_curve, t)
+  s <- km_curve$s
+  tt <- km_curve$t
+  i <- which(s <= p)[1]
+  if (is.na(i)) return(NA_real_)
+  if (i == 1) return(tt[1])
+  approx(c(s[i - 1], s[i]), c(tt[i - 1], tt[i]), xout = p)$y
+}
+
 obs_median_pfs <- pub_tar_read("km_trial_pfs") |>
   filter(btype == "ub", grepl("lilly_cxcr4", trial)) |>
   mutate(
     trial = fct_recode(trial, !!!TARGET_ARM_LABELS),
-    obs_median = map_dbl(quantiles, \(q) q$pfs[q$quantile == 0.5])
+    obs_median = map_dbl(km_data, km_median_interp)
   ) |>
   select(trial, obs_median)
 
@@ -1520,7 +1544,7 @@ obs_median_os <- pub_tar_read("km_trial_os") |>
   filter(btype == "ub", grepl("lilly_cxcr4", trial)) |>
   mutate(
     trial = fct_recode(trial, !!!TARGET_ARM_LABELS),
-    obs_median = map_dbl(quantiles, \(q) q$pfs[q$quantile == 0.5])
+    obs_median = map_dbl(km_data, km_median_interp)
   ) |>
   select(trial, obs_median)
 ```
@@ -1608,10 +1632,9 @@ cutoff_levels <- c(
   "Full data"
 )
 
-obs_orr <- tibble(
-  trial = c("Arm A (CXCR4 + chemo)", "Arm B (chemo alone)"),
-  obs_orr = c(0.85, 0.946)
-)
+obs_orr <- pub_tar_read("obs_orr") |>
+  filter(grepl("lilly_cxcr4", trial)) |>
+  mutate(trial = fct_recode(fct_drop(trial), !!!TARGET_ARM_LABELS))
 
 bind_rows(lfo_orr, full_orr) |>
   mutate(cutoff_label = factor(cutoff_label, levels = cutoff_levels)) |>
@@ -1625,7 +1648,7 @@ bind_rows(lfo_orr, full_orr) |>
   scale_color_discrete("Data cut-off", type = AZ_palette) +
   scale_shape_manual("", values = c("Observed" = "|")) +
   scale_x_continuous("Overall Response Rate (ORR)", limits = c(0, 1), labels = scales::label_percent()) +
-  labs(y = NULL, caption = "Observed ORR from clinical study report (target-lesion RECIST best response)") +
+  labs(y = NULL, caption = "Observed ORR: confirmed objective response before PFS (SLD-derived RECIST)") +
   theme(legend.position = "bottom")
 ```
 
@@ -1664,7 +1687,7 @@ obs_median_pfs_crc <- crc_tar_read("km_trial_pfs") |>
   (\(d) d[d$btype == "ub", ])() |>
   mutate(
     trial      = fct_recode(trial, !!!CRC_ARM_LABELS_5),
-    obs_median = map_dbl(quantiles, \(q) q$pfs[q$quantile == 0.5])
+    obs_median = map_dbl(km_data, km_median_interp)
   ) |>
   select(trial, obs_median)
 
@@ -1672,7 +1695,7 @@ obs_median_os_crc <- crc_tar_read("km_trial_os") |>
   (\(d) d[d$btype == "ub", ])() |>
   mutate(
     trial      = fct_recode(trial, !!!CRC_ARM_LABELS_5),
-    obs_median = map_dbl(quantiles, \(q) q$pfs[q$quantile == 0.5])
+    obs_median = map_dbl(km_data, km_median_interp)
   ) |>
   select(trial, obs_median)
 
@@ -1692,22 +1715,12 @@ os_quant_crc <- os_km_rvar_crc |>
     .groups = "drop"
   )
 
-# Observed ORR from best deterministic RECIST per patient
-analysis_data_crc_ep <- crc_tar_read("all_analysis_data")
-obs_orr_crc <- purrr::map_dfr(seq_len(nrow(analysis_data_crc_ep)), \(i) {
-  v  <- analysis_data_crc_ep$visit_data[[i]]
-  v  <- v[!is.na(v$week) & v$week >= 0, ]
-  rs <- v$det_response[!is.na(v$det_response)]
-  best <- if (length(rs) == 0) NA_character_
-    else if (any(rs == "CR")) "CR"
-    else if (any(rs == "PR")) "PR"
-    else if (any(rs == "SD")) "SD"
-    else "PD"
-  tibble(group = as.character(analysis_data_crc_ep$group[i]), best = best)
-}) |>
-  group_by(group) |>
-  summarise(obs_orr = mean(best %in% c("CR", "PR"), na.rm = TRUE), .groups = "drop") |>
-  mutate(trial = fct_recode(as.factor(group), !!!CRC_ARM_LABELS_5)) |>
+# Observed ORR — confirmed objective response (PR/CR confirmed by two consecutive
+# assessments, before PFS) on SLD-derived RECIST, matching the model's predicted
+# sample_target_orr estimand (same fix as SCLC; replaces the prior unconfirmed
+# best-response-ever computation, which over-counted responders).
+obs_orr_crc <- crc_tar_read("obs_orr") |>
+  mutate(trial = fct_recode(fct_drop(trial), !!!CRC_ARM_LABELS_5)) |>
   select(trial, obs_orr)
 ```
 
