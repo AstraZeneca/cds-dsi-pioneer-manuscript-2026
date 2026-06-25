@@ -176,7 +176,7 @@ The novelty has five facets:
 
 - **Transition-specific tumour covariates.** Each transition in the illness-death model has its own tumour-derived covariate vector with transition-specific coefficients, allowing the model to express that growth rate strongly predicts progression hazard but only weakly affects post-progression mortality — a distinction single-hazard joint models cannot make.
 - **Joint latent state.** The decrease/growth decomposition is the latent state of a state-space model fitted jointly with the multistate submodel — not a two-stage plug-in — avoiding both the attenuation and the omitted-frailty misspecification of plug-in approaches and correctly propagating kinetic uncertainty into every downstream endpoint.
-- **Correlated per-transition frailty.** Each transition carries its own patient-level frailty, and the frailty terms are modelled jointly as a multivariate normal with an estimated correlation structure, capturing residual individual heterogeneity unexplained by the tumour bridge and revealing cross-transition dependence in unmeasured patient characteristics.
+- **Correlated per-transition frailty.** Each transition carries its own patient-level frailty, and the frailty terms are modelled jointly as a multivariate normal with an estimated correlation structure, capturing residual individual heterogeneity unexplained by the tumour-derived time-varying covariates and revealing cross-transition dependence in unmeasured patient characteristics.
 - **Multi-trial hierarchy.** Patients are nested within arms within trials in a single hierarchical model; population-level parameters are shared across trials by construction, so fitting on multiple trials simultaneously yields cross-trial borrowing without a separate meta-analytic step. Covariate effects are entered via QR-decomposed design matrices with elicited priors mapped through the rotation.
 - **Full-posterior endpoint propagation.** All endpoints are read off the joint posterior, producing both unconditional posterior-predictive and observed-data-conditioned predictive distributions without re-fitting.
 
@@ -291,7 +291,7 @@ The decay parameter is modelled on the log scale with a population-level interce
 $$
 \log \kappa_i \;=\; \alpha^{\kappa},
 $$ {#eq-kappa-linpred}
-where $\alpha^{\kappa}$ is the population log-decay intercept, so that $\kappa_i = \mathrm{e}^{\alpha^{\kappa}} > 0$ for all patients. Baseline-covariate slopes on $\log \kappa_i$ are supported by the model but not activated in the primary analysis; the current configuration pools all patients at a single population decay rate. The prior on $\alpha^{\kappa}$ is weakly informative, chosen so that the implied carrying capacity $r^{\mathrm{gro}}_i / \kappa_i$ is finite and reachable within the forecast window, while remaining diffuse enough that the posterior can contract toward the curvature actually present in the observed trajectories (see @sec-priors).
+where $\alpha^{\kappa}$ is the population log-decay intercept, so that $\kappa_i = \mathrm{e}^{\alpha^{\kappa}} > 0$ for all patients. Baseline-covariate slopes on $\log \kappa_i$ are supported by the model but not activated in the primary analysis; the current configuration pools all patients at a single population decay rate. The prior on $\alpha^{\kappa}$ is weakly informative, chosen so that the implied carrying capacity $r^{\mathrm{gro}}_i / \kappa_i$ is finite and reachable within the forecast window, while remaining diffuse enough that the posterior can contract toward the curvature actually present in the observed trajectories (@sec-priors).
 
 #### Initial state {#sec-mech-initial}
 
@@ -332,11 +332,11 @@ $$
 \eta^{\mathrm{bal}}_i &\;=\; \alpha^{\mathrm{bal}} \;+\; \alpha^{\mathrm{bal}}_{s[i]} \;+\; \alpha^{\mathrm{bal}}_i \;+\; \mathbf{x}_i \cdot \boldsymbol{\beta}^{\mathrm{bal}},
 \end{aligned}
 $$ {#eq-rate-linpred}
-with population-level intercepts $\alpha^{\mathrm{tot}}, \alpha^{\mathrm{bal}}$, trial-arm deviations $\alpha^{\mathrm{tot}}_{s[i]} \sim \mathtt{Normal}(0, \tau^{\mathrm{tot}}_{\mathrm{arm}}{}^2)$ and $\alpha^{\mathrm{bal}}_{s[i]} \sim \mathtt{Normal}(0, \tau^{\mathrm{bal}}_{\mathrm{arm}}{}^2)$, patient-level deviations $\alpha^{\mathrm{tot}}_i \sim \mathtt{Normal}(0, \tau^{\mathrm{tot}}_{\mathrm{patient}}{}^2)$ and $\alpha^{\mathrm{bal}}_i \sim \mathtt{Normal}(0, \tau^{\mathrm{bal}}_{\mathrm{patient}}{}^2)$, and a covariate coefficient vector $\boldsymbol{\beta}^{\mathrm{bal}}$ on the balance only (priors discussed in @sec-priors). Notice that baseline covariates do **not** enter the magnitude: they affect the *balance* between contraction and growth but not the overall speed of the dynamics.
+with population-level intercepts $\alpha^{\mathrm{tot}}, \alpha^{\mathrm{bal}}$, trial-arm deviations $\alpha^{\mathrm{tot}}_{s[i]} \sim \mathtt{Normal}(0, \tau^{\mathrm{tot}}_{\mathrm{arm}}{}^2)$ and $\alpha^{\mathrm{bal}}_{s[i]} \sim \mathtt{Normal}(0, \tau^{\mathrm{bal}}_{\mathrm{arm}}{}^2)$, patient-level deviations $\alpha^{\mathrm{tot}}_i \sim \mathtt{Normal}(0, \tau^{\mathrm{tot}}_{\mathrm{patient}}{}^2)$ and $\alpha^{\mathrm{bal}}_i \sim \mathtt{Normal}(0, \tau^{\mathrm{bal}}_{\mathrm{patient}}{}^2)$, and a covariate coefficient vector $\boldsymbol{\beta}^{\mathrm{bal}}$ on the balance only. Notice that baseline covariates do **not** enter the magnitude: they affect the *balance* between contraction and growth but not the overall speed of the dynamics.
 
-This restricted covariate structure — covariates on the balance and on the initial split, not on the magnitude — is a deliberate identification choice for the case study. With covariates entering all three of $\eta^{\mathrm{tot}}_i, \eta^{\mathrm{bal}}_i, \eta^{\mathrm{init}}_i$ unrestricted, the resulting three coefficient vectors are poorly separated when SLD trajectories are short or noisy: a patient who shrinks quickly looks the same as a patient with a fast magnitude and a balance pushed entirely toward decrease. Routing covariates through balance and initial split, while leaving magnitude to a population mean plus arm and patient deviations, has empirically been the most identifiable parameterisation across the trials we have fitted; we expand on this in @sec-priors.
+This restricted covariate structure — covariates on the balance and on the initial split, not on the magnitude — is a deliberate identification choice for the case study. With covariates entering all three of $\eta^{\mathrm{tot}}_i, \eta^{\mathrm{bal}}_i, \eta^{\mathrm{init}}_i$ unrestricted, the resulting three coefficient vectors are poorly separated when SLD trajectories are short or noisy: a patient who shrinks quickly looks the same as a patient with a fast magnitude and a balance pushed entirely toward decrease. Routing covariates through balance and initial split, while leaving magnitude to a population mean plus arm and patient deviations, has empirically been the most identifiable parameterisation across the trials we have fitted.
 
-The covariate vector $\mathbf{x}_i$ in (@eq-init-linpred) and (@eq-rate-linpred) is the same throughout. In the SCLC case study, $\mathbf{x}_i$ comprises six baseline covariates: age (years), sex (male indicator), haemoglobin (g/dL), log-LDH, albumin (g/L), and ECOG performance status ($\geq 1$ indicator). We enter them through QR-rotated design matrices, with elicited priors mapped through the QR rotation; this is discussed in detail in @sec-priors.
+The covariate vector $\mathbf{x}_i$ in (@eq-init-linpred) and (@eq-rate-linpred) is the same throughout. In the SCLC case study, $\mathbf{x}_i$ comprises six baseline covariates: age (years), sex (male indicator), haemoglobin (g/dL), log-LDH, albumin (g/L), and ECOG performance status ($\geq 1$ indicator). We enter them through QR-rotated design matrices, with elicited priors mapped through the QR rotation (@sec-priors).
 
 #### Observation model {#sec-mech-observation}
 
@@ -382,7 +382,7 @@ $$
 \;+\;
 \underbrace{\gamma_{jk,i}}_{\text{frailty}},
 $$ {#eq-ms-hazard}
-in which only the first three terms are functions of time. The population and trial-level baselines are Gaussian processes (@sec-ms-gp); the tumour bridge $\mathbf{W}_i(t)$ is the explicit coupling to the mechanistic submodel (@sec-ms-bridge); the baseline covariates $\mathbf{x}_i$ are the same patient-level covariate vector used in the mechanistic submodel (@sec-mechanistic), with priors elicited on the original-scale coefficients but rotated through the QR decomposition of the design matrix for inference, as discussed in @sec-priors; and $\gamma_{jk,i}$ is a patient-level frailty term, described below.
+in which only the first three terms are functions of time. The population and trial-level baselines are Gaussian processes (@sec-ms-gp); the tumour bridge $\mathbf{W}_i(t)$ is the explicit coupling to the mechanistic submodel (@sec-ms-bridge); the baseline covariates $\mathbf{x}_i$ are the same patient-level covariate vector used in the mechanistic submodel (@sec-mechanistic), entered via QR-rotated design matrices with elicited priors (@sec-priors); and $\gamma_{jk,i}$ is a patient-level frailty term, described below.
 
 Each of the five additive components is *transition-specific*: there is no constraint that, say, the coefficient on log-burden in the $0\to 1$ hazard equals the corresponding coefficient in the $1\to 2$ hazard. This is the structural point that distinguishes our framework from a single-hazard joint model: the tumour-derived covariates are allowed (under the priors) to act differently on progression hazard than on post-progression death hazard, and the data decide which transitions they actually inform.
 
@@ -416,7 +416,7 @@ $$
 \qquad
 \boldsymbol{\Sigma}_\gamma = \mathrm{diag}(\boldsymbol{\sigma}_\gamma)\, \mathbf{R}_\gamma\, \mathrm{diag}(\boldsymbol{\sigma}_\gamma),
 $$ {#eq-ms-frailty}
-where $\boldsymbol{\sigma}_\gamma = (\sigma_{01}, \sigma_{03})^\top$ are per-transition marginal standard deviations and $\mathbf{R}_\gamma$ is a $2\times 2$ correlation matrix with an LKJ prior (discussed in @sec-priors). The off-diagonal element of $\mathbf{R}_\gamma$ captures whether patients who are intrinsically high-risk for progression tend also to be high-risk for dropout — a cross-transition dependence that neither the tumour bridge nor the observed covariates can absorb. Sampling is performed via the NCP Cholesky parameterisation of $\boldsymbol{\Sigma}_\gamma$.
+where $\boldsymbol{\sigma}_\gamma = (\sigma_{01}, \sigma_{03})^\top$ are per-transition marginal standard deviations and $\mathbf{R}_\gamma$ is a $2\times 2$ correlation matrix with an LKJ prior (@sec-priors). The off-diagonal element of $\mathbf{R}_\gamma$ captures whether patients who are intrinsically high-risk for progression tend also to be high-risk for dropout — a cross-transition dependence that neither the tumour bridge nor the observed covariates can absorb. Sampling is performed via the NCP Cholesky parameterisation of $\boldsymbol{\Sigma}_\gamma$.
 
 #### Tumour-to-hazard bridge {#sec-ms-bridge}
 
@@ -454,7 +454,7 @@ with squared-exponential covariance kernel
 $$
 k_{jk}(t, t';\, \alpha, \rho) \;=\; \alpha^2 \exp\!\bigg(\!-\frac{(t - t')^2}{2 \rho^2}\bigg),
 $$
-intercept $\mu^{\mathrm{pop}}_{jk}$ (population log-baseline-hazard level), marginal SD $\alpha^{\mathrm{pop}}_{jk}$, and length scale $\rho^{\mathrm{pop}}_{jk}$. The trial-level baseline $\log \lambda^{\mathrm{trial}}_{jk, s[i]}(\cdot)$ is an analogous GP with its own marginal SD and length scale, mean zero, and one independent realisation per trial. Patient-level GP residuals are not used in the case study (see @sec-priors).
+intercept $\mu^{\mathrm{pop}}_{jk}$ (population log-baseline-hazard level), marginal SD $\alpha^{\mathrm{pop}}_{jk}$, and length scale $\rho^{\mathrm{pop}}_{jk}$. The trial-level baseline $\log \lambda^{\mathrm{trial}}_{jk, s[i]}(\cdot)$ is an analogous GP with its own marginal SD and length scale, mean zero, and one independent realisation per trial. Patient-level GP residuals are not used in the case study (@sec-priors).
 
 For the three clock-forward transitions ($0\to 1$, $0\to 2$, $0\to 3$), the GP is defined on calendar time $t \in \{1, 2, \dots, T\}$ with $T$ the maximum study week across all patients. For the two sojourn-clock transitions ($1\to 2$, $3\to 2$), the GP is defined on sojourn time $u \in \{1, 2, \dots, U_{jk}\}$ with $U_{jk}$ the maximum sojourn time observed (or required for forecasting). The two clocks have separate GPs with independent hyperparameters; the GP defined on $t$ is shared across patients (same calendar time means the same baseline-hazard value), and the GP defined on $u$ is shared across patients in the same source state (a patient who has been in state $1$ for $u$ weeks has the same post-progression death baseline hazard as any other such patient, regardless of when their progression occurred).
 
@@ -547,21 +547,6 @@ Direct death without progression *is* a PFS event (PFS fails at the death time);
 - Fig. 4.2 — illustrative posterior baseline hazards $\lambda_{01}, \lambda_{02}, \lambda_{12}$ from SCLC-01.
 - The bridge $\mathbf{W}_i(t)$ coefficient forest plot is shown with the results in the bottom panel of @fig-covariate-effects.
 
-### Priors and the multi-level hierarchy {#sec-priors}
-
-*[To be drafted. Outline:]*
-
-- Hierarchy as level-agnostic: population → (intermediate levels) → patient. Each module independently enables random intercepts/slopes at each level.
-- Non-centred parameterisation (NCP) as default; centred (CP) as opt-in for narrow-SD levels.
-- QR-rotated covariates: elicited priors $(\boldsymbol{\mu}, \boldsymbol{\Sigma})$ on the original-scale coefficients are rotated through $R$ for the parameter declaration.
-- Prior choices on $\alpha^{\mathrm{tot}}, \alpha^{\mathrm{bal}}, \alpha^{\mathrm{init}}$ (with explanation of the tightening that followed prior–posterior conflict).
-- GP hyper-priors on the multistate baseline hazard: inverse-gamma on length-scale and marginal SD.
-- Cross-trial borrowing: HISTORICAL-derived priors transferred to SCLC-01 via the trial-level hierarchy.
-
-**Figures.**
-
-- Fig. 3.6 — prior vs posterior for key population intercepts.
-- Fig. 3.7 — schematic of the multi-level hierarchy with module enable matrix.
 
 ## Inference and implementation {#sec-inference}
 
@@ -1394,3 +1379,16 @@ target_pfs_sclc |>
   facet_wrap(vars(trial)) +
   theme(legend.position = "bottom")
 ```
+
+## Appendix B. Priors and multi-level hierarchy {#sec-priors .unnumbered}
+
+*[To be drafted. Outline:]*
+
+- Hierarchy as level-agnostic: population → (intermediate levels) → patient. Each module independently enables random intercepts/slopes at each level.
+- Non-centred parameterisation (NCP) as default; centred (CP) as opt-in for narrow-SD levels.
+- QR-rotated covariates: elicited priors $(\boldsymbol{\mu}, \boldsymbol{\Sigma})$ on the original-scale coefficients are rotated through $R$ for the parameter declaration.
+- Prior choices on $\alpha^{\mathrm{tot}}, \alpha^{\mathrm{bal}}, \alpha^{\mathrm{init}}$ (with explanation of the tightening that followed prior–posterior conflict).
+- GP hyper-priors on the multistate baseline hazard: inverse-gamma on length-scale and marginal SD.
+- Gompertz decay $\kappa$: prior chosen so the implied carrying capacity $r^{\mathrm{gro}}_i / \kappa_i$ is reachable within the forecast window.
+- Correlated frailty: LKJ prior on the $2 \times 2$ correlation matrix $\mathbf{R}_\gamma$.
+- Cross-trial borrowing: population parameters shared across trials via the hierarchical structure.
