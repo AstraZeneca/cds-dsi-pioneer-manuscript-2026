@@ -63,6 +63,27 @@ orr_data |>
 
 ## Median PFS {#sec-median-pfs}
 
+::: {.callout-note collapse="false"}
+## KM bands and median intervals show the same uncertainty along different axes
+
+The median-PFS intervals below and the Kaplan–Meier credible bands on the
+[Survival Analysis](survival-analysis.qmd) page are two readings of the **same**
+posterior, displayed along orthogonal axes:
+
+- The **KM band** is read *vertically* — at each fixed time it shows the credible
+  range of the survival probability $S(t)$.
+- A **median-PFS interval** is read *horizontally* — at the fixed level $S = 0.5$
+  it shows the credible range of the *time* the curve crosses that level. The same
+  applies to the fixed-timepoint PFS probabilities below (vertical) versus these
+  median summaries (horizontal).
+
+The two are linked by the curve's local slope ($\Delta t \approx \Delta S / |S'(t)|$):
+where the survival curve is steep — the high-hazard early window typical of this
+cohort — a wide vertical band maps to a *narrow* median interval. A tight median-PFS
+interval next to a broader-looking KM ribbon is therefore expected, not a sign of
+overconfidence.
+:::
+
 ::: {.panel-tabset}
 
 ### Sample-Based
