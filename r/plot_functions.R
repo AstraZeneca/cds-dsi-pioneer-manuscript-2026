@@ -1239,20 +1239,43 @@ get_pfs_event_markers <- function(sld_data, analysis_data) {
 #'   events sit at the `pfs` week; dropouts sit at the last observed visit.
 #'   Right-censored patients have no event and so no line. Pass `NULL` to omit
 #'   the markers entirely.
+#' @param free_x When `TRUE`, each panel also gets an independent x-axis (use for
+#'   the observed-only / uncensored fit, where progressors have widely differing
+#'   observation windows). Defaults to `FALSE` (shared x), appropriate for the
+#'   censored forecast plots that all extend to the same horizon.
 #' @return A ggplot object with SLD forecasts
-plot_sld_forecast_censored <- function(sld_data, analysis_data = NULL) {
+plot_sld_forecast_censored <- function(sld_data, analysis_data = NULL, free_x = FALSE) {
   # Per-patient SLD cap: squish each patient's rvar draws to 2× their max observed
   # SLD at the data level. Long-horizon Gompertz regrowth can reach billions of mm,
   # compressing the observed window into a sliver. We cap draws directly (via
   # draws_of/pmin) rather than using ggh4x::facetted_pos_scales, which is broken
   # with ggplot2 >= 4.0 (data$PANEL is NULL at the ggh4x finish_data hook point).
+  # The staged SLD frame is bind_rows(obs, forecast) and the forecast half carries
+  # group = NA. Backfill group per patient before computing caps/ranks, else the
+  # NA-group rows spawn a spurious rank sequence and explode the column count.
+  sld_data <- sld_data |>
+    group_by(i) |>
+    mutate(group = first(group[!is.na(group)])) |>
+    ungroup()
+
   caps <- sld_data |>
     group_by(i) |>
     summarise(cap_mm = 2 * max(mmsumdiam, na.rm = TRUE) * 10, .groups = "drop")
 
+  # Within-group patient rank (1..n) so the grid is a dense group × rank crossing;
+  # facet_grid(vars(group), vars(rank)) lays arms out as rows, sampled patients as
+  # columns. facet_grid can only free scales per row, so y is shared within an arm.
+  patient_rank <- sld_data |>
+    distinct(i, group) |>
+    group_by(group) |>
+    mutate(rank = dense_rank(i)) |>
+    ungroup() |>
+    select(i, rank)
+
   pobj <- sld_data |>
     mutate(patient_sld = patient_sld * 10) |>
     left_join(caps, by = "i") |>
+    left_join(patient_rank, by = "i") |>
     mutate(
       patient_sld = purrr::map2(
         patient_sld, cap_mm,
@@ -1260,10 +1283,29 @@ plot_sld_forecast_censored <- function(sld_data, analysis_data = NULL) {
       ) |> do.call(what = c)
     ) |>
     select(-cap_mm) |>
-    plot_dynamics(patient_sld)
+    plot_dynamics(patient_sld) +
+    # Per-panel independent axes (ggh4x::facet_grid2). Independent y always: each
+    # patient's trajectory fills its own panel; plain facet_grid only frees y per
+    # row, letting one regrowth patient flatten its row-mates. The per-patient cap
+    # above (2× max observed SLD) still bounds each panel's upper range, so the
+    # long-horizon Gompertz blow-up can't stretch a panel to billions of mm.
+    # free_x adds independent x too (uncensored fit: progressors observed over
+    # very different windows); censored forecasts keep a shared x to the horizon.
+    ggh4x::facet_grid2(
+      vars(group), vars(rank),
+      scales = if (free_x) "free" else "free_y",
+      independent = if (free_x) "all" else "y",
+      labeller = labeller(group = label_wrap_gen(18), rank = \(x) rep("", length(x)))
+    )
 
   if (!is.null(analysis_data)) {
-    event_markers <- get_pfs_event_markers(sld_data, analysis_data)
+    # Event markers must carry the facet vars (group, rank) or geom_vline replicates
+    # each line into every panel of the grid. Join the per-patient group/rank map.
+    patient_meta <- sld_data |>
+      distinct(i, group) |>
+      left_join(patient_rank, by = "i")
+    event_markers <- get_pfs_event_markers(sld_data, analysis_data) |>
+      left_join(patient_meta, by = "i")
     pobj <- pobj +
       geom_vline(
         data = event_markers,
@@ -1286,13 +1328,45 @@ plot_sld_forecast_censored <- function(sld_data, analysis_data = NULL) {
   pobj +
     scale_x_continuous("Months", breaks = months_to_weeks(seq(0, 48, 12)), label = label_weeks_to_months) +
     labs(y = "SLD [mm]") +
-    theme(legend.position = "bottom", strip.text = element_blank()) +
+    theme(
+      legend.position = "bottom",
+      # Row strips (arm names) on; column strips (rank) blanked via empty labeller.
+      strip.text.y = element_text(size = rel(0.7), angle = 0),
+      strip.text.x = element_blank()
+    ) +
     NULL
 }
 
 plot_recist_censored <- function(recist_data) {
+  # Some RECIST forecast targets carry no `group` column (e.g. CRC
+  # tumor_ssls_forecast_recist_rvar_*), so a row-bound obs+forecast frame has NA
+  # group on the forecast half. Backfill group per patient from the rows that have
+  # it before computing the grid layout.
+  recist_data <- recist_data |>
+    group_by(i) |>
+    mutate(group = first(group[!is.na(group)])) |>
+    ungroup()
+
+  # Within-group patient rank so the grid is a dense group × rank crossing,
+  # matching plot_sld_forecast_censored: arms as rows, sampled patients as columns.
+  patient_rank <- recist_data |>
+    distinct(i, group) |>
+    group_by(group) |>
+    mutate(rank = dense_rank(i)) |>
+    ungroup() |>
+    select(i, rank)
+
   recist_data |>
-    plot_recist_predictions(x_breaks = months_to_weeks(seq(0, 60, 12)))
+    left_join(patient_rank, by = "i") |>
+    plot_recist_predictions(x_breaks = months_to_weeks(seq(0, 60, 12))) +
+    facet_grid(
+      vars(group), vars(rank),
+      labeller = labeller(group = label_wrap_gen(18), rank = \(x) rep("", length(x)))
+    ) +
+    theme(
+      strip.text.y = element_text(size = rel(0.7), angle = 0),
+      strip.text.x = element_blank()
+    )
 }
 
 plot_km_evolution <- function(
