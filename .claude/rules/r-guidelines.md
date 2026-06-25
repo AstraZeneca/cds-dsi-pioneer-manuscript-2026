@@ -69,6 +69,13 @@ Rscript -e 'rsconnect::deploySite(siteDir = "quarto/publication/crc",  server = 
 - Publication (SCLC): https://rstudio-connect.seml.scp.astrazeneca.net/content/f14694b1-bfe3-4025-b037-f7338c6ea744/
 - Publication (CRC): https://rstudio-connect.seml.scp.astrazeneca.net/content/924fa554-f3ee-4199-b119-74243e38f0f6/
 
+**Manuscript (the paper, `writing/PIONEER_2026.qmd`)** is deployed differently — it is a single
+pre-rendered static HTML document, **not** a website. Render standalone first
+(`TAR_RUN=gompertz quarto render writing/PIONEER_2026.qmd --to html` — do NOT add a `_quarto.yml`,
+it breaks `here::here()` anchoring), then `deployDoc()` the `.html` with
+`appId = "dbdb7762-c2be-4e63-9edb-0f073e8bedce"`. See `docs/PUBLISHING.md` → "Publishing the Manuscript"
+for the full procedure and collaborator notes.
+
 ### Key Configuration Files
 - `_quarto.yml` - Site configuration, navigation, theme settings (per-trial)
 - `quarto/_shared/az-colors.scss` - AstraZeneca color scheme (navy, gold, turquoise, etc.)

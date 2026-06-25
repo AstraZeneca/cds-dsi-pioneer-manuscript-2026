@@ -123,6 +123,63 @@ rsconnect::deployDoc(
 )
 ```
 
+## Publishing the Manuscript (paper)
+
+The paper (`writing/PIONEER_2026.qmd`) is **not** a Quarto website — it is a single document
+that pulls figures and tables from the targets stores at `/mnt/data/analysis-results/...`.
+RStudio Connect cannot re-execute it (no access to those stores), so it is deployed as
+**pre-rendered static HTML** via `deployDoc()`.
+
+Deployed content item:
+- Name: `pioneer-manuscript`
+- Title: "PIONEER: Publication Manuscript"
+- URL: https://rstudio-connect.seml.scp.astrazeneca.net/content/dbdb7762-c2be-4e63-9edb-0f073e8bedce/
+- Content GUID (`appId`): `dbdb7762-c2be-4e63-9edb-0f073e8bedce`
+
+### To update the deployment
+
+**Step 1 — render the document standalone** (from the project root). Set `TAR_RUN` to the
+canonical fit store (currently `gompertz`):
+```bash
+TAR_RUN=gompertz quarto render writing/PIONEER_2026.qmd --to html
+```
+
+> **Do NOT wrap the manuscript in a `_quarto.yml` website project.** Doing so creates a new
+> Quarto project root that hijacks `here::here()` (it stops resolving to the repo-root `.here`
+> anchor), which breaks `init_project()` / `source(here("r", "util.R"))`. The manuscript renders
+> correctly only as a standalone document, because `here` then walks up past `writing/` to the
+> repo-root `.here`.
+
+Verify the render produced fresh HTML assets (figures live in `writing/PIONEER_2026_files/figure-html/`):
+```bash
+ls writing/PIONEER_2026_files/figure-html/ | wc -l   # expect ~24 PNGs
+```
+
+**Step 2 — deploy the rendered HTML to the same content item.** Run from `writing/`. Passing
+`appId` (the content GUID) guarantees you update the existing item rather than creating a new one:
+```r
+# From the writing/ directory
+library(rsconnect)
+rsconnect::deployDoc(
+  doc      = "PIONEER_2026.html",          # the rendered HTML, NOT the .qmd
+  appId    = "dbdb7762-c2be-4e63-9edb-0f073e8bedce",
+  appName  = "pioneer-manuscript",
+  appTitle = "PIONEER: Publication Manuscript",
+  account  = "kmjq089",
+  server   = "az-connect",
+  launch.browser = FALSE
+)
+```
+
+Notes for collaborators:
+- The content is **owned by `kmjq089`**. Deploy using that account (the shared API-key setup in
+  Method 1 above). If you deploy under a different account without `appId`, Connect will create a
+  separate, differently-named item instead of updating this one.
+- `deployDoc` records the target in a local (gitignored) `rsconnect/` dir. On a fresh checkout that
+  record is absent, which is exactly why `appId` is required to hit the same content.
+- Deploy the **`.html`**, not the `.qmd` — `deployDoc` on the rendered HTML uploads it as static
+  content (`app_mode: static`) and will not attempt to re-execute on the server.
+
 **Published sites:**
 - SCLC-01: `rsconnect::deploySite(siteDir = "quarto/sclc/website", server = "az-connect", account = "kmjq089")`
 - Pioneer: `rsconnect::deploySite(siteDir = "quarto/pioneer/website", server = "az-connect", account = "kmjq089")`
