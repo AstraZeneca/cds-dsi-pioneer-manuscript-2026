@@ -1744,7 +1744,1194 @@ plot_competing_risks_cif <- function(
     theme(legend.position = "bottom")
 }
 
-#' Table of observed competing risks event counts from state 0
+
+plot_pdl1_km <- function(
+  cond_km_data,
+  km_est_var = cond_sample_target_km_est,
+  obs_km_data = NULL,
+  ...
+) {
+  # Process conditional KM data
+  # Can't use prepare_pdl1_and_trial_info() on rvar data due to vctrs issues
+  # Manually filter and transform using base R subsetting
+  # Keep only PDL1 High and Low (exclude "All" PDL1 group)
+  keep_idx <- which(
+    ((as.character(cond_km_data$variable) == "pdl1" & as.character(cond_km_data$cond_group_name) %in% c("hi", "low")) |
+     (as.character(cond_km_data$variable) == "pdl1_naive" & as.character(cond_km_data$cond_group_name) %in% c("hi", "low")) |
+     (as.character(cond_km_data$variable) == "part_e_pdl1" & as.character(cond_km_data$cond_group_name) %in% c("hi", "low"))) &
+    as.character(cond_km_data$fit_type) == "posterior"
+  )
+
+  plot_data <- cond_km_data[keep_idx, ] |>
+    mutate(
+      # Map variable names to cohort labels
+      variable = fct_collapse(variable,
+        "all" = c("pdl1"),
+        "pdl1_naive" = c("pdl1_naive"),
+        "part_e_pdl1" = c("part_e_pdl1")
+      ),
+      # Map cond_group_name to standardized names
+      cond_group_name = fct_collapse(cond_group_name, "PDL1 Low" = "low", "PDL1 High" = "hi"),
+      km_est = {{ km_est_var }}
+    ) |>
+    mutate(
+      # Create cohort label for faceting (must be in separate mutate to use transformed variable)
+      cohort_label = fct_recode(variable, "All" = "all", "First Line" = "pdl1_naive", "Part E" = "part_e_pdl1"),
+      cohort_label = fct_relevel(cohort_label, "All", "First Line", "Part E"),
+      pdl1_group = fct_recode(cond_group_name, "Low" = "PDL1 Low", "High" = "PDL1 High")
+    )
+
+  # Build the plot
+  plot_obj <- plot_data |>
+    base_plot_km(
+      NULL,
+      km_est,
+      group = pdl1_group,
+      color_group = pdl1_group,
+      alpha_group = NULL,
+      linewidth = 0.5,
+      alpha = 0.25,
+      ...
+    )
+
+  if (!is_null(obs_km_data)) {
+    # obs_km_data is expected to already have cohort_label from the calling function
+    plot_obj <- plot_obj +
+      geom_step(
+        aes(
+          x = t,
+          y = s,
+          group = interaction(cohort_label, pdl1_hi),
+          color = !pdl1_hi
+        ),
+        linewidth = 0.75,
+        alpha = 0.75,
+        data = obs_km_data
+      )
+  }
+
+  plot_obj +
+    scale_alpha_manual(values = 0) +
+    scale_x_continuous(
+      "Months",
+      breaks = months_to_weeks(seq(0, 60, 6)),
+      label = label_weeks_to_months
+    ) +
+    scale_y_continuous("Survival Probability", breaks = seq(0, 1, 0.1)) +
+    scale_fill_discrete("PDL1", label = str_to_title, type = AZ_palette[-2]) +
+    scale_color_discrete("PDL1", label = c("TRUE" = "Low", "FALSE" = "High"), type = AZ_palette[-2]) +
+    facet_wrap(vars(cohort_label)) +
+    guides(alpha = "none") +
+    coord_cartesian(xlim = c(0, months_to_weeks(48))) +
+    NULL
+}
+
+#' Plot SCLC KM curves by estimate type
 #'
-#' @param stan_data Stan data list with patient_trial, ms_censored_01, etc.
-#' @return A gt table summarising event counts by trial and cause.
+#' Wrapper function to plot overall SCLC KM curves for either sample-based
+#' or superpopulation estimates, with facets by treatment cohort (All/First Line/Part E).
+#'
+#' @param estimate_type Either "sample" or "spop"
+#' @param all_km_data Trial-level KM data from all_tumor_ssls_km_rvar_ctdna_jan26
+#' @param cond_km_data Conditional KM data from all_tumor_ssls_cond_km_rvar_ctdna_jan26
+#' @param obs_km_all_data Observed KM for all patients from km_trial_pfs_ctdna_jan26
+#' @param obs_km_first_line_data Observed KM for first line patients from km_trial_pfs_naive_ctdna_jan26
+#' @param analysis_data Analysis data for Part E calculation
+#' @return A ggplot object with KM curves faceted by cohort
+plot_sclc_km_by_estimate_type <- function(
+  estimate_type = c("sample", "spop"),
+  all_km_data,
+  cond_km_data,
+  obs_km_all_data,
+  obs_km_first_line_data,
+  analysis_data,
+  endpoint = c("pfs", "os")
+) {
+  estimate_type <- match.arg(estimate_type)
+  endpoint <- match.arg(endpoint)
+
+  if (endpoint == "pfs") {
+    km_est_var_trial <- rlang::sym(if (estimate_type == "sample") "sample_pfs_km_est" else "spop_pfs_km_est")
+    km_est_var_cond <- rlang::sym(if (estimate_type == "sample") "cond_sample_pfs_km_est" else "cond_spop_pfs_km_est")
+  } else {
+    km_est_var_trial <- rlang::sym(if (estimate_type == "sample") "sample_os_km_est" else "spop_os_km_est")
+    km_est_var_cond <- rlang::sym(if (estimate_type == "sample") "cond_sample_os_km_est" else "cond_spop_os_km_est")
+  }
+
+  # Get trial-level KM data for "All" patients
+  all_km_processed <- all_km_data |>
+    filter(fct_match(trial, "sclc"), fct_match(dco, "jan26")) |>
+    mutate(variable_label = "All", km_est = {{ km_est_var_trial }}) |>
+    select(trial, t, fit_type, variable_label, km_est)
+
+  # Get conditional KM data for first line and Part E (without PDL1 stratification)
+  cond_km_processed <- cond_km_data |>
+    filter(
+      fct_match(dco, "jan26"),
+      (fct_match(variable, "first_liners") & fct_match(cond_group_name, "yes")) |
+      (fct_match(variable, "parts") & fct_match(cond_group_name, "part_e"))
+    ) |>
+    mutate(
+      trial = "sclc",
+      variable_label = case_when(
+        fct_match(variable, "first_liners") ~ "First Line",
+        fct_match(variable, "parts") ~ "Part E"
+      ),
+      km_est = {{ km_est_var_cond }}
+    ) |>
+    select(trial, t, fit_type, variable_label, km_est)
+
+  # Combine all cohorts
+  combined_km_data <- bind_rows(all_km_processed, cond_km_processed)
+
+  # Get observed KM data for all, first line, and Part E cohorts
+  obs_km_data <- bind_rows(
+    all = obs_km_all_data |>
+      filter(fct_match(trial, "sclc"), fct_match(btype, "ub")) |>
+      select(!quantiles) |>
+      unnest(km_data),
+    first_line = obs_km_first_line_data |>
+      filter(fct_match(trial, "sclc"), fct_match(btype, "ub"), first_line) |>
+      select(!quantiles) |>
+      unnest(km_data),
+    part_e = if (endpoint == "pfs") {
+      analysis_data |>
+        filter(fct_match(trial, "sclc"), fct_match(arm, "E01")) |>
+        get_km_res(pfs, right_censored) |>
+        filter(fct_match(btype, "ub")) |>
+        select(!quantiles) |>
+        unnest(km_data)
+    } else {
+      analysis_data |>
+        filter(fct_match(trial, "sclc"), fct_match(arm, "E01")) |>
+        mutate(os_time = if_else(death, death_week, patient_max_t), os_censored = !death) |>
+        get_km_res(os_time, os_censored) |>
+        filter(fct_match(btype, "ub")) |>
+        select(!quantiles) |>
+        unnest(km_data)
+    },
+    .id = "cohort"
+  ) |>
+    mutate(
+      variable_label = fct_recode(cohort, "All" = "all", "First Line" = "first_line", "Part E" = "part_e"),
+      trial = "sclc"
+    )
+
+  # For OS, pre-compute os_time and os_censored on analysis_data
+  plot_analysis_data <- analysis_data |> filter(fct_match(trial, "sclc"))
+  if (endpoint == "os") {
+    plot_analysis_data <- plot_analysis_data |>
+      mutate(os_time = if_else(death, death_week, patient_max_t), os_censored = !death)
+  }
+
+  plot_km(
+    combined_km_data,
+    km_est_var = km_est,
+    obs_km_data = obs_km_data,
+    analysis_data = plot_analysis_data,
+    facet_col = variable_label,
+    endpoint = endpoint
+  )
+}
+
+#' Plot PDL1-stratified KM curves by estimate type
+#'
+#' Wrapper function to plot PDL1-stratified KM curves for either sample-based
+#' or superpopulation estimates, with facets by cohort (All/First Line/Part E).
+#' Note: Part E observed KM is not available in targets and is omitted.
+#'
+#' @param estimate_type Either "sample" or "spop"
+#' @return A ggplot object with PDL1-stratified KM curves
+plot_pdl1_km_by_estimate_type <- function(
+  estimate_type = c("sample", "spop"),
+  cond_km_data,
+  obs_km_all,
+  obs_km_first_line,
+  obs_km_part_e,
+  endpoint = c("pfs", "os")
+) {
+  estimate_type <- match.arg(estimate_type)
+  endpoint <- match.arg(endpoint)
+
+  if (endpoint == "pfs") {
+    km_est_var <- rlang::sym(if (estimate_type == "sample") "cond_sample_pfs_km_est" else "cond_spop_pfs_km_est")
+  } else {
+    km_est_var <- rlang::sym(if (estimate_type == "sample") "cond_sample_os_km_est" else "cond_spop_os_km_est")
+  }
+
+  # Get observed KM data for all, first line, and Part E
+  obs_km_data <- bind_rows(
+    all = obs_km_all |>
+      filter(fct_match(trial, "sclc"), fct_match(btype, "ub")) |>
+      select(!quantiles) |>
+      unnest(km_data),
+    first_line = obs_km_first_line |>
+      filter(fct_match(trial, "sclc"), fct_match(btype, "ub")) |>
+      select(!quantiles) |>
+      unnest(km_data),
+    part_e = obs_km_part_e |>
+      filter(fct_match(trial, "sclc"), fct_match(btype, "ub")) |>
+      select(!quantiles) |>
+      unnest(km_data),
+    .id = "cohort"
+  ) |>
+    mutate(
+      cohort_label = fct_recode(cohort, "All" = "all", "First Line" = "first_line", "Part E" = "part_e"),
+      cohort_label = fct_relevel(cohort_label, "All", "First Line", "Part E"),
+      trial = "sclc"
+    )
+
+  plot_pdl1_km(
+    cond_km_data = cond_km_data,
+    km_est_var = !!km_est_var,
+    obs_km_data = obs_km_data
+  )
+}
+
+#' Plot ORR by estimate type
+#'
+#' Wrapper function to plot overall response rate for either sample-based
+#' or superpopulation estimates, reducing code duplication in qmd files.
+#'
+#' @param estimate_type Either "sample" or "spop"
+#' @param orr_data ORR data frame from all_tumor_ssls_orr_rvar_ctdna_jan26
+#' @param cond_orr_data Conditional ORR data frame from all_tumor_ssls_cond_orr_rvar_ctdna_jan26
+#' @return A ggplot object with ORR distributions
+plot_orr_by_estimate_type <- function(
+  estimate_type = c("sample", "spop"),
+  orr_data,
+  cond_orr_data
+) {
+  estimate_type <- match.arg(estimate_type)
+  col_prefix <- if (estimate_type == "sample") "sample" else "spop"
+
+  bind_rows(
+    orr_data |> rename(orr = !!str_c(col_prefix, "_target_orr")),
+    cond_orr_data |> rename(orr = !!str_c("cond_", col_prefix, "_target_orr"))
+  ) |>
+    filter(fct_match(dco, "jan26")) |>
+    plot_outcome_by_pdl1_and_trial(orr) +
+    labs(x = "Overall Response Rate (ORR)", y = "Density") +
+    coord_cartesian(xlim = c(0, 1))
+}
+
+#' Plot median survival by estimate type
+#'
+#' Wrapper function to plot median survival (PFS or OS) for either sample-based
+#' or superpopulation estimates, reducing code duplication in qmd files.
+#'
+#' @param estimate_type Either "sample" or "spop"
+#' @param quant_data Quantile data frame (PFS or OS)
+#' @param cond_quant_data Conditional quantile data frame (PFS or OS)
+#' @param endpoint Either "pfs" or "os"
+#' @return A ggplot object with median survival distributions
+plot_median_survival_by_estimate_type <- function(
+  estimate_type = c("sample", "spop"),
+  quant_data,
+  cond_quant_data,
+  endpoint = c("pfs", "os")
+) {
+  estimate_type <- match.arg(estimate_type)
+  endpoint <- match.arg(endpoint)
+  col_prefix <- if (estimate_type == "sample") "sample" else "spop"
+
+  # Column names differ by endpoint (PFS: sample_pfs_quant, OS: sample_os_quant)
+  if (endpoint == "pfs") {
+    col_name <- str_c(col_prefix, "_pfs_quant")
+    cond_col_name <- str_c("cond_", col_prefix, "_pfs_quant")
+  } else {
+    col_name <- str_c(col_prefix, "_os_quant")
+    cond_col_name <- str_c("cond_", col_prefix, "_os_quant")
+  }
+
+  label <- if (endpoint == "pfs") "PFS" else "OS"
+  xlim_months <- if (endpoint == "pfs") 26 else 48
+
+  bind_rows(
+    quant_data |> rename(median_val = !!col_name),
+    cond_quant_data |> rename(median_val = !!cond_col_name)
+  ) |>
+    filter(quantile == 0.5, fct_match(dco, "jan26")) |>
+    plot_outcome_by_pdl1_and_trial(median_val) +
+    scale_x_continuous(str_c("Median ", label, " [Months]"), breaks = months_to_weeks(seq(0, 48, 2)), label = label_weeks_to_months) +
+    labs(y = "") +
+    coord_cartesian(xlim = c(0, months_to_weeks(xlim_months))) +
+    NULL
+}
+
+#' @rdname plot_median_survival_by_estimate_type
+plot_median_pfs_by_estimate_type <- function(estimate_type, pfs_quant_data, cond_pfs_quant_data) {
+  plot_median_survival_by_estimate_type(estimate_type, pfs_quant_data, cond_pfs_quant_data, endpoint = "pfs")
+}
+
+#' Plot survival at fixed timepoints by estimate type
+#'
+#' Wrapper function to plot survival (PFS or OS) at fixed timepoints for either sample-based
+#' or superpopulation estimates, reducing code duplication in qmd files.
+#'
+#' @param estimate_type Either "sample" or "spop"
+#' @param surv_n_data Survival-n data frame (PFS or OS)
+#' @param cond_surv_n_data Conditional survival-n data frame (PFS or OS)
+#' @param timepoints Timepoints data frame from pfs_timepoints target
+#' @param endpoint Either "pfs" or "os"
+#' @return A ggplot object with survival-n point intervals
+plot_survival_n_by_estimate_type <- function(
+  estimate_type = c("sample", "spop"),
+  surv_n_data,
+  cond_surv_n_data,
+  timepoints,
+  endpoint = c("pfs", "os")
+) {
+  estimate_type <- match.arg(estimate_type)
+  endpoint <- match.arg(endpoint)
+  col_prefix <- if (estimate_type == "sample") "sample" else "spop"
+
+  # Column names differ by endpoint (PFS: sample_pfs_n, OS: sample_os_n)
+  if (endpoint == "pfs") {
+    col_name <- str_c(col_prefix, "_pfs_n")
+    cond_col_name <- str_c("cond_", col_prefix, "_pfs_n")
+  } else {
+    col_name <- str_c(col_prefix, "_os_n")
+    cond_col_name <- str_c("cond_", col_prefix, "_os_n")
+  }
+
+  label <- if (endpoint == "pfs") "PFS-n" else "OS-n"
+
+  bind_rows(
+    surv_n_data |> rename(surv_n = !!col_name),
+    cond_surv_n_data |> rename(surv_n = !!cond_col_name)
+  ) |>
+    filter(fct_match(dco, "jan26")) |>
+    prepare_pdl1_and_trial_info() |>
+    filter(fct_match(trial, "sclc"), fct_match(variable, c("all", "pdl1_naive", "part_e_pdl1"))) |>
+    ggplot() +
+    stat_pointinterval(aes(ydist = surv_n, x = timepoint, color = fit_type, group = interaction(fit_type, timepoint)),
+                       position = "dodge", .width = c(0.5, 0.8)) +
+    scale_x_continuous("Timepoint [Months]", breaks = timepoints |> pluck("timepoint")) +
+    scale_y_continuous(label, limits = c(0, 1)) +
+    scale_color_discrete("", type = AZ_palette, label = str_to_title) +
+    facet_grid(vars(variable), vars(cond_group_name), scales = "free", space = "free",
+               labeller = labeller(trial = trial_labeller, variable = c("all" = "All", "pdl1_naive" = "First Line", "part_e_pdl1" = "Part E"))) +
+    labs(caption = "Points show posterior median; inner bars show 50% credible intervals,\nouter bars show 80% credible intervals.") +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
+    NULL
+}
+
+#' @rdname plot_survival_n_by_estimate_type
+plot_pfs_n_by_estimate_type <- function(estimate_type, pfs_n_data, cond_pfs_n_data, pfs_timepoints) {
+  plot_survival_n_by_estimate_type(estimate_type, pfs_n_data, cond_pfs_n_data, pfs_timepoints, endpoint = "pfs")
+}
+
+#' Plot SLD posterior predictive checks for uncensored patients by trial and DCO
+#'
+#' @param trial Either "historical" or "sclc"
+#' @param sld_data Pre-loaded SLD data for the specific DCO (from tumor_ssls_staged_sld_rvar_uncensored_posterior_ctdna_*)
+#' @return A ggplot object with SLD posterior checks
+plot_sld_ppc_by_trial_dco <- function(trial = c("historical", "sclc"), sld_data) {
+  trial <- match.arg(trial)
+
+  sld_data |>
+    filter(fct_match(trial, !!trial), fct_match(stage, "obs")) |>
+    mutate(patient_sld = patient_sld * 10) |>
+    plot_dynamics(patient_sld) +
+    scale_fill_manual("Stage",
+                      values = c("obs" = AZ_palette[2]),
+                      labels = c("obs" = "Observed")) +
+    scale_x_continuous("Months", breaks = months_to_weeks(seq(0, 48, 2)), label = label_weeks_to_months) +
+    theme(legend.position = "bottom") +
+    NULL
+}
+
+#' Plot RECIST predictions for censored patients
+#'
+#' @param recist_data Pre-filtered RECIST data for the desired DCO and patient cohort
+#' @return A ggplot object with RECIST predictions
+
+#' Plot ORR by DCO with sample or superpopulation estimates
+#'
+#' @param estimate_type Either "sample" or "spop"
+#' @param orr_list Named list of ORR data frames (apr25, aug25, jan26)
+#' @param cond_orr_list Named list of conditional ORR data frames (apr25, aug25, jan26)
+#' @return A ggplot object with ORR by DCO
+plot_orr_by_dco <- function(
+  estimate_type = c("sample", "spop"),
+  orr_list,
+  cond_orr_list,
+  show_priors = TRUE
+) {
+  estimate_type <- match.arg(estimate_type)
+  orr_col <- if (estimate_type == "sample") "sample_target_orr" else "spop_target_orr"
+  cond_orr_col <- if (estimate_type == "sample") "cond_sample_target_orr" else "cond_spop_target_orr"
+
+  plot_data <- bind_rows(
+    apr25 = bind_rows(
+      orr_list$apr25 |> rename(orr = !!orr_col),
+      cond_orr_list$apr25 |> rename(orr = !!cond_orr_col)
+    ),
+    aug25 = bind_rows(
+      orr_list$aug25 |> rename(orr = !!orr_col),
+      cond_orr_list$aug25 |> rename(orr = !!cond_orr_col)
+    ),
+    jan26 = bind_rows(
+      orr_list$jan26 |> rename(orr = !!orr_col),
+      cond_orr_list$jan26 |> rename(orr = !!cond_orr_col)
+    ),
+    .id = "dco"
+  ) |>
+    mutate(dco = factor(dco, levels = c("apr25", "aug25", "jan26"))) |>
+    prepare_pdl1_and_trial_info() |>
+    filter(fct_match(variable, c("all", "pdl1_naive", "part_e_pdl1")), fct_match(trial, "sclc"))
+
+  if (!show_priors) {
+    plot_data <- plot_data |> filter(fct_match(fit_type, "posterior"))
+  }
+
+  plot_data |>
+    ggplot() +
+    stat_pointinterval(aes(xdist = orr, y = cond_group_name, color = dco, alpha = fit_type), position = "dodge", .width = c(0.9)) +
+    scale_x_continuous("Overall Response Rate (ORR)", limits = c(0, 1), labels = scales::percent_format()) +
+    scale_color_discrete("DCO", type = AZ_palette, label = str_to_title) +
+    scale_alpha_manual("", values = c(prior = 0.125, posterior = 1), label = str_to_title, guide = if (show_priors) "legend" else "none") +
+    facet_grid(vars(variable), scales = "free", space = "free",
+               labeller = labeller(variable = c("all" = "All", "pdl1_naive" = "First Line", "part_e_pdl1" = "Part E"))) +
+    labs(
+      y = NULL,
+      caption = "Points show posterior median with 90% credible intervals."
+    ) +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
+    NULL
+}
+
+#' Plot Median PFS by DCO with sample or superpopulation estimates
+#'
+#' @param estimate_type Either "sample" or "spop"
+#' @param quant_list Named list of quantile data frames (apr25, aug25, jan26)
+#' @param cond_quant_list Named list of conditional quantile data frames (apr25, aug25, jan26)
+#' @param obs_km_list Named list of nested lists containing observed KM data for each DCO
+#' @param show_observed Logical, whether to show observed KM estimates (default TRUE)
+#' @return A ggplot object with Median survival by DCO
+plot_median_surv_by_dco <- function(
+  estimate_type = c("sample", "spop"),
+  quant_list,
+  cond_quant_list,
+  obs_km_list,
+  show_observed = TRUE,
+  endpoint = c("pfs", "os")
+) {
+  estimate_type <- match.arg(estimate_type)
+  endpoint <- match.arg(endpoint)
+  col_prefix <- if (estimate_type == "sample") "sample" else "spop"
+  if (endpoint == "pfs") {
+    pfs_col      <- str_c(col_prefix, "_pfs_quant")
+    cond_pfs_col <- str_c("cond_", col_prefix, "_pfs_quant")
+  } else {
+    pfs_col      <- str_c(col_prefix, "_os_quant")
+    cond_pfs_col <- str_c("cond_", col_prefix, "_os_quant")
+  }
+
+  obs_km <- bind_rows(
+    apr25 = bind_rows(
+      all = obs_km_list$apr25$all,
+      pdl1_naive = obs_km_list$apr25$pdl1_naive,
+      pdl1 = obs_km_list$apr25$pdl1,
+      naive = obs_km_list$apr25$naive,
+      .id = "src"
+    ),
+    aug25 = bind_rows(
+      all = obs_km_list$aug25$all,
+      pdl1_naive = obs_km_list$aug25$pdl1_naive,
+      pdl1 = obs_km_list$aug25$pdl1,
+      naive = obs_km_list$aug25$naive,
+      .id = "src"
+    ),
+    jan26 = bind_rows(
+      all = obs_km_list$jan26$all,
+      pdl1_naive = obs_km_list$jan26$pdl1_naive,
+      pdl1 = obs_km_list$jan26$pdl1,
+      naive = obs_km_list$jan26$naive,
+      .id = "src"
+    ),
+    .id = "dco"
+  ) |>
+    filter(fct_match(btype, "ub"), !fct_match(src, "naive") | first_line) |>
+    unnest(quantiles) |>
+    filter(quantile == 0.5) |>
+    rename(median_pfs = pfs, median_pfs_lower = pfs_lower, median_pfs_upper = pfs_upper) |>
+    mutate(
+      variable = case_when(
+        is.na(first_line) & fct_match(src, "pdl1_naive") ~ "pdl1_naive",
+        fct_match(src, "naive") & first_line ~ "pdl1_naive",
+        TRUE ~ "all",
+      ),
+      cond_group_name = case_when(
+        is.na(pdl1_hi) ~ "All",
+        pdl1_hi ~ "PDL1 High",
+        !pdl1_hi ~ "PDL1 Low"
+      )
+    ) |>
+    select(trial, dco, variable, cond_group_name, median_pfs, median_pfs_lower, median_pfs_upper) |>
+    distinct() |>
+    mutate(
+      dco = factor(dco, levels = c("apr25", "aug25", "jan26")),
+      cond_group_name = factor(cond_group_name)
+    )
+
+  # Build model forecast data
+ model_data <- bind_rows(
+    apr25 = bind_rows(
+      quant_list$apr25 |> rename(median_pfs = !!pfs_col),
+      cond_quant_list$apr25 |> rename(median_pfs = !!cond_pfs_col)
+    ),
+    aug25 = bind_rows(
+      quant_list$aug25 |> rename(median_pfs = !!pfs_col),
+      cond_quant_list$aug25 |> rename(median_pfs = !!cond_pfs_col)
+    ),
+    jan26 = bind_rows(
+      quant_list$jan26 |> rename(median_pfs = !!pfs_col),
+      cond_quant_list$jan26 |> rename(median_pfs = !!cond_pfs_col)
+    ),
+    .id = "dco"
+  ) |>
+    mutate(dco = factor(dco, levels = c("apr25", "aug25", "jan26"))) |>
+    filter(quantile == 0.5) |>
+    prepare_pdl1_and_trial_info() |>
+    filter(fct_match(variable, c("all", "pdl1_naive", "part_e_pdl1")), fct_match(trial, "sclc"), fct_match(fit_type, "posterior")) |>
+    mutate(cond_group_name = factor(cond_group_name))
+
+  # Build base plot with model forecasts
+  p <- ggplot(model_data, aes(y = cond_group_name, color = dco)) +
+    stat_pointinterval(aes(xdist = median_pfs, color = dco, shape = "model"), point_size = 3, position = position_dodge(width = 0.7), .width = c(0.9))
+
+  # Conditionally add observed KM layers
+  if (show_observed) {
+    p <- p +
+      geom_segment(aes(x = median_pfs_lower, xend = median_pfs_upper, y = dodged_y, yend = dodged_y, group = interaction(variable, cond_group_name, dco)),
+                    linewidth = 1.5,
+                    data = \(d) semi_join(obs_km, d, by = "trial") |>
+                      filter(!is.na(median_pfs_upper)) |>
+                      mutate(dodged_y = as.numeric(cond_group_name) + case_when(
+                        fct_match(dco, "apr25") ~ -0.23,
+                        fct_match(dco, "aug25") ~ 0,
+                        fct_match(dco, "jan26") ~ 0.23
+                      ))) +
+      geom_segment(aes(x = median_pfs_lower, xend = 100, y = dodged_y, yend = dodged_y, group = interaction(variable, cond_group_name, dco)),
+                   arrow = arrow(length = unit(0.1, "inches")),
+                   data = \(d) semi_join(obs_km, d, by = "trial") |>
+                     filter(is.na(median_pfs_upper)) |>
+                     mutate(dodged_y = as.numeric(cond_group_name) + case_when(
+                       fct_match(dco, "apr25") ~ -0.23,
+                       fct_match(dco, "aug25") ~ 0,
+                       fct_match(dco, "jan26") ~ 0.23
+                     ))) +
+      geom_point(aes(x = median_pfs, shape = "data", y = dodged_y, group = interaction(variable, cond_group_name, dco)), fill = "white", size = 2,
+                 data = \(d) semi_join(obs_km, d, by = "trial") |>
+                   filter(!is.na(median_pfs)) |>
+                   mutate(dodged_y = as.numeric(cond_group_name) + case_when(
+                     fct_match(dco, "apr25") ~ -0.23,
+                     fct_match(dco, "aug25") ~ 0,
+                     fct_match(dco, "jan26") ~ 0.23
+                   )))
+  }
+
+  # Add scales and theme
+  shape_labels <- if (show_observed) {
+    c(model = "Model Forecast", data = "Observed KM")
+  } else {
+    c(model = "Model Forecast")
+  }
+
+  p +
+    scale_color_discrete("DCO", type = AZ_palette, label = str_to_title) +
+    scale_x_continuous(str_c("Median ", toupper(endpoint), " [Months]"),
+                       breaks = months_to_weeks(seq(0, 60, 4)),
+                       label = label_weeks_to_months,
+                       limits = months_to_weeks(c(0, 40))) +
+    scale_y_discrete("", drop = FALSE) +
+    scale_shape_manual("Method", labels = shape_labels, values = c(model = 18, data = 21)) +
+    facet_grid(vars(variable), scales = "free", space = "free",
+               labeller = labeller(variable = c("all" = "All", "pdl1_naive" = "First Line", "part_e_pdl1" = "Part E"))) +
+    labs(caption = "Model forecast points show posterior median with 90% credible intervals.") +
+    theme(
+      legend.position = "top",
+      legend.direction = "horizontal",
+      plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))
+    )
+}
+
+#' Plot PFS-n by DCO with sample or superpopulation estimates
+#'
+#' @param estimate_type Either "sample" or "spop"
+#' @param surv_n_list Named list of survival-n data frames (apr25, aug25, jan26)
+#' @param cond_surv_n_list Named list of conditional survival-n data frames (apr25, aug25, jan26)
+#' @param timepoints Timepoints data frame from pfs_timepoints target
+#' @return A ggplot object with survival-n by DCO
+plot_surv_n_by_dco <- function(
+  estimate_type = c("sample", "spop"),
+  surv_n_list,
+  cond_surv_n_list,
+  timepoints,
+  show_priors = TRUE,
+  endpoint = c("pfs", "os")
+) {
+  estimate_type <- match.arg(estimate_type)
+  endpoint <- match.arg(endpoint)
+  if (endpoint == "pfs") {
+    pfs_n_col <- if (estimate_type == "sample") "sample_target_pfs_n" else "spop_target_pfs_n"
+    cond_pfs_n_col <- if (estimate_type == "sample") "cond_sample_target_pfs_n" else "cond_spop_target_pfs_n"
+  } else {
+    pfs_n_col <- if (estimate_type == "sample") "sample_os_n" else "spop_os_n"
+    cond_pfs_n_col <- if (estimate_type == "sample") "cond_sample_os_n" else "cond_spop_os_n"
+  }
+
+  plot_data <- bind_rows(
+    apr25 = bind_rows(
+      surv_n_list$apr25 |> rename(pfs_n = !!pfs_n_col),
+      cond_surv_n_list$apr25 |> rename(pfs_n = !!cond_pfs_n_col)
+    ),
+    aug25 = bind_rows(
+      surv_n_list$aug25 |> rename(pfs_n = !!pfs_n_col),
+      cond_surv_n_list$aug25 |> rename(pfs_n = !!cond_pfs_n_col)
+    ),
+    jan26 = bind_rows(
+      surv_n_list$jan26 |> rename(pfs_n = !!pfs_n_col),
+      cond_surv_n_list$jan26 |> rename(pfs_n = !!cond_pfs_n_col)
+    ),
+    .id = "dco"
+  ) |>
+    mutate(dco = factor(dco, levels = c("apr25", "aug25", "jan26"))) |>
+    prepare_pdl1_and_trial_info() |>
+    filter(fct_match(trial, "sclc"), fct_match(variable, c("all", "pdl1_naive", "part_e_pdl1")))
+
+  if (!show_priors) {
+    plot_data <- plot_data |> filter(fct_match(fit_type, "posterior"))
+  }
+
+  plot_data |>
+    ggplot() +
+    stat_pointinterval(aes(ydist = pfs_n, x = timepoint, group = interaction(fit_type, timepoint, dco), color = dco, alpha = fit_type),
+                       position = "dodge", .width = c(0.5, 0.8)) +
+    scale_x_continuous("Timepoint [Months]", breaks = timepoints |> pluck("timepoint")) +
+    scale_y_continuous(str_c(toupper(endpoint), "n"), limits = c(0, 1)) +
+    scale_color_discrete("DCO", type = AZ_palette, label = str_to_title, drop = FALSE) +
+    scale_alpha_manual("", values = c(prior = 0.125, posterior = 1), label = str_to_title, guide = if (show_priors) "legend" else "none") +
+    facet_grid(vars(variable), vars(cond_group_name), scales = "free", space = "free",
+               labeller = labeller(trial = trial_labeller, variable = c("all" = "All", "pdl1_naive" = "First Line", "part_e_pdl1" = "Part E"))) +
+    labs(caption = "Points show posterior median; inner bars show 50% credible intervals,\nouter bars show 80% credible intervals.") +
+    theme(plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))) +
+    NULL
+}
+
+#' Plot SCLC KM curves by DCO across cohorts
+#'
+#' Plots Kaplan-Meier curves for SCLC across data cutoffs, showing All/First Line/Part E cohorts.
+#' Faceted by variable_label (rows) and dco (columns).
+#'
+#' @param estimate_type Either "sample" or "spop"
+#' @param all_km_list Named list of trial-level KM data (one per DCO)
+#' @param cond_km_list Named list of conditional KM data (one per DCO)
+#' @param obs_km_all_list Named list of observed KM for all patients (one per DCO)
+#' @param obs_km_first_line_list Named list of observed KM for first line patients (one per DCO)
+#' @param analysis_data_list Named list of analysis data for Part E calculation (one per DCO)
+#' @return A ggplot object with KM curves faceted by cohort and DCO
+plot_sclc_km_by_dco <- function(
+  estimate_type = c("sample", "spop"),
+  all_km_list,
+  cond_km_list,
+  obs_km_all_list,
+  obs_km_first_line_list,
+  analysis_data_list,
+  show_priors = TRUE,
+  fill_color = AZ_palette,
+  obs_color = AZ_palette[-c(1:4)],
+  endpoint = c("pfs", "os")
+) {
+  estimate_type <- match.arg(estimate_type)
+  endpoint <- match.arg(endpoint)
+  if (endpoint == "pfs") {
+    km_est_var_trial <- rlang::sym(if (estimate_type == "sample") "sample_pfs_km_est" else "spop_pfs_km_est")
+    km_est_var_cond <- rlang::sym(if (estimate_type == "sample") "cond_sample_pfs_km_est" else "cond_spop_pfs_km_est")
+  } else {
+    km_est_var_trial <- rlang::sym(if (estimate_type == "sample") "sample_os_km_est" else "spop_os_km_est")
+    km_est_var_cond <- rlang::sym(if (estimate_type == "sample") "cond_sample_os_km_est" else "cond_spop_os_km_est")
+  }
+
+  # Get trial-level KM for "All" patients across DCOs
+  all_km_data <- bind_rows(all_km_list, .id = "dco") |>
+    filter(fct_match(trial, "sclc")) |>
+    mutate(
+      variable_label = "All",
+      km_est = {{ km_est_var_trial }},
+      dco = fct_recode(factor(dco), "Apr25" = "apr25", "Aug25" = "aug25", "Jan26" = "jan26")
+    ) |>
+    select(trial, dco, t, fit_type, variable_label, km_est)
+
+  # Get conditional KM for First Line and Part E across DCOs
+  cond_km_data <- bind_rows(cond_km_list, .id = "dco") |>
+    filter(
+      (fct_match(variable, "first_liners") & fct_match(cond_group_name, "yes")) |
+      (fct_match(variable, "parts") & fct_match(cond_group_name, "part_e"))
+    ) |>
+    mutate(
+      trial = "sclc",
+      variable_label = case_when(
+        fct_match(variable, "first_liners") ~ "First Line",
+        fct_match(variable, "parts") ~ "Part E"
+      ),
+      km_est = {{ km_est_var_cond }},
+      dco = fct_recode(factor(dco), "Apr25" = "apr25", "Aug25" = "aug25", "Jan26" = "jan26")
+    ) |>
+    select(trial, dco, t, fit_type, variable_label, km_est)
+
+  # Combine all cohorts
+  combined_km_data <- bind_rows(all_km_data, cond_km_data) |>
+    mutate(variable_label = fct_relevel(variable_label, "All", "First Line", "Part E"))
+
+  # Filter out priors if requested
+  if (!show_priors) {
+    combined_km_data <- combined_km_data |>
+      filter(fct_match(fit_type, "posterior"))
+  }
+
+  # Get observed KM for all cohorts across DCOs
+  obs_km_data <- bind_rows(
+    all = bind_rows(obs_km_all_list, .id = "dco") |>
+      filter(fct_match(trial, "sclc"), fct_match(btype, "ub")) |>
+      select(!quantiles) |>
+      unnest(km_data),
+    first_line = bind_rows(obs_km_first_line_list, .id = "dco") |>
+      filter(fct_match(trial, "sclc"), fct_match(btype, "ub"), first_line) |>
+      select(!quantiles) |>
+      unnest(km_data),
+    part_e = bind_rows(analysis_data_list, .id = "dco") |>
+      filter(fct_match(trial, "sclc"), fct_match(arm, "E01")) |>
+      mutate(
+        os_time = if_else(death, death_week, patient_max_t),
+        os_censored = !death,
+        interval_censored = if (endpoint == "os") 0L else interval_censored
+      ) |>
+      group_by(dco) |>
+      group_modify(~if (endpoint == "pfs") get_km_res(.x, pfs, right_censored) else get_km_res(.x, os_time, os_censored)) |>
+      ungroup() |>
+      filter(fct_match(btype, "ub")) |>
+      select(!quantiles) |>
+      unnest(km_data),
+    .id = "cohort"
+  ) |>
+    mutate(
+      variable_label = fct_recode(cohort, "All" = "all", "First Line" = "first_line", "Part E" = "part_e"),
+      variable_label = fct_relevel(variable_label, "All", "First Line", "Part E"),
+      dco = fct_recode(factor(dco), "Apr25" = "apr25", "Aug25" = "aug25", "Jan26" = "jan26"),
+      trial = "sclc"
+    )
+
+  # Plot with base_plot_km and add facet_grid
+  p <- combined_km_data |>
+    base_plot_km(
+      obs_km_data = obs_km_data,
+      km_est = km_est,
+      group = fit_type,
+      alpha_group = if (show_priors) fit_type else NULL,
+      linewidth = 0.5,
+      alpha = if (show_priors) NULL else 0.25
+    ) +
+    scale_x_continuous(
+      "Months",
+      breaks = months_to_weeks(seq(0, 60, 6)),
+      label = label_weeks_to_months
+    ) +
+    scale_fill_discrete("", label = str_to_title, type = fill_color) +
+    scale_color_discrete(
+      "Interval Censored Observed KM",
+      label = c("lb" = "Lower Bound", "ub" = "Upper Bound"),
+      type = obs_color
+    ) +
+    facet_grid(rows = vars(variable_label), cols = vars(dco))
+
+  # Add alpha scale and guides based on whether priors are shown
+  if (show_priors) {
+    p <- p +
+      scale_alpha_manual("", values = c(prior = 0.125, posterior = 0.25)) +
+      guides(color = "none")
+  } else {
+    p <- p +
+      guides(color = "none", fill = "none", alpha = "none")
+  }
+
+  p
+}
+
+#' Plot PDL1-stratified KM curves by DCO across cohorts
+#'
+#' Wrapper function to plot PDL1-stratified Kaplan-Meier curves across multiple
+#' data cutoff dates, showing All/First Line/Part E cohorts stratified by PDL1.
+#' Faceted by cohort (rows) and DCO (columns).
+#'
+#' @param cond_km_data_list Named list of conditional KM data frames (one per DCO)
+#' @param obs_km_all_list Named list of observed KM for all patients (one per DCO)
+#' @param obs_km_first_line_list Named list of observed KM for first line patients (one per DCO)
+#' @param obs_km_part_e_list Named list of observed KM for Part E patients (one per DCO)
+#' @param estimate_type Either "sample" or "spop"
+#' @return A ggplot object with PDL1-stratified KM curves faceted by cohort and DCO
+plot_km_pdl1_by_dco <- function(
+  cond_km_data_list,
+  obs_km_all_list,
+  obs_km_first_line_list,
+  obs_km_part_e_list,
+  estimate_type = c("sample", "spop"),
+  color_palette = AZ_palette[-2],
+  endpoint = c("pfs", "os")
+) {
+  estimate_type <- match.arg(estimate_type)
+  endpoint <- match.arg(endpoint)
+  if (endpoint == "pfs") {
+    km_est_col <- if (estimate_type == "sample") "cond_sample_pfs_km_est" else "cond_spop_pfs_km_est"
+  } else {
+    km_est_col <- if (estimate_type == "sample") "cond_sample_os_km_est" else "cond_spop_os_km_est"
+  }
+
+  # Process conditional KM data for all three cohorts
+  cond_data <- bind_rows(
+    apr25 = cond_km_data_list$apr25 |> rename(km_est = !!km_est_col),
+    aug25 = cond_km_data_list$aug25 |> rename(km_est = !!km_est_col),
+    jan26 = cond_km_data_list$jan26 |> rename(km_est = !!km_est_col),
+    .id = "dco"
+  ) |>
+    filter(
+      fct_match(cond_group_name, c("hi", "low")),
+      fct_match(fit_type, "posterior"),
+      fct_match(variable, c("pdl1", "pdl1_naive", "part_e_pdl1"))
+    ) |>
+    mutate(
+      trial = "sclc",
+      cohort_label = fct_recode(variable, "All" = "pdl1", "First Line" = "pdl1_naive", "Part E" = "part_e_pdl1"),
+      cohort_label = fct_relevel(cohort_label, "All", "First Line", "Part E"),
+      cond_group_name = fct_collapse(cond_group_name, "PDL1 Low" = "low", "PDL1 High" = "hi"),
+      pdl1_group = fct_recode(cond_group_name, "Low" = "PDL1 Low", "High" = "PDL1 High"),
+      dco = fct_recode(factor(dco), "Apr25" = "apr25", "Aug25" = "aug25", "Jan26" = "jan26")
+    )
+
+  # Process observed KM data for all three cohorts
+  obs_data <- bind_rows(
+    all = bind_rows(obs_km_all_list, .id = "dco") |>
+      filter(fct_match(trial, "sclc"), fct_match(btype, "ub")) |>
+      select(!quantiles) |>
+      unnest(km_data),
+    first_line = bind_rows(obs_km_first_line_list, .id = "dco") |>
+      filter(fct_match(trial, "sclc"), fct_match(btype, "ub")) |>
+      select(!quantiles) |>
+      unnest(km_data),
+    part_e = bind_rows(obs_km_part_e_list, .id = "dco") |>
+      filter(fct_match(trial, "sclc"), fct_match(btype, "ub")) |>
+      select(!quantiles) |>
+      unnest(km_data),
+    .id = "cohort"
+  ) |>
+    mutate(
+      trial = "sclc",
+      cohort_label = fct_recode(cohort, "All" = "all", "First Line" = "first_line", "Part E" = "part_e"),
+      cohort_label = fct_relevel(cohort_label, "All", "First Line", "Part E"),
+      dco = fct_recode(factor(dco), "Apr25" = "apr25", "Aug25" = "aug25", "Jan26" = "jan26")
+    )
+
+  # Create base plot without observed data
+  plot_obj <- cond_data |>
+    base_plot_km(
+      obs_km_data = NULL,
+      km_est = km_est,
+      group = pdl1_group,
+      color_group = pdl1_group,
+      linewidth = 0.5,
+      alpha = 0.25
+    )
+
+  # Add observed data - group by cohort_label, dco, and pdl1_hi to ensure proper separation
+  plot_obj <- plot_obj +
+    geom_step(
+      aes(
+        x = t,
+        y = s,
+        group = interaction(cohort_label, dco, pdl1_hi),
+        color = !pdl1_hi
+      ),
+      linewidth = 0.75,
+      alpha = 0.75,
+      data = obs_data
+    )
+
+  # Apply scales and faceting
+  plot_obj +
+    scale_x_continuous(
+      "Months",
+      breaks = months_to_weeks(seq(0, 60, 6)),
+      label = label_weeks_to_months
+    ) +
+    scale_y_continuous("Survival Probability", breaks = seq(0, 1, 0.1)) +
+    scale_fill_discrete("PDL1", label = str_to_title, type = color_palette) +
+    scale_color_discrete("PDL1", label = c("TRUE" = "Low", "FALSE" = "High"), type = color_palette) +
+    scale_alpha_identity() +
+    facet_grid(rows = vars(cohort_label), cols = vars(dco)) +
+    coord_cartesian(xlim = c(0, months_to_weeks(48)))
+}
+
+#' Plot RECIST prediction sensitivity over time
+#'
+#' Shows how model sensitivity for predicting each RECIST category evolves
+#' across LFO cutoff dates. Displays running mean with standard error bands.
+#'
+#' The SE is computed within each posterior draw across LFO folds, then averaged
+#' across draws. This preserves posterior uncertainty while showing fold-to-fold
+#' variability in the SE bands.
+#'
+#' @param confusion_matrix_data Full out-of-sample confusion matrix data with columns:
+#'   n, m, cutoff_date, response, pred_response, oos_recist_confusion_matrix
+#' @param base_size Base font size for the plot (default 11). Use larger values (e.g., 16) for presentations.
+#' @param dco_dates Named vector of DCO dates (e.g., c("DCO1" = "2025-04-30", "DCO2" = "2025-08-31", "DCO3" = "2026-01-31"))
+#' @param caption Plot caption text. If NULL, uses default caption explaining the intervals.
+#' @return A ggplot object showing sensitivity trends over time
+plot_recist_sensitivity_over_time <- function(
+  confusion_matrix_data,
+  base_size = 11,
+  dco_dates = c("DCO1" = "2025-04-30", "DCO2" = "2025-08-31", "DCO3" = "2026-01-31"),
+  caption = "SE computed within each posterior draw across LFO folds, then averaged."
+) {
+  # Compute running proportions for all RECIST categories
+  recist_data <- confusion_matrix_data |>
+    group_by(n, m, cutoff_date, response) |>
+    mutate(
+      total = rvar_sum(oos_recist_confusion_matrix),
+      prop = oos_recist_confusion_matrix / total
+    ) |>
+    ungroup() |>
+    filter(response == pred_response) |>
+    arrange(response, cutoff_date)
+
+  # Compute running mean and SE for each RECIST category
+
+  # SE is computed within each posterior draw, then averaged across draws
+  recist_running <- recist_data |>
+    group_by(response) |>
+    group_modify(~ {
+      # Extract posterior draws matrix (n_draws x n_folds)
+      prop_draws <- do.call(cbind, lapply(.x$prop, posterior::draws_of))
+      n_draws <- nrow(prop_draws)
+      n_folds <- ncol(prop_draws)
+
+      # For each draw, compute running mean and SE across folds
+      running_means <- t(apply(prop_draws, 1, cumsum)) / rep(seq_len(n_folds), each = n_draws)
+      dim(running_means) <- c(n_draws, n_folds)
+
+      # Compute running SE: for each draw, SE = sd(folds 1:t) / sqrt(t)
+      running_ses <- matrix(0, nrow = n_draws, ncol = n_folds)
+      for (t in seq_len(n_folds)) {
+        if (t == 1) {
+          running_ses[, t] <- 0
+        } else {
+          running_ses[, t] <- apply(prop_draws[, 1:t, drop = FALSE], 1, sd) / sqrt(t)
+        }
+      }
+
+      # Average across posterior draws
+      .x |>
+        mutate(
+          running_mean = colMeans(running_means),
+          running_se = colMeans(running_ses),
+          running_lower = running_mean - running_se,
+          running_upper = running_mean + running_se
+        )
+    }) |>
+    ungroup()
+
+  # Define colors for each RECIST category
+  recist_colors <- c(
+    "CR" = AZ_navy,
+    "PR" = AZ_turquoise,
+    "SD" = AZ_gold,
+    "PD" = AZ_pink
+  )
+
+  # Convert DCO dates to Date objects
+  dco_dates_converted <- as.Date(dco_dates)
+
+  # Calculate font sizes based on base_size
+  title_size <- base_size * 1.3
+  axis_title_size <- base_size * 1.1
+  axis_text_size <- base_size * 0.9
+  legend_size <- base_size * 0.9
+  label_size <- base_size * 0.35  # For geom_label size parameter
+
+  # Create data frame for DCO labels
+  dco_labels <- tibble(
+    date = dco_dates_converted,
+    label = names(dco_dates),
+    y = 0.95
+  )
+
+  # Create plot
+  p <- recist_running |>
+    ggplot(aes(x = cutoff_date, color = response, fill = response))
+
+  # Add vertical lines for DCO dates
+  for (i in seq_along(dco_dates_converted)) {
+    p <- p + geom_vline(xintercept = dco_dates_converted[i], linetype = "dashed", color = "gray40", alpha = 0.6)
+  }
+
+  # Add ribbons and lines
+  p <- p +
+    geom_ribbon(aes(ymin = running_lower, ymax = running_upper), alpha = 0.3, color = NA) +
+    geom_line(aes(y = running_mean), linewidth = 1.5)
+
+  if (nrow(dco_labels) > 0) {
+    p <- p + geom_label(
+      data = dco_labels,
+      aes(x = date, y = y, label = label),
+      color = "gray40",
+      size = label_size,
+      fill = "white",
+      label.padding = unit(0.3, "lines"),
+      inherit.aes = FALSE
+    )
+  }
+
+  # Apply scales and theme
+  p +
+    scale_color_manual(values = recist_colors, name = "RECIST Category") +
+    scale_fill_manual(values = recist_colors, name = "RECIST Category") +
+    scale_y_continuous(
+      "Sensitivity",
+      breaks = seq(0, 1, 0.1),
+      labels = scales::percent_format(),
+      limits = c(0, 1.0),
+      expand = expansion(mult = c(0, 0.02))
+    ) +
+    labs(x = "Cutoff Date", caption = caption) +
+    theme_minimal(base_size = base_size) +
+    theme(
+      legend.position = "bottom",
+      axis.title = element_text(size = axis_title_size),
+      axis.text = element_text(size = axis_text_size),
+      legend.text = element_text(size = legend_size),
+      legend.title = element_text(size = legend_size),
+      plot.caption = element_text(hjust = 0, size = rel(0.9), margin = margin(t = 6))
+    )
+}
+
+#' Plot standalone multistate KM predictions vs observed KM (PFS + OS)
+#'
+#' Produces two KM panels (PFS and OS), each faceted by trial, combined with
+#' patchwork. Predicted uncertainty is shown with stat_ribbon (.width = c(0.5, 0.8));
+#' the posterior median is drawn as a solid step line; the observed KM is overlaid
+#' as a dashed step line.
+#'
+#' @param pfs_rvar Tibble from ms_standalone_km_pfs_rvar_posterior_*. Columns:
+#'   trial, t (1-indexed weeks), sample_ms_pfs_km_est (rvar).
+#' @param os_rvar Tibble from ms_standalone_km_os_rvar_posterior_*. Columns:
+#'   trial, t, sample_os_km_est (rvar).
+#' @param obs_pfs Unnested, ub-filtered km_trial_pfs. Columns: trial, t, s.
+#' @param obs_os Unnested, ub-filtered km_trial_os. Columns: trial, t, s.
+#' @param x_breaks_months Numeric vector of month break points for x-axis.
+#' @return A patchwork object combining the PFS and OS panels.
+plot_ms_standalone_km <- function(
+  pfs_rvar,
+  os_rvar,
+  obs_pfs,
+  obs_os,
+  x_breaks_months = seq(0, 48, by = 6)
+) {
+  x_breaks <- months_to_weeks(x_breaks_months)
+
+  pred_colors <- c(
+    "Conditional"   = "#003865",  # AZ navy
+    "Unconditional" = "#68D2DF"   # AZ turquoise
+  )
+
+  make_km_panel <- function(rvar_data, sample_col, spop_col, obs_data, title) {
+    long_data <- rvar_data |>
+      rename(Conditional = {{ sample_col }}, Unconditional = {{ spop_col }}) |>
+      pivot_longer(
+        c(Conditional, Unconditional),
+        names_to = "pred_type",
+        values_to = "km_est"
+      )
+
+    long_data |>
+      ggplot(aes(x = t - 1, fill = pred_type, color = pred_type)) +
+      stat_ribbon(
+        aes(dist = km_est, fill_ramp = after_stat(level)),
+        .width = c(0.5, 0.8),
+        alpha = 0.6
+      ) +
+      ggdist::scale_fill_ramp_discrete(
+        range = c(0.15, 0.45),
+        labels = c("80%", "50%"),
+        name = "Credible interval"
+      ) +
+      geom_step(
+        aes(y = median(km_est)),
+        linewidth = 0.8
+      ) +
+      geom_step(
+        aes(x = t, y = s),
+        data = \(d) semi_join(obs_data, d, by = "trial"),
+        color = "#F0AB00",
+        linewidth = 0.9,
+        linetype = "dashed",
+        inherit.aes = FALSE
+      ) +
+      scale_fill_manual(values = pred_colors, name = "Prediction") +
+      scale_color_manual(values = pred_colors, name = "Prediction") +
+      facet_wrap(~trial, labeller = as_labeller(trial_labeller)) +
+      scale_x_continuous("Months", breaks = x_breaks, labels = label_weeks_to_months) +
+      scale_y_continuous(
+        "Survival probability",
+        limits = c(0, 1),
+        labels = scales::label_percent(accuracy = 1)
+      ) +
+      labs(title = title) +
+      theme_bw() +
+      theme(
+        legend.position = "bottom",
+        strip.background = element_rect(fill = "#003865"),
+        strip.text = element_text(color = "white", face = "bold")
+      )
+  }
+
+  pfs_plot <- make_km_panel(
+    pfs_rvar, sample_ms_pfs_km_est, spop_ms_pfs_km_est, obs_pfs,
+    "PFS — Multistate model vs observed"
+  )
+  os_plot <- make_km_panel(
+    os_rvar, sample_os_km_est, spop_os_km_est, obs_os,
+    "OS — Multistate model vs observed"
+  )
+
+  pfs_plot / os_plot +
+    patchwork::plot_layout(guides = "collect") &
+    theme(legend.position = "bottom")
+}
+
+competing_risks_event_table <- function(stan_data) {
+  trial_id    <- as.integer(stan_data$patient_trial)
+  trial_names <- trial_labeller(levels(stan_data$patient_trial))
+
+  obs <- tibble(
+    trial   = trial_id,
+    cens_01 = stan_data$ms_censored_01,
+    cens_02 = as.integer(!(stan_data$ms_final_state == 2L & stan_data$ms_time_01 == 0L)),
+    fs      = stan_data$ms_final_state
+  ) |> mutate(
+    cause_lbl = case_when(
+      fs == 3L      ~ "0→3 Dropout",
+      cens_01 == 0L ~ "0→1 Progression",
+      cens_02 == 0L ~ "0→2 On-trial death",
+      TRUE          ~ "Censored"
+    ),
+    trial_name = trial_names[trial]
+  )
+
+  obs |>
+    count(trial_name, cause_lbl) |>
+    pivot_wider(names_from = cause_lbl, values_from = n, values_fill = 0) |>
+    gt::gt(rowname_col = "trial_name") |>
+    gt::tab_header(title = "Observed event counts from state 0") |>
+    gt::tab_stubhead(label = "Trial")
+}
