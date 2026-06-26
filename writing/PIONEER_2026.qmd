@@ -9,7 +9,7 @@ author:
     affiliation: AstraZeneca, Oncology R&D, Data Science & AI
   - name: Antonia Bevan
     affiliation: AstraZeneca, Oncology R&D, Data Science & AI
-  - name: Sajan Khosecka
+  - name: Sajan Khosla
     affiliation: AstraZeneca, Oncology R&D, Data Science & AI
   - name: Jessica Davies
     affiliation: AstraZeneca, Oncology R&D, Data Science & AI
