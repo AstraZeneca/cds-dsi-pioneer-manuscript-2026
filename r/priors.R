@@ -608,4 +608,77 @@ get_confirmed_resp_priors <- function() {
   )
 }
 
+add_tumor_priors <- function(stan_data, tumor_priors) {
+  stan_data |> list_assign(!!!tumor_priors)
+}
+
+#' Prepare elicited priors with directional signed Normal parameters
+#'
+#' @importFrom tibble tribble
+prepare_elicited_priors <- function(
+  design_matrix,
+  shrink_mean = 1.0,
+  shrink_sd = 1.0
+) {
+  covar_names <- colnames(design_matrix)
+
+  if (length(covar_names) == 0) {
+    return(tibble(coef_mean = numeric(0), coef_sd = numeric(0)))
+  }
+
+  priors_tbl <- tribble(
+    ~name                  , ~effect_on_pfs                , ~effect_size , ~effect_direction ,
+    "prev_lines"           , "Strongly worsens PFS"        , "large"      , "worsens"         ,
+    "pdl1_hi"              , "Strongly improves PFS"       , "large"      , "improves"        ,
+    "age"                  , "Slightly worsens PFS"        , "small"      , "worsens"         ,
+    "ecogbl"               , "Moderately worsens PFS"      , "medium"     , "worsens"         ,
+    "liver_mets"           , "Moderately worsens PFS"      , "medium"     , "worsens"         ,
+    "brain_mets"           , "No meaningful effect on PFS" , "none"       , "none"            ,
+    "bone_mets"            , "Slightly worsens PFS"        , "small"      , "worsens"         ,
+    "stage_num"            , "Strongly worsens PFS"        , "large"      , "worsens"         ,
+    "baseline_ldh"         , "Slightly worsens PFS"        , "small"      , "worsens"         ,
+    "baseline_albumin"     , "Moderately improves PFS"     , "medium"     , "improves"        ,
+    "baseline_neutrophils" , "No meaningful effect"        , "none"       , "none"            ,
+    "baseline_monocytes"   , "No meaningful effect"        , "none"       , "none"            ,
+    "baseline_hematocrit"  , "No meaningful effect"        , "none"       , "none"            ,
+    "baseline_nlr"         , "Moderately worsens PFS"      , "medium"     , "worsens"         ,
+    "baseline_AST"         , "Moderately worsens PFS"      , "medium"     , "worsens"         ,
+    "baseline_GGT"         , "Slightly worsens PFS"        , "small"      , "worsens"         ,
+    "baseline_ALP"         , "Slightly worsens PFS"        , "small"      , "worsens"         ,
+    "baseline_chloride"    , "No meaningful effect on PFS" , "none"       , "none"            ,
+    "pdl1_hi_x_prev_lines" , "none"                        , "none"       , "none"            ,
+    "histology_Squamous"   , "none"                        , "none"       , "none"            ,
+    "sex_M"                , "No meaningful effect"        , "none"       , "none"            ,
+    "smoker_ever"          , "Moderately improves PFS"     , "medium"     , "improves"        ,
+    "race_Asian"           , "No meaningful effect on PFS" , "none"       , "none"            ,
+    "race_Black"           , "No meaningful effect on PFS" , "none"       , "none"            ,
+    "race_Unknown"         , "No meaningful effect on PFS" , "none"       , "none"            ,
+    "race_White"           , "No meaningful effect on PFS" , "none"       , "none"            ,
+    "baseline_ctdna"       , "Unknown"                     , "none"       , "none"
+  ) |>
+    left_join(
+      tribble(
+        ~effect_size , ~mean     , ~sd       ,
+        "none"       , 0.0000000 , 0.2000000 ,
+        "small"      , 0.1803720 , 0.1239036 ,
+        "medium"     , 0.4655957 , 0.1865261 ,
+        "large"      , 0.8291831 , 0.3536294
+      ),
+      by = "effect_size"
+    )
+  priors_tbl |>
+    filter(name %in% covar_names) |>
+    mutate(
+      name = factor(name, levels = covar_names),
+      dir_sign = dplyr::case_when(
+        effect_direction == "worsens" ~ -1,
+        effect_direction == "improves" ~ 1,
+        TRUE ~ 0
+      ),
+      coef_mean = shrink_mean * dir_sign * mean,
+      coef_sd = shrink_sd * sd
+    ) |>
+    arrange(name)
+}
+
 # nolint end: object_usage_linter

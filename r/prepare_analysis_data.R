@@ -93,47 +93,84 @@ calc_confirmed_response <- function(response) {
   )
 }
 
-#' Convert analysis data into Stan list format data
-#'
-#' @param analysis_data Analysis data frame.
-#'
-#' This is used to pass to a model the tumor specific data.
-#'
-#' @return Stan list data.
-prepare_tumor_stan_data <- function(analysis_data) {
+prepare_tumor_stan_data <- function(
+  analysis_data,
+  covar_design_matrix,
+  cond_group,
+  pfs_quantiles,
+  ...,
+  group_col = "trial"
+) {
+  covar_matrix <- as.matrix(covar_design_matrix)
+  n_covar <- ncol(covar_matrix)
+
+  if (n_covar == 0) {
+    covar_matrix <- array(numeric(0), dim = c(nrow(analysis_data), 0))
+  }
+
+  n_time_varying_covar <- 3L
+  n_time_invariant_covar <- n_covar
+
+  group_vec <- analysis_data[[group_col]]
+  hierarchy <- create_hierarchy_structure(
+    patient_assignments = list(trial = group_vec),
+    n_patients = nrow(analysis_data)
+  )
+
   lst(
     n_patients = nrow(analysis_data),
-    n_trials = n_distinct(analysis_data$trial),
-    tumor_location = unnest(analysis_data, patient_tumors) |>
-      pull(tuloc) |>
-      factor(),
-    n_tumor_locations = nlevels(tumor_location),
-    patient_trial = factor(analysis_data$trial),
-    n_patient_tumors = analysis_data$n_tumors,
-    n_measures = analysis_data$n_measures |> unlist(),
-    n_patient_visits = map_int(analysis_data$n_measures, max),
-    t_measure = unnest(analysis_data, patient_tumors) |>
-      pull(tumor_history) |>
-      map(\(h) h$week) |>
-      unlist(),
-    t_day_measure = unnest(analysis_data, patient_tumors) |>
-      pull(tumor_history) |>
-      map(\(h) h$day) |>
-      unlist(),
-    t_patient_visits = map(analysis_data$t_measure, \(t) {
-      sort(unique(unlist(t)))
-    }) |>
-      unlist(),
-    tumor_size = unnest(analysis_data, patient_tumors) |>
-      pull(tumor_history) |>
-      map(\(h) h$mmdiam / 10) |>
-      unlist(),
-    sum_tumor_size = map(analysis_data$tumor_sum_size, \(ts) {
-      ts$mmsumdiam / 10
-    }) |>
-      unlist(),
+    n_trials = n_distinct(group_vec),
+    patient_trial = group_vec,
+    n_patient_visits = map_int(analysis_data$visit_data, nrow),
+    t_patient_visits = unnest(analysis_data, visit_data) |> pull(week),
+    t_patient_visits_day = unnest(analysis_data, visit_data) |> pull(ady),
+    sum_tumor_size = unnest(analysis_data, visit_data) |>
+      pull(mmsumdiam) |>
+      divide_by(10),
     patient_t_width = analysis_data$patient_t_width,
-  )
+    calendar_day = analysis_data$calendar_day,
+    calendar_week = analysis_data$calendar_week,
+    extend_max_all_t = 1,
+    forecast_observation_interval = 6L,
+    recist = unnest(analysis_data, visit_data) |>
+      pull(response) |>
+      factor(levels = c("CR", "PR", "SD", "PD", "NE")) |>
+      fct_na_value_to_level(level = "NE"),
+    target_recist = unnest(analysis_data, visit_data) |>
+      pull(det_response) |>
+      factor(levels = c("CR", "PR", "SD", "PD", "NE")) |>
+      fct_na_value_to_level(level = "NE"),
+    pfs = analysis_data$pfs,
+    right_censored = analysis_data$right_censored,
+    target_pfs = if_else(
+      analysis_data$det_right_censored,
+      analysis_data$det_pfs,
+      analysis_data$det_pfs + analysis_data$det_interval_censored + 1L
+    ),
+    target_right_censored = analysis_data$det_right_censored,
+    death_week = coalesce(analysis_data$death_week, 0L),
+    n_time_varying_covar = n_time_varying_covar,
+    n_time_invariant_covar = n_time_invariant_covar,
+    covar_design_matrix = covar_matrix,
+    n_covar = n_covar,
+    n_cond_group = length(cond_group),
+    cond_group_size = if (length(cond_group) > 0) map_int(cond_group, length) else integer(0),
+    cond_group = if (length(cond_group) > 0) as.integer(unlist(cond_group)) else integer(0),
+    pfs_quantiles = pfs_quantiles,
+    n_pfs_quantiles = length(pfs_quantiles),
+    n_forecast_patients = nrow(analysis_data),
+    forecast_split_level = 0L,
+    forecast_group = 0L,
+    ms_split_level = 0L,
+    n_ms_target_groups = 0L,
+    ms_target_groups = integer(0),
+    enable_student_t_hierarchy = 0L,
+  ) |>
+    list_modify(!!!hierarchy) |>
+    list_modify(!!!serialize_sd_subhierarchy_modes(
+      NULL, colnames(hierarchy$patient_level_groups), hierarchy$n_groups_per_level
+    )) |>
+    list_modify(...)
 }
 
 #' Prepare Stan data for Progression-Free Survival (PFS) analysis
@@ -440,6 +477,219 @@ prepare_confirmed_resp_km <- function(stan_data) {
           )
       ),
     )
+}
+
+prepare_analysis_data <- function(trial_patient_data, trial_visit_data, admin_censor_buffer = 6L) {
+  trial_dco_df <- trial_patient_data |>
+    group_by(studyid) |>
+    summarise(trial_dco_date = max(trtsdt + patient_max_t * 7), .groups = "drop")
+
+  analysis_data <- nest_join(
+    trial_patient_data,
+    trial_visit_data,
+    by = c("studyid", "usubjid"),
+    name = "visit_data"
+  ) |>
+    select(-any_of("baseline_date")) |>
+    mutate(
+      across(where(is.character), as_factor),
+      map_dfr(visit_data, \(d) determine_pfs(d, 1)),
+      race = str_to_title(race),
+      stage_num = as.integer(str_extract(stage, "\\d+")),
+      across(any_of(c("first_line", "chemo_naive", "cpi_naive")), \(x) x == 1),
+
+      target_only_right_censored = !map_lgl(visit_data, \(d) {
+        any(fct_match(d$det_response, "PD"))
+      }),
+      non_target_pd = map_lgl(visit_data, \(d) {
+        overall_pd_idx <- which(fct_match(d$response, "PD"))
+        if (length(overall_pd_idx) == 0) return(FALSE)
+        target_pd_idx <- which(fct_match(d$det_response, "PD"))
+        if (length(target_pd_idx) == 0) return(TRUE)
+        min(overall_pd_idx) < min(target_pd_idx)
+      }),
+
+      original_right_censored = right_censored,
+      progression_before_death = if_else(original_right_censored, FALSE, progression_before_death),
+      right_censored = right_censored |
+        !((death & (death_week - patient_max_t <= admin_censor_buffer)) | progression_before_death),
+      interval_censored = (1 - right_censored) * interval_censored,
+      original_pfs = pfs,
+      pfs = if_else(right_censored, patient_max_t, pfs),
+      progression_event = !right_censored & progression_before_death,
+
+      ms_final_state_full = case_when(
+        right_censored ~ 0L,
+        progression_before_death & death ~ 2L,
+        progression_before_death & !death ~ 1L,
+        death & !progression_before_death ~ 2L,
+        TRUE ~ 1L
+      ),
+      ms_time_01_full = case_when(
+        right_censored ~ as.integer(patient_max_t),
+        progression_before_death ~ as.integer(pfs),
+        TRUE ~ 0L
+      ),
+      ms_time_01_sld = if_else(
+        !right_censored,
+        as.integer(pfs),
+        as.integer(patient_max_t)
+      ),
+      ms_censored_01_full = as.integer(right_censored | (!progression_before_death & death)),
+      ms_censored_01_sld = as.integer(right_censored),
+
+      ms_time_02 = case_when(
+        death & !progression_before_death ~ as.integer(death_week),
+        TRUE ~ as.integer(patient_max_t)
+      ),
+      ms_censored_02 = as.integer(!(death & !progression_before_death)),
+
+      ms_max_time_02 = as.integer(pmin(ms_time_01_full, ms_time_02)),
+
+      ms_time_12 = case_when(
+        progression_before_death & death ~ pmax(1L, as.integer(death_week - pfs)),
+        progression_before_death & !death ~ as.integer(patient_max_t - pfs),
+        TRUE ~ 0L
+      ),
+      ms_censored_12 = as.integer(!(progression_before_death & death)),
+
+      ms_prog_deterministic = as.integer(replace_na(
+        map_lgl(visit_data, \(d) {
+          any(fct_match(d$det_response, "PD"), na.rm = TRUE)
+        }) & replace_na(progression_before_death, FALSE),
+        FALSE
+      )),
+
+      trial_dco_date = trial_dco_df$trial_dco_date[
+        base::match(studyid, trial_dco_df$studyid)
+      ],
+      potential_followup = as.numeric(trial_dco_date - trtsdt) / 7,
+    ) |>
+    mutate(
+      pfs = if_else(!right_censored, pfs + interval_censored + 1L, pfs),
+    )
+
+  analysis_data$ms_pattern <- classify_ms_patients(analysis_data, admin_censor_buffer)
+
+  analysis_data
+}
+
+prepare_covar_design_matrix <- function(analysis_data, covar_formula) {
+  if (is_null(covar_formula)) {
+    return(tibble(.rows = nrow(analysis_data)))
+  }
+
+  rec_data <- recipe(formula = covar_formula, data = analysis_data)
+  rec_cols <- rec_data$var_info$variable
+
+  rec_data |>
+    step_mutate(
+      across(any_of(c("race")), \(x) fct_relevel(x, "Other")),
+      across(any_of(c("sex")), \(x) fct_relevel(x, "F")),
+      across(any_of(c("smoker")), \(x) fct_relevel(x, "never")),
+      across(any_of(c("pdl1_hi")), \(x) as.integer(x))
+    ) |>
+    (\(.) {
+      r <- .
+      if ("pdl1_hi" %in% rec_cols && "prev_lines" %in% rec_cols) {
+        r <- r |> step_interact(~ pdl1_hi:prev_lines)
+      }
+      if ("pdl1_hi" %in% rec_cols || "prev_lines" %in% rec_cols) {
+        r <- r |>
+          step_dummy(
+            all_nominal_predictors(),
+            one_hot = FALSE,
+            naming = \(var, lvl, ...) str_c(var, "_", lvl)
+          )
+      }
+      r
+    })() |>
+    step_center(all_predictors()) |>
+    step_scale(all_predictors()) |>
+    prep() |>
+    bake(new_data = NULL) |>
+    select(!any_of("(Intercept)"))
+}
+
+discretize_pdl1 <- function(pdl1_data, cutoff = 50, handle_gte1 = "low") {
+  cleaned <- str_trim(str_to_upper(pdl1_data))
+  cleaned <- str_remove_all(cleaned, "%")
+  cleaned <- str_replace_all(cleaned, ">=", "≥")
+  cleaned <- str_replace_all(cleaned, "> =", "≥")
+  cleaned <- str_replace_all(cleaned, "\\s*>\\s*", ">")
+
+  operator <- case_when(
+    str_detect(cleaned, "^≥") ~ "≥",
+    str_detect(cleaned, "^>") ~ ">",
+    str_detect(cleaned, "^<") ~ "<",
+    str_detect(cleaned, "^≤") ~ "≤",
+    TRUE ~ "="
+  )
+
+  numeric_value <- as.numeric(str_extract(cleaned, "\\d+(?:\\.\\d+)?"))
+
+  range_pattern <- "^(\\d+)-(\\d+)$"
+  range_matches <- str_match(cleaned, range_pattern)
+  range_indices <- !is.na(range_matches[, 1])
+  numeric_value[range_indices] <- as.numeric(range_matches[range_indices, 2])
+
+  gte1_indices <- operator == "≥" & numeric_value == 1 & !is.na(numeric_value)
+
+  case_when(
+    gte1_indices & handle_gte1 == "low" ~ "Low",
+    gte1_indices & handle_gte1 == "high" ~ "High",
+    gte1_indices & handle_gte1 == "missing" ~ NA_character_,
+    operator == "≥" & numeric_value >= cutoff & !is.na(numeric_value) ~ "High",
+    operator == "≥" & numeric_value < cutoff & !is.na(numeric_value) ~ "Low",
+    operator == ">" & numeric_value >= cutoff & !is.na(numeric_value) ~ "High",
+    operator == ">" & numeric_value < cutoff & !is.na(numeric_value) ~ "Low",
+    !is.na(numeric_value) & numeric_value >= cutoff ~ "High",
+    !is.na(numeric_value) & numeric_value < cutoff ~ "Low",
+    TRUE ~ NA_character_
+  )
+}
+
+subsample_for_testing <- function(data, n_per_trial) {
+  result <- data |>
+    group_by(trial) |>
+    group_modify(\(trial_data, trial_key) {
+      stratified <- trial_data |>
+        mutate(.stratum = str_c(
+          ms_final_state_full, ms_prog_deterministic,
+          ms_censored_12, interval_censored,
+          sep = "_"
+        ))
+
+      mandatory <- stratified |>
+        group_by(.stratum) |>
+        slice_sample(n = 1) |>
+        ungroup()
+
+      remaining_n <- max(0L, n_per_trial - nrow(mandatory))
+      if (remaining_n > 0) {
+        pool <- stratified |>
+          anti_join(mandatory, by = "usubjid")
+        extras <- pool |>
+          slice_sample(n = min(remaining_n, nrow(pool)))
+        bind_rows(mandatory, extras) |> select(!.stratum)
+      } else {
+        mandatory |> select(!.stratum)
+      }
+    }) |>
+    ungroup()
+
+  cat(
+    "TEST MODE: Subsampled", nrow(result), "patients from", nrow(data),
+    "(", n_per_trial, "per trial )\n"
+  )
+
+  result
+}
+
+harmonize_smoker_status <- function(smoker_status) {
+  smoker_status |>
+    str_to_lower() |>
+    fct_collapse(ever = c("ever", "former", "current"))
 }
 
 # nolint end: object_usage_linter

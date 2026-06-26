@@ -411,8 +411,163 @@ create_tumor_ss_pathfinder_initializer <- function(pathfinder_fit, stan_data) {
 }
 
 
-# NOTE: create_tumor_ssls_initializer() has been moved to r/sclc/initializers.R
-# NOTE: create_pioneer_initializer() lives in r/pioneer/initializers.R
+#' Create SCLC Stan model initializer
+#'
+#' Returns function(chain_id) that draws starting values from priors.
+#' Composes biomarker-specific (SLD tumor) initialization with the shared
+#' multistate GP initialization from ms_init_values().
+#'
+#' @param stan_data Complete Stan data list (base data + priors + flags)
+#' @return Function(chain_id) returning a named list of initial values
+create_tumor_ssls_initializer <- function(stan_data) {
+  .ms_init <- ms_init_values
+  function(chain_id) {
+    min_all_t <- min(stan_data$t_patient_visits)
+    max_all_t <- max(max(stan_data$t_patient_visits) + 1, stan_data$extend_max_all_t %||% 0)
+    max_t_width <- max_all_t - min_all_t + 1
+
+    with(stan_data, {
+      n_fgpl <- n_groups_per_level
+      if (!is.null(n_forecast_patients)) n_fgpl[n_levels] <- n_forecast_patients
+
+      n_raw_groups_tr_intercept  <- sum(n_fgpl[enable_level_intercept_tr %in% c(1L, 2L, 3L)])
+      n_cp_groups_tr_intercept   <- sum(n_fgpl[enable_level_intercept_tr == 4L])
+      n_raw_groups_frac_intercept <- sum(n_fgpl[enable_level_intercept_frac %in% c(1L, 2L, 3L)])
+      n_cp_groups_frac_intercept  <- sum(n_fgpl[enable_level_intercept_frac == 4L])
+      n_raw_groups_init_intercept <- sum(n_fgpl[enable_level_intercept_init %in% c(1L, 2L, 3L)])
+      n_cp_groups_init_intercept  <- sum(n_fgpl[enable_level_intercept_init == 4L])
+
+      n_raw_groups_tr_slope  <- sum(n_fgpl[(enable_level_intercept_tr %in% c(1L, 2L, 3L)) & (enable_level_cov_tr == 1L)])
+      n_cp_groups_tr_slope   <- sum(n_fgpl[(enable_level_intercept_tr == 4L) & (enable_level_cov_tr == 1L)])
+      n_raw_groups_frac_slope <- sum(n_fgpl[(enable_level_intercept_frac %in% c(1L, 2L, 3L)) & (enable_level_cov_frac == 1L)])
+      n_cp_groups_frac_slope  <- sum(n_fgpl[(enable_level_intercept_frac == 4L) & (enable_level_cov_frac == 1L)])
+      n_raw_groups_init_slope <- sum(n_fgpl[(enable_level_intercept_init %in% c(1L, 2L, 3L)) & (enable_level_cov_init == 1L)])
+      n_cp_groups_init_slope  <- sum(n_fgpl[(enable_level_intercept_init == 4L) & (enable_level_cov_init == 1L)])
+
+      rtruncnorm_actual <- function(n, sd, max_dev = 1.5) {
+        raw <- rnorm(n, sd = sd * 0.6)
+        pmax(-max_dev * sd, pmin(max_dev * sd, raw))
+      }
+
+      tr_sd_level <- pmax(0.05, abs(rnorm(n_levels, sd = tr_sd_level_intercept_sd)))
+      frac_sd_level <- pmax(0.05, abs(rnorm(n_levels, sd = frac_sd_level_intercept_sd)))
+      init_sd_level <- pmax(0.05, abs(rnorm(n_levels, sd = init_sd_level_intercept_sd)))
+
+      tr_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
+        if (enable_level_intercept_tr[lv] %in% c(1L, 2L, 3L)) rtruncnorm_actual(n_fgpl[lv], tr_sd_level[lv]) else NULL
+      }))
+      frac_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
+        if (enable_level_intercept_frac[lv] %in% c(1L, 2L, 3L)) rtruncnorm_actual(n_fgpl[lv], frac_sd_level[lv]) else NULL
+      }))
+      init_level_dev <- unlist(lapply(seq_len(n_levels), function(lv) {
+        if (enable_level_intercept_init[lv] %in% c(1L, 2L, 3L)) rtruncnorm_actual(n_fgpl[lv], init_sd_level[lv]) else NULL
+      }))
+
+      raw_mask_tr   <- as.integer(enable_level_intercept_tr %in% c(1L, 2L, 3L))
+      raw_mask_frac  <- as.integer(enable_level_intercept_frac %in% c(1L, 2L, 3L))
+      raw_mask_init  <- as.integer(enable_level_intercept_init %in% c(1L, 2L, 3L))
+
+      enabled_level_pos_tr <- c(1L, cumsum(n_fgpl * raw_mask_tr) + 1L)
+      tr_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
+        if (!raw_mask_tr[lv]) return(NULL)
+        idx <- enabled_level_pos_tr[lv]:(enabled_level_pos_tr[lv + 1] - 1)
+        tr_level_dev[idx] / tr_sd_level[lv]
+      }))
+
+      enabled_level_pos_frac <- c(1L, cumsum(n_fgpl * raw_mask_frac) + 1L)
+      frac_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
+        if (!raw_mask_frac[lv]) return(NULL)
+        idx <- enabled_level_pos_frac[lv]:(enabled_level_pos_frac[lv + 1] - 1)
+        frac_level_dev[idx] / frac_sd_level[lv]
+      }))
+
+      enabled_level_pos_init <- c(1L, cumsum(n_fgpl * raw_mask_init) + 1L)
+      init_raw_level <- unlist(lapply(seq_len(n_levels), function(lv) {
+        if (!raw_mask_init[lv]) return(NULL)
+        idx <- enabled_level_pos_init[lv]:(enabled_level_pos_init[lv + 1] - 1)
+        init_level_dev[idx] / init_sd_level[lv]
+      }))
+
+      tr_cp_level_intercept   <- rnorm(n_cp_groups_tr_intercept,   0, tr_sd_level[enable_level_intercept_tr   == 4L] * 0.2)
+      frac_cp_level_intercept <- rnorm(n_cp_groups_frac_intercept, 0, frac_sd_level[enable_level_intercept_frac == 4L] * 0.2)
+      init_cp_level_intercept <- rnorm(n_cp_groups_init_intercept, 0, init_sd_level[enable_level_intercept_init == 4L] * 0.2)
+
+      tr_sd_level_slope <- lapply(seq_len(n_levels), function(lv) {
+        pmax(0.01, abs(rnorm(n_covar, sd = tr_sd_level_slope_sd[[lv]])))
+      })
+      frac_sd_level_slope <- lapply(seq_len(n_levels), function(lv) {
+        pmax(0.01, abs(rnorm(n_covar, sd = frac_sd_level_slope_sd[[lv]])))
+      })
+      init_sd_level_slope <- lapply(seq_len(n_levels), function(lv) {
+        pmax(0.01, abs(rnorm(n_covar, sd = init_sd_level_slope_sd[[lv]])))
+      })
+
+      tr_raw_level_slope   <- matrix(rnorm(n_raw_groups_tr_slope   * n_covar, sd = 0.5),
+                                     nrow = n_raw_groups_tr_slope,   ncol = n_covar)
+      frac_raw_level_slope <- matrix(rnorm(n_raw_groups_frac_slope * n_covar, sd = 0.5),
+                                     nrow = n_raw_groups_frac_slope, ncol = n_covar)
+      init_raw_level_slope <- matrix(rnorm(n_raw_groups_init_slope * n_covar, sd = 0.5),
+                                     nrow = n_raw_groups_init_slope, ncol = n_covar)
+
+      tr_cp_level_slope   <- matrix(rnorm(n_cp_groups_tr_slope   * n_covar, sd = 0.1),
+                                    nrow = n_cp_groups_tr_slope,   ncol = n_covar)
+      frac_cp_level_slope <- matrix(rnorm(n_cp_groups_frac_slope * n_covar, sd = 0.1),
+                                    nrow = n_cp_groups_frac_slope, ncol = n_covar)
+      init_cp_level_slope <- matrix(rnorm(n_cp_groups_init_slope * n_covar, sd = 0.1),
+                                    nrow = n_cp_groups_init_slope, ncol = n_covar)
+
+      biomarker_init <- lst(
+        tr_loc_pop = rnorm(1, tr_loc_pop_mean, tr_loc_pop_sd),
+        frac_logit_loc_pop = rnorm(1, frac_logit_loc_pop_mean, frac_logit_loc_pop_sd),
+        init_logit_loc_pop = rnorm(1, init_logit_loc_pop_mean, init_logit_loc_pop_sd),
+
+        tr_sd_level_intercept_raw = as.array(tr_sd_level[enable_level_intercept_tr %in% c(2L, 4L)]),
+        tr_raw_level_intercept = as.array(tr_raw_level),
+        tr_cp_level_intercept = as.array(tr_cp_level_intercept),
+        frac_sd_level_intercept_raw = as.array(frac_sd_level[enable_level_intercept_frac %in% c(2L, 4L)]),
+        frac_raw_level_intercept = as.array(frac_raw_level),
+        frac_cp_level_intercept = as.array(frac_cp_level_intercept),
+        init_sd_level_intercept_raw = as.array(init_sd_level[enable_level_intercept_init %in% c(2L, 4L)]),
+        init_raw_level_intercept = as.array(init_raw_level),
+        init_cp_level_intercept = as.array(init_cp_level_intercept),
+
+        tr_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_tr) array(rnorm(n_covar, tr_coef_qr_pop_mean, tr_coef_qr_pop_sd), dim = n_covar),
+        frac_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_frac) array(rnorm(n_covar, frac_coef_qr_pop_mean, frac_coef_qr_pop_sd), dim = n_covar),
+        init_coef_qr_pop = if (n_covar > 0 && enable_pop_cov_init) array(rnorm(n_covar, init_coef_qr_pop_mean, init_coef_qr_pop_sd), dim = n_covar),
+
+        tr_sd_level_slope = if (n_covar > 0) tr_sd_level_slope,
+        tr_raw_level_slope = if (n_covar > 0) tr_raw_level_slope,
+        tr_cp_level_slope = if (n_covar > 0) tr_cp_level_slope,
+        frac_sd_level_slope = if (n_covar > 0) frac_sd_level_slope,
+        frac_raw_level_slope = if (n_covar > 0) frac_raw_level_slope,
+        frac_cp_level_slope = if (n_covar > 0) frac_cp_level_slope,
+        init_sd_level_slope = if (n_covar > 0) init_sd_level_slope,
+        init_raw_level_slope = if (n_covar > 0) init_raw_level_slope,
+        init_cp_level_slope = if (n_covar > 0) init_cp_level_slope,
+
+        tr_raw_patient_process_noise = if (enable_patient_process_noise_tr) {
+          matrix(0, nrow = n_patients, ncol = max_t_width)
+        },
+        tr_log_sd_pop_process_noise = if (enable_patient_process_noise_tr) array(rnorm(1, mean = log(0.05), sd = 0.5)),
+        tr_sd_patient_log_sd_process_noise = if (enable_patient_process_noise_tr) array(abs(rnorm(1, sd = 0.3))),
+        tr_raw_patient_log_sd_process_noise = if (enable_patient_process_noise_sd_tr) rep(0, n_patients),
+        tr_logit_phi_pop_process_noise = if (enable_patient_process_noise_tr) array(rnorm(1, mean = 2, sd = 1)),
+        tr_sd_patient_phi_process_noise = if (enable_patient_process_noise_tr) array(abs(rnorm(1, sd = 0.1))),
+        tr_raw_patient_phi_process_noise = if (enable_patient_process_noise_phi_tr) rep(0, n_patients),
+
+        tr_raw_pop_process_noise = if (enable_pop_process_noise_tr) {
+          rnorm(max_t_width, 0, 0.1)
+        },
+        tr_log_sd_pop_process_noise_pop = if (enable_pop_process_noise_tr) array(rnorm(1, mean = log(0.05), sd = 0.5)),
+        tr_logit_phi_pop_process_noise_pop = if (enable_pop_process_noise_tr) array(rnorm(1, mean = 1.4, sd = 0.3)),
+
+        measure_sd_sld = invgamma::rinvgamma(1, measure_sd_sld_alpha, measure_sd_sld_beta),
+      )
+
+      c(biomarker_init, .ms_init(environment()))
+    }) |> compact()
+  }
+}
 
 
 # nolint end: object_usage_linter

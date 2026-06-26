@@ -4,8 +4,8 @@ library(tidyverse)
 
 source(here::here("r/util.R"))
 source(here::here("r/multistate.R"))
-source(here::here("r/sclc/priors.R"))
-source(here::here("r/sclc/prepare_analysis_data.R"))
+source(here::here("r/priors.R"))
+source(here::here("r/prepare_analysis_data.R"))
 source(here::here("r/publication/prepare_analysis_data.R"))
 
 make_minimal_pub_data <- function() {
@@ -62,7 +62,6 @@ test_that("visit_calendar_day equals calendar_day + ady - 1", {
 })
 
 source(here::here("r/accuracy.R"))
-source(here::here("r/sclc/accuracy.R"))
 
 test_that("get_lfo_cutoffs works for a non-sclc target_trial", {
   # Two patients: target trial lilly_cxcr4 (calendar_day 100, 130),

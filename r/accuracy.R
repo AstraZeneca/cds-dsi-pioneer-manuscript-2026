@@ -973,4 +973,51 @@ compute_oos_accuracy_metrics <- function(confusion_matrix_data) {
     arrange(metric, class)
 }
 
+get_lfo_cutoffs <- function(all_analysis_data, lfo_step, target_trial = "sclc") {
+  target_data <- filter(all_analysis_data, fct_match(trial, target_trial))
+
+  first_cutoff_day <- min(target_data$calendar_day)
+  last_cutoff_day  <- max(target_data$calendar_day) +
+    max(target_data$patient_max_t) * 7L
+
+  if ("trtsdt" %in% names(all_analysis_data)) {
+    origin <- min(all_analysis_data$trtsdt) - 1L
+  } else {
+    origin <- as.Date("1970-01-01") + min(all_analysis_data$calendar_day) - 1L
+  }
+
+  all_visits_data <- all_analysis_data |>
+    select(visit_data) |>
+    unnest(visit_data)
+
+  target_obs_visit_days <- map(target_data$visit_data, \(vd) {
+    vd$visit_calendar_day[vd$week > 0]
+  })
+
+  get_lfo_cutoff_days(
+    origin + first_cutoff_day,
+    origin + last_cutoff_day,
+    first_cutoff_day,
+    lfo_step
+  ) |>
+    mutate(
+      n_visits_added = map_int(cutoff_calendar_day, \(cutoff_day) {
+        all_visits_data |> filter(visit_calendar_day <= cutoff_day) |> nrow()
+      }),
+      n_future_visits = nrow(all_visits_data) - n_visits_added,
+      n_visits_added  = n_visits_added - lag(n_visits_added),
+      n_target_observed = map_int(cutoff_calendar_day, \(cutoff_day) {
+        sum(map_lgl(target_obs_visit_days, \(days) any(days <= cutoff_day)))
+      }),
+      n_target_future_observed = map_int(cutoff_calendar_day, \(cutoff_day) {
+        sum(map_lgl(target_obs_visit_days, \(days) any(days > cutoff_day)))
+      })
+    ) |>
+    filter(
+      n_future_visits > 0,
+      n_target_observed > 0,
+      n_target_future_observed > 0
+    )
+}
+
 # nolint end: object_usage_linter

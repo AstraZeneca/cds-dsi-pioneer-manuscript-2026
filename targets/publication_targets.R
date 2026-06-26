@@ -1,15 +1,7 @@
 if (!exists("init_project")) source(here::here(".Rprofile"))
 init_project()
 
-# The publication pipeline reuses the sclc model code (Stan model,
-# multistate logic, initializers, priors, prepare_tumor_stan_data). init_project()
-# only sources these when TAR_PROJECT == "sclc", so source them explicitly
-# here for TAR_PROJECT == "publication".
-source(here::here("r", "sclc", "priors.R"))
 source(here::here("r", "multistate.R"))
-source(here::here("r", "sclc", "prepare_analysis_data.R"))
-source(here::here("r", "sclc", "accuracy.R"))
-source(here::here("r", "sclc", "initializers.R"))
 source(here::here("r", "publication", "prepare_analysis_data.R"))
 source(here::here("r", "publication", "csv_slim.R"))
 

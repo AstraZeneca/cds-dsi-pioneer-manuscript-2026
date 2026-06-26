@@ -4,20 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Bayesian hierarchical modeling system for analyzing cancer burden dynamics, progression-free survival (PFS), and overall survival (OS) in oncology trials. The codebase supports projects:
+This is a Bayesian hierarchical modeling system for the **PIONEER 2026 manuscript** — analyzing tumor burden dynamics, progression-free survival (PFS), and overall survival (OS) via a state-space model applied to SCLC and CRC oncology trials.
 
-1. **SCLC-01**: Longitudinal tumor analysis with state-space modeling (primary focus)
-2. **Endometrial to LUNG**: Trial outcome predictions
-3. **Breast-01 to -04**: Cross-validation predictions
-4. **Pioneer** Using PSA as the disease burden
+`TAR_PROJECT=publication` is the only active project. The pipeline lives in `targets/publication_targets.R`.
 
 ### GitHub Repositories (azu-oncology-rd org)
 - `cds-dsi-pioneer-core` — shared modeling core
-- `cds-dsi-pioneer-sclc-01-2025` — SCLC-01 analysis
-- `cds-dsi-pioneer-lung-2024` — LUNG analysis
-- `cds-dsi-pioneer-pioneer-2026` — Pioneer analysis
-
-Look at the TAR_PROJECT env var in .Renviron to see which project we are in.
+- `cds-dsi-pioneer-manuscript-2026` — this repo (publication pipeline)
 
 ## Build and Development Commands
 
@@ -32,11 +25,7 @@ Rscript -e 'cmdstanr::install_cmdstan()'
 
 ### Stan Model Syntax Check (fast)
 ```bash
-# Tumor models:
-~/.cmdstan/cmdstan-2.38.0/bin/stanc --include-paths=stan --include-paths=stan/tumor stan/tumor/sf-ssm-log-space.stan
-
-# PSA models:
-~/.cmdstan/cmdstan-2.38.0/bin/stanc --include-paths=stan --include-paths=stan/psa stan/psa/pioneer.stan
+~/.cmdstan/cmdstan-2.39.0/bin/stanc --include-paths=stan --include-paths=stan/tumor stan/tumor/sf-ssm-log-space.stan
 ```
 
 ### Running Tests
@@ -85,26 +74,28 @@ Naming convention:
 
 ### R Code
 - `r/util.R` - Utility functions including `select_draws(fit, matches(...))` for efficient parameter extraction from CmdStanR fits
+- `r/prepare_analysis_data.R` - `prepare_analysis_data()`, `prepare_tumor_stan_data()`, covariate design matrix helpers
+- `r/priors.R` - `add_tumor_priors()`, `prepare_elicited_priors()`, and population prior helpers
+- `r/accuracy.R` - `lfo_log_lik()`, `clean_lfo_results()`, `get_lfo_cutoffs()`
+- `r/initializers.R` - `create_tumor_ssls_initializer()` for MCMC warm-starting
+- `r/plot_functions.R` - All plot helpers including sclc-specific KM, ORR, DCO comparison plots
+- `r/table_functions.R` - `create_orr_table()`, `create_median_survival_table()`, etc.
 
-Per-project code lives in `r/<project>/`; pipelines in `targets/<project>_targets.R`.
+Publication-specific code lives in `r/publication/`; pipeline in `targets/publication_targets.R`.
 
 ### Configuration
 - `renv.lock` - Package versions
-- `sclc_targets.sh` / `pioneer_targets.sh` / `publication_targets.sh` - Shell scripts for launching Domino jobs
-
-**Always use the project-matching script**: `publication_targets.sh` for `TAR_PROJECT=publication`, `sclc_targets.sh` for sclc, `pioneer_targets.sh` for pioneer. Never use `sclc_targets.sh` for the publication pipeline.
+- `publication_targets.sh` - Shell script for launching the publication Domino job
 
 ## Analysis Results Storage
 
-### Project and Store Context (ALWAYS CHECK FIRST)
+### Store Path
 
-**NEVER assume a project or store path without confirming.** This codebase supports multiple projects — do not default to sclc.
+Store paths follow: `/mnt/data/analysis-results/$DOMINO_STARTING_USERNAME/publication/<TAR_RUN>/_targets`
 
-The active project is set via `TAR_PROJECT`. Store paths follow: `/mnt/data/analysis-results/$DOMINO_STARTING_USERNAME/<TAR_PROJECT>/<TAR_RUN>/_targets`
-
-`TAR_RUN` selects the analysis run (named by data cut-off or feature branch). List available runs:
+`TAR_RUN` selects the analysis run. List available runs:
 ```bash
-ls /mnt/data/analysis-results/$DOMINO_STARTING_USERNAME/<project>/
+ls /mnt/data/analysis-results/$DOMINO_STARTING_USERNAME/publication/
 ```
 
 **Setting `TAR_RUN` for `quarto render`**: use a shell env var prefix — do NOT edit `.Renviron`:
@@ -112,11 +103,9 @@ ls /mnt/data/analysis-results/$DOMINO_STARTING_USERNAME/<project>/
 TAR_RUN=gompertz quarto render quarto/publication/sclc
 ```
 
-Project-specific details (TAR_RUN values, data files, endpoint definitions) are in `.claude/rules/sclc.md` and `.claude/rules/pioneer.md`.
-
 ## GitHub Project Management
 
-Issues across all PIONEER repos are tracked in the **PIONEER** GitHub Project (project number 56, owner `azu-oncology-rd`). See `docs/GITHUB_PROJECT.md` for full reference (project/field IDs, `gh` commands, GraphQL queries).
+Issues are tracked in the **PIONEER 2026** GitHub Project (project number 56, owner `azu-oncology-rd`). See `docs/GITHUB_PROJECT.md` for full reference.
 
 ## Pioneer Claude Marketplace
 
