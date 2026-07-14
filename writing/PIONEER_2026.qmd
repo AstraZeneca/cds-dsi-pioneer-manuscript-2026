@@ -567,7 +567,7 @@ Both trials share the same disease (ES-SCLC), the same standard-of-care backbone
 
 ### Data source
 
-Individual patient-level data were obtained through [Project Data Sphere](http://www.projectdatasphere.org), a not-for-profit initiative providing access to de-identified patient-level data from oncology clinical trials.
+This publication is based on research using information obtained from [www.projectdatasphere.org](http://www.projectdatasphere.org), which is maintained by Project Data Sphere. Neither Project Data Sphere nor the owner(s) of any information from the web site have contributed to, approved or are in any way responsible for the contents of this publication.
 
 ### Data processing
 
