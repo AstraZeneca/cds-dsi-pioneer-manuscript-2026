@@ -5,7 +5,7 @@
 | Name | Role | Contact |
 |------|------|---------|
 | Roger Berché | Data curation, pipeline architecture, missing data | roger.berche@astrazeneca.com |
-| Lu Li | Real-world data pipeline, data harmonisation | lu.li3@astrazeneca.com |
+| Lu Li | Real-world data pipeline, data harmonisation | lu.li7@astrazeneca.com |
 
 ## Authors
 
