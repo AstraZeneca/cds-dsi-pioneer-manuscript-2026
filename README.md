@@ -1,5 +1,8 @@
 # PIONEER — Bayesian Joint Modelling of Mechanistic Tumour Growth and Time-to-Event Endpoints
 
+[![Maturity Level](https://img.shields.io/badge/Maturity%20Level-ML--0-orange)](https://github.com/AstraZeneca/osscar/blob/main/MATURITY_LEVELS.md)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE.md)
+
 Publication repository for the PIONEER framework manuscript.
 
 ## Overview
@@ -24,6 +27,17 @@ bib/                  Bibliography
 data/                 Pre-computed inverse metrics for LFO warmstart
 ```
 
+## Requirements
+
+| Dependency | Version | Purpose |
+|-----------|---------|---------|
+| R | ≥ 4.3.0 | Statistical computing |
+| renv | (bundled) | Package dependency management |
+| CmdStan | ≥ 2.33.0 | Stan model compilation and sampling |
+| Quarto | ≥ 1.4 | Manuscript rendering |
+
+All R package dependencies are captured in `renv.lock` and restored automatically via `renv::restore()`.
+
 ## Running the Pipeline
 
 1. Install packages: `renv::restore()`
@@ -34,3 +48,7 @@ data/                 Pre-computed inverse metrics for LFO warmstart
 ## Case Study
 
 Applied to extensive-stage small-cell lung cancer (ES-SCLC) using patient-level data from Project Data Sphere (two trials, N = 497). Leave-future-out cross-validation demonstrates calibrated PFS forecasts from month 4 of enrolment and OS convergence by month 11.
+
+## License
+
+This project is licensed under the Apache License 2.0 — see [LICENSE.md](LICENSE.md) for details.

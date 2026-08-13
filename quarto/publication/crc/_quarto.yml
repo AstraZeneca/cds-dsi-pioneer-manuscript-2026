@@ -40,11 +40,8 @@ website:
           - text: Diagnostics
             href: analysis/diagnostics.qmd
     right:
-      - icon: book
-        href: https://rstudio-connect.seml.scp.astrazeneca.net/content/084c017e-8ec4-4efd-ae02-e4a86c9dc51f/
-        aria-label: "SCLC-01 Documentation"
       - icon: github
-        href: https://github.com/azu-oncology-rd/cds-dsi-pioneer-sclc-01-2025
+        href: https://github.com/azu-oncology-rd/cds-dsi-pioneer-manuscript-2026
   sidebar:
     - title: "Data"
       style: docked
