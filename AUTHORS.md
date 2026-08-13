@@ -4,8 +4,8 @@
 
 | Name | Role | Contact |
 |------|------|---------|
-| Karim Naguib | Lead developer, statistical modelling | karim.naguib@astrazeneca.com |
 | Roger Berché | Data curation, pipeline architecture, missing data | roger.berche@astrazeneca.com |
+| Lu Li | Real-world data pipeline, data harmonisation | lu.li3@astrazeneca.com |
 
 ## Authors
 
