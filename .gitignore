@@ -110,11 +110,16 @@ run-aws-credentials.sh
 node_modules
 aws/
 
-# Claude Code cache and local settings
-.claude/.stan-diagnose-cache/
-.claude/.stan-diagnose-last-dir
-.claude/.stan-diagnose-output-cache
-.claude/settings.local.json
+# Claude Code (development tooling, not part of publication)
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+
+# Internal development planning docs
+docs/plans/
+docs/superpowers/
+docs/PUBLISHING.md
+docs/GITHUB_PROJECT.md
 
 # R package artifacts
 .here
