@@ -1,0 +1,113 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, karim/* ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      RENV_PATHS_CACHE: ~/.renv-cache
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - name: Disable Domino config files in CI
+        run: |
+          # Rename Domino-specific config files to prevent issues in CI
+          # .Renviron: contains DOMINO-specific paths that don't exist in GitHub Actions
+          # .Rprofile: loads packages (conflicted, etc.) before renv::restore() runs
+          if [ -f .Renviron ]; then
+            mv .Renviron .Renviron.domino
+          fi
+          if [ -f .Rprofile ]; then
+            mv .Rprofile .Rprofile.domino
+          fi
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@d3c5be51b12e724e68f33216ca3c148b66d5f0b6  # v2
+        with:
+          r-version: '4.5.0'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            pandoc \
+            gsfonts \
+            libcurl4-openssl-dev \
+            libssl-dev \
+            libxml2-dev \
+            libfontconfig1-dev \
+            libharfbuzz-dev \
+            libfribidi-dev \
+            libfreetype6-dev \
+            libpng-dev \
+            libtiff5-dev \
+            libjpeg-dev \
+            libcairo2-dev \
+            libgit2-dev \
+            libglpk-dev \
+            libmagick++-dev \
+            libnode-dev \
+            libsodium-dev \
+            libx11-dev
+
+      - name: Cache R packages
+        uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c  # v3
+        with:
+          path: ${{ env.R_LIBS_USER }}
+          key: ${{ runner.os }}-r-4.5.0-${{ hashFiles('renv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-r-4.5.0-
+
+      - name: Install renv
+        run: Rscript -e "install.packages('renv', repos = 'https://cloud.r-project.org')"
+
+      - name: Restore R packages
+        run: |
+          # Install qs dependencies first (renv doesn't respect dependency order)
+          # qs requires: RApiSerialize, stringfish, Rcpp
+          Rscript -e "install.packages(c('Rcpp', 'RApiSerialize', 'stringfish'), repos = 'https://cloud.r-project.org')"
+          # Now restore all packages from renv.lock
+          Rscript -e "renv::restore(prompt = FALSE)"
+
+      - name: Install cmdstanr
+        run: Rscript -e "install.packages('cmdstanr', repos = c('https://stan-dev.r-universe.dev', getOption('repos')))"
+
+      - name: Cache CmdStan
+        uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c  # v3
+        id: cmdstan-cache
+        with:
+          path: ~/.cmdstan
+          key: ${{ runner.os }}-cmdstan-2.38.0
+
+      - name: Install CmdStan
+        if: steps.cmdstan-cache.outputs.cache-hit != 'true'
+        run: Rscript -e "cmdstanr::install_cmdstan(version = '2.38.0', cores = 2)"
+
+      - name: Run tests (Quick - Push)
+        if: github.event_name == 'push'
+        run: |
+          # Quick smoke tests on push - R helpers and critical Stan functions only
+          Rscript -e "testthat::test_dir('tests/testthat', filter = '^helper|^multistate|^trial-data', perl = TRUE)"
+        env:
+          CMDSTAN: ~/.cmdstan/cmdstan-2.38.0
+
+      - name: Run tests (Full - PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          # Full test suite on PR - all tests except integration
+          Rscript -e "testthat::test_dir('tests/testthat', filter = '^(?!integration)', perl = TRUE)"
+        env:
+          CMDSTAN: ~/.cmdstan/cmdstan-2.38.0
+
+      - name: Test summary
+        if: always()
+        run: echo "Tests completed. Check logs above for results."

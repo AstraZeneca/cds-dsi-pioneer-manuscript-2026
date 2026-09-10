@@ -1,0 +1,15 @@
+{
+  "hash": "670bbdcd0a71d559e3d8a46473be2d00",
+  "result": {
+    "engine": "knitr",
+    "markdown": "---\ntitle: \"Sampling Diagnostics\"\nsubtitle: \"MCMC convergence and sampling quality assessment\"\nexecute:\n  freeze: true\n---\n\n\n\nThis page presents MCMC sampling diagnostics for the publication model fit.\n\n::: {.callout-note}\n## Interpretation\n- **Divergences**: Should be 0 or very low\n- **E-BFMI**: Should be > 0.3\n- **R-hat**: Should be < 1.01 for all parameters\n- **ESS**: Effective sample size — should be sufficiently large\n:::\n\n## Diagnostics Summary {#sec-summary}\n\n\n::: {.cell}\n\n```{.r .cell-code}\npub_tar_read(\"tumor_ssls_nuts_summary_posterior\")\n```\n\n::: {.cell-output .cell-output-stdout}\n\n```\n# A tibble: 4 × 8\n  Chain n_iter n_divergent n_max_treedepth mean_accept median_stepsize\n  <int>  <int>       <int>           <int>       <dbl>           <dbl>\n1     1    500           4               0       0.929          0.0166\n2     2    500           0               0       0.953          0.0148\n3     3    500           0               0       0.946          0.0150\n4     4    500           0               0       0.957          0.0155\n# ℹ 2 more variables: total_leapfrog <dbl>, ebfmi <dbl>\n```\n\n\n:::\n:::\n\n\n## Convergence Check {#sec-convergence}\n\n\n::: {.cell}\n\n```{.r .cell-code}\npub_tar_read(\"tumor_ssls_convergence_posterior\")\n```\n\n::: {.cell-output .cell-output-stdout}\n\n```\n$pop\n# A tibble: 1,644 × 4\n   variable                        rhat ess_bulk ess_tail\n   <chr>                          <dbl>    <dbl>    <dbl>\n 1 tr_loc_pop                      1.04     81.2     435.\n 2 pop_log_decrease_rate           1.04     79.9     327.\n 3 tr_sd_level_intercept_raw[2]    1.03    157.      302.\n 4 tr_sd_level_intercept[2]        1.03    157.      302.\n 5 init_sd_level_intercept_raw[1]  1.03    164.      736.\n 6 init_sd_level_intercept[1]      1.03    164.      736.\n 7 time_varying_coef_01[3]         1.02    145.      233.\n 8 time_varying_coef_01[2]         1.02    147.      234.\n 9 init_logit_loc_pop              1.02    297.      819.\n10 init_pi_decrease_pop            1.02    297.      819.\n# ℹ 1,634 more rows\n\n$patient\n# A tibble: 1 × 6\n  group           n_params max_rhat n_rhat_bad min_ess_bulk min_ess_tail\n  <chr>              <int>    <dbl>      <int>        <dbl>        <dbl>\n1 patient_effects   209312     1.06      15613         81.9         112.\n```\n\n\n:::\n:::\n\n\n## Detailed Inspection {#sec-detailed}\n\nFor detailed parameter-level diagnostics, trace plots, and pair plots, load the fit object:\n\n```r\nfit <- pub_tar_read(\"tumor_ssls_res_posterior\")\nfit$summary()\nfit$diagnostic_summary()\n```\n",
+    "supporting": [],
+    "filters": [
+      "rmarkdown/pagebreak.lua"
+    ],
+    "includes": {},
+    "engineDependencies": {},
+    "preserve": {},
+    "postProcess": true
+  }
+}

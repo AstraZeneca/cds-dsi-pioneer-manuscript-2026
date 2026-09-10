@@ -1,0 +1,2726 @@
+/**
+ * Find the first occurrence of a value (or set of values) in a RECIST or similar array,
+ * and map the resulting index to the actual week using map_idx_to_week.
+ *
+ * @param arr Array to search (e.g., RECIST codes)
+ * @param value Value or array of values to search for (can be int or array[] int)
+ * @param curr_visits Array of observed (treatment) visit weeks (screening removed)
+ * @param forecast_time Array of forecast visit weeks (length >= pfs_idx - size(curr_visits))
+ * @param max_all_t Value to use if censored (optional, default 0)
+ * @param ... (optional) start_idx, min_run_length, etc. (passed to find_first)
+ * @return The week corresponding to the first match, or max_all_t if not found
+ */
+
+tuple(int, int) find_first_week(
+  array[] int arr,
+  array[] int values,
+  int min_run_length,
+  array[] int curr_visits,
+  array[] int forecast_time,
+  int max_all_t
+) {
+  // Convention B: arr and curr_visits exclude screening visits; index maps directly.
+  int idx = find_first(arr, values, min_run_length);
+  int week;
+  int right_censored;
+  if (idx == 0) {
+    week = max_all_t;
+    right_censored = 1;
+  } else {
+    week = map_idx_to_week(idx, curr_visits, forecast_time, max_all_t);
+    right_censored = 0;
+  }
+  return (week, right_censored);
+}
+
+tuple(int, int) find_first_forecast_week(
+  array[] int arr,
+  array[] int values,
+  int min_run_length,
+  array[] int forecast_time,
+  int max_all_t
+) {
+  // Only forecast visits (no observed visits supplied)
+  return find_first_week(arr, values, min_run_length, zeros_int_array(0), forecast_time, max_all_t);
+}
+
+/**
+ * Map a (treatment+forecast) visit index to an actual week.
+ *
+ * Convention: forecast_time[1] is the FIRST future assessment AFTER the last observed
+ * treatment visit (i.e. we do NOT duplicate the last observed week). If the calling
+ * code still provides forecast_time that starts with the last observed week, then
+ * leaving the old behavior would timestamp a forecast-only event at the last observed
+ * week. To avoid double-counting / anchoring progression at the final observed week,
+ * we skip that duplicated anchor by shifting the forecast indexing by +1.
+ *
+ * If you ensure forecast_time already omits the anchor week, set SKIP_FORECAST_ANCHOR=0
+ * (hardcoded below) or remove the +1 shift.
+ *
+ * @param idx 1-based index into concatenated treatment (curr_visits) then forecast sequence.
+ * @param curr_visits Observed treatment visit weeks (screening removed).
+ * @param forecast_time Future assessment weeks (may currently include anchor as first element).
+ * @param max_all_t Censoring sentinel.
+ */
+int map_idx_to_week(int idx, array[] int curr_visits, array[] int forecast_time, int max_all_t) {
+  int n_obs = size(curr_visits);
+  if (idx == 0) return max_all_t;
+  if (idx <= n_obs) return curr_visits[idx];
+  // Forecast_time now starts strictly AFTER last observed visit, so direct offset (idx - n_obs)
+  int forecast_idx = idx - n_obs;
+  if (forecast_idx < 1 || forecast_idx > size(forecast_time)) return max_all_t; // defensive
+  return forecast_time[forecast_idx];
+}
+
+/**
+ * Truncate PFS and right_censored arrays at a given max time (per-patient cutoff)
+ *
+ * For each patient, if pfs[i] > max_time[i], set pfs[i] = max_time[i] and right_censored[i] = 1.
+ * If pfs[i] <= max_time[i], leave as is.
+ *
+ * @param pfs Array of observed survival times (e.g., weeks or days)
+ * @param right_censored Array of censoring indicators (1 = censored, 0 = event)
+ * @param max_time Array of cutoff times (same length as pfs)
+ * @return tuple of (truncated_pfs, truncated_right_censored)
+ */
+tuple(array[] int, array[] int) truncate_at_max_time(array[] int pfs, array[] int right_censored, array[] int max_time) {
+  int n = size(pfs);
+  array[n] int truncated_pfs;
+  array[n] int truncated_right_censored;
+
+  for (i in 1:n) {
+    if (pfs[i] > max_time[i]) {
+      truncated_pfs[i] = max_time[i];
+      truncated_right_censored[i] = 1;
+    } else {
+      truncated_pfs[i] = pfs[i];
+      truncated_right_censored[i] = right_censored[i];
+    }
+  }
+
+  return (truncated_pfs, truncated_right_censored);
+}
+
+/**
+ * Calculate the marginal probability of disease progression at every interval.
+ *
+ * This function computes the log marginal probability of disease progression
+ * (or "exit") for each time interval, given the log conditional probabilities
+ * of survival.
+ *
+ * @param log_cond_prob_surv A row vector containing the log conditional 
+ *                           probabilities of survival for each time interval.
+ * @return A row vector of log marginal probabilities of disease progression 
+ *         for each time interval.
+ */
+row_vector calculate_log_marginal_exit_prob(row_vector log_cond_prob_surv) {
+  int T = num_elements(log_cond_prob_surv); 
+  row_vector[T] log_marginal_exit_prob;  // Output vector
+
+  for (t in 1:T) {
+    // Calculate the log probability of exit at time t
+    log_marginal_exit_prob[t] = log1m_exp(log_cond_prob_surv[t]);
+  
+    if (t > 1) {
+      // For t > 1, add the sum of log conditional survival probabilities
+      // up to t-1 to account for survival up to the previous interval
+      log_marginal_exit_prob[t] += sum(log_cond_prob_surv[1:(t - 1)]);
+    }
+  }
+  
+  return(log_marginal_exit_prob);
+}
+
+/**
+ * Calculate the log-likelihood for a piecewise constant hazard model.
+ *
+ * This function computes the log-likelihood for each patient in a survival analysis
+ * using a piecewise constant hazard model. It handles various censoring scenarios
+ * including right censoring and interval censoring.
+ *
+ * @param last_surv_week Array of last survival weeks for each patient
+ * @param exit_event Array indicating the type of exit event for each patient
+ * @param right_censored Array indicating if each patient is right-censored (1) or not (0)
+ * @param interval_censored Array indicating the length of interval censoring for each patient
+ * @param ignore_interval_censoring Integer flag to ignore interval censoring if set to 1
+ * @param log_cond_prob_surv Array of matrices containing log conditional survival probabilities for each exit type and patient
+ * @param start_from Array of starting intervals for each patient
+ * @param end_at Array of ending intervals for each patient
+ *
+ * @return A vector of log-likelihoods, one for each patient
+ */
+vector calc_pch_loglik(
+  array[] int last_surv_week, array[] int exit_event, array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring,  
+  array[] matrix log_cond_prob_surv, array[] int start_from, array[] int end_at
+) {
+  int n_exit_types = size(log_cond_prob_surv), n_patients = rows(log_cond_prob_surv[1]);
+  vector[n_patients] lp = zeros_vector(n_patients);
+  
+  // Iterate over all patients
+  for (i in 1:n_patients) {
+    int interval_pos = max(0, start_from[i]);
+    int interval_end = min(end_at[i], last_surv_week[i]);
+    
+    // Given the value of end_at, this patient might become right censored.
+    int effective_right_censored = right_censored[i] || (end_at[i] < last_surv_week[i] + (1 - ignore_interval_censoring) * interval_censored[i] + 1);
+    int curr_interval_censored = ignore_interval_censoring || effective_right_censored ? 0 : interval_censored[i];
+  
+    // Check for invalid censoring scenario
+    if (right_censored[i] && interval_censored[i] > 0) {
+      fatal_error("Interval censoring not allowed with right censored observations. Patient ", i, ".");
+    }
+  
+    // Calculate log-likelihood for known survival part
+    if (interval_pos <= interval_end) {
+      for (k in 1:n_exit_types) {
+        lp[i] += sum(log_cond_prob_surv[k, i, interval_pos:interval_end]);
+      }
+    }
+  
+    // Handle interval censoring
+    if ((interval_pos <= interval_end) || (interval_end + curr_interval_censored + 1 >= interval_pos)) {
+      int old_interval_end = interval_end, old_interval_censored = curr_interval_censored;
+      interval_end = max(old_interval_end, interval_pos - 1);
+      curr_interval_censored = max(0, curr_interval_censored - (interval_end - old_interval_end));  
+  
+      // Create a mixture of all possible true intervals of exit for interval censoring
+      vector[curr_interval_censored + 1] ic_mix_lp = zeros_vector(curr_interval_censored + 1);  
+  
+      for (c in 0:curr_interval_censored) {
+        if (c > 0) {  
+          for (k in 1:n_exit_types) {
+            ic_mix_lp[c + 1] += sum(log_cond_prob_surv[k, i, (interval_end + 1):(interval_end + c)]);
+          }
+        }
+  
+        if (!effective_right_censored) {  
+          ic_mix_lp[c + 1] += log1m_exp(log_cond_prob_surv[exit_event[i], i, interval_end + c + 1]);
+        }
+      }
+  
+      // Add log-likelihood for interval censoring
+      lp[i] += curr_interval_censored > 0 ? log_sum_exp(ic_mix_lp) - log(curr_interval_censored + 1) : ic_mix_lp[1];  
+    }
+  }
+  
+  return lp;
+}
+
+/**
+ * Overloaded versions of calc_pch_loglik function for different parameter combinations.
+ * These functions provide convenience wrappers around the main calc_pch_loglik function,
+ * allowing it to be called with fewer parameters by using default values or derived parameters.
+ */
+
+/**
+ * Calculate log-likelihood with specified start times but default end times.
+ *
+ * @param last_surv_week Array of last survival weeks for each patient
+ * @param exit_event Array indicating the type of exit event for each patient
+ * @param right_censored Array indicating if each patient is right-censored (1) or not (0)
+ * @param interval_censored Array indicating the length of interval censoring for each patient
+ * @param ignore_interval_censoring Integer flag to ignore interval censoring if set to 1
+ * @param log_cond_prob_surv Array of matrices containing log conditional survival probabilities for each exit type and patient
+ * @param start_from Array of starting intervals for each patient
+ * @return A vector of log-likelihoods, one for each patient
+ */
+vector calc_pch_loglik(
+  array[] int last_surv_week, array[] int exit_event, array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring,  
+  array[] matrix log_cond_prob_surv, array[] int start_from
+) {
+  int max_all_t = cols(log_cond_prob_surv[1]);
+  
+  return calc_pch_loglik(
+    last_surv_week, exit_event, right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_surv, start_from, rep_array(max_all_t, size(start_from))
+  );
+}  
+
+/**
+ * Calculate log-likelihood with default start times.
+ *
+ * @param last_surv_week Array of last survival weeks for each patient
+ * @param exit_event Array indicating the type of exit event for each patient
+ * @param right_censored Array indicating if each patient is right-censored (1) or not (0)
+ * @param interval_censored Array indicating the length of interval censoring for each patient
+ * @param ignore_interval_censoring Integer flag to ignore interval censoring if set to 1
+ * @param log_cond_prob_surv Array of matrices containing log conditional survival probabilities for each exit type and patient
+ * @return A vector of log-likelihoods, one for each patient
+ */
+vector calc_pch_loglik(
+  array[] int last_surv_week, array[] int exit_event, array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring, array[] matrix log_cond_prob_surv
+) {
+  return calc_pch_loglik(last_surv_week, exit_event, right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_surv, ones_int_array(size(last_surv_week)));
+}
+
+/**
+ * Calculate log-likelihood for a single exit type with default start times.
+ *
+ * @param last_surv_week Array of last survival weeks for each patient
+ * @param right_censored Array indicating if each patient is right-censored (1) or not (0)
+ * @param interval_censored Array indicating the length of interval censoring for each patient
+ * @param ignore_interval_censoring Integer flag to ignore interval censoring if set to 1
+ * @param log_cond_prob_surv Matrix containing log conditional survival probabilities for each patient
+ * @return A vector of log-likelihoods, one for each patient
+ */
+vector calc_pch_loglik(
+  array[] int last_surv_week, array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring, matrix log_cond_prob_surv
+) {
+  int n_patients = size(last_surv_week);
+  
+  return calc_pch_loglik(last_surv_week, ones_int_array(n_patients), right_censored, interval_censored, ignore_interval_censoring, { log_cond_prob_surv }, ones_int_array(n_patients));
+}
+
+/**
+ * Calculate log-likelihood for a single exit type with specified start times.
+ *
+ * @param last_surv_week Array of last survival weeks for each patient
+ * @param right_censored Array indicating if each patient is right-censored (1) or not (0)
+ * @param interval_censored Array indicating the length of interval censoring for each patient
+ * @param ignore_interval_censoring Integer flag to ignore interval censoring if set to 1
+ * @param log_cond_prob_surv Matrix containing log conditional survival probabilities for each patient
+ * @param start_from Array of starting intervals for each patient
+ * @return A vector of log-likelihoods, one for each patient
+ */
+vector calc_pch_loglik(
+  array[] int last_surv_week, array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring, matrix log_cond_prob_surv, array[] int start_from
+) {
+  int n_patients = size(last_surv_week);
+  
+  return calc_pch_loglik(last_surv_week, ones_int_array(n_patients), right_censored, interval_censored, ignore_interval_censoring, { log_cond_prob_surv }, start_from);
+}
+
+/**
+ * Calculate log-likelihood for a single exit type with specified start and end times.
+ *
+ * @param last_surv_week Array of last survival weeks for each patient
+ * @param right_censored Array indicating if each patient is right-censored (1) or not (0)
+ * @param interval_censored Array indicating the length of interval censoring for each patient
+ * @param ignore_interval_censoring Integer flag to ignore interval censoring if set to 1
+ * @param log_cond_prob_surv Matrix containing log conditional survival probabilities for each patient
+ * @param start_from Array of starting intervals for each patient
+ * @param end_at Array of ending intervals for each patient
+ * @return A vector of log-likelihoods, one for each patient
+ */
+vector calc_pch_loglik(
+  array[] int last_surv_week, array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring, matrix log_cond_prob_surv,  
+  array[] int start_from, array[] int end_at
+) {
+  int n_patients = size(last_surv_week);
+  
+  return calc_pch_loglik(last_surv_week, ones_int_array(n_patients), right_censored, interval_censored, ignore_interval_censoring, { log_cond_prob_surv }, start_from, end_at);
+}
+
+/**
+ * Calculate the piecewise-constant proportional hazard log-likelihood if the log conditional survival probabilities are stored in a single vector.
+ *
+ * @param pfs Array of observed number of weeks without disease progression for each patient.
+ * @param right_censored Array indicating if each patient is right-censored (1) or not (0).
+ * @param interval_censored Array indicating the number of weeks over which we have interval censoring for each patient.
+ * @param ignore_interval_censoring Integer flag to ignore interval censoring if set to 1.
+ * @param log_cond_prob_surv Vector of log conditional probabilities of survival at every interval.
+ * @param max_all_t The latest week assessment is done across all the data.
+ * @param start_from Array of weeks in which the first post-treatment assessment was done for each patient.
+ *
+ * @return Vector of patient-level log-likelihoods.
+ *
+ * Note: This function differs from the pch_lpmf() function in that it returns the vector of 
+ * patient-level log-likelihoods rather than a single log-likelihood value for all patients.
+ */
+vector calc_pch_loglik(
+  array[] int pfs,  
+  array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring,  
+  vector log_cond_prob_surv, int max_all_t, array[] int start_from  
+) {
+  int n_patients = size(pfs);
+  
+  return calc_pch_loglik(
+    pfs, ones_int_array(n_patients), right_censored, interval_censored, ignore_interval_censoring, { to_matrix(log_cond_prob_surv, max_all_t, n_patients) }, start_from
+  );
+}
+
+/**
+ * Piecewise Constant Hazard Log Probability Mass Function
+ *
+ * These functions provide an easy-to-use Stan distribution for piecewise constant hazard models.
+ * They calculate the total log-likelihood by summing individual log-probabilities.
+ */
+
+/**
+ * @param y Array of observed number of weeks without disease progression.
+ * @param right_censored Array indicating if each observation is right-censored (1) or not (0).
+ * @param interval_censored Array of number of weeks over which we have interval censoring.
+ * @param ignore_interval_censoring Integer flag to ignore interval censoring if set to 1.
+ * @param log_cond_prob_progress Vector of log conditional probabilities of disease progression at every interval.
+ * @param max_all_t The latest week assessment is done across all the data.
+ * @param start_from Array of weeks in which the first post-treatment assessment was done.
+ * @return Total log-likelihood summed across all observations.
+ */
+real pch_lpmf(
+  array[] int y,  
+  array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring, vector log_cond_prob_progress, int max_all_t, array[] int start_from
+) {
+  return sum(calc_pch_loglik(y, right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_progress, max_all_t, start_from));
+}
+
+/**
+ * @param y Array of observed number of weeks without disease progression.
+ * @param right_censored Array indicating if each observation is right-censored (1) or not (0).
+ * @param interval_censored Array of number of weeks over which we have interval censoring.
+ * @param ignore_interval_censoring Integer flag to ignore interval censoring if set to 1.
+ * @param log_cond_prob_progress Array of matrices containing log conditional probabilities of disease progression.
+ * @param start_from Array of weeks in which the first post-treatment assessment was done.
+ * @return Total log-likelihood summed across all observations.
+ */
+real pch_lpmf(
+  array[] int y,  
+  array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring, array[] matrix log_cond_prob_progress, array[] int start_from
+) {
+  return sum(calc_pch_loglik(y, ones_int_array(size(y)), right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_progress, start_from));
+}
+
+/**
+ * @param y Array of observed number of weeks without disease progression.
+ * @param exit_event Array indicating the type of exit event for each observation.
+ * @param right_censored Array indicating if each observation is right-censored (1) or not (0).
+ * @param interval_censored Array of number of weeks over which we have interval censoring.
+ * @param ignore_interval_censoring Integer flag to ignore interval censoring if set to 1.
+ * @param log_cond_prob_progress Array of matrices containing log conditional probabilities of disease progression.
+ * @param start_from Array of weeks in which the first post-treatment assessment was done.
+ * @param end_at Array of weeks in which the last assessment was done.
+ * @return Total log-likelihood summed across all observations.
+ */
+real pch_lpmf(
+  array[] int y,  
+  array[] int exit_event, array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring, array[] matrix log_cond_prob_progress,  
+  array[] int start_from, array[] int end_at
+) {
+  return sum(calc_pch_loglik(y, exit_event, right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_progress, start_from, end_at));
+}
+
+/**
+ * @param y Array of observed number of weeks without disease progression.
+ * @param exit_event Array indicating the type of exit event for each observation.
+ * @param right_censored Array indicating if each observation is right-censored (1) or not (0).
+ * @param interval_censored Array of number of weeks over which we have interval censoring.
+ * @param ignore_interval_censoring Integer flag to ignore interval censoring if set to 1.
+ * @param log_cond_prob_progress Array of matrices containing log conditional probabilities of disease progression.
+ * @param start_from Array of weeks in which the first post-treatment assessment was done.
+ * @return Total log-likelihood summed across all observations.
+ */
+real pch_lpmf(
+  array[] int y,  
+  array[] int exit_event, array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring, array[] matrix log_cond_prob_progress, array[] int start_from
+) {
+  return sum(calc_pch_loglik(y, exit_event, right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_progress, start_from));
+}
+
+real pch_lpmf(
+  array[] int y, 
+  array[] int exit_event, array[] int right_censored, array[] int interval_censored, int ignore_interval_censoring, array[] matrix log_cond_prob_progress
+) {
+  return sum(calc_pch_loglik(y, exit_event, right_censored, interval_censored, ignore_interval_censoring, log_cond_prob_progress, ones_int_array(size(y))));
+}
+/**
+ * Calculate the quantiles of the given sample PFS (Progression-Free Survival).
+ *
+ * This function computes specified quantiles of survival times, accounting for right censoring.
+ * It's particularly useful for calculating median PFS and other percentiles of interest.
+ *
+ * @param surv_time Array of patient survival times.
+ * @param last_surv_time Interval beyond which we assume right censoring. This may not affect lower quantiles.
+ * @param p Vector of percentiles to calculate (e.g., [0.25, 0.5, 0.75] for quartiles).
+ * @return A tuple containing:
+ *         1. A vector of calculated quantiles.
+ *         2. An array indicating which quantiles couldn't be calculated due to right censoring (1 if not calculable, 0 if calculable).
+ */
+tuple(vector, array[] int) survival_quantiles(array[] int surv_time, int last_surv_time, vector p) {
+  int N = size(surv_time);
+  int P = num_elements(p); // Number of percentiles
+  vector[P] quantiles;
+  array[P] int cannot_calculate;
+  array[N] int sorted_surv_time = sort_asc(surv_time);
+  
+  // Calculate each quantile
+  for (j in 1:P) {
+      int k = 1;
+  
+      // We can't use the floor() function because it returns real and to_int() expected "data real".
+      while (p[j] >= k * (1.0 / N)) {
+        k += 1;
+      }
+  
+      if (sorted_surv_time[max(k - 1, 1)] > last_surv_time) {
+        quantiles[j] = 0.0;
+        cannot_calculate[j] = 1;
+      } else {
+        real pos = p[j] * (N - 1) + 1;
+        real d = pos - (k - 1);
+  
+        quantiles[j] = sorted_surv_time[max(k - 1, 1)] + d * (sorted_surv_time[k] - sorted_surv_time[max(k - 1, 1)]);
+        cannot_calculate[j] = 0;
+      }
+  }
+  
+  return (quantiles, cannot_calculate);
+}
+
+/**
+ * Calculate median PFS (Progression-Free Survival)
+ *
+ * This function is a specialized version of survival_quantiles that calculates only the median (50th percentile).
+ * It accounts for right censoring in the data.
+ *
+ * @param surv_time Array of patient survival times.
+ * @param last_surv_time Interval beyond which we assume right censoring. This may not affect the median calculation in many cases.
+ * @return A tuple containing:
+ *         1. The calculated median survival time.
+ *         2. An integer flag indicating whether the median could be calculated (0 if calculable, 1 if not calculable due to right censoring).
+ */
+tuple(real, int) survival_median(array[] int surv_time, int last_surv_time) {
+  vector[1] q;
+  array[1] int c;
+  (q, c) = survival_quantiles(surv_time, last_surv_time, [ 0.5 ]');
+  
+  return(q[1], c[1]);
+}
+
+/**
+ * Calculate quantiles from a Kaplan-Meier survival curve
+ *
+ * This function computes specified quantiles from a pre-calculated Kaplan-Meier survival curve.
+ * It uses linear interpolation when the quantile falls between two time points for more accurate estimates.
+ * Optimized to perform a single pass through the survival curve for all quantiles.
+ *
+ * @param km_survival Vector of Kaplan-Meier survival probabilities S(t) for t = 0, 1, 2, ..., max_t
+ * @param p Vector of percentiles to calculate (e.g., [0.25, 0.5, 0.75] for quartiles)
+ * @return A tuple containing:
+ *         1. A vector of calculated quantiles (time points where survival drops to specified percentiles)
+ *         2. An array indicating which quantiles couldn't be calculated (1 if not calculable, 0 if calculable)
+ */
+tuple(vector, array[] int) km_quantiles(vector km_survival, vector p) {
+  int T = num_elements(km_survival);
+  int P = num_elements(p);
+  // Initialize not-reached quantiles to the forecast horizon (T - 1 = max_all_t)
+  // instead of 0. This treats "median not reached" as "at least max_all_t", a
+  // conservative lower bound. Downstream summaries (posterior median, intervals)
+  // then degrade gracefully as the observation window shrinks, rather than
+  // producing spurious bimodal distributions with mass at 0. The cannot_calculate
+  // flag is still returned so callers who care about the exceeds-max fraction
+  // can detect it.
+  vector[P] quantiles = rep_vector(T - 1, P);
+  array[P] int cannot_calculate = rep_array(1, P);
+  
+  // Sort percentiles in descending order to match decreasing survival curve
+  array[P] int p_indices = sort_indices_desc(p);
+  int current_p_idx = 1;
+  
+  // Handle percentiles higher than initial survival
+  while (current_p_idx <= P && p[p_indices[current_p_idx]] > km_survival[1]) {
+    quantiles[p_indices[current_p_idx]] = 0.0;
+    cannot_calculate[p_indices[current_p_idx]] = 0;
+    current_p_idx += 1;
+  }
+  
+  // Single pass through survival curve
+  for (t in 2:T) {
+    // Process all percentiles that cross at this time point
+    while (current_p_idx <= P && 
+           km_survival[t] <= p[p_indices[current_p_idx]] && 
+           km_survival[t-1] > p[p_indices[current_p_idx]]) {
+      
+      int idx = p_indices[current_p_idx];
+      // Linear interpolation between time points t-1 and t
+      real weight = (km_survival[t-1] - p[idx]) / (km_survival[t-1] - km_survival[t]);
+      quantiles[idx] = (t - 2) + weight; // Convert to 0-based indexing
+      cannot_calculate[idx] = 0;
+      current_p_idx += 1;
+    }
+    
+    // Early termination if all percentiles found
+    if (current_p_idx > P) break;
+  }
+  
+  return (quantiles, cannot_calculate);
+}
+
+/**
+ * Calculate median from a Kaplan-Meier survival curve
+ *
+ * This function is a specialized version of km_quantiles that calculates only the median (50th percentile)
+ * from a pre-calculated Kaplan-Meier survival curve.
+ *
+ * @param km_survival Vector of Kaplan-Meier survival probabilities S(t) for t = 0, 1, 2, ..., max_t
+ * @return A tuple containing:
+ *         1. The calculated median survival time
+ *         2. An integer flag indicating whether the median could be calculated (0 if calculable, 1 if not calculable)
+ */
+tuple(real, int) km_median(vector km_survival) {
+  vector[1] q;
+  array[1] int c;
+  (q, c) = km_quantiles(km_survival, [0.5]');
+  
+  return (q[1], c[1]);
+}
+
+/**
+ * Calculate the proportion of patients who survived beyond time n (PFSn) using Kaplan-Meier curve
+ *
+ * Computes PFSn directly from a pre-calculated Kaplan-Meier survival curve.
+ *
+ * @param km_survival Vector of Kaplan-Meier survival probabilities S(t) for t = 0, 1, ..., max_t
+ * @param n Time point at which to evaluate survival probability
+ * @return Proportion surviving beyond time n (with linear interpolation if needed)
+ */
+real calc_km_pfs_n(vector km_survival, data real n) {
+  int max_t = num_elements(km_survival) - 1;
+  int t_index = min(max_t + 1, max(1, to_int(floor(n)) + 1));
+  if (n <= 0) {
+    return km_survival[1];
+  } else if (n >= max_t) {
+    return km_survival[max_t + 1];
+  } else {
+    // Linear interpolation between time points
+    int t_floor = to_int(floor(n));
+    real weight = n - t_floor;
+    return (1 - weight) * km_survival[t_floor + 1] + weight * km_survival[t_floor + 2];
+  }
+}
+
+tuple(int, int) survival_time_rng(row_vector log_cond_prob_surv) {
+  int n_intervals = num_elements(log_cond_prob_surv);
+  
+  int survival_time = 0;
+  
+  row_vector[n_intervals] log_odds_surv = log_cond_prob_surv - log1m_exp(log_cond_prob_surv);
+  
+  while (survival_time < n_intervals && bernoulli_logit_rng(log_odds_surv[survival_time + 1])) {
+    survival_time += 1;
+  }
+  
+  int censored = survival_time >= n_intervals;  
+  
+  return(survival_time, censored);
+}
+
+/**
+ * Forecast survival time based on observed data and log conditional probabilities
+ *
+ * This function forecasts the survival time for a patient given their observed 
+ * survival time, censoring status, and the log conditional probabilities of survival.
+ *
+ * @param log_cond_prob_surv Row vector of log conditional probabilities of survival
+ * @param obs_surv_time Observed survival time
+ * @param right_censored Indicator for right censoring (1 if right-censored, 0 otherwise)
+ * @param interval_censored Number of intervals over which the observation is interval censored (0 if not interval censored)
+ * @return A tuple containing:
+ *         1. The forecasted survival time (integer)
+ *         2. An indicator for whether the forecast is right-censored (1 if right-censored, 0 otherwise)
+ */
+tuple(int, int) survival_time_rng(row_vector log_cond_prob_surv, int obs_surv_time, int right_censored, int interval_censored) {
+  int n = num_elements(log_cond_prob_surv);
+  int survival_time = obs_surv_time, forecast_right_censored = right_censored;
+  
+  if (right_censored) {
+    // Check that we are not at the highest interval; we don't have any estimated probability after that.  
+    if (obs_surv_time < n) {
+      (survival_time, forecast_right_censored) = survival_time_rng(log_cond_prob_surv[(obs_surv_time + 1):]);
+      survival_time += obs_surv_time;
+    }
+  } else if (interval_censored > 0) {
+    survival_time += interval_censored_survival_time_rng(log_cond_prob_surv[(obs_surv_time + 1):(obs_surv_time + interval_censored + 1)]);
+  }
+  
+  return(survival_time, forecast_right_censored);
+}
+
+
+tuple(int, int) survival_time_rng(row_vector log_cond_prob_surv, int obs_surv_time) {
+  return survival_time_rng(log_cond_prob_surv, obs_surv_time, 1, 0);
+}
+
+/**
+ * Sample a survival time gated by assessment visits.
+ *
+ * Instead of sampling bernoulli per-week, accumulates cumulative hazard
+ * between assessment visits and samples once per visit. Event time is the
+ * assessment visit week where the transition is detected.
+ *
+ * When visit_weeks has weekly spacing (interval=1), this is mathematically
+ * equivalent to survival_time_rng (single-week cumulative = single bernoulli).
+ *
+ * @param log_cond_prob_surv  Row vector [max_all_t] of log P(survive week t)
+ * @param visit_weeks         Array of assessment visit calendar weeks (1-indexed, ascending)
+ * @param n_visits            Number of visits in visit_weeks
+ * @param max_all_t           Maximum time (returned when censored)
+ * @return (event_week, censored) — event_week is 1-indexed calendar week or max_all_t
+ */
+tuple(int, int) assessment_gated_survival_time_rng(
+    row_vector log_cond_prob_surv,
+    array[] int visit_weeks,
+    int max_all_t
+) {
+  int n_intervals = num_elements(log_cond_prob_surv);
+  int event_week = max_all_t;
+  int censored = 1;
+  int prev_week = 0;
+  int done = 0;
+
+  for (a in 1:size(visit_weeks)) {
+    if (!done) {
+      int curr_week = visit_weeks[a];
+      int start_t = prev_week + 1;
+      int end_t = min(curr_week, n_intervals);
+
+      if (start_t > n_intervals) {
+        done = 1;
+      } else {
+        // Accumulate log P(survive interval) = sum of per-week log conditional survivals
+        real cum_log_surv = sum(log_cond_prob_surv[start_t:end_t]);
+        // P(no event in interval) = exp(cum_log_surv)
+        // Sample: survived this interval?
+        if (!bernoulli_rng(exp(cum_log_surv))) {
+          // Event detected at this assessment visit
+          event_week = curr_week;
+          censored = 0;
+          done = 1;
+        }
+      }
+      prev_week = curr_week;
+    }
+  }
+
+  return (event_week, censored);
+}
+
+/**
+ * Conditional overload: starts accumulating from obs_surv_time.
+ * Skips visits at or before obs_surv_time. If right_censored=0,
+ * returns observed time directly (no forecast needed).
+ */
+tuple(int, int) assessment_gated_survival_time_rng(
+    row_vector log_cond_prob_surv,
+    array[] int visit_weeks,
+    int max_all_t,
+    int obs_surv_time,
+    int right_censored
+) {
+  if (!right_censored) {
+    return (obs_surv_time, 0);
+  }
+
+  int n_intervals = num_elements(log_cond_prob_surv);
+  int event_week = max_all_t;
+  int censored = 1;
+  int prev_week = obs_surv_time;  // Start from observed time
+  int done = 0;
+
+  for (a in 1:size(visit_weeks)) {
+    if (!done) {
+      int curr_week = visit_weeks[a];
+      if (curr_week <= obs_surv_time) {
+        // Skip visits in the observed region
+      } else {
+        int start_t = prev_week + 1;
+        int end_t = min(curr_week, n_intervals);
+
+        if (start_t > n_intervals) {
+          done = 1;
+        } else {
+          real cum_log_surv = sum(log_cond_prob_surv[start_t:end_t]);
+          if (!bernoulli_rng(exp(cum_log_surv))) {
+            event_week = curr_week;
+            censored = 0;
+            done = 1;
+          }
+        }
+        prev_week = curr_week;
+      }
+    }
+  }
+
+  return (event_week, censored);
+}
+
+/**
+ * Build a full spop visit schedule: observed visits + forecast visits at regular
+ * intervals from the last observed visit up to max_t.
+ *
+ * @param obs_visits           Array of observed visit weeks (1-indexed, ascending)
+ * @param forecast_interval    Weeks between forecast assessments (e.g. 6)
+ * @param max_t                Maximum calendar time (prediction horizon)
+ * @return Array of visit weeks covering [obs_visits, ..., max_t]
+ */
+array[] int build_spop_visit_schedule(
+    array[] int obs_visits,
+    int forecast_interval,
+    int max_t
+) {
+  int n_obs = size(obs_visits);
+  int last_wk = obs_visits[n_obs];
+  int n_forecast = max(0, (max_t - last_wk) %/% forecast_interval);
+  array[n_obs + n_forecast] int schedule;
+  schedule[1:n_obs] = obs_visits;
+  for (a in 1:n_forecast) {
+    schedule[n_obs + a] = min(last_wk + a * forecast_interval, max_t);
+  }
+  return schedule;
+}
+
+/**
+ * Sample a survival time for a visit-discrete process (e.g., dropout).
+ *
+ * Unlike assessment_gated_survival_time_rng which accumulates per-week hazard
+ * between visits, this function evaluates the hazard ONLY at visit weeks —
+ * one bernoulli check per visit using only log_cond_prob_surv[visit_week].
+ *
+ * Use for processes that can only occur AT visits (not between them), matching
+ * the likelihood's sum_03_at_visits_below() which evaluates one log_cond_surv
+ * term per visit.
+ *
+ * @param log_cond_prob_surv  Row vector [max_all_t] of log P(survive week t)
+ * @param visit_weeks         Array of assessment visit calendar weeks (1-indexed, ascending)
+ * @param max_all_t           Maximum time (returned when censored)
+ * @return (event_week, censored) — event_week is 1-indexed calendar week or max_all_t
+ */
+tuple(int, int) visit_only_survival_time_rng(
+    row_vector log_cond_prob_surv,
+    array[] int visit_weeks,
+    int max_all_t
+) {
+  int n_intervals = num_elements(log_cond_prob_surv);
+
+  for (a in 1:size(visit_weeks)) {
+    int wk = visit_weeks[a];
+    if (wk < 1 || wk > n_intervals) continue;
+
+    // Single-visit check: log-odds = log P(survive) - log P(event)
+    real log_odds_surv = log_cond_prob_surv[wk] - log1m_exp(log_cond_prob_surv[wk]);
+    if (!bernoulli_logit_rng(log_odds_surv)) {
+      return (wk, 0);
+    }
+  }
+
+  return (max_all_t, 1);
+}
+
+/**
+ * Conditional overload: starts from obs_time, skipping visits at or before it.
+ * If right_censored=0 (event already observed), returns observed time directly.
+ *
+ * Use for the sample pathway when an admin-censored patient needs a forecasted
+ * 0→3 dropout time beyond their last observed visit.
+ *
+ * @param log_cond_prob_surv  Row vector [max_all_t] of log P(survive week t)
+ * @param visit_weeks         Array of assessment visit calendar weeks (1-indexed, ascending)
+ * @param max_all_t           Maximum time (returned when censored)
+ * @param obs_time            Last observed time (visits at or before this are skipped)
+ * @param right_censored      1 if censored (forecast needed), 0 if event observed
+ * @return (event_week, censored)
+ */
+tuple(int, int) visit_only_survival_time_rng(
+    row_vector log_cond_prob_surv,
+    array[] int visit_weeks,
+    int max_all_t,
+    int obs_time,
+    int right_censored
+) {
+  if (!right_censored) {
+    return (obs_time, 0);
+  }
+
+  int n_intervals = num_elements(log_cond_prob_surv);
+
+  for (a in 1:size(visit_weeks)) {
+    int wk = visit_weeks[a];
+    if (wk <= obs_time) continue;  // skip observed region
+    if (wk < 1 || wk > n_intervals) continue;
+
+    real log_odds_surv = log_cond_prob_surv[wk] - log1m_exp(log_cond_prob_surv[wk]);
+    if (!bernoulli_logit_rng(log_odds_surv)) {
+      return (wk, 0);
+    }
+  }
+
+  return (max_all_t, 1);
+}
+
+/**
+ * Sample first event time for a visit-gated transition with optional covariate.
+ *
+ * Generalization of visit_only_survival_time_rng: one Bernoulli check per visit,
+ * with optional PSA covariate adjustment. Pass zero-sized obs_covar for transitions
+ * with no covariate (e.g., 0->3 dropout).
+ *
+ * @param log_cond_surv_base  Row vector [max_all_t] baseline log conditional survival
+ * @param visit_weeks         Pre-extracted visit weeks for this patient (ascending)
+ * @param max_all_t           Censoring boundary
+ * @param obs_covar           Covariate value at each visit (same indexing as visit_weeks);
+ *                            zero-sized = no covariate
+ * @param coef                Covariate coefficient (0.0 if no covariate)
+ * @return (event_week, censored)
+ */
+tuple(int, int) sample_at_visits_rng(
+    row_vector log_cond_surv_base,
+    array[] int visit_weeks,
+    int max_all_t,
+    vector obs_covar,
+    real coef
+) {
+  int n_intervals = num_elements(log_cond_surv_base);
+  int has_covar = size(obs_covar) > 0;
+
+  for (a in 1:size(visit_weeks)) {
+    int wk = visit_weeks[a];
+    if (wk < 1 || wk > n_intervals) continue;
+
+    real log_surv = log_cond_surv_base[wk]
+                    + (has_covar ? coef * obs_covar[a] : 0.0);
+    // log_surv >= 0 means covariate dominated baseline: P(survive) >= 1, no event.
+    if (log_surv < 0 && bernoulli_rng(1 - exp(log_surv))) {
+      return (wk, 0);
+    }
+  }
+
+  return (max_all_t, 1);
+}
+
+/**
+ * Conditional overload: starts from obs_time.
+ */
+tuple(int, int) sample_at_visits_rng(
+    row_vector log_cond_surv_base,
+    array[] int visit_weeks,
+    int max_all_t,
+    int obs_time,
+    int right_censored,
+    vector obs_covar,
+    real coef
+) {
+  if (!right_censored) {
+    return (obs_time, 0);
+  }
+
+  int n_intervals = num_elements(log_cond_surv_base);
+  int has_covar = size(obs_covar) > 0;
+
+  for (a in 1:size(visit_weeks)) {
+    int wk = visit_weeks[a];
+    if (wk <= obs_time) continue;
+    if (wk < 1 || wk > n_intervals) continue;
+
+    real log_surv = log_cond_surv_base[wk]
+                    + (has_covar ? coef * obs_covar[a] : 0.0);
+    if (log_surv < 0 && bernoulli_rng(1 - exp(log_surv))) {
+      return (wk, 0);
+    }
+  }
+
+  return (max_all_t, 1);
+}
+
+/**
+ * Generate a survival time within the range of interval censored intervals
+ *
+ * Have to be careful using this; it is not in the log space. I don't want to touch it right now because I don't want to break something critical.
+ *
+ * This function simulates a survival time for an interval censored observation,
+ * given the log conditional probabilities of survival within the censored interval.
+ *
+ * @param ic_log_cond_prob_surv Row vector of log conditional probabilities of survival 
+ *                              at each interval within the interval censored range
+ * @return An integer representing the time after the left bound of the interval censored range
+ */  
+int interval_censored_survival_time_rng(row_vector ic_log_cond_prob_surv) {
+  int n = num_elements(ic_log_cond_prob_surv);
+  row_vector[n] marginal_prob_exit = exp(cumulative_sum(append_col(0, ic_log_cond_prob_surv))[:n] + log1m_exp(ic_log_cond_prob_surv));
+
+  marginal_prob_exit /= sum(marginal_prob_exit);
+
+  return categorical_rng(marginal_prob_exit') - 1;
+}
+
+/**
+ * Estimate Kaplan-Meier survival function aggregated over all patients
+ *
+ * This function calculates the Kaplan-Meier estimate of the survival function S(t) = Pr[T > t],
+ * where t ranges from 0 to max_t. It accounts for right-censoring and multiple causes of exit.
+ *
+ * @param last_surv Array of integers representing the last observed week that was progression-free for each patient
+ * @param cause Array of integers indicating the cause of exit for each patient
+ * @param right_censored Array of integers (0 or 1) indicating whether each patient was right-censored
+ * @param max_t Integer specifying the last interval to report Kaplan-Meier results
+ *
+ * @return A tuple containing four elements:
+ *         1. vector: Proportion surviving at each time point (S(t))
+ *         2. array[] int: Number of patients at risk at each time point
+ *         3. array[] int: Number of right-censored patients at each time point
+ *         4. array[,] int: Number of patients who exited due to each cause at each time point
+ *
+ * Note: The returned arrays and vector are of length max_t + 1, with index 1 corresponding to t=0.
+ */
+tuple(vector, array[] int, array[] int, array[,] int) estimate_kaplan_meier(
+  array[] int last_surv, array[] int cause, array[] int right_censored, int max_t
+) {
+  // Only keep patients with last_surv > 0 using which() and count_positive()
+  int n_patients_full = size(last_surv);
+  int n_causes = size(cause);
+  int n_patients = count_positive(last_surv);
+  array[n_patients] int keep_idx = which(last_surv);
+
+  array[n_patients] int filtered_last_surv = last_surv[keep_idx];
+  array[n_patients] int filtered_cause = cause[keep_idx];
+  array[n_patients] int filtered_right_censored = right_censored[keep_idx];
+
+  array[n_patients] int sorted_last_surv_idx = sort_indices_asc(filtered_last_surv);
+  int last_surv_pos = 1;
+  int n = n_patients;
+
+  vector[max_t + 1] s = rep_vector(1.0, max_t + 1);
+  array[max_t + 1] int at_risk = rep_array(n, max_t + 1);
+  array[max_t + 1] int n_right_censored = rep_array(0, max_t + 1);
+  array[max_t + 1, n_causes] int n_exited;
+
+  // For each time interval in 0..max_t see how many patients exited and calculate proportion surviving.
+
+  for (t in 0:max_t) {
+    n_exited[t + 1] = rep_array(0, n_causes);
+    real prev_s = t > 0 ? s[t] : 1.0;
+
+    while (
+      (n > 0) &&  
+      (last_surv_pos <= n_patients) &&  
+      (filtered_right_censored[sorted_last_surv_idx[last_surv_pos]] || (filtered_last_surv[sorted_last_surv_idx[last_surv_pos]] <= t))
+    ) {
+      n_exited[t + 1, filtered_cause[sorted_last_surv_idx[last_surv_pos]]] += !filtered_right_censored[sorted_last_surv_idx[last_surv_pos]];
+      n_right_censored[t + 1] += filtered_right_censored[sorted_last_surv_idx[last_surv_pos]];
+
+      last_surv_pos += 1;
+    }
+
+    s[t + 1] = n > 0 ? prev_s * (n - sum(n_exited[t + 1])) / n : prev_s;
+    at_risk[t + 1] = n;
+    n -= sum(n_exited[t + 1]) + n_right_censored[t + 1];
+  }
+
+  return (s, at_risk, n_right_censored, n_exited);
+}
+
+/**
+ * Estimate the Kaplan-Meier survival function S(t) = Pr[T > t] for t = 0, 1, ..., max_t
+ *
+ * Implements the standard Kaplan-Meier estimator for survival analysis, supporting:
+ *   - Right-censoring (right_censored = 1)
+ *   - Immediate events (event_time = 0)
+ *   - Optional offset (pfs_offset) to shift event times
+ *
+ * Output convention:
+ *   - Returns survival vector S(0), S(1), ..., S(max_t) (length max_t + 1)
+ *   - S(0) is always included and may be < 1 if immediate events are present
+ *   - Output matches R's survfit2 (type = "kaplan-meier", with S(0) included)
+ *   - All output arrays/vectors use 1-based indexing: index 1 is t = 0
+ *
+ * Algorithm:
+ *   - Applies pfs_offset to event_time to get actual event times
+ *   - Sorts patients by adjusted event time
+ *   - For each t, counts events and censorings at t
+ *   - Updates survival: S(t) = S(t-1) * (n_at_risk - n_events) / n_at_risk
+ *   - at_risk[t+1]: number at risk at start of t
+ *   - n_exited[t+1]: number of events at t
+ *   - n_right_censored[t+1]: number censored at t
+ *
+ * Parameters:
+ *   - event_time: array of raw event times (before offset)
+ *   - right_censored: array, 1 if censored, 0 if event
+ *   - max_t: maximum time to compute survival for
+ *   - pfs_offset: offset to add to each event_time
+ *
+ * @param event_time Array of raw event times (before applying offset)
+ * @param right_censored Array indicating whether each patient is right-censored (1) or had event (0)
+ * @param max_t Maximum time to compute survival estimates for
+ * @param pfs_offset Offset to add to each event_time to get the actual event time
+ * @return Tuple:
+ *   - vector: Survival probabilities S(0), S(1), ..., S(max_t)
+ *   - array[] int: Number at risk at start of each time interval
+ *   - array[] int: Number censored at each time point
+ *   - array[] int: Number of events at each time point
+ */
+tuple(vector, array[] int, array[] int, array[] int) estimate_kaplan_meier(array[] int event_time, array[] int right_censored, int max_t, int pfs_offset) {
+  int n_pfs = size(event_time); // How many patients
+  
+  // Apply offset to get actual event times
+  array[n_pfs] int adjusted_event_time;
+  for (i in 1:n_pfs) {
+    adjusted_event_time[i] = event_time[i] + pfs_offset;
+  }
+  
+  array[n_pfs] int sorted_pfs_idx = sort_indices_asc(adjusted_event_time);
+  
+  vector[max_t + 1] s = rep_vector(1.0, max_t + 1);
+  array[max_t + 1] int at_risk = rep_array(0, max_t + 1);
+  array[max_t + 1] int n_right_censored = rep_array(0, max_t + 1);
+  array[max_t + 1] int n_exited = rep_array(0, max_t + 1); 
+  
+  // s[1] = S(0), s[2] = S(1), s[3] = S(2), etc.
+  // S(t) = probability of surviving past time t
+  
+  // Track current position in sorted array and current risk set size
+  int pfs_pos = 1;
+  int n = n_pfs;
+
+  // Set initial at-risk count
+  at_risk[1] = n; 
+
+  for (t in 0:max_t) {
+    int events_at_t = 0;
+    int censored_at_t = 0;
+    
+    // Count events and censoring that occur exactly at time t
+    while ((pfs_pos <= n_pfs) && (adjusted_event_time[sorted_pfs_idx[pfs_pos]] == t)) {
+      if (!right_censored[sorted_pfs_idx[pfs_pos]]) {
+        events_at_t += 1;
+      } else {
+        censored_at_t += 1;
+      }
+      pfs_pos += 1;
+    }
+    
+    // Store the counts (using 1-based indexing: t=0 -> index 1)
+    n_exited[t + 1] = events_at_t;
+    n_right_censored[t + 1] = censored_at_t;
+    // Update survival probability using Kaplan-Meier formula
+    if (t > 0) {
+      if (n > 0 && events_at_t > 0) {
+      // For time t, multiply previous survival by (n_at_risk - events) / n_at_risk
+      s[t + 1] = s[t] * (n - events_at_t) / n;
+      } else {
+      // No events, carry forward previous survival
+      s[t + 1] = s[t];
+      }
+    }
+    // If t == 0 and no events, s[1] stays at initial value 1.0
+    
+    // Update at-risk count for next time point (if not the last iteration)
+    if (t < max_t) {
+      n -= events_at_t + censored_at_t;
+      at_risk[t + 2] = n;
+    }
+  }
+  
+  return (s, at_risk, n_right_censored, n_exited); 
+}  
+
+tuple(vector, array[] int, array[] int, array[] int) estimate_kaplan_meier(array[] int event_time, array[] int right_censored, int max_t) {
+  return estimate_kaplan_meier(event_time, right_censored, max_t, 0);
+}
+
+/**
+ * Calculate the Concordance Index (C-index) for survival data
+ *
+ * The C-index measures the discriminative power of a risk score in predicting survival times.
+ * It represents the probability that, for a pair of randomly chosen patients, the patient with 
+ * the higher risk score has a shorter survival time.
+ *
+ * @param pfs Array of progression-free survival times for each patient
+ * @param right_censored Array indicating whether each patient is right-censored (1) or not (0)
+ * @param risk_score Vector of risk scores for each patient
+ * @return The calculated C-index as a real number between 0 and 1
+ */
+real calc_c_index(array[] int pfs, array[] int right_censored, vector risk_score) {
+  int n_patients = size(pfs);
+  int n_concord = 0;
+  int n_ranked = 0;
+  
+  for (i in 1:n_patients) {
+    for (j in 1:n_patients) {
+      if (i != j && pfs[i] > pfs[j] && !right_censored[j]) {
+        n_ranked += 1;
+        n_concord += risk_score[i] < risk_score[j];  
+      }
+    }
+  }
+  
+  return 1.0 * n_concord / n_ranked;
+}
+
+/**
+ * Calculate the C-index for competing risks survival data
+ *
+ * This version of the C-index calculation handles competing risks and incorporates 
+ * information about confirmed responses.
+ *
+ * @param pfs Array of progression-free survival times for each patient
+ * @param right_censored Array indicating whether each patient is right-censored (1) or not (0)
+ * @param confirmed_response Array indicating the type of confirmed response for each patient
+ * @param confirmed_response_censored Array indicating whether the confirmed response is censored for each patient
+ * @param log_risk_score Array of vectors containing log risk scores for each cause and patient
+ * @param log_last_cif Array of vectors containing log cumulative incidence function values for each cause and patient
+ * @return The calculated C-index as a real number between 0 and 1
+ */
+real calc_c_index(
+  array[] int pfs, array[] int right_censored,  
+  array[] int confirmed_response, array[] int confirmed_response_censored,  
+  array[] vector log_risk_score, array[] vector log_last_cif  
+) {
+  int n_patients = size(pfs);
+  vector[n_patients] risk_score;
+  
+  for (i in 1:n_patients) {
+    risk_score[i] =  
+      confirmed_response_censored[i] ?  
+      log_sum_exp(log_last_cif[1, i] + log_risk_score[1, i], log_last_cif[2, i] + log_risk_score[2, i]) - log_sum_exp(log_last_cif[1, i], log_last_cif[2, i]) :
+      log_risk_score[confirmed_response[i] + 1, i];
+  }
+  
+  return calc_c_index(pfs, right_censored, risk_score);
+}
+
+/** Convert a ragged vector tumor size measures to a matrix aligned by measurement week
+ *
+ * @param tumor_size Tumor sizes
+ * @param n_patient_tumors Array with the number of tumors per patient.
+ * @param n_measures The number of assessments per tumor.
+ * @param t_measure The week each assessment was done.
+ * @param n_screening_t Number of observed pre-screening assessments per tumor
+ * @param max_measures Number of tumor sizes to include in output, irrespective of when they are actually observed.
+ * @return (Aligned matrix, Actual t used for the columns)
+ */
+tuple(matrix, array[,] int) create_aligned_matrix(vector tumor_size, array[] int n_measures, array[] int t_measure, array[] int n_screening_t, int max_measures) {
+  int n_tumors = size(n_measures);
+  int n_total_measures = sum(n_measures);
+  array[n_total_measures] int t_sort_ind = sort_indices_asc(t_measure);
+  array[n_total_measures] int within_tumor_ind;
+  
+  int last_within_ind = 0;
+  int last_t = min(t_measure) - 1; 
+  
+  for(n in 1:n_total_measures) {
+    if (t_measure[t_sort_ind[n]] != last_t) {
+      last_within_ind += 1;
+    }
+    
+    last_t = t_measure[t_sort_ind[n]];
+    within_tumor_ind[t_sort_ind[n]] = last_within_ind;
+  }
+
+  int n_screening_col = max(n_screening_t);
+  int n_aligned_col = max(max_measures, last_within_ind); 
+  matrix[n_tumors, n_aligned_col] aligned_matrix = rep_matrix(0, n_tumors, n_aligned_col);
+  array[n_tumors, n_aligned_col] int aligned_t = rep_array(0, n_tumors, n_aligned_col);
+  
+  int tumor_pos = 1;
+  
+  for (j in 1:n_tumors) {
+    int tumor_end = tumor_pos + n_measures[j] - 1;
+    
+    aligned_matrix[j, within_tumor_ind[tumor_pos:tumor_end]] = tumor_size[tumor_pos:tumor_end]'; 
+    aligned_t[j, within_tumor_ind[tumor_pos:tumor_end]] = t_measure[tumor_pos:tumor_end]; 
+    
+    tumor_pos = tumor_end + 1;
+  }
+  
+  return (aligned_matrix[, n_screening_col:(max_measures + n_screening_col - 1)], aligned_t[, n_screening_col:(max_measures + n_screening_col - 1)]);
+}
+
+/** Create (n_patients * n_tumors) x max_measures matrix of each tumor's covariates from assessment **order** (not t) = 1, 2, ...., max_measures 
+ * What this function actually returns is the last pre-screening measure and the (max_measures - 1) succeeding measures. The second output in the tuple
+ * provides the intervals (weeks) of these max_measures columns.
+ * 
+ * @param tumor_size Tumor sizes
+ * @param n_patient_tumors Array with the number of tumors per patient.
+ * @param n_measures The number of assessments per tumor.
+ * @param t_measure The week each assessment was done.
+ * @param n_screening_t Number of observed pre-screening assessments per tumor
+ * @param max_measures Number of tumor sizes to include in output, irrespective of when they are actually observed.
+ * @return (Design matrix, Actual t used for the columns)
+ */
+tuple(matrix, array[,] int) prepare_early_tumors_design_matrix(
+  vector tumor_size, array[] int n_patient_tumors, array[] int n_measures, array[] int t_measure, array[] int n_screening_t, int max_measures
+) {
+  matrix[sum(n_patient_tumors), max_measures] tumor_covar = rep_matrix(0, sum(n_patient_tumors), max_measures);
+  array[sum(n_patient_tumors), max_measures] int tumor_covar_t = rep_array(min(t_measure) - 1, sum(n_patient_tumors), max_measures);
+  int n_patients = size(n_patient_tumors);
+  int tumor_pos = 1;
+  int tumor_size_pos = 1;
+  int covar_pos = 1;
+  
+  for (i in 1:n_patients) {
+    int n_current_tumors = n_patient_tumors[i];
+    int covar_end = covar_pos + n_current_tumors - 1; 
+    int tumor_end = tumor_pos + n_current_tumors - 1;
+    int n_patient_measures = sum(n_measures[tumor_pos:tumor_end]);
+    int tumor_size_end = tumor_size_pos + n_patient_measures - 1;
+   
+    (tumor_covar[covar_pos:covar_end], tumor_covar_t[covar_pos:covar_end]) = create_aligned_matrix(
+      tumor_size[tumor_size_pos:tumor_size_end], n_measures[tumor_pos:tumor_end], t_measure[tumor_size_pos:tumor_size_end], n_screening_t, max_measures
+    );
+    
+    covar_pos = covar_end + 1;
+    tumor_pos = tumor_end + 1;
+    tumor_size_pos = tumor_size_end + 1;
+  }
+  
+  return (tumor_covar, tumor_covar_t);
+}
+
+tuple(matrix, matrix, vector, vector) prepare_early_tumor_sums_covar(
+  vector tumor_size, 
+  array[] int n_patient_tumors, array[] int n_measures, array[] int t_measure, array[] int n_screening_t, int max_measures
+) {
+  int n_tumors = sum(n_patient_tumors);
+  int n_patients = size(n_patient_tumors);
+  matrix[n_tumors, 2] tumor_covar; 
+  array[n_tumors, 2] int tumor_covar_t; 
+  matrix[n_patients, 2] tumor_sum_covar; 
+  matrix[n_patients, 2] uncentered_tumor_sum_covar; 
+  
+  (tumor_covar, tumor_covar_t) = prepare_early_tumors_design_matrix(tumor_size, n_patient_tumors, n_measures, t_measure, n_screening_t, max_measures);
+  
+  {
+    int tumor_pos = 1;
+    
+    for (i in 1:n_patients) {
+      int tumor_end = tumor_pos + n_patient_tumors[i] - 1;
+      
+      tumor_sum_covar[i] = ones_row_vector(n_patient_tumors[i]) * tumor_covar[tumor_pos:tumor_end];
+      
+      tumor_pos = tumor_end + 1;
+    }
+  }
+  
+  vector[2] tumor_sum_covar_mean;
+  vector[2] tumor_sum_covar_sd;
+  
+  for (c in 1:2) {
+    uncentered_tumor_sum_covar[, c] = tumor_sum_covar[, c];
+    
+    (tumor_sum_covar_mean[c], tumor_sum_covar_sd[c], tumor_sum_covar[, c]) = standardize_tumor_sizes(tumor_sum_covar[, c]);
+    
+    uncentered_tumor_sum_covar[, c] /= tumor_sum_covar_sd[c];
+  }
+  
+  return (tumor_sum_covar, uncentered_tumor_sum_covar, tumor_sum_covar_mean, tumor_sum_covar_sd);
+}
+
+// ============================================================================
+// Classification-first competing-risks endpoint computation (Issue 79)
+//
+// Cause enum used by all four functions below:
+//   0 = CENSORED     — no state-0 exit within the prediction horizon
+//   1 = PROGRESSION  — 0→1 fired first (SLD-driven or ms-hazard-driven)
+//   2 = DIRECT_DEATH — 0→2 fired first
+//   3 = DROPOUT      — 0→3 fired first
+// ============================================================================
+
+/**
+ * Classify the first state-0 exit for the unconditional (spop) pathway.
+ *
+ * Encapsulates the tie-breaking logic from sf.stanfunctions lines 1561–1569.
+ * Priority on ties: progression (0→1) > direct death (0→2) > dropout (0→3).
+ *
+ * @param t_01         Combined 0→1 time = min(target_pfs, ms_hazard_pfs); 1-indexed
+ * @param c_01         Combined 0→1 censoring (1 = censored)
+ * @param t_02         Direct death time; 1-indexed (max_all_t+1 if disabled/censored)
+ * @param c_02         Direct death censoring
+ * @param t_03         Dropout time; 1-indexed (max_all_t+1 if disabled/censored)
+ * @param c_03         Dropout censoring
+ * @param enable_ms_02 Flag: 0→2 transition enabled
+ * @param enable_ms_03 Flag: 0→3 transition enabled
+ * @return (cause, exit_time)
+ */
+tuple(int, int) classify_spop_exit(
+    int t_01, int c_01,
+    int t_02, int c_02,
+    int t_03, int c_03,
+    int enable_ms_02, int enable_ms_03) {
+
+  int progressed_first = !c_01
+    && (c_02 || t_01 <= t_02)
+    && (c_03 || t_01 <= t_03);
+
+  int died_directly = enable_ms_02 && !c_02
+    && (c_01 || t_02 < t_01)
+    && (c_03 || t_02 <= t_03);
+
+  int dropped_out = enable_ms_03 && !c_03
+    && (c_01 || t_03 < t_01)
+    && (c_02 || t_03 < t_02);
+
+  if (progressed_first) {
+    return (1, t_01);
+  } else if (died_directly) {
+    return (2, t_02);
+  } else if (dropped_out) {
+    return (3, t_03);
+  } else {
+    return (0, max({t_01, t_02, t_03}));
+  }
+}
+
+/**
+ * Derive spop PFS variables atomically from the competing-risks outcome.
+ *
+ * Subsumes the retroactive PFS patches (sf.stanfunctions lines 1597–1620) and
+ * the CIF reclassification loop (_endpoints_generated_quantities.stan lines 366–389).
+ * No RNG — pure derivation.
+ *
+ * @param cause    First-exit cause from classify_spop_exit()
+ * @param exit_time Exit time from classify_spop_exit()
+ * @param t_target  Target-lesion PFS time (spop_target_pfs)
+ * @param c_target  Target-lesion PFS censoring (spop_target_right_censored)
+ * @param t_ms01    Raw ms-hazard PFS time (from assessment_gated_survival_time_rng)
+ * @param c_ms01    Raw ms-hazard PFS censoring
+ * @param t_03      Dropout time (spop 0→3 exit time)
+ * @param enable_ms_02 Flag: 0→2 transition enabled
+ * @param enable_ms_03 Flag: 0→3 transition enabled
+ * @return (pfs, right_censored, ms_pfs, ms_right_censored)
+ */
+tuple(int, int, int, int) derive_spop_pfs(
+    int cause, int exit_time,
+    int t_target, int c_target,
+    int t_ms01, int c_ms01,
+    int t_03,
+    int enable_ms_02, int enable_ms_03) {
+
+  if (cause == 1) {
+    // Progression (0→1): combined PFS = min(target, ms01) = exit_time; both uncensored
+    return (exit_time, 0, exit_time, 0);
+
+  } else if (cause == 2) {
+    // Direct death (0→2): since 0→2 beat 0→1, t_02 < min(t_target, t_ms01),
+    // so min(t_target, exit_time) = exit_time; both uncensored
+    return (exit_time, 0, exit_time, 0);
+
+  } else if (cause == 3) {
+    // Dropout (0->3): the inner "SLD PD before dropout" case is UNREACHABLE here
+    // — classify_spop_exit only returns cause 3 when no uncensored target PD
+    // precedes t_03 (else progression wins the priority order). For the spop
+    // path the caller overwrites this result with the OS outcome (PFS-from-OS
+    // graft); this return is the censored-at-dropout fallback.
+    return (t_03, 1, t_03, 1);
+
+  } else {
+    // All censored (cause == 0): combined PFS = min(target, ms01); ms_pfs = raw ms01 sample
+    return (min(t_target, t_ms01), 1, t_ms01, c_ms01);
+  }
+}
+
+/**
+ * Classify the first state-0 exit for the conditional (sample) pathway.
+ *
+ * Symmetric with classify_spop_exit: pure competing-risks classification
+ * using (time, censoring) tuples for all three transitions.
+ * Caller is responsible for setting the 0→3 tuple:
+ *   - Observed dropout (state 3):  (ms_time_03, 0)
+ *   - Admin-censored (state 0):    forecasted via visit_only_survival_time_rng
+ *   - States 1, 2 (event observed): (max_all_t+1, 1)  — dropout didn't win
+ *
+ * @param sample_time_01    Combined 0→1 PFS (pre-classification); 1-indexed
+ * @param sample_cens_01    Combined 0→1 censoring
+ * @param sample_time_02    Direct death time (observed or forecasted); 1-indexed
+ * @param sample_cens_02    Direct death censoring
+ * @param sample_time_03    Dropout time (observed or forecasted); 1-indexed
+ * @param sample_cens_03    Dropout censoring (0 = event, 1 = survived)
+ * @param ms_censored_02_i  Censoring indicator for 0→2 (1 = not observed)
+ * @param enable_ms_02      Flag: 0→2 transition enabled
+ * @param enable_ms_03      Flag: 0→3 transition enabled
+ * @return (cause, exit_time)
+ */
+tuple(int, int) classify_sample_exit(
+    int sample_time_01, int sample_cens_01,
+    int sample_time_02, int sample_cens_02,
+    int sample_time_03, int sample_cens_03,
+    int ms_censored_02_i,
+    int enable_ms_02, int enable_ms_03) {
+
+  // Dropout: observed or forecasted 0→3 event that precedes 0→1 and 0→2
+  int dropped_out = enable_ms_03 && !sample_cens_03
+    && (sample_cens_01 || sample_time_03 < sample_time_01)
+    && (sample_cens_02 || sample_time_03 < sample_time_02);
+
+  // Direct death: either observed directly or forecasted to precede progression
+  int died_directly = !dropped_out && enable_ms_02 && !sample_cens_02
+    && (!ms_censored_02_i || sample_cens_01 || sample_time_02 < sample_time_01)
+    && (sample_cens_03 || sample_time_02 <= sample_time_03);
+
+  // Progression: 0→1 beats 0→2 and 0→3
+  int progressed_first = !dropped_out && !died_directly && !sample_cens_01
+    && (sample_cens_02 || sample_time_01 <= sample_time_02)
+    && (sample_cens_03 || sample_time_01 <= sample_time_03);
+
+  if (dropped_out) {
+    return (3, sample_time_03);
+  } else if (died_directly) {
+    return (2, sample_time_02);
+  } else if (progressed_first) {
+    return (1, sample_time_01);
+  } else {
+    return (0, max({sample_time_01, sample_time_02, sample_time_03}));
+  }
+}
+
+/**
+ * Derive sample PFS variables atomically from the competing-risks outcome.
+ *
+ * Subsumes the retroactive PFS patches for the sample pathway
+ * (sf.stanfunctions lines 1696–1719). No RNG — pure derivation.
+ *
+ * @param cause                    First-exit cause from classify_sample_exit()
+ * @param exit_time                Exit time from classify_sample_exit()
+ * @param sample_target_pfs_i      Sample target-lesion PFS time
+ * @param sample_target_right_cens_i Sample target-lesion PFS censoring
+ * @param sample_ms_pfs_raw        Raw ms-hazard PFS (from RNG step 1, before any patches)
+ * @param sample_ms_right_cens_raw Raw ms-hazard PFS censoring
+ * @param sample_time_03_i         Dropout time (observed or forecasted); from classify_sample_exit
+ * @param enable_ms_02             Flag: 0→2 transition enabled
+ * @param enable_ms_03             Flag: 0→3 transition enabled
+ * @return (pfs, right_censored, ms_pfs, ms_right_censored)
+ */
+tuple(int, int, int, int) derive_sample_pfs(
+    int cause, int exit_time,
+    int sample_target_pfs_i, int sample_target_right_cens_i,
+    int sample_ms_pfs_raw, int sample_ms_right_cens_raw,
+    int sample_time_03_i,
+    int enable_ms_02, int enable_ms_03) {
+
+  if (cause == 2) {
+    // Direct death (0→2): both pfs and ms_pfs updated to t_02; uncensored
+    return (exit_time, 0, exit_time, 0);
+
+  } else if (cause == 3) {
+    // Dropout (0→3): ms_pfs censored at dropout; PFS event if SLD PD before dropout
+    if (!sample_target_right_cens_i && sample_target_pfs_i <= sample_time_03_i) {
+      return (sample_target_pfs_i, 0, sample_time_03_i, 1);
+    } else {
+      return (sample_time_03_i, 1, sample_time_03_i, 1);
+    }
+
+  } else {
+    // cause=1 (progression): exit_time is the combined PFS; right_censored=0 (event)
+    // cause=0 (censored):    exit_time is the combined PFS; right_censored=1
+    // ms_pfs stays at the raw ms-hazard sample in both cases
+    int right_censored = (cause == 0) ? 1 : 0;
+    return (exit_time, right_censored, sample_ms_pfs_raw, sample_ms_right_cens_raw);
+  }
+}
+
+// ============================================================================
+// Competing-risks CIF computation for a single trial's patient cohort
+// ============================================================================
+
+/**
+ * Compute empirical cumulative incidence functions for one trial cohort.
+ *
+ * Classification rule (is_dropout checked FIRST so grafted dropout-deaths,
+ * which have right_censored==0 after the PFS-from-OS graft, stay in CIF_03):
+ *   0→3 dropout      : is_dropout (dead or alive), regardless of PFS event status
+ *   0→2 direct death : NOT dropout AND PFS event AND OS event AND pfs == os
+ *   0→1 progression  : NOT dropout AND PFS event AND NOT 0→2
+ *   admin censored   : NOT dropout AND right_censored (no CIF contribution)
+ *
+ * NOTE: is_dropout must be set explicitly from the cause computed upstream
+ * (spop_cause==3 or spop_dropped_out). Do NOT use pfs<=max_t as a proxy —
+ * admin-censored patients also satisfy pfs<=max_t in the GQ simulation.
+ *
+ * CIF vectors are 1-indexed (length max_t + 1): index k = fraction of cohort
+ * with the given cause AND exit at vector position <= k (i.e. time 0..k-1).
+ *
+ * @param pfs            Patient PFS times (1-indexed, length n_patients)
+ * @param right_censored PFS censoring flags (1 = censored)
+ * @param is_dropout     1 if patient dropped out (cause 3), 0 otherwise
+ * @param os             Patient OS times
+ * @param os_censored    OS censoring flags
+ * @param max_t          Maximum time horizon (CIF vectors have length max_t + 1)
+ * @return tuple(cif_01, cif_02, cif_03) — three vectors of length max_t + 1
+ */
+tuple(vector, vector, vector) compute_trial_cif(
+    array[] int pfs,
+    array[] int right_censored,
+    array[] int is_dropout,
+    array[] int os,
+    array[] int os_censored,
+    int max_t) {
+
+  int n = size(pfs);
+  array[max_t + 1] int cnt_01 = zeros_int_array(max_t + 1);
+  array[max_t + 1] int cnt_02 = zeros_int_array(max_t + 1);
+  array[max_t + 1] int cnt_03 = zeros_int_array(max_t + 1);
+
+  for (j in 1:n) {
+    if (is_dropout[j]) {
+      // 0->3 dropout (dead or alive) — checked FIRST. Under the PFS-from-OS
+      // convention a dropout's pfs == its OS outcome, which can exceed the CIF
+      // horizon max_t when the 3->2 death lands beyond the window. Such an event
+      // is not observed within [0, max_t], so it contributes nothing to the
+      // in-window CIF (same treatment as a beyond-horizon censoring). Guard the
+      // index to avoid out-of-range access (cnt_03 has length max_t + 1).
+      if (pfs[j] <= max_t) {
+        cnt_03[pfs[j]] += 1;
+      }
+    } else if (!right_censored[j]) {
+      // PFS event for a non-dropout: distinguish direct death (0->2) from progression (0->1)
+      if (!os_censored[j] && pfs[j] == os[j]) {
+        cnt_02[pfs[j]] += 1;
+      } else {
+        cnt_01[pfs[j]] += 1;
+      }
+    }
+    // else: admin-censored non-dropout — no CIF contribution
+  }
+
+  int c01 = 0; int c02 = 0; int c03 = 0;
+  vector[max_t + 1] cif_01 = zeros_vector(max_t + 1);
+  vector[max_t + 1] cif_02 = zeros_vector(max_t + 1);
+  vector[max_t + 1] cif_03 = zeros_vector(max_t + 1);
+  for (t in 1:max_t + 1) {
+    c01 += cnt_01[t]; c02 += cnt_02[t]; c03 += cnt_03[t];
+    cif_01[t] = c01 * 1.0 / n;
+    cif_02[t] = c02 * 1.0 / n;
+    cif_03[t] = c03 * 1.0 / n;
+  }
+
+  return (cif_01, cif_02, cif_03);
+}
+
+/**
+ * Calculate patient-level endpoints (PFS and response indicators) for all patients
+ * This function processes all patients at once, computing PFS times, censoring status,
+ * and confirmed/unconfirmed response indicators.
+ * 
+ * @param recist Observed RECIST classifications (all visits including screening)
+ * @param rep_recist Replicated RECIST classifications (treatment visits only)
+ * @param forecast_recist Forecasted RECIST classifications
+ * @param pfs Observed PFS detection weeks (1-indexed; = patient_max_t for censored patients)
+ * @param right_censored Right censored indicators
+ * @param patient_visit_pos Position array for patient visits
+ * @param forecast_visits_pos Position array for forecast visits
+ * @param n_patient_visits Number of visits per patient
+ * @param n_patient_screening_visits Number of screening visits per patient
+ * @param n_patient_forecast_visits Number of forecast visits per patient
+ * @param patient_last_obs_visit Last observed visit week per patient
+ * @param last_predict_visit Last prediction visit week (scalar)
+ * @param t_patient_visits All patient visit times (flat array)
+ * @param max_all_t Maximum time for analysis
+ * 
+ * @return Tuple containing:
+ *   - sample_target_pfs: Sample PFS times
+ *   - sample_target_right_censored: Sample censoring status
+ *   - spop_target_pfs: Posterior predictive PFS times
+ *   - spop_target_right_censored: Posterior predictive censoring status
+ *   - spop_target_obs_cens_pfs: Observed-censored posterior PFS
+ *   - spop_target_obs_cens_right_censored: Observed-censored posterior censoring
+ *   - sample_target_confirmed_response: Sample confirmed response indicators
+ *   - sample_target_unconfirmed_response: Sample unconfirmed response indicators
+ *   - spop_target_confirmed_response: Posterior predictive confirmed response
+ *   - spop_target_unconfirmed_response: Posterior predictive unconfirmed response
+ *   - forecast_target_pfs: Forecast PFS for right-censored patients
+ *   - forecast_target_right_censored: Forecast censoring for right-censored patients
+ */
+tuple(
+  array[] int,  // sample_target_pfs
+  array[] int,  // sample_target_right_censored
+  array[] int,  // spop_target_pfs
+  array[] int,  // spop_target_right_censored
+  array[] int,  // spop_target_obs_cens_pfs
+  array[] int,  // spop_target_obs_cens_right_censored
+  array[] int,  // sample_ms_pfs
+  array[] int,  // sample_ms_right_censored
+  array[] int,  // spop_ms_pfs
+  array[] int,  // spop_ms_right_censored
+  array[] int,  // sample_pfs
+  array[] int,  // sample_right_censored
+  array[] int,  // spop_pfs
+  array[] int,  // spop_right_censored
+  array[] int,  // sample_target_confirmed_response
+  array[] int,  // sample_target_unconfirmed_response
+  array[] int,  // spop_target_confirmed_response
+  array[] int,  // spop_target_unconfirmed_response
+  array[] int,  // forecast_target_pfs
+  array[] int,  // forecast_target_right_censored
+  array[] int,  // sample_os
+  array[] int,  // sample_os_censored
+  array[] int,  // spop_os
+  array[] int,  // spop_os_censored
+  array[] int,  // spop_is_dropout
+  array[] int,  // sample_is_dropout
+  array[] int,  // spop_dropout_week (pre-graft cause-3 exit week; 0 otherwise)
+  array[] int,  // sample_prog_pfs (0→1 progression-only PFS; excludes 0→2 death, 0→3 dropout)
+  array[] int   // sample_prog_right_censored (censored unless a 0→1 progression occurred)
+) calculate_all_patients_endpoints_rng(
+  array[] int patient_idx,         // maps loop index j -> unified patient index p
+  array[] int biomarker_category,
+  array[] int rep_biomarker_category,
+  array[] int forecast_obs_biomarker_category,
+  array[] int forecast_obs_visits_pos,
+  int forecast_observation_interval,
+  matrix ms_log_cond_surv,  // matrix[n_patients, max_all_t] - log conditional survival probabilities (0→1)
+  int enable_ms_02,
+  int enable_ms_03,
+  int enable_ms_32,
+  int enable_ms_12,
+  int ms_time_scale_12,
+  matrix log_cond_surv_02,    // matrix[n_patients, max_all_t] or [0,0] - 0→2 log conditional survival
+  matrix log_cond_surv_03,    // matrix[n_patients, max_all_t] or [0,0] - 0→3 log conditional survival
+  matrix log_cond_surv_32,    // matrix[n_patients, ms_max_sojourn_t_32] or [0,0] - 3→2 log conditional survival
+  matrix log_cond_surv_12_s,  // matrix[n_patients, ms_max_sojourn_t] or [0,0] - 1→2 sojourn GP
+  matrix log_cond_surv_12_t,  // matrix[n_patients, max_all_t] or [0,0] - 1→2 clock-forward GP
+  array[] int pfs,
+  array[] int right_censored,
+  array[] int target_pfs,             // PFS based on biomarker only (observed data)
+  array[] int target_right_censored,  // Censoring status for biomarker-only PFS (observed data)
+  array[] int ms_right_censored,  // Censoring status for multistate events
+  array[] int ms_final_state,  // Final state per patient: 0=censored, 1=progressed, 2=dead, 3=dropout
+  array[] int ms_time_02,      // Observed time to death without progression
+  array[] int ms_censored_02,  // Censoring indicator for 0→2
+  array[] int ms_censored_12,  // Censoring indicator for 1→2
+  array[] int ms_time_12,      // Observed time to post-progression death (sojourn)
+  array[] int ms_os_event_12,  // Exact death calendar week for observed 1→2 deaths (0 if censored)
+  array[] int ms_time_03,      // Calendar week of dropout (= patient_max_t; 1-indexed)
+  array[] int ms_time_32,      // Observed sojourn from dropout to death (0 if not observed)
+  array[] int ms_censored_32,  // Censoring indicator for 3→2
+  array[] int patient_visit_pos,
+  array[] int forecast_visits_pos,
+  array[] int patient_last_obs_visit,
+  int last_predict_visit,
+  array[] int t_patient_visits,
+  int max_all_t,
+  array[] int n_patient_screening_visits,
+  int enable_ms_visit_gated_01,          // 1 = use sample_at_visits_rng for 0->1
+  real tv_coef_01_val,                   // time_varying_coef_01[1] (0.0 if not visit-gated)
+  vector forecast_obs_log_psa,           // flat forecast log PSA at obs visits (zero-sized if not visit-gated)
+  real median_log_psa_obs,               // PSA normalisation centre (0.0 if not visit-gated)
+  real iqr_log_psa_obs                   // PSA normalisation scale (0.0 if not visit-gated)
+) {
+  // Illness-death model states:
+  //   0 = alive without progression
+  //   1 = alive with progression (post-progression)
+  //   2 = dead
+  //   3 = dropout (off-trial)
+  // Transitions: 0→1 (progression), 0→2 (direct death), 1→2 (post-progression death),
+  //              0→3 (dropout), 3→2 (off-trial death)
+  //
+  // Key data conventions:
+  //   pfs[i]         = detection week (1-indexed; week progression was detected)
+  //                     for censored patients: pfs = patient_max_t
+  //   ms_time_02[i]  = death_week for observed 0→2 deaths (1-indexed, exact)
+  //   ms_time_12[i]  = sojourn time post-progression:
+  //                     observed death: death_week - detection_week (exact sojourn)
+  //                     censored alive: patient_max_t - detection_week (observed sojourn survival)
+  //                     never progressed: 0
+  //   ms_time_03[i]  = calendar dropout week (1-indexed, patient_max_t for dropout patients)
+  //   ms_time_32[i]  = sojourn from dropout to off-trial death (0 if not observed)
+
+  int n_patients = size(patient_idx);  // HMC patients only
+  int n_target_right_censored_patients = sum(target_right_censored[patient_idx]);
+
+  // Progression category constants (compatible with both RECIST and PCWG3)
+  int CR = 1; int PR = 2; int SD = 3; int PD = 4;
+
+  // Initialize output arrays
+  array[n_patients] int sample_target_pfs;
+  array[n_patients] int sample_target_right_censored;
+  array[n_patients] int spop_target_pfs;
+  array[n_patients] int spop_target_right_censored;
+  array[n_patients] int spop_target_obs_cens_pfs;
+  array[n_patients] int spop_target_obs_cens_right_censored;
+  array[n_patients] int sample_target_confirmed_response;
+  array[n_patients] int sample_target_unconfirmed_response;
+  array[n_patients] int spop_target_confirmed_response;
+  array[n_patients] int spop_target_unconfirmed_response;
+  array[n_target_right_censored_patients] int forecast_target_pfs;
+  array[n_target_right_censored_patients] int forecast_target_right_censored;
+
+  // Multistate PFS
+  array[n_patients] int sample_ms_pfs;
+  array[n_patients] int sample_ms_right_censored;
+  array[n_patients] int spop_ms_pfs;
+  array[n_patients] int spop_ms_right_censored;
+
+  // Combined PFS (minimum of target and other events)
+  array[n_patients] int sample_pfs;
+  array[n_patients] int sample_right_censored;
+  array[n_patients] int spop_pfs;
+  array[n_patients] int spop_right_censored;
+
+  // OS (overall survival)
+  array[n_patients] int sample_os;
+  array[n_patients] int sample_os_censored;
+  array[n_patients] int spop_os;
+  array[n_patients] int spop_os_censored;
+
+  // Dropout flags (1 if patient exited via cause 3; used for CIF computation)
+  array[n_patients] int spop_is_dropout;
+  array[n_patients] int sample_is_dropout;
+  array[n_patients] int spop_dropout_week = zeros_int_array(n_patients);
+  array[n_patients] int sample_prog_pfs = zeros_int_array(n_patients);
+  array[n_patients] int sample_prog_right_censored = rep_array(1, n_patients);
+
+  int right_censored_idx = 1;
+
+  // Process each patient
+  for (j in 1:n_patients) {
+    int p = patient_idx[j];  // unified patient index for data arrays
+    int visit_size = get_pos_size(patient_visit_pos, p);
+    int forecast_size = get_pos_size(forecast_visits_pos, p);
+    int n_obs_treat_visits = visit_size - n_patient_screening_visits[p];
+
+    int visit_start, screening_visit_end, treat_visit_start, visit_end;
+    (visit_start, screening_visit_end, treat_visit_start, visit_end) = get_visit_pos(
+      patient_visit_pos, p, n_patient_screening_visits[p]);
+
+    int forecast_visit_start, forecast_visit_end;
+    (forecast_visit_start, forecast_visit_end) = get_pos(forecast_visits_pos, p);
+
+    array[visit_size] int curr_visits = get_int_sub_array(t_patient_visits, patient_visit_pos, p);
+    array[n_obs_treat_visits] int treat_curr_visits = curr_visits[(n_patient_screening_visits[p] + 1):];
+
+    // Build assessment-visit forecast schedule
+    int n_assessment = get_pos_size(forecast_obs_visits_pos, p);
+    int assess_start, assess_end;
+    (assess_start, assess_end) = get_pos(forecast_obs_visits_pos, p);
+
+    // Assessment visit calendar weeks (subsampled from weekly grid)
+    array[n_assessment] int obs_visit_time;
+    for (a in 1:n_assessment) {
+      obs_visit_time[a] = min(patient_last_obs_visit[p] + a * forecast_observation_interval,
+                               last_predict_visit);
+    }
+
+    // Full assessment visit schedule for spop (unconditional):
+    // observed treatment visits + forecast assessment visits
+    int n_spop_visits = n_obs_treat_visits + n_assessment;
+    array[n_spop_visits] int spop_visit_weeks =
+      append_array(treat_curr_visits, obs_visit_time);
+
+    // Forecast observed-burden covariate for visit-gated 0->1 GQ sampling.
+    // PSA models populate this from forecast_obs_log_psa (standardized).
+    // Tumor models pass an empty vector here because they bake the latent
+    // burden contribution into log_cond_surv_01 directly (see latent VG path).
+    // Indexed 1..n_spop_visits, matching spop_visit_weeks.
+    // For observed visits (first n_obs_treat_visits), set to 0.0 — these weeks
+    // are behind pfs[p] for censored patients and get skipped by the conditional
+    // overload of sample_at_visits_rng (wk <= obs_time guard).
+    // For forecast assessment visits, use forecast_obs_log_psa normalised by
+    // (median_log_psa_obs, iqr_log_psa_obs) — same transform as training data.
+    vector[enable_ms_visit_gated_01 ? n_spop_visits : 0] spop_ms01_obs_covar;
+    if (enable_ms_visit_gated_01) {
+      for (a in 1:n_obs_treat_visits) {
+        spop_ms01_obs_covar[a] = 0.0;  // behind obs_time; skipped by conditional overload
+      }
+      for (a in 1:n_assessment) {
+        real log_psa_v = forecast_obs_log_psa[assess_start + a - 1];
+        spop_ms01_obs_covar[n_obs_treat_visits + a] =
+          (log_psa_v - median_log_psa_obs) / iqr_log_psa_obs;
+      }
+    }
+
+    // Assessment-visit forecast biomarker category for this patient
+    array[n_assessment] int patient_forecast_obs_cat =
+      forecast_obs_biomarker_category[assess_start:assess_end];
+
+    // Concatenate observed + assessment-visit forecast categories
+    array[n_obs_treat_visits] int patient_rep_cat = rep_biomarker_category[treat_visit_start:visit_end];
+    array[n_obs_treat_visits + n_assessment] int full_predict_cat =
+      append_array(patient_rep_cat, patient_forecast_obs_cat);
+
+    // Initialize response tracking variables
+    int sample_target_confirmed_response_week, sample_target_confirmed_response_censored;
+    int sample_target_unconfirmed_response_week, sample_target_unconfirmed_response_censored;
+    int spop_target_confirmed_response_week, spop_target_confirmed_response_censored;
+    int spop_target_unconfirmed_response_week, spop_target_unconfirmed_response_censored;
+
+    // Calculate posterior predictive target PFS (using assessment-visit biomarker categories)
+    (spop_target_pfs[j], spop_target_right_censored[j]) = find_first_week(
+      full_predict_cat, { PD }, 1, treat_curr_visits, obs_visit_time, max_all_t);
+
+    // Calculate response weeks for posterior predictive (always use full prediction)
+    (spop_target_confirmed_response_week, spop_target_confirmed_response_censored) = find_first_week(
+      full_predict_cat, { PR, CR }, 2, treat_curr_visits, obs_visit_time, max_all_t);
+
+    (spop_target_unconfirmed_response_week, spop_target_unconfirmed_response_censored) = find_first_week(
+      full_predict_cat, { PR, CR }, 1, treat_curr_visits, obs_visit_time, max_all_t);
+
+    // Handle right-censored patients with forecast
+    if (forecast_size > 0 && target_right_censored[p]) {
+      // Combine observed + assessment-visit forecast categories for sample outcomes
+      array[n_obs_treat_visits + n_assessment] int combined_cat =
+        append_array(biomarker_category[treat_visit_start:visit_end], patient_forecast_obs_cat);
+
+      (sample_target_pfs[j], sample_target_right_censored[j]) =
+        find_first_week(combined_cat, { PD }, 1, treat_curr_visits, obs_visit_time, max_all_t);
+
+      forecast_target_pfs[right_censored_idx] = sample_target_pfs[j];
+      forecast_target_right_censored[right_censored_idx] = sample_target_right_censored[j];
+
+      (sample_target_confirmed_response_week, sample_target_confirmed_response_censored) = find_first_week(
+        combined_cat, { PR, CR }, 2, treat_curr_visits, obs_visit_time, max_all_t);
+
+      (sample_target_unconfirmed_response_week, sample_target_unconfirmed_response_censored) = find_first_week(
+        combined_cat, { PR, CR }, 1, treat_curr_visits, obs_visit_time, max_all_t);
+
+      right_censored_idx += 1;
+    } else {
+      // Calculate sample target PFS from observed target-lesion data
+      // Use target_pfs (deterministic PFS from target lesions only) not overall pfs
+      sample_target_pfs[j] = target_pfs[p];
+      sample_target_right_censored[j] = target_right_censored[p];
+
+      (sample_target_confirmed_response_week, sample_target_confirmed_response_censored) = find_first_week(
+        biomarker_category[treat_visit_start:visit_end], { PR, CR }, 2, treat_curr_visits, obs_visit_time, max_all_t);
+
+      (sample_target_unconfirmed_response_week, sample_target_unconfirmed_response_censored) = find_first_week(
+        biomarker_category[treat_visit_start:visit_end], { PR, CR }, 1, treat_curr_visits, obs_visit_time, max_all_t);
+    }
+
+    // Calculate observed-censored posterior PFS
+    spop_target_obs_cens_right_censored[j] = target_right_censored[p];
+    spop_target_obs_cens_pfs[j] = target_right_censored[p] ? min(spop_target_pfs[j], target_pfs[p]) : spop_target_pfs[j];
+
+    // Calculate response indicators
+    sample_target_confirmed_response[j] = !sample_target_confirmed_response_censored && sample_target_confirmed_response_week < sample_target_pfs[j];
+    sample_target_unconfirmed_response[j] = !sample_target_unconfirmed_response_censored && sample_target_unconfirmed_response_week <= sample_target_pfs[j];
+
+    spop_target_confirmed_response[j] = !spop_target_confirmed_response_censored && spop_target_confirmed_response_week < spop_target_pfs[j];
+    spop_target_unconfirmed_response[j] = !spop_target_unconfirmed_response_censored && spop_target_unconfirmed_response_week <= spop_target_pfs[j];
+
+    // =========================================================================
+    // MULTISTATE PFS + OS: Classify-first competing-risks approach (Issue 79)
+    //
+    // Per-patient RNG call sequence (preserved for bitwise equivalence):
+    //   Step 1: assessment_gated_survival_time_rng  — sample ms01 (conditional)
+    //   Step 2: assessment_gated_survival_time_rng  — spop  ms01 (unconditional)
+    //   Step 3: survival_time_rng                   — spop  0→2  (if enable_ms_02)
+    //   Step 4: survival_time_rng                   — spop  0→3  (if enable_ms_03)
+    //   Step 5: derive_spop_os RNG                  — spop post-event death
+    //   Step 6: survival_time_rng                   — sample 0→2 (if enable_ms_02 && ms_censored)
+    //   Step 7: derive_sample_os RNG                — sample post-event death
+    // =========================================================================
+
+    // --- RNG Step 1: sample ms01 (conditional on observed data) ---
+    // In visit-gated mode, sample_at_visits_rng is used (one Bernoulli per visit,
+    // matching the likelihood's sum_at_visits_below pattern).
+    // In continuous mode, assessment_gated_survival_time_rng accumulates per-week hazard.
+    // Guard: ms_log_cond_surv is [0,0] when enable_ms_01=0 (e.g. simple survival).
+    if (rows(ms_log_cond_surv) > 0) {
+      if (ms_right_censored[p]) {
+        if (enable_ms_visit_gated_01) {
+          (sample_ms_pfs[j], sample_ms_right_censored[j]) = sample_at_visits_rng(
+              ms_log_cond_surv[j], spop_visit_weeks, max_all_t,
+              pfs[p], 1, spop_ms01_obs_covar, tv_coef_01_val);
+        } else {
+          (sample_ms_pfs[j], sample_ms_right_censored[j]) = assessment_gated_survival_time_rng(
+              ms_log_cond_surv[j], spop_visit_weeks, max_all_t, pfs[p], 1);
+        }
+      } else {
+        sample_ms_pfs[j] = pfs[p];
+        sample_ms_right_censored[j] = 0;
+      }
+    } else {
+      // No 0→1 transition — no progression possible, right-censored at horizon
+      sample_ms_pfs[j] = max_all_t;
+      sample_ms_right_censored[j] = 1;
+    }
+
+    // --- RNG Step 2: spop ms01 (unconditional) ---
+    // No +1: sampling functions return 1-indexed calendar week directly
+    // Guard: ms_log_cond_surv is [0,0] when enable_ms_01=0.
+    int t_ms01_spop; int c_ms01_spop;
+    if (rows(ms_log_cond_surv) > 0) {
+      if (enable_ms_visit_gated_01) {
+        (t_ms01_spop, c_ms01_spop) = sample_at_visits_rng(
+            ms_log_cond_surv[j], spop_visit_weeks, max_all_t,
+            spop_ms01_obs_covar, tv_coef_01_val);
+      } else {
+        (t_ms01_spop, c_ms01_spop) = assessment_gated_survival_time_rng(
+            ms_log_cond_surv[j], spop_visit_weeks, max_all_t);
+      }
+    } else {
+      t_ms01_spop = max_all_t;
+      c_ms01_spop = 1;
+    }
+
+    // --- RNG Steps 3–4: spop 0→2 and 0→3 competing risks ---
+    int spop_time_02 = max_all_t + 1; int spop_cens_02 = 1;
+    if (enable_ms_02) {
+      int t02_raw; int c02_raw;
+      (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[j]);
+      spop_time_02 = t02_raw + 1;  // Convert to 1-indexed week
+      spop_cens_02 = c02_raw;
+    }
+
+    int spop_time_03 = max_all_t + 1; int spop_cens_03 = 1;
+    if (enable_ms_03) {
+      // Visit-only sampling: dropout can only occur AT visits, not between them.
+      // Matches the likelihood's sum_03_at_visits_below() which evaluates one
+      // log_cond_surv_03 term per visit week.
+      (spop_time_03, spop_cens_03) = visit_only_survival_time_rng(
+          log_cond_surv_03[j], spop_visit_weeks, max_all_t);
+    }
+
+    // --- Classify and derive spop PFS atomically (no RNG) ---
+    int t_01_spop = min(spop_target_pfs[j], t_ms01_spop);
+    int c_01_spop = spop_target_right_censored[j] && c_ms01_spop;
+    int spop_cause; int spop_exit;
+    (spop_cause, spop_exit) = classify_spop_exit(
+        t_01_spop, c_01_spop,
+        spop_time_02, spop_cens_02,
+        spop_time_03, spop_cens_03,
+        enable_ms_02, enable_ms_03);
+
+    spop_is_dropout[j] = (spop_cause == 3);
+
+    // Retain the pre-graft cause-3 exit week so the 3->2 sojourn KM can be
+    // recovered downstream after the PFS-from-OS graft overwrites spop_pfs.
+    if (spop_cause == 3) spop_dropout_week[j] = spop_time_03;
+
+    // --- RNG Step 5: spop OS (drawn BEFORE the PFS derivation so a 0->3
+    //     dropout's PFS can reuse the OS outcome — see graft below) ---
+    // derive_spop_os_rng depends only on spop_cause, spop_exit, and the survival
+    // rows (all computed above) and is the only RNG step here; moving it before
+    // the RNG-free derive_spop_pfs does not perturb the RNG stream.
+    // Guard: sojourn matrix is [0,0] when ms_time_scale_12==0 (Markov-only)
+    row_vector[cols(log_cond_surv_12_s)] surv_12_s_i =
+      rows(log_cond_surv_12_s) > 0 ? log_cond_surv_12_s[j] : rep_row_vector(0, 0);
+    // Guard: clock-forward matrix is [0,0] when ms_time_scale_12==1 (semi-Markov)
+    row_vector[cols(log_cond_surv_12_t)] surv_12_t_i =
+      cols(log_cond_surv_12_t) > 0 ? log_cond_surv_12_t[j] : rep_row_vector(0, 0);
+    // Guard: log_cond_surv_32 is matrix[0,0] when enable_ms_32=0
+    row_vector[cols(log_cond_surv_32)] surv_32_i =
+      rows(log_cond_surv_32) > 0 ? log_cond_surv_32[j] : rep_row_vector(0, 0);
+    (spop_os[j], spop_os_censored[j]) = derive_spop_os_rng(
+        spop_cause, spop_exit,
+        enable_ms_12, enable_ms_32, ms_time_scale_12,
+        surv_12_s_i, surv_12_t_i,
+        surv_32_i,
+        t_01_spop, spop_time_02, spop_time_03);
+
+    // --- Classify and derive spop PFS atomically (no RNG) ---
+    (spop_pfs[j], spop_right_censored[j], spop_ms_pfs[j], spop_ms_right_censored[j]) =
+        derive_spop_pfs(spop_cause, spop_exit,
+                        spop_target_pfs[j], spop_target_right_censored[j],
+                        t_ms01_spop, c_ms01_spop,
+                        spop_time_03,
+                        enable_ms_02, enable_ms_03);
+
+    // PFS-from-OS convention for dropouts: a 0->3 patient's PFS is its OS
+    // outcome — event at the 3->2 death week if death occurs in-window, else
+    // censored at the forecast horizon. Reuses spop_os so PFS == OS by
+    // construction (preserves PFS <= OS). See spec 2026-05-30.
+    if (spop_cause == 3) {
+      spop_pfs[j]               = spop_os[j];
+      spop_right_censored[j]    = spop_os_censored[j];
+      spop_ms_pfs[j]            = spop_os[j];
+      spop_ms_right_censored[j] = spop_os_censored[j];
+    }
+
+    // --- RNG Step 6: sample 0→2 (use observed data if available) ---
+    int sample_time_02 = max_all_t + 1; int sample_cens_02 = 1;
+    if (enable_ms_02) {
+      if (!ms_censored_02[p]) {
+        // Death without progression was observed (death_week is exact, 1-indexed)
+        sample_time_02 = ms_time_02[p];
+        sample_cens_02 = 0;
+      } else {
+        // Censored for 0→2: forecast from observed time
+        int t02_raw; int c02_raw;
+        (t02_raw, c02_raw) = survival_time_rng(log_cond_surv_02[j], pfs[p], 1, 0);
+        sample_time_02 = t02_raw + 1;
+        sample_cens_02 = c02_raw;
+      }
+    }
+
+    // --- RNG Step 6b: sample 0→3 (use observed data or forecast) ---
+    int sample_time_03 = max_all_t + 1; int sample_cens_03 = 1;
+    if (enable_ms_03) {
+      if (ms_final_state[p] == 3) {
+        // Observed dropout — use ground truth
+        sample_time_03 = ms_time_03[p]; sample_cens_03 = 0;
+      } else if (ms_final_state[p] == 0) {
+        // Admin-censored — forecast 0→3 from last observation
+        (sample_time_03, sample_cens_03) = visit_only_survival_time_rng(
+            log_cond_surv_03[j], spop_visit_weeks, max_all_t,
+            ms_time_03[p], 1);
+      }
+      // States 1, 2: event observed → dropout didn't happen; leave as (max_all_t+1, 1)
+    }
+
+    // --- Classify and derive sample PFS atomically (no RNG) ---
+    int sample_t01; int sample_c01;
+    if (!right_censored[p]) {
+      sample_t01 = pfs[p];
+      sample_c01 = 0;
+    } else {
+      sample_t01 = min(sample_target_pfs[j], sample_ms_pfs[j]);
+      sample_c01 = sample_target_right_censored[j] && sample_ms_right_censored[j];
+    }
+
+    int sample_cause; int sample_exit;
+    (sample_cause, sample_exit) = classify_sample_exit(
+        sample_t01, sample_c01,
+        sample_time_02, sample_cens_02,
+        sample_time_03, sample_cens_03,
+        ms_censored_02[p],
+        enable_ms_02, enable_ms_03);
+
+    sample_is_dropout[j] = (sample_cause == 3);
+
+    // Progression-only PFS for the OOS RECIST confusion matrix: the 0→1 event
+    // (target-lesion PD OR MS 0→1 hazard), excluding 0→2 death and 0→3 dropout.
+    // Captured here, before the death/dropout PFS-from-OS graft below, so it
+    // reflects radiographic progression only. PFS/OS endpoints are unaffected.
+    sample_prog_pfs[j]            = sample_t01;
+    sample_prog_right_censored[j] = sample_c01;
+
+    // --- RNG Step 7: sample OS (drawn BEFORE the PFS derivation so a 0->3
+    //     dropout's PFS can reuse the OS outcome — see graft below) ---
+    // derive_sample_os_rng depends only on sample_cause, sample_exit, the
+    // survival rows and observed-OS data (all computed above) and is the only
+    // RNG step here; moving it before the RNG-free derive_sample_pfs does not
+    // perturb the RNG stream. Mirrors the spop reorder (OS before PFS).
+    (sample_os[j], sample_os_censored[j]) = derive_sample_os_rng(
+        sample_cause, sample_exit,
+        enable_ms_12, enable_ms_32, ms_time_scale_12,
+        surv_12_s_i, surv_12_t_i,
+        surv_32_i,
+        sample_t01, sample_time_02,
+        pfs[p],
+        ms_censored_12[p], ms_time_12[p], ms_os_event_12[p],
+        ms_censored_32[p], sample_time_03, ms_time_32[p]);
+
+    (sample_pfs[j], sample_right_censored[j], sample_ms_pfs[j], sample_ms_right_censored[j]) =
+        derive_sample_pfs(sample_cause, sample_exit,
+                          sample_target_pfs[j], sample_target_right_censored[j],
+                          sample_ms_pfs[j], sample_ms_right_censored[j],
+                          sample_time_03,
+                          enable_ms_02, enable_ms_03);
+
+    // PFS-from-OS convention for sample-pathway dropouts (mirror of spop above):
+    // a 0->3 dropout's PFS is its OS outcome — honors the observed/forecast death
+    // as the PFS event week. Operational-PFS estimand (clinical-endpoints-spec
+    // line 52); preserves PFS <= OS by construction.
+    if (sample_cause == 3) {
+      sample_pfs[j]               = sample_os[j];
+      sample_right_censored[j]    = sample_os_censored[j];
+      sample_ms_pfs[j]            = sample_os[j];
+      sample_ms_right_censored[j] = sample_os_censored[j];
+    }
+  }
+
+  return (
+    sample_target_pfs,
+    sample_target_right_censored,
+    spop_target_pfs,
+    spop_target_right_censored,
+    spop_target_obs_cens_pfs,
+    spop_target_obs_cens_right_censored,
+    sample_ms_pfs,
+    sample_ms_right_censored,
+    spop_ms_pfs,
+    spop_ms_right_censored,
+    sample_pfs,
+    sample_right_censored,
+    spop_pfs,
+    spop_right_censored,
+    sample_target_confirmed_response,
+    sample_target_unconfirmed_response,
+    spop_target_confirmed_response,
+    spop_target_unconfirmed_response,
+    forecast_target_pfs,
+    forecast_target_right_censored,
+    sample_os,
+    sample_os_censored,
+    spop_os,
+    spop_os_censored,
+    spop_is_dropout,
+    sample_is_dropout,
+    spop_dropout_week,
+    sample_prog_pfs,
+    sample_prog_right_censored
+  );
+}
+
+/**
+ * Aggregate patient-level endpoints to trial-level metrics
+ * This function processes all trials at once, computing trial-level ORR, 
+ * Kaplan-Meier curves, median PFS, and PFS at specific timepoints.
+ * 
+ * @param sample_target_confirmed_response Sample confirmed response indicators
+ * @param spop_target_confirmed_response Posterior predictive confirmed response
+ * @param sample_target_pfs Sample PFS times
+ * @param sample_target_right_censored Sample censoring status
+ * @param spop_target_pfs Posterior predictive PFS times
+ * @param spop_target_right_censored Posterior predictive censoring status
+ * @param spop_target_obs_cens_pfs Observed-censored posterior PFS
+ * @param spop_target_obs_cens_right_censored Observed-censored posterior censoring
+ * @param trial_patient_pos Position array for trial patients
+ * @param max_all_t Maximum time for analysis
+ * @param pfs_timepoints PFS timepoints (in months)
+ * 
+ * @return Tuple containing:
+ *   - sample_target_orr: Sample ORR per trial
+ *   - spop_target_orr: Posterior predictive ORR per trial
+ *   - sample_target_km_est: Sample KM curves per trial
+ *   - spop_target_km_est: Posterior predictive KM curves per trial
+ *   - spop_target_obs_cens_km_est: Observed-censored posterior KM curves
+ *   - sample_target_median_pfs: Sample median PFS per trial
+ *   - spop_target_median_pfs: Posterior predictive median PFS per trial
+ *   - sample_target_median_pfs_exceeds_max: Indicator if sample median exceeds max_all_t per trial
+ *   - spop_target_median_pfs_exceeds_max: Indicator if spop median exceeds max_all_t per trial
+ *   - sample_target_pfs_n: Sample PFS-n per trial
+ *   - spop_target_pfs_n: Posterior predictive PFS-n per trial
+ */
+tuple(
+  vector,         // sample_target_orr [n_trials]
+  vector,         // spop_target_orr [n_trials]
+  array[] vector, // sample_target_km_est [n_trials][max_all_t + 1]
+  array[] vector, // spop_target_km_est [n_trials][max_all_t + 1]
+  array[] vector, // spop_target_obs_cens_km_est [n_trials][max_all_t + 1]
+  array[] vector, // sample_ms_pfs_km_est [n_trials][max_all_t + 1]
+  array[] vector, // spop_ms_pfs_km_est [n_trials][max_all_t + 1]
+  array[] vector, // sample_pfs_km_est [n_trials][max_all_t + 1]
+  array[] vector, // spop_pfs_km_est [n_trials][max_all_t + 1]
+  array[] vector, // sample_target_pfs_quant [n_trials][n_pfs_quantiles]
+  array[] vector, // spop_target_pfs_quant [n_trials][n_pfs_quantiles]
+  array[,] int,   // sample_target_pfs_quant_exceeds_max [n_trials, n_pfs_quantiles]
+  array[,] int,   // spop_target_pfs_quant_exceeds_max [n_trials, n_pfs_quantiles]
+  array[] vector, // sample_ms_pfs_quant [n_trials][n_pfs_quantiles]
+  array[] vector, // spop_ms_pfs_quant [n_trials][n_pfs_quantiles]
+  array[,] int,   // sample_ms_pfs_quant_exceeds_max [n_trials, n_pfs_quantiles]
+  array[,] int,   // spop_ms_pfs_quant_exceeds_max [n_trials, n_pfs_quantiles]
+  array[] vector, // sample_pfs_quant [n_trials][n_pfs_quantiles]
+  array[] vector, // spop_pfs_quant [n_trials][n_pfs_quantiles]
+  array[,] int,   // sample_pfs_quant_exceeds_max [n_trials, n_pfs_quantiles]
+  array[,] int,   // spop_pfs_quant_exceeds_max [n_trials, n_pfs_quantiles]
+  array[] vector, // sample_target_pfs_n [n_trials][n_pfs_timepoints]
+  array[] vector, // spop_target_pfs_n [n_trials][n_pfs_timepoints]
+  array[] vector, // sample_ms_pfs_n [n_trials][n_pfs_timepoints]
+  array[] vector, // spop_ms_pfs_n [n_trials][n_pfs_timepoints]
+  array[] vector, // sample_pfs_n [n_trials][n_pfs_timepoints]
+  array[] vector, // spop_pfs_n [n_trials][n_pfs_timepoints]
+  array[] vector, // sample_os_km_est [n_trials][max_all_t + 1]
+  array[] vector, // spop_os_km_est [n_trials][max_all_t + 1]
+  array[] vector, // sample_os_quant [n_trials][n_pfs_quantiles]
+  array[] vector, // spop_os_quant [n_trials][n_pfs_quantiles]
+  array[,] int,   // sample_os_quant_exceeds_max [n_trials, n_pfs_quantiles]
+  array[,] int,   // spop_os_quant_exceeds_max [n_trials, n_pfs_quantiles]
+  array[] vector, // sample_os_n [n_trials][n_pfs_timepoints]
+  array[] vector  // spop_os_n [n_trials][n_pfs_timepoints]
+) aggregate_trial_metrics(
+  array[] int sample_target_confirmed_response,
+  array[] int spop_target_confirmed_response,
+  array[] int sample_target_pfs,
+  array[] int sample_target_right_censored,
+  array[] int spop_target_pfs,
+  array[] int spop_target_right_censored,
+  array[] int spop_target_obs_cens_pfs,
+  array[] int spop_target_obs_cens_right_censored,
+  array[] int sample_ms_pfs,
+  array[] int sample_ms_right_censored,
+  array[] int spop_ms_pfs,
+  array[] int spop_ms_right_censored,
+  array[] int sample_pfs,
+  array[] int sample_right_censored,
+  array[] int spop_pfs,
+  array[] int spop_right_censored,
+  array[] int sample_os,
+  array[] int sample_os_censored,
+  array[] int spop_os,
+  array[] int spop_os_censored,
+  array[] int trial_patient_pos,
+  int max_all_t,
+  vector pfs_quantiles,
+  array[] int pfs_timepoints
+) {
+  int n_trials = size(trial_patient_pos) - 1;  // Position arrays have size n_groups + 1
+  int n_pfs_quantiles = num_elements(pfs_quantiles);
+  int n_pfs_timepoints = size(pfs_timepoints);
+  
+  // Initialize output arrays
+  vector[n_trials] sample_target_orr;
+  vector[n_trials] spop_target_orr;
+  array[n_trials] vector[max_all_t + 1] sample_target_km_est;
+  array[n_trials] vector[max_all_t + 1] spop_target_km_est;
+  array[n_trials] vector[max_all_t + 1] spop_target_obs_cens_km_est;
+  array[n_trials] vector[max_all_t + 1] sample_ms_pfs_km_est;
+  array[n_trials] vector[max_all_t + 1] spop_ms_pfs_km_est;
+  array[n_trials] vector[max_all_t + 1] sample_pfs_km_est;
+  array[n_trials] vector[max_all_t + 1] spop_pfs_km_est;
+  array[n_trials] vector[n_pfs_quantiles] sample_target_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+  array[n_trials] vector[n_pfs_quantiles] spop_target_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+  array[n_trials, n_pfs_quantiles] int sample_target_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+  array[n_trials, n_pfs_quantiles] int spop_target_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+  array[n_trials] vector[n_pfs_quantiles] sample_ms_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+  array[n_trials] vector[n_pfs_quantiles] spop_ms_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+  array[n_trials, n_pfs_quantiles] int sample_ms_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+  array[n_trials, n_pfs_quantiles] int spop_ms_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+  array[n_trials] vector[n_pfs_quantiles] sample_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+  array[n_trials] vector[n_pfs_quantiles] spop_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+  array[n_trials, n_pfs_quantiles] int sample_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+  array[n_trials, n_pfs_quantiles] int spop_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+  array[n_trials] vector[n_pfs_timepoints] sample_target_pfs_n;
+  array[n_trials] vector[n_pfs_timepoints] spop_target_pfs_n;
+  array[n_trials] vector[n_pfs_timepoints] sample_ms_pfs_n;
+  array[n_trials] vector[n_pfs_timepoints] spop_ms_pfs_n;
+  array[n_trials] vector[n_pfs_timepoints] sample_pfs_n;
+  array[n_trials] vector[n_pfs_timepoints] spop_pfs_n;
+  // OS aggregation arrays
+  array[n_trials] vector[max_all_t + 1] sample_os_km_est;
+  array[n_trials] vector[max_all_t + 1] spop_os_km_est;
+  array[n_trials] vector[n_pfs_quantiles] sample_os_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+  array[n_trials] vector[n_pfs_quantiles] spop_os_quant = rep_array(zeros_vector(n_pfs_quantiles), n_trials);
+  array[n_trials, n_pfs_quantiles] int sample_os_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+  array[n_trials, n_pfs_quantiles] int spop_os_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_trials);
+  array[n_trials] vector[n_pfs_timepoints] sample_os_n;
+  array[n_trials] vector[n_pfs_timepoints] spop_os_n;
+
+  // Process each trial
+  for (s in 1:n_trials) {
+    if (get_pos_size(trial_patient_pos, s) > 0) {
+      // Calculate ORR
+      sample_target_orr[s] = mean(get_int_sub_array(sample_target_confirmed_response, trial_patient_pos, s));
+      spop_target_orr[s] = mean(get_int_sub_array(spop_target_confirmed_response, trial_patient_pos, s));
+      
+      // Get trial patient data
+      array[get_pos_size(trial_patient_pos, s)] int curr_sample_pfs = 
+        get_int_sub_array(sample_target_pfs, trial_patient_pos, s);
+      array[get_pos_size(trial_patient_pos, s)] int curr_sample_right_censored = 
+        get_int_sub_array(sample_target_right_censored, trial_patient_pos, s);
+      
+      array[get_pos_size(trial_patient_pos, s)] int curr_spop_target_pfs = 
+        get_int_sub_array(spop_target_pfs, trial_patient_pos, s);
+      array[get_pos_size(trial_patient_pos, s)] int curr_spop_target_right_censored = 
+        get_int_sub_array(spop_target_right_censored, trial_patient_pos, s);
+      
+      // Estimate Kaplan-Meier curves
+      sample_target_km_est[s] = estimate_kaplan_meier(
+        curr_sample_pfs, curr_sample_right_censored, max_all_t).1;
+      
+      spop_target_km_est[s] = estimate_kaplan_meier(
+        curr_spop_target_pfs, curr_spop_target_right_censored, max_all_t, 0).1;
+      
+      spop_target_obs_cens_km_est[s] = estimate_kaplan_meier(
+        get_int_sub_array(spop_target_obs_cens_pfs, trial_patient_pos, s),
+        get_int_sub_array(spop_target_obs_cens_right_censored, trial_patient_pos, s),
+        max_all_t, 0).1;
+      
+      // Multistate KM estimates
+      sample_ms_pfs_km_est[s] = estimate_kaplan_meier(
+        get_int_sub_array(sample_ms_pfs, trial_patient_pos, s),
+        get_int_sub_array(sample_ms_right_censored, trial_patient_pos, s),
+        max_all_t, 0).1;
+
+      spop_ms_pfs_km_est[s] = estimate_kaplan_meier(
+        get_int_sub_array(spop_ms_pfs, trial_patient_pos, s),
+        get_int_sub_array(spop_ms_right_censored, trial_patient_pos, s),
+        max_all_t, 0).1;
+      
+      // Combined PFS KM estimates
+      sample_pfs_km_est[s] = estimate_kaplan_meier(
+        get_int_sub_array(sample_pfs, trial_patient_pos, s),
+        get_int_sub_array(sample_right_censored, trial_patient_pos, s),
+        max_all_t, 0).1;
+      
+      spop_pfs_km_est[s] = estimate_kaplan_meier(
+        get_int_sub_array(spop_pfs, trial_patient_pos, s),
+        get_int_sub_array(spop_right_censored, trial_patient_pos, s),
+        max_all_t, 0).1;
+      
+      // Calculate quantile PFS and capture exceeds_max indicators using vectorized function
+      (sample_target_pfs_quant[s], sample_target_pfs_quant_exceeds_max[s]) = 
+        km_quantiles(sample_target_km_est[s], pfs_quantiles);
+      (spop_target_pfs_quant[s], spop_target_pfs_quant_exceeds_max[s]) = 
+        km_quantiles(spop_target_km_est[s], pfs_quantiles);
+      (sample_ms_pfs_quant[s], sample_ms_pfs_quant_exceeds_max[s]) =
+        km_quantiles(sample_ms_pfs_km_est[s], pfs_quantiles);
+      (spop_ms_pfs_quant[s], spop_ms_pfs_quant_exceeds_max[s]) =
+        km_quantiles(spop_ms_pfs_km_est[s], pfs_quantiles);
+      (sample_pfs_quant[s], sample_pfs_quant_exceeds_max[s]) = 
+        km_quantiles(sample_pfs_km_est[s], pfs_quantiles);
+      (spop_pfs_quant[s], spop_pfs_quant_exceeds_max[s]) = 
+        km_quantiles(spop_pfs_km_est[s], pfs_quantiles);
+      
+      // Calculate PFS-n at specified timepoints
+      for (n in 1:n_pfs_timepoints) {
+        sample_target_pfs_n[s, n] = calc_km_pfs_n(sample_target_km_est[s], months_to_weeks(pfs_timepoints[n]));
+        spop_target_pfs_n[s, n] = calc_km_pfs_n(spop_target_km_est[s], months_to_weeks(pfs_timepoints[n]));
+        sample_ms_pfs_n[s, n] = calc_km_pfs_n(sample_ms_pfs_km_est[s], months_to_weeks(pfs_timepoints[n]));
+        spop_ms_pfs_n[s, n] = calc_km_pfs_n(spop_ms_pfs_km_est[s], months_to_weeks(pfs_timepoints[n]));
+        sample_pfs_n[s, n] = calc_km_pfs_n(sample_pfs_km_est[s], months_to_weeks(pfs_timepoints[n]));
+        spop_pfs_n[s, n] = calc_km_pfs_n(spop_pfs_km_est[s], months_to_weeks(pfs_timepoints[n]));
+      }
+
+      // OS KM estimates
+      sample_os_km_est[s] = estimate_kaplan_meier(
+        get_int_sub_array(sample_os, trial_patient_pos, s),
+        get_int_sub_array(sample_os_censored, trial_patient_pos, s),
+        max_all_t, 0).1;
+
+      spop_os_km_est[s] = estimate_kaplan_meier(
+        get_int_sub_array(spop_os, trial_patient_pos, s),
+        get_int_sub_array(spop_os_censored, trial_patient_pos, s),
+        max_all_t, 0).1;
+
+      // OS quantiles
+      (sample_os_quant[s], sample_os_quant_exceeds_max[s]) =
+        km_quantiles(sample_os_km_est[s], pfs_quantiles);
+      (spop_os_quant[s], spop_os_quant_exceeds_max[s]) =
+        km_quantiles(spop_os_km_est[s], pfs_quantiles);
+
+      // OS-n at specified timepoints
+      for (n in 1:n_pfs_timepoints) {
+        sample_os_n[s, n] = calc_km_pfs_n(sample_os_km_est[s], months_to_weeks(pfs_timepoints[n]));
+        spop_os_n[s, n] = calc_km_pfs_n(spop_os_km_est[s], months_to_weeks(pfs_timepoints[n]));
+      }
+    } else {
+      // Empty trial - set to zero
+      sample_target_orr[s] = 0;
+      spop_target_orr[s] = 0;
+      sample_target_km_est[s] = zeros_vector(max_all_t + 1);
+      spop_target_km_est[s] = zeros_vector(max_all_t + 1);
+      spop_target_obs_cens_km_est[s] = zeros_vector(max_all_t + 1);
+      sample_ms_pfs_km_est[s] = zeros_vector(max_all_t + 1);
+      spop_ms_pfs_km_est[s] = zeros_vector(max_all_t + 1);
+      sample_pfs_km_est[s] = zeros_vector(max_all_t + 1);
+      spop_pfs_km_est[s] = zeros_vector(max_all_t + 1);
+      sample_os_km_est[s] = zeros_vector(max_all_t + 1);
+      spop_os_km_est[s] = zeros_vector(max_all_t + 1);
+      sample_target_pfs_n[s] = zeros_vector(n_pfs_timepoints);
+      spop_target_pfs_n[s] = zeros_vector(n_pfs_timepoints);
+      sample_ms_pfs_n[s] = zeros_vector(n_pfs_timepoints);
+      spop_ms_pfs_n[s] = zeros_vector(n_pfs_timepoints);
+      sample_pfs_n[s] = zeros_vector(n_pfs_timepoints);
+      spop_pfs_n[s] = zeros_vector(n_pfs_timepoints);
+      sample_os_n[s] = zeros_vector(n_pfs_timepoints);
+      spop_os_n[s] = zeros_vector(n_pfs_timepoints);
+    }
+  }
+  
+  return (
+    sample_target_orr,
+    spop_target_orr,
+    sample_target_km_est,
+    spop_target_km_est,
+    spop_target_obs_cens_km_est,
+    sample_ms_pfs_km_est,
+    spop_ms_pfs_km_est,
+    sample_pfs_km_est,
+    spop_pfs_km_est,
+    sample_target_pfs_quant,
+    spop_target_pfs_quant,
+    sample_target_pfs_quant_exceeds_max,
+    spop_target_pfs_quant_exceeds_max,
+    sample_ms_pfs_quant,
+    spop_ms_pfs_quant,
+    sample_ms_pfs_quant_exceeds_max,
+    spop_ms_pfs_quant_exceeds_max,
+    sample_pfs_quant,
+    spop_pfs_quant,
+    sample_pfs_quant_exceeds_max,
+    spop_pfs_quant_exceeds_max,
+    sample_target_pfs_n,
+    spop_target_pfs_n,
+    sample_ms_pfs_n,
+    spop_ms_pfs_n,
+    sample_pfs_n,
+    spop_pfs_n,
+    sample_os_km_est,
+    spop_os_km_est,
+    sample_os_quant,
+    spop_os_quant,
+    sample_os_quant_exceeds_max,
+    spop_os_quant_exceeds_max,
+    sample_os_n,
+    spop_os_n
+  );
+}
+
+/**
+ * Aggregate patient-level endpoints to conditional group-level metrics
+ * This function processes all conditional groups at once, computing group-level ORR, 
+ * Kaplan-Meier curves, median PFS, and PFS at specific timepoints.
+ * 
+ * @param sample_target_confirmed_response Sample confirmed response indicators
+ * @param spop_target_confirmed_response Posterior predictive confirmed response
+ * @param sample_target_pfs Sample PFS times
+ * @param sample_target_right_censored Sample censoring status
+ * @param spop_target_pfs Posterior predictive PFS times
+ * @param spop_target_right_censored Posterior predictive censoring status
+ * @param spop_target_obs_cens_pfs Observed-censored posterior PFS
+ * @param spop_target_obs_cens_right_censored Observed-censored posterior censoring
+ * @param cond_group Conditional group patient indices
+ * @param cond_group_pos Position array for conditional group patients
+ * @param cond_group_size Size of each conditional group
+ * @param max_all_t Maximum time for analysis
+ * @param pfs_timepoints PFS timepoints (in months)
+ * 
+ * @return Tuple containing:
+ *   - cond_sample_target_orr: Sample ORR per group
+ *   - cond_spop_target_orr: Posterior predictive ORR per group
+ *   - cond_sample_target_km_est: Sample KM curves per group
+ *   - cond_spop_target_km_est: Posterior predictive KM curves per group
+ *   - cond_spop_target_obs_cens_km_est: Observed-censored posterior KM curves
+ *   - cond_sample_target_median_pfs: Sample median PFS per group
+ *   - cond_spop_target_median_pfs: Posterior predictive median PFS per group
+ *   - cond_sample_target_median_pfs_exceeds_max: Indicator if sample median exceeds max_all_t per group
+ *   - cond_spop_target_median_pfs_exceeds_max: Indicator if spop median exceeds max_all_t per group
+ *   - cond_sample_target_pfs_n: Sample PFS-n per group
+ *   - cond_spop_target_pfs_n: Posterior predictive PFS-n per group
+ */
+tuple(
+  vector,         // cond_sample_target_orr [n_cond_group]
+  vector,         // cond_spop_target_orr [n_cond_group]
+  array[] vector, // cond_sample_target_km_est [n_cond_group][max_all_t + 1]
+  array[] vector, // cond_spop_target_km_est [n_cond_group][max_all_t + 1]
+  array[] vector, // cond_spop_target_obs_cens_km_est [n_cond_group][max_all_t + 1]
+  array[] vector, // cond_sample_ms_pfs_km_est [n_cond_group][max_all_t + 1]
+  array[] vector, // cond_spop_ms_pfs_km_est [n_cond_group][max_all_t + 1]
+  array[] vector, // cond_sample_pfs_km_est [n_cond_group][max_all_t + 1]
+  array[] vector, // cond_spop_pfs_km_est [n_cond_group][max_all_t + 1]
+  array[] vector, // cond_sample_target_pfs_quant [n_cond_group][n_pfs_quantiles]
+  array[] vector, // cond_spop_target_pfs_quant [n_cond_group][n_pfs_quantiles]
+  array[,] int,   // cond_sample_target_pfs_quant_exceeds_max [n_cond_group, n_pfs_quantiles]
+  array[,] int,   // cond_spop_target_pfs_quant_exceeds_max [n_cond_group, n_pfs_quantiles]
+  array[] vector, // cond_sample_ms_pfs_quant [n_cond_group][n_pfs_quantiles]
+  array[] vector, // cond_spop_ms_pfs_quant [n_cond_group][n_pfs_quantiles]
+  array[,] int,   // cond_sample_ms_pfs_quant_exceeds_max [n_cond_group, n_pfs_quantiles]
+  array[,] int,   // cond_spop_ms_pfs_quant_exceeds_max [n_cond_group, n_pfs_quantiles]
+  array[] vector, // cond_sample_pfs_quant [n_cond_group][n_pfs_quantiles]
+  array[] vector, // cond_spop_pfs_quant [n_cond_group][n_pfs_quantiles]
+  array[,] int,   // cond_sample_pfs_quant_exceeds_max [n_cond_group, n_pfs_quantiles]
+  array[,] int,   // cond_spop_pfs_quant_exceeds_max [n_cond_group, n_pfs_quantiles]
+  array[] vector, // cond_sample_target_pfs_n [n_cond_group][n_pfs_timepoints]
+  array[] vector, // cond_spop_target_pfs_n [n_cond_group][n_pfs_timepoints]
+  array[] vector, // cond_sample_ms_pfs_n [n_cond_group][n_pfs_timepoints]
+  array[] vector, // cond_spop_ms_pfs_n [n_cond_group][n_pfs_timepoints]
+  array[] vector, // cond_sample_pfs_n [n_cond_group][n_pfs_timepoints]
+  array[] vector, // cond_spop_pfs_n [n_cond_group][n_pfs_timepoints]
+  array[] vector, // cond_sample_os_km_est [n_cond_group][max_all_t + 1]
+  array[] vector, // cond_spop_os_km_est [n_cond_group][max_all_t + 1]
+  array[] vector, // cond_sample_os_quant [n_cond_group][n_pfs_quantiles]
+  array[] vector, // cond_spop_os_quant [n_cond_group][n_pfs_quantiles]
+  array[,] int,   // cond_sample_os_quant_exceeds_max [n_cond_group, n_pfs_quantiles]
+  array[,] int,   // cond_spop_os_quant_exceeds_max [n_cond_group, n_pfs_quantiles]
+  array[] vector, // cond_sample_os_n [n_cond_group][n_pfs_timepoints]
+  array[] vector  // cond_spop_os_n [n_cond_group][n_pfs_timepoints]
+) aggregate_conditional_group_metrics(
+  array[] int sample_target_confirmed_response,
+  array[] int spop_target_confirmed_response,
+  array[] int sample_target_pfs,
+  array[] int sample_target_right_censored,
+  array[] int spop_target_pfs,
+  array[] int spop_target_right_censored,
+  array[] int spop_target_obs_cens_pfs,
+  array[] int spop_target_obs_cens_right_censored,
+  array[] int sample_ms_pfs,
+  array[] int sample_ms_right_censored,
+  array[] int spop_ms_pfs,
+  array[] int spop_ms_right_censored,
+  array[] int sample_pfs,
+  array[] int sample_right_censored,
+  array[] int spop_pfs,
+  array[] int spop_right_censored,
+  array[] int sample_os,
+  array[] int sample_os_censored,
+  array[] int spop_os,
+  array[] int spop_os_censored,
+  array[] int cond_group,
+  array[] int cond_group_pos,
+  int max_all_t,
+  vector pfs_quantiles,
+  array[] int pfs_timepoints
+) {
+  int n_cond_group = size(cond_group_pos) - 1;
+  int n_pfs_quantiles = num_elements(pfs_quantiles);
+  int n_pfs_timepoints = size(pfs_timepoints);
+  
+  // Initialize output arrays
+  vector[n_cond_group] cond_sample_target_orr = zeros_vector(n_cond_group);
+  vector[n_cond_group] cond_spop_target_orr = zeros_vector(n_cond_group);
+  array[n_cond_group] vector[max_all_t + 1] cond_sample_target_km_est;
+  array[n_cond_group] vector[max_all_t + 1] cond_spop_target_km_est;
+  array[n_cond_group] vector[max_all_t + 1] cond_spop_target_obs_cens_km_est;
+  array[n_cond_group] vector[max_all_t + 1] cond_sample_ms_pfs_km_est;
+  array[n_cond_group] vector[max_all_t + 1] cond_spop_ms_pfs_km_est;
+  array[n_cond_group] vector[max_all_t + 1] cond_sample_pfs_km_est;
+  array[n_cond_group] vector[max_all_t + 1] cond_spop_pfs_km_est;
+  array[n_cond_group] vector[n_pfs_quantiles] cond_sample_target_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group] vector[n_pfs_quantiles] cond_spop_target_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group, n_pfs_quantiles] int cond_sample_target_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group, n_pfs_quantiles] int cond_spop_target_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group] vector[n_pfs_quantiles] cond_sample_ms_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group] vector[n_pfs_quantiles] cond_spop_ms_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group, n_pfs_quantiles] int cond_sample_ms_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group, n_pfs_quantiles] int cond_spop_ms_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group] vector[n_pfs_quantiles] cond_sample_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group] vector[n_pfs_quantiles] cond_spop_pfs_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group, n_pfs_quantiles] int cond_sample_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group, n_pfs_quantiles] int cond_spop_pfs_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group] vector[n_pfs_timepoints] cond_sample_target_pfs_n;
+  array[n_cond_group] vector[n_pfs_timepoints] cond_spop_target_pfs_n;
+  array[n_cond_group] vector[n_pfs_timepoints] cond_sample_ms_pfs_n;
+  array[n_cond_group] vector[n_pfs_timepoints] cond_spop_ms_pfs_n;
+  array[n_cond_group] vector[n_pfs_timepoints] cond_sample_pfs_n;
+  array[n_cond_group] vector[n_pfs_timepoints] cond_spop_pfs_n;
+  // OS aggregation arrays
+  array[n_cond_group] vector[max_all_t + 1] cond_sample_os_km_est;
+  array[n_cond_group] vector[max_all_t + 1] cond_spop_os_km_est;
+  array[n_cond_group] vector[n_pfs_quantiles] cond_sample_os_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group] vector[n_pfs_quantiles] cond_spop_os_quant = rep_array(zeros_vector(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group, n_pfs_quantiles] int cond_sample_os_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group, n_pfs_quantiles] int cond_spop_os_quant_exceeds_max = rep_array(zeros_int_array(n_pfs_quantiles), n_cond_group);
+  array[n_cond_group] vector[n_pfs_timepoints] cond_sample_os_n;
+  array[n_cond_group] vector[n_pfs_timepoints] cond_spop_os_n;
+
+  // Process each conditional group
+  for (c in 1:n_cond_group) {
+    int curr_group_size = get_pos_size(cond_group_pos, c);
+    if (curr_group_size > 0) {
+      array[curr_group_size] int curr_group_patients = get_int_sub_array(cond_group, cond_group_pos, c);
+      
+      // Calculate ORR
+      cond_sample_target_orr[c] = mean(sample_target_confirmed_response[curr_group_patients]);
+      cond_spop_target_orr[c] = mean(spop_target_confirmed_response[curr_group_patients]);
+      
+      // Estimate Kaplan-Meier curves
+      cond_sample_target_km_est[c] = estimate_kaplan_meier(
+        sample_target_pfs[curr_group_patients],
+        sample_target_right_censored[curr_group_patients],
+        max_all_t, 0).1;
+      
+      cond_spop_target_km_est[c] = estimate_kaplan_meier(
+        spop_target_pfs[curr_group_patients],
+        spop_target_right_censored[curr_group_patients],
+        max_all_t, 0).1;
+      
+      cond_spop_target_obs_cens_km_est[c] = estimate_kaplan_meier(
+        spop_target_obs_cens_pfs[curr_group_patients],
+        spop_target_obs_cens_right_censored[curr_group_patients],
+        max_all_t, 0).1;
+      
+      // Multistate KM estimates
+      cond_sample_ms_pfs_km_est[c] = estimate_kaplan_meier(
+        sample_ms_pfs[curr_group_patients],
+        sample_ms_right_censored[curr_group_patients],
+        max_all_t, 0).1;
+
+      cond_spop_ms_pfs_km_est[c] = estimate_kaplan_meier(
+        spop_ms_pfs[curr_group_patients],
+        spop_ms_right_censored[curr_group_patients],
+        max_all_t, 0).1;
+      
+      // Combined PFS KM estimates
+      cond_sample_pfs_km_est[c] = estimate_kaplan_meier(
+        sample_pfs[curr_group_patients],
+        sample_right_censored[curr_group_patients],
+        max_all_t, 0).1;
+      
+      cond_spop_pfs_km_est[c] = estimate_kaplan_meier(
+        spop_pfs[curr_group_patients],
+        spop_right_censored[curr_group_patients],
+        max_all_t, 0).1;
+      
+      // Calculate quantile PFS and capture exceeds_max indicators using vectorized function
+      (cond_sample_target_pfs_quant[c], cond_sample_target_pfs_quant_exceeds_max[c]) = 
+        km_quantiles(cond_sample_target_km_est[c], pfs_quantiles);
+      (cond_spop_target_pfs_quant[c], cond_spop_target_pfs_quant_exceeds_max[c]) = 
+        km_quantiles(cond_spop_target_km_est[c], pfs_quantiles);
+      (cond_sample_ms_pfs_quant[c], cond_sample_ms_pfs_quant_exceeds_max[c]) =
+        km_quantiles(cond_sample_ms_pfs_km_est[c], pfs_quantiles);
+      (cond_spop_ms_pfs_quant[c], cond_spop_ms_pfs_quant_exceeds_max[c]) =
+        km_quantiles(cond_spop_ms_pfs_km_est[c], pfs_quantiles);
+      (cond_sample_pfs_quant[c], cond_sample_pfs_quant_exceeds_max[c]) = 
+        km_quantiles(cond_sample_pfs_km_est[c], pfs_quantiles);
+      (cond_spop_pfs_quant[c], cond_spop_pfs_quant_exceeds_max[c]) = 
+        km_quantiles(cond_spop_pfs_km_est[c], pfs_quantiles);
+      
+      // Calculate PFS-n at specified timepoints
+      for (n in 1:n_pfs_timepoints) {
+        cond_sample_target_pfs_n[c, n] = calc_km_pfs_n(cond_sample_target_km_est[c], months_to_weeks(pfs_timepoints[n]));
+        cond_spop_target_pfs_n[c, n] = calc_km_pfs_n(cond_spop_target_km_est[c], months_to_weeks(pfs_timepoints[n]));
+        cond_sample_ms_pfs_n[c, n] = calc_km_pfs_n(cond_sample_ms_pfs_km_est[c], months_to_weeks(pfs_timepoints[n]));
+        cond_spop_ms_pfs_n[c, n] = calc_km_pfs_n(cond_spop_ms_pfs_km_est[c], months_to_weeks(pfs_timepoints[n]));
+        cond_sample_pfs_n[c, n] = calc_km_pfs_n(cond_sample_pfs_km_est[c], months_to_weeks(pfs_timepoints[n]));
+        cond_spop_pfs_n[c, n] = calc_km_pfs_n(cond_spop_pfs_km_est[c], months_to_weeks(pfs_timepoints[n]));
+      }
+
+      // OS KM estimates
+      cond_sample_os_km_est[c] = estimate_kaplan_meier(
+        sample_os[curr_group_patients],
+        sample_os_censored[curr_group_patients],
+        max_all_t, 0).1;
+
+      cond_spop_os_km_est[c] = estimate_kaplan_meier(
+        spop_os[curr_group_patients],
+        spop_os_censored[curr_group_patients],
+        max_all_t, 0).1;
+
+      // OS quantiles
+      (cond_sample_os_quant[c], cond_sample_os_quant_exceeds_max[c]) =
+        km_quantiles(cond_sample_os_km_est[c], pfs_quantiles);
+      (cond_spop_os_quant[c], cond_spop_os_quant_exceeds_max[c]) =
+        km_quantiles(cond_spop_os_km_est[c], pfs_quantiles);
+
+      // OS-n at specified timepoints
+      for (n in 1:n_pfs_timepoints) {
+        cond_sample_os_n[c, n] = calc_km_pfs_n(cond_sample_os_km_est[c], months_to_weeks(pfs_timepoints[n]));
+        cond_spop_os_n[c, n] = calc_km_pfs_n(cond_spop_os_km_est[c], months_to_weeks(pfs_timepoints[n]));
+      }
+    } else {
+      // Empty group - set to zero
+      cond_sample_target_km_est[c] = zeros_vector(max_all_t + 1);
+      cond_spop_target_km_est[c] = zeros_vector(max_all_t + 1);
+      cond_spop_target_obs_cens_km_est[c] = zeros_vector(max_all_t + 1);
+      cond_sample_ms_pfs_km_est[c] = zeros_vector(max_all_t + 1);
+      cond_spop_ms_pfs_km_est[c] = zeros_vector(max_all_t + 1);
+      cond_sample_pfs_km_est[c] = zeros_vector(max_all_t + 1);
+      cond_spop_pfs_km_est[c] = zeros_vector(max_all_t + 1);
+      cond_sample_os_km_est[c] = zeros_vector(max_all_t + 1);
+      cond_spop_os_km_est[c] = zeros_vector(max_all_t + 1);
+      cond_sample_target_pfs_n[c] = zeros_vector(n_pfs_timepoints);
+      cond_spop_target_pfs_n[c] = zeros_vector(n_pfs_timepoints);
+      cond_sample_ms_pfs_n[c] = zeros_vector(n_pfs_timepoints);
+      cond_spop_ms_pfs_n[c] = zeros_vector(n_pfs_timepoints);
+      cond_sample_pfs_n[c] = zeros_vector(n_pfs_timepoints);
+      cond_spop_pfs_n[c] = zeros_vector(n_pfs_timepoints);
+      cond_sample_os_n[c] = zeros_vector(n_pfs_timepoints);
+      cond_spop_os_n[c] = zeros_vector(n_pfs_timepoints);
+    }
+  }
+  
+  return (
+    cond_sample_target_orr,
+    cond_spop_target_orr,
+    cond_sample_target_km_est,
+    cond_spop_target_km_est,
+    cond_spop_target_obs_cens_km_est,
+    cond_sample_ms_pfs_km_est,
+    cond_spop_ms_pfs_km_est,
+    cond_sample_pfs_km_est,
+    cond_spop_pfs_km_est,
+    cond_sample_target_pfs_quant,
+    cond_spop_target_pfs_quant,
+    cond_sample_target_pfs_quant_exceeds_max,
+    cond_spop_target_pfs_quant_exceeds_max,
+    cond_sample_ms_pfs_quant,
+    cond_spop_ms_pfs_quant,
+    cond_sample_ms_pfs_quant_exceeds_max,
+    cond_spop_ms_pfs_quant_exceeds_max,
+    cond_sample_pfs_quant,
+    cond_spop_pfs_quant,
+    cond_sample_pfs_quant_exceeds_max,
+    cond_spop_pfs_quant_exceeds_max,
+    cond_sample_target_pfs_n,
+    cond_spop_target_pfs_n,
+    cond_sample_ms_pfs_n,
+    cond_spop_ms_pfs_n,
+    cond_sample_pfs_n,
+    cond_spop_pfs_n,
+    cond_sample_os_km_est,
+    cond_spop_os_km_est,
+    cond_sample_os_quant,
+    cond_spop_os_quant,
+    cond_sample_os_quant_exceeds_max,
+    cond_spop_os_quant_exceeds_max,
+    cond_sample_os_n,
+    cond_spop_os_n
+  );
+}

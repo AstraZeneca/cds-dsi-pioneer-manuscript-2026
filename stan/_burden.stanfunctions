@@ -1,0 +1,85 @@
+// ============================================================================
+// SHARED BURDEN INTERFACE (PSA / SLD agnostic)
+// ============================================================================
+// Helpers operating on a generic "log burden" — log(absolute marker value)
+// where the marker is either tumor SLD (cm) or PSA (ng/mL). Both biomarkers
+// share the same shrinkage-fraction state representation:
+//   log(burden / baseline) = log_sum_exp(state_d, state_g)
+// so all downstream covariate machinery only needs the (baseline, median, iqr)
+// triple to standardize.
+//
+// Lives at top-level (stan/_burden.stanfunctions) — included by both
+// stan/tumor/sf-ssm-log-space.stan and stan/psa/pioneer.stan inside
+// their `functions {}` blocks, after the basic util/pos includes.
+
+/**
+ * Standardize log(burden) for use as a time-varying covariate.
+ *
+ * Converts a log(normalized burden) value — i.e. log(burden / baseline) from
+ * the two-component state — into a standardized absolute log(burden) suitable
+ * for the multistate hazard model.
+ *
+ * Caps log_burden_normalized at 10 (burden up to exp(10)x baseline ~ 22000x)
+ * to prevent the downstream log-hazard cap from binding during HMC warmup.
+ * Same numerical guard for both PSA and SLD: untreated growth excursions
+ * during early warmup can otherwise drive the linear predictor to extreme
+ * magnitudes and stall adaptation.
+ *
+ * @param log_burden_normalized  log(exp(state_d) + exp(state_g)) - ratio scale
+ * @param log_baseline_burden    log(baseline burden in marker units)
+ * @param median_log_burden_obs  Population median of log(absolute burden)
+ * @param iqr_log_burden_obs     Population IQR of log(absolute burden)
+ * @return Standardized log(burden) value
+ */
+real standardize_log_burden(real log_burden_normalized,
+                            real log_baseline_burden,
+                            real median_log_burden_obs,
+                            real iqr_log_burden_obs) {
+  real log_burden_abs = log_baseline_burden + fmin(log_burden_normalized, 10.0);
+  return (log_burden_abs - median_log_burden_obs) / iqr_log_burden_obs;
+}
+
+/**
+ * Standardize a velocity (rate of change of log-burden) for use as a
+ * time-varying covariate. Unlike standardize_log_burden there is NO cap:
+ * velocity inherits the level cap already applied to the trajectory it is
+ * differenced from, and capping velocity would silently force it to zero at
+ * the ceiling (consecutive capped values are equal), suppressing gradient
+ * information HMC needs. See the (level, velocity) coupling-basis spec §3.1.
+ *
+ * @param velocity_raw        Raw velocity (per-week d/dw of log-burden)
+ * @param median_velocity_obs Population median of observed per-week log-burden deltas
+ * @param iqr_velocity_obs    Population IQR of observed per-week log-burden deltas
+ * @return Standardized velocity
+ */
+real standardize_velocity(real velocity_raw,
+                          real median_velocity_obs,
+                          real iqr_velocity_obs) {
+  return (velocity_raw - median_velocity_obs) / iqr_velocity_obs;
+}
+
+/**
+ * Central-difference derivative of a log-burden trajectory sampled on a unit
+ * (weekly) grid. Forward difference at the first column, central in the
+ * interior, backward at the last column. For a single-column input the
+ * velocity is 0 (no neighbour to difference against).
+ *
+ * Central difference is algebraically identical to the analytic derivative of
+ * a quadratic at interior points, matching the Laplace surrogate's b1 + 2*b2*w.
+ *
+ * @param g  row vector of log-burden values g(w) on a unit grid
+ * @return row vector of velocities v(w), same length as g
+ */
+row_vector central_difference_row(row_vector g) {
+  int n = num_elements(g);
+  row_vector[n] v;
+  if (n == 1) {
+    v[1] = 0.0;
+    return v;
+  }
+  v[1] = g[2] - g[1];                       // forward
+  for (k in 2:(n - 1))
+    v[k] = (g[k + 1] - g[k - 1]) / 2.0;     // central
+  v[n] = g[n] - g[n - 1];                   // backward
+  return v;
+}

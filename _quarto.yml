@@ -1,0 +1,11 @@
+project:
+  title: "PIONEER"
+code-fold: true
+code-tools: true
+toc: true
+toc-location: left
+fig-caption-location: margin
+preview:
+  port: 4200
+  host: 0.0.0.0
+  browser: false

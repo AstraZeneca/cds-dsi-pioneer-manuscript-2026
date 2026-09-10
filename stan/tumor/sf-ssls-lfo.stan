@@ -1,0 +1,492 @@
+functions {
+  #include "util.stanfunctions"
+  #include "pos.stanfunctions"
+  #include "hierarchy.stanfunctions"
+  #include "full_model.stanfunctions"
+  #include "gp.stanfunctions"
+  #include "pfs.stanfunctions"
+  #include "lfo.stanfunctions"
+  #include "multistate.stanfunctions"
+  #include "_burden.stanfunctions"
+  #include "modules/state_space/sf.stanfunctions"
+  #include "modules/gr_decay/gr_decay.stanfunctions"
+  #include "modules/tumor/tumor.stanfunctions"
+  #include "modules/laplace_surrogate/surrogate.stanfunctions"
+}
+
+data {
+  #include "_hierarchy_data.stan"
+  #include "_visit_data.stan"
+  #include "_full_model_data.stan"
+  #include "modules/tumor/data.stan"
+  #include "modules/visits/data.stan"
+  #include "modules/tumor/hyperparams.stan"
+  #include "modules/state_space/data.stan"
+  #include "modules/multistate/flags.stan"
+  #include "modules/multistate/data.stan"
+  #include "modules/multistate/hyperparams.stan"
+  #include "modules/tr/hyperparams.stan"
+  #include "modules/frac/hyperparams.stan"
+  #include "modules/init/hyperparams.stan"
+  #include "modules/tr/flags.stan"
+  #include "modules/frac/flags.stan"
+  #include "modules/init/flags.stan"
+  #include "modules/gr_decay/flags.stan"
+  #include "modules/gr_decay/hyperparams.stan"
+
+  int<lower = 0, upper = 1> fit_multistate_data;
+
+  #include "modules/state_space/lfo_data.stan"
+  #include "modules/laplace_surrogate/flags.stan"
+  #include "modules/laplace_surrogate/data.stan"
+}
+
+transformed data {
+  print("cutoff_calendar_day = ", cutoff_calendar_day);
+
+  #include "_hierarchy_transformed_data.stan"
+  #include "_forecast_routing_transformed_data.stan"
+  int max_all_t = max(max(t_patient_visits) + 1, extend_max_all_t);
+  int<lower=0> max_t_width = max_all_t - min(t_patient_visits) + 1;
+  #include "_visit_transformed_data.stan"
+  // Tumor model has no inline TV-covariate populator.
+  int has_inline_tv_covar = 0;
+  #include "_full_model_transformed_data.stan"
+  #include "modules/visits/transformed_data.stan"
+  #include "modules/tumor/transformed_data.stan"
+  #include "modules/tr/transformed_data.stan"
+  #include "modules/frac/transformed_data.stan"
+  #include "modules/gr_decay/transformed_data.stan"
+  #include "modules/init/transformed_data.stan"
+  #include "modules/state_space/transformed_data.stan"
+  #include "modules/multistate/transformed_data.stan"
+  #include "_tumor_observed_covar_transformed_data.stan"
+  #include "_lfo_transformed_data.stan"
+  #include "modules/laplace_surrogate/transformed_data.stan"
+}
+
+parameters {
+  #include "modules/tumor/parameters.stan"
+  #include "modules/multistate/parameters.stan"
+  #include "modules/tr/parameters.stan"
+  #include "modules/frac/parameters.stan"
+  #include "modules/init/parameters.stan"
+  #include "modules/gr_decay/parameters.stan"
+}
+
+transformed parameters {
+  #include "modules/tr/transformed_parameters.stan"
+  #include "modules/frac/transformed_parameters.stan"
+  #include "modules/init/transformed_parameters.stan"
+  #include "modules/gr_decay/transformed_parameters.stan"
+  #include "modules/state_space/transformed_parameters.stan"
+  // (median_log_burden_obs / iqr_log_burden_obs are declared in transformed
+  // data via _tumor_observed_covar_transformed_data.stan — already in scope.)
+  vector[n_patients] log_baseline_burden = log_baseline_sld;
+  #include "_ms_burden_tv_covar.stan"
+  #include "modules/multistate/transformed_parameters.stan"
+  #include "_ms_burden_inline_tv_covar.stan"
+  #include "modules/multistate/cond_surv_transform.stan"
+}
+
+model {
+  #include "modules/tumor/priors.stan"
+  #include "modules/multistate/priors.stan"
+  #include "modules/tr/priors.stan"
+  #include "modules/frac/priors.stan"
+  #include "modules/init/priors.stan"
+  #include "modules/gr_decay/priors.stan"
+
+  if (fit_tumor_data) {
+    // --- LFO CV specific ---
+    for (j in 1:n_forecast_patients) {
+      int p = forecast_patient_idx[j];
+      if (cutoff_last_visit_idx[p] > 0) {
+        int data_start, data_end;
+        (data_start, data_end) = get_pos(patient_visit_pos, p);
+        int state_start, state_end;
+        (state_start, state_end) = get_pos(forecast_visit_pos, j);
+
+        int cutoff_data_idx = cutoff_last_visit_idx[p];
+        // cutoff_data_idx is a unified visit index; translate to forecast-local:
+        int cutoff_state_idx = state_start + (cutoff_data_idx - data_start);
+
+        normalized_sld[data_start:cutoff_data_idx] ~ sf_log_space_obs(states[state_start:cutoff_state_idx], measure_sd_sld, log_lod - log_baseline_sld[p]);
+      }
+    }
+
+    // Multistate likelihood contribution (cutoff-aware, ALL enabled transitions).
+    // Mirrors the full model (sf-ssm-log-space.stan:101) via multistate_lpmf,
+    // fed cutoff-censored lfo_ms_* arrays from recensor_ms_at_cutoff (issue #92).
+    // No propensity module here, so weights are all 1.0 (like the full tumor model).
+    //
+    // B2 GUARD: log_cond_surv_* are forecast-row-sized and indexed forecast-local.
+    // The publication LFO runs forecast_split_level == 0 (identity row map), so
+    // indexing by full patient IDs is correct. Background/forecast split (B2) must
+    // reconcile the row space before lifting this guard.
+    if (fit_multistate_data) {
+      if (forecast_split_level != 0)
+        fatal_error("sf-ssls-lfo all-transition MS likelihood requires ",
+                    "forecast_split_level == 0 (got ", forecast_split_level,
+                    "); background/forecast split (B2) not yet implemented.");
+
+      lfo_ms_final_state[forecast_patient_idx] ~ multistate(
+        ones_vector(n_forecast_patients),
+        enable_ms_01, enable_ms_02, enable_ms_12, ms_time_scale_12,
+        enable_ms_03, enable_ms_32,
+        lfo_ms_time_01[forecast_patient_idx], lfo_ms_time_02[forecast_patient_idx],
+        lfo_ms_time_12[forecast_patient_idx],
+        lfo_ms_time_03[forecast_patient_idx], lfo_ms_time_32[forecast_patient_idx],
+        lfo_ms_censored_01[forecast_patient_idx],
+        lfo_ms_prog_deterministic[forecast_patient_idx],
+        lfo_ms_ic_gap_01[forecast_patient_idx],
+        t_patient_visits,
+        patient_visit_pos,
+        log_cond_surv_01,
+        log_cond_surv_02,
+        log_cond_surv_12_s,
+        log_cond_surv_12_t,
+        log_cond_surv_03,
+        log_cond_surv_32,
+        enable_ms_visit_gated_01
+      );
+    }
+
+    #include "modules/laplace_surrogate/likelihood.stan"
+  }
+}
+
+generated quantities {
+  // Include comprehensive endpoints that integrate other events with target RECIST
+  #include "_lfo_endpoints_generated_quantities.stan"
+  
+  // Sentinel PD+1 not allowed by bound; assert below ensures no leakage
+  array[sum(n_patient_testing_visits)] int<lower = CR, upper = PD> oos_recist = rep_array(PD + 1, sum(n_patient_testing_visits));
+
+  // Per-patient static log-level for the combine function (mirrors the full
+  // model's generated_quantities.stan). Flag off OR no static patients -> -inf.
+  // init_log_static_patient is forecast-local (size n_forecast_patients); map to
+  // the unified patient index via forecast_patient_idx.
+  vector[n_patients] static_log_level_per_patient = rep_vector(negative_infinity(), n_patients);
+  if (enable_static_init) {
+    for (j in 1:n_forecast_patients) {
+      static_log_level_per_patient[forecast_patient_idx[j]] = init_log_static_patient[j];
+    }
+  }
+
+  // Per-patient kappa for the forecast path (mirror of static_log_level_per_patient).
+  // 0.0 sentinel => growth_warp(t,0)=t (no attenuation) when gr_decay is off.
+  vector[n_patients] gr_decay_kappa_per_patient = zeros_vector(n_patients);
+  if (enable_gr_decay) {
+    for (j in 1:n_forecast_patients) {
+      gr_decay_kappa_per_patient[forecast_patient_idx[j]] = gr_decay_kappa[j];
+    }
+  }
+
+  for (i in last_visit_calendar_day_sort_idx[testing_patient_idx[1]:]) {
+    int visit_start, visit_screening_end, visit_treat_pos, visit_end;
+    (visit_start, visit_screening_end, visit_treat_pos, visit_end) = get_visit_pos(patient_visit_pos, i, n_patient_screening_visits[i]);
+
+    int cutoff_idx = cutoff_last_visit_idx[i];
+    cutoff_idx = cutoff_idx > 0 ? cutoff_idx : visit_start;
+
+    int visit_size = cutoff_idx - visit_start + 1;
+    int treat_visit_size = max(0, cutoff_idx - visit_treat_pos + 1);
+    int start_idx = testing_start_idx[1, i];
+    // Only generate OOS predictions for patients who:
+    // 1) Have post-cutoff visits at the first cutoff (start_idx > 0), AND
+    // 2) Were observed before/at the cutoff (cutoff_observed_mask[i] == 1), AND
+    // 3) Belong to the eval trial (lfo_testing_patient_idx[i] > 0)
+    // Historical (non-eval-trial) patients are given full training history by C-EXT
+    // but must NOT fill oos_recist — n_patient_testing_visits[i]==0 for them, so
+    // testing_visit_pos has no slot allocated and get_pos() returns a degenerate range.
+    if (start_idx > 0 && cutoff_observed_mask[i] && lfo_testing_patient_idx[i] > 0) {
+      int n_oos_visits = visit_end - start_idx + 1; 
+    
+      array[n_oos_visits + 1] int forecast_time = get_int_sub_array(t_patient_visits, patient_visit_pos, i)[visit_size:];      
+      
+      // Extract observed visit indices for this patient
+      array[visit_size] int visit_indices = t_patient_visit_idx[visit_start:cutoff_idx];
+
+      // Extract observed states and compute forecast states
+      matrix[visit_size, 2] patient_states;
+      matrix[n_oos_visits, 2] forecast_patient_states;
+
+      if (enable_patient_process_noise_tr) {
+        // Process noise ON: Extract from dense grid computed in transformed_parameters
+        patient_states[, 1] = to_vector(states_full_grid[1][i, visit_indices]);
+        patient_states[, 2] = to_vector(states_full_grid[2][i, visit_indices]);
+
+        if (n_oos_visits > 0) {
+          forecast_patient_states[, 1] = to_vector(states_full_grid[1][i, forecast_time[2:]]);
+          forecast_patient_states[, 2] = to_vector(states_full_grid[2][i, forecast_time[2:]]);
+        }
+      } else {
+        // Process noise OFF: Use states directly and compute forecast on-the-fly
+        patient_states = states[visit_start:cutoff_idx];
+
+        if (n_oos_visits > 0) {
+          // Compute forecast states using constant rates
+          matrix[n_oos_visits + 1, 2] full_forecast_expected;  // Unused but required by tuple return
+          matrix[n_oos_visits + 1, 2] full_forecast;
+          real kappa_i = gr_decay_kappa_per_patient[i];
+          // Per-step Gompertz factor on the GROWTH rate only = exact phi-difference / dt,
+          // so the forecast telescopes to growth_rate*phi(t) and matches the in-sample branches.
+          // The warp clock is anchored at the patient's BASELINE week — the SAME origin the
+          // in-sample states use — so the forecast continues the decay reached at the cutoff.
+          // Anchoring at forecast_time[1] (the cutoff) instead would reset the clock and let
+          // the growth rate re-accelerate to near-full strength at forecast start.
+          real baseline_week = t_patient_visits[visit_start + n_patient_screening_visits[i] - 1];
+          vector[size(forecast_time)] tv_factor;
+          for (t in 1:size(forecast_time)) {
+            if (t == 1 || !enable_gr_decay) {
+              tv_factor[t] = 1.0;
+            } else {
+              real e_hi = forecast_time[t]     - baseline_week;
+              real e_lo = forecast_time[t - 1] - baseline_week;
+              real dphi = growth_warp(e_hi, kappa_i) - growth_warp(e_lo, kappa_i);
+              real dt   = forecast_time[t] - forecast_time[t - 1];
+              tv_factor[t] = dt > 0 ? dphi / dt : 1.0;
+            }
+          }
+          (full_forecast_expected, full_forecast) = sf_log_space_trajectory_ncp_decay(
+            patient_states[visit_size],
+            forecast_time,
+            exp(patient_log_decrease_rate[i, 1]),
+            exp(patient_log_growth_rate[i, 1]),
+            tv_factor,
+            rep_matrix(0.0, n_oos_visits, 2),
+            0
+          );
+          forecast_patient_states = full_forecast[2:];  // Skip anchor
+        }
+      }
+      
+      // Calculate replicated SLD for observed visits
+      vector[visit_size] rep_patient_log_sld = zeros_vector(visit_size);
+      rep_patient_log_sld[1] = log(sum_tumor_size[visit_start]);
+      if (visit_size > 1) {
+        rep_patient_log_sld[2:] = to_vector(normal_rng(
+          calc_log_burden_mean(patient_states[2:], sum_tumor_size[visit_start], static_log_level_per_patient[i]),
+          rep_vector(measure_sd_sld, visit_size - 1)
+        ));
+      }
+      
+      // Calculate mean log SLD (deterministic, no measurement noise)
+      vector[visit_size] rep_mean_patient_log_sld = 
+        calc_log_burden_mean(patient_states, sum_tumor_size[visit_start], static_log_level_per_patient[i]);
+      
+      // Calculate forecast SLD with measurement noise
+      vector[n_oos_visits] forecast_patient_log_sld = zeros_vector(n_oos_visits);
+      vector[n_oos_visits] forecast_mean_patient_log_sld = zeros_vector(n_oos_visits);
+      if (n_oos_visits > 0) {
+        forecast_mean_patient_log_sld = 
+          calc_log_burden_mean(forecast_patient_states, sum_tumor_size[visit_start], static_log_level_per_patient[i]);
+        forecast_patient_log_sld = to_vector(normal_rng(
+          forecast_mean_patient_log_sld,
+          rep_vector(measure_sd_sld, n_oos_visits)
+        ));
+      }
+
+      // calculate_target_recist returns RECIST for treatment visits only (screening dropped),
+      // so length(full_predict_recist) == treat_visit_size + n_oos_visits.
+      array[treat_visit_size + n_oos_visits] int full_predict_overall_recist = calculate_target_recist(
+        exp(append_row(rep_mean_patient_log_sld, forecast_mean_patient_log_sld)) * 10,
+        n_patient_screening_visits[i]
+      );
+      
+      // Check if there was already a PD in the in-sample (observed) period
+      // If so, all forecast visits must also be PD (overall RECIST remains PD once reached)
+      int had_insample_pd = treat_visit_size > 0 && full_predict_overall_recist[treat_visit_size] == PD;
+      
+      // Mark all forecast visits as PD if:
+      // 1) Patient had PD in the in-sample period (had_insample_pd == 1), OR
+      // 2) Other events cause PD in the forecast period
+      if (had_insample_pd) {
+        // All forecast visits are PD since patient already had PD before cutoff
+        full_predict_overall_recist[(treat_visit_size + 1):] = rep_array(PD, n_oos_visits);
+      } else {
+        // Integrate multistate PFS to mark RECIST as PD when multistate events cause progression
+        // Since we only process cutoff-observed patients (cutoff_observed_mask[i] == 1),
+        // we can always use the already-calculated sample_ms_pfs from _lfo_endpoints_generated_quantities.stan
+        int cutoff_patient_idx = patient_to_cutoff_idx[i];
+        // Confusion-matrix prediction uses PROGRESSION-ONLY PFS (0→1: target-lesion
+        // PD or MS 0→1 hazard). Death (0→2) and dropout (0→3) must NOT stamp PD here
+        // because the observed RECIST axis is scan-only and never records death as PD.
+        // PFS/OS endpoints continue to treat death as an event (unchanged).
+        int forecast_ms_pfs = sample_prog_pfs[cutoff_patient_idx];
+        int forecast_ms_censored = sample_prog_right_censored[cutoff_patient_idx];
+
+        if (!forecast_ms_censored) {
+          // Multistate PD occurs at week forecast_ms_pfs
+          // Find first forecast visit at or after multistate PFS
+          int forecast_ms_visit_idx = 1;
+          while (forecast_ms_visit_idx <= n_oos_visits && forecast_time[forecast_ms_visit_idx + 1] < forecast_ms_pfs) {
+            forecast_ms_visit_idx += 1;
+          }
+
+          // Mark all subsequent forecast visits as PD (from the first visit >= multistate PFS onward)
+          if (forecast_ms_visit_idx <= n_oos_visits) {
+            full_predict_overall_recist[(treat_visit_size + forecast_ms_visit_idx):] = rep_array(PD, n_oos_visits - forecast_ms_visit_idx + 1);
+          }
+        }
+      }
+
+      int oos_recist_start, oos_recist_end;
+      (oos_recist_start, oos_recist_end) = get_pos(testing_visit_pos, i);
+
+      // We write only the out-of-sample part: drop the in-sample treatment visits (treat_visit_size)
+      // and keep exactly n_oos_visits RECIST values.
+      if (n_patient_testing_visits[i] > 0) {
+        // Bounds/sanity checks for the per-patient OOS slice
+        assert_equal(oos_recist_end - oos_recist_start + 1, n_oos_visits);
+        oos_recist[oos_recist_start:oos_recist_end] = full_predict_overall_recist[(treat_visit_size + 1):];
+      }
+    }
+  }
+
+  // Separate tracking for interpretability
+  // Array dimensions are configurable:
+  //   - Exact LFO: max_n_rows=1, max_forecast_horizon=2 → [1, 2] arrays (minimal memory)
+  //   - PSIS LFO: max_n_rows=n_cutoffs, max_forecast_horizon=n_cutoffs → [n, n] arrays (for approximation)
+  array[max_n_rows, max_forecast_horizon] vector[n_all_testing_patients] patient_log_lik_tumor;   // P(SLD | tumor model)
+  array[max_n_rows, max_forecast_horizon] vector[n_all_testing_patients] patient_log_lik_oe;      // P(OE PFS | OE model)
+  array[max_n_rows, max_forecast_horizon] vector[n_all_testing_patients] patient_log_lik;         // P(SLD, OE PFS | joint model)
+
+  array[max_n_rows, max_forecast_horizon] matrix<lower = 0>[PD, PD] oos_recist_confusion_matrix; // rows = observed, cols = predicted
+
+  // Index usage notes:
+  //   start_idx = testing_start_idx[n, i] is first post-cutoff-n visit (0 if none yet)
+  //   end_idx   = testing_end_idx[n, m_abs+1, i] (inclusive) for horizon ending at cutoff m_abs (< n_cutoffs), else patient's last visit
+  //   first_start_idx = testing_start_idx[1, i] anchor for contiguous per-patient OOS slice
+  //   test_start_offset = start_idx - first_start_idx (>=0) positions current window inside that slice
+  //
+  // Loop bounds explanation:
+  //   - max_n_rows controls how many training cutoffs to compute (1 for exact LFO, n_cutoffs for PSIS)
+  //   - max_forecast_horizon controls the forecast window size (2 for exact LFO, n_cutoffs for PSIS)
+  //   - m_rel is the relative column index for array storage (1, 2, ...)
+  //   - m_abs is the absolute cutoff index for data access (n, n+1, ...)
+  // H3: Zero-initialize ALL array cells over the full [max_n_rows, max_forecast_horizon]
+  // range BEFORE the conditional fill. The fill loop below only writes cells with
+  // m_abs in [n, min(n + max_forecast_horizon - 1, n_cutoffs)]; at the global last
+  // cutoff (n_cutoffs == 1) only [.,1] is reached, leaving [.,2] uninitialized (NaN).
+  // Pre-zeroing every cell guarantees unreached cells are zeros, not NaN.
+  for (n in 1:max_n_rows) {
+    for (m_rel in 1:max_forecast_horizon) {
+      patient_log_lik_tumor[n, m_rel] = zeros_vector(n_all_testing_patients);
+      patient_log_lik_oe[n, m_rel] = zeros_vector(n_all_testing_patients);
+      patient_log_lik[n, m_rel] = zeros_vector(n_all_testing_patients);
+      oos_recist_confusion_matrix[n, m_rel] = rep_matrix(0, PD, PD);
+    }
+  }
+
+  for (n in 1:max_n_rows) {
+    int n_curr_patients = n_patients - testing_patient_idx[n] + 1; // How many patients after the current patient index
+    array[n_curr_patients] int curr_patients = last_visit_calendar_day_sort_idx[testing_patient_idx[n]:]; // Who are these patients
+
+    // Only compute for forecast window: m_abs in [n, min(n + max_forecast_horizon - 1, n_cutoffs)]
+    int m_end = min(n + max_forecast_horizon - 1, n_cutoffs);
+    for (m_abs in n:m_end) {
+      // m_rel is the relative column index for array storage (1-based: 1, 2, ...)
+      int m_rel = m_abs - n + 1;
+
+      for (i_idx in 1:n_curr_patients) {
+        // Note: i is the original patient ID (1-based index from input data), not a sort position.
+        // curr_patients contains original patient IDs that were reordered by sorting on last_visit_calendar_day
+        int i = curr_patients[i_idx];
+
+        int visit_start, visit_end, first_start_idx = testing_start_idx[1, i];
+        (visit_start, visit_end) = get_pos(patient_visit_pos, i);
+
+        int start_idx = testing_start_idx[n, i];
+        int end_idx = m_abs < n_cutoffs ? testing_end_idx[n, m_abs + 1, i] : visit_end;
+
+        // Only evaluate patients who:
+        // 1) Have post-cutoff visits (start_idx > 0 && end_idx >= start_idx)
+        // 2) Were observed before/at the cutoff (cutoff_observed_mask[i])
+        // 3) Have allocated OOS testing visits (n_patient_testing_visits[i] > 0)
+        // 4) Belong to the eval trial (lfo_testing_patient_idx[i] > 0)
+        // Non-eval-trial patients are excluded from the log-lik output vectors.
+        if (start_idx > 0 && end_idx >= start_idx && calendar_day[i] <= cutoff_calendar_day[n]
+            && cutoff_observed_mask[i] && n_patient_testing_visits[i] > 0
+            && lfo_testing_patient_idx[i] > 0) {
+          int patient_idx = lfo_testing_patient_idx[i];
+
+          // Component 1: Tumor model log-likelihood using observed SLD
+          real tumor_ll = sf_log_space_obs_lpdf(
+              normalized_sld[start_idx:end_idx] | states[start_idx:end_idx],
+              measure_sd_sld, log_lod - log_baseline_sld[i]);
+
+          patient_log_lik_tumor[n, m_rel, patient_idx] = tumor_ll;
+
+          // Component 2: Multistate model log-likelihood using ACTUAL observed PFS
+          // (not cutoff-censored - we want true OOS evaluation against real outcomes)
+          real ms_ll = 0;
+
+          if (enable_ms_01) {
+            // Get test window boundaries in weeks
+            int test_start_week = t_patient_visits[start_idx];
+            int test_end_week = t_patient_visits[end_idx];
+
+            // Use ACTUAL observed multistate PFS (not cutoff-censored)
+            // This ensures proper OOS evaluation against real outcomes.
+            // calc_pch_loglik expects last-surviving-week; mirror the fit-time
+            // convention (calc_ms_single_transition_loglik): for an observed
+            // 0→1 event, last_surv_week = detection_week - 1 (survived up to the
+            // week before detection); for a censored patient, last_surv_week =
+            // detection_week. Passing ms_time_01[i] directly was an off-by-one.
+            array[1] int obs_ms_time = {ms_censored_01[i] ? ms_time_01[i] : ms_time_01[i] - 1};
+            array[1] int obs_ms_censored = {ms_censored_01[i]};
+            array[1] int test_start = {test_start_week};
+            array[1] int test_end = {test_end_week};
+
+            // Extract single patient's survival probabilities as a 1-row matrix
+            matrix[1, max_all_t] patient_log_surv = log_cond_surv_01[i:i];
+
+            // Calculate log-likelihood using the same function as in model block
+            ms_ll = calc_pch_loglik(
+              obs_ms_time,
+              obs_ms_censored,
+              zeros_int_array(1), // no interval censoring
+              0, // ignore_interval_censoring
+              patient_log_surv,
+              test_start,
+              test_end
+            )[1]; // Extract single element from returned vector
+          }
+
+          patient_log_lik_oe[n, m_rel, patient_idx] = ms_ll;
+
+          // Joint log-likelihood: log P(SLD, OE PFS | θ) = log P(SLD | θ) + log P(OE PFS | θ)
+          patient_log_lik[n, m_rel, patient_idx] = tumor_ll + ms_ll;
+
+          // Below part is for OOS RECIST confusion matrix calculation
+
+          int oos_recist_start, oos_recist_end;
+          (oos_recist_start, oos_recist_end) = get_pos(testing_visit_pos, i);
+
+          int n_curr_testing_visits = end_idx - start_idx + 1;
+          int test_start_offset = start_idx - first_start_idx;
+          assert_greater_than_or_equal(test_start_offset, 0);
+
+          // The patient slice in oos_recist spans all OOS visits from the first cutoff:
+          assert_equal(oos_recist_start + n_patient_testing_visits[i] - 1, oos_recist_end);
+          // For current (n, m_abs) window, ensure we don't step past the end of that slice:
+          assert_greater_than_or_equal(oos_recist_end, oos_recist_start + test_start_offset + n_curr_testing_visits - 1);
+
+          for (t_idx in 1:n_curr_testing_visits) {
+            // Predicted RECIST must be within 1..PD
+            assert_less_or_equal(oos_recist[oos_recist_start + test_start_offset + t_idx - 1], PD);
+
+            int obs_val = recist[start_idx + t_idx - 1];
+            int pred_val = oos_recist[oos_recist_start + test_start_offset + t_idx - 1];
+
+            if (obs_val <= PD) { // Ignore first pre-screening visits that don't have a response yet
+              oos_recist_confusion_matrix[n, m_rel][obs_val, pred_val] += 1;
+            }
+          }
+        }
+      }
+    }
+  }
+}

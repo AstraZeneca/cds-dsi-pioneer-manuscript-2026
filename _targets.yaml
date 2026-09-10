@@ -1,0 +1,4 @@
+publication:
+  script: targets/publication_targets.R
+  store: !expr file.path("/mnt/data/analysis-results", Sys.getenv("DOMINO_STARTING_USERNAME"), "publication", Sys.getenv("TAR_RUN", "main"), "_targets")
+  as_job: no

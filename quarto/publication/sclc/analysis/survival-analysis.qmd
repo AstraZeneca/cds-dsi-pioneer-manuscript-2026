@@ -1,0 +1,96 @@
+---
+title: "Survival Analysis"
+subtitle: "Kaplan-Meier forecasts and observed PFS"
+execute:
+  freeze: true
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+source("_setup.R")
+km_data     <- pub_tar_read("all_tumor_ssls_km_rvar")
+obs_km_data <- pub_tar_read("km_trial_pfs") |>
+  filter(fct_match(btype, "ub")) |>
+  select(!quantiles) |>
+  unnest(km_data)
+```
+
+## PFS Kaplan-Meier Curves {#sec-pfs-km}
+
+::: {.callout-note collapse="false"}
+## Two estimands: sample-based vs superpopulation
+
+The two tabs answer different questions and are **not** expected to coincide:
+
+- **Sample-based** is a posterior-predictive check. Each enrolled patient is
+  re-simulated forward *conditional on having survived event-free up to their
+  last observed visit*. This is the curve to compare against the observed KM —
+  it tracks the data to within roughly ±0.02–0.04 across the follow-up window.
+
+- **Superpopulation** re-simulates the same cohort *unconditionally, from week 1*.
+  By discarding each patient's already-survived early follow-up, the cohort is
+  re-exposed to the high early-progression hazard window, so the curve sits
+  roughly 4–5 weeks to the left of the sample-based curve (largest separation,
+  ≈0.16–0.19, near week 24, closing to near-zero by week 60+). This is the
+  population-forecast estimand — the predicted PFS for the cohort *before*
+  observing any of its survival, not a fit to the realised data. Its
+  displacement from the observed KM is the mechanical signature of unconditional
+  re-simulation, not a misspecification.
+:::
+
+::: {.panel-tabset}
+
+### Sample-Based
+
+```{r}
+#| label: fig-pfs-km-sample
+#| fig-cap: Sample-based PFS KM (posterior) by trial. Shaded band shows 80% credible interval.
+#| fig-width: 10
+#| fig-height: 5
+
+km_data |>
+  filter(fit_type == "posterior") |>
+  plot_km(
+    km_est_var  = sample_pfs_km_est,
+    facet_col   = trial,
+    obs_km_data = obs_km_data
+  )
+```
+
+### Superpopulation
+
+```{r}
+#| label: fig-pfs-km-spop
+#| fig-cap: "Superpopulation PFS KM (posterior) by trial: the enrolled cohort re-simulated unconditionally from week 1 (the population-forecast estimand). It sits left of both the sample-based and observed curves by design — see the note above. Wider uncertainty reflects the unconditional re-simulation."
+#| fig-width: 10
+#| fig-height: 5
+
+km_data |>
+  filter(fit_type == "posterior") |>
+  plot_km(
+    km_est_var  = spop_pfs_km_est,
+    facet_col   = trial,
+    obs_km_data = obs_km_data
+  )
+```
+
+### Prior vs Posterior
+
+```{r}
+#| label: fig-pfs-km-prior-post
+#| fig-cap: Prior vs posterior PFS KM (sample-based) by trial.
+#| fig-width: 10
+#| fig-height: 5
+
+km_data |>
+  plot_km(
+    km_est_var  = sample_pfs_km_est,
+    facet_col   = trial,
+    group       = fit_type,
+    alpha_group = fit_type
+  )
+```
+
+:::

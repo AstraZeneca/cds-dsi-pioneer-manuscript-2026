@@ -1,0 +1,1023 @@
+#
+# This file contains functions for Leave-Future-Out (LFO) cross-validation,
+# model stacking, and various model evaluation metrics for survival analysis
+# and clinical trial data.}
+
+# nolint start: object_usage_linter
+
+get_trial_loo <- function(
+  res,
+  log_lik_var = "trial_log_lik",
+  moment_match = TRUE,
+  ...
+) {
+  res$loo(log_lik_var, moment_match = moment_match, save_psis = TRUE, ...)
+}
+
+#' Add Stacked Results to Existing Results Data
+#'
+#' This function combines multiple model results using stacking weights to create
+#' a new "stacked" model result. It adds this stacked result to the original data.
+#'
+#' @param res_data A data frame containing the original results data
+#' @param stacking_weights A data frame containing the stacking weights for each model
+#' @param ... Names of columns in res_data that contain the results to be stacked
+#' @param by A character vector specifying the columns to join by (default: c("model_type", "trial"))
+#'
+#' @return A data frame containing the original results plus the stacked results
+#'
+#' @details
+#' The function performs the following steps:
+#' 1. Joins the original results with the stacking weights.
+#' 2. Converts the weights to numeric values.
+#' 3. For each combination of fit_type and trial, it creates a new "stacked" model result
+#'    by combining the specified result columns using the stacking weights.
+#' 4. Adds these stacked results to the original data.
+#'
+#' The stacking is performed using a nested function `stack_draws`, which:
+#' - Allocates draws to each model based on its weight using `simplex_allocate`.
+#' - Resamples the draws for each model according to its allocation.
+#' - Combines the resampled draws into a single random variable (rvar).
+#'
+#' This approach ensures that the stacked result maintains the correct proportions
+#' of draws from each model as specified by the stacking weights.
+#'
+add_stacked_results <- function(
+  res_data,
+  stacking_weights,
+  ...,
+  by = c("model_type", "trial")
+) {
+  stack_draws <- function(rvs, simplex) {
+    map2(rvs, simplex_allocate(simplex, ndraws(rvs[1])), \(rv, n) {
+      resample_draws(rv, ndraws = n)
+    }) |>
+      map(\(d) as.vector(draws_of(d))) |>
+      purrr::flatten_dbl() |>
+      rvar()
+  }
+
+  inner_join(res_data, stacking_weights, by = by) |>
+    mutate(weight = as.numeric(weight)) %>%
+    bind_rows(
+      filter(., !is.na(weight)) |>
+        group_by(fit_type, trial) |>
+        summarize(
+          model_type = "stacked",
+          across(c(...), \(res) stack_draws(res, weight))
+        )
+    )
+}
+
+get_trial_c_index <- function(res, analysis_data = NULL) {
+  if (!is_null(analysis_data)) {
+    res <- recover_types(res, select(analysis_data, trial))
+  }
+
+  spread_rvars(res, trial_c_index[trial])
+}
+
+get_patient_pointwise_loo <- function(model_loo, stan_data) {
+  as_tibble(stan_data[c("patient", "patient_trial")]) |>
+    rename(trial = patient_trial) |>
+    mutate(
+      pareto_k_influence = loo::pareto_k_influence_values(model_loo),
+      imputed = row_number() %in% stan_data$imputed_patients,
+      elpd_loo = loo::pointwise(model_loo, "elpd_loo")
+    )
+}
+
+#' Allocate Integer Values Based on a Simplex
+#'
+#' This function takes a simplex (a vector of non-negative values that sum to 1)
+#' and a total integer value, and allocates the total across the simplex elements
+#' as integer values, maintaining the proportions as closely as possible.
+#'
+#' @param simplex A numeric vector representing a simplex (sum should be 1)
+#' @param total An integer representing the total to be allocated
+#'
+#' @return An integer vector of the same length as `simplex`, representing the allocation
+#'
+#' @details
+#' The function works as follows:
+#' 1. It first validates the inputs to ensure the simplex sums to 1 (within a small tolerance)
+#'    and that the total is an integer.
+#' 2. It then performs an initial allocation by multiplying each simplex value by the total
+#'    and taking the floor of the result.
+#' 3. If there's any remainder after the initial allocation, it distributes the remaining
+#'    units one by one to the elements with the largest fractional parts.
+#'
+#' This approach ensures that the allocation is as close as possible to the proportions
+#' specified by the simplex, while still resulting in integer values that sum to the specified total.
+#'
+#' @examples
+#' simplex_allocate(c(0.3, 0.5, 0.2), 10)  # Returns c(3, 5, 2)
+#' simplex_allocate(c(0.33, 0.33, 0.34), 100)  # Returns c(33, 33, 34)
+#'
+simplex_allocate <- function(simplex, total) {
+  # Input validation
+  if (abs(sum(simplex) - 1) > 1e-5) {
+    stop("Input vector must sum to 1")
+  }
+  if (total %% 1 != 0) {
+    stop("total must be an integer")
+  }
+
+  # Initial allocation using floor after multiplication
+  raw_allocation <- simplex * total
+  initial_allocation <- floor(raw_allocation)
+
+  # Calculate remaining amount to distribute
+  remainder <- total - sum(initial_allocation)
+
+  if (remainder > 0) {
+    # Get fractional parts
+    fractional_parts <- raw_allocation - initial_allocation
+    # Get indices that would sort in descending order
+    sorted_indices <- order(fractional_parts, decreasing = TRUE)
+
+    # Only distribute up to the remainder amount
+    result <- initial_allocation
+    if (remainder > 0) {
+      result[sorted_indices[1:remainder]] <- result[sorted_indices[
+        1:remainder
+      ]] +
+        1
+    }
+    return(result)
+  } else {
+    return(initial_allocation)
+  }
+}
+
+get_loo_admin_brier_score <- function(res, loo_obj) {
+  res |>
+    spread_draws(trial_admin_brier_score[i, t]) |>
+    ungroup() |>
+    select(.draw, i, t, trial_admin_brier_score) |>
+    pivot_wider(
+      id_cols = c(.draw, t),
+      names_from = i,
+      values_from = trial_admin_brier_score
+    ) |>
+    select(!.draw) |>
+    nest(draws_matrix = !t) |>
+    transmute(
+      t,
+      mean_brier_score = map_dbl(draws_matrix, \(m) {
+        sum(loo::E_loo(as.matrix(m), loo_obj$psis_object, type = "mean")$value)
+      })
+    )
+}
+
+# LFO functions ######
+
+#' Generate Leave-Future-Out (LFO) Cutoff Days
+#'
+#' This function generates a sequence of cutoff dates and corresponding calendar days
+#' for Leave-Future-Out (LFO) cross-validation in time series or longitudinal data analysis.
+#'
+#' @param first_cutoff_date Date. The starting date for the cutoff sequence.
+#' @param last_date Date. The ending date for the cutoff sequence.
+#' @param first_cutoff_day_idx Numeric. The calendar day index corresponding to the first cutoff date.
+#' @param days_increment Numeric. The number of days between each cutoff.
+#'
+#' @return A tibble with columns:
+#'   \item{n}{Integer. Sequential number for each cutoff.}
+#'   \item{cutoff_date}{Date. The date of each cutoff.}
+#'   \item{cutoff_calendar_day}{Numeric. The calendar day index for each cutoff.}
+#'
+#' @details
+#' The function performs the following steps:
+#' 1. Calculates the number of cutoffs based on the time span and increment.
+#' 2. Generates a sequence of cutoff dates using the specified increment.
+#' 3. Calculates the corresponding calendar day index for each cutoff date.
+#'
+#' This is particularly useful for setting up Leave-Future-Out cross-validation
+#' in time-dependent analyses, such as clinical trials or longitudinal studies.
+#'
+get_lfo_cutoff_days <- function(
+  first_cutoff_date,
+  last_date,
+  first_cutoff_day_idx,
+  days_increment
+) {
+  len <- time_length(last_date - first_cutoff_date, unit = "days") %/%
+    days_increment +
+    1
+  n <- seq(len)
+
+  tibble(
+    n,
+    cutoff_date = accumulate(
+      n[-len],
+      \(prev, n) prev + days(days_increment),
+      .init = first_cutoff_date
+    ),
+    cutoff_calendar_day = first_cutoff_day_idx +
+      time_length(cutoff_date - first_cutoff_date, unit = "days"),
+  )
+}
+
+#' Locate the most recent sampling-run CSVs in an LFO fit directory
+#'
+#' Returns the 4 chain CSVs belonging to the latest `method = sample` run in
+#' `fit_dir`, excluding metric/profile sidecar files and any `generate_quantities`
+#' output. Used by the GQ-only LFO path to find valid `fitted_params` draws.
+#'
+#' @param fit_dir Directory containing one or more LFO sampling runs.
+#' @return Character vector of CSV paths (one per chain) for the newest run,
+#'   or `character(0)` if none are found.
+lfo_latest_sample_csvs <- function(fit_dir) {
+  if (!fs::dir_exists(fit_dir)) {
+    return(character(0))
+  }
+
+  csvs <- fs::dir_ls(fit_dir, glob = "*.csv", type = "file")
+  # Drop metric / profile sidecar files; keep only the per-chain sample CSVs,
+  # whose names embed a 12-digit run timestamp: <prefix>-<YYYYMMDDHHMM>-<chain>-<hash>.csv
+  csvs <- csvs |>
+    str_subset("_metric|profile", negate = TRUE) |>
+    str_subset(r"{-\d{12}-\d+-[^-/]+\.csv$}")
+
+  if (length(csvs) == 0) {
+    return(character(0))
+  }
+
+  # Pick the newest run by its embedded timestamp, then return its chain files.
+  run_ids <- str_extract(fs::path_file(csvs), r"{\d{12}}")
+  latest <- max(run_ids)
+  sort(csvs[run_ids == latest])
+}
+
+#' Perform Leave-Future-Out (LFO) Cross-Validation
+#'
+#' This function implements Leave-Future-Out cross-validation for time series or longitudinal data,
+#' particularly useful for Bayesian models fit with Stan.
+#'
+#' @param stan_data List. The data to be passed to the Stan model.
+#' @param model Stan model object. The model to be fit.
+#' @param cutoffs Data frame. Contains the cutoff points for LFO, typically generated by `get_lfo_cutoff_days`.
+#' @param output_path String. Path where output files will be saved.
+#' @param basename String. Base name for output files.
+#' @param output_timestamp Logical. Whether to include a timestamp in output filenames (default: FALSE).
+#' @param refit_n Integer. The initial cutoff point to start fitting from (default: min(cutoffs$n)).
+#' @param k_threshold Numeric. Threshold for Pareto k statistic to determine when to refit (default: 0.7).
+#' @param lean Logical. If TRUE, return only essential columns in the results (default: FALSE).
+#' @param verbose Logical. If TRUE, print progress information (default: FALSE).
+#' @param exact Logical. If TRUE, refit at every time point regardless of k statistic (default: FALSE).
+#' @param fit_only Logical. If TRUE, only fit the model without computing LFO (default: FALSE).
+#' @param iter_warmup Integer. Number of warmup iterations for Stan (default: 300).
+#' @param iter_sampling Integer. Number of sampling iterations for Stan (default: 500).
+#' @param ... Additional arguments passed to `sample_and_save`.
+#'
+#' @return A data frame containing LFO results, including log-likelihood and Pareto k statistics.
+#'
+#' @details
+#' The function performs the following steps:
+#' 1. Fits the model using the provided data and cutoffs.
+#' 2. Computes LFO log-likelihood and Pareto k statistics.
+#' 3. Determines if refitting is necessary based on the k statistic and threshold.
+#' 4. Recursively calls itself with updated cutoffs if refitting is needed.
+#'
+#' This implementation allows for adaptive refitting, where the model is only refit
+#' when the approximation quality (as measured by the Pareto k statistic) degrades.
+#'
+lfo <- function(
+  stan_data,
+  exe_file,
+  cutoffs,
+  all_cutoffs,
+  output_path,
+  basename,
+  initializer,
+  output_timestamp = FALSE,
+  refit_n = min(cutoffs$n),
+  k_threshold = 0.7,
+  lean = FALSE,
+  verbose = FALSE,
+  exact = FALSE,
+  fit_only = FALSE,
+  iter_warmup = 300,
+  iter_sampling = 500,
+  save_warmup = FALSE,
+  parallel_chains = 4,
+  adapt_delta = 0.9,
+  future_window = 1,
+  initializer_factory = NULL,
+  gq_only = FALSE,
+  gq_source_path = NULL,
+  ...
+) {
+  if (verbose) {
+    cat("Starting on:\n")
+    print(cutoffs)
+    cat("\n")
+  }
+
+  remaining_cutoffs <- cutoffs |> filter(n >= refit_n)
+  remaining_all_cutoffs <- all_cutoffs |> filter(n >= refit_n)
+
+  fit_output_dir <- file.path(
+    output_path,
+    "fit",
+    str_glue("{basename}-{refit_n}")
+  )
+
+  # If initializer_factory is provided, create a new initializer for this cutoff
+  # with the correct save directory. Otherwise use the provided initializer.
+  if (!is.null(initializer_factory)) {
+    initializer <- initializer_factory(
+      stan_data = stan_data,
+      save_dir = fit_output_dir,
+      run_id = output_timestamp
+    )
+  }
+
+  # Determine array dimensions based on LFO mode
+  # exact = TRUE: Only need n=1 and m ∈ {1, 2} (minimal memory)
+  # exact = FALSE: Need full matrix for PSIS approximation
+  n_cutoffs <- nrow(remaining_all_cutoffs)
+  if (exact) {
+    max_n_rows <- 1L
+    max_forecast_horizon <- future_window
+  } else {
+    max_n_rows <- n_cutoffs
+    max_forecast_horizon <- n_cutoffs
+  }
+
+  lfo_stan_data <- stan_data |>
+    list_assign(
+      cutoff_calendar_day = as.array(remaining_all_cutoffs$cutoff_calendar_day),
+      n_cutoffs = n_cutoffs,
+      max_n_rows = max_n_rows,
+      max_forecast_horizon = max_forecast_horizon,
+      lfo_eval_trial = stan_data$lfo_eval_trial %||% 1L
+    )
+
+  if (gq_only) {
+    # GQ-only rerun: re-execute the (updated) generated quantities block against
+    # the parameter draws from a prior sampling run, skipping warmup + sampling.
+    # The parameters block is unchanged, so the old sample CSVs are valid
+    # fitted_params. Source CSVs default to this branch's own fit dir, but a
+    # different store can be supplied via gq_source_path (e.g. reuse a prior
+    # run's draws with a freshly compiled binary).
+    source_dir <- file.path(
+      gq_source_path %||% output_path,
+      "fit",
+      str_glue("{basename}-{refit_n}")
+    )
+    source_csvs <- lfo_latest_sample_csvs(source_dir)
+    if (length(source_csvs) == 0) {
+      stop("gq_only: no sample CSVs found under '", source_dir, "'.")
+    }
+
+    prior_fit <- cmdstanr::as_cmdstan_fit(
+      source_csvs,
+      check_diagnostics = FALSE
+    )
+
+    # Write GQ output to a separate gq/ tree so it never collides with the
+    # source sample CSVs (which would confuse lfo_latest_sample_csvs on reruns).
+    gq_output_dir <- file.path(
+      output_path,
+      "gq",
+      str_glue("{basename}-{refit_n}")
+    )
+    fit <- generate_quantities_from_fit(
+      exe_file,
+      prior_fit,
+      lfo_stan_data,
+      output_dir = gq_output_dir,
+      parallel_chains = parallel_chains
+    )
+  } else {
+    fit <- lfo_stan_data %>%
+      sample_and_save(
+        exe_file,
+        .,
+        iter_warmup = iter_warmup,
+        iter_sampling = iter_sampling,
+        save_warmup = save_warmup,
+        parallel_chains = parallel_chains,
+        adapt_delta = adapt_delta,
+        init = initializer,
+        output_dir = fit_output_dir,
+        save_profiles = FALSE,
+        timestamp = output_timestamp,
+        ...
+      )
+  }
+
+  # Select only the needed log_lik variables for memory efficiency
+  draws <- select_draws(fit, matches("^patient.*log_lik"))
+
+  psis_results <- draws |>
+    lfo_log_lik(future_window = future_window, exact = exact) |>
+    mutate(across(c(n, m), \(x) x + refit_n - 1)) |>
+    left_join(
+      select(remaining_all_cutoffs, n, cutoff_date, cutoff_calendar_day),
+      by = "n"
+    ) |>
+    mutate(tar_group = first(cutoffs$tar_group %||% NA_integer_), refit_n)
+
+  if (fit_only) {
+    return(lst(fit, psis_results))
+  }
+
+  if (lean) {
+    psis_results <- psis_results |>
+      select(n, m, contains("E_"))
+  } else {
+    # Drop heavy draw matrix columns but keep fit and summary statistics
+    # This prevents memory from accumulating through recursive calls
+    psis_results <- psis_results |>
+      select(
+        n, m, refit_n, tar_group, cutoff_date, cutoff_calendar_day,
+        contains("E_"), k
+      ) |>
+      mutate(fit = if_else(n == refit_n, list(fit), list(NULL)))
+  }
+
+  next_cutoffs <- if (exact) {
+    remaining_cutoffs |> filter(n > refit_n)
+  } else {
+    psis_results |>
+      filter(!is.na(k) & k > k_threshold, n > refit_n) %>%
+      semi_join(remaining_cutoffs, ., by = "n")
+  }
+
+  if (verbose) {
+    cat("LFO results:\n")
+    print(select(psis_results, n, m, refit_n, k))
+    cat("\n")
+  }
+
+  if (nrow(next_cutoffs) > 0) {
+    next_results <- lfo(
+      stan_data,
+      exe_file,
+      cutoffs,
+      all_cutoffs,
+      output_path,
+      basename,
+      initializer,
+      output_timestamp,
+      refit_n = min(next_cutoffs$n),
+      k_threshold,
+      lean,
+      verbose,
+      exact,
+      fit_only,
+      iter_warmup,
+      iter_sampling,
+      save_warmup,
+      parallel_chains,
+      adapt_delta,
+      future_window,
+      initializer_factory = initializer_factory,
+      gq_only = gq_only,
+      gq_source_path = gq_source_path,
+      ...
+    )
+
+    return(bind_rows(psis_results, next_results))
+  } else {
+    return(psis_results)
+  }
+}
+
+lfo_drop_bad_approx <- function(lfo_res) {
+  lfo_res |>
+    group_by(n) %>%
+    filter(if (has_name(., "refit_n")) min_rank(refit_n) == n() else TRUE) |>
+    ungroup()
+}
+
+# more stable than log(sum(exp(x)))
+log_sum_exp <- function(x) {
+  max_x <- max(x)
+  max_x + log(sum(exp(x - max_x)))
+}
+
+# more stable than log(mean(exp(x)))
+log_mean_exp <- function(x) {
+  log_sum_exp(x) - log(length(x))
+}
+
+lfo_log_lik <- function(res, max_n = Inf, future_window = 1, exact = FALSE) {
+  res |>
+    spread_rvars(patient_log_lik[n, m, i]) |>
+    # Convert m from relative (array index) to absolute (cutoff index)
+    # Stan stores arrays as [n, m_rel] where m_rel = m_abs - n + 1
+    mutate(m = n + m - 1) |>
+    lfo_log_lik_rvar(max_n, future_window, exact = exact)
+}
+
+psis_resample <- function(l, w, recalc_full = FALSE) {
+  #, negative_only = TRUE) {
+  map2(l, w, function(ln, wn) {
+    if (!is_null(ln)) {
+      if (!is_null(wn)) {
+        plyr::aaply(ln, 2, \(lni) log_sum_exp(lni + wn * all(wn < 0)))
+      } else if (recalc_full) {
+        plyr::aaply(ln, 2, log_mean_exp)
+      }
+    }
+  })
+}
+
+#' Calculate Log-Likelihood for Leave-Future-Out (LFO) Cross-Validation
+#'
+#' This function processes log-likelihood values for Leave-Future-Out cross-validation,
+#' computing various statistics including PSIS (Pareto Smoothed Importance Sampling) estimates.
+#'
+#' @param log_lik_rvar A data frame containing log-likelihood values as random variables (rvars),
+#'        typically output from a Stan model. Expected columns include 'n', 'm', and various
+#'        'patient_log_lik' columns.
+#' @param max_n Integer. The maximum 'n' value to process (default: Inf).
+#' @param future_window Integer. The number of future time points to consider (default: 1).
+#'
+#' @return A data frame with processed log-likelihood values and related statistics, including:
+#'   \item{n}{Time index}
+#'   \item{mean_patient_log_lik}{Mean log-likelihood}
+#'   \item{psis_log_ratio}{PSIS estimates for log ratios}
+#'   \item{k}{Pareto k values}
+#'   \item{lwt}{PSIS weights}
+#'   \item{approx_E_patient_log_lik}{Approximated expected log-likelihood}
+#'   \item{E_patient_log_lik}{Expected log-likelihood}
+#'   ... and similar columns for PFS and CRCR specific log-likelihoods
+#'
+#' @details
+#' The function performs several steps:
+#' 1. Filters and groups the input data.
+#' 2. Calculates mean log-likelihoods and log ratios.
+#' 3. Computes PSIS estimates and related statistics (k values, weights).
+#' 4. Calculates approximated expected log-likelihoods using PSIS resampling.
+#' 5. Renames and reorganizes columns for clarity.
+#'
+#' This function is crucial for assessing model performance in a time-series context.
+#'
+lfo_log_lik_rvar <- function(log_lik_rvar, max_n = Inf, future_window = 1,
+                             exact = FALSE) {
+  base <- log_lik_rvar |>
+    filter(m >= n) |>
+    group_by(n, m) |>
+    summarize(
+      across(matches("^patient(_.+)?_log_lik"), \(l) list(draws_of(l))),
+      .groups = "drop"
+    ) |>
+    (function(d) {
+      inner_join(
+        filter(d, m == max(m)) |> select(!m), # From n to max(m), this is the out of sample loglik. For n = 1, that is the exact SAP.
+        filter(d, n == 1) |> select(!n), # From 1 to, this is the loglik for the additional periods of time that we want to PSIS to approximate.
+        # This is relevant to predicting the _next_ row down.
+        by = c("n" = "m"),
+        suffix = c("", "_log_ratio")
+      ) |>
+        # This add loglik columns for M-SAP, rather than the full SAP we get from the above join.
+        left_join(
+          # mutate(d, m = m - future_window + 1) |> filter(n == m),
+          filter(d, m == n + future_window - 1),
+          by = "n",
+          suffix = c("", "_w") # _w is in reference to the m-sap "window"
+        )
+    })() |>
+    filter(n <= max_n) |>
+    mutate(
+      # fit = map(min_rank(n), \(nr) if (nr == 1) res),
+      across(
+        matches("^patient(_.+)?_log_lik(_w)?$"),
+        \(l) {
+          map_if(l, \(ln) !is_null(ln), \(ln) {
+            plyr::aaply(ln, 2, \(lni) log_mean_exp(lni))
+          })
+        },
+        .names = "mean_{.col}"
+      )
+    )
+
+  if (exact) {
+    # Exact LFO: PSIS is dead work — its outputs (psis_/k_/lwt_) are lag-ed to
+    # NA and clean_lfo_results always takes the is.na(k) branch, using the exact
+    # E_patient_* columns rather than the approx_E_patient_* columns. Skip the
+    # loo::psis() / weights() / resample calls entirely (a single NaN in the
+    # log-ratio input would otherwise hard-error and abort the whole lfo()
+    # recursion). We still materialise k = NA and approx_E_* placeholder columns
+    # so the downstream if_else() in clean_lfo_results resolves cleanly; the
+    # placeholders mirror the exact mean_* columns and are never selected.
+    base |>
+      mutate(
+        k = NA_real_,
+        across(
+          matches("^mean_patient(_.+)?_log_lik(_w)?$"),
+          \(x) x,
+          .names = "approx_{.col}"
+        ),
+        across(
+          matches("^(approx_)?mean"),
+          \(m) map_dbl(m, \(mn) if (!is_null(mn)) sum(mn) else NA_real_),
+          .names = "E_{.col}"
+        )
+      ) |>
+      rename_with(\(n) str_replace(n, r"{E_(approx_)?mean}", r"{\1E}"))
+  } else {
+    base |>
+      mutate(
+        across(
+          matches("^patient(_.+)?_log_lik_log_ratio$"),
+          \(l) map(l, \(ln) suppressWarnings(loo::psis(rowSums(ln)))),
+          .names = "psis_{.col}"
+        ),
+        across(
+          starts_with("psis"),
+          lst(k = \(po) map_dbl(po, loo::pareto_k_values), lwt = \(po) {
+            map(po, \(pon) weights(pon, normalize = TRUE)[, 1])
+          }),
+          .names = "{.fn}_{.col}"
+        ),
+        across(matches("^(psis|lwt|k)"), lag),
+      ) |>
+      rename_with(\(n) {
+        str_replace_all(
+          n,
+          c(
+            r"{log_lik_log_ratio}" = "log_ratio",
+            r"{(k|lwt)_psis_patient(_.+)?_log_ratio}" = r"{\1\2}",
+            r"{^psis_patient(_.+)?_log_ratio}" = r"{psis\1}"
+          )
+        )
+      }) |>
+      mutate(
+        dplyover::across2(
+          matches("^patient(_.+)?_log_lik$"),
+          matches("^lwt(_.+)?"),
+          psis_resample,
+          .names = "approx_mean_{xcol}"
+        ),
+        dplyover::across2(
+          matches("^patient(_.+)?_log_lik_w$"),
+          matches("^lwt(_+)?"),
+          psis_resample,
+          .names = "approx_mean_{xcol}"
+        ),
+        across(
+          matches("^(approx_)?mean"),
+          \(m) map_dbl(m, \(mn) if (!is_null(mn)) sum(mn) else NA_real_),
+          .names = "E_{.col}"
+        )
+      ) |>
+      rename_with(\(n) str_replace(n, r"{E_(approx_)?mean}", r"{\1E}"))
+  }
+}
+
+redo_lfo_results <- function(lfo_res, lean = FALSE) {
+  new_res <- lfo_res |>
+    lfo_drop_bad_approx() |>
+    arrange(n) |>
+    group_by(refit_n) |>
+    reframe(lfo_log_lik(first(fit), max_n = n())) |>
+    mutate(n = n + refit_n - 1)
+
+  if (lean) {
+    new_res <- new_res |>
+      select(n, contains("E_"), k)
+  }
+
+  return(new_res)
+}
+
+clean_lfo_results <- function(lfo_res) {
+  res <- lfo_res |>
+    lfo_drop_bad_approx() |>
+    mutate(
+      E_log_lik = if_else(
+        is.na(k),
+        E_patient_log_lik,
+        approx_E_patient_log_lik
+      ),
+      E_log_lik_w = if_else(
+        is.na(k),
+        E_patient_log_lik_w,
+        approx_E_patient_log_lik_w
+      ),
+    )
+
+  if ("E_patient_pfs_log_lik" %in% names(res)) {
+    res <- res |>
+      mutate(
+        E_pfs_log_lik = if_else(
+          is.na(k),
+          E_patient_pfs_log_lik,
+          approx_E_patient_pfs_log_lik
+        ),
+        E_pfs_log_lik_w = if_else(
+          is.na(k),
+          E_patient_pfs_log_lik_w,
+          approx_E_patient_pfs_log_lik_w
+        ),
+      )
+  }
+
+  if ("E_patient_crcr_log_lik" %in% names(res)) {
+    res <- res |>
+      mutate(
+        E_crcr_log_lik = if_else(
+          is.na(k),
+          E_patient_crcr_log_lik,
+          approx_E_patient_crcr_log_lik
+        ),
+        E_crcr_log_lik_w = if_else(
+          is.na(k),
+          E_patient_crcr_log_lik_w,
+          approx_E_patient_crcr_log_lik_w
+        ),
+      )
+  }
+
+  res
+}
+
+#' Bootstrap Expected Log Pointwise Predictive Density (ELPD) for Leave-Future-Out Cross-Validation
+#'
+#' This function performs bootstrapping to estimate the uncertainty in the Expected Log Pointwise
+#' Predictive Density (ELPD) for Leave-Future-Out (LFO) cross-validation results.
+#'
+#' @param lfo_res A data frame containing the results of LFO cross-validation, typically output
+#'        from the `lfo` function. Expected to contain columns with patient log-likelihoods and weights.
+#' @param n_bootstrap Integer. The number of bootstrap samples to generate (default: 1000).
+#'
+#' @return A data frame with `n_bootstrap` rows, each containing a bootstrapped estimate of the ELPD.
+#'         The columns correspond to different components of the log-likelihood (e.g., overall, PFS, CRCR).
+#'
+#' @details
+#' The function performs the following steps:
+#' 1. Removes any bad approximations from the LFO results.
+#' 2. For each bootstrap iteration:
+#'    a. Samples patients with replacement.
+#'    b. Recalculates log-likelihoods and weights for the sampled patients.
+#'    c. Computes the ELPD using PSIS (Pareto Smoothed Importance Sampling).
+#' 3. Returns a data frame of bootstrapped ELPD estimates.
+#'
+#' This bootstrapping approach helps quantify the uncertainty in the ELPD estimate,
+#' which is crucial for model comparison and assessment in a time-series context,
+#' particularly for clinical trial data with multiple outcomes.
+#'
+lfo_bootstrap_elpd <- function(lfo_res, n_bootstrap = 1000) {
+  get_patient_subset_col <- function(ln, i) {
+    n_early_patients <- length(i) - ncol(ln)
+    ln[, discard(i, \(x) x < n_early_patients) - n_early_patients]
+  }
+
+  origin_res <- lfo_res |>
+    lfo_drop_bad_approx() |>
+    arrange(n)
+
+  n_lfo_patients <- ncol(first(origin_res$patient_log_lik))
+
+  map_dfr(seq(n_bootstrap), function(b) {
+    bootstrap_i <- sample(n_lfo_patients, n_lfo_patients, replace = TRUE)
+
+    origin_res |>
+      mutate(
+        across(matches("^patient(_pfs|_crcr)?_log_lik(_w)?$"), \(l) {
+          map(l, \(ln) get_patient_subset_col(ln, bootstrap_i))
+        }),
+        dplyover::across2(
+          matches("^patient(_pfs|_crcr)?_log_lik$"),
+          matches("^lwt(_pfs|crcr)?"),
+          \(l, lw) psis_resample(l, lw, recalc_full = TRUE),
+          .names = "mean_{xcol}"
+        ),
+        dplyover::across2(
+          matches("^patient(_pfs|_crcr)?_log_lik_w$"),
+          matches("^lwt(_pfs|crcr)?"),
+          \(l, lw) psis_resample(l, lw, recalc_full = TRUE),
+          .names = "mean_{xcol}"
+        ),
+      ) |>
+      transmute(across(
+        matches("^mean"),
+        \(m) map_dbl(m, \(mn) if (!is_null(mn)) sum(mn) else NA_real_),
+        .names = "E_{.col}"
+      )) |>
+      rename_with(\(n) {
+        str_replace(n, r"{E_(approx_)?mean_patient}", r"{\1E}")
+      }) |>
+      summarize(across(everything(), sum))
+  })
+}
+
+lfo_stacking_weights <- function(model_log_lik, log_lik_var = E_log_lik) {
+  model_log_lik |>
+    map_dfr(clean_lfo_results, .id = "model") |>
+    select(model, n, {{ log_lik_var }}) |>
+    pivot_wider(names_from = model, values_from = {{ log_lik_var }}) |>
+    select(!n) |>
+    as.matrix() |>
+    loo::stacking_weights() |>
+    c() |>
+    set_names(names(model_log_lik))
+}
+
+get_oos_confusion_marix <- function(lfo_res, recover_data) {
+  lfo_res |>
+    mutate(
+      w = lead(n_visits_added, default = last(n_future_visits)) %>%
+        divide_by(sum(.)),
+      oos_confusion_matrix = pmap(
+        lst(f = fit, n, m, refit_n),
+        function(f, n, m, refit_n) {
+          if (!is_null(f)) {
+            lite_spread_rvars(
+              f,
+              oos_recist_confusion_matrix[
+                n_mat,
+                m_mat,
+                response,
+                pred_response
+              ],
+              recover_data = recover_data
+            ) |>
+              mutate(across(c(n_mat, m_mat), \(x) x + refit_n - 1)) |>
+              filter(n_mat == n, m_mat == m) |>
+              select(!c(n_mat, m_mat)) |>
+              unnest(oos_recist_confusion_matrix) |>
+              group_by(response) |>
+              mutate(observed = sum(oos_recist_confusion_matrix) > 0) |>
+              ungroup() |>
+              filter(observed)
+          }
+        }
+      )
+    ) |>
+    unnest(oos_confusion_matrix)
+}
+
+#' Compute Accuracy Metrics from Out-of-Sample Confusion Matrix
+#'
+#' Calculates classification accuracy metrics (sensitivity, specificity, and overall accuracy)
+#' from out-of-sample confusion matrix predictions.
+#'
+#' @param confusion_matrix_data Data frame containing the confusion matrix with columns:
+#'   response, pred_response, mean_pred, cell_size, and optionally count.
+#'
+#' @return A data frame with columns:
+#'   \item{metric}{Character. The metric type: "Accuracy", "Sensitivity", or "Specificity"}
+#'   \item{class}{Character. The class label, or "Overall" for accuracy}
+#'   \item{median}{Numeric. The median of the posterior distribution}
+#'   \item{q5}{Numeric. The 5th percentile}
+#'   \item{q95}{Numeric. The 95th percentile}
+#'
+#' @details
+#' The function computes three types of metrics:
+#' - **Sensitivity** (per-class): The true positive rate for each RECIST category
+#' - **Accuracy** (overall): The weighted average of correct predictions across all classes
+#' - **Specificity** (per-class): The true negative rate for each RECIST category
+#'
+#' The confusion matrix data should contain both row-normalized proportions
+#' (for sensitivity/accuracy) and raw counts (for specificity).
+#'
+compute_oos_accuracy_metrics <- function(confusion_matrix_data) {
+  data <- confusion_matrix_data
+
+  # Validate data structure
+  if (nrow(data) == 0) {
+    stop("confusion_matrix_data has no rows")
+  }
+
+  # Check if count column exists - if not, we can't compute specificity
+  has_counts <- "count" %in% names(data)
+
+  # Per-class sensitivity (diagonal elements, as data is row-normalized)
+  sensitivity <- data |>
+    filter(response == pred_response) |>
+    transmute(
+      class = response,
+      metric = "Sensitivity",
+      value = mean_pred
+    )
+
+  # Overall accuracy: need to weight by class prevalence
+  # Since mean_pred is P(Predicted | Observed), we need class weights
+  class_totals <- data |>
+    group_by(response) |>
+    summarize(n = first(cell_size), .groups = "drop") |>
+    mutate(weight = n / sum(n))
+
+  accuracy <- sensitivity |>
+    left_join(class_totals, by = c("class" = "response")) |>
+    summarize(
+      class = "Overall",
+      metric = "Accuracy",
+      value = rvar_weighted_mean(value, weight)
+    )
+
+  # Specificity: requires raw counts
+  if (has_counts) {
+    classes <- levels(data$response)
+
+    # Specificity(X) = P(Predicted != X | Observed != X)
+    # = (correctly predicted non-X) / (all non-X observed)
+    specificity <- map_dfr(classes, function(cls) {
+    # Non-X observations
+    non_x_data <- data |> filter(response != cls)
+
+    # Return NA if no non-X observations (e.g., only one class)
+    if (nrow(non_x_data) == 0 || !("count" %in% names(non_x_data))) {
+      return(tibble(
+        class = cls,
+        metric = "Specificity",
+        value = rvar(NA_real_)
+      ))
+    }
+
+    # Ensure count column exists and has valid values
+    if (all(is.na(non_x_data$count))) {
+      return(tibble(
+        class = cls,
+        metric = "Specificity",
+        value = rvar(NA_real_)
+      ))
+    }
+
+    non_x_total <- rvar_sum(non_x_data$count)
+
+    # Correctly predicted non-X (predicted != X when observed != X)
+    non_x_correct_data <- data |>
+      filter(response != cls, pred_response != cls)
+
+    # If no correct non-X predictions, specificity is 0
+    if (nrow(non_x_correct_data) == 0) {
+      non_x_correct <- rvar(0)
+    } else {
+      non_x_correct <- rvar_sum(non_x_correct_data$count)
+    }
+
+    tibble(
+      class = cls,
+      metric = "Specificity",
+      value = non_x_correct / non_x_total
+    )
+    })
+  } else {
+    # If no counts available, return empty specificity
+    specificity <- tibble()
+  }
+
+  bind_rows(accuracy, sensitivity, specificity) |>
+    distinct(metric, class, value, .keep_all = TRUE) |>
+    tidybayes::point_interval(value, .width = 0.9, .point = median, .interval = qi) |>
+    rename(median = value, q5 = .lower, q95 = .upper) |>
+    select(metric, class, median, q5, q95) |>
+    arrange(metric, class)
+}
+
+get_lfo_cutoffs <- function(all_analysis_data, lfo_step, target_trial = "sclc") {
+  target_data <- filter(all_analysis_data, fct_match(trial, target_trial))
+
+  first_cutoff_day <- min(target_data$calendar_day)
+  last_cutoff_day  <- max(target_data$calendar_day) +
+    max(target_data$patient_max_t) * 7L
+
+  if ("trtsdt" %in% names(all_analysis_data)) {
+    origin <- min(all_analysis_data$trtsdt) - 1L
+  } else {
+    origin <- as.Date("1970-01-01") + min(all_analysis_data$calendar_day) - 1L
+  }
+
+  all_visits_data <- all_analysis_data |>
+    select(visit_data) |>
+    unnest(visit_data)
+
+  target_obs_visit_days <- map(target_data$visit_data, \(vd) {
+    vd$visit_calendar_day[vd$week > 0]
+  })
+
+  get_lfo_cutoff_days(
+    origin + first_cutoff_day,
+    origin + last_cutoff_day,
+    first_cutoff_day,
+    lfo_step
+  ) |>
+    mutate(
+      n_visits_added = map_int(cutoff_calendar_day, \(cutoff_day) {
+        all_visits_data |> filter(visit_calendar_day <= cutoff_day) |> nrow()
+      }),
+      n_future_visits = nrow(all_visits_data) - n_visits_added,
+      n_visits_added  = n_visits_added - lag(n_visits_added),
+      n_target_observed = map_int(cutoff_calendar_day, \(cutoff_day) {
+        sum(map_lgl(target_obs_visit_days, \(days) any(days <= cutoff_day)))
+      }),
+      n_target_future_observed = map_int(cutoff_calendar_day, \(cutoff_day) {
+        sum(map_lgl(target_obs_visit_days, \(days) any(days > cutoff_day)))
+      })
+    ) |>
+    filter(
+      n_future_visits > 0,
+      n_target_observed > 0,
+      n_target_future_observed > 0
+    )
+}
+
+# nolint end: object_usage_linter
